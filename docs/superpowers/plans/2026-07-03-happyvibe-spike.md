@@ -6,7 +6,7 @@
 
 **Architecture:** Three processes: Electron renderer (disposable React UI) ↔ Electron main (`PiClient` — typed JSON-lines RPC layer, built to keep) ↔ Pi subprocess (vendored, pinned, loaded with the HappyVibe bridge extension, built to keep). Pi is always spawned as a subprocess via Electron's own binary (`ELECTRON_RUN_AS_NODE=1`) so dev and packaged behavior are identical. Permission prompts flow over Pi's documented `extension_ui_request`/`extension_ui_response` RPC sub-protocol (Path A); the WebSocket sidecar (Path B) is only built if Task 3's empirical probe contradicts the docs.
 
-**Tech Stack:** Electron + electron-vite + React + TypeScript (strict), Vitest for unit tests, electron-builder for packaging, `@earendil-works/pi-coding-agent@0.80.3` (pinned), provider: Anthropic (BYOK).
+**Tech Stack:** Electron + electron-vite + React + TypeScript (strict), Vitest for unit tests, electron-builder for packaging, `@earendil-works/pi-coding-agent@0.80.3` (pinned), provider: DeepSeek `deepseek-v4-flash` (BYOK; key from `.env` as `DEEPSEEK_API_KEY`).
 
 **Spec:** Notion — "HappyVibe Spike PRD — Walking Skeleton" (`391d33dfffca81afa86adf1e82360f64`). Validation results are logged in `docs/validation/RESULTS.md` and copied back to Notion in Task 15.
 
@@ -15,7 +15,8 @@
 - Pi package pinned exactly: `@earendil-works/pi-coding-agent@0.80.3` (NOT `@mariozechner/pi-coding-agent` — that scope is stale). Never `^`/`~`.
 - Node >= 20.6.0 required by Pi; develop with Node 22+.
 - Pi subprocess is ALWAYS spawned as `process.execPath` with `env.ELECTRON_RUN_AS_NODE="1"` pointing at `pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js` — never a system `node`, never imported as a library.
-- Pi RPC start flags: `--mode rpc -e <abs path to happyvibe-bridge.ts> --session-dir <userData>/sessions`, `cwd` = the selected workspace folder.
+- Pi RPC start flags: `--mode rpc -e <abs path to happyvibe-bridge.ts> --session-dir <userData>/sessions --provider deepseek --model deepseek-v4-flash`, `cwd` = the selected workspace folder.
+- Model/provider: DeepSeek `deepseek-v4-flash`, env var `DEEPSEEK_API_KEY`. In dev the key lives in a gitignored `.env` at repo root (loaded via `dotenv` in main, tiny inline loader in tests); the packaged app falls back to the setup screen.
 - All RPC commands include an `id` field; responses echo it (`{"id":..,"type":"response","command":..,"success":..}`).
 - Permission prompts never auto-allow and never time out. Deny is always safe.
 - The renderer never touches Node APIs; all Pi traffic flows main→preload→renderer as typed IPC events.
@@ -103,7 +104,16 @@ test("vitest runs", () => { expect(1 + 1).toBe(2); });
 
 Run: `npm test` — Expected: 1 passed.
 
-- [ ] **Step 4: Create the validation log**
+- [ ] **Step 4: Gitignore the env file and create it**
+
+```bash
+echo ".env" >> .gitignore
+echo "DEEPSEEK_API_KEY=sk-REPLACE-ME" > .env
+```
+
+(The user supplies the real key. NEVER commit `.env`.)
+
+- [ ] **Step 5: Create the validation log**
 
 Create `docs/validation/RESULTS.md`:
 ```markdown
@@ -113,7 +123,7 @@ Create `docs/validation/RESULTS.md`:
 |------|-----------|--------|------|-------|
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -171,7 +181,33 @@ console.log("OK pi version:", r.stdout.trim());
 
 Run: `node scripts/smoke-pi.mjs` — Expected: `OK pi version: 0.80.3` (exit 0). If the version differs, STOP — the pin is wrong.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Verify DeepSeek support in the pinned version**
+
+Run:
+```bash
+node pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --list-models 2>/dev/null | grep -i deepseek
+```
+
+- **If `deepseek-v4-flash` is listed:** native support — nothing more to do.
+- **If NOT listed:** register DeepSeek as an OpenAI-compatible provider in `~/.pi/agent/models.json` (per DeepSeek's official Pi integration doc):
+```json
+{
+  "providers": {
+    "deepseek": {
+      "baseUrl": "https://api.deepseek.com",
+      "api": "openai-completions",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "models": [
+        { "id": "deepseek-v4-flash", "reasoning": true },
+        { "id": "deepseek-v4-pro", "reasoning": true }
+      ]
+    }
+  }
+}
+```
+Check the exact schema against `pi-runtime/node_modules/@earendil-works/pi-coding-agent/docs/models.md` if the above is rejected. ⚠️ Known Pi issue: custom `models.json` providers can hang on first call in some versions (badlogic/pi-mono#3168). If Task 6's prompt hangs, that is a **validation finding** — STOP and report; do not debug around it silently. Record which route (native vs models.json) was used in `docs/validation/RESULTS.md` notes.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add pi-runtime scripts/smoke-pi.mjs
@@ -476,8 +512,10 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, apiKey: st
       "--mode", "rpc",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--session-dir", sessionDir,
+      "--provider", "deepseek",
+      "--model", "deepseek-v4-flash",
     ],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ANTHROPIC_API_KEY: apiKey } as Record<string, string>,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", DEEPSEEK_API_KEY: apiKey } as Record<string, string>,
     cwd: workspace,
   };
 }
@@ -591,7 +629,7 @@ git commit -m "feat: PiClient RPC layer with fake-pi unit tests and real-pi hand
 
 **Files:**
 - Create: `pi-runtime/extensions/happyvibe-bridge.ts`
-- Test: `tests/bridge.test.ts` (gated on `ANTHROPIC_API_KEY`)
+- Test: `tests/bridge.test.ts` (gated on `DEEPSEEK_API_KEY`, auto-loaded from `.env`)
 
 **Interfaces:**
 - Consumes: the exact `extension_ui_request`/`extension_ui_response` wire shapes recorded in `docs/validation/d1.md` — read that file first and adjust the response payload in the test if it differs from `{ value }`.
@@ -643,7 +681,12 @@ import fs from "node:fs";
 import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
 
-const KEY = process.env.ANTHROPIC_API_KEY;
+// Tiny .env loader — keeps tests dependency-free
+for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
+  const m = line.match(/^([A-Z_]+)=(.+)$/);
+  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+}
+const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
 let client: PiClient;
 afterEach(() => client?.stop());
 
@@ -656,9 +699,9 @@ test.skipIf(!KEY)("bridge intercepts bash; deny blocks and agent continues", asy
       path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
       "--mode", "rpc", "--no-session",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
-      "--provider", "anthropic", "--model", "haiku",
+      "--provider", "deepseek", "--model", "deepseek-v4-flash",
     ],
-    env: { ...process.env, ANTHROPIC_API_KEY: KEY! } as Record<string, string>,
+    env: { ...process.env, DEEPSEEK_API_KEY: KEY! } as Record<string, string>,
     cwd: tmp,
   });
   await client.start();
@@ -681,7 +724,7 @@ test.skipIf(!KEY)("bridge intercepts bash; deny blocks and agent continues", asy
 
 - [ ] **Step 3: Run gated test**
 
-Run: `ANTHROPIC_API_KEY=<your key> npm test -- bridge` — Expected: PASS — the ui-request arrives with parseable JSON title, deny prevents file creation, `agent_end` still arrives (agent continued gracefully). Without a key: test reports skipped.
+Ensure `.env` at repo root has the real `DEEPSEEK_API_KEY` (Task 1 created the placeholder). Run: `npm test -- bridge` — Expected: PASS — the ui-request arrives with parseable JSON title, deny prevents file creation, `agent_end` still arrives (agent continued gracefully). With only the placeholder key: test reports skipped. If the prompt hangs and Task 2 used the models.json route, that is the known custom-provider issue — STOP and report (validation finding).
 
 - [ ] **Step 4: Commit**
 
@@ -729,6 +772,10 @@ import path from "node:path";
 const file = () => path.join(app.getPath("userData"), "config.json");
 
 export function getApiKey(): string | null {
+  // Dev convenience: .env (loaded via dotenv in main/index.ts) wins over stored key.
+  if (process.env.DEEPSEEK_API_KEY && !process.env.DEEPSEEK_API_KEY.startsWith("sk-REPLACE")) {
+    return process.env.DEEPSEEK_API_KEY;
+  }
   try {
     const raw = JSON.parse(fs.readFileSync(file(), "utf8"));
     return safeStorage.decryptString(Buffer.from(raw.apiKey, "base64"));
@@ -791,7 +838,11 @@ export function registerIpc(win: BrowserWindow): void {
 
 - [ ] **Step 3: Replace `src/main/index.ts` window setup**
 
-Keep the scaffold's window creation, add after window creation: `registerIpc(mainWindow)` (import from `./ipc`). Delete template demo IPC.
+```bash
+npm install dotenv
+```
+
+Keep the scaffold's window creation; add `import "dotenv/config";` as the FIRST import (dev: picks up `.env` at repo root; packaged: silent no-op, setup screen takes over). After window creation add `registerIpc(mainWindow)` (import from `./ipc`). Delete template demo IPC.
 
 - [ ] **Step 4: Replace `src/preload/index.ts`**
 
@@ -873,7 +924,7 @@ export default function App(): JSX.Element {
   if (screen === "setup") return (
     <div className="screen">
       <h1>HappyVibe Spike</h1>
-      <input placeholder="Anthropic API key" value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
+      <input placeholder="DeepSeek API key" value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
       <button disabled={!keyInput.startsWith("sk-")} onClick={async () => { await window.hv.setApiKey(keyInput); setScreen("folder"); }}>Save</button>
     </div>
   );
@@ -925,7 +976,7 @@ export function Transcript({ items }: { items: TranscriptItem[] }): JSX.Element 
 
 - [ ] **Step 3: Manual gate V2**
 
-Run: `npm run dev`. Enter your API key → pick any small project folder → send "What files are in this project? Answer in one sentence." Expected: assistant text streams in token-by-token (visibly incremental, not one blob).
+Run: `npm run dev`. With a real key in `.env` the setup screen is skipped automatically (key detected) → pick any small project folder → send "What files are in this project? Answer in one sentence." Expected: assistant text streams in token-by-token (visibly incremental, not one blob) from `deepseek-v4-flash`.
 
 Append to `docs/validation/RESULTS.md`:
 ```markdown
@@ -1262,7 +1313,7 @@ npm run package
 open "release/mac-arm64/HappyVibe Spike.app"
 ```
 
-Expected: the app launches from the bundle. Run the full scripted demo from the Spike PRD success criteria: key → folder → change request → streaming + tool cards → dangerous command modal → Deny (graceful) → Allow an edit → file lands on disk. All against the BUNDLED runtime (verify: `ps aux | grep pi-runtime` shows the path inside `…/Resources/pi-runtime/…`).
+Expected: the app launches from the bundle. Run the full scripted demo from the Spike PRD success criteria: key (packaged app cannot see the dev `.env` — paste the DeepSeek key into the setup screen; this also exercises the fallback path) → folder → change request → streaming + tool cards → dangerous command modal → Deny (graceful) → Allow an edit → file lands on disk. All against the BUNDLED runtime (verify: `ps aux | grep pi-runtime` shows the path inside `…/Resources/pi-runtime/…`).
 
 Append to `RESULTS.md`:
 ```markdown
@@ -1301,6 +1352,6 @@ Report to the user: gates passed/failed, surprises found, and whether the HappyV
 
 ## Self-Review Notes
 
-- **Spec coverage:** V1 (T5 step 6), V2 (T8), V3 (T9), V4 (T3), V5 (T10), V6 (T13), V7 (T14); error handling (T4 malformed lines, T12 crash/restart, permission prompts never time out — bridge passes no timeout); testing strategy (fixtures T5, gated headless T6, manual demo); BYOK/Anthropic-only (T7/T8); walking-skeleton split (PiClient + bridge tested, renderer manual-only) — all covered.
+- **Spec coverage:** V1 (T5 step 6), V2 (T8), V3 (T9), V4 (T3), V5 (T10), V6 (T13), V7 (T14); error handling (T4 malformed lines, T12 crash/restart, permission prompts never time out — bridge passes no timeout); testing strategy (fixtures T5, gated headless T6, manual demo); BYOK/DeepSeek-only (`deepseek-v4-flash`, `.env`-sourced key; T2/T7/T8); walking-skeleton split (PiClient + bridge tested, renderer manual-only) — all covered.
 - **Known empiricism, by design:** exact `extension_ui_response` field name (T3 discovers, T5/T6/T7 carry a note to match `d1.md`), `tool_execution_*` field names (T9 logs once), `get_session_stats` payload shape (T11 logs once), pi-permission-system entry path + config schema (T13 inspects README). These are validation targets of the spike itself, not plan gaps.
 - **Type consistency check:** `PiClient.send/respondUi/events` signatures match usage in T6 tests, T7 ipc, and fixtures; `TranscriptItem` widening in T9 matches T8's export; `respondPermission` choice strings match the bridge's option array exactly.
