@@ -15,8 +15,13 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, apiKey: st
     args: [
       path.join(runtimeDir, PI_CLI_RELPATH),
       "--mode", "rpc",
+      // The HappyVibe bridge is the SOLE permission path in RPC mode.
+      // @gotgenes/pi-permission-system was removed from the spawn after Gate V6
+      // proved it is TUI-only (both its prompt paths gate on ctx.hasUI, which is
+      // false in --mode rpc; its non-UI fallback silently denies). It stays
+      // vendored in pi-runtime only for tests/permission-coexistence.test.ts,
+      // which documents that finding. See docs/validation/v6.md.
       "-e", path.join(runtimeDir, "extensions/happyvibe-bridge.ts"),
-      "-e", path.join(runtimeDir, "node_modules/@gotgenes/pi-permission-system/src/index.ts"),
       "--session-dir", sessionDir,
       "--provider", "deepseek",
       "--model", "deepseek-v4-flash",

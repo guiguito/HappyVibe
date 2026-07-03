@@ -1,34 +1,69 @@
-# hv-scaffold
+# HappyVibe Spike — Walking Skeleton
 
-An Electron application with React and TypeScript
+A minimal Electron app embedding the [Pi coding agent](https://pi.dev), built to validate the HappyVibe stack end-to-end. **Feasibility confirmed 2026-07-03** — see [`docs/validation/RESULTS.md`](docs/validation/RESULTS.md) for the full V1–V7 gate results.
 
-## Recommended IDE Setup
+> Product context: HappyVibe PRD + Spike PRD live in Notion (HappyVibe workspace). This repo is the walking skeleton HappyVibe V1 grows from: the **UI is disposable**, the **architecture underneath is built to keep**.
 
-- [VSCode](https://code.visualstudio.com/) + [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) + [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+## What was proven
 
-## Project Setup
+- **A desktop UI can drive an embedded, pinned Pi over its RPC protocol** (spawn, stream, tool events, session stats) — Gates V1/V2/V3.
+- **A bundled bridge extension can gate tool calls with UI approval** over Pi's native `extension_ui_request`/`extension_ui_response` sub-protocol ("Path A" — no custom IPC sidecar needed) — Gates V4/V5. Deny blocks the tool call with a real model (`deepseek-v4-flash`); the agent continues gracefully.
+- **True embedding**: a packaged unsigned `.app` runs its bundled Pi runtime — Gate V7.
+- **Key negative finding (V6)**: `@gotgenes/pi-permission-system` is TUI-only (all prompt paths gate on `ctx.hasUI`, which is `false` in `--mode rpc`). **The HappyVibe bridge owns all permission UI in RPC mode.** See [`docs/validation/v6.md`](docs/validation/v6.md).
 
-### Install
+## Architecture
 
-```bash
-$ npm install
+```
+┌─ Electron renderer (React + TS + Vite)      src/renderer/   ← disposable
+│      ↕ typed IPC (contextBridge, window.hv)  src/preload/
+├─ Electron main                                src/main/
+│    config.ts     API key (.env in dev, safeStorage otherwise)
+│    ipc.ts        session lifecycle + event forwarding
+│    pi/PiClient   ← KEEP: JSON-lines RPC client (spawn, correlate, events)
+│    pi/spawn.ts   ← KEEP: electron-free spawn spec (vitest-importable)
+│    pi/codec.ts   ← KEEP: NDJSON decoder (buffers partials, skips garbage)
+│    pi/runtimeDir electron-only dev/packaged path resolution
+│      ↕ stdio (Pi RPC protocol)
+└─ Pi subprocess (vendored, pinned)             pi-runtime/
+     @earendil-works/pi-coding-agent@0.80.3 (exact pin)
+     extensions/happyvibe-bridge.ts ← KEEP: tool_call gate → ctx.ui.select
 ```
 
-### Development
+Rules that keep this sound:
+
+- Pi is **always a subprocess** (spawned via `process.execPath` + `ELECTRON_RUN_AS_NODE=1`), never imported as a library. The RPC protocol is the coupling surface.
+- `src/main/pi/{codec,spawn,PiClient,types}.ts` are **electron-free** so Vitest can import them.
+- Permission wire shapes (empirically proven, see [`docs/validation/d1.md`](docs/validation/d1.md)): `confirm` responses use `confirmed: boolean`; `select` responses use `value: string`. The renderer only routes `method === "select"` requests to the permission modal (fire-and-forget `setStatus` etc. would crash it otherwise).
+- Permission prompts never auto-allow and never time out.
+
+## Run it
 
 ```bash
-$ npm run dev
+npm install
+cd pi-runtime && npm ci && cd ..       # restores the pinned Pi runtime
+echo 'DEEPSEEK_API_KEY=sk-...' > .env  # gitignored; BYOK (DeepSeek)
+npm run dev
 ```
 
-### Build
+Flow: setup screen is auto-skipped when `.env` has a key → pick a project folder → chat. Ask for a change; tool calls show as cards; shell commands raise the Allow / Allow for session / Deny modal.
 
 ```bash
-# For windows
-$ npm run build:win
-
-# For macOS
-$ npm run build:mac
-
-# For Linux
-$ npm run build:linux
+npm test           # 11 unit/integration tests; bridge + coexistence tests
+                   # make real DeepSeek calls when DEEPSEEK_API_KEY is set,
+                   # and skip cleanly otherwise
+npm run package    # unsigned .app in release/mac-arm64/ (bundles pi-runtime
+                   # via build/afterPack.mjs — electron-builder drops
+                   # node_modules on its own)
 ```
+
+## Gotchas discovered during the spike
+
+- **One-shot Pi CLI calls hang if stdin stays open** (TTY read). Always close stdin for `--version`/`--list-models` (`stdio: ["ignore", ...]`). RPC mode is unaffected.
+- `pi --list-models` lists only *configured* providers — it is not a catalog; native provider support was confirmed from Pi's model registry.
+- Extensions calling `ctx.ui.*` inside `session_start` must fire **async-detached** (Pi's JSONL stdin reader attaches after the handler returns).
+- The Pi npm package moved to the `@earendil-works` scope (`@mariozechner` is stale).
+- Upgrading Pi = a deliberate change: bump the pin in `pi-runtime/package.json`, re-run the whole test suite, re-check the wire shapes in `docs/validation/d1.md`.
+
+## Where to build next (per the HappyVibe PRD)
+
+Sessions list & parallel sessions · MCP via `pi-mcp-adapter` · sub-agents via `pi-subagents` (Code Explorer + Summarizer) · context inspection/editing · audit log · pretty diffs · real design. The PiClient event stream and the bridge pattern generalize to all of these.
