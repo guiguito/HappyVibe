@@ -11,6 +11,7 @@
 | V5-core | Permission round-trip with real model | PASS | 2026-07-03 | Bridge extension gates bash via `ctx.ui.select`; deny blocks tool call (forbidden.txt NOT created); `agent_end` arrives (agent continues gracefully). Model: `deepseek-v4-flash` (provider `deepseek`). Select response field proven: `value: string`. Full select wire shape in d1.md. |
 
 | V2 | Streaming chat | PENDING (manual) | 2026-07-03 | Code complete: setup/folder/chat screens implemented; text_delta accumulation wired; awaiting manual GUI validation with `npm run dev` |
+| V3 | Tool visibility | PENDING (manual) | 2026-07-03 | Code complete: ToolCard.tsx created; Transcript.tsx widened; tool_execution_start/end branches wired in App.tsx. Field names (`toolCallId`, `toolName`, `args`, `result`, `isError`) derived from `pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`. Awaiting manual GUI validation (`npm run dev`, prompt that triggers tool calls). |
 
 ## Bring-up findings
 

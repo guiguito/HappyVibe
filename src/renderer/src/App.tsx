@@ -11,6 +11,24 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     window.hv.getApiKey().then((k) => setScreen(k ? "folder" : "setup"));
     window.hv.onPiEvent((e) => {
+      if (e.type === "tool_execution_start") {
+        const t = e as { toolCallId: string; toolName: string; args: unknown };
+        streaming.current = false;
+        setItems((p) => [
+          ...p,
+          { kind: "tool", card: { toolCallId: t.toolCallId, toolName: t.toolName, args: t.args, status: "running" } },
+        ]);
+      }
+      if (e.type === "tool_execution_end") {
+        const t = e as { toolCallId: string; result: unknown; isError: boolean };
+        setItems((p) =>
+          p.map((it) =>
+            it.kind === "tool" && it.card.toolCallId === t.toolCallId
+              ? { ...it, card: { ...it.card, status: t.isError ? ("error" as const) : ("done" as const), result: t.result } }
+              : it
+          )
+        );
+      }
       const ame = (e as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
       if (e.type === "message_update" && ame?.type === "text_delta" && ame.delta) {
         setItems((prev) => {
