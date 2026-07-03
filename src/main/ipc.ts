@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
+import { piRuntimeDir } from "./pi/runtimeDir";
 import { getApiKey, setApiKey, sessionDir } from "./config";
 
 let client: PiClient | null = null;
@@ -15,7 +16,7 @@ function attach(win: BrowserWindow, c: PiClient): void {
 async function startSession(win: BrowserWindow, workspace: string): Promise<void> {
   client?.stop();
   lastWorkspace = workspace;
-  client = new PiClient(resolvePiSpawn(workspace, sessionDir(), getApiKey() ?? ""));
+  client = new PiClient(resolvePiSpawn(workspace, sessionDir(), getApiKey() ?? "", piRuntimeDir()));
   attach(win, client);
   await client.start();
 }

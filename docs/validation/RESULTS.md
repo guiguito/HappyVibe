@@ -16,6 +16,8 @@
 | V2 | Streaming chat | PENDING (manual) | 2026-07-03 | Code complete: setup/folder/chat screens implemented; text_delta accumulation wired; awaiting manual GUI validation with `npm run dev` |
 | V3 | Tool visibility | PENDING (manual) | 2026-07-03 | Code complete: ToolCard.tsx created; Transcript.tsx widened; tool_execution_start/end branches wired in App.tsx. Field names (`toolCallId`, `toolName`, `args`, `result`, `isError`) derived from `pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`. Awaiting manual GUI validation (`npm run dev`, prompt that triggers tool calls). |
 
+| V7 | True embedding | PARTIAL (headless) | 2026-07-03 | `npm run package` produced unsigned `release/mac-arm64/HappyVibe Spike.app`. Bundle structure confirmed: `Contents/Resources/pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js` PRESENT. Bundled-runtime smoke test (`ELECTRON_RUN_AS_NODE=1 "<MacOS binary>" "<bundled cli.js>" --version </dev/null`) printed `0.80.3` — embedding proven. Interactive GUI demo (streaming, permission modal) PENDING manual validation. |
+
 ## Bring-up findings
 
 - **Pi CLI one-shot invocations hang if stdin stays open** (TTY-read behavior). All non-RPC invocations (`--version`, `--list-models`) MUST use `stdin: "ignore"` / `</dev/null`. RPC mode is unaffected (we own the stdin pipe). smoke-pi.mjs uses `stdio: ["ignore","pipe","pipe"]`.
