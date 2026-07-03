@@ -6,6 +6,8 @@
 
 | V4 | D1: ctx.ui surfaces over RPC | PASS | 2026-07-03 | Path A confirmed; wire shapes in d1.md. Note: confirm response field is `confirmed: boolean`, not `value`. Extensions must fire confirm async-detached from session_start to allow JSONL reader to attach first. |
 
+| V1 | Spawn & handshake | PASS | 2026-07-03 | Real pinned Pi answers RPC from tests |
+
 ## Bring-up findings
 
 - **Pi CLI one-shot invocations hang if stdin stays open** (TTY-read behavior). All non-RPC invocations (`--version`, `--list-models`) MUST use `stdin: "ignore"` / `</dev/null`. RPC mode is unaffected (we own the stdin pipe). smoke-pi.mjs uses `stdio: ["ignore","pipe","pipe"]`.
