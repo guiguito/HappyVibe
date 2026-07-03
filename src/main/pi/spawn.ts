@@ -16,6 +16,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, apiKey: st
       path.join(runtime, PI_CLI_RELPATH),
       "--mode", "rpc",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
+      "-e", path.join(runtime, "node_modules/@gotgenes/pi-permission-system/src/index.ts"),
       "--session-dir", sessionDir,
       "--provider", "deepseek",
       "--model", "deepseek-v4-flash",

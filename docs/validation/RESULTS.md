@@ -10,6 +10,8 @@
 
 | V5-core | Permission round-trip with real model | PASS | 2026-07-03 | Bridge extension gates bash via `ctx.ui.select`; deny blocks tool call (forbidden.txt NOT created); `agent_end` arrives (agent continues gracefully). Model: `deepseek-v4-flash` (provider `deepseek`). Select response field proven: `value: string`. Full select wire shape in d1.md. |
 
+| V6 | Enforcement coexistence | FAIL | 2026-07-03 | pi-permission-system ask prompts do NOT surface over RPC as select ui-requests — only setStatus events arrive. Bridge-only enforcement works (deny blocks). Extensions coexist without crash. PRD impact: pi-permission-system is TUI-only; HappyVibe must own all RPC-mode permission UI via its bridge. see v6.md |
+
 | V5 | Permission modal (GUI) | PENDING (manual) | 2026-07-03 | PermissionModal.tsx created; uiReq state + onUiRequest subscription wired in App.tsx. Title parsed defensively (JSON hv.permission → tool+summary; non-JSON → plain text fallback, exercised by Task 13). Options rendered from req.options (not hardcoded). V5-core (headless round-trip) already PASS (Task 6). GUI modal requires manual `npm run dev` validation. |
 | V2 | Streaming chat | PENDING (manual) | 2026-07-03 | Code complete: setup/folder/chat screens implemented; text_delta accumulation wired; awaiting manual GUI validation with `npm run dev` |
 | V3 | Tool visibility | PENDING (manual) | 2026-07-03 | Code complete: ToolCard.tsx created; Transcript.tsx widened; tool_execution_start/end branches wired in App.tsx. Field names (`toolCallId`, `toolName`, `args`, `result`, `isError`) derived from `pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`. Awaiting manual GUI validation (`npm run dev`, prompt that triggers tool calls). |
