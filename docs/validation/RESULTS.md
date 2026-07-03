@@ -4,6 +4,8 @@
 |------|-----------|--------|------|-------|
 | — | Pi runtime vendored (0.80.3) | PASS | 2026-07-03 | smoke-pi.mjs prints 0.80.3. **Native DeepSeek support confirmed** (provider `deepseek` + `DEEPSEEK_API_KEY` in cli/args.js & model-registry.js) → no models.json needed. Exact model id verified at V5-core (Task 6). |
 
+| V4 | D1: ctx.ui surfaces over RPC | PASS | 2026-07-03 | Path A confirmed; wire shapes in d1.md. Note: confirm response field is `confirmed: boolean`, not `value`. Extensions must fire confirm async-detached from session_start to allow JSONL reader to attach first. |
+
 ## Bring-up findings
 
 - **Pi CLI one-shot invocations hang if stdin stays open** (TTY-read behavior). All non-RPC invocations (`--version`, `--list-models`) MUST use `stdin: "ignore"` / `</dev/null`. RPC mode is unaffected (we own the stdin pipe). smoke-pi.mjs uses `stdio: ["ignore","pipe","pipe"]`.
