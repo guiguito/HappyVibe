@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Transcript, type TranscriptItem } from "./components/Transcript";
+import { PermissionModal, type UiRequest } from "./components/PermissionModal";
 
 export default function App(): React.JSX.Element {
   const [screen, setScreen] = useState<"loading" | "setup" | "folder" | "chat">("loading");
   const [keyInput, setKeyInput] = useState("");
   const [items, setItems] = useState<TranscriptItem[]>([]);
   const [input, setInput] = useState("");
+  const [uiReq, setUiReq] = useState<UiRequest | null>(null);
   const streaming = useRef(false);
 
   useEffect(() => {
     window.hv.getApiKey().then((k) => setScreen(k ? "folder" : "setup"));
+    window.hv.onUiRequest((r) => setUiReq(r));
     window.hv.onPiEvent((e) => {
       if (e.type === "tool_execution_start") {
         const t = e as { toolCallId: string; toolName: string; args: unknown };
@@ -63,6 +66,7 @@ export default function App(): React.JSX.Element {
   return (
     <div className="chat">
       <Transcript items={items} />
+      {uiReq && <PermissionModal req={uiReq} onChoice={(c) => { window.hv.respondPermission(uiReq.id, c as "Allow" | "Allow for session" | "Deny"); setUiReq(null); }} />}
       <form onSubmit={async (ev) => {
         ev.preventDefault();
         setItems((p) => [...p, { kind: "user", text: input }]);
