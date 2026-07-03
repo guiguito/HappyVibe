@@ -15,9 +15,9 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     window.hv.getApiKey().then((k) => setScreen(k ? "folder" : "setup"));
-    window.hv.onUiRequest((r) => { if (r.method === "select") setUiReq(r); });
-    window.hv.onPiExit(({ code }) => setCrashed(code ?? -1));
-    window.hv.onPiEvent((e) => {
+    const offUiRequest = window.hv.onUiRequest((r) => { if (r.method === "select") setUiReq(r); });
+    const offPiExit = window.hv.onPiExit(({ code }) => setCrashed(code ?? -1));
+    const offPiEvent = window.hv.onPiEvent((e) => {
       if (e.type === "tool_execution_start") {
         const t = e as { toolCallId: string; toolName: string; args: unknown };
         streaming.current = false;
@@ -52,6 +52,9 @@ export default function App(): React.JSX.Element {
         setTurns((t) => t + 1);
       }
     });
+    // Cleanup: without this, StrictMode's dev double-mount leaves two
+    // listeners registered and every stream delta renders twice.
+    return () => { offUiRequest(); offPiExit(); offPiEvent(); };
   }, []);
 
   if (screen === "loading") return <p>…</p>;

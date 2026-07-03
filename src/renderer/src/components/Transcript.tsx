@@ -1,3 +1,5 @@
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ToolCard, type ToolCardData } from "./ToolCard";
 
 export type TranscriptItem =
@@ -15,9 +17,19 @@ export function Transcript({ items }: { items: TranscriptItem[] }): React.JSX.El
             </div>
           );
         }
+        if (it.kind === "assistant") {
+          return (
+            <div key={i} className="msg msg-assistant">
+              <b>Agent</b>
+              <div className="md">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{it.text}</ReactMarkdown>
+              </div>
+            </div>
+          );
+        }
         return (
-          <div key={i} className={`msg msg-${it.kind}`}>
-            <b>{it.kind === "user" ? "You" : "Agent"}:</b> <pre>{it.text}</pre>
+          <div key={i} className="msg msg-user">
+            <b>You:</b> <pre>{it.text}</pre>
           </div>
         );
       })}
