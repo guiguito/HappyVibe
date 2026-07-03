@@ -10,11 +10,13 @@ export default function App(): React.JSX.Element {
   const [input, setInput] = useState("");
   const [uiReq, setUiReq] = useState<UiRequest | null>(null);
   const [turns, setTurns] = useState(0);
+  const [crashed, setCrashed] = useState<number | null>(null);
   const streaming = useRef(false);
 
   useEffect(() => {
     window.hv.getApiKey().then((k) => setScreen(k ? "folder" : "setup"));
     window.hv.onUiRequest((r) => setUiReq(r));
+    window.hv.onPiExit(({ code }) => setCrashed(code ?? -1));
     window.hv.onPiEvent((e) => {
       if (e.type === "tool_execution_start") {
         const t = e as { toolCallId: string; toolName: string; args: unknown };
@@ -71,6 +73,12 @@ export default function App(): React.JSX.Element {
   return (
     <div className="chat">
       <StatsBadge refreshKey={turns} />
+      {crashed !== null && (
+        <div className="banner-error">
+          ⚠️ The agent process stopped (code {crashed}).
+          <button onClick={async () => { setCrashed(null); await window.hv.restartPi(); }}>Restart agent</button>
+        </div>
+      )}
       <Transcript items={items} />
       {uiReq && <PermissionModal req={uiReq} onChoice={(c) => { window.hv.respondPermission(uiReq.id, c as "Allow" | "Allow for session" | "Deny"); setUiReq(null); }} />}
       <form onSubmit={async (ev) => {
