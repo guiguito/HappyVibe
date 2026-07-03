@@ -1,35 +1,61 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
+import { useEffect, useRef, useState } from "react";
+import { Transcript, type TranscriptItem } from "./components/Transcript";
 
-function App(): React.JSX.Element {
-  const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
+export default function App(): React.JSX.Element {
+  const [screen, setScreen] = useState<"loading" | "setup" | "folder" | "chat">("loading");
+  const [keyInput, setKeyInput] = useState("");
+  const [items, setItems] = useState<TranscriptItem[]>([]);
+  const [input, setInput] = useState("");
+  const streaming = useRef(false);
 
+  useEffect(() => {
+    window.hv.getApiKey().then((k) => setScreen(k ? "folder" : "setup"));
+    window.hv.onPiEvent((e) => {
+      const ame = (e as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
+      if (e.type === "message_update" && ame?.type === "text_delta" && ame.delta) {
+        setItems((prev) => {
+          const last = prev[prev.length - 1];
+          if (streaming.current && last?.kind === "assistant") {
+            return [...prev.slice(0, -1), { kind: "assistant", text: last.text + ame.delta }];
+          }
+          streaming.current = true;
+          return [...prev, { kind: "assistant", text: ame.delta! }];
+        });
+      }
+      if (e.type === "agent_end") streaming.current = false;
+    });
+  }, []);
+
+  if (screen === "loading") return <p>…</p>;
+  if (screen === "setup") return (
+    <div className="screen">
+      <h1>HappyVibe Spike</h1>
+      <input placeholder="DeepSeek API key" value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
+      <button disabled={!keyInput.startsWith("sk-")} onClick={async () => { await window.hv.setApiKey(keyInput); setScreen("folder"); }}>Save</button>
+    </div>
+  );
+  if (screen === "folder") return (
+    <div className="screen">
+      <button onClick={async () => {
+        const ws = await window.hv.pickFolder();
+        if (ws) { await window.hv.startSession(ws); setScreen("chat"); }
+      }}>Open a project folder…</button>
+    </div>
+  );
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-        &nbsp;and <span className="ts">TypeScript</span>
-      </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
-        </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
-        </div>
-      </div>
-      <Versions></Versions>
-    </>
-  )
+    <div className="chat">
+      <Transcript items={items} />
+      <form onSubmit={async (ev) => {
+        ev.preventDefault();
+        setItems((p) => [...p, { kind: "user", text: input }]);
+        streaming.current = false;
+        const msg = input; setInput("");
+        await window.hv.prompt(msg);
+      }}>
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask for a change…" />
+        <button type="submit">Send</button>
+        <button type="button" onClick={() => window.hv.abort()}>Abort</button>
+      </form>
+    </div>
+  );
 }
-
-export default App
