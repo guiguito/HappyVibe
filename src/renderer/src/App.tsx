@@ -15,7 +15,7 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     window.hv.getApiKey().then((k) => setScreen(k ? "folder" : "setup"));
-    window.hv.onUiRequest((r) => setUiReq(r));
+    window.hv.onUiRequest((r) => { if (r.method === "select") setUiReq(r); });
     window.hv.onPiExit(({ code }) => setCrashed(code ?? -1));
     window.hv.onPiEvent((e) => {
       if (e.type === "tool_execution_start") {

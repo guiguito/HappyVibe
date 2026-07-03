@@ -9,7 +9,7 @@ interface HvApi {
   respondPermission(id: string, choice: string): void;
   restartPi(): Promise<void>;
   onPiEvent(cb: (e: Record<string, unknown>) => void): void;
-  onUiRequest(cb: (r: { id: string; title: string; options: string[] }) => void): void;
+  onUiRequest(cb: (r: { id: string; method?: string; title?: string; options?: string[] }) => void): void;
   onPiExit(cb: (info: { code: number | null }) => void): void;
 }
 

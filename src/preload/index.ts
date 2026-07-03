@@ -11,6 +11,6 @@ contextBridge.exposeInMainWorld("hv", {
   restartPi: () => ipcRenderer.invoke("hv:restart-pi"),
   respondPermission: (id: string, choice: string) => ipcRenderer.send("hv:respond-permission", id, choice),
   onPiEvent: (cb: (e: Record<string, unknown>) => void) => ipcRenderer.on("hv:pi-event", (_e, p) => cb(p as Record<string, unknown>)),
-  onUiRequest: (cb: (r: { id: string; title: string; options: string[] }) => void) => ipcRenderer.on("hv:ui-request", (_e, p) => cb(p as { id: string; title: string; options: string[] })),
+  onUiRequest: (cb: (r: { id: string; method?: string; title?: string; options?: string[] }) => void) => ipcRenderer.on("hv:ui-request", (_e, p) => cb(p as { id: string; method?: string; title?: string; options?: string[] })),
   onPiExit: (cb: (i: { code: number | null }) => void) => ipcRenderer.on("hv:pi-exit", (_e, p) => cb(p as { code: number | null })),
 });
