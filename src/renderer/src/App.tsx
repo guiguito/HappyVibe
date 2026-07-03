@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Transcript, type TranscriptItem } from "./components/Transcript";
 import { PermissionModal, type UiRequest } from "./components/PermissionModal";
+import { StatsBadge } from "./components/StatsBadge";
 
 export default function App(): React.JSX.Element {
   const [screen, setScreen] = useState<"loading" | "setup" | "folder" | "chat">("loading");
@@ -8,6 +9,7 @@ export default function App(): React.JSX.Element {
   const [items, setItems] = useState<TranscriptItem[]>([]);
   const [input, setInput] = useState("");
   const [uiReq, setUiReq] = useState<UiRequest | null>(null);
+  const [turns, setTurns] = useState(0);
   const streaming = useRef(false);
 
   useEffect(() => {
@@ -43,7 +45,10 @@ export default function App(): React.JSX.Element {
           return [...prev, { kind: "assistant", text: ame.delta! }];
         });
       }
-      if (e.type === "agent_end") streaming.current = false;
+      if (e.type === "agent_end") {
+        streaming.current = false;
+        setTurns((t) => t + 1);
+      }
     });
   }, []);
 
@@ -65,6 +70,7 @@ export default function App(): React.JSX.Element {
   );
   return (
     <div className="chat">
+      <StatsBadge refreshKey={turns} />
       <Transcript items={items} />
       {uiReq && <PermissionModal req={uiReq} onChoice={(c) => { window.hv.respondPermission(uiReq.id, c as "Allow" | "Allow for session" | "Deny"); setUiReq(null); }} />}
       <form onSubmit={async (ev) => {
