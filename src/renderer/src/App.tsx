@@ -34,7 +34,8 @@ export default function App(): React.JSX.Element {
     setTranscripts((p) => ({ ...p, [sid]: [...(p[sid] ?? []), item] }));
 
   useEffect(() => {
-    window.hv.getApiKey().then((k) => setKeyState(k ? "present" : "missing"));
+    // B3: any configured provider (BYOK key, OAuth login, local Ollama) passes the gate.
+    window.hv.hasAnyProvider().then((ok) => setKeyState(ok ? "present" : "missing"));
     window.hv.listWorkspaces().then(setWorkspaces);
     window.hv.listSessions().then(setSessions);
 
@@ -230,7 +231,6 @@ export default function App(): React.JSX.Element {
         )}
         {activeView === "settings" ? (
           <SettingsView
-            hasKey={keyState === "present"}
             firstRun={needsSetup}
             onSaved={() => {
               setKeyState("present");

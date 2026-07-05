@@ -1,9 +1,17 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import os from "node:os";
 import path from "node:path";
 import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
-import { getApiKey, setApiKey, sessionDir } from "./config";
+import {
+  agentDir, getApiKey, getDefaultModel, providerEnv, providerKeyStatus,
+  removeProviderKey, sessionDir, setApiKey, setDefaultModel, setProviderKey,
+} from "./config";
+import {
+  authJsonProviders, BYOK_PROVIDERS, detectOllama, isByokProvider, syncOllamaModels,
+  type ByokProvider,
+} from "./providers";
 import { SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { EventLog } from "./log";
@@ -29,6 +37,16 @@ function messageText(content: unknown): string {
     .join("\n");
 }
 
+/** Everything a Pi spawn needs from provider config (B3). */
+function spawnOpts(resumeFile?: string) {
+  return {
+    model: getDefaultModel(),
+    agentDir: agentDir(),
+    providerEnv: providerEnv(),
+    resumeFile,
+  };
+}
+
 export function registerIpc(win: BrowserWindow): void {
   const userData = app.getPath("userData");
   const index = new SessionIndex(path.join(userData, "session-index.json"));
@@ -43,11 +61,51 @@ export function registerIpc(win: BrowserWindow): void {
   const manager = new SessionManager({
     pidFile,
     spawn: (workspace, resumeFile) =>
-      new PiClient(resolvePiSpawn(workspace, sessionDir(), getApiKey() ?? "", piRuntimeDir(), resumeFile)),
+      new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(resumeFile))),
   });
 
-  // Which session owns a pending extension_ui_request id (permission modal).
+  // Which client owns a pending extension_ui_request id (permission modal, auth flows).
+  const UTILITY = "__utility__";
   const uiOwners = new Map<string, string>();
+  const clientFor = (owner: string | undefined): PiClient | null =>
+    owner === UTILITY ? utility : owner ? (manager.get(owner) as PiClient | null) : null;
+
+  // ── utility client (B3) ──────────────────────────────────────────
+  // Auth/model bridge commands ride the RPC prompt channel (s0.2), so they
+  // need a live Pi even before any workspace session exists. A $HOME session
+  // outside the SessionManager (and outside the index) serves those ops.
+  let utility: PiClient | null = null;
+  let utilityStarting: Promise<PiClient> | null = null;
+
+  const startUtility = async (): Promise<PiClient> => {
+    utility?.stop();
+    utility = null;
+    // Sync Ollama models into the app-owned agent dir so local models are
+    // selectable with zero config.
+    await syncOllamaModels(agentDir()).catch(() => {});
+    const c = new PiClient(resolvePiSpawn(os.homedir(), sessionDir(), piRuntimeDir(), spawnOpts()));
+    c.on("ui-request", (r: { id: string }) => {
+      uiOwners.set(r.id, UTILITY);
+      win.webContents.send("hv:ui-request", { ...r, sessionId: UTILITY });
+    });
+    c.on("exit", () => {
+      if (utility === c) utility = null; // crashed — next auth/model op respawns it
+    });
+    await c.start();
+    utility = c;
+    return c;
+  };
+  const ensureUtility = async (): Promise<PiClient> => {
+    if (utility) return utility;
+    // Guard against concurrent first calls (settings fires status+models together).
+    utilityStarting ??= startUtility().finally(() => { utilityStarting = null; });
+    return utilityStarting;
+  };
+  /** Respawn so key changes (they ride spawn env) take effect for auth/model ops. */
+  const restartUtility = async (): Promise<void> => {
+    if (utility) await startUtility();
+  };
+
   // First user message per session, kept until the model title lands.
   const firstPrompt = new Map<string, string>();
 
@@ -59,7 +117,11 @@ export function registerIpc(win: BrowserWindow): void {
     if (!meta || meta.titleSource !== "fallback" || !msg) return;
     firstPrompt.delete(sessionId);
     // Fire-and-forget — never blocks the chat; fallback title stays on failure.
-    void generateTitle(piRuntimeDir(), meta.workspaceId, getApiKey() ?? "", msg).then((title) => {
+    void generateTitle(piRuntimeDir(), meta.workspaceId, msg, {
+      model: getDefaultModel(),
+      // BYOK keys via env; OAuth creds live in auth.json under the agent dir.
+      env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
+    }).then((title) => {
       const cur = index.get(sessionId);
       if (title && cur && cur.titleSource === "fallback") {
         index.update(sessionId, { title, titleSource: "model" });
@@ -101,6 +163,7 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   const startClient = async (meta: SessionMeta, resume: boolean): Promise<PiClient> => {
+    await syncOllamaModels(agentDir()).catch(() => {});
     const client = (await manager.start(
       meta.id,
       meta.workspaceId,
@@ -112,7 +175,10 @@ export function registerIpc(win: BrowserWindow): void {
     return client;
   };
 
-  app.on("will-quit", () => manager.stopAll());
+  app.on("will-quit", () => {
+    manager.stopAll();
+    utility?.stop();
+  });
 
   // ── config / folder picking ──────────────────────────────────────
   ipcMain.handle("hv:get-api-key", () => getApiKey());
@@ -233,6 +299,86 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.on("hv:respond-permission", (_e, id: string, choice: string) => {
     const owner = uiOwners.get(id);
     uiOwners.delete(id);
-    if (owner) (manager.get(owner) as PiClient | null)?.respondUi(id, { value: choice });
+    clientFor(owner)?.respondUi(id, { value: choice });
+  });
+
+  // ── B3: providers & onboarding ────────────────────────────────────
+  // input/select responses use { value }; null → { cancelled: true } (rpc-mode.js).
+  ipcMain.on("hv:respond-input", (_e, id: string, value: string | null) => {
+    const owner = uiOwners.get(id);
+    uiOwners.delete(id);
+    clientFor(owner)?.respondUi(id, value === null ? { cancelled: true } : { value });
+  });
+
+  ipcMain.handle("hv:get-providers", () => {
+    const status = providerKeyStatus();
+    return {
+      byok: (Object.keys(BYOK_PROVIDERS) as ByokProvider[]).map((id) => ({
+        id, label: BYOK_PROVIDERS[id].label, source: status[id],
+      })),
+      defaultModel: getDefaultModel(),
+    };
+  });
+  ipcMain.handle("hv:set-provider-key", async (_e, provider: string, key: string) => {
+    if (!isByokProvider(provider)) throw new Error(`Not a curated provider: ${provider}`);
+    setProviderKey(provider, key);
+    // Keys ride spawn env: the utility client respawns now; running chat
+    // sessions keep their env until their next spawn (never yanked mid-turn).
+    await restartUtility();
+  });
+  ipcMain.handle("hv:remove-provider-key", async (_e, provider: string) => {
+    if (!isByokProvider(provider)) throw new Error(`Not a curated provider: ${provider}`);
+    removeProviderKey(provider);
+    await restartUtility();
+  });
+
+  // OAuth over RPC: fire-and-forget /hv-* bridge commands. The prompt promise
+  // only resolves when the whole login flow ends, so never await it here —
+  // progress/results stream back as hv.auth ui-requests.
+  ipcMain.handle("hv:auth-login", async (_e, provider: string) => {
+    const c = await ensureUtility();
+    void c.send({ type: "prompt", message: `/hv-login ${provider}` }).catch(() => {});
+  });
+  ipcMain.handle("hv:auth-login-cancel", (_e, provider: string) => {
+    void utility?.send({ type: "prompt", message: `/hv-login-cancel ${provider}` }).catch(() => {});
+  });
+  ipcMain.handle("hv:auth-logout", async (_e, provider: string) => {
+    const c = await ensureUtility();
+    void c.send({ type: "prompt", message: `/hv-logout ${provider}` }).catch(() => {});
+  });
+  ipcMain.handle("hv:auth-status", async () => {
+    const c = await ensureUtility();
+    void c.send({ type: "prompt", message: "/hv-auth-status" }).catch(() => {});
+  });
+
+  ipcMain.handle("hv:detect-ollama", () => detectOllama());
+
+  // Live model list from Pi's registry (only models with configured auth).
+  ipcMain.handle("hv:list-models", async () => {
+    const c = await ensureUtility();
+    const res = await c.send({ type: "get_available_models" });
+    const models = ((res.data as { models?: { provider: string; id: string; name?: string }[] })?.models ?? []);
+    return models.map((m) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id }));
+  });
+  ipcMain.handle("hv:set-default-model", async (_e, provider: string, modelId: string) => {
+    setDefaultModel({ provider, modelId });
+    // Apply live to the utility client; chat sessions pick the new default up
+    // at their next spawn (changing a running conversation's model mid-turn
+    // would be surprising).
+    await utility?.send({ type: "set_model", provider, modelId }).catch(() => {});
+  });
+
+  // First-run gate: any BYOK key, any auth.json credential, or local Ollama.
+  ipcMain.handle("hv:has-any-provider", async () => {
+    const status = providerKeyStatus();
+    if (Object.values(status).some(Boolean)) return true;
+    if (authJsonProviders(agentDir()).length > 0) return true;
+    return (await detectOllama()).running;
+  });
+
+  // Explicit renderer request only; auth URLs from Pi's OAuth flows.
+  ipcMain.handle("hv:open-external", (_e, url: string) => {
+    if (/^https?:\/\//.test(url)) return shell.openExternal(url);
+    return Promise.resolve();
   });
 }

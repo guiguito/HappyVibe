@@ -19,9 +19,10 @@ import { PI_CLI_RELPATH } from "./pi/spawn";
 export function generateTitle(
   runtimeDir: string,
   workspace: string,
-  apiKey: string,
-  firstUserMessage: string
+  firstUserMessage: string,
+  opts: { model?: { provider: string; modelId: string } | null; env?: Record<string, string> } = {}
 ): Promise<string | null> {
+  const model = opts.model ?? { provider: "deepseek", modelId: "deepseek-v4-flash" };
   const prompt =
     "Write a short title (3 to 6 words, no quotes, no trailing period) for a coding session " +
     `that starts with this request:\n\n${firstUserMessage.slice(0, 500)}\n\nReply with ONLY the title.`;
@@ -31,13 +32,13 @@ export function generateTitle(
       [
         path.join(runtimeDir, PI_CLI_RELPATH),
         "-p", "--no-session", "--no-tools", "--no-extensions",
-        "--provider", "deepseek",
-        "--model", "deepseek-v4-flash",
+        "--provider", model.provider,
+        "--model", model.modelId,
         prompt,
       ],
       {
         cwd: workspace,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", DEEPSEEK_API_KEY: apiKey },
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(opts.env ?? {}) },
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 60_000,
       }

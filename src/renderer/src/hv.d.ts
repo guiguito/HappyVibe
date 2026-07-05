@@ -16,6 +16,18 @@ interface SimpleMessage {
   text: string;
 }
 
+interface HvByokProvider {
+  id: string;
+  label: string;
+  source: "env" | "stored" | null;
+}
+
+interface HvModel {
+  provider: string;
+  id: string;
+  name: string;
+}
+
 interface HvApi {
   getApiKey(): Promise<string | null>;
   setApiKey(key: string): Promise<void>;
@@ -37,10 +49,24 @@ interface HvApi {
 
   onPiEvent(cb: (e: Record<string, unknown>) => void): () => void;
   onUiRequest(
-    cb: (r: { id: string; sessionId?: string; method?: string; title?: string; options?: string[] }) => void
+    cb: (r: { id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[] }) => void
   ): () => void;
   onPiExit(cb: (info: { sessionId: string; code: number | null; intentional: boolean }) => void): () => void;
   onSessionsChanged(cb: (sessions: SessionMeta[]) => void): () => void;
+  // B3: providers & onboarding
+  respondInput(id: string, value: string | null): void;
+  getProviders(): Promise<{ byok: HvByokProvider[]; defaultModel: { provider: string; modelId: string } | null }>;
+  setProviderKey(provider: string, key: string): Promise<void>;
+  removeProviderKey(provider: string): Promise<void>;
+  authLogin(provider: string): Promise<void>;
+  authLoginCancel(provider: string): Promise<void>;
+  authLogout(provider: string): Promise<void>;
+  authStatus(): Promise<void>;
+  detectOllama(): Promise<{ running: boolean; models: string[] }>;
+  listModels(): Promise<HvModel[]>;
+  setDefaultModel(provider: string, modelId: string): Promise<void>;
+  hasAnyProvider(): Promise<boolean>;
+  openExternal(url: string): Promise<void>;
 }
 
   interface Window {
