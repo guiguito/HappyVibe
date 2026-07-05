@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
 
-function StatsChip({ refreshKey }: { refreshKey: number }): React.JSX.Element {
+function StatsChip({ refreshKey, sessionId }: { refreshKey: number; sessionId: string }): React.JSX.Element {
   const [stats, setStats] = useState<{ tokens?: { total?: number }; cost?: number } | null>(null);
   useEffect(() => {
-    window.hv.getStats().then((s) => setStats(s as { tokens?: { total?: number }; cost?: number }));
-  }, [refreshKey]);
+    window.hv.getStats(sessionId).then((s) => setStats(s as { tokens?: { total?: number }; cost?: number }));
+  }, [refreshKey, sessionId]);
   const tokens = stats?.tokens?.total ?? "–";
   const cost = typeof stats?.cost === "number" ? `$${stats.cost.toFixed(4)}` : "–";
   return (
@@ -17,6 +17,8 @@ function StatsChip({ refreshKey }: { refreshKey: number }): React.JSX.Element {
 
 export function ChatView({
   workspace,
+  sessionId,
+  title,
   items,
   busy,
   crashed,
@@ -27,6 +29,8 @@ export function ChatView({
   onOpenFolder,
 }: {
   workspace: string | null;
+  sessionId: string | null;
+  title: string | null;
   items: TranscriptItem[];
   busy: boolean;
   crashed: number | null;
@@ -38,7 +42,7 @@ export function ChatView({
 }): React.JSX.Element {
   const [input, setInput] = useState("");
 
-  if (!workspace) {
+  if (!workspace || !sessionId) {
     return (
       <div className="flex-1 flex items-center justify-center px-8">
         <div className="text-center max-w-md">
@@ -49,14 +53,15 @@ export function ChatView({
           </div>
           <h1 className="font-black text-3xl tracking-tight">Pick a project, make a vibe.</h1>
           <p className="text-ink-soft mt-2 mb-7">
-            The agent works inside one folder at a time. Point it somewhere fun.
+            Add a workspace, then hit <span className="font-bold text-tangerine">+</span> next to it in the sidebar
+            to start a session.
           </p>
           <button
             type="button"
             onClick={onOpenFolder}
             className="rounded-xl bg-tangerine text-paper font-bold px-6 py-3 border-2 border-tangerine-deep shadow-pop transition-all hover:brightness-105 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none cursor-pointer"
           >
-            Open a project folder…
+            Add a workspace folder…
           </button>
         </div>
       </div>
@@ -67,8 +72,11 @@ export function ChatView({
     <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <header className="flex items-center gap-3 px-6 py-3 border-b-2 border-line bg-paper">
-        <div className="font-bold truncate flex-1 min-w-0" title={workspace}>
-          {workspace.split("/").filter(Boolean).pop()}
+        <div className="flex-1 min-w-0 flex items-baseline gap-2">
+          <span className="font-bold truncate" title={title ?? undefined}>{title ?? "Session"}</span>
+          <span className="text-xs text-ink-soft truncate shrink-0" title={workspace}>
+            {workspace.split("/").filter(Boolean).pop()}
+          </span>
         </div>
         {busy && (
           <span className="flex items-center gap-1.5 text-xs font-bold text-tangerine">
@@ -76,7 +84,7 @@ export function ChatView({
             working
           </span>
         )}
-        <StatsChip refreshKey={turns} />
+        <StatsChip refreshKey={turns} sessionId={sessionId} />
       </header>
 
       {/* Crash banner */}

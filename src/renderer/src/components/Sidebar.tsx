@@ -1,20 +1,157 @@
+import { useState } from "react";
+import type { SessionStatus } from "../App";
+
 export type View = "chat" | "settings";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
 }
 
+function SessionRow({
+  session,
+  status,
+  selected,
+  onSelect,
+  onRename,
+  onArchive,
+  onClose,
+}: {
+  session: SessionMeta;
+  status: SessionStatus | undefined;
+  selected: boolean;
+  onSelect: () => void;
+  onRename: (title: string) => void;
+  onArchive: () => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(session.title);
+
+  const commit = (): void => {
+    setEditing(false);
+    if (draft.trim() && draft.trim() !== session.title) onRename(draft.trim());
+  };
+
+  const dot =
+    status === "running"
+      ? "bg-leaf animate-pulse"
+      : status === "crashed"
+        ? "bg-berry"
+        : "bg-line-strong";
+
+  return (
+    <div
+      className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold cursor-pointer ${
+        selected ? "bg-honey-soft border border-honey/60" : "border border-transparent hover:bg-card/70"
+      } ${session.archived ? "opacity-60" : ""}`}
+      onClick={onSelect}
+      title={session.title}
+    >
+      <span className={`size-1.5 rounded-full shrink-0 ${dot}`} title={status ?? "idle"} />
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="flex-1 min-w-0 bg-card border border-line rounded px-1.5 py-0.5 text-sm focus:outline-none focus:border-tangerine"
+        />
+      ) : (
+        <span
+          className="flex-1 min-w-0 truncate"
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            setDraft(session.title);
+            setEditing(true);
+          }}
+        >
+          {session.title}
+        </span>
+      )}
+      {!editing && (
+        <span className="hidden group-hover:flex items-center gap-1 shrink-0">
+          {status === "running" && (
+            <button
+              type="button"
+              title="Stop session"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              className="text-ink-soft hover:text-berry cursor-pointer text-[11px] font-bold px-0.5"
+            >
+              ■
+            </button>
+          )}
+          <button
+            type="button"
+            title={session.archived ? "Unarchive" : "Archive"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onArchive();
+            }}
+            className="text-ink-soft hover:text-tangerine cursor-pointer text-[11px] font-bold px-0.5"
+          >
+            {session.archived ? "⇧" : "⇩"}
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar({
-  workspace,
+  workspaces,
+  sessions,
+  statuses,
+  selectedId,
   view,
   onNavigate,
-  onSwitchFolder,
+  onAddWorkspace,
+  onRemoveWorkspace,
+  onNewSession,
+  onSelectSession,
+  onRenameSession,
+  onArchiveSession,
+  onCloseSession,
 }: {
-  workspace: string | null;
+  workspaces: string[];
+  sessions: SessionMeta[];
+  statuses: Record<string, SessionStatus>;
+  selectedId: string | null;
   view: View;
   onNavigate: (v: View) => void;
-  onSwitchFolder: () => void;
+  onAddWorkspace: () => void;
+  onRemoveWorkspace: (ws: string) => void;
+  onNewSession: (ws: string) => void;
+  onSelectSession: (id: string) => void;
+  onRenameSession: (id: string, title: string) => void;
+  onArchiveSession: (id: string, archived: boolean) => void;
+  onCloseSession: (id: string) => void;
 }): React.JSX.Element {
+  const [filter, setFilter] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const q = filter.trim().toLowerCase();
+  const visible = (s: SessionMeta): boolean =>
+    (showArchived || !s.archived) && (!q || s.title.toLowerCase().includes(q));
+
+  const toggle = (ws: string): void =>
+    setCollapsed((p) => {
+      const next = new Set(p);
+      if (next.has(ws)) next.delete(ws);
+      else next.add(ws);
+      return next;
+    });
+
+  const archivedCount = sessions.filter((s) => s.archived).length;
+
   return (
     <aside className="w-64 shrink-0 bg-paper-deep pegboard border-r-2 border-line flex flex-col">
       {/* Brand */}
@@ -33,43 +170,101 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Workspace */}
-      <div className="px-4 pb-3">
-        <div className="rounded-xl bg-card border-2 border-line shadow-sticker px-3.5 py-3">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-0.5">project</div>
-          <div className="font-bold text-sm truncate" title={workspace ?? undefined}>
-            {workspace ? basename(workspace) : "No project open"}
-          </div>
-          <button
-            type="button"
-            onClick={onSwitchFolder}
-            className="mt-2 text-xs font-bold text-tangerine hover:text-tangerine-deep cursor-pointer"
-          >
-            {workspace ? "Switch folder…" : "Open a folder…"}
-          </button>
-        </div>
+      {/* Session title filter */}
+      <div className="px-4 pb-2">
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter sessions…"
+          className="w-full rounded-lg bg-card border-2 border-line px-2.5 py-1.5 text-sm focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+        />
       </div>
 
-      {/* Sessions (placeholder — real session manager lands in B1) */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft px-1.5 pt-2 pb-1.5">
-          sessions
-        </div>
-        {workspace ? (
+      {/* Workspace tree */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-2">
+        <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">workspaces</span>
           <button
             type="button"
-            onClick={() => onNavigate("chat")}
-            className={`w-full text-left rounded-lg px-3 py-2 text-sm font-semibold flex items-center gap-2 cursor-pointer ${
-              view === "chat" ? "bg-honey-soft border border-honey/60" : "hover:bg-card/70"
-            }`}
+            onClick={onAddWorkspace}
+            title="Add workspace folder"
+            className="text-xs font-bold text-tangerine hover:text-tangerine-deep cursor-pointer"
           >
-            <span className="size-1.5 rounded-full bg-leaf shrink-0" />
-            <span className="truncate">Current session</span>
+            + add
           </button>
-        ) : (
-          <div className="text-xs text-ink-soft px-1.5 py-1">Open a project to start a session.</div>
+        </div>
+        {workspaces.length === 0 && (
+          <div className="text-xs text-ink-soft px-1.5 py-1">Add a project folder to start.</div>
         )}
-        <div className="text-xs text-ink-soft/70 px-1.5 py-2">Past sessions will show up here.</div>
+        {workspaces.map((ws) => {
+          const wsSessions = sessions
+            .filter((s) => s.workspaceId === ws && visible(s))
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+          const isCollapsed = collapsed.has(ws) && !q; // filtering expands everything
+          return (
+            <div key={ws} className="mb-1.5">
+              <div className="group flex items-center gap-1.5 px-1.5 py-1">
+                <button
+                  type="button"
+                  onClick={() => toggle(ws)}
+                  className="text-ink-soft cursor-pointer text-[10px] w-3 shrink-0"
+                  title={isCollapsed ? "Expand" : "Collapse"}
+                >
+                  {isCollapsed ? "▸" : "▾"}
+                </button>
+                <span className="flex-1 min-w-0 truncate font-bold text-sm" title={ws}>
+                  {basename(ws)}
+                </span>
+                <button
+                  type="button"
+                  title="New session"
+                  onClick={() => onNewSession(ws)}
+                  className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm shrink-0"
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  title="Forget workspace"
+                  onClick={() => onRemoveWorkspace(ws)}
+                  className="hidden group-hover:block text-ink-soft hover:text-berry cursor-pointer font-bold text-xs shrink-0"
+                >
+                  ×
+                </button>
+              </div>
+              {!isCollapsed && (
+                <div className="ml-3 flex flex-col gap-0.5">
+                  {wsSessions.length === 0 && (
+                    <div className="text-xs text-ink-soft/70 px-2 py-0.5">
+                      {q ? "No matching sessions." : "No sessions yet."}
+                    </div>
+                  )}
+                  {wsSessions.map((s) => (
+                    <SessionRow
+                      key={s.id}
+                      session={s}
+                      status={statuses[s.id]}
+                      selected={view === "chat" && s.id === selectedId}
+                      onSelect={() => onSelectSession(s.id)}
+                      onRename={(title) => onRenameSession(s.id, title)}
+                      onArchive={() => onArchiveSession(s.id, !s.archived)}
+                      onClose={() => onCloseSession(s.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {archivedCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowArchived((v) => !v)}
+            className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer px-1.5 py-1.5"
+          >
+            {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
+          </button>
+        )}
       </div>
 
       {/* Settings */}
