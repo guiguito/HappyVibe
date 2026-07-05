@@ -23,7 +23,8 @@ export default function App(): React.JSX.Element {
   const pendingApproval = useRef<{ tool: string; choice: "Allow" | "Allow for session" } | null>(null);
 
   useEffect(() => {
-    window.hv.getApiKey().then((k) => setKeyState(k ? "present" : "missing"));
+    // B3: any configured provider (BYOK key, OAuth login, local Ollama) passes the gate.
+    window.hv.hasAnyProvider().then((ok) => setKeyState(ok ? "present" : "missing"));
 
     // Only hv.permission select prompts open the modal. Other ui-requests
     // (setStatus etc.) are fire-and-forget — routing them here was a CRITICAL bug.
@@ -149,7 +150,6 @@ export default function App(): React.JSX.Element {
       <main className="flex-1 min-w-0 flex flex-col">
         {activeView === "settings" ? (
           <SettingsView
-            hasKey={keyState === "present"}
             firstRun={needsSetup}
             onSaved={() => {
               setKeyState("present");
