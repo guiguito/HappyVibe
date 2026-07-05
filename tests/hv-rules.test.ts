@@ -1,0 +1,176 @@
+import { describe, expect, test } from "vitest";
+import {
+  EMPTY_RULES,
+  evaluate,
+  globToRegExp,
+  parseRulesFile,
+  type Rule,
+  type RulesFile,
+} from "../pi-runtime/extensions/hv-rules";
+
+const WS = "/Users/me/proj";
+const call = (tool: string, input: Record<string, unknown> = {}, workspace = WS) => ({ tool, input, workspace });
+const rules = (global: Rule[] = [], workspaces: Record<string, Rule[]> = {}): RulesFile => ({ global, workspaces });
+
+describe("no-match defaults (pre-B4 behavior preserved)", () => {
+  test("safe tools allow by default", () => {
+    for (const t of ["read", "grep", "glob", "list", "ls"]) {
+      expect(evaluate(EMPTY_RULES, call(t))).toEqual({ action: "allow", source: "safe-default" });
+    }
+  });
+  test("everything else asks by default", () => {
+    expect(evaluate(EMPTY_RULES, call("bash", { command: "ls" }))).toEqual({ action: "ask", source: "default" });
+    expect(evaluate(EMPTY_RULES, call("write", { path: "a.txt" }))).toEqual({ action: "ask", source: "default" });
+  });
+});
+
+describe("tool layer", () => {
+  test("exact tool name match", () => {
+    const r = rules([{ layer: "tool", pattern: "bash", action: "deny" }]);
+    expect(evaluate(r, call("bash", { command: "ls" }))).toMatchObject({ action: "deny", source: "rule" });
+    expect(evaluate(r, call("write", { path: "x" }))).toMatchObject({ action: "ask", source: "default" });
+  });
+  test("glob tool pattern", () => {
+    const r = rules([{ layer: "tool", pattern: "*", action: "deny" }]);
+    expect(evaluate(r, call("read", { path: "x" })).action).toBe("deny"); // rule beats safe-default
+  });
+  test("allow rule on a non-safe tool", () => {
+    const r = rules([{ layer: "tool", pattern: "write", action: "allow" }]);
+    expect(evaluate(r, call("write", { path: "x" }))).toMatchObject({ action: "allow", source: "rule" });
+  });
+});
+
+describe("command layer", () => {
+  test("glob matches across spaces", () => {
+    const r = rules([{ layer: "command", pattern: "git push*", action: "ask" }]);
+    expect(evaluate(r, call("bash", { command: "git push origin main" })).action).toBe("ask");
+    expect(evaluate(r, call("bash", { command: "git status" })).source).toBe("default");
+  });
+  test("leading/trailing whitespace in the command is trimmed", () => {
+    const r = rules([{ layer: "command", pattern: "rm *", action: "deny" }]);
+    expect(evaluate(r, call("bash", { command: "  rm -rf / " })).action).toBe("deny");
+  });
+  test("? matches exactly one char", () => {
+    const r = rules([{ layer: "command", pattern: "make -j?", action: "allow" }]);
+    expect(evaluate(r, call("bash", { command: "make -j4" })).action).toBe("allow");
+    expect(evaluate(r, call("bash", { command: "make -j16" })).source).toBe("default");
+  });
+  test("no command arg → command rules never match", () => {
+    const r = rules([{ layer: "command", pattern: "*", action: "deny" }]);
+    expect(evaluate(r, call("write", { path: "a.txt" })).source).toBe("default");
+  });
+  test("regex specials in patterns are literal", () => {
+    const r = rules([{ layer: "command", pattern: "echo (hi)", action: "deny" }]);
+    expect(evaluate(r, call("bash", { command: "echo (hi)" })).action).toBe("deny");
+    expect(evaluate(r, call("bash", { command: "echo hi" })).source).toBe("default");
+  });
+});
+
+describe("path layer", () => {
+  const denyEnv = rules([{ layer: "path", pattern: ".env*", action: "deny" }]);
+  test("relative path arg matches", () => {
+    expect(evaluate(denyEnv, call("write", { path: ".env" })).action).toBe("deny");
+    expect(evaluate(denyEnv, call("write", { path: ".env.local" })).action).toBe("deny");
+  });
+  test("absolute path inside the workspace is relativized", () => {
+    expect(evaluate(denyEnv, call("read", { path: `${WS}/.env` })).action).toBe("deny");
+  });
+  test("* stays within a segment; ** crosses segments", () => {
+    const star = rules([{ layer: "path", pattern: "src/*.ts", action: "allow" }]);
+    expect(evaluate(star, call("write", { path: "src/a.ts" })).action).toBe("allow");
+    expect(evaluate(star, call("write", { path: "src/deep/a.ts" })).source).toBe("default");
+    const dstar = rules([{ layer: "path", pattern: "src/**", action: "allow" }]);
+    expect(evaluate(dstar, call("write", { path: "src/deep/a.ts" })).action).toBe("allow");
+  });
+  test("matches any file-ish input key", () => {
+    const r = rules([{ layer: "path", pattern: "secrets/**", action: "deny" }]);
+    expect(evaluate(r, call("edit", { file_path: "secrets/k.pem" })).action).toBe("deny");
+    expect(evaluate(r, call("x", { directory: "secrets/sub" })).action).toBe("deny");
+  });
+  test("no path-ish args → path rules never match", () => {
+    const r = rules([{ layer: "path", pattern: "**", action: "deny" }]);
+    expect(evaluate(r, call("bash", { command: "ls" })).source).toBe("default");
+  });
+  test("absolute path outside the workspace still matches absolute patterns", () => {
+    const r = rules([{ layer: "path", pattern: "/etc/**", action: "deny" }]);
+    expect(evaluate(r, call("read", { path: "/etc/passwd" })).action).toBe("deny");
+  });
+});
+
+describe("most-restrictive-wins across layers and scopes", () => {
+  test("deny > ask > allow among matching rules", () => {
+    const r = rules([
+      { layer: "tool", pattern: "bash", action: "allow" },
+      { layer: "command", pattern: "git *", action: "ask" },
+      { layer: "command", pattern: "git push*", action: "deny" },
+    ]);
+    expect(evaluate(r, call("bash", { command: "git push" })).action).toBe("deny");
+    expect(evaluate(r, call("bash", { command: "git status" })).action).toBe("ask");
+    expect(evaluate(r, call("bash", { command: "ls" })).action).toBe("allow");
+  });
+  test("workspace deny beats global allow", () => {
+    const r = rules(
+      [{ layer: "tool", pattern: "bash", action: "allow" }],
+      { [WS]: [{ layer: "tool", pattern: "bash", action: "deny" }] },
+    );
+    const v = evaluate(r, call("bash", { command: "ls" }));
+    expect(v.action).toBe("deny");
+    expect(v.rule?.scope).toBe("workspace");
+  });
+  test("global deny beats workspace allow (restrictive wins regardless of scope)", () => {
+    const r = rules(
+      [{ layer: "tool", pattern: "bash", action: "deny" }],
+      { [WS]: [{ layer: "tool", pattern: "bash", action: "allow" }] },
+    );
+    expect(evaluate(r, call("bash", { command: "ls" })).action).toBe("deny");
+  });
+  test("other workspaces' rules are ignored", () => {
+    const r = rules([], { "/other/ws": [{ layer: "tool", pattern: "*", action: "deny" }] });
+    expect(evaluate(r, call("read", { path: "x" }))).toMatchObject({ action: "allow", source: "safe-default" });
+  });
+  test("verdict carries the winning rule for the audit trail", () => {
+    const r = rules([{ layer: "command", pattern: "rm *", action: "deny" }]);
+    const v = evaluate(r, call("bash", { command: "rm -rf x" }));
+    expect(v.rule).toMatchObject({ layer: "command", pattern: "rm *", action: "deny", scope: "global" });
+  });
+});
+
+describe("parseRulesFile", () => {
+  test("round-trips a valid file", () => {
+    const f = rules(
+      [{ layer: "tool", pattern: "bash", action: "ask" }],
+      { [WS]: [{ layer: "path", pattern: ".env", action: "deny" }] },
+    );
+    expect(parseRulesFile(JSON.stringify(f))).toEqual(f);
+  });
+  test("drops malformed rules, keeps valid ones", () => {
+    const f = parseRulesFile(JSON.stringify({
+      global: [
+        { layer: "tool", pattern: "bash", action: "deny" },
+        { layer: "nope", pattern: "x", action: "deny" },
+        { layer: "tool", pattern: "", action: "deny" },
+        { layer: "tool", pattern: "x", action: "maybe" },
+        "garbage",
+      ],
+      workspaces: { [WS]: [{ layer: "command", pattern: "*", action: "ask" }], bad: "not-an-array" },
+    }));
+    expect(f.global).toHaveLength(1);
+    expect(f.workspaces[WS]).toHaveLength(1);
+    expect(f.workspaces.bad).toBeUndefined();
+  });
+  test("missing sections default to empty", () => {
+    expect(parseRulesFile("{}")).toEqual(EMPTY_RULES);
+  });
+  test("invalid JSON throws", () => {
+    expect(() => parseRulesFile("not json")).toThrow();
+    expect(() => parseRulesFile("null")).toThrow();
+  });
+});
+
+describe("globToRegExp anchoring", () => {
+  test("patterns match the whole string, not a substring", () => {
+    expect(globToRegExp("git", "command").test("git push")).toBe(false);
+    expect(globToRegExp("a.ts", "path").test("xa.ts")).toBe(false);
+    expect(globToRegExp("a.ts", "path").test("aXts")).toBe(false); // "." is literal
+  });
+});
