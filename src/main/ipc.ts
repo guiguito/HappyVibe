@@ -1,12 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
 import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
   agentDir, getApiKey, getDefaultModel, providerEnv, providerKeyStatus,
-  removeProviderKey, sessionDir, setApiKey, setDefaultModel, setProviderKey,
+  removeProviderKey, rulesFile, sessionDir, setApiKey, setDefaultModel, setProviderKey,
 } from "./config";
 import {
   authJsonProviders, BYOK_PROVIDERS, detectOllama, isByokProvider, syncOllamaModels,
@@ -37,14 +39,26 @@ function messageText(content: unknown): string {
     .join("\n");
 }
 
-/** Everything a Pi spawn needs from provider config (B3). */
+/** Everything a Pi spawn needs from provider config (B3) + rules delivery (B4). */
 function spawnOpts(resumeFile?: string) {
   return {
     model: getDefaultModel(),
     agentDir: agentDir(),
     providerEnv: providerEnv(),
     resumeFile,
+    rulesFile: rulesFile(),
   };
+}
+
+/** hv.audit payload when this ui-request is the bridge's audit notify, else null. */
+function parseAuditNotify(r: { method?: string; message?: string }): Record<string, unknown> | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "") as Record<string, unknown>;
+    return p?.kind === "hv.audit" ? p : null;
+  } catch {
+    return null;
+  }
 }
 
 export function registerIpc(win: BrowserWindow): void {
@@ -148,7 +162,14 @@ export function registerIpc(win: BrowserWindow): void {
         if (meta && !index.get(sessionId)?.piSessionFile) void captureSessionFile(sessionId, client);
       }
     });
-    client.on("ui-request", (r: { id: string }) => {
+    client.on("ui-request", (r: { id: string; method?: string; message?: string }) => {
+      // B4 audit channel: hv.audit notifies are fire-and-forget (never respond)
+      // and land in the EventLog, not the renderer.
+      const audit = parseAuditNotify(r);
+      if (audit) {
+        void log.append({ type: "permission.decision", sessionId, workspaceId: meta?.workspaceId, data: audit });
+        return;
+      }
       uiOwners.set(r.id, sessionId);
       win.webContents.send("hv:ui-request", { ...r, sessionId });
     });
@@ -352,6 +373,45 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   ipcMain.handle("hv:detect-ollama", () => detectOllama());
+
+  // ── B4: permission rules, audit, badge ─────────────────────────────
+  const readRules = (): RulesFile => {
+    try {
+      return parseRulesFile(fs.readFileSync(rulesFile(), "utf8"));
+    } catch {
+      return EMPTY_RULES; // missing or corrupt → empty (bridge behaves the same)
+    }
+  };
+
+  ipcMain.handle("hv:get-rules", () => readRules());
+
+  ipcMain.handle("hv:set-rules", (_e, rules: RulesFile) => {
+    // Sanitize through the same parser the bridge uses — malformed rules never hit disk.
+    const clean = parseRulesFile(JSON.stringify(rules));
+    fs.writeFileSync(rulesFile(), JSON.stringify(clean, null, 2));
+    // Broadcast reload to every live Pi (fire-and-forget slash command, B3 pattern).
+    for (const id of manager.activeIds()) {
+      void (manager.get(id) as PiClient | null)?.send({ type: "prompt", message: "/hv-rules-reload" }).catch(() => {});
+    }
+    void utility?.send({ type: "prompt", message: "/hv-rules-reload" }).catch(() => {});
+    return clean;
+  });
+
+  // Settings "test a call" preview — the SAME pure engine the bridge runs.
+  ipcMain.handle("hv:eval-rules", (_e, workspaceId: string, tool: string, input: Record<string, unknown>) =>
+    evaluate(readRules(), { tool, input, workspace: workspaceId }));
+
+  ipcMain.handle("hv:read-audit", (_e, filter?: { sessionId?: string; workspaceId?: string }) =>
+    log.read({ type: "permission.decision", ...filter }));
+
+  // macOS dock badge = total pending permission prompts (renderer-computed).
+  ipcMain.on("hv:set-badge-count", (_e, n: number) => {
+    try {
+      app.setBadgeCount(Number.isInteger(n) && n > 0 ? n : 0);
+    } catch {
+      /* not supported on this platform */
+    }
+  });
 
   // Live model list from Pi's registry (only models with configured auth).
   ipcMain.handle("hv:list-models", async () => {

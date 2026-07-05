@@ -28,6 +28,33 @@ interface HvModel {
   name: string;
 }
 
+/** Mirrors Rule/RulesFile/Verdict in pi-runtime/extensions/hv-rules.ts (separate tsconfig roots). */
+interface HvRule {
+  layer: "tool" | "path" | "command";
+  pattern: string;
+  action: "allow" | "ask" | "deny";
+}
+
+interface HvRulesFile {
+  global: HvRule[];
+  workspaces: Record<string, HvRule[]>;
+}
+
+interface HvVerdict {
+  action: "allow" | "ask" | "deny";
+  source: "rule" | "safe-default" | "default";
+  rule?: HvRule & { scope: "global" | "workspace" };
+}
+
+/** Mirrors LogEvent in src/main/log.ts. */
+interface HvAuditEvent {
+  ts: string;
+  type: string;
+  sessionId?: string;
+  workspaceId?: string;
+  data?: Record<string, unknown>;
+}
+
 interface HvApi {
   getApiKey(): Promise<string | null>;
   setApiKey(key: string): Promise<void>;
@@ -67,6 +94,12 @@ interface HvApi {
   setDefaultModel(provider: string, modelId: string): Promise<void>;
   hasAnyProvider(): Promise<boolean>;
   openExternal(url: string): Promise<void>;
+  // B4: permissions v1
+  getRules(): Promise<HvRulesFile>;
+  setRules(rules: HvRulesFile): Promise<HvRulesFile>;
+  evalRules(workspaceId: string, tool: string, input: Record<string, unknown>): Promise<HvVerdict>;
+  readAudit(filter?: { sessionId?: string; workspaceId?: string }): Promise<HvAuditEvent[]>;
+  setBadgeCount(n: number): void;
 }
 
   interface Window {

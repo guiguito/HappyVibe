@@ -35,6 +35,14 @@ contextBridge.exposeInMainWorld("hv", {
   setDefaultModel: (provider: string, modelId: string) => ipcRenderer.invoke("hv:set-default-model", provider, modelId),
   hasAnyProvider: () => ipcRenderer.invoke("hv:has-any-provider"),
   openExternal: (url: string) => ipcRenderer.invoke("hv:open-external", url),
+
+  // ── B4: permissions v1 (additive) ───────────────────────────────
+  getRules: () => ipcRenderer.invoke("hv:get-rules"),
+  setRules: (rules: unknown) => ipcRenderer.invoke("hv:set-rules", rules),
+  evalRules: (workspaceId: string, tool: string, input: Record<string, unknown>) =>
+    ipcRenderer.invoke("hv:eval-rules", workspaceId, tool, input),
+  readAudit: (filter?: { sessionId?: string; workspaceId?: string }) => ipcRenderer.invoke("hv:read-audit", filter),
+  setBadgeCount: (n: number) => ipcRenderer.send("hv:set-badge-count", n),
   // Each on* returns an unsubscribe function. Without it, React StrictMode's
   // dev double-mount registers listeners twice and every stream delta renders
   // twice ("the the heading heading ...").
