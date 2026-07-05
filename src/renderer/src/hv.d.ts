@@ -44,8 +44,13 @@ interface HvApi {
   closeSession(sessionId: string): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
   archiveSession(sessionId: string, archived: boolean): Promise<void>;
-  promptSession(sessionId: string, msg: string): Promise<void>;
+  promptSession(sessionId: string, msg: string, behavior?: "steer" | "followUp"): Promise<void>;
   abortSession(sessionId: string): Promise<void>;
+
+  // B2: AGENTS.md
+  readAgentsMd(workspaceId: string): Promise<string | null>;
+  writeAgentsMd(workspaceId: string, content: string): Promise<void>;
+  proposeAgentsMd(workspaceId: string): Promise<string | null>;
 
   onPiEvent(cb: (e: Record<string, unknown>) => void): () => void;
   onUiRequest(

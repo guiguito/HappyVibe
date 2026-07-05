@@ -16,6 +16,8 @@ import { SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { EventLog } from "./log";
 import { generateTitle } from "./titles";
+import { promptCommand, type PromptBehavior } from "./pi/commands";
+import { proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
 
 /** Transcript rebuilt from Pi's get_messages on resume (renderer shape). */
 interface SimpleMessage {
@@ -268,7 +270,12 @@ export function registerIpc(win: BrowserWindow): void {
     sessionsChanged();
   });
 
-  ipcMain.handle("hv:prompt-session", async (_e, sessionId: string, msg: string) => {
+  // behavior (B2, additive): renderer passes "steer" | "followUp" while the
+  // agent is busy — Pi errors on a bare prompt mid-stream without it.
+  ipcMain.handle("hv:prompt-session", async (_e, sessionId: string, msg: string, behavior?: PromptBehavior) => {
+    if (behavior !== undefined && behavior !== "steer" && behavior !== "followUp") {
+      throw new Error("Invalid prompt behavior");
+    }
     const client = manager.get(sessionId) as PiClient | null;
     if (!client) throw new Error("Session is not active");
     const meta = index.get(sessionId);
@@ -277,7 +284,7 @@ export function registerIpc(win: BrowserWindow): void {
       index.update(sessionId, { title: truncateTitle(msg) }); // fallback until generation lands
       sessionsChanged();
     }
-    await client.send({ type: "prompt", message: msg });
+    await client.send(promptCommand(msg, behavior));
   });
 
   ipcMain.handle("hv:abort-session", async (_e, sessionId: string) => {
@@ -381,4 +388,15 @@ export function registerIpc(win: BrowserWindow): void {
     if (/^https?:\/\//.test(url)) return shell.openExternal(url);
     return Promise.resolve();
   });
+
+  // ── AGENTS.md (B2, additive) — fs confined to <workspace>/AGENTS.md ──
+  ipcMain.handle("hv:read-agents-md", (_e, workspaceId: string) =>
+    readAgentsMd(workspaces.list(), workspaceId));
+  ipcMain.handle("hv:write-agents-md", (_e, workspaceId: string, content: string) =>
+    writeAgentsMd(workspaces.list(), workspaceId, String(content)));
+  ipcMain.handle("hv:propose-agents-md", (_e, workspaceId: string) =>
+    proposeAgentsMd(piRuntimeDir(), workspaces.list(), workspaceId, {
+      model: getDefaultModel(),
+      env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
+    }));
 }

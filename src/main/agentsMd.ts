@@ -1,0 +1,108 @@
+import fs from "node:fs";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { PI_CLI_RELPATH } from "./pi/spawn";
+
+/**
+ * AGENTS.md support (B2). Pi loads context files at session start (cwd upward,
+ * plus the CLAUDE.md alias) — NOT live, hence the "applies to new or restarted
+ * sessions" note in the UI.
+ *
+ * File access is STRICTLY confined to `<workspace>/AGENTS.md` for a registered
+ * workspace: the renderer-supplied workspaceId is a trust boundary.
+ */
+export function resolveAgentsMd(registeredWorkspaces: string[], workspaceId: string): string {
+  const ws = path.resolve(workspaceId);
+  if (!registeredWorkspaces.some((w) => path.resolve(w) === ws)) {
+    throw new Error("Unknown workspace");
+  }
+  const file = path.resolve(ws, "AGENTS.md");
+  // Belt-and-braces: the result must be exactly <workspace>/AGENTS.md.
+  if (file !== path.join(ws, "AGENTS.md") || path.dirname(file) !== ws) {
+    throw new Error("Path escapes workspace");
+  }
+  return file;
+}
+
+export function readAgentsMd(registeredWorkspaces: string[], workspaceId: string): string | null {
+  const file = resolveAgentsMd(registeredWorkspaces, workspaceId);
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return null; // missing file — UI offers "propose one"
+  }
+}
+
+export function writeAgentsMd(registeredWorkspaces: string[], workspaceId: string, content: string): void {
+  fs.writeFileSync(resolveAgentsMd(registeredWorkspaces, workspaceId), content, "utf8");
+}
+
+/** Facts handed to the draft prompt — the model inspects nothing itself. */
+export function workspaceFacts(workspace: string): string {
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(workspace).filter((n) => !n.startsWith(".")).slice(0, 60);
+  } catch {
+    /* unreadable dir — facts stay minimal */
+  }
+  let pkg = "";
+  try {
+    const p = JSON.parse(fs.readFileSync(path.join(workspace, "package.json"), "utf8")) as {
+      name?: string;
+      scripts?: Record<string, string>;
+    };
+    pkg = `\npackage.json name: ${p.name ?? "(unnamed)"}\nnpm scripts: ${JSON.stringify(p.scripts ?? {})}`;
+  } catch {
+    /* no package.json */
+  }
+  return `Project folder: ${path.basename(workspace)}\nTop-level entries: ${entries.join(", ") || "(empty)"}${pkg}`;
+}
+
+/**
+ * One-shot `pi -p` draft generation — same pattern as titles.ts generateTitle:
+ * `--no-tools --no-extensions --no-session` keeps it pure text, stdin "ignore"
+ * (one-shot Pi hangs if stdin stays open). Resolves null on any failure.
+ */
+export function proposeAgentsMd(
+  runtimeDir: string,
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  opts: { model?: { provider: string; modelId: string } | null; env?: Record<string, string> } = {}
+): Promise<string | null> {
+  resolveAgentsMd(registeredWorkspaces, workspaceId); // confinement gate before any spawn
+  const workspace = path.resolve(workspaceId);
+  const model = opts.model ?? { provider: "deepseek", modelId: "deepseek-v4-flash" };
+  const prompt =
+    "Draft an AGENTS.md file (context notes for a coding agent) for this project. " +
+    "Do NOT inspect, read, or list any files — use ONLY the facts below. " +
+    "Keep it under 30 lines: a one-line project description, key commands, and 2-3 working conventions. " +
+    "Reply with ONLY the raw markdown content, no code fences.\n\n" +
+    workspaceFacts(workspace);
+  return new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      [
+        path.join(runtimeDir, PI_CLI_RELPATH),
+        "-p", "--no-session", "--no-tools", "--no-extensions",
+        "--provider", model.provider,
+        "--model", model.modelId,
+        prompt,
+      ],
+      {
+        cwd: workspace,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(opts.env ?? {}) },
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 60_000,
+      }
+    );
+    let out = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (d: string) => (out += d));
+    child.on("error", () => resolve(null));
+    child.on("exit", (code) => {
+      if (code !== 0) return resolve(null);
+      const draft = out.trim().replace(/^```(?:markdown|md)?\n?/, "").replace(/\n?```$/, "").trim();
+      resolve(draft || null);
+    });
+  });
+}

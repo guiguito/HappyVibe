@@ -18,8 +18,15 @@ contextBridge.exposeInMainWorld("hv", {
   renameSession: (sessionId: string, title: string) => ipcRenderer.invoke("hv:rename-session", sessionId, title),
   archiveSession: (sessionId: string, archived: boolean) =>
     ipcRenderer.invoke("hv:archive-session", sessionId, archived),
-  promptSession: (sessionId: string, msg: string) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg),
+  promptSession: (sessionId: string, msg: string, behavior?: "steer" | "followUp") =>
+    ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior),
   abortSession: (sessionId: string) => ipcRenderer.invoke("hv:abort-session", sessionId),
+
+  // ── B2: AGENTS.md (additive) ────────────────────────────────────
+  readAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:read-agents-md", workspaceId),
+  writeAgentsMd: (workspaceId: string, content: string) =>
+    ipcRenderer.invoke("hv:write-agents-md", workspaceId, content),
+  proposeAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:propose-agents-md", workspaceId),
 
   // ── B3: providers & onboarding (additive; existing signatures unchanged) ──
   respondInput: (id: string, value: string | null) => ipcRenderer.send("hv:respond-input", id, value),
