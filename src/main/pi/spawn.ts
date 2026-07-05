@@ -11,6 +11,8 @@ export interface PiSpawnOptions {
   providerEnv?: Record<string, string>;
   /** Absolute path to an existing Pi session file to resume (opaque blob from our index). */
   resumeFile?: string;
+  /** Permission rules JSON → HV_RULES_FILE (B4; bridge loads at startup, reloads on /hv-rules-reload). */
+  rulesFile?: string;
 }
 
 /**
@@ -46,6 +48,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ELECTRON_RUN_AS_NODE: "1",
       ...(opts.providerEnv ?? {}),
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
+      ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
     } as Record<string, string>,
     cwd: workspace,
   };
