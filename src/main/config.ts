@@ -111,3 +111,8 @@ export function agentDir(): string {
   fs.mkdirSync(d, { recursive: true });
   return d;
 }
+
+/** Permission rules file (B4) — handed to the bridge as HV_RULES_FILE on spawn. */
+export function rulesFile(): string {
+  return path.join(app.getPath("userData"), "permission-rules.json");
+}

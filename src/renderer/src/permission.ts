@@ -30,3 +30,49 @@ export function parsePermission(r: UiRequest): PermissionInfo | null {
   }
   return null;
 }
+
+// ── B4: cross-session pending queues + dangerous mode ──────────────────────
+
+export interface QueuedPrompt {
+  req: UiRequest & { sessionId?: string };
+  info: PermissionInfo;
+}
+
+/**
+ * The prompt the modal should show for the focused session: its oldest
+ * pending one. Prompts without a session (utility client) always surface —
+ * a prompt nobody can see would violate "never auto-allow, never time out".
+ */
+export function headFor(queue: QueuedPrompt[], selectedId: string | null): QueuedPrompt | null {
+  return queue.find((q) => !q.req.sessionId || q.req.sessionId === "__utility__" || q.req.sessionId === selectedId) ?? null;
+}
+
+/** Pending prompt count per session — sidebar attention dots. */
+export function pendingCounts(queue: QueuedPrompt[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const q of queue) {
+    const sid = q.req.sessionId;
+    if (sid) out[sid] = (out[sid] ?? 0) + 1;
+  }
+  return out;
+}
+
+/** Drop a session's pending prompts (its Pi exited — nothing left to answer). */
+export function dropSession(queue: QueuedPrompt[], sessionId: string): QueuedPrompt[] {
+  return queue.filter((q) => q.req.sessionId !== sessionId);
+}
+
+/**
+ * Parses an hv.dangerous notify → true/false (mode on/off), null when the
+ * request is anything else (incl. the usage-error notify, which has no `on`).
+ */
+export function parseDangerous(r: UiRequest & { message?: string }): boolean | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "");
+    if (p?.kind === "hv.dangerous" && typeof p.on === "boolean") return p.on;
+  } catch {
+    /* not JSON → not ours */
+  }
+  return null;
+}

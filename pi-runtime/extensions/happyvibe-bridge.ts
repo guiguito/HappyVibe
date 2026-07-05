@@ -1,12 +1,44 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import * as fs from "node:fs";
+import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
 
-// Tools that never need approval in the spike.
-const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls"]);
 const sessionGrants = new Set<string>();
 
 function summarize(toolName: string, input: Record<string, unknown>): string {
   if (toolName === "bash" && typeof input.command === "string") return input.command.slice(0, 300);
   return JSON.stringify(input).slice(0, 300);
+}
+
+// ── B4 permissions (docs/validation/d1.md §hv.audit) ───────────────────────
+// Rules file path rides the spawn env; main rewrites the file on UI edits
+// and broadcasts /hv-rules-reload to every live session.
+let rules: RulesFile = EMPTY_RULES;
+let rulesError: string | null = null;
+// Per-session, never persisted — a respawn always starts safe.
+let dangerous = false;
+
+function loadRules(): void {
+  rulesError = null;
+  const file = process.env.HV_RULES_FILE;
+  if (!file) { rules = EMPTY_RULES; return; }
+  try {
+    rules = parseRulesFile(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") { rules = EMPTY_RULES; return; } // no rules yet
+    // Torn/corrupt file: keep the previous ruleset — NEVER fail open.
+    rulesError = e instanceof Error ? e.message : String(e);
+  }
+}
+
+type AuditDecision = "allow" | "allow-session" | "deny";
+type AuditSource = "rule" | "user" | "dangerous" | "safe-default";
+
+/** Every permission decision emits one hv.audit notify — main's audit channel. */
+function audit(
+  ui: { notify(message: string, type?: "info" | "warning" | "error"): void },
+  o: { tool: string; summary: string; decision: AuditDecision; source: AuditSource; rule?: Verdict["rule"]; grant?: "session" },
+): void {
+  ui.notify(JSON.stringify({ kind: "hv.audit", ts: new Date().toISOString(), ...o }), "info");
 }
 
 // ── B3 auth (docs/validation/s0.2.md) ──────────────────────────────────────
@@ -26,22 +58,86 @@ const STATUS_PROVIDERS = [
 const loginAborts = new Map<string, AbortController>();
 
 export default function (pi: ExtensionAPI) {
+  loadRules();
+
   pi.on("tool_call", async (event, ctx) => {
     const tool = event.toolName as string;
-    if (SAFE_TOOLS.has(tool) || sessionGrants.has(tool)) return;
+    const input = (event.input ?? {}) as Record<string, unknown>;
+    const summary = summarize(tool, input);
 
-    const title = JSON.stringify({
-      kind: "hv.permission",
-      tool,
-      summary: summarize(tool, (event.input ?? {}) as Record<string, unknown>),
-    });
+    // Dangerous mode: everything runs without prompting, but NEVER silently —
+    // each call is audit-flagged and the renderer shows a permanent banner.
+    if (dangerous) {
+      audit(ctx.ui, { tool, summary, decision: "allow", source: "dangerous" });
+      return;
+    }
+
+    const v = evaluate(rules, { tool, input, workspace: process.cwd() });
+
+    if (v.action === "deny") {
+      audit(ctx.ui, { tool, summary, decision: "deny", source: "rule", rule: v.rule });
+      return { block: true, reason: `Blocked by HappyVibe permission rule (${v.rule?.layer}: ${v.rule?.pattern})` };
+    }
+    if (v.action === "allow") {
+      audit(ctx.ui, { tool, summary, decision: "allow", source: v.source === "rule" ? "rule" : "safe-default", rule: v.rule });
+      return;
+    }
+
+    // ask — an earlier "Allow for session" grant covers default asks only;
+    // an explicit ask RULE always re-prompts (that's what the rule is for).
+    if (v.source === "default" && sessionGrants.has(tool)) {
+      audit(ctx.ui, { tool, summary, decision: "allow", source: "user", grant: "session" });
+      return;
+    }
+
+    const title = JSON.stringify({ kind: "hv.permission", tool, summary });
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).
-    // NO timeout: permission prompts wait indefinitely by design.
+    // NO timeout, NO auto-allow: permission prompts wait indefinitely by design.
     const choice = await ctx.ui.select(title, ["Allow", "Allow for session", "Deny"]);
 
-    if (choice === "Allow for session") { sessionGrants.add(tool); return; }
-    if (choice === "Allow") return;
+    if (choice === "Allow for session") {
+      sessionGrants.add(tool);
+      audit(ctx.ui, { tool, summary, decision: "allow-session", source: "user" });
+      return;
+    }
+    if (choice === "Allow") {
+      audit(ctx.ui, { tool, summary, decision: "allow", source: "user" });
+      return;
+    }
+    audit(ctx.ui, { tool, summary, decision: "deny", source: "user" });
     return { block: true, reason: "User denied this action in HappyVibe" };
+  });
+
+  pi.registerCommand("hv-rules-reload", {
+    description: "HappyVibe: reload permission rules from HV_RULES_FILE",
+    handler: async (_args, ctx) => {
+      loadRules();
+      ctx.ui.notify(
+        JSON.stringify(
+          rulesError
+            ? { kind: "hv.rules", stage: "error", message: rulesError }
+            : {
+                kind: "hv.rules", stage: "loaded",
+                global: rules.global.length,
+                workspaces: Object.values(rules.workspaces).reduce((n, r) => n + r.length, 0),
+              },
+        ),
+        rulesError ? "error" : "info",
+      );
+    },
+  });
+
+  pi.registerCommand("hv-dangerous", {
+    description: "HappyVibe: per-session dangerous mode. Usage: /hv-dangerous on|off",
+    handler: async (args, ctx) => {
+      const arg = args.trim();
+      if (arg !== "on" && arg !== "off") {
+        ctx.ui.notify(JSON.stringify({ kind: "hv.dangerous", stage: "error", message: "Usage: /hv-dangerous on|off" }), "error");
+        return;
+      }
+      dangerous = arg === "on";
+      ctx.ui.notify(JSON.stringify({ kind: "hv.dangerous", on: dangerous }), dangerous ? "warning" : "info");
+    },
   });
 
   pi.registerCommand("hv-auth-status", {
