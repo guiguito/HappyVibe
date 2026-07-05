@@ -14,6 +14,9 @@ export class PiClient extends EventEmitter {
 
   constructor(private spec: SpawnSpec) { super(); }
 
+  /** OS pid of the Pi subprocess (for persisted pid tracking / orphan sweep). */
+  get pid(): number | undefined { return this.child?.pid; }
+
   async start(): Promise<void> {
     this.child = spawn(this.spec.execPath, this.spec.args, {
       cwd: this.spec.cwd, env: this.spec.env, stdio: ["pipe", "pipe", "pipe"],

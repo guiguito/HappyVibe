@@ -9,12 +9,22 @@ export const PI_CLI_RELPATH = "node_modules/@earendil-works/pi-coding-agent/dist
  *   tests). Keeping this param explicit ensures spawn.ts has NO electron import
  *   and remains importable by Vitest.
  */
-export function resolvePiSpawn(workspace: string, sessionDir: string, apiKey: string, runtimeDir: string) {
+export function resolvePiSpawn(
+  workspace: string,
+  sessionDir: string,
+  apiKey: string,
+  runtimeDir: string,
+  /** Absolute path to an existing Pi session file to resume (opaque blob from our index). */
+  resumeFile?: string
+) {
   return {
     execPath: process.execPath,
     args: [
       path.join(runtimeDir, PI_CLI_RELPATH),
       "--mode", "rpc",
+      // Resume = Pi's own `--session <path>`: main.js resolves a path arg via
+      // resolveSessionPath → openSessionOrExit, reopening the JSONL in place.
+      ...(resumeFile ? ["--session", resumeFile] : []),
       // The HappyVibe bridge is the SOLE permission path in RPC mode.
       // @gotgenes/pi-permission-system was removed from the spawn after Gate V6
       // proved it is TUI-only (both its prompt paths gate on ctx.hasUI, which is
