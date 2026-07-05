@@ -1,29 +1,53 @@
 import { useEffect, useRef, useState } from "react";
-import { Transcript, type TranscriptItem } from "./components/Transcript";
-import { PermissionModal, type UiRequest } from "./components/PermissionModal";
-import { StatsBadge } from "./components/StatsBadge";
+import { Sidebar, type View } from "./components/Sidebar";
+import { ChatView } from "./components/ChatView";
+import { SettingsView } from "./components/SettingsView";
+import { type TranscriptItem } from "./components/Transcript";
+import { PermissionModal } from "./components/PermissionModal";
+import { parsePermission, type PermissionChoice, type PermissionInfo, type UiRequest } from "./permission";
+
+type KeyState = "loading" | "missing" | "present";
 
 export default function App(): React.JSX.Element {
-  const [screen, setScreen] = useState<"loading" | "setup" | "folder" | "chat">("loading");
-  const [keyInput, setKeyInput] = useState("");
+  const [keyState, setKeyState] = useState<KeyState>("loading");
+  const [view, setView] = useState<View>("chat");
+  const [workspace, setWorkspace] = useState<string | null>(null);
   const [items, setItems] = useState<TranscriptItem[]>([]);
-  const [input, setInput] = useState("");
-  const [uiReq, setUiReq] = useState<UiRequest | null>(null);
+  const [uiReq, setUiReq] = useState<{ req: UiRequest; info: PermissionInfo } | null>(null);
+  const [busy, setBusy] = useState(false);
   const [turns, setTurns] = useState(0);
   const [crashed, setCrashed] = useState<number | null>(null);
   const streaming = useRef(false);
+  // Set when the user grants a permission; the next matching
+  // tool_execution_start adopts it so the outcome shows on the card.
+  const pendingApproval = useRef<{ tool: string; choice: "Allow" | "Allow for session" } | null>(null);
 
   useEffect(() => {
-    window.hv.getApiKey().then((k) => setScreen(k ? "folder" : "setup"));
-    const offUiRequest = window.hv.onUiRequest((r) => { if (r.method === "select") setUiReq(r); });
-    const offPiExit = window.hv.onPiExit(({ code }) => setCrashed(code ?? -1));
+    window.hv.getApiKey().then((k) => setKeyState(k ? "present" : "missing"));
+
+    // Only hv.permission select prompts open the modal. Other ui-requests
+    // (setStatus etc.) are fire-and-forget — routing them here was a CRITICAL bug.
+    const offUiRequest = window.hv.onUiRequest((r) => {
+      const info = parsePermission(r);
+      if (info) setUiReq({ req: r, info });
+    });
+    const offPiExit = window.hv.onPiExit(({ code }) => {
+      setCrashed(code ?? -1);
+      setBusy(false);
+    });
     const offPiEvent = window.hv.onPiEvent((e) => {
       if (e.type === "tool_execution_start") {
         const t = e as { toolCallId: string; toolName: string; args: unknown };
         streaming.current = false;
+        const approval =
+          pendingApproval.current?.tool === t.toolName ? pendingApproval.current.choice : undefined;
+        if (approval) pendingApproval.current = null;
         setItems((p) => [
           ...p,
-          { kind: "tool", card: { toolCallId: t.toolCallId, toolName: t.toolName, args: t.args, status: "running" } },
+          {
+            kind: "tool",
+            card: { toolCallId: t.toolCallId, toolName: t.toolName, args: t.args, status: "running", approval },
+          },
         ]);
       }
       if (e.type === "tool_execution_end") {
@@ -49,52 +73,107 @@ export default function App(): React.JSX.Element {
       }
       if (e.type === "agent_end") {
         streaming.current = false;
+        setBusy(false);
         setTurns((t) => t + 1);
       }
     });
     // Cleanup: without this, StrictMode's dev double-mount leaves two
     // listeners registered and every stream delta renders twice.
-    return () => { offUiRequest(); offPiExit(); offPiEvent(); };
+    return () => {
+      offUiRequest();
+      offPiExit();
+      offPiEvent();
+    };
   }, []);
 
-  if (screen === "loading") return <p>…</p>;
-  if (screen === "setup") return (
-    <div className="screen">
-      <h1>HappyVibe Spike</h1>
-      <input placeholder="DeepSeek API key" value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
-      <button disabled={!keyInput.startsWith("sk-")} onClick={async () => { await window.hv.setApiKey(keyInput); setScreen("folder"); }}>Save</button>
-    </div>
-  );
-  if (screen === "folder") return (
-    <div className="screen">
-      <button onClick={async () => {
-        const ws = await window.hv.pickFolder();
-        if (ws) { await window.hv.startSession(ws); setScreen("chat"); }
-      }}>Open a project folder…</button>
-    </div>
-  );
+  const openFolder = async (): Promise<void> => {
+    const ws = await window.hv.pickFolder();
+    if (!ws) return;
+    await window.hv.startSession(ws);
+    setWorkspace(ws);
+    setItems([]);
+    setTurns(0);
+    setCrashed(null);
+    setBusy(false);
+    setUiReq(null);
+    streaming.current = false;
+    pendingApproval.current = null;
+    setView("chat");
+  };
+
+  const send = async (msg: string): Promise<void> => {
+    setItems((p) => [...p, { kind: "user", text: msg }]);
+    streaming.current = false;
+    setBusy(true);
+    await window.hv.prompt(msg);
+  };
+
+  const respondPermission = (choice: PermissionChoice): void => {
+    if (!uiReq) return;
+    window.hv.respondPermission(uiReq.req.id, choice);
+    if (choice === "Deny") {
+      // A denied call never reaches tool_execution_start — show the outcome as its own card.
+      setItems((p) => [
+        ...p,
+        {
+          kind: "tool",
+          card: {
+            toolCallId: `denied-${uiReq.req.id}`,
+            toolName: uiReq.info.tool,
+            args: uiReq.info.summary,
+            status: "denied",
+          },
+        },
+      ]);
+    } else {
+      pendingApproval.current = { tool: uiReq.info.tool, choice };
+    }
+    setUiReq(null);
+  };
+
+  if (keyState === "loading") {
+    return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
+  }
+
+  const needsSetup = keyState === "missing";
+  const activeView: View = needsSetup ? "settings" : view;
+
   return (
-    <div className="chat">
-      <StatsBadge refreshKey={turns} />
-      {crashed !== null && (
-        <div className="banner-error">
-          ⚠️ The agent process stopped (code {crashed}).
-          <button onClick={async () => { setCrashed(null); await window.hv.restartPi(); }}>Restart agent</button>
-        </div>
-      )}
-      <Transcript items={items} />
-      {uiReq && <PermissionModal req={uiReq} onChoice={(c) => { window.hv.respondPermission(uiReq.id, c as "Allow" | "Allow for session" | "Deny"); setUiReq(null); }} />}
-      <form onSubmit={async (ev) => {
-        ev.preventDefault();
-        setItems((p) => [...p, { kind: "user", text: input }]);
-        streaming.current = false;
-        const msg = input; setInput("");
-        await window.hv.prompt(msg);
-      }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask for a change…" />
-        <button type="submit">Send</button>
-        <button type="button" onClick={() => window.hv.abort()}>Abort</button>
-      </form>
+    <div className="h-full flex">
+      <Sidebar
+        workspace={workspace}
+        view={activeView}
+        onNavigate={(v) => !needsSetup && setView(v)}
+        onSwitchFolder={openFolder}
+      />
+      <main className="flex-1 min-w-0 flex flex-col">
+        {activeView === "settings" ? (
+          <SettingsView
+            hasKey={keyState === "present"}
+            firstRun={needsSetup}
+            onSaved={() => {
+              setKeyState("present");
+              setView("chat");
+            }}
+          />
+        ) : (
+          <ChatView
+            workspace={workspace}
+            items={items}
+            busy={busy}
+            crashed={crashed}
+            turns={turns}
+            onSend={send}
+            onAbort={() => window.hv.abort()}
+            onRestart={async () => {
+              setCrashed(null);
+              await window.hv.restartPi();
+            }}
+            onOpenFolder={openFolder}
+          />
+        )}
+      </main>
+      {uiReq && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
     </div>
   );
 }
