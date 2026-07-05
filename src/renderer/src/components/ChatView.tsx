@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
+import { AgentsMdPanel } from "./AgentsMdPanel";
+import { emptyQueue, type QueueState } from "../queue";
 
 function StatsChip({ refreshKey, sessionId }: { refreshKey: number; sessionId: string }): React.JSX.Element {
   const [stats, setStats] = useState<{ tokens?: { total?: number }; cost?: number } | null>(null);
@@ -23,9 +25,11 @@ export function ChatView({
   busy,
   crashed,
   turns,
+  queue = emptyQueue,
   onSend,
   onAbort,
   onRestart,
+  onRetry,
   onOpenFolder,
 }: {
   workspace: string | null;
@@ -35,12 +39,15 @@ export function ChatView({
   busy: boolean;
   crashed: number | null;
   turns: number;
-  onSend: (msg: string) => void;
+  queue?: QueueState;
+  onSend: (msg: string, behavior?: "followUp") => void;
   onAbort: () => void;
   onRestart: () => void;
+  onRetry: () => void;
   onOpenFolder: () => void;
 }): React.JSX.Element {
   const [input, setInput] = useState("");
+  const [agentsMdOpen, setAgentsMdOpen] = useState(false);
 
   if (!workspace || !sessionId) {
     return (
@@ -68,6 +75,14 @@ export function ChatView({
     );
   }
 
+  const queued = queue.steering.length + queue.followUp.length;
+
+  const submit = (): void => {
+    if (!input.trim()) return;
+    onSend(input);
+    setInput("");
+  };
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
@@ -84,6 +99,14 @@ export function ChatView({
             working
           </span>
         )}
+        <button
+          type="button"
+          onClick={() => setAgentsMdOpen(true)}
+          title="Edit AGENTS.md — project context for the agent (applies to new or restarted sessions)"
+          className="font-mono text-[11px] rounded-full border-2 border-line bg-card px-3 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
+        >
+          AGENTS.md
+        </button>
         <StatsChip refreshKey={turns} sessionId={sessionId} />
       </header>
 
@@ -101,43 +124,86 @@ export function ChatView({
         </div>
       )}
 
-      <Transcript items={items} busy={busy} />
+      <Transcript items={items} busy={busy} onRetry={onRetry} />
 
       {/* Composer */}
       <form
         onSubmit={(ev) => {
           ev.preventDefault();
-          if (!input.trim()) return;
-          onSend(input);
-          setInput("");
+          submit();
         }}
         className="px-6 pb-5 pt-2"
       >
+        {/* Queued messages (Pi queue_update). Abort preserves the queue — chips stay after Stop. */}
+        {queued > 0 && (
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-1.5 px-1 pb-2">
+            <span
+              className="text-[10px] font-bold uppercase tracking-widest text-ink-soft"
+              title="Queued messages are kept even if you press Stop."
+            >
+              queued · kept on stop
+            </span>
+            {queue.steering.map((m, i) => (
+              <span
+                key={`s-${i}`}
+                title={`Steering: delivered between tool calls — ${m}`}
+                className="max-w-56 truncate rounded-full border-2 border-honey bg-honey-soft px-2.5 py-0.5 text-xs font-semibold"
+              >
+                ↪ {m}
+              </span>
+            ))}
+            {queue.followUp.map((m, i) => (
+              <span
+                key={`f-${i}`}
+                title={`Follow-up: runs after this turn — ${m}`}
+                className="max-w-56 truncate rounded-full border-2 border-sky/50 bg-card px-2.5 py-0.5 text-xs font-semibold"
+              >
+                ⏭ {m}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="max-w-3xl mx-auto flex gap-2 items-center rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-3 py-2 focus-within:border-tangerine transition-colors">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask for a change…"
+            placeholder={busy ? "Steer the agent — lands between tool calls…" : "Ask for a change…"}
             className="flex-1 min-w-0 bg-transparent px-2 py-1.5 text-[0.95rem] focus:outline-none placeholder:text-ink-soft/60"
           />
           {busy && (
-            <button
-              type="button"
-              onClick={onAbort}
-              className="rounded-xl border-2 border-berry text-berry font-bold text-sm px-4 py-2 hover:bg-berry-soft cursor-pointer"
-            >
-              Stop
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={onAbort}
+                className="rounded-xl border-2 border-berry text-berry font-bold text-sm px-4 py-2 hover:bg-berry-soft cursor-pointer"
+              >
+                Stop
+              </button>
+              <button
+                type="button"
+                disabled={!input.trim()}
+                title="Queue for after this turn"
+                onClick={() => {
+                  if (!input.trim()) return;
+                  onSend(input, "followUp");
+                  setInput("");
+                }}
+                className="rounded-xl border-2 border-line-strong text-ink-soft font-bold text-sm px-4 py-2 enabled:hover:bg-paper-deep/40 enabled:cursor-pointer disabled:opacity-40"
+              >
+                Queue
+              </button>
+            </>
           )}
           <button
             type="submit"
             disabled={!input.trim()}
             className="rounded-xl bg-tangerine text-paper font-bold text-sm px-5 py-2 border-2 border-tangerine-deep shadow-sticker transition-all enabled:hover:brightness-105 enabled:active:translate-x-[2px] enabled:active:translate-y-[2px] enabled:active:shadow-none enabled:cursor-pointer disabled:opacity-40"
           >
-            Send
+            {busy ? "Steer" : "Send"}
           </button>
         </div>
       </form>
+      {agentsMdOpen && <AgentsMdPanel workspace={workspace} onClose={() => setAgentsMdOpen(false)} />}
     </div>
   );
 }

@@ -5,9 +5,19 @@ import { ToolCard, type ToolCardData } from "./ToolCard";
 
 export type TranscriptItem =
   | { kind: "user" | "assistant"; text: string }
-  | { kind: "tool"; card: ToolCardData };
+  | { kind: "tool"; card: ToolCardData }
+  // B2: provider errors / session crashes as first-class transcript items.
+  | { kind: "error"; text: string; retriable?: boolean };
 
-export function Transcript({ items, busy }: { items: TranscriptItem[]; busy: boolean }): React.JSX.Element {
+export function Transcript({
+  items,
+  busy,
+  onRetry,
+}: {
+  items: TranscriptItem[];
+  busy: boolean;
+  onRetry?: () => void;
+}): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -35,6 +45,26 @@ export function Transcript({ items, busy }: { items: TranscriptItem[]; busy: boo
         {items.map((it, i) => {
           if (it.kind === "tool") {
             return <ToolCard key={i} card={it.card} />;
+          }
+          if (it.kind === "error") {
+            return (
+              <div
+                key={i}
+                className="flex items-center gap-3 rounded-xl border-2 border-berry/50 bg-berry-soft px-3.5 py-2.5 shadow-sticker"
+              >
+                <span className="size-2.5 rounded-full bg-berry shrink-0" />
+                <span className="flex-1 min-w-0 text-sm font-semibold text-berry break-words">{it.text}</span>
+                {it.retriable && onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="shrink-0 rounded-lg bg-berry text-paper font-bold text-xs px-3 py-1.5 border-2 border-berry hover:brightness-110 cursor-pointer"
+                  >
+                    Restart &amp; resend
+                  </button>
+                )}
+              </div>
+            );
           }
           if (it.kind === "assistant") {
             return (

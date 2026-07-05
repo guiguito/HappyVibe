@@ -5,6 +5,7 @@ import { SettingsView } from "./components/SettingsView";
 import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
 import { parsePermission, type PermissionChoice, type PermissionInfo, type UiRequest } from "./permission";
+import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed";
@@ -22,6 +23,9 @@ export default function App(): React.JSX.Element {
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({});
   const [turns, setTurns] = useState<Record<string, number>>({});
   const [crashCodes, setCrashCodes] = useState<Record<string, number>>({});
+  // B2: pending steering/follow-up queue per session (mirrors Pi queue_update).
+  const [queues, setQueues] = useState<Record<string, QueueState>>({});
+  const queueRef = useRef<Record<string, QueueState>>({});
   // Per-session permission prompts queue up; the modal shows the head.
   const [uiQueue, setUiQueue] = useState<{ req: SessionUiRequest; info: PermissionInfo }[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +54,15 @@ export default function App(): React.JSX.Element {
 
     const offPiExit = window.hv.onPiExit(({ sessionId, code, intentional }) => {
       setBusy((p) => ({ ...p, [sessionId]: false }));
-      if (!intentional) setCrashCodes((p) => ({ ...p, [sessionId]: code ?? -1 }));
+      if (!intentional) {
+        setCrashCodes((p) => ({ ...p, [sessionId]: code ?? -1 }));
+        // B2: crash lands in the transcript too, with a retriable action.
+        appendItem(sessionId, {
+          kind: "error",
+          text: `The session crashed (code ${code ?? -1}).`,
+          retriable: true,
+        });
+      }
       setStatuses((p) => {
         const next = { ...p };
         if (intentional) delete next[sessionId];
@@ -100,6 +112,27 @@ export default function App(): React.JSX.Element {
         streaming.current[sid] = false;
         setBusy((p) => ({ ...p, [sid]: false }));
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
+      }
+      // B2: pending steering/follow-up queue. Messages that leave the queue
+      // were delivered to the agent — append them as user items right there,
+      // keeping transcript order truthful.
+      if (e.type === "queue_update") {
+        const { queue, delivered } = applyQueueUpdate(queueRef.current[sid] ?? emptyQueue, e);
+        queueRef.current[sid] = queue;
+        setQueues((p) => ({ ...p, [sid]: queue }));
+        for (const text of delivered) {
+          streaming.current[sid] = false; // next delta starts a fresh assistant bubble
+          appendItem(sid, { kind: "user", text });
+        }
+      }
+      // B2: provider errors (model call failed) as distinct transcript items.
+      // "aborted" is the user's own Stop — no error item for that.
+      if (e.type === "message_end") {
+        const m = (e as { message?: { role?: string; stopReason?: string; errorMessage?: string } }).message;
+        if (m?.role === "assistant" && m.stopReason === "error") {
+          streaming.current[sid] = false;
+          appendItem(sid, { kind: "error", text: m.errorMessage || "The model call failed." });
+        }
       }
     });
 
@@ -151,17 +184,44 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  const send = async (msg: string): Promise<void> => {
+  const send = async (msg: string, behavior?: "followUp"): Promise<void> => {
     if (!selectedId) return;
-    appendItem(selectedId, { kind: "user", text: msg });
-    streaming.current[selectedId] = false;
-    setBusy((p) => ({ ...p, [selectedId]: true }));
+    const sid = selectedId;
+    // B2: while the agent runs, a bare prompt errors — Enter steers, the Queue
+    // button follows up. The message shows as a chip (queue_update) and only
+    // joins the transcript when Pi delivers it.
+    if (busy[sid]) {
+      try {
+        await window.hv.promptSession(sid, msg, behavior ?? "steer");
+      } catch (err) {
+        surface(err);
+      }
+      return;
+    }
+    appendItem(sid, { kind: "user", text: msg });
+    streaming.current[sid] = false;
+    setBusy((p) => ({ ...p, [sid]: true }));
     try {
-      await window.hv.promptSession(selectedId, msg);
+      await window.hv.promptSession(sid, msg);
     } catch (err) {
-      setBusy((p) => ({ ...p, [selectedId]: false }));
+      setBusy((p) => ({ ...p, [sid]: false }));
       surface(err);
     }
+  };
+
+  // B2: "restart & resend" for a crashed session — restart the agent, then
+  // resend the last user message (if any).
+  const retryCrash = async (): Promise<void> => {
+    if (!selectedId) return;
+    const sid = selectedId;
+    const lastUser = [...(transcripts[sid] ?? [])].reverse().find((it) => it.kind === "user");
+    setStatuses((p) => {
+      const next = { ...p };
+      delete next[sid];
+      return next;
+    });
+    await selectSession(sid);
+    if (lastUser && lastUser.kind === "user") await send(lastUser.text);
   };
 
   const uiReq = uiQueue[0] ?? null;
@@ -246,7 +306,9 @@ export default function App(): React.JSX.Element {
             busy={(selectedId && busy[selectedId]) || false}
             crashed={selectedId && statuses[selectedId] === "crashed" ? (crashCodes[selectedId] ?? -1) : null}
             turns={(selectedId && turns[selectedId]) || 0}
+            queue={(selectedId ? queues[selectedId] : undefined) ?? emptyQueue}
             onSend={send}
+            onRetry={retryCrash}
             onAbort={() => selectedId && window.hv.abortSession(selectedId)}
             onRestart={async () => {
               if (!selectedId) return;
