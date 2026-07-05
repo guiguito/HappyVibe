@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { SessionStatus } from "../App";
 
-export type View = "chat" | "settings";
+export type View = "chat" | "settings" | "audit";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
@@ -10,6 +10,7 @@ function basename(p: string): string {
 function SessionRow({
   session,
   status,
+  pending,
   selected,
   onSelect,
   onRename,
@@ -18,6 +19,8 @@ function SessionRow({
 }: {
   session: SessionMeta;
   status: SessionStatus | undefined;
+  /** Unanswered permission prompts (B4) — attention badge. */
+  pending: number;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
@@ -48,6 +51,14 @@ function SessionRow({
       title={session.title}
     >
       <span className={`size-1.5 rounded-full shrink-0 ${dot}`} title={status ?? "idle"} />
+      {pending > 0 && (
+        <span
+          className="min-w-4 h-4 px-1 rounded-full bg-honey text-ink border border-ink/60 text-[10px] font-black flex items-center justify-center shrink-0 animate-pulse"
+          title={`${pending} permission prompt${pending === 1 ? "" : "s"} waiting`}
+        >
+          {pending}
+        </span>
+      )}
       {editing ? (
         <input
           autoFocus
@@ -109,6 +120,7 @@ export function Sidebar({
   workspaces,
   sessions,
   statuses,
+  pending,
   selectedId,
   view,
   onNavigate,
@@ -123,6 +135,8 @@ export function Sidebar({
   workspaces: string[];
   sessions: SessionMeta[];
   statuses: Record<string, SessionStatus>;
+  /** Pending permission prompts per session (B4). */
+  pending: Record<string, number>;
   selectedId: string | null;
   view: View;
   onNavigate: (v: View) => void;
@@ -244,6 +258,7 @@ export function Sidebar({
                       key={s.id}
                       session={s}
                       status={statuses[s.id]}
+                      pending={pending[s.id] ?? 0}
                       selected={view === "chat" && s.id === selectedId}
                       onSelect={() => onSelectSession(s.id)}
                       onRename={(title) => onRenameSession(s.id, title)}
@@ -267,8 +282,21 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Settings */}
+      {/* Audit + Settings */}
       <div className="p-4 border-t-2 border-line">
+        <button
+          type="button"
+          onClick={() => onNavigate("audit")}
+          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
+            view === "audit" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+          }`}
+        >
+          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 12h6M9 16h6M9 8h2" />
+            <path d="M5 4a1 1 0 0 1 1-1h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z" />
+          </svg>
+          Audit log
+        </button>
         <button
           type="button"
           onClick={() => onNavigate("settings")}

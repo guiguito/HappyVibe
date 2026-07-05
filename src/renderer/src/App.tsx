@@ -4,12 +4,19 @@ import { ChatView } from "./components/ChatView";
 import { SettingsView } from "./components/SettingsView";
 import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
-import { parsePermission, type PermissionChoice, type PermissionInfo, type UiRequest } from "./permission";
+import { AuditView } from "./components/AuditView";
+import {
+  dropSession,
+  headFor,
+  parseDangerous,
+  parsePermission,
+  pendingCounts,
+  type PermissionChoice,
+  type QueuedPrompt,
+} from "./permission";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed";
-
-type SessionUiRequest = UiRequest & { sessionId?: string };
 
 export default function App(): React.JSX.Element {
   const [keyState, setKeyState] = useState<KeyState>("loading");
@@ -22,8 +29,11 @@ export default function App(): React.JSX.Element {
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({});
   const [turns, setTurns] = useState<Record<string, number>>({});
   const [crashCodes, setCrashCodes] = useState<Record<string, number>>({});
-  // Per-session permission prompts queue up; the modal shows the head.
-  const [uiQueue, setUiQueue] = useState<{ req: SessionUiRequest; info: PermissionInfo }[]>([]);
+  // Per-session permission prompt queues (B4): the modal shows the focused
+  // session's oldest pending prompt; the rest badge the sidebar + dock.
+  const [uiQueue, setUiQueue] = useState<QueuedPrompt[]>([]);
+  // Sessions currently in /hv-dangerous mode (bridge-notified, never persisted).
+  const [dangerous, setDangerous] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const streaming = useRef<Record<string, boolean>>({});
   // Set when the user grants a permission; the next matching
@@ -46,9 +56,14 @@ export default function App(): React.JSX.Element {
     const offUiRequest = window.hv.onUiRequest((r) => {
       const info = parsePermission(r);
       if (info) setUiQueue((q) => [...q, { req: r, info }]);
+      const dng = parseDangerous(r);
+      if (dng !== null && r.sessionId) setDangerous((p) => ({ ...p, [r.sessionId!]: dng }));
     });
 
     const offPiExit = window.hv.onPiExit(({ sessionId, code, intentional }) => {
+      // Dead Pi: its prompts are unanswerable and dangerous mode never survives a respawn.
+      setUiQueue((q) => dropSession(q, sessionId));
+      setDangerous((p) => ({ ...p, [sessionId]: false }));
       setBusy((p) => ({ ...p, [sessionId]: false }));
       if (!intentional) setCrashCodes((p) => ({ ...p, [sessionId]: code ?? -1 }));
       setStatuses((p) => {
@@ -164,7 +179,13 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  const uiReq = uiQueue[0] ?? null;
+  // macOS dock badge mirrors total unanswered permission prompts.
+  useEffect(() => {
+    window.hv.setBadgeCount(uiQueue.length);
+  }, [uiQueue.length]);
+
+  // Selecting a session surfaces ITS oldest pending prompt (B4 routing).
+  const uiReq = headFor(uiQueue, selectedId);
   const respondPermission = (choice: PermissionChoice): void => {
     if (!uiReq) return;
     const sid = uiReq.req.sessionId;
@@ -185,7 +206,8 @@ export default function App(): React.JSX.Element {
         pendingApproval.current[sid] = { tool: uiReq.info.tool, choice };
       }
     }
-    setUiQueue((q) => q.slice(1));
+    // Pop the answered prompt (not necessarily the global head — B4 queues are per-session).
+    setUiQueue((q) => q.filter((e) => e.req.id !== uiReq.req.id));
   };
 
   if (keyState === "loading") {
@@ -202,6 +224,7 @@ export default function App(): React.JSX.Element {
         workspaces={workspaces}
         sessions={sessions}
         statuses={statuses}
+        pending={pendingCounts(uiQueue)}
         selectedId={selectedId}
         view={activeView}
         onNavigate={(v) => !needsSetup && setView(v)}
@@ -229,6 +252,21 @@ export default function App(): React.JSX.Element {
             </button>
           </div>
         )}
+        {/* B4: permanent dangerous-mode warning with one-click off. */}
+        {activeView === "chat" && selectedId && dangerous[selectedId] && (
+          <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/60 text-sm font-semibold text-berry">
+            <span className="flex-1">
+              Dangerous mode is ON for this session — every tool call runs without asking.
+            </span>
+            <button
+              type="button"
+              onClick={() => void window.hv.promptSession(selectedId, "/hv-dangerous off")}
+              className="text-xs font-bold rounded-lg border-2 border-berry px-2.5 py-1 hover:bg-berry hover:text-paper cursor-pointer"
+            >
+              Turn off
+            </button>
+          </div>
+        )}
         {activeView === "settings" ? (
           <SettingsView
             firstRun={needsSetup}
@@ -237,6 +275,8 @@ export default function App(): React.JSX.Element {
               setView("chat");
             }}
           />
+        ) : activeView === "audit" ? (
+          <AuditView sessions={sessions} workspaces={workspaces} />
         ) : (
           <ChatView
             workspace={selected?.workspaceId ?? null}

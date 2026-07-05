@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { parseAuth, type AuthEvent, type AuthProviderStatus } from "../auth";
 import { AuthFlowModal } from "./AuthFlowModal";
+import { PermissionRulesSection } from "./PermissionRulesSection";
 
 /** Onboarding ladder rung 1 (PRD B3): OAuth sign-in over RPC. */
 const OAUTH_PROVIDERS: { id: string; label: string; caveat?: string }[] = [
@@ -298,6 +299,9 @@ export function SettingsView({
             </select>
           )}
         </Card>
+
+        {/* B4: permission rules — hidden during first-run onboarding to keep the ladder focused. */}
+        {!firstRun && <PermissionRulesSection />}
       </div>
 
       {login && (
