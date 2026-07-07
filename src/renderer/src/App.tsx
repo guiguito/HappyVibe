@@ -49,6 +49,11 @@ export default function App(): React.JSX.Element {
   // B6: agent + tool inventories (from hv.agents / hv.tools notifies).
   const [agents, setAgents] = useState<AgentInfo[] | null>(null);
   const [tools, setTools] = useState<ToolInfo[] | null>(null);
+  // B6: active subagent delegation per session (agent name + start time). During
+  // delegation the main chat goes silent (main agent is blocked), so this drives
+  // an always-visible top-level "Delegating to <agent>…" signal with elapsed
+  // time — distinct from the collapsible nested subagent card.
+  const [delegations, setDelegations] = useState<Record<string, { agent: string; startedAt: number } | null>>({});
   const [error, setError] = useState<string | null>(null);
   const streaming = useRef<Record<string, boolean>>({});
   // Set when the user grants a permission; the next matching
@@ -163,6 +168,8 @@ export default function App(): React.JSX.Element {
       setUiQueue((q) => dropSession(q, sessionId));
       setDangerous((p) => ({ ...p, [sessionId]: false }));
       setBusy((p) => ({ ...p, [sessionId]: false }));
+      // Dead Pi won't emit tool_execution_end — drop any dangling delegation signal.
+      setDelegations((p) => (p[sessionId] ? { ...p, [sessionId]: null } : p));
       if (!intentional) {
         setCrashCodes((p) => ({ ...p, [sessionId]: code ?? -1 }));
         // B2: crash lands in the transcript too, with a retriable action.
@@ -193,6 +200,11 @@ export default function App(): React.JSX.Element {
           kind: "tool",
           card: { toolCallId: t.toolCallId, toolName: t.toolName, args: t.args, status: "running", approval },
         });
+        // B6: raise the top-level delegation signal (agent from args.agent).
+        if (isSubagentTool(t.toolName)) {
+          const agent = (t.args as { agent?: string } | undefined)?.agent ?? "subagent";
+          setDelegations((p) => ({ ...p, [sid]: { agent, startedAt: Date.now() } }));
+        }
       }
       // B6: subagent delegation streams the child transcript live through
       // tool_execution_update.partialResult (s0.3). Merge it onto the card.
@@ -222,6 +234,8 @@ export default function App(): React.JSX.Element {
             ...(isSub ? { trace: mergeTrace(card.trace, traceFromEnd(t.result)) } : {}),
           })),
         }));
+        // B6: delegation done — clear the top-level signal.
+        if (isSub) setDelegations((p) => (p[sid] ? { ...p, [sid]: null } : p));
       }
       const ame = (e as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
       if (e.type === "message_update" && ame?.type === "text_delta" && ame.delta) {
@@ -490,6 +504,7 @@ export default function App(): React.JSX.Element {
             crashed={selectedId && statuses[selectedId] === "crashed" ? (crashCodes[selectedId] ?? -1) : null}
             turns={(selectedId && turns[selectedId]) || 0}
             queue={(selectedId ? queues[selectedId] : undefined) ?? emptyQueue}
+            delegation={(selectedId ? delegations[selectedId] : undefined) ?? null}
             contextSnapshot={(selectedId ? contextSnapshots[selectedId] : undefined) ?? null}
             fallbackWindow={fallbackWindow}
             onSend={send}

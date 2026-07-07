@@ -16,6 +16,7 @@ export function ChatView({
   crashed,
   turns,
   queue = emptyQueue,
+  delegation = null,
   contextSnapshot = null,
   fallbackWindow,
   onSend,
@@ -34,6 +35,8 @@ export function ChatView({
   crashed: number | null;
   turns: number;
   queue?: QueueState;
+  /** B6: active subagent delegation (agent name + start time), or null. */
+  delegation?: { agent: string; startedAt: number } | null;
   contextSnapshot?: ContextSnapshot | null;
   fallbackWindow?: number | null;
   onSend: (msg: string, behavior?: "followUp") => void;
@@ -161,6 +164,11 @@ export function ChatView({
         </div>
       )}
 
+      {/* B6: always-visible top-level delegation signal. The main chat goes
+          silent during a delegation (main agent is blocked); this makes it
+          obvious WHO is running and that progress is happening. */}
+      {delegation && <DelegationBanner agent={delegation.agent} startedAt={delegation.startedAt} />}
+
       <Transcript items={items} streaming={streaming} busy={busy} onRetry={onRetry} />
 
       {/* Composer */}
@@ -252,6 +260,30 @@ export function ChatView({
           onCompact={onCompact}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * B6: top-level "Delegating to <agent>…" banner with a live elapsed timer.
+ * Distinct from the collapsible nested subagent card — this stays put so it's
+ * always obvious a subagent is running while the main chat is quiet.
+ */
+function DelegationBanner({ agent, startedAt }: { agent: string; startedAt: number }): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const elapsed = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  return (
+    <div className="flex items-center gap-3 px-6 py-2.5 bg-honey-soft border-b-2 border-honey/60 text-sm font-semibold">
+      <span className="size-2.5 rounded-full bg-sky animate-pulse shrink-0" />
+      <span className="flex-1">
+        Delegating to <span className="font-black text-tangerine-deep">{agent}</span>…
+      </span>
+      <span className="font-mono text-xs text-ink-soft tabular-nums" title="Elapsed time">{elapsed}</span>
     </div>
   );
 }

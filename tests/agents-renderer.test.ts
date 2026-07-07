@@ -112,6 +112,15 @@ describe("subagent trace extraction", () => {
     expect(r.usage?.input).toBe(1924);
   });
 
+  test("mergeTrace guards a final result with no messages field (falls back to live)", () => {
+    // A raw result lacking `messages` must not throw on `.length` — it falls
+    // back to the live transcript (empty-array logic unchanged, only guarded).
+    const live = traceFromUpdate(updatePayload);
+    const final = { results: [{ agent: "greeter" } as unknown as (typeof live.results)[number]] };
+    const merged = mergeTrace(live, final);
+    expect(merged.results[0].messages.map((m) => m.text)).toContain("HELLO FROM SUBAGENT");
+  });
+
   test("flattens toolCall blocks in a child message", () => {
     const trace = traceFromUpdate({
       details: { results: [{ agent: "x", messages: [{ role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: { command: "ls" } }] }] }] },

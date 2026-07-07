@@ -154,7 +154,7 @@ export function mergeTrace(live: SubagentTrace | undefined, final: SubagentTrace
       const l = live.results[i];
       return {
         ...f,
-        messages: f.messages.length ? f.messages : l?.messages ?? [],
+        messages: f.messages?.length ? f.messages : l?.messages ?? [],
         usage: f.usage ?? l?.usage,
         model: f.model ?? l?.model,
       };

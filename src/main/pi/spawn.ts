@@ -52,6 +52,11 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       "--model", model.modelId,
     ],
     env: {
+      // Env is passed through wholesale (incl. ELECTRON_RUN_AS_NODE) and inherited
+      // by pi-subagents child spawns. Trimming it is NOT a subagent-speed lever:
+      // the child spawns `.bin/pi` (a `#!/usr/bin/env node` shebang) directly, so
+      // it runs as plain `node` off PATH, not Electron — ELECTRON_RUN_AS_NODE has
+      // no effect on it. See docs/validation/s0.3.md "Subagent spawn cost".
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
       ...(opts.providerEnv ?? {}),
