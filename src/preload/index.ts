@@ -50,6 +50,14 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:eval-rules", workspaceId, tool, input),
   readAudit: (filter?: { sessionId?: string; workspaceId?: string }) => ipcRenderer.invoke("hv:read-audit", filter),
   setBadgeCount: (n: number) => ipcRenderer.send("hv:set-badge-count", n),
+
+  // ── B5: context visibility (additive) ────────────────────────────
+  // Snapshot/remove/restore fire /hv-context* commands; results arrive as
+  // hv.context notifies through onUiRequest (parsed by the renderer).
+  contextSnapshot: (sessionId: string) => ipcRenderer.invoke("hv:context-snapshot", sessionId),
+  contextRemove: (sessionId: string, keys: string[]) => ipcRenderer.invoke("hv:context-remove", sessionId, keys),
+  contextRestore: (sessionId: string, keys: string[]) => ipcRenderer.invoke("hv:context-restore", sessionId, keys),
+  compactSession: (sessionId: string) => ipcRenderer.invoke("hv:compact-session", sessionId),
   // Each on* returns an unsubscribe function. Without it, React StrictMode's
   // dev double-mount registers listeners twice and every stream delta renders
   // twice ("the the heading heading ...").

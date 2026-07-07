@@ -1,21 +1,10 @@
 import { useEffect, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { AgentsMdPanel } from "./AgentsMdPanel";
+import { TokenGauge } from "./TokenGauge";
+import { ContextPanel } from "./ContextPanel";
 import { emptyQueue, type QueueState } from "../queue";
-
-function StatsChip({ refreshKey, sessionId }: { refreshKey: number; sessionId: string }): React.JSX.Element {
-  const [stats, setStats] = useState<{ tokens?: { total?: number }; cost?: number } | null>(null);
-  useEffect(() => {
-    window.hv.getStats(sessionId).then((s) => setStats(s as { tokens?: { total?: number }; cost?: number }));
-  }, [refreshKey, sessionId]);
-  const tokens = stats?.tokens?.total ?? "–";
-  const cost = typeof stats?.cost === "number" ? `$${stats.cost.toFixed(4)}` : "–";
-  return (
-    <span className="font-mono text-[11px] rounded-full border-2 border-line bg-card px-3 py-1 text-ink-soft">
-      {tokens} tok · {cost}
-    </span>
-  );
-}
+import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
 
 export function ChatView({
   workspace,
@@ -26,11 +15,14 @@ export function ChatView({
   crashed,
   turns,
   queue = emptyQueue,
+  contextSnapshot = null,
+  fallbackWindow,
   onSend,
   onAbort,
   onRestart,
   onRetry,
   onOpenFolder,
+  onCompact,
 }: {
   workspace: string | null;
   sessionId: string | null;
@@ -40,14 +32,31 @@ export function ChatView({
   crashed: number | null;
   turns: number;
   queue?: QueueState;
+  contextSnapshot?: ContextSnapshot | null;
+  fallbackWindow?: number | null;
   onSend: (msg: string, behavior?: "followUp") => void;
   onAbort: () => void;
   onRestart: () => void;
   onRetry: () => void;
   onOpenFolder: () => void;
+  onCompact: () => void;
 }): React.JSX.Element {
   const [input, setInput] = useState("");
   const [agentsMdOpen, setAgentsMdOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  // Fetched once per agent_end (turns bump); shared by the gauge and the panel.
+  const [stats, setStats] = useState<SessionStats | null>(null);
+  useEffect(() => {
+    if (!sessionId) return;
+    let live = true;
+    window.hv.getStats(sessionId).then((s) => live && setStats(s as SessionStats | null));
+    return () => { live = false; };
+  }, [turns, sessionId]);
+  // B5: non-blocking auto-suggest banner, shown once per session when the gauge
+  // first hits the red zone. Never auto-compacts.
+  const [suggestDismissed, setSuggestDismissed] = useState<Set<string>>(new Set());
+  const gauge = computeGauge(stats, fallbackWindow);
+  const suggestCompact = gauge?.zone === "red" && sessionId != null && !suggestDismissed.has(sessionId) && !contextOpen;
 
   if (!workspace || !sessionId) {
     return (
@@ -107,7 +116,7 @@ export function ChatView({
         >
           AGENTS.md
         </button>
-        <StatsChip refreshKey={turns} sessionId={sessionId} />
+        <TokenGauge stats={stats} fallbackWindow={fallbackWindow} onOpen={() => setContextOpen(true)} />
       </header>
 
       {/* Crash banner */}
@@ -120,6 +129,27 @@ export function ChatView({
             className="rounded-lg bg-berry text-paper font-bold text-xs px-3 py-1.5 border-2 border-berry hover:brightness-110 cursor-pointer"
           >
             Restart agent
+          </button>
+        </div>
+      )}
+
+      {/* B5: red-zone auto-suggest (once per session, non-blocking). */}
+      {suggestCompact && (
+        <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/40 text-sm font-semibold text-berry">
+          <span className="flex-1">Context is {gauge!.percent}% full. Open the context panel to review or compact.</span>
+          <button
+            type="button"
+            onClick={() => setContextOpen(true)}
+            className="rounded-lg bg-berry text-paper font-bold text-xs px-3 py-1.5 border-2 border-berry hover:brightness-110 cursor-pointer"
+          >
+            Review context
+          </button>
+          <button
+            type="button"
+            onClick={() => sessionId && setSuggestDismissed((p) => new Set(p).add(sessionId))}
+            className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer"
+          >
+            Dismiss
           </button>
         </div>
       )}
@@ -204,6 +234,16 @@ export function ChatView({
         </div>
       </form>
       {agentsMdOpen && <AgentsMdPanel workspace={workspace} onClose={() => setAgentsMdOpen(false)} />}
+      {contextOpen && (
+        <ContextPanel
+          sessionId={sessionId}
+          snapshot={contextSnapshot}
+          stats={stats}
+          fallbackWindow={fallbackWindow}
+          onClose={() => setContextOpen(false)}
+          onCompact={onCompact}
+        />
+      )}
     </div>
   );
 }

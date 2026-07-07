@@ -323,6 +323,25 @@ export function registerIpc(win: BrowserWindow): void {
     }
   });
 
+  // ── B5: context visibility ─────────────────────────────────────────
+  // All three ride the RPC prompt channel as fire-and-forget /hv-context*
+  // bridge commands; the hv.context notify streams back through hv:ui-request
+  // (B4 hv.dangerous pattern). The renderer parses it — never opens the modal.
+  const contextCmd = (sessionId: string, message: string): void => {
+    void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message }).catch(() => {});
+  };
+  ipcMain.handle("hv:context-snapshot", (_e, sessionId: string) => contextCmd(sessionId, "/hv-context"));
+  ipcMain.handle("hv:context-remove", (_e, sessionId: string, keys: string[]) =>
+    contextCmd(sessionId, `/hv-context-remove ${keys.join(",")}`));
+  ipcMain.handle("hv:context-restore", (_e, sessionId: string, keys: string[]) =>
+    contextCmd(sessionId, `/hv-context-restore ${keys.join(",")}`));
+  ipcMain.handle("hv:compact-session", (_e, sessionId: string) => {
+    const client = manager.get(sessionId) as PiClient | null;
+    if (!client) throw new Error("Session is not active");
+    // Fire the compact RPC; compaction_start/end stream back as pi-events.
+    void client.send({ type: "compact" }).catch(() => {});
+  });
+
   // Payload field must match docs/validation/d1.md — select permission response uses { value: <choice string> }
   ipcMain.on("hv:respond-permission", (_e, id: string, choice: string) => {
     const owner = uiOwners.get(id);
@@ -424,8 +443,9 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:list-models", async () => {
     const c = await ensureUtility();
     const res = await c.send({ type: "get_available_models" });
-    const models = ((res.data as { models?: { provider: string; id: string; name?: string }[] })?.models ?? []);
-    return models.map((m) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id }));
+    const models = ((res.data as { models?: { provider: string; id: string; name?: string; contextWindow?: number }[] })?.models ?? []);
+    // contextWindow feeds B5's estimated-gauge fallback (when Pi didn't measure).
+    return models.map((m) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id, contextWindow: m.contextWindow }));
   });
   ipcMain.handle("hv:set-default-model", async (_e, provider: string, modelId: string) => {
     setDefaultModel({ provider, modelId });

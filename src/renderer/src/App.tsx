@@ -15,6 +15,7 @@ import {
   type QueuedPrompt,
 } from "./permission";
 import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
+import { parseContextAck, parseContextSnapshot, type ContextSnapshot } from "./context";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed";
@@ -38,6 +39,10 @@ export default function App(): React.JSX.Element {
   const [uiQueue, setUiQueue] = useState<QueuedPrompt[]>([]);
   // Sessions currently in /hv-dangerous mode (bridge-notified, never persisted).
   const [dangerous, setDangerous] = useState<Record<string, boolean>>({});
+  // B5: latest context breakdown snapshot per session (from hv.context notify).
+  const [contextSnapshots, setContextSnapshots] = useState<Record<string, ContextSnapshot>>({});
+  // B5: the default model's context window — fallback for the estimated gauge.
+  const [fallbackWindow, setFallbackWindow] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const streaming = useRef<Record<string, boolean>>({});
   // Set when the user grants a permission; the next matching
@@ -53,6 +58,17 @@ export default function App(): React.JSX.Element {
     window.hv.listWorkspaces().then(setWorkspaces);
     window.hv.listSessions().then(setSessions);
 
+    // B5: default model's context window feeds the estimated-gauge fallback.
+    void (async () => {
+      try {
+        const { defaultModel } = await window.hv.getProviders();
+        if (!defaultModel) return;
+        const models = await window.hv.listModels();
+        const m = models.find((x) => x.provider === defaultModel.provider && x.id === defaultModel.modelId);
+        if (m?.contextWindow) setFallbackWindow(m.contextWindow);
+      } catch { /* no provider configured yet — gauge just shows nothing */ }
+    })();
+
     const offSessions = window.hv.onSessionsChanged(setSessions);
 
     // Only hv.permission select prompts open the modal. Other ui-requests
@@ -62,6 +78,15 @@ export default function App(): React.JSX.Element {
       if (info) setUiQueue((q) => [...q, { req: r, info }]);
       const dng = parseDangerous(r);
       if (dng !== null && r.sessionId) setDangerous((p) => ({ ...p, [r.sessionId!]: dng }));
+      // B5: hv.context is fire-and-forget (never opens the modal).
+      const sid = r.sessionId;
+      if (sid) {
+        const snap = parseContextSnapshot(r);
+        if (snap) setContextSnapshots((p) => ({ ...p, [sid]: snap }));
+        const ack = parseContextAck(r);
+        // Update the mark set live (remove/restore) without re-fetching the snapshot.
+        if (ack) setContextSnapshots((p) => (p[sid] ? { ...p, [sid]: { ...p[sid], marks: ack.marks } } : p));
+      }
     });
 
     const offPiExit = window.hv.onPiExit(({ sessionId, code, intentional }) => {
@@ -126,6 +151,15 @@ export default function App(): React.JSX.Element {
       if (e.type === "agent_end") {
         streaming.current[sid] = false;
         setBusy((p) => ({ ...p, [sid]: false }));
+        setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
+      }
+      // B5: compaction streams as a transcript notice; a fresh snapshot lands
+      // on the next panel open. Bump turns so the gauge re-reads post-compaction.
+      if (e.type === "compaction_start") {
+        appendItem(sid, { kind: "error", text: "Compacting the conversation to free context…" });
+      }
+      if (e.type === "compaction_end") {
+        appendItem(sid, { kind: "error", text: "Compaction complete — older turns were summarized." });
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
       }
       // B2: pending steering/follow-up queue. Messages that leave the queue
@@ -347,8 +381,11 @@ export default function App(): React.JSX.Element {
             crashed={selectedId && statuses[selectedId] === "crashed" ? (crashCodes[selectedId] ?? -1) : null}
             turns={(selectedId && turns[selectedId]) || 0}
             queue={(selectedId ? queues[selectedId] : undefined) ?? emptyQueue}
+            contextSnapshot={(selectedId ? contextSnapshots[selectedId] : undefined) ?? null}
+            fallbackWindow={fallbackWindow}
             onSend={send}
             onRetry={retryCrash}
+            onCompact={() => selectedId && void window.hv.compactSession(selectedId)}
             onAbort={() => selectedId && window.hv.abortSession(selectedId)}
             onRestart={async () => {
               if (!selectedId) return;
