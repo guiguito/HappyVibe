@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -8,10 +8,10 @@ import { PiClient } from "../src/main/pi/PiClient";
  * B5 contract test — the bridge's /hv-context* commands over REAL RPC
  * (docs/validation/d1.md §hv.context).
  *
- * The snapshot-shape test needs no model. The mark→filter round-trip and the
- * "marks survive a compact" guarantee need a real turn (entries + a completed
- * turn), so they are DEEPSEEK-gated like bridge.test.ts. A real --session-dir
- * is used (not --no-session) so pi.appendEntry persistence + compaction work.
+ * The snapshot-shape + in-flight-refusal tests need no model. The
+ * remove→resume-survival guarantee needs real turns (entries + a completed
+ * turn), so it is DEEPSEEK-gated like bridge.test.ts. A real --session-dir is
+ * used (not --no-session) so pi.appendEntry persistence works.
  */
 
 for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
