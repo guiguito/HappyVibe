@@ -18,6 +18,7 @@ import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
 import { isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type ToolInfo } from "./agents";
+import { applyDelta, updateToolCard } from "./streaming";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed";
@@ -54,8 +55,62 @@ export default function App(): React.JSX.Element {
   // tool_execution_start in that session adopts it so the outcome shows on the card.
   const pendingApproval = useRef<Record<string, { tool: string; choice: "Allow" | "Allow for session" } | null>>({});
 
+  // Perf: in-progress assistant text lives HERE, keyed by sid, outside
+  // `transcripts` — so a delta doesn't copy the whole transcript array and
+  // Transcript doesn't re-parse committed markdown. `streamText` is the render
+  // mirror (one update per frame via rAF); `streamRef` holds the latest buffer.
+  const [streamText, setStreamText] = useState<Record<string, string>>({});
+  const streamRef = useRef<Record<string, string>>({});
+  const rafRef = useRef<number | null>(null);
+  // Stable, monotonic id per committed item (see appendItem) so Transcript can
+  // key on identity instead of the array index and skip re-parsing.
+  const idCounter = useRef(0);
+  // Perf: toolCallId → position in transcripts[sid], so tool_execution_update/
+  // _end update the card in O(1) instead of mapping the whole array.
+  const toolIndex = useRef<Record<string, Map<string, number>>>({});
+
   const appendItem = (sid: string, item: TranscriptItem): void =>
-    setTranscripts((p) => ({ ...p, [sid]: [...(p[sid] ?? []), item] }));
+    setTranscripts((p) => {
+      const items = p[sid] ?? [];
+      const withId = { ...item, id: idCounter.current++ };
+      if (withId.kind === "tool") {
+        (toolIndex.current[sid] ??= new Map()).set(withId.card.toolCallId, items.length);
+      }
+      return { ...p, [sid]: [...items, withId] };
+    });
+
+  // Perf: coalesce text deltas to one React update per frame. Deltas accumulate
+  // in streamRef; a single rAF mirrors the whole map into streamText.
+  const scheduleFlush = (): void => {
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      setStreamText({ ...streamRef.current });
+    });
+  };
+
+  // Commit the in-progress streaming bubble as ONE assistant transcript item,
+  // then clear the buffer. Called on agent_end and on every interrupt that
+  // ends the current bubble (tool start, queue delivery, message_end error) —
+  // preserving today's ordering: the committed assistant text lands before the
+  // item that interrupted it.
+  const commitStream = (sid: string): void => {
+    const text = streamRef.current[sid];
+    streaming.current[sid] = false;
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (!text) return;
+    delete streamRef.current[sid];
+    setStreamText((p) => {
+      if (!(sid in p)) return p;
+      const next = { ...p };
+      delete next[sid];
+      return next;
+    });
+    appendItem(sid, { kind: "assistant", text });
+  };
 
   useEffect(() => {
     // B3: any configured provider (BYOK key, OAuth login, local Ollama) passes the gate.
@@ -126,7 +181,7 @@ export default function App(): React.JSX.Element {
       if (!sid) return;
       if (e.type === "tool_execution_start") {
         const t = e as unknown as { toolCallId: string; toolName: string; args: unknown };
-        streaming.current[sid] = false;
+        commitStream(sid); // flush the live bubble before the tool card (order preserved)
         const pending = pendingApproval.current[sid];
         const approval = pending?.tool === t.toolName ? pending.choice : undefined;
         if (approval) pendingApproval.current[sid] = null;
@@ -141,50 +196,39 @@ export default function App(): React.JSX.Element {
         const t = e as unknown as { toolCallId: string; toolName?: string; partialResult?: unknown };
         if (isSubagentTool(t.toolName)) {
           const trace = traceFromUpdate(t.partialResult);
+          const idx = toolIndex.current[sid] ??= new Map();
           setTranscripts((p) => ({
             ...p,
-            [sid]: (p[sid] ?? []).map((it) =>
-              it.kind === "tool" && it.card.toolCallId === t.toolCallId ? { ...it, card: { ...it.card, trace } } : it
-            ),
+            [sid]: updateToolCard(p[sid] ?? [], idx, t.toolCallId, (card) => ({ ...card, trace })),
           }));
         }
       }
       if (e.type === "tool_execution_end") {
         const t = e as unknown as { toolCallId: string; toolName?: string; result: unknown; isError: boolean };
         const isSub = isSubagentTool(t.toolName);
+        const idx = toolIndex.current[sid] ??= new Map();
         setTranscripts((p) => ({
           ...p,
-          [sid]: (p[sid] ?? []).map((it) =>
-            it.kind === "tool" && it.card.toolCallId === t.toolCallId
-              ? {
-                  ...it,
-                  card: {
-                    ...it.card,
-                    status: t.isError ? ("error" as const) : ("done" as const),
-                    result: t.result,
-                    // The end lacks the transcript — merge the outcome onto the
-                    // live trace so messages captured during _update survive.
-                    ...(isSub ? { trace: mergeTrace(it.card.trace, traceFromEnd(t.result)) } : {}),
-                  },
-                }
-              : it
-          ),
+          [sid]: updateToolCard(p[sid] ?? [], idx, t.toolCallId, (card) => ({
+            ...card,
+            status: t.isError ? ("error" as const) : ("done" as const),
+            result: t.result,
+            // The end lacks the transcript — merge the outcome onto the
+            // live trace so messages captured during _update survive.
+            ...(isSub ? { trace: mergeTrace(card.trace, traceFromEnd(t.result)) } : {}),
+          })),
         }));
       }
       const ame = (e as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
       if (e.type === "message_update" && ame?.type === "text_delta" && ame.delta) {
-        setTranscripts((prev) => {
-          const items = prev[sid] ?? [];
-          const last = items[items.length - 1];
-          if (streaming.current[sid] && last?.kind === "assistant") {
-            return { ...prev, [sid]: [...items.slice(0, -1), { kind: "assistant", text: last.text + ame.delta }] };
-          }
-          streaming.current[sid] = true;
-          return { ...prev, [sid]: [...items, { kind: "assistant", text: ame.delta! }] };
-        });
+        // Perf: accumulate in the ref (O(1)) and repaint one live bubble per
+        // frame — no transcript-array copy, no committed-markdown re-parse.
+        streamRef.current[sid] = applyDelta(streamRef.current, sid, ame.delta, streaming.current[sid]);
+        streaming.current[sid] = true;
+        scheduleFlush();
       }
       if (e.type === "agent_end") {
-        streaming.current[sid] = false;
+        commitStream(sid); // finalize the live bubble into the transcript
         setBusy((p) => ({ ...p, [sid]: false }));
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
       }
@@ -205,7 +249,7 @@ export default function App(): React.JSX.Element {
         queueRef.current[sid] = queue;
         setQueues((p) => ({ ...p, [sid]: queue }));
         for (const text of delivered) {
-          streaming.current[sid] = false; // next delta starts a fresh assistant bubble
+          commitStream(sid); // flush any live bubble before the delivered user item
           appendItem(sid, { kind: "user", text });
         }
       }
@@ -214,7 +258,7 @@ export default function App(): React.JSX.Element {
       if (e.type === "message_end") {
         const m = (e as { message?: { role?: string; stopReason?: string; errorMessage?: string } }).message;
         if (m?.role === "assistant" && m.stopReason === "error") {
-          streaming.current[sid] = false;
+          commitStream(sid); // flush any partial bubble before the error item
           appendItem(sid, { kind: "error", text: m.errorMessage || "The model call failed." });
         }
       }
@@ -227,6 +271,7 @@ export default function App(): React.JSX.Element {
       offUiRequest();
       offPiExit();
       offPiEvent();
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
   }, []);
 
@@ -419,6 +464,7 @@ export default function App(): React.JSX.Element {
             sessionId={selectedId}
             title={selected?.title ?? null}
             items={(selectedId ? transcripts[selectedId] : undefined) ?? []}
+            streaming={(selectedId ? streamText[selectedId] : undefined) || undefined}
             busy={(selectedId && busy[selectedId]) || false}
             crashed={selectedId && statuses[selectedId] === "crashed" ? (crashCodes[selectedId] ?? -1) : null}
             turns={(selectedId && turns[selectedId]) || 0}
