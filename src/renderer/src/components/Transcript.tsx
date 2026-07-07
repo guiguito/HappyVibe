@@ -11,6 +11,9 @@ export type TranscriptItem = { id?: number } & (
   | { kind: "tool"; card: ToolCardData }
   // B2: provider errors / session crashes as first-class transcript items.
   | { kind: "error"; text: string; retriable?: boolean }
+  // A neutral, warm status line (not an error). `pending` shows an ongoing
+  // spinner (e.g. "Compacting context…") that resolves in place on completion.
+  | { kind: "notice"; text: string; pending?: boolean }
 );
 
 // Perf: memoized so a committed assistant message only re-parses markdown when
@@ -37,6 +40,18 @@ const MessageItem = memo(function MessageItem({
             Restart &amp; resend
           </button>
         )}
+      </div>
+    );
+  }
+  if (it.kind === "notice") {
+    return (
+      <div className="flex items-center gap-2.5 self-center rounded-full border-2 border-line bg-card px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker">
+        {it.pending ? (
+          <span className="size-2 rounded-full bg-honey animate-pulse shrink-0" />
+        ) : (
+          <span className="size-2 rounded-full bg-leaf shrink-0" />
+        )}
+        <span>{it.text}</span>
       </div>
     );
   }

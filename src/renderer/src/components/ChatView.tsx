@@ -247,6 +247,7 @@ export function ChatView({
           snapshot={contextSnapshot}
           stats={stats}
           fallbackWindow={fallbackWindow}
+          turns={turns}
           onClose={() => setContextOpen(false)}
           onCompact={onCompact}
         />

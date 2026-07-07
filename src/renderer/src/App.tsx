@@ -68,6 +68,10 @@ export default function App(): React.JSX.Element {
   // Perf: toolCallId → position in transcripts[sid], so tool_execution_update/
   // _end update the card in O(1) instead of mapping the whole array.
   const toolIndex = useRef<Record<string, Map<string, number>>>({});
+  // Id of the in-progress "Compacting context…" notice per session, so
+  // compaction_end resolves it in place ("Compaction complete") instead of
+  // leaving a stale ongoing line + appending a second item.
+  const compactionNotice = useRef<Record<string, number>>({});
 
   const appendItem = (sid: string, item: TranscriptItem): void =>
     setTranscripts((p) => {
@@ -232,13 +236,30 @@ export default function App(): React.JSX.Element {
         setBusy((p) => ({ ...p, [sid]: false }));
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
       }
-      // B5: compaction streams as a transcript notice; a fresh snapshot lands
-      // on the next panel open. Bump turns so the gauge re-reads post-compaction.
+      // B5: compaction is slow (Pi's model summarization, not our bug), so show
+      // an ONGOING notice that resolves in place — never a scary error box.
+      // compaction_end bumps turns so the gauge re-reads (it'll read "pending"
+      // until the next LLM response) and the open panel re-fetches its snapshot.
       if (e.type === "compaction_start") {
-        appendItem(sid, { kind: "error", text: "Compacting the conversation to free context…" });
+        commitStream(sid); // flush any live bubble before the notice
+        compactionNotice.current[sid] = idCounter.current; // id appendItem will assign next
+        appendItem(sid, { kind: "notice", text: "Compacting context…", pending: true });
       }
       if (e.type === "compaction_end") {
-        appendItem(sid, { kind: "error", text: "Compaction complete — older turns were summarized." });
+        const noticeId = compactionNotice.current[sid];
+        delete compactionNotice.current[sid];
+        setTranscripts((p) => {
+          const items = p[sid];
+          if (!items) return p;
+          const i = items.findIndex((it) => it.id === noticeId && it.kind === "notice");
+          if (i < 0) {
+            // No pending notice found (missed start) — append a resolved one.
+            return { ...p, [sid]: [...items, { kind: "notice", text: "Compaction complete", pending: false, id: idCounter.current++ }] };
+          }
+          const next = items.slice();
+          next[i] = { ...items[i], kind: "notice", text: "Compaction complete", pending: false };
+          return { ...p, [sid]: next };
+        });
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
       }
       // B2: pending steering/follow-up queue. Messages that leave the queue
