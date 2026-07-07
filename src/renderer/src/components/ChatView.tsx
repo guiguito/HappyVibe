@@ -11,6 +11,7 @@ export function ChatView({
   sessionId,
   title,
   items,
+  streaming,
   busy,
   crashed,
   turns,
@@ -28,6 +29,7 @@ export function ChatView({
   sessionId: string | null;
   title: string | null;
   items: TranscriptItem[];
+  streaming?: string;
   busy: boolean;
   crashed: number | null;
   turns: number;
@@ -46,11 +48,16 @@ export function ChatView({
   const [contextOpen, setContextOpen] = useState(false);
   // Fetched once per agent_end (turns bump); shared by the gauge and the panel.
   const [stats, setStats] = useState<SessionStats | null>(null);
+  // Perf: `turns` bumps once per agent_end / compaction — during a burst of
+  // turns this fired an RPC each time. Debounce 500ms trailing so we fetch once
+  // after activity settles; still guarantees a final fetch.
   useEffect(() => {
     if (!sessionId) return;
     let live = true;
-    window.hv.getStats(sessionId).then((s) => live && setStats(s as SessionStats | null));
-    return () => { live = false; };
+    const t = setTimeout(() => {
+      window.hv.getStats(sessionId).then((s) => live && setStats(s as SessionStats | null));
+    }, 500);
+    return () => { live = false; clearTimeout(t); };
   }, [turns, sessionId]);
   // B5: non-blocking auto-suggest banner, shown once per session when the gauge
   // first hits the red zone. Never auto-compacts.
@@ -154,7 +161,7 @@ export function ChatView({
         </div>
       )}
 
-      <Transcript items={items} busy={busy} onRetry={onRetry} />
+      <Transcript items={items} streaming={streaming} busy={busy} onRetry={onRetry} />
 
       {/* Composer */}
       <form
