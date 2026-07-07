@@ -1,6 +1,10 @@
 import path from "node:path";
 
 export const PI_CLI_RELPATH = "node_modules/@earendil-works/pi-coding-agent/dist/cli.js";
+/** pi-subagents extension entry (its package.json `pi.extensions`) — B6. */
+export const PI_SUBAGENTS_RELPATH = "node_modules/pi-subagents/src/extension/index.ts";
+/** Embedded pi CLI the pi-subagents child spawn must use (no global `pi`; s0.3). */
+export const PI_SUBAGENT_BIN_RELPATH = "node_modules/.bin/pi";
 
 export interface PiSpawnOptions {
   /** Global default model (config.ts); falls back to the spike default. */
@@ -39,6 +43,10 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // vendored in pi-runtime only for tests/permission-coexistence.test.ts,
       // which documents that finding. See docs/validation/v6.md.
       "-e", path.join(runtimeDir, "extensions/happyvibe-bridge.ts"),
+      // B6: pi-subagents (RPC-validated, s0.3). Loaded as a second -e extension
+      // per its package.json `pi.extensions` entry; the subagent tool it
+      // registers is a normal tool_call, so the bridge's permission gate applies.
+      "-e", path.join(runtimeDir, PI_SUBAGENTS_RELPATH),
       "--session-dir", sessionDir,
       "--provider", model.provider,
       "--model", model.modelId,
@@ -49,6 +57,9 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.providerEnv ?? {}),
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
+      // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
+      // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).
+      PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, PI_SUBAGENT_BIN_RELPATH),
     } as Record<string, string>,
     cwd: workspace,
   };

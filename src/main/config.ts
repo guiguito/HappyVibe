@@ -116,3 +116,56 @@ export function agentDir(): string {
 export function rulesFile(): string {
   return path.join(app.getPath("userData"), "permission-rules.json");
 }
+
+/**
+ * Built-in agent dir (B6). pi-subagents discovers agents from
+ * `<PI_CODING_AGENT_DIR>/agents/*.md` — since agentDir() is PI_CODING_AGENT_DIR,
+ * our built-ins live in agentDir()/agents. Also where duplicates/edits land.
+ */
+export function builtinAgentsDir(): string {
+  const d = path.join(agentDir(), "agents");
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
+
+/**
+ * Install the bundled built-in agents (pi-runtime/agents/*.md) into the
+ * app-owned agent dir at startup. Idempotent and NON-clobbering:
+ *  - target absent            → install
+ *  - bundle version unchanged → skip (already installed)
+ *  - bundle bumped + user has NOT edited (target mtime == our recorded install
+ *    mtime) → reinstall; if the user edited it, keep their version.
+ * Per-file bundle version + our install mtime are tracked in
+ * installed-agents.json so a bundle bump ships fixes without clobbering edits.
+ */
+export function installBuiltinAgents(bundleDir: string): void {
+  const dest = builtinAgentsDir();
+  const stampFile = path.join(agentDir(), "installed-agents.json");
+  let stamps: Record<string, { version: number; installedMtime: number }> = {};
+  try {
+    stamps = JSON.parse(fs.readFileSync(stampFile, "utf8")) as typeof stamps;
+  } catch {
+    /* first run */
+  }
+  let files: string[];
+  try {
+    files = fs.readdirSync(bundleDir).filter((n) => n.endsWith(".md"));
+  } catch {
+    return; // no bundle (shouldn't happen) — nothing to install
+  }
+  let changed = false;
+  for (const name of files) {
+    const src = path.join(bundleDir, name);
+    const version = fs.statSync(src).mtimeMs;
+    const target = path.join(dest, name);
+    const stamp = stamps[name];
+    const exists = fs.existsSync(target);
+    if (exists && stamp?.version === version) continue; // up to date
+    // Bundle bumped but the user edited the file → keep theirs.
+    if (exists && stamp && Math.abs(fs.statSync(target).mtimeMs - stamp.installedMtime) > 1) continue;
+    fs.copyFileSync(src, target);
+    stamps[name] = { version, installedMtime: fs.statSync(target).mtimeMs };
+    changed = true;
+  }
+  if (changed) fs.writeFileSync(stampFile, JSON.stringify(stamps));
+}
