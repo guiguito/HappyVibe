@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { SessionStatus } from "../App";
 
-export type View = "chat" | "settings" | "audit";
+export type View = "chat" | "settings" | "audit" | "agents";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
@@ -282,8 +282,21 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Audit + Settings */}
+      {/* Agents + Audit + Settings */}
       <div className="p-4 border-t-2 border-line">
+        <button
+          type="button"
+          onClick={() => onNavigate("agents")}
+          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
+            view === "agents" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+          }`}
+        >
+          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="8" r="3.2" />
+            <path d="M5 20a7 7 0 0 1 14 0" />
+          </svg>
+          Agents &amp; tools
+        </button>
         <button
           type="button"
           onClick={() => onNavigate("audit")}

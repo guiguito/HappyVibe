@@ -16,6 +16,8 @@ import {
 } from "./permission";
 import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextSnapshot, type ContextSnapshot } from "./context";
+import { AgentsView } from "./components/AgentsView";
+import { isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type ToolInfo } from "./agents";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed";
@@ -43,6 +45,9 @@ export default function App(): React.JSX.Element {
   const [contextSnapshots, setContextSnapshots] = useState<Record<string, ContextSnapshot>>({});
   // B5: the default model's context window — fallback for the estimated gauge.
   const [fallbackWindow, setFallbackWindow] = useState<number | null>(null);
+  // B6: agent + tool inventories (from hv.agents / hv.tools notifies).
+  const [agents, setAgents] = useState<AgentInfo[] | null>(null);
+  const [tools, setTools] = useState<ToolInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const streaming = useRef<Record<string, boolean>>({});
   // Set when the user grants a permission; the next matching
@@ -78,6 +83,11 @@ export default function App(): React.JSX.Element {
       if (info) setUiQueue((q) => [...q, { req: r, info }]);
       const dng = parseDangerous(r);
       if (dng !== null && r.sessionId) setDangerous((p) => ({ ...p, [r.sessionId!]: dng }));
+      // B6: agent/tool inventories are fire-and-forget (never open the modal).
+      const ags = parseAgents(r);
+      if (ags) setAgents(ags);
+      const tls = parseTools(r);
+      if (tls) setTools(tls);
       // B5: hv.context is fire-and-forget (never opens the modal).
       const sid = r.sessionId;
       if (sid) {
@@ -125,13 +135,38 @@ export default function App(): React.JSX.Element {
           card: { toolCallId: t.toolCallId, toolName: t.toolName, args: t.args, status: "running", approval },
         });
       }
+      // B6: subagent delegation streams the child transcript live through
+      // tool_execution_update.partialResult (s0.3). Merge it onto the card.
+      if (e.type === "tool_execution_update") {
+        const t = e as unknown as { toolCallId: string; toolName?: string; partialResult?: unknown };
+        if (isSubagentTool(t.toolName)) {
+          const trace = traceFromUpdate(t.partialResult);
+          setTranscripts((p) => ({
+            ...p,
+            [sid]: (p[sid] ?? []).map((it) =>
+              it.kind === "tool" && it.card.toolCallId === t.toolCallId ? { ...it, card: { ...it.card, trace } } : it
+            ),
+          }));
+        }
+      }
       if (e.type === "tool_execution_end") {
-        const t = e as unknown as { toolCallId: string; result: unknown; isError: boolean };
+        const t = e as unknown as { toolCallId: string; toolName?: string; result: unknown; isError: boolean };
+        const isSub = isSubagentTool(t.toolName);
         setTranscripts((p) => ({
           ...p,
           [sid]: (p[sid] ?? []).map((it) =>
             it.kind === "tool" && it.card.toolCallId === t.toolCallId
-              ? { ...it, card: { ...it.card, status: t.isError ? ("error" as const) : ("done" as const), result: t.result } }
+              ? {
+                  ...it,
+                  card: {
+                    ...it.card,
+                    status: t.isError ? ("error" as const) : ("done" as const),
+                    result: t.result,
+                    // The end lacks the transcript — merge the outcome onto the
+                    // live trace so messages captured during _update survive.
+                    ...(isSub ? { trace: mergeTrace(it.card.trace, traceFromEnd(t.result)) } : {}),
+                  },
+                }
               : it
           ),
         }));
@@ -371,6 +406,13 @@ export default function App(): React.JSX.Element {
           />
         ) : activeView === "audit" ? (
           <AuditView sessions={sessions} workspaces={workspaces} />
+        ) : activeView === "agents" ? (
+          <AgentsView
+            agents={agents}
+            tools={tools}
+            sessionId={selectedId}
+            workspaceId={selected?.workspaceId ?? null}
+          />
         ) : (
           <ChatView
             workspace={selected?.workspaceId ?? null}

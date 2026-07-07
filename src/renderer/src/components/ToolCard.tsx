@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
+import type { SubagentTrace } from "../agents";
 
 export interface ToolCardData {
   toolCallId: string;
@@ -9,6 +10,8 @@ export interface ToolCardData {
   result?: unknown;
   /** Set when the permission modal granted this call. */
   approval?: "Allow" | "Allow for session";
+  /** B6: subagent delegation trace (toolName "subagent" only) — live + final. */
+  trace?: SubagentTrace;
 }
 
 const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
@@ -40,7 +43,72 @@ function DiffView({ lines }: { lines: DiffLine[] }): React.JSX.Element {
   );
 }
 
+const fmtCost = (c?: number): string => (c != null ? `$${c.toFixed(c < 0.01 ? 5 : 4)}` : "");
+
+/**
+ * Subagent delegation renders as a NESTED mini-conversation, distinct from a
+ * normal tool card: the child transcript (live during the run, final at end),
+ * per-agent model + usage + cost + turns. Collapsible; open while running so
+ * the delegation is watchable, collapses on done.
+ */
+function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
+  const running = card.status === "running";
+  const [open, setOpen] = useState(true);
+  const req = card.args as { agent?: string; task?: string } | undefined;
+  const results = card.trace?.results ?? [];
+  const denied = card.status === "denied";
+  return (
+    <div className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-paper-deep/40 transition-colors"
+      >
+        <span className={`size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : denied ? "bg-berry" : "bg-leaf"}`} />
+        <span className="text-[11px] font-black uppercase tracking-wide text-sky shrink-0">subagent</span>
+        <span className="font-bold text-sm shrink-0">{req?.agent ?? results[0]?.agent ?? "?"}</span>
+        <span className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0" title={req?.task}>
+          {req?.task ?? ""}
+        </span>
+        <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-soft">
+          {running ? "delegating…" : denied ? "denied" : "done"}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 flex flex-col gap-3">
+          {results.length === 0 && <p className="text-xs text-ink-soft italic">Waiting for the subagent to respond…</p>}
+          {results.map((r, i) => (
+            <div key={i} className="rounded-lg border border-line bg-card overflow-hidden">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-line text-[11px]">
+                <span className="font-bold">{r.agent}</span>
+                {r.model && <span className="font-mono text-ink-soft">{r.model}</span>}
+                <span className="flex-1" />
+                {r.usage && (
+                  <span className="font-mono text-ink-soft" title="input/output tokens · turns · cost">
+                    {(r.usage.input ?? 0) + (r.usage.output ?? 0)} tok
+                    {r.usage.turns != null ? ` · ${r.usage.turns} turn${r.usage.turns === 1 ? "" : "s"}` : ""}
+                    {r.usage.cost != null ? ` · ${fmtCost(r.usage.cost)}` : ""}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5 px-2.5 py-2 max-h-64 overflow-y-auto">
+                {r.messages.map((m, j) => (
+                  <div key={j} className="text-xs">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mr-1.5">{m.role}</span>
+                    <span className="whitespace-pre-wrap break-words">{m.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ToolCard({ card }: { card: ToolCardData }): React.JSX.Element {
+  if (card.toolName === "subagent") return <SubagentCard card={card} />;
   // Edit diffs open by default (the diff IS the payload); write stays collapsed
   // (a full new file can be long). Bash keeps the raw output card.
   const diff = card.toolName === "edit" || card.toolName === "write" ? toolDiff(card.toolName, card.args) : null;
