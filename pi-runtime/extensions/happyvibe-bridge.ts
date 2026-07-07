@@ -1,6 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as fs from "node:fs";
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
+import {
+  acceptableMarks, filterMessages, serializeEntries,
+  type AgentMessage, type MarkKey, type SessionEntry,
+} from "./hv-context";
 
 const sessionGrants = new Set<string>();
 
@@ -16,6 +20,32 @@ let rules: RulesFile = EMPTY_RULES;
 let rulesError: string | null = null;
 // Per-session, never persisted — a respawn always starts safe.
 let dangerous = false;
+
+// ── B5 context visibility (docs/validation/d1.md §hv.context) ───────────────
+// The kill-set of context marks. Persisted as `hv-context-marks` custom entries
+// (pi.appendEntry — do NOT enter LLM context), restored on session_start, and
+// re-appended after compaction so they survive. filterMessages applies them in
+// the `context` handler (proven non-destructive in s0.3).
+const CONTEXT_MARKS_TYPE = "hv-context-marks";
+let contextMarks = new Set<MarkKey>();
+
+/** JSON envelope for the fire-and-forget bridge→main channel (B4 hv.audit precedent). */
+const ctxPayload = (o: Record<string, unknown>): string => JSON.stringify({ kind: "hv.context", ...o });
+
+/** Newest hv-context-marks custom entry wins — it's a full snapshot of the set. */
+function restoreMarks(entries: SessionEntry[]): void {
+  contextMarks = new Set();
+  for (const e of entries) {
+    if ((e.type === "custom" || e.type === "custom_message") && e.customType === CONTEXT_MARKS_TYPE) {
+      const marks = (e.data as { marks?: MarkKey[] } | undefined)?.marks;
+      if (Array.isArray(marks)) contextMarks = new Set(marks); // last one seen = newest
+    }
+  }
+}
+
+function persistMarks(pi: ExtensionAPI): void {
+  pi.appendEntry(CONTEXT_MARKS_TYPE, { marks: [...contextMarks] });
+}
 
 function loadRules(): void {
   rulesError = null;
@@ -59,6 +89,90 @@ const loginAborts = new Map<string, AbortController>();
 
 export default function (pi: ExtensionAPI) {
   loadRules();
+
+  // ── B5 context visibility ──────────────────────────────────────────────
+  // System-prompt block captured once per turn (NOT a session entry — read via
+  // before_agent_start). Feeds the /hv-context snapshot's "System prompt" +
+  // "Context files" groups. Sizes are char-based estimates (labeled in UI).
+  let systemBlock: {
+    chars: number;
+    estTokens: number;
+    toolCount: number;
+    contextFiles: Array<{ path: string; chars: number; estTokens: number }>;
+  } | null = null;
+
+  pi.on("session_start", async (_event, ctx) => {
+    restoreMarks(ctx.sessionManager.getEntries() as unknown as SessionEntry[]);
+  });
+
+  pi.on("before_agent_start", async (event) => {
+    const sp = (event.systemPrompt ?? "") as string;
+    const opts = (event.systemPromptOptions ?? {}) as {
+      selectedTools?: unknown[];
+      contextFiles?: Array<{ path?: string; content?: string }>;
+    };
+    systemBlock = {
+      chars: sp.length,
+      estTokens: Math.ceil(sp.length / 4),
+      toolCount: Array.isArray(opts.selectedTools) ? opts.selectedTools.length : 0,
+      contextFiles: (opts.contextFiles ?? []).map((f) => {
+        const chars = (f.content ?? "").length;
+        return { path: f.path ?? "", chars, estTokens: Math.ceil(chars / 4) };
+      }),
+    };
+  });
+
+  // The only place removal takes effect. Non-destructive: session file untouched.
+  pi.on("context", async (event) => {
+    if (contextMarks.size === 0) return;
+    return { messages: filterMessages(event.messages as unknown as AgentMessage[], contextMarks) };
+  });
+
+  // Marks are persisted as custom entries; compaction rewrites history but keeps
+  // custom entries, and restoreMarks re-reads the newest one. Re-appending here
+  // GUARANTEES a fresh snapshot lands on the post-compaction branch.
+  pi.on("session_before_compact", async () => {
+    if (contextMarks.size > 0) persistMarks(pi);
+  });
+
+  pi.registerCommand("hv-context", {
+    description: "HappyVibe: emit a context snapshot (hv.context notify)",
+    handler: async (_args, ctx) => {
+      const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
+      ctx.ui.notify(
+        ctxPayload({
+          stage: "snapshot",
+          system: systemBlock,
+          items: serializeEntries(entries),
+          marks: [...contextMarks],
+        }),
+        "info",
+      );
+    },
+  });
+
+  pi.registerCommand("hv-context-remove", {
+    description: "HappyVibe: remove context items (completed turns only). Usage: /hv-context-remove <key,key,...>",
+    handler: async (args, ctx) => {
+      const requested = args.split(/[,\s]+/).filter(Boolean) as MarkKey[];
+      const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
+      const { accepted, refused } = acceptableMarks(requested, entries);
+      for (const k of accepted) contextMarks.add(k);
+      if (accepted.length) persistMarks(pi);
+      ctx.ui.notify(ctxPayload({ stage: "removed", accepted, refused, marks: [...contextMarks] }), refused.length ? "warning" : "info");
+    },
+  });
+
+  pi.registerCommand("hv-context-restore", {
+    description: "HappyVibe: restore removed context items. Usage: /hv-context-restore <key,key,...>",
+    handler: async (args, ctx) => {
+      const keys = args.split(/[,\s]+/).filter(Boolean) as MarkKey[];
+      let changed = false;
+      for (const k of keys) changed = contextMarks.delete(k) || changed;
+      if (changed) persistMarks(pi);
+      ctx.ui.notify(ctxPayload({ stage: "restored", restored: keys, marks: [...contextMarks] }), "info");
+    },
+  });
 
   pi.on("tool_call", async (event, ctx) => {
     const tool = event.toolName as string;
