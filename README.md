@@ -63,6 +63,7 @@ npm run package    # unsigned .app in release/mac-arm64/ (bundles pi-runtime
 - Extensions calling `ctx.ui.*` inside `session_start` must fire **async-detached** (Pi's JSONL stdin reader attaches after the handler returns).
 - The Pi npm package moved to the `@earendil-works` scope (`@mariozechner` is stale).
 - Upgrading Pi = a deliberate change: bump the pin in `pi-runtime/package.json`, re-run the whole test suite, re-check the wire shapes in `docs/validation/d1.md`.
+- **`pi-subagents` is a second pinned-exact runtime dep** (`pi-runtime/package.json`, `0.33.1`) with the SAME upgrade-gate treatment as Pi: bump deliberately, re-run `tests/agents-bridge.test.ts` (it asserts the observed subagent `tool_execution_*` trace shapes — they moved between the S0.3 spike and 0.33.1) and re-check `docs/validation/d1.md §B6`. It loads as a second `-e` extension; its child Pi spawn is pinned to the embedded bin via `PI_SUBAGENT_PI_BINARY` (spawn env). The two built-in agents ship as `pi-runtime/agents/*.md` and install idempotently into the app-owned agent dir at startup.
 
 ## Where to build next (per the HappyVibe PRD)
 
