@@ -16,11 +16,13 @@ test("computeGauge falls back to an ESTIMATE against the model window when conte
   expect(g).toMatchObject({ tokens: 100000, contextWindow: 200000, percent: 50, source: "estimated" });
 });
 
-test("computeGauge estimates when contextUsage exists but tokens/percent are null (post-compaction)", () => {
+test("computeGauge returns PENDING (not a stale cumulative estimate) when Pi has a window but tokens are null (post-compaction)", () => {
+  // Root cause: cumulative session totals (20000) DON'T drop after compaction,
+  // so presenting them as live context % would mislead. Show "measuring…" instead.
   const g = computeGauge(
     { tokens: { input: 20000, output: 0 }, contextUsage: { tokens: null, contextWindow: 100000, percent: null } },
   );
-  expect(g).toMatchObject({ source: "estimated", tokens: 20000, contextWindow: 100000, percent: 20 });
+  expect(g).toEqual({ source: "pending", tokens: null, percent: null, contextWindow: 100000, zone: "calm" });
 });
 
 test("computeGauge returns null when there is nothing honest to show", () => {

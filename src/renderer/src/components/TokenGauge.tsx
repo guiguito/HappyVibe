@@ -36,20 +36,41 @@ export function TokenGauge({
     );
   }
 
+  // Pending: Pi is re-measuring context (post-compaction). Show a subdued
+  // "measuring…" pill with a soft pulse — never a scary or stale hard number.
+  if (gauge.source === "pending") {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        title="Context just compacted — Pi re-measures usage on the next response. Open the breakdown."
+        className="group flex items-center gap-2 rounded-full border-2 border-line bg-card pl-2.5 pr-3 py-1 cursor-pointer hover:brightness-[0.98] transition-all"
+      >
+        <span className="relative w-14 h-1.5 rounded-full bg-line/60 overflow-hidden">
+          <span className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-honey/70 animate-pulse" />
+        </span>
+        <span className="font-mono text-[11px] font-bold text-ink-soft animate-pulse">measuring…</span>
+      </button>
+    );
+  }
+
   const z = ZONE[gauge.zone];
+  // Past the null + pending guards, measured/estimated always carry real numbers.
+  const tokens = gauge.tokens ?? 0;
+  const percent = gauge.percent ?? 0;
   return (
     <button
       type="button"
       onClick={onOpen}
-      title={`${gauge.tokens.toLocaleString()} / ${gauge.contextWindow.toLocaleString()} tokens (${gauge.source}) — open the breakdown`}
+      title={`${tokens.toLocaleString()} / ${gauge.contextWindow.toLocaleString()} tokens (${gauge.source}) — open the breakdown`}
       className={`group flex items-center gap-2 rounded-full border-2 ${z.border} ${z.bg} pl-2.5 pr-3 py-1 cursor-pointer hover:brightness-[0.98] transition-all`}
     >
       <span className="relative w-14 h-1.5 rounded-full bg-line/60 overflow-hidden">
-        <span className={`absolute inset-y-0 left-0 rounded-full ${z.bar}`} style={{ width: `${Math.min(100, gauge.percent)}%` }} />
+        <span className={`absolute inset-y-0 left-0 rounded-full ${z.bar}`} style={{ width: `${Math.min(100, percent)}%` }} />
       </span>
-      <span className={`font-mono text-[11px] font-bold ${z.text}`}>{gauge.percent}%</span>
+      <span className={`font-mono text-[11px] font-bold ${z.text}`}>{percent}%</span>
       <span className="font-mono text-[10px] text-ink-soft">
-        {fmt(gauge.tokens)}/{fmt(gauge.contextWindow)}
+        {fmt(tokens)}/{fmt(gauge.contextWindow)}
       </span>
       <span
         className={`text-[9px] font-bold uppercase tracking-wide rounded px-1 py-px ${

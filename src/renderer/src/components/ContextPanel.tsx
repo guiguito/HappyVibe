@@ -19,6 +19,7 @@ export function ContextPanel({
   snapshot,
   stats,
   fallbackWindow,
+  turns,
   onClose,
   onCompact,
 }: {
@@ -26,17 +27,21 @@ export function ContextPanel({
   snapshot: ContextSnapshot | null;
   stats: SessionStats | null;
   fallbackWindow?: number | null;
+  /** Bumps once per agent_end / compaction_end — re-fetches the snapshot so an
+   *  open panel isn't stale after a compaction changed what's in context. */
+  turns: number;
   onClose: () => void;
   onCompact: () => void;
 }): React.JSX.Element {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmCompact, setConfirmCompact] = useState(false);
 
-  // Refresh the snapshot when the panel opens (fire-and-forget; result streams
-  // back through the hv.context notify the parent captures).
+  // Refresh the snapshot on open, session change, or a turn/compaction bump
+  // (fire-and-forget; result streams back through the hv.context notify the
+  // parent captures).
   useEffect(() => {
     void window.hv.contextSnapshot(sessionId);
-  }, [sessionId]);
+  }, [sessionId, turns]);
 
   const marks = useMemo(() => new Set(snapshot?.marks ?? []), [snapshot]);
   const gauge: Gauge | null = computeGauge(stats, fallbackWindow);
@@ -80,11 +85,16 @@ export function ContextPanel({
 
         {/* Gauge summary */}
         <div className="px-5 py-3 border-b-2 border-line">
-          {gauge ? (
+          {gauge?.source === "pending" ? (
+            <div className="flex items-baseline gap-2">
+              <span className="font-black text-2xl text-ink-soft animate-pulse">measuring…</span>
+              <span className="font-mono text-xs text-ink-soft">re-measuring after compaction</span>
+            </div>
+          ) : gauge ? (
             <div className="flex items-baseline gap-2">
               <span className="font-black text-2xl">{gauge.percent}%</span>
               <span className="font-mono text-xs text-ink-soft">
-                {gauge.tokens.toLocaleString()} / {gauge.contextWindow.toLocaleString()} tokens
+                {gauge.tokens!.toLocaleString()} / {gauge.contextWindow.toLocaleString()} tokens
               </span>
               <span
                 className={`text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 ${

@@ -11,13 +11,18 @@ export interface SessionStats {
   contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
 }
 
-export type GaugeSource = "measured" | "estimated";
+// "pending": Pi has a window but no live measurement yet (tokens null) — most
+// commonly right after compaction, before the next LLM response. We refuse to
+// pass cumulative session totals off as the live context %, so the UI shows a
+// "measuring…" state instead of a misleading number.
+export type GaugeSource = "measured" | "estimated" | "pending";
 export type GaugeZone = "calm" | "amber" | "red";
 
 export interface Gauge {
-  tokens: number;
+  /** null when source is "pending" — there is no honest live number yet. */
+  tokens: number | null;
   contextWindow: number;
-  percent: number;
+  percent: number | null;
   source: GaugeSource;
   zone: GaugeZone;
 }
@@ -28,10 +33,19 @@ const RED = 90;
 export const zoneOf = (percent: number): GaugeZone => (percent >= RED ? "red" : percent >= AMBER ? "amber" : "calm");
 
 /**
- * Derive the gauge. Prefers Pi's measured contextUsage. Falls back to a
- * char/usage-based ESTIMATE against the model's context window when Pi didn't
- * measure (e.g. no window available, or fresh post-compaction before the next
- * assistant response). Returns null when there's nothing honest to show.
+ * Derive the gauge. Prefers Pi's measured contextUsage. When Pi has a window but
+ * no live measurement yet (tokens null — the documented post-compaction gap,
+ * types.d.ts:193) returns a "pending" gauge so the UI can show "measuring…"
+ * rather than a stale/misleading number. Otherwise (no contextUsage at all)
+ * falls back to a rough ESTIMATE against the model's window. Returns null when
+ * there's nothing honest to show.
+ *
+ * NOTE: `stats.tokens.{input,output}` is CUMULATIVE-since-session-start (Pi sums
+ * every assistant message's usage — agent-session.js getSessionStats), so it
+ * does NOT drop after compaction and is only a rough proxy for live context.
+ * That's why we never present it once Pi has a real window but null tokens
+ * (post-compaction): that's the "pending" case, not an estimate. We prefer the
+ * measured value whenever it's available.
  *
  * @param fallbackWindow the default model's contextWindow (from list-models)
  */
@@ -42,8 +56,15 @@ export function computeGauge(stats: SessionStats | null, fallbackWindow?: number
     const percent = Math.round(cu.percent);
     return { tokens: cu.tokens, contextWindow: cu.contextWindow, percent, source: "measured", zone: zoneOf(percent) };
   }
-  // Estimate: latest usage totals vs the model window.
-  const window = cu?.contextWindow && cu.contextWindow > 0 ? cu.contextWindow : fallbackWindow ?? 0;
+  // Pending: Pi HAS a window but tokens are null (post-compaction, before the
+  // next LLM response). Do NOT pass cumulative session totals off as live
+  // context — show a "measuring…" state instead.
+  if (cu && cu.contextWindow > 0) {
+    return { tokens: null, contextWindow: cu.contextWindow, percent: null, source: "pending", zone: "calm" };
+  }
+  // Estimate: no contextUsage from Pi at all — rough proxy of cumulative usage
+  // vs the model window (labeled "est." in the UI; see NOTE above).
+  const window = fallbackWindow ?? 0;
   const tokens = (stats?.tokens?.input ?? 0) + (stats?.tokens?.output ?? 0);
   if (window > 0 && tokens > 0) {
     const percent = Math.round((tokens / window) * 100);
