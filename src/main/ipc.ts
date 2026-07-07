@@ -7,9 +7,10 @@ import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, getApiKey, getDefaultModel, providerEnv, providerKeyStatus,
-  removeProviderKey, rulesFile, sessionDir, setApiKey, setDefaultModel, setProviderKey,
+  agentDir, builtinAgentsDir, getApiKey, getDefaultModel, installBuiltinAgents, providerEnv,
+  providerKeyStatus, removeProviderKey, rulesFile, sessionDir, setApiKey, setDefaultModel, setProviderKey,
 } from "./config";
+import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
   authJsonProviders, BYOK_PROVIDERS, detectOllama, isByokProvider, syncOllamaModels,
   type ByokProvider,
@@ -73,6 +74,14 @@ export function registerIpc(win: BrowserWindow): void {
   // Kill pi processes a previous app run left behind (crash / force-quit).
   const swept = sweepOrphans(pidFile);
   if (swept.length) console.warn("[hv] swept orphan pi processes:", swept);
+
+  // B6: install/refresh the bundled built-in agents into the app-owned agent
+  // dir (idempotent, never clobbers user edits). pi-subagents discovers them.
+  try {
+    installBuiltinAgents(path.join(piRuntimeDir(), "agents"));
+  } catch (e) {
+    console.warn("[hv] built-in agent install failed:", e);
+  }
 
   const manager = new SessionManager({
     pidFile,
@@ -479,4 +488,31 @@ export function registerIpc(win: BrowserWindow): void {
       model: getDefaultModel(),
       env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
     }));
+
+  // ── B6: agents & tools ─────────────────────────────────────────────────
+  // hv.agents / hv.tools ride the fire-and-forget /hv-* command channel (like
+  // B5 context); results stream back as notifies parsed by the renderer.
+  // Prefer the focused session's live Pi, else the utility client, so the
+  // panels work even with no chat session open.
+  const anyClient = async (sessionId?: string): Promise<PiClient> => {
+    const c = sessionId ? (manager.get(sessionId) as PiClient | null) : null;
+    return c ?? ensureUtility();
+  };
+  const agentDirs = (): string[] => allowedAgentDirs(builtinAgentsDir(), workspaces.list());
+
+  ipcMain.handle("hv:list-agents", async (_e, sessionId?: string) => {
+    void (await anyClient(sessionId)).send({ type: "prompt", message: "/hv-agents" }).catch(() => {});
+  });
+  ipcMain.handle("hv:list-tools", async (_e, sessionId?: string) => {
+    void (await anyClient(sessionId)).send({ type: "prompt", message: "/hv-tools" }).catch(() => {});
+  });
+
+  // Agent file edit/duplicate — path-confined to allowed agent dirs (agents.ts).
+  ipcMain.handle("hv:read-agent", (_e, filePath: string) => readAgentBody(agentDirs(), filePath));
+  ipcMain.handle("hv:write-agent", (_e, filePath: string, edit: { body?: string; model?: string | null }) => {
+    writeAgentEdit(agentDirs(), filePath, edit);
+    // Agents are read at delegation time by the pi-subagents child spawn, so
+    // edits apply to the next delegation — no live broadcast needed.
+  });
+  ipcMain.handle("hv:duplicate-agent", (_e, filePath: string) => duplicateAgent(agentDirs(), filePath));
 }

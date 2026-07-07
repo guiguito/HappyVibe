@@ -30,6 +30,23 @@ interface HvModel {
   contextWindow?: number;
 }
 
+/** B6 — mirrors AgentDef in pi-runtime/extensions/hv-agents.ts (from the hv.agents notify). */
+interface HvAgent {
+  name: string;
+  description: string;
+  tools?: string[];
+  model?: string;
+  source: "builtin" | "project";
+  path: string;
+}
+
+/** B6 — a built-in LLM tool (from the hv.tools notify; permission joined renderer-side). */
+interface HvTool {
+  name: string;
+  description: string;
+  source: string;
+}
+
 /** Mirrors Rule/RulesFile/Verdict in pi-runtime/extensions/hv-rules.ts (separate tsconfig roots). */
 interface HvRule {
   layer: "tool" | "path" | "command";
@@ -112,6 +129,12 @@ interface HvApi {
   contextRemove(sessionId: string, keys: string[]): Promise<void>;
   contextRestore(sessionId: string, keys: string[]): Promise<void>;
   compactSession(sessionId: string): Promise<void>;
+  // B6: agents & tools
+  listAgents(sessionId?: string): Promise<void>;
+  listTools(sessionId?: string): Promise<void>;
+  readAgent(filePath: string): Promise<{ body: string; model?: string }>;
+  writeAgent(filePath: string, edit: { body?: string; model?: string | null }): Promise<void>;
+  duplicateAgent(filePath: string): Promise<string>;
 }
 
   interface Window {

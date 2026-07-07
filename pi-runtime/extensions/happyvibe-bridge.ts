@@ -1,10 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
 import {
   acceptableMarks, filterMessages, serializeEntries,
   type AgentMessage, type MarkKey, type SessionEntry,
 } from "./hv-context";
+import { parseAgentFile, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
 
 const sessionGrants = new Set<string>();
 
@@ -332,6 +334,67 @@ export default function (pi: ExtensionAPI) {
       const provider = args.trim();
       ctx.modelRegistry.authStorage.logout(provider);
       ctx.ui.notify(authPayload({ stage: "logged_out", provider }), "info");
+    },
+  });
+
+  // ── B6 agents & tools (docs/validation/d1.md §hv.agents / §hv.tools) ───────
+  // Both ride the fire-and-forget notify channel (JSON in `message`), like
+  // hv.context. The renderer parses them and NEVER opens the modal.
+
+  /** The two dirs pi-subagents discovers agents from (s0.3): app-owned + project. */
+  function agentDirs(): Array<{ dir: string; source: AgentSource }> {
+    const dirs: Array<{ dir: string; source: AgentSource }> = [];
+    // App-owned agent dir (PI_CODING_AGENT_DIR/agents) → our built-ins live here.
+    if (process.env.PI_CODING_AGENT_DIR) {
+      dirs.push({ dir: path.join(process.env.PI_CODING_AGENT_DIR, "agents"), source: "builtin" });
+    }
+    // Project-local agents override/extend them.
+    dirs.push({ dir: path.join(process.cwd(), ".pi", "agents"), source: "project" });
+    return dirs;
+  }
+
+  function enumerateAgents(): AgentDef[] {
+    const out: AgentDef[] = [];
+    for (const { dir, source } of agentDirs()) {
+      let names: string[];
+      try {
+        names = fs.readdirSync(dir).filter((n) => n.endsWith(".md") && !n.endsWith(".chain.md"));
+      } catch {
+        continue; // dir absent — nothing to list
+      }
+      for (const name of names) {
+        const file = path.join(dir, name);
+        try {
+          const def = toAgentDef(parseAgentFile(fs.readFileSync(file, "utf8")).frontmatter, source, file);
+          if (def) out.push(def);
+        } catch {
+          /* unreadable/malformed agent file — skip */
+        }
+      }
+    }
+    return out;
+  }
+
+  pi.registerCommand("hv-agents", {
+    description: "HappyVibe: emit the agent inventory (hv.agents notify)",
+    handler: async (_args, ctx) => {
+      ctx.ui.notify(JSON.stringify({ kind: "hv.agents", agents: enumerateAgents() }), "info");
+    },
+  });
+
+  pi.registerCommand("hv-tools", {
+    description: "HappyVibe: emit the tool inventory (hv.tools notify)",
+    handler: async (_args, ctx) => {
+      // Built-in LLM tools come from the extension side — get_commands over RPC
+      // does NOT list them (s0.3). Permission state is joined renderer-side via
+      // hv:eval-rules (the SAME evaluate() this bridge's gate runs), so the
+      // rules logic is never forked into two implementations.
+      const tools = pi.getAllTools().map((t) => ({
+        name: t.name,
+        description: t.description ?? "",
+        source: t.sourceInfo?.source ?? t.sourceInfo?.scope ?? "builtin",
+      }));
+      ctx.ui.notify(JSON.stringify({ kind: "hv.tools", tools }), "info");
     },
   });
 }

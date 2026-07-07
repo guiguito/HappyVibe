@@ -58,6 +58,17 @@ contextBridge.exposeInMainWorld("hv", {
   contextRemove: (sessionId: string, keys: string[]) => ipcRenderer.invoke("hv:context-remove", sessionId, keys),
   contextRestore: (sessionId: string, keys: string[]) => ipcRenderer.invoke("hv:context-restore", sessionId, keys),
   compactSession: (sessionId: string) => ipcRenderer.invoke("hv:compact-session", sessionId),
+
+  // ── B6: agents & tools (additive) ────────────────────────────────
+  // list* fire /hv-agents / /hv-tools; results arrive as hv.agents / hv.tools
+  // notifies through onUiRequest (parsed by the renderer).
+  listAgents: (sessionId?: string) => ipcRenderer.invoke("hv:list-agents", sessionId),
+  listTools: (sessionId?: string) => ipcRenderer.invoke("hv:list-tools", sessionId),
+  readAgent: (filePath: string) => ipcRenderer.invoke("hv:read-agent", filePath),
+  writeAgent: (filePath: string, edit: { body?: string; model?: string | null }) =>
+    ipcRenderer.invoke("hv:write-agent", filePath, edit),
+  duplicateAgent: (filePath: string) => ipcRenderer.invoke("hv:duplicate-agent", filePath),
+
   // Each on* returns an unsubscribe function. Without it, React StrictMode's
   // dev double-mount registers listeners twice and every stream delta renders
   // twice ("the the heading heading ...").
