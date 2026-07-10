@@ -51,6 +51,12 @@ contextBridge.exposeInMainWorld("hv", {
   readAudit: (filter?: { sessionId?: string; workspaceId?: string }) => ipcRenderer.invoke("hv:read-audit", filter),
   setBadgeCount: (n: number) => ipcRenderer.send("hv:set-badge-count", n),
 
+  // ── B7: local analytics + onboarding (additive) ──────────────────
+  getAnalytics: (filter?: { workspaceId?: string; sinceTs?: string }) =>
+    ipcRenderer.invoke("hv:get-analytics", filter),
+  getOnboardingSeen: () => ipcRenderer.invoke("hv:get-onboarding-seen"),
+  setOnboardingSeen: (seen: boolean) => ipcRenderer.invoke("hv:set-onboarding-seen", seen),
+
   // ── B5: context visibility (additive) ────────────────────────────
   // Snapshot/remove/restore fire /hv-context* commands; results arrive as
   // hv.context notifies through onUiRequest (parsed by the renderer).

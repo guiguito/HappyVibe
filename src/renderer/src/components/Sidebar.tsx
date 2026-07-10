@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { SessionStatus } from "../App";
 
-export type View = "chat" | "settings" | "audit" | "agents";
+export type View = "chat" | "settings" | "audit" | "agents" | "dashboard";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
@@ -131,6 +131,7 @@ export function Sidebar({
   onRenameSession,
   onArchiveSession,
   onCloseSession,
+  onOpenHelp,
 }: {
   workspaces: string[];
   sessions: SessionMeta[];
@@ -147,6 +148,8 @@ export function Sidebar({
   onRenameSession: (id: string, title: string) => void;
   onArchiveSession: (id: string, archived: boolean) => void;
   onCloseSession: (id: string) => void;
+  /** B7: re-open the onboarding wow-flow. */
+  onOpenHelp: () => void;
 }): React.JSX.Element {
   const [filter, setFilter] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -282,8 +285,20 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Agents + Audit + Settings */}
+      {/* Dashboard + Agents + Audit + Settings */}
       <div className="p-4 border-t-2 border-line">
+        <button
+          type="button"
+          onClick={() => onNavigate("dashboard")}
+          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
+            view === "dashboard" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+          }`}
+        >
+          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+          </svg>
+          Dashboard
+        </button>
         <button
           type="button"
           onClick={() => onNavigate("agents")}
@@ -324,6 +339,18 @@ export function Sidebar({
             <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
           </svg>
           Settings
+        </button>
+        <button
+          type="button"
+          onClick={onOpenHelp}
+          title="Show the getting-started guide"
+          className="w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
+        >
+          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3M12 17h.01" />
+          </svg>
+          Help
         </button>
       </div>
     </aside>

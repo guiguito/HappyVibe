@@ -11,6 +11,8 @@ interface ConfigFile {
   /** per-provider safeStorage-encrypted keys, base64 */
   keys?: Partial<Record<ByokProvider, string>>;
   defaultModel?: { provider: string; modelId: string };
+  /** B7: user has seen (or dismissed) the onboarding wow-flow. */
+  onboardingSeen?: boolean;
 }
 
 function load(): ConfigFile {
@@ -83,6 +85,17 @@ export function setDefaultModel(m: { provider: string; modelId: string } | null)
   const cfg = load();
   if (m) cfg.defaultModel = m;
   else delete cfg.defaultModel;
+  save(cfg);
+}
+
+// B7: onboarding wow-flow seen flag.
+export function getOnboardingSeen(): boolean {
+  return load().onboardingSeen ?? false;
+}
+
+export function setOnboardingSeen(seen: boolean): void {
+  const cfg = load();
+  cfg.onboardingSeen = seen;
   save(cfg);
 }
 

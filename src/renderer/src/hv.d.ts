@@ -74,6 +74,31 @@ interface HvAuditEvent {
   data?: Record<string, unknown>;
 }
 
+/** B7 — mirrors Analytics in src/main/analytics.ts (from hv:get-analytics). */
+interface HvBreakdown {
+  key: string;
+  sessions: number;
+  tokens: number;
+  cost: number;
+}
+
+interface HvAnalytics {
+  totalSessions: number;
+  openSessions: number;
+  crashes: number;
+  tokens: { input: number; output: number };
+  cost: number;
+  duration: { avgMs: number | null; medianMs: number | null; count: number };
+  sessionsPerDay: Array<{ date: string; count: number }>;
+  perWorkspace: HvBreakdown[];
+  perModel: HvBreakdown[];
+  permissions: {
+    total: number;
+    byDecision: Record<string, number>;
+    bySource: Record<string, number>;
+  };
+}
+
 interface HvApi {
   getApiKey(): Promise<string | null>;
   setApiKey(key: string): Promise<void>;
@@ -135,6 +160,11 @@ interface HvApi {
   readAgent(filePath: string): Promise<{ body: string; model?: string }>;
   writeAgent(filePath: string, edit: { body?: string; model?: string | null }): Promise<void>;
   duplicateAgent(filePath: string): Promise<string>;
+
+  // B7: local analytics + onboarding
+  getAnalytics(filter?: { workspaceId?: string; sinceTs?: string }): Promise<HvAnalytics>;
+  getOnboardingSeen(): Promise<boolean>;
+  setOnboardingSeen(seen: boolean): Promise<void>;
 }
 
   interface Window {

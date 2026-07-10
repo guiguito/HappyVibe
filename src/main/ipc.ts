@@ -7,8 +7,9 @@ import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getApiKey, getDefaultModel, installBuiltinAgents, providerEnv,
-  providerKeyStatus, removeProviderKey, rulesFile, sessionDir, setApiKey, setDefaultModel, setProviderKey,
+  agentDir, builtinAgentsDir, getApiKey, getDefaultModel, getOnboardingSeen, installBuiltinAgents,
+  providerEnv, providerKeyStatus, removeProviderKey, rulesFile, sessionDir, setApiKey, setDefaultModel,
+  setOnboardingSeen, setProviderKey,
 } from "./config";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
@@ -18,6 +19,7 @@ import {
 import { SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { EventLog } from "./log";
+import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior } from "./pi/commands";
 import { proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
@@ -438,6 +440,15 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle("hv:read-audit", (_e, filter?: { sessionId?: string; workspaceId?: string }) =>
     log.read({ type: "permission.decision", ...filter }));
+
+  // ── B7: local analytics (read + aggregate in main, never leaves the machine) ──
+  ipcMain.handle("hv:get-analytics", async (_e, filter?: AnalyticsFilter) =>
+    aggregate(await log.read(), filter ?? {}));
+
+  // B7 onboarding: "seen the wow-flow" flag lives in config (userData), shown
+  // once, re-openable from the Help affordance.
+  ipcMain.handle("hv:get-onboarding-seen", () => getOnboardingSeen());
+  ipcMain.handle("hv:set-onboarding-seen", (_e, seen: boolean) => setOnboardingSeen(!!seen));
 
   // macOS dock badge = total pending permission prompts (renderer-computed).
   ipcMain.on("hv:set-badge-count", (_e, n: number) => {

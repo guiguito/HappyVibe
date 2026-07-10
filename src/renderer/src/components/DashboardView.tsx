@@ -1,0 +1,223 @@
+import { useEffect, useState } from "react";
+import { fmtCost, fmtDuration, fmtNum } from "../analytics-format";
+
+/** B7 — local-only analytics. Everything here is read from the JSONL event log
+ * in main; nothing is ever sent anywhere. Money is labeled as an estimate. */
+
+function basename(p: string): string {
+  return p.split("/").filter(Boolean).pop() ?? p;
+}
+
+function Card({ label, value, sub }: { label: string; value: string; sub?: string }): React.JSX.Element {
+  return (
+    <div className="rounded-2xl bg-card border-2 border-line shadow-sticker px-4 py-3">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">{label}</div>
+      <div className="font-black text-2xl tracking-tight mt-1">{value}</div>
+      {sub && <div className="text-xs text-ink-soft mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+/** Hand-rolled SVG day bars — no chart dep. Empty days between first/last render as gaps. */
+function DayBars({ data }: { data: HvAnalytics["sessionsPerDay"] }): React.JSX.Element {
+  if (data.length === 0) return <p className="text-sm text-ink-soft">No sessions yet.</p>;
+  const max = Math.max(...data.map((d) => d.count), 1);
+  const w = 22;
+  const gap = 6;
+  const h = 90;
+  return (
+    <div className="overflow-x-auto">
+      <svg width={data.length * (w + gap)} height={h + 22} role="img" aria-label="Sessions per day">
+        {data.map((d, i) => {
+          const bh = Math.max(3, Math.round((d.count / max) * h));
+          const x = i * (w + gap);
+          return (
+            <g key={d.date}>
+              <rect x={x} y={h - bh} width={w} height={bh} rx={3} className="fill-tangerine" />
+              <text x={x + w / 2} y={h - bh - 3} textAnchor="middle" className="fill-ink" fontSize="10" fontWeight="700">
+                {d.count}
+              </text>
+              <text x={x + w / 2} y={h + 14} textAnchor="middle" className="fill-ink-soft" fontSize="8">
+                {d.date.slice(5)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function BreakdownTable({
+  rows,
+  labelKey,
+}: {
+  rows: HvBreakdown[];
+  labelKey?: (k: string) => string;
+}): React.JSX.Element {
+  if (rows.length === 0) return <p className="text-sm text-ink-soft">No data yet.</p>;
+  const max = Math.max(...rows.map((r) => r.tokens), 1);
+  return (
+    <div className="flex flex-col gap-2">
+      {rows.map((r) => (
+        <div key={r.key} className="flex items-center gap-3 text-sm">
+          <span className="w-40 shrink-0 truncate font-bold" title={r.key}>
+            {labelKey ? labelKey(r.key) : r.key}
+          </span>
+          <div className="flex-1 h-4 rounded-full bg-paper-deep overflow-hidden border border-line">
+            <div className="h-full bg-honey" style={{ width: `${(r.tokens / max) * 100}%` }} />
+          </div>
+          <span className="w-28 shrink-0 text-right text-xs text-ink-soft tabular-nums">
+            {r.sessions} · {fmtNum(r.tokens)} tok · {fmtCost(r.cost)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Chips({ counts }: { counts: Record<string, number> }): React.JSX.Element {
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return <span className="text-sm text-ink-soft">None yet.</span>;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {entries.map(([k, v]) => (
+        <span
+          key={k}
+          className="inline-flex items-center gap-1.5 rounded-full border-2 border-line bg-paper-deep px-2.5 py-0.5 text-xs font-bold"
+        >
+          {k}
+          <span className="text-ink-soft tabular-nums">{v}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg p-5 mb-5">
+      <h2 className="font-black text-lg tracking-tight mb-3">{title}</h2>
+      {children}
+    </div>
+  );
+}
+
+export function DashboardView({ workspaces }: { workspaces: string[] }): React.JSX.Element {
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [data, setData] = useState<HvAnalytics | null>(null);
+
+  useEffect(() => {
+    let stale = false;
+    setData(null);
+    const filter = workspaceId ? { workspaceId } : undefined;
+    void window.hv.getAnalytics(filter).then((a) => {
+      if (!stale) setData(a);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [workspaceId]);
+
+  const empty = data && data.totalSessions === 0 && data.permissions.total === 0;
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-3xl mx-auto w-full px-8 py-10">
+        <h1 className="font-black text-3xl tracking-tight mb-2">Dashboard</h1>
+        <p className="text-sm text-ink-soft mb-6">
+          Your usage, computed entirely on this machine — nothing is ever sent anywhere.
+        </p>
+
+        <div className="flex gap-3 mb-5">
+          <select
+            value={workspaceId}
+            onChange={(e) => setWorkspaceId(e.target.value)}
+            className="rounded-lg border-2 border-line bg-card px-2.5 py-1.5 text-sm font-bold focus:outline-none focus:border-tangerine cursor-pointer"
+          >
+            <option value="">All workspaces</option>
+            {workspaces.map((ws) => (
+              <option key={ws} value={ws}>
+                {basename(ws)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {data === null ? (
+          <p className="text-sm text-ink-soft">Loading…</p>
+        ) : empty ? (
+          <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg p-8 text-center">
+            <div className="text-4xl mb-2">📊</div>
+            <p className="font-bold">Nothing to show yet.</p>
+            <p className="text-sm text-ink-soft mt-1">
+              Start a session and chat with the agent — your stats will build up here.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+              <Card
+                label="Sessions"
+                value={String(data.totalSessions)}
+                sub={data.openSessions > 0 ? `${data.openSessions} still open` : undefined}
+              />
+              <Card
+                label="Tokens"
+                value={fmtNum(data.tokens.input + data.tokens.output)}
+                sub={`${fmtNum(data.tokens.input)} in · ${fmtNum(data.tokens.output)} out`}
+              />
+              <Card label="Cost (est.)" value={fmtCost(data.cost)} sub="local estimate" />
+              <Card
+                label="Avg session"
+                value={fmtDuration(data.duration.avgMs)}
+                sub={data.duration.medianMs != null ? `median ${fmtDuration(data.duration.medianMs)}` : undefined}
+              />
+            </div>
+
+            <Section title="Sessions over time">
+              <DayBars data={data.sessionsPerDay} />
+            </Section>
+
+            <Section title="By workspace">
+              <BreakdownTable rows={data.perWorkspace} labelKey={basename} />
+            </Section>
+
+            {data.perModel.length > 0 && (
+              <Section title="By model">
+                <BreakdownTable rows={data.perModel} />
+              </Section>
+            )}
+
+            <Section title="Permission activity">
+              {data.permissions.total === 0 ? (
+                <p className="text-sm text-ink-soft">No permission decisions logged yet.</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-1.5">
+                      by decision
+                    </div>
+                    <Chips counts={data.permissions.byDecision} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-1.5">
+                      by source
+                    </div>
+                    <Chips counts={data.permissions.bySource} />
+                  </div>
+                </div>
+              )}
+            </Section>
+
+            {data.crashes > 0 && (
+              <p className="text-sm text-berry font-semibold">
+                {data.crashes} session{data.crashes === 1 ? "" : "s"} crashed.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

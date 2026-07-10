@@ -5,6 +5,8 @@ import { SettingsView } from "./components/SettingsView";
 import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
 import { AuditView } from "./components/AuditView";
+import { DashboardView } from "./components/DashboardView";
+import { OnboardingOverlay } from "./components/OnboardingOverlay";
 import {
   dropSession,
   headFor,
@@ -55,6 +57,10 @@ export default function App(): React.JSX.Element {
   // time — distinct from the collapsible nested subagent card.
   const [delegations, setDelegations] = useState<Record<string, { agent: string; startedAt: number } | null>>({});
   const [error, setError] = useState<string | null>(null);
+  // B7: onboarding wow-flow overlay. Shown once for a brand-new user's first
+  // session (no prior sessions), re-openable from the Help affordance.
+  const [onboarding, setOnboarding] = useState(false);
+  const seenOnboarding = useRef(true); // assume seen until config says otherwise
   const streaming = useRef<Record<string, boolean>>({});
   // Set when the user grants a permission; the next matching
   // tool_execution_start in that session adopts it so the outcome shows on the card.
@@ -126,6 +132,8 @@ export default function App(): React.JSX.Element {
     window.hv.hasAnyProvider().then((ok) => setKeyState(ok ? "present" : "missing"));
     window.hv.listWorkspaces().then(setWorkspaces);
     window.hv.listSessions().then(setSessions);
+    // B7: has the user seen the wow-flow? (drives auto-show on first session)
+    void window.hv.getOnboardingSeen().then((seen) => { seenOnboarding.current = seen; });
 
     // B5: default model's context window feeds the estimated-gauge fallback.
     void (async () => {
@@ -319,6 +327,9 @@ export default function App(): React.JSX.Element {
   };
 
   const newSession = async (workspaceId: string): Promise<void> => {
+    // B7: this user's very first session (nothing in the index yet) + they've
+    // never seen the wow-flow → surface it, layered over the real chat.
+    const firstEver = sessions.length === 0 && !seenOnboarding.current;
     try {
       const meta = await window.hv.createSession(workspaceId);
       setStatuses((p) => ({ ...p, [meta.id]: "running" }));
@@ -326,9 +337,16 @@ export default function App(): React.JSX.Element {
       setSelectedId(meta.id);
       setView("chat");
       setError(null);
+      if (firstEver) setOnboarding(true);
     } catch (err) {
       surface(err);
     }
+  };
+
+  const dismissOnboarding = (): void => {
+    setOnboarding(false);
+    seenOnboarding.current = true;
+    void window.hv.setOnboardingSeen(true);
   };
 
   const selectSession = async (id: string): Promise<void> => {
@@ -447,6 +465,7 @@ export default function App(): React.JSX.Element {
         onRenameSession={(id, title) => window.hv.renameSession(id, title)}
         onArchiveSession={(id, archived) => window.hv.archiveSession(id, archived)}
         onCloseSession={(id) => window.hv.closeSession(id)}
+        onOpenHelp={() => setOnboarding(true)}
       />
       <main className="flex-1 min-w-0 flex flex-col">
         {error && (
@@ -486,6 +505,8 @@ export default function App(): React.JSX.Element {
           />
         ) : activeView === "audit" ? (
           <AuditView sessions={sessions} workspaces={workspaces} />
+        ) : activeView === "dashboard" ? (
+          <DashboardView workspaces={workspaces} />
         ) : activeView === "agents" ? (
           <AgentsView
             agents={agents}
@@ -525,6 +546,7 @@ export default function App(): React.JSX.Element {
         )}
       </main>
       {uiReq && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
+      {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
     </div>
   );
 }
