@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
 import {
   acceptableMarks, filterMessages, serializeEntries,
@@ -32,7 +34,7 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
 // param to the model and makes validation require it; the value then rides
 // tool_call.input and tool_execution_*.args untouched. New bundled tools:
 // add their name to INTENT_TOOLS.
-const INTENT_TOOLS = ["subagent"];
+const INTENT_TOOLS = ["subagent", "ask_user"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
 function requireIntent(pi: ExtensionAPI): void {
   for (const name of INTENT_TOOLS) {
     const params = pi.getAllTools().find((t) => t.name === name)?.parameters as
@@ -461,6 +463,63 @@ export default function (pi: ExtensionAPI) {
     description: "HappyVibe: emit the agent inventory (hv.agents notify)",
     handler: async (_args, ctx) => {
       ctx.ui.notify(JSON.stringify({ kind: "hv.agents", agents: enumerateAgents() }), "info");
+    },
+  });
+
+  // ── V2.B AskUserQuestion tool (docs/validation/d1.md §hv.ask-user) ────────
+  // The model surfaces a decision to the user in a blocking picker. Rides
+  // ctx.ui.input with the JSON payload in `title` (hv.auth prompt precedent);
+  // the renderer answers {value: JSON answers} or {cancelled: true} — NO
+  // timeout, NO auto-answer (permission invariant). Input is clamped, never
+  // rejected: adjustments ride back on the tool result as notes.
+  pi.registerTool({
+    name: "ask_user",
+    label: "Ask the user",
+    description:
+      "Ask the user to decide something you genuinely cannot decide or verify yourself " +
+      "(preferences, trade-offs, ambiguous requirements). Blocks until the user answers. " +
+      "Rules: at most 4 questions per call; options must be mutually exclusive and exhaustive " +
+      "for the decision; put your recommended option FIRST with its label suffixed ' (Recommended)'; " +
+      "never ask about things you can check yourself (files, code, docs); keep labels 1-5 words " +
+      "with the trade-offs in the description. The UI adds a free-text 'Other' option automatically — " +
+      "do not add one. If the user dismisses the question, proceed with your best judgment.",
+    parameters: Type.Object({
+      intent: Type.String({
+        description:
+          "REQUIRED on every call. One short customer-facing sentence: what you are deciding and why (shown to the user as the headline).",
+      }),
+      questions: Type.Array(
+        Type.Object({
+          question: Type.String({ description: "The full question text shown to the user." }),
+          header: Type.String({ maxLength: HEADER_MAX, description: `Chip label for this question, at most ${HEADER_MAX} characters.` }),
+          multiSelect: Type.Boolean({ description: "true = the user may pick several options (checkboxes)." }),
+          options: Type.Array(
+            Type.Object({
+              label: Type.String({ description: "1-5 words. Suffix the recommended option with ' (Recommended)' and list it first." }),
+              description: Type.String({ description: "The trade-offs of this choice, one or two sentences." }),
+              preview: Type.Optional(Type.String({ description: "Optional monospace markdown block shown beside the options. Single-select questions only." })),
+            }),
+            { minItems: 2, maxItems: MAX_OPTIONS },
+          ),
+        }),
+        { minItems: 1, maxItems: MAX_QUESTIONS },
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const { intent, questions: rawQuestions } = params as { intent?: string; questions?: unknown };
+      const { questions, notes } = normalizeQuestions(rawQuestions);
+      if (questions.length === 0) {
+        return { content: [{ type: "text", text: `ask_user received no valid questions — nothing was shown to the user (${notes.join("; ")}).` }], details: {} };
+      }
+      // Blocking, indefinitely: same invariant as permission prompts.
+      const value = await ctx.ui.input(JSON.stringify({ kind: "hv.ask-user", intent: intent ?? "", questions }), "");
+      if (value === undefined) {
+        return { content: [{ type: "text", text: DISMISSED_RESULT }], details: {} };
+      }
+      const answers = parseAnswers(value);
+      let text = answers ? answersMarkdown(answers) : `The user answered: ${value}`;
+      if (notes.length) text += `\n\n(Your input was adjusted: ${notes.join("; ")}.)`;
+      return { content: [{ type: "text", text }], details: { answers } };
     },
   });
 

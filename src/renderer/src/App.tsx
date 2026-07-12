@@ -15,6 +15,8 @@ import {
   type PermissionChoice,
   type QueuedPrompt,
 } from "./permission";
+import { answersSummary, parseAskUser, type AskAnswer } from "./askUser";
+import { AskUserModal } from "./components/AskUserModal";
 import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
@@ -167,7 +169,11 @@ export default function App(): React.JSX.Element {
     // (setStatus etc.) are fire-and-forget — routing them here was a CRITICAL bug.
     const offUiRequest = window.hv.onUiRequest((r) => {
       const info = parsePermission(r);
-      if (info) setUiQueue((q) => [...q, { req: r, info }]);
+      if (info) setUiQueue((q) => [...q, { kind: "permission", req: r, info }]);
+      // V2.B: ask_user questions queue through the same machinery (badges,
+      // headFor routing). Kind-based parse — hv.auth inputs stay untouched.
+      const ask = parseAskUser(r);
+      if (ask) setUiQueue((q) => [...q, { kind: "askUser", req: r, ask }]);
       const dng = parseDangerous(r);
       if (dng !== null && r.sessionId) setDangerous((p) => ({ ...p, [r.sessionId!]: dng }));
       // B6: agent/tool inventories are fire-and-forget (never open the modal).
@@ -503,7 +509,7 @@ export default function App(): React.JSX.Element {
   // Selecting a session surfaces ITS oldest pending prompt (B4 routing).
   const uiReq = headFor(uiQueue, selectedId);
   const respondPermission = (choice: PermissionChoice): void => {
-    if (!uiReq) return;
+    if (uiReq?.kind !== "permission") return;
     const sid = uiReq.req.sessionId;
     window.hv.respondPermission(uiReq.req.id, choice);
     if (sid) {
@@ -523,6 +529,17 @@ export default function App(): React.JSX.Element {
       }
     }
     // Pop the answered prompt (not necessarily the global head — B4 queues are per-session).
+    setUiQueue((q) => q.filter((e) => e.req.id !== uiReq.req.id));
+  };
+
+  // V2.B: answer/dismiss an ask_user question. Submit echoes the choices into
+  // the transcript as a user-style item so the conversation reads coherently;
+  // Dismiss maps to {cancelled:true} → the bridge tells the model to proceed.
+  const respondAskUser = (answers: AskAnswer[] | null): void => {
+    if (uiReq?.kind !== "askUser") return;
+    window.hv.respondInput(uiReq.req.id, answers ? JSON.stringify(answers) : null);
+    const sid = uiReq.req.sessionId;
+    if (sid && answers) appendItem(sid, { kind: "user", text: answersSummary(answers) });
     setUiQueue((q) => q.filter((e) => e.req.id !== uiReq.req.id));
   };
 
@@ -677,7 +694,10 @@ export default function App(): React.JSX.Element {
           {treeOpen && wsId && <FileTree key={wsId} workspace={wsId} onOpenFile={(rel) => openFileTab(wsId, rel)} />}
         </div>
       </main>
-      {uiReq && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
+      {uiReq?.kind === "permission" && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
+      {uiReq?.kind === "askUser" && (
+        <AskUserModal key={uiReq.req.id} ask={uiReq.ask} onSubmit={respondAskUser} onDismiss={() => respondAskUser(null)} />
+      )}
       {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
     </div>

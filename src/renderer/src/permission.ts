@@ -1,3 +1,5 @@
+import type { AskUserInfo } from "./askUser";
+
 export interface UiRequest {
   id: string;
   method?: string;
@@ -33,10 +35,14 @@ export function parsePermission(r: UiRequest): PermissionInfo | null {
 
 // ── B4: cross-session pending queues + dangerous mode ──────────────────────
 
-export interface QueuedPrompt {
-  req: UiRequest & { sessionId?: string };
-  info: PermissionInfo;
-}
+/**
+ * V2.B: the queue carries permission prompts AND ask_user questions —
+ * headFor/pendingCounts/dropSession only read req.sessionId, so badges and
+ * routing work identically for both kinds.
+ */
+export type QueuedPrompt =
+  | { kind: "permission"; req: UiRequest & { sessionId?: string }; info: PermissionInfo }
+  | { kind: "askUser"; req: UiRequest & { sessionId?: string }; ask: AskUserInfo };
 
 /**
  * The prompt the modal should show for the focused session: its oldest

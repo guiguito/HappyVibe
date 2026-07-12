@@ -9,6 +9,7 @@ import {
 } from "../src/renderer/src/permission";
 
 const prompt = (id: string, sessionId?: string): QueuedPrompt => ({
+  kind: "permission",
   req: { id, sessionId, method: "select", title: "{}" },
   info: { tool: "bash", summary: `cmd-${id}` },
 });
