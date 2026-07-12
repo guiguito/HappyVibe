@@ -23,6 +23,7 @@ import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior } from "./pi/commands";
 import { proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
+import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 
 /** Transcript rebuilt from Pi's get_messages on resume (renderer shape). */
 interface SimpleMessage {
@@ -42,17 +43,6 @@ function messageText(content: unknown): string {
     .map((b) => ((b as { type?: string; text?: string }).type === "text" ? (b as { text?: string }).text ?? "" : ""))
     .filter(Boolean)
     .join("\n");
-}
-
-/** Everything a Pi spawn needs from provider config (B3) + rules delivery (B4). */
-function spawnOpts(resumeFile?: string) {
-  return {
-    model: getDefaultModel(),
-    agentDir: agentDir(),
-    providerEnv: providerEnv(),
-    resumeFile,
-    rulesFile: rulesFile(),
-  };
 }
 
 /** hv.audit payload when this ui-request is the bridge's audit notify, else null. */
@@ -85,10 +75,21 @@ export function registerIpc(win: BrowserWindow): void {
     console.warn("[hv] built-in agent install failed:", e);
   }
 
+  /** Everything a Pi spawn needs from provider config (B3) + rules delivery (B4).
+   *  Model resolution (W1.4): workspace override → global default. The session
+   *  tier (PRD: session → workspace → global) lands in Wave 2 — resolve it here. */
+  const spawnOpts = (workspace?: string, resumeFile?: string) => ({
+    model: (workspace ? workspaces.getModel(workspace) : null) ?? getDefaultModel(),
+    agentDir: agentDir(),
+    providerEnv: providerEnv(),
+    resumeFile,
+    rulesFile: rulesFile(),
+  });
+
   const manager = new SessionManager({
     pidFile,
     spawn: (workspace, resumeFile) =>
-      new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(resumeFile))),
+      new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile))),
   });
 
   // Which client owns a pending extension_ui_request id (permission modal, auth flows).
@@ -526,4 +527,31 @@ export function registerIpc(win: BrowserWindow): void {
     // edits apply to the next delegation — no live broadcast needed.
   });
   ipcMain.handle("hv:duplicate-agent", (_e, filePath: string) => duplicateAgent(agentDirs(), filePath));
+
+  // ── W1.4: system prompt + workspace settings ───────────────────────────
+  // /hv-sysprompt rides the fire-and-forget command channel (B5 pattern); the
+  // hv.sysprompt notify streams back through hv:ui-request. Prefer the focused
+  // session's Pi (it has a captured prompt after a turn), else the utility
+  // client (never runs a turn → text null → renderer shows the friendly note).
+  ipcMain.handle("hv:sysprompt-snapshot", async (_e, sessionId?: string) => {
+    void (await anyClient(sessionId)).send({ type: "prompt", message: "/hv-sysprompt" }).catch(() => {});
+  });
+
+  // APPEND_SYSTEM.md additions layer — read at session load, so edits apply to
+  // new/restarted sessions. Workspace file REPLACES the global one (appendSystem.ts).
+  ipcMain.handle("hv:get-global-append", () => readAppend(globalAppendFile(agentDir())));
+  ipcMain.handle("hv:set-global-append", (_e, content: string) =>
+    writeAppend(globalAppendFile(agentDir()), String(content)));
+  ipcMain.handle("hv:get-workspace-append", (_e, workspaceId: string) =>
+    readAppend(resolveWorkspaceAppend(workspaces.list(), workspaceId)));
+  ipcMain.handle("hv:set-workspace-append", (_e, workspaceId: string, content: string) =>
+    writeAppend(resolveWorkspaceAppend(workspaces.list(), workspaceId), String(content)));
+
+  // Per-workspace model override (spawn resolution: workspace → global default).
+  // Applies to sessions spawned/restarted after the change.
+  ipcMain.handle("hv:get-workspace-model", (_e, workspaceId: string) => workspaces.getModel(workspaceId));
+  ipcMain.handle("hv:set-workspace-model", (_e, workspaceId: string, m: { provider: string; modelId: string } | null) =>
+    workspaces.setModel(workspaceId, m && typeof m.provider === "string" && typeof m.modelId === "string"
+      ? { provider: m.provider, modelId: m.modelId }
+      : null));
 }

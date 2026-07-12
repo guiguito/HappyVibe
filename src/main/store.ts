@@ -85,27 +85,55 @@ export class SessionIndex {
   }
 }
 
+/** Per-workspace settings (W1.4). Model hierarchy: session → workspace → global;
+ *  the session tier lands in Wave 2 — `model` here is the workspace tier. */
+export interface WorkspaceEntry {
+  path: string;
+  model?: { provider: string; modelId: string };
+}
+
 export class WorkspaceRegistry {
-  private paths: string[];
+  private entries: WorkspaceEntry[];
 
   constructor(private readonly file: string) {
-    this.paths = readJson<string[]>(file, []);
-    if (!Array.isArray(this.paths)) this.paths = [];
+    const raw = readJson<unknown>(file, []);
+    // Migration: pre-W1.4 format was a plain string[] of paths.
+    this.entries = Array.isArray(raw)
+      ? raw
+          .map((e) => (typeof e === "string" ? { path: e } : (e as WorkspaceEntry)))
+          .filter((e): e is WorkspaceEntry => !!e && typeof e.path === "string")
+      : [];
+  }
+
+  private save(): void {
+    writeJson(this.file, this.entries);
   }
 
   list(): string[] {
-    return [...this.paths];
+    return this.entries.map((e) => e.path);
   }
 
   add(p: string): void {
-    if (!this.paths.includes(p)) {
-      this.paths.push(p);
-      writeJson(this.file, this.paths);
+    if (!this.entries.some((e) => e.path === p)) {
+      this.entries.push({ path: p });
+      this.save();
     }
   }
 
   remove(p: string): void {
-    this.paths = this.paths.filter((x) => x !== p);
-    writeJson(this.file, this.paths);
+    this.entries = this.entries.filter((e) => e.path !== p);
+    this.save();
+  }
+
+  getModel(p: string): { provider: string; modelId: string } | null {
+    return this.entries.find((e) => e.path === p)?.model ?? null;
+  }
+
+  setModel(p: string, model: { provider: string; modelId: string } | null): void {
+    const entry = this.entries.find((e) => e.path === p);
+    if (!entry) return; // unknown workspace — nothing to set
+    if (model) entry.model = model;
+    else delete entry.model;
+    this.save();
   }
 }
