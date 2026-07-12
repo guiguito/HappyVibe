@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 
 /**
- * B4 rules editor — Global tab + one tab per workspace (overrides layer on
- * top; most-restrictive wins). Saving rewrites permission-rules.json in main,
- * which broadcasts /hv-rules-reload to every live session.
+ * B4 rules editor, parameterized by scope (W1.4): no `workspace` prop → the
+ * GLOBAL layer (Settings → Permissions); a workspace path → that workspace's
+ * override layer (workspace settings). Most-restrictive wins across layers.
+ * Saving rewrites permission-rules.json in main, which broadcasts
+ * /hv-rules-reload to every live session. Renders bare content — callers wrap
+ * it in their own card/section chrome.
  */
 
 const EMPTY: HvRulesFile = { global: [], workspaces: {} };
@@ -14,10 +17,6 @@ const smallBtn =
   "rounded-lg border-2 px-3 py-1.5 text-xs font-bold shadow-sticker cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
 const field =
   "rounded-lg border-2 border-line bg-card px-2 py-1.5 text-xs font-bold focus:outline-none focus:border-tangerine";
-
-function basename(p: string): string {
-  return p.split("/").filter(Boolean).pop() ?? p;
-}
 
 const VERDICT_TONE: Record<string, string> = {
   deny: "text-berry",
@@ -73,22 +72,21 @@ function TestBox({ workspace }: { workspace: string }): React.JSX.Element {
   );
 }
 
-export function PermissionRulesSection(): React.JSX.Element {
-  const [workspaces, setWorkspaces] = useState<string[]>([]);
+export function PermissionRulesSection({ workspace }: { workspace?: string }): React.JSX.Element {
   const [rules, setRules] = useState<HvRulesFile>(EMPTY);
-  const [tab, setTab] = useState(""); // "" = global, else workspace path
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     void window.hv.getRules().then(setRules);
-    void window.hv.listWorkspaces().then(setWorkspaces);
   }, []);
 
-  const current: HvRule[] = tab ? (rules.workspaces[tab] ?? []) : rules.global;
+  const current: HvRule[] = workspace ? (rules.workspaces[workspace] ?? []) : rules.global;
 
   const setCurrent = (next: HvRule[]): void => {
-    setRules((r) => (tab ? { ...r, workspaces: { ...r.workspaces, [tab]: next } } : { ...r, global: next }));
+    setRules((r) =>
+      workspace ? { ...r, workspaces: { ...r.workspaces, [workspace]: next } } : { ...r, global: next }
+    );
     setDirty(true);
     setSaved(false);
   };
@@ -101,35 +99,16 @@ export function PermissionRulesSection(): React.JSX.Element {
     setSaved(true);
   };
 
-  const tabBtn = (id: string, label: string): React.JSX.Element => (
-    <button
-      key={id || "global"}
-      type="button"
-      onClick={() => setTab(id)}
-      className={`rounded-lg px-2.5 py-1 text-xs font-bold cursor-pointer border-2 ${
-        tab === id ? "bg-honey-soft border-honey/60" : "border-transparent text-ink-soft hover:bg-paper-deep"
-      }`}
-    >
-      {label}
-    </button>
-  );
-
   return (
-    <section className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg p-6 mb-6">
-      <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-1">permissions</div>
-      <h2 className="font-bold text-lg mb-1">Rules</h2>
+    <div>
       <p className="text-sm text-ink-soft mb-4">
-        Tool, path and command rules. Global first, workspace overrides on top — the most restrictive match wins
-        (deny &gt; ask &gt; allow). No match falls back to asking you.
+        {workspace
+          ? "Overrides layered on top of the global rules for this workspace — the most restrictive match wins (deny > ask > allow)."
+          : "Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). No match falls back to asking you."}
       </p>
 
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {tabBtn("", "Global")}
-        {workspaces.map((ws) => tabBtn(ws, basename(ws)))}
-      </div>
-
       <div className="flex flex-col gap-2">
-        {current.length === 0 && <p className="text-xs text-ink-soft">No {tab ? "workspace" : "global"} rules yet.</p>}
+        {current.length === 0 && <p className="text-xs text-ink-soft">No {workspace ? "workspace" : "global"} rules yet.</p>}
         {current.map((r, i) => (
           <div key={i} className="flex gap-2 items-center">
             <select value={r.layer} onChange={(e) => patch(i, { layer: e.target.value as HvRule["layer"] })} className={`${field} cursor-pointer`}>
@@ -184,7 +163,7 @@ export function PermissionRulesSection(): React.JSX.Element {
         </button>
       </div>
 
-      <TestBox workspace={tab} />
-    </section>
+      <TestBox workspace={workspace ?? ""} />
+    </div>
   );
 }

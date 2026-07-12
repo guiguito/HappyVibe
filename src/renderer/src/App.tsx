@@ -4,8 +4,7 @@ import { ChatView } from "./components/ChatView";
 import { SettingsView } from "./components/SettingsView";
 import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
-import { AuditView } from "./components/AuditView";
-import { DashboardView } from "./components/DashboardView";
+import { WorkspaceSettingsModal } from "./components/WorkspaceSettingsModal";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
 import {
   dropSession,
@@ -61,6 +60,8 @@ export default function App(): React.JSX.Element {
   // B7: onboarding wow-flow overlay. Shown once for a brand-new user's first
   // session (no prior sessions), re-openable from the Help affordance.
   const [onboarding, setOnboarding] = useState(false);
+  // W1.4: workspace whose settings modal is open (gear on a sidebar workspace row).
+  const [wsSettings, setWsSettings] = useState<string | null>(null);
   const seenOnboarding = useRef(true); // assume seen until config says otherwise
   const streaming = useRef<Record<string, boolean>>({});
   // Set when the user grants a permission; the next matching
@@ -482,6 +483,7 @@ export default function App(): React.JSX.Element {
           await window.hv.removeWorkspace(ws);
           setWorkspaces(await window.hv.listWorkspaces());
         }}
+        onWorkspaceSettings={setWsSettings}
         onNewSession={newSession}
         onSelectSession={selectSession}
         onRenameSession={(id, title) => window.hv.renameSession(id, title)}
@@ -524,11 +526,10 @@ export default function App(): React.JSX.Element {
               setKeyState("present");
               setView("chat");
             }}
+            sessionId={selectedId}
+            sessions={sessions}
+            workspaces={workspaces}
           />
-        ) : activeView === "audit" ? (
-          <AuditView sessions={sessions} workspaces={workspaces} />
-        ) : activeView === "dashboard" ? (
-          <DashboardView workspaces={workspaces} />
         ) : activeView === "agents" ? (
           <AgentsView
             agents={agents}
@@ -568,6 +569,7 @@ export default function App(): React.JSX.Element {
         )}
       </main>
       {uiReq && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
+      {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
     </div>
   );

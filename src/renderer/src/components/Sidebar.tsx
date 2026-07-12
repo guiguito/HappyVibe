@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { SessionStatus } from "../App";
 
-export type View = "chat" | "settings" | "audit" | "agents" | "dashboard";
+// W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
+export type View = "chat" | "settings" | "agents";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
@@ -126,6 +127,7 @@ export function Sidebar({
   onNavigate,
   onAddWorkspace,
   onRemoveWorkspace,
+  onWorkspaceSettings,
   onNewSession,
   onSelectSession,
   onRenameSession,
@@ -143,6 +145,8 @@ export function Sidebar({
   onNavigate: (v: View) => void;
   onAddWorkspace: () => void;
   onRemoveWorkspace: (ws: string) => void;
+  /** W1.4: open the workspace-settings surface (model override, rules, prompt additions). */
+  onWorkspaceSettings: (ws: string) => void;
   onNewSession: (ws: string) => void;
   onSelectSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
@@ -242,6 +246,17 @@ export function Sidebar({
                 </button>
                 <button
                   type="button"
+                  title="Workspace settings"
+                  onClick={() => onWorkspaceSettings(ws)}
+                  className="hidden group-hover:block text-ink-soft hover:text-tangerine cursor-pointer shrink-0"
+                >
+                  <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   title="Forget workspace"
                   onClick={() => onRemoveWorkspace(ws)}
                   className="hidden group-hover:block text-ink-soft hover:text-berry cursor-pointer font-bold text-xs shrink-0"
@@ -285,20 +300,8 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Dashboard + Agents + Audit + Settings */}
+      {/* Agents + Settings (audit + dashboard live inside Settings, W1.4) */}
       <div className="p-4 border-t-2 border-line">
-        <button
-          type="button"
-          onClick={() => onNavigate("dashboard")}
-          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
-            view === "dashboard" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
-          }`}
-        >
-          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
-          </svg>
-          Dashboard
-        </button>
         <button
           type="button"
           onClick={() => onNavigate("agents")}
@@ -311,19 +314,6 @@ export function Sidebar({
             <path d="M5 20a7 7 0 0 1 14 0" />
           </svg>
           Agents &amp; tools
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("audit")}
-          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
-            view === "audit" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
-          }`}
-        >
-          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 12h6M9 16h6M9 8h2" />
-            <path d="M5 4a1 1 0 0 1 1-1h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z" />
-          </svg>
-          Audit log
         </button>
         <button
           type="button"
