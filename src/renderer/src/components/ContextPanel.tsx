@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  computeGauge, groupItems, totalEstTokens,
-  type ContextItem, type ContextSnapshot, type Gauge, type SessionStats,
+  computeGauge, groupItems, summarizeGroups, totalEstTokens,
+  type CategorySummary, type ContextItem, type ContextSnapshot, type Gauge, type SessionStats,
 } from "../context";
 
 const estTok = (n: number): string => `≈${n.toLocaleString()} tok`;
 
 /**
- * Context breakdown panel (opened from the gauge). Shows the honest split:
+ * Context breakdown panel (opened from the gauge). W2.4: opens on a category
+ * SUMMARY (name + count + size + share per category); clicking a category
+ * drills into its item list, with a back affordance. The honest split:
  * System prompt / Context files / Conversation / Tool calls / Compaction
  * summaries. Char-based sizes are LABELED estimated. Removable items (completed
  * turns only) get checkboxes → "Remove from context"; removed items show
@@ -35,6 +37,9 @@ export function ContextPanel({
 }): React.JSX.Element {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmCompact, setConfirmCompact] = useState(false);
+  // Summary-first: null = category summary; a key = drilled into that
+  // category. Component state, so reopening the panel starts at the summary.
+  const [drill, setDrill] = useState<CategorySummary["key"] | null>(null);
 
   // Refresh the snapshot on open, session change, or a turn/compaction bump
   // (fire-and-forget; result streams back through the hv.context notify the
@@ -47,6 +52,10 @@ export function ContextPanel({
   const gauge: Gauge | null = computeGauge(stats, fallbackWindow);
   const groups = groupItems(snapshot?.items ?? []);
   const total = snapshot ? totalEstTokens(snapshot) : 0;
+  const summary = summarizeGroups(snapshot?.items ?? [], snapshot?.system ?? null, snapshot?.marks ?? []);
+  // Drilled category, if it still exists after a refresh (else fall back to summary).
+  const drilled = drill != null ? summary.find((r) => r.key === drill) : undefined;
+  const drilledGroup = drilled ? groups.find((g) => g.key === drilled.key) : undefined;
 
   const toggle = (key: string): void =>
     setSelected((p) => {
@@ -130,73 +139,101 @@ export function ContextPanel({
           </div>
         )}
 
-        {/* System prompt + context files */}
+        {/* Body: category summary first; click a category to drill in */}
         <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-4">
-          {snapshot?.system && (
-            <section>
-              <GroupHeader label="System prompt" est={snapshot.system.estTokens} />
-              <div className="text-[11px] text-ink-soft mt-1">
-                {snapshot.system.toolCount} tools · {snapshot.system.chars.toLocaleString()} chars
-              </div>
-              {(snapshot.system.contextFiles.length > 0 || (snapshot.system.nested ?? []).length > 0) && (
-                <div className="mt-2">
-                  <GroupHeader
-                    label="Context files"
-                    est={
-                      snapshot.system.contextFiles.reduce((n, f) => n + f.estTokens, 0) +
-                      (snapshot.system.nested ?? []).reduce((n, f) => n + Math.ceil(f.chars / 4), 0)
-                    }
-                  />
-                  <ul className="mt-1 flex flex-col gap-1">
-                    {snapshot.system.contextFiles.map((f) => (
-                      <li key={f.path} className="flex items-center gap-2 text-xs">
-                        <span className="font-mono truncate flex-1 min-w-0" title={f.path}>
-                          {f.path.split("/").pop()}
-                        </span>
-                        <span className="text-ink-soft shrink-0">{estTok(f.estTokens)}</span>
-                      </li>
-                    ))}
-                    {/* W2.3: nested AGENTS.md, bridge-injected for touched subtrees. */}
-                    {(snapshot.system.nested ?? []).map((f) => (
-                      <li key={f.path} className="flex items-center gap-2 text-xs">
-                        <span className="font-mono shrink-0">AGENTS.md</span>
-                        <span className="text-[9px] font-bold uppercase tracking-wide rounded border border-line px-1 py-0.5 text-ink-soft shrink-0">
-                          nested
-                        </span>
-                        <span className="font-mono text-[10px] text-ink-soft truncate flex-1 min-w-0" title={f.path}>
-                          {f.dir}/
-                        </span>
-                        <span className="text-ink-soft shrink-0">{estTok(Math.ceil(f.chars / 4))}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
-          )}
-
           {!snapshot && <div className="text-sm text-ink-soft">Loading breakdown…</div>}
 
-          {groups.map((g) => (
-            <section key={g.key}>
-              <GroupHeader label={g.label} est={g.estTokens} />
-              <ul className="mt-1.5 flex flex-col gap-1.5">
-                {g.items.map((it) => (
-                  <ContextRow
-                    key={it.entryId}
-                    item={it}
-                    removed={it.markKey != null && marks.has(it.markKey)}
-                    checked={it.markKey != null && selected.has(it.markKey)}
-                    onToggle={() => it.markKey && toggle(it.markKey)}
-                    onRestore={() => it.markKey && restore(it.markKey)}
-                  />
+          {snapshot && !drilled && (
+            summary.length === 0 ? (
+              <div className="text-sm text-ink-soft">Nothing in context yet.</div>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {summary.map((row) => (
+                  <li key={row.key}>
+                    <button
+                      type="button"
+                      onClick={() => setDrill(row.key)}
+                      className="w-full text-left rounded-xl border-2 border-line px-3 py-2 hover:border-line-strong hover:bg-paper-deep/30 cursor-pointer"
+                    >
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-bold text-sm flex-1 min-w-0 truncate">{row.label}</span>
+                        <span className="font-mono text-[10px] text-ink-soft shrink-0">
+                          {row.count} {row.count === 1 ? "item" : "items"}
+                        </span>
+                        <span className="font-mono text-[10px] text-ink-soft shrink-0">{estTok(row.estTokens)}</span>
+                        <span className="font-mono text-[10px] font-bold shrink-0 w-9 text-right">{row.share}%</span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 rounded-full bg-paper-deep overflow-hidden">
+                        <div className="h-full rounded-full bg-tangerine" style={{ width: `${row.share}%` }} />
+                      </div>
+                      {row.removedCount > 0 && (
+                        <div className="mt-1 text-[10px] text-ink-soft">{row.removedCount} removed</div>
+                      )}
+                    </button>
+                  </li>
                 ))}
               </ul>
-            </section>
-          ))}
+            )
+          )}
 
-          {snapshot && groups.length === 0 && !snapshot.system && (
-            <div className="text-sm text-ink-soft">Nothing in context yet.</div>
+          {snapshot && drilled && (
+            <section>
+              <button
+                type="button"
+                onClick={() => setDrill(null)}
+                className="mb-2 text-xs font-bold text-ink-soft hover:text-ink cursor-pointer"
+              >
+                ← All categories
+              </button>
+              <GroupHeader label={drilled.label} est={drilled.estTokens} />
+
+              {drilled.key === "system" && snapshot.system && (
+                <div className="text-[11px] text-ink-soft mt-1">
+                  {snapshot.system.toolCount} tools · {snapshot.system.chars.toLocaleString()} chars
+                </div>
+              )}
+
+              {drilled.key === "files" && snapshot.system && (
+                <ul className="mt-1 flex flex-col gap-1">
+                  {snapshot.system.contextFiles.map((f) => (
+                    <li key={f.path} className="flex items-center gap-2 text-xs">
+                      <span className="font-mono truncate flex-1 min-w-0" title={f.path}>
+                        {f.path.split("/").pop()}
+                      </span>
+                      <span className="text-ink-soft shrink-0">{estTok(f.estTokens)}</span>
+                    </li>
+                  ))}
+                  {/* W2.3: nested AGENTS.md, bridge-injected for touched subtrees. */}
+                  {(snapshot.system.nested ?? []).map((f) => (
+                    <li key={f.path} className="flex items-center gap-2 text-xs">
+                      <span className="font-mono shrink-0">AGENTS.md</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wide rounded border border-line px-1 py-0.5 text-ink-soft shrink-0">
+                        nested
+                      </span>
+                      <span className="font-mono text-[10px] text-ink-soft truncate flex-1 min-w-0" title={f.path}>
+                        {f.dir}/
+                      </span>
+                      <span className="text-ink-soft shrink-0">{estTok(Math.ceil(f.chars / 4))}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {drilledGroup && (
+                <ul className="mt-1.5 flex flex-col gap-1.5">
+                  {drilledGroup.items.map((it) => (
+                    <ContextRow
+                      key={it.entryId}
+                      item={it}
+                      removed={it.markKey != null && marks.has(it.markKey)}
+                      checked={it.markKey != null && selected.has(it.markKey)}
+                      onToggle={() => it.markKey && toggle(it.markKey)}
+                      onRestore={() => it.markKey && restore(it.markKey)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
           )}
         </div>
 

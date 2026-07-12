@@ -177,6 +177,65 @@ export function groupItems(items: ContextItem[]): ContextGroupView[] {
   return out;
 }
 
+// ── W2.4: summary-first panel ────────────────────────────────────────────────
+
+export interface CategorySummary {
+  key: "system" | "files" | ContextItem["group"];
+  label: string;
+  count: number;
+  chars: number;
+  estTokens: number;
+  /** items in this category currently marked removed. */
+  removedCount: number;
+  /** integer % share of the total shown estTokens (0 when total is 0). */
+  share: number;
+}
+
+/**
+ * Per-category summary rows for the panel's initial view: system prompt,
+ * context files (incl. nested AGENTS.md), then the item groups in display
+ * order. Sizes are the same char/4 estimates as the drill-in views.
+ */
+export function summarizeGroups(
+  items: ContextItem[],
+  system: SystemBlock | null,
+  marks: MarkKey[] = [],
+): CategorySummary[] {
+  const removed = new Set(marks);
+  const rows: CategorySummary[] = [];
+  if (system) {
+    rows.push({ key: "system", label: "System prompt", count: 1, chars: system.chars, estTokens: system.estTokens, removedCount: 0, share: 0 });
+    const nested = system.nested ?? [];
+    if (system.contextFiles.length > 0 || nested.length > 0) {
+      rows.push({
+        key: "files",
+        label: "Context files",
+        count: system.contextFiles.length + nested.length,
+        chars: system.contextFiles.reduce((n, f) => n + f.chars, 0) + nested.reduce((n, f) => n + f.chars, 0),
+        estTokens:
+          system.contextFiles.reduce((n, f) => n + f.estTokens, 0) +
+          nested.reduce((n, f) => n + Math.ceil(f.chars / 4), 0),
+        removedCount: 0,
+        share: 0,
+      });
+    }
+  }
+  for (const g of groupItems(items)) {
+    rows.push({
+      key: g.key,
+      label: g.label,
+      count: g.items.length,
+      chars: g.items.reduce((n, i) => n + i.chars, 0),
+      estTokens: g.estTokens,
+      removedCount: g.items.filter((i) => i.markKey != null && removed.has(i.markKey)).length,
+      share: 0,
+    });
+  }
+  const total = rows.reduce((n, r) => n + r.estTokens, 0);
+  for (const r of rows) r.share = total > 0 ? Math.round((r.estTokens / total) * 100) : 0;
+  return rows;
+}
+
 /** Total estimated tokens across the whole context (system + all items). */
 export function totalEstTokens(snapshot: ContextSnapshot): number {
   const sys = snapshot.system ? snapshot.system.estTokens + snapshot.system.contextFiles.reduce((n, f) => n + f.estTokens, 0) : 0;
