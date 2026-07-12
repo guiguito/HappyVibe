@@ -31,6 +31,14 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:set-session-model", sessionId, m),
   pickImage: () => ipcRenderer.invoke("hv:pick-image"),
 
+  // ── W2.2: file tree + editor + card path actions (additive) ─────
+  fsList: (workspaceId: string, relDir: string) => ipcRenderer.invoke("hv:fs-list", workspaceId, relDir),
+  fsRead: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-read", workspaceId, relPath),
+  fsWrite: (workspaceId: string, relPath: string, content: string) =>
+    ipcRenderer.invoke("hv:fs-write", workspaceId, relPath, content),
+  fsMtime: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-mtime", workspaceId, relPath),
+  revealPath: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:reveal-path", workspaceId, relPath),
+
   // ── B2: AGENTS.md (additive) ────────────────────────────────────
   readAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:read-agents-md", workspaceId),
   writeAgentsMd: (workspaceId: string, content: string) =>

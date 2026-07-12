@@ -24,6 +24,7 @@ import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
+import { listDir, readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspaceFile } from "./files";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 
 /** Transcript rebuilt from Pi's get_messages on resume (renderer shape). */
@@ -657,6 +658,20 @@ export function registerIpc(win: BrowserWindow): void {
     const mimeType = IMAGE_MIME[path.extname(file).toLowerCase()];
     if (!mimeType) return null; // filter should prevent this — stay honest if bypassed
     return { data: fs.readFileSync(file).toString("base64"), mimeType, name: path.basename(file) };
+  });
+
+  // ── W2.2: workspace file tree + editor (additive; files.ts confinement) ──
+  ipcMain.handle("hv:fs-list", (_e, workspaceId: string, relDir: string) =>
+    listDir(workspaces.list(), workspaceId, relDir));
+  ipcMain.handle("hv:fs-read", (_e, workspaceId: string, relPath: string) =>
+    readWorkspaceFile(workspaces.list(), workspaceId, relPath));
+  ipcMain.handle("hv:fs-write", (_e, workspaceId: string, relPath: string, content: string) =>
+    writeWorkspaceFile(workspaces.list(), workspaceId, relPath, content));
+  ipcMain.handle("hv:fs-mtime", (_e, workspaceId: string, relPath: string) =>
+    statMtime(workspaces.list(), workspaceId, relPath));
+  // Reveal in Finder from clickable card paths — workspace-confined.
+  ipcMain.handle("hv:reveal-path", (_e, workspaceId: string, relPath: string) => {
+    shell.showItemInFolder(resolveInWorkspace(workspaces.list(), workspaceId, relPath));
   });
 
   // Per-workspace model override (spawn resolution: workspace → global default).
