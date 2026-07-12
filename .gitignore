@@ -6,3 +6,5 @@ release
 .eslintcache
 *.log*
 .env
+
+*.tsbuildinfo

@@ -163,6 +163,15 @@ interface HvApi {
   writeAgent(filePath: string, edit: { body?: string; model?: string | null }): Promise<void>;
   duplicateAgent(filePath: string): Promise<string>;
 
+  // W1.4: system prompt + workspace settings
+  sysPromptSnapshot(sessionId?: string): Promise<void>;
+  getGlobalAppend(): Promise<string | null>;
+  setGlobalAppend(content: string): Promise<void>;
+  getWorkspaceAppend(workspaceId: string): Promise<string | null>;
+  setWorkspaceAppend(workspaceId: string, content: string): Promise<void>;
+  getWorkspaceModel(workspaceId: string): Promise<{ provider: string; modelId: string } | null>;
+  setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
+
   // B7: local analytics + onboarding
   getAnalytics(filter?: { workspaceId?: string; sinceTs?: string }): Promise<HvAnalytics>;
   getOnboardingSeen(): Promise<boolean>;

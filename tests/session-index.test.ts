@@ -89,3 +89,34 @@ test("workspace registry adds, dedupes, removes, persists", () => {
   reg.remove("/tmp/a");
   expect(new WorkspaceRegistry(wsFile).list()).toEqual(["/tmp/b"]);
 });
+
+// ── W1.4: per-workspace model override ──────────────────────────────────────
+
+test("legacy string[] workspaces.json migrates and getModel is null (falls back to global)", () => {
+  const wsFile = path.join(dir, "workspaces.json");
+  fs.writeFileSync(wsFile, JSON.stringify(["/tmp/a", "/tmp/b"])); // pre-W1.4 format
+  const reg = new WorkspaceRegistry(wsFile);
+  expect(reg.list()).toEqual(["/tmp/a", "/tmp/b"]);
+  expect(reg.getModel("/tmp/a")).toBeNull();
+  // Spawn resolution (ipc.ts spawnOpts): workspace model ?? global default.
+  const global = { provider: "deepseek", modelId: "deepseek-chat" };
+  expect(reg.getModel("/tmp/a") ?? global).toEqual(global);
+});
+
+test("setModel persists an override; null clears it; unknown workspace is a no-op", () => {
+  const wsFile = path.join(dir, "workspaces.json");
+  const reg = new WorkspaceRegistry(wsFile);
+  reg.add("/tmp/a");
+  const model = { provider: "anthropic", modelId: "claude-sonnet" };
+  reg.setModel("/tmp/a", model);
+  expect(reg.getModel("/tmp/a")).toEqual(model);
+  // Persists across reload, and the workspace → global resolution prefers it.
+  const reloaded = new WorkspaceRegistry(wsFile);
+  expect(reloaded.getModel("/tmp/a") ?? { provider: "g", modelId: "g" }).toEqual(model);
+  reloaded.setModel("/tmp/a", null);
+  expect(new WorkspaceRegistry(wsFile).getModel("/tmp/a")).toBeNull();
+  // Unknown workspace: nothing stored, nothing thrown.
+  reloaded.setModel("/tmp/nope", model);
+  expect(new WorkspaceRegistry(wsFile).getModel("/tmp/nope")).toBeNull();
+  expect(new WorkspaceRegistry(wsFile).list()).toEqual(["/tmp/a"]);
+});

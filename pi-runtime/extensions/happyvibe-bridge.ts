@@ -134,6 +134,9 @@ export default function (pi: ExtensionAPI) {
     toolCount: number;
     contextFiles: Array<{ path: string; chars: number; estTokens: number }>;
   } | null = null;
+  // W1.4: full resolved system prompt text (read-only Settings display).
+  // null until the first turn runs — before_agent_start is the capture point.
+  let systemText: string | null = null;
 
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi); // all extensions have registered by now (idempotent across reloads)
@@ -142,6 +145,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("before_agent_start", async (event) => {
     const sp = (event.systemPrompt ?? "") as string;
+    systemText = sp;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
       contextFiles?: Array<{ path?: string; content?: string }>;
@@ -206,6 +210,16 @@ export default function (pi: ExtensionAPI) {
       for (const k of keys) changed = contextMarks.delete(k) || changed;
       if (changed) persistMarks(pi);
       ctx.ui.notify(ctxPayload({ stage: "restored", restored: keys, marks: [...contextMarks] }), "info");
+    },
+  });
+
+  // W1.4: read-only resolved system prompt for Settings (docs/validation/d1.md
+  // §hv.sysprompt). Fire-and-forget notify like hv.context — text is null
+  // until a turn has run in this session.
+  pi.registerCommand("hv-sysprompt", {
+    description: "HappyVibe: emit the resolved system prompt (hv.sysprompt notify)",
+    handler: async (_args, ctx) => {
+      ctx.ui.notify(JSON.stringify({ kind: "hv.sysprompt", text: systemText }), "info");
     },
   });
 

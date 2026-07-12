@@ -1,0 +1,142 @@
+import * as Dialog from "@radix-ui/react-dialog";
+import { useEffect, useState } from "react";
+import { PermissionRulesSection } from "./PermissionRulesSection";
+
+/**
+ * W1.4 workspace settings (PRD "Settings"): model override, workspace
+ * permission rules, workspace system-prompt additions. Opened from the gear
+ * on a workspace row in the sidebar.
+ */
+
+const smallBtn =
+  "rounded-lg border-2 px-3 py-1.5 text-xs font-bold shadow-sticker cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
+
+function basename(p: string): string {
+  return p.split("/").filter(Boolean).pop() ?? p;
+}
+
+function Block({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="mb-6">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-2">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+export function WorkspaceSettingsModal({
+  workspace,
+  onClose,
+}: {
+  workspace: string;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [models, setModels] = useState<HvModel[]>([]);
+  const [model, setModel] = useState<{ provider: string; modelId: string } | null>(null);
+  const [additions, setAdditions] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    void window.hv.listModels().then(setModels);
+    void window.hv.getWorkspaceModel(workspace).then(setModel);
+    void window.hv.getWorkspaceAppend(workspace).then((c) => setAdditions(c ?? ""));
+  }, [workspace]);
+
+  const pickModel = (value: string): void => {
+    // "" = use the global default (clears the override).
+    const next = value ? { provider: value.split("/")[0], modelId: value.split("/").slice(1).join("/") } : null;
+    setModel(next);
+    void window.hv.setWorkspaceModel(workspace, next);
+  };
+
+  const saveAdditions = async (): Promise<void> => {
+    await window.hv.setWorkspaceAppend(workspace, additions);
+    setDirty(false);
+    setSaved(true);
+  };
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]" />
+        <Dialog.Content className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(38rem,calc(100vw-3rem))] max-h-[85vh] overflow-y-auto rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6 focus:outline-none">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="size-9 rounded-xl bg-honey border-2 border-ink/80 flex items-center justify-center -rotate-3 shrink-0">
+            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
+            </svg>
+          </div>
+          <Dialog.Title className="font-black text-xl tracking-tight truncate">{basename(workspace)}</Dialog.Title>
+          <span className="flex-1" />
+          <Dialog.Close asChild>
+            <button type="button" title="Close" className="text-ink-soft hover:text-ink cursor-pointer font-black text-lg px-1">
+              ×
+            </button>
+          </Dialog.Close>
+        </div>
+        <Dialog.Description className="text-xs text-ink-soft font-mono truncate mb-5">{workspace}</Dialog.Description>
+
+        <Block title="model override">
+          <select
+            value={model ? `${model.provider}/${model.modelId}` : ""}
+            onChange={(e) => pickModel(e.target.value)}
+            className="w-full rounded-xl border-2 border-line bg-paper px-3.5 py-2.5 text-sm font-bold focus:outline-none focus:border-tangerine cursor-pointer"
+          >
+            <option value="">Use global default</option>
+            {[...new Set(models.map((m) => m.provider))].map((prov) => (
+              <optgroup key={prov} label={prov}>
+                {models
+                  .filter((m) => m.provider === prov)
+                  .map((m) => (
+                    <option key={`${m.provider}/${m.id}`} value={`${m.provider}/${m.id}`}>
+                      {m.name}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          </select>
+          <p className="text-xs text-ink-soft mt-1.5">
+            Sessions in this workspace start with this model instead of the global default. Applies to new or
+            restarted sessions.
+          </p>
+        </Block>
+
+        <Block title="permission rules">
+          <PermissionRulesSection workspace={workspace} />
+        </Block>
+
+        <Block title="system prompt additions">
+          <textarea
+            value={additions}
+            onChange={(e) => {
+              setAdditions(e.target.value);
+              setDirty(true);
+              setSaved(false);
+            }}
+            rows={5}
+            placeholder="Extra instructions for sessions in this workspace…"
+            className="w-full font-mono text-xs rounded-xl border-2 border-line bg-paper px-3 py-2.5 focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60 resize-y"
+          />
+          <div className="flex items-center gap-2 mt-2">
+            <p className="text-xs text-ink-soft flex-1">
+              Heads up: these REPLACE the global additions for this workspace — they don't combine. Applies to new or
+              restarted sessions.
+            </p>
+            {saved && <span className="text-xs font-bold text-leaf shrink-0">Saved.</span>}
+            <button
+              type="button"
+              disabled={!dirty}
+              onClick={() => void saveAdditions()}
+              className={`${smallBtn} bg-tangerine text-paper border-tangerine-deep enabled:hover:brightness-105 disabled:opacity-40 shrink-0`}
+            >
+              Save
+            </button>
+          </div>
+        </Block>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
