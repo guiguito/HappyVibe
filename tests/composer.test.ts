@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachmentUrl, buildImages, resolveModel, supportsVision } from "../src/renderer/src/composer";
+import { attachmentUrl, buildImages, resolveModel, resolveModelTier, supportsVision } from "../src/renderer/src/composer";
 import { promptCommand } from "../src/main/pi/commands";
 
 const S = { provider: "anthropic", modelId: "claude-sonnet-4" };
@@ -17,6 +17,21 @@ describe("resolveModel (session → workspace → global)", () => {
   it("falls back to global, then null", () => {
     expect(resolveModel(null, null, G)).toEqual(G);
     expect(resolveModel(null, null, null)).toBeNull();
+  });
+});
+
+// V2.A: the chip shows WHICH tier won ("session override" / "workspace
+// default" / "global default") — resolveModelTier reports it.
+describe("resolveModelTier", () => {
+  it("names the winning tier", () => {
+    expect(resolveModelTier(S, W, G)).toEqual({ ref: S, tier: "session" });
+    expect(resolveModelTier(null, W, G)).toEqual({ ref: W, tier: "workspace" });
+    expect(resolveModelTier(undefined, null, G)).toEqual({ ref: G, tier: "global" });
+    expect(resolveModelTier(null, null, null)).toBeNull();
+  });
+  it("resolveModel stays consistent with the tiered resolution", () => {
+    expect(resolveModel(S, W, G)).toEqual(resolveModelTier(S, W, G)?.ref);
+    expect(resolveModel(null, W, null)).toEqual(resolveModelTier(null, W, null)?.ref);
   });
 });
 

@@ -7,8 +7,15 @@ import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
 import { formatElapsed, type DelegationRun } from "../agents";
 import {
-  attachmentUrl, resolveModel, supportsVision, type ImageAttachment, type ModelRef,
+  attachmentUrl, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
+
+/** V2.A: chip subtext — which tier of session → workspace → global won. */
+const TIER_LABEL: Record<ModelTier, string> = {
+  session: "session override",
+  workspace: "workspace default",
+  global: "global default",
+};
 
 export function ChatView({
   workspace,
@@ -66,13 +73,18 @@ export function ChatView({
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   // Honest fallback: live set_model failed → override persisted, applies on next spawn.
   const [restartHint, setRestartHint] = useState(false);
-  useEffect(() => {
-    window.hv.listModels().then(setModels).catch(() => setModels([]));
-    window.hv.getProviders().then((p) => setDefaultModel(p.defaultModel)).catch(() => {});
-  }, []);
+  // V2.A: fetch every resolution tier, and REFETCH whenever provider/model
+  // config changes (key added/removed, OAuth login/logout, default/workspace
+  // model edits) — the mount-only fetch left the list and chip stale.
   useEffect(() => {
     setWorkspaceModel(null);
-    if (workspace) window.hv.getWorkspaceModel(workspace).then(setWorkspaceModel).catch(() => {});
+    const refetch = (): void => {
+      window.hv.listModels().then(setModels).catch(() => setModels([]));
+      window.hv.getProviders().then((p) => setDefaultModel(p.defaultModel)).catch(() => {});
+      if (workspace) window.hv.getWorkspaceModel(workspace).then(setWorkspaceModel).catch(() => {});
+    };
+    refetch();
+    return window.hv.onProvidersChanged(refetch);
   }, [workspace]);
   // Session switch: attachments and the restart hint belong to the old session.
   useEffect(() => {
@@ -81,7 +93,8 @@ export function ChatView({
     setModelMenuOpen(false);
     setAttachMenuOpen(false);
   }, [sessionId]);
-  const resolved = resolveModel(sessionModel, workspaceModel, defaultModel);
+  const resolution = resolveModelTier(sessionModel, workspaceModel, defaultModel);
+  const resolved = resolution?.ref ?? null;
   const vision = supportsVision(models, resolved);
   const modelName = resolved
     ? models?.find((m) => m.provider === resolved.provider && m.id === resolved.modelId)?.name ?? resolved.modelId
@@ -352,10 +365,16 @@ export function ChatView({
               aria-label="Change model for this session"
               aria-expanded={modelMenuOpen}
               onClick={() => { setModelMenuOpen((o) => !o); setAttachMenuOpen(false); }}
-              title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${sessionModel ? " (session override)" : ""}` : "No model configured"}
-              className="max-w-44 truncate font-mono text-[11px] rounded-full border-2 border-line bg-paper px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
+              title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
+              className="max-w-44 text-left font-mono text-[11px] rounded-full border-2 border-line bg-paper px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
             >
-              {modelName ?? "model…"}
+              <span className="block truncate">{modelName ?? "model…"}</span>
+              {/* V2.A: tier-source subtext — honest about WHERE the model came from. */}
+              {resolution && (
+                <span className="block truncate font-sans text-[9px] font-semibold leading-tight text-ink-soft/80">
+                  {TIER_LABEL[resolution.tier]}
+                </span>
+              )}
             </button>
             {modelMenuOpen && (
               <>

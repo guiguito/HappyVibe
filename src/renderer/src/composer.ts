@@ -25,12 +25,26 @@ export interface ImageContent {
   mimeType: string;
 }
 
+/** Which tier of the hierarchy won the resolution (V2.A: chip subtext). */
+export type ModelTier = "session" | "workspace" | "global";
+
+export function resolveModelTier(
+  session: ModelRef | null | undefined,
+  workspace: ModelRef | null | undefined,
+  global: ModelRef | null | undefined
+): { ref: ModelRef; tier: ModelTier } | null {
+  if (session) return { ref: session, tier: "session" };
+  if (workspace) return { ref: workspace, tier: "workspace" };
+  if (global) return { ref: global, tier: "global" };
+  return null;
+}
+
 export function resolveModel(
   session: ModelRef | null | undefined,
   workspace: ModelRef | null | undefined,
   global: ModelRef | null | undefined
 ): ModelRef | null {
-  return session ?? workspace ?? global ?? null;
+  return resolveModelTier(session, workspace, global)?.ref ?? null;
 }
 
 /**

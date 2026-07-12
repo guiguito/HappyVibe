@@ -96,6 +96,11 @@ export interface WorkspaceEntry {
   model?: { provider: string; modelId: string };
 }
 
+/** V2.A: workspace paths are dialog-provided strings — compare them
+ *  trailing-slash-insensitively so a "/ws/" vs "/ws" mismatch can never make
+ *  setModel silently no-op or getModel miss the override. */
+const normPath = (p: string): string => p.replace(/\/+$/, "") || "/";
+
 export class WorkspaceRegistry {
   private entries: WorkspaceEntry[];
 
@@ -117,24 +122,28 @@ export class WorkspaceRegistry {
     return this.entries.map((e) => e.path);
   }
 
+  private find(p: string): WorkspaceEntry | undefined {
+    return this.entries.find((e) => normPath(e.path) === normPath(p));
+  }
+
   add(p: string): void {
-    if (!this.entries.some((e) => e.path === p)) {
+    if (!this.find(p)) {
       this.entries.push({ path: p });
       this.save();
     }
   }
 
   remove(p: string): void {
-    this.entries = this.entries.filter((e) => e.path !== p);
+    this.entries = this.entries.filter((e) => normPath(e.path) !== normPath(p));
     this.save();
   }
 
   getModel(p: string): { provider: string; modelId: string } | null {
-    return this.entries.find((e) => e.path === p)?.model ?? null;
+    return this.find(p)?.model ?? null;
   }
 
   setModel(p: string, model: { provider: string; modelId: string } | null): void {
-    const entry = this.entries.find((e) => e.path === p);
+    const entry = this.find(p);
     if (!entry) return; // unknown workspace — nothing to set
     if (model) entry.model = model;
     else delete entry.model;

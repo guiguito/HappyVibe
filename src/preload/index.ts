@@ -116,6 +116,12 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:pi-event", listener);
     return () => ipcRenderer.removeListener("hv:pi-event", listener);
   },
+  // V2.A: provider/model config changed (keys, OAuth, default/workspace model).
+  onProvidersChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on("hv:providers-changed", listener);
+    return () => ipcRenderer.removeListener("hv:providers-changed", listener);
+  },
   onUiRequest: (
     cb: (r: { id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[] }) => void
   ): (() => void) => {

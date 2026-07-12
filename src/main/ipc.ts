@@ -157,9 +157,17 @@ export function registerIpc(win: BrowserWindow): void {
     // selectable with zero config.
     await syncOllamaModels(agentDir()).catch(() => {});
     const c = new PiClient(resolvePiSpawn(os.homedir(), sessionDir(), piRuntimeDir(), spawnOpts()));
-    c.on("ui-request", (r: { id: string }) => {
+    c.on("ui-request", (r: { id: string; message?: string }) => {
       uiOwners.set(r.id, UTILITY);
       win.webContents.send("hv:ui-request", { ...r, sessionId: UTILITY });
+      // Auth landed/left → the model list changed (OAuth results only flow as
+      // hv.auth ui-requests, so this is where main learns about them).
+      try {
+        const p = JSON.parse(r.message ?? "") as { kind?: string; stage?: string };
+        if (p?.kind === "hv.auth" && (p.stage === "success" || p.stage === "logged_out")) providersChanged();
+      } catch {
+        /* not JSON — not an hv.auth notify */
+      }
     });
     c.on("exit", () => {
       if (utility === c) utility = null; // crashed — next auth/model op respawns it
@@ -183,6 +191,12 @@ export function registerIpc(win: BrowserWindow): void {
   const firstPrompt = new Map<string, string>();
 
   const sessionsChanged = (): void => win.webContents.send("hv:sessions-changed", index.list());
+
+  // V2.A: single "model config changed" broadcast — fired on BYOK key add/
+  // remove, OAuth login/logout (main sees every utility hv.auth notify), and
+  // default/workspace-model edits. The chat bar refetches its model list and
+  // resolution tiers on it, so the chip and menu are never stale.
+  const providersChanged = (): void => win.webContents.send("hv:providers-changed");
 
   const maybeTitle = (sessionId: string): void => {
     const meta = index.get(sessionId);
@@ -453,11 +467,13 @@ export function registerIpc(win: BrowserWindow): void {
     // Keys ride spawn env: the utility client respawns now; running chat
     // sessions keep their env until their next spawn (never yanked mid-turn).
     await restartUtility();
+    providersChanged();
   });
   ipcMain.handle("hv:remove-provider-key", async (_e, provider: string) => {
     if (!isByokProvider(provider)) throw new Error(`Not a curated provider: ${provider}`);
     removeProviderKey(provider);
     await restartUtility();
+    providersChanged();
   });
 
   // OAuth over RPC: fire-and-forget /hv-* bridge commands. The prompt promise
@@ -544,6 +560,7 @@ export function registerIpc(win: BrowserWindow): void {
     // at their next spawn (changing a running conversation's model mid-turn
     // would be surprising).
     await utility?.send({ type: "set_model", provider, modelId }).catch(() => {});
+    providersChanged();
   });
 
   // First-run gate: any BYOK key, any auth.json credential, or local Ollama.
@@ -682,8 +699,10 @@ export function registerIpc(win: BrowserWindow): void {
   // Per-workspace model override (spawn resolution: workspace → global default).
   // Applies to sessions spawned/restarted after the change.
   ipcMain.handle("hv:get-workspace-model", (_e, workspaceId: string) => workspaces.getModel(workspaceId));
-  ipcMain.handle("hv:set-workspace-model", (_e, workspaceId: string, m: { provider: string; modelId: string } | null) =>
+  ipcMain.handle("hv:set-workspace-model", (_e, workspaceId: string, m: { provider: string; modelId: string } | null) => {
     workspaces.setModel(workspaceId, m && typeof m.provider === "string" && typeof m.modelId === "string"
       ? { provider: m.provider, modelId: m.modelId }
-      : null));
+      : null);
+    providersChanged(); // open chat bars refetch → the chip's tier updates live
+  });
 }
