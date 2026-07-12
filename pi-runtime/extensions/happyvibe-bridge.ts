@@ -15,6 +15,38 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
   return JSON.stringify(input).slice(0, 300);
 }
 
+// ── W1.1 intent (PRD "Chat experience") ─────────────────────────────────────
+// STANDING RULE: every registered (extension) tool HappyVibe bundles carries a
+// REQUIRED `intent` string param — one short customer-facing sentence the UI
+// leads with (renderer: toolLabel.ts). Built-in tool schemas are hard-coded in
+// Pi (unknown params are stripped/rejected BEFORE tool_call), so built-ins get
+// derived labels instead — do NOT try to add intent to them.
+//
+// Mechanism: a registered tool's TypeBox parameters object is shared by
+// reference across Pi's definition registry, the wrapped AgentTool, and the
+// per-request LLM tool spec (getAllTools() returns `definition.parameters`
+// unchanged — verified against dist/core/agent-session.js getAllTools /
+// dist/core/tools/tool-definition-wrapper.js). Mutating it once at
+// session_start (after every extension has registered) both advertises the
+// param to the model and makes validation require it; the value then rides
+// tool_call.input and tool_execution_*.args untouched. New bundled tools:
+// add their name to INTENT_TOOLS.
+const INTENT_TOOLS = ["subagent"];
+function requireIntent(pi: ExtensionAPI): void {
+  for (const name of INTENT_TOOLS) {
+    const params = pi.getAllTools().find((t) => t.name === name)?.parameters as
+      | { properties?: Record<string, unknown>; required?: string[] }
+      | undefined;
+    if (!params?.properties || params.properties.intent) continue; // tool absent or already wired
+    params.properties.intent = {
+      type: "string",
+      description:
+        "REQUIRED on every call. One short customer-facing sentence: what you are doing and why (shown to the user as the headline for this call).",
+    };
+    params.required = [...(params.required ?? []), "intent"];
+  }
+}
+
 // ── B4 permissions (docs/validation/d1.md §hv.audit) ───────────────────────
 // Rules file path rides the spawn env; main rewrites the file on UI edits
 // and broadcasts /hv-rules-reload to every live session.
@@ -104,6 +136,7 @@ export default function (pi: ExtensionAPI) {
   } | null = null;
 
   pi.on("session_start", async (_event, ctx) => {
+    requireIntent(pi); // all extensions have registered by now (idempotent across reloads)
     restoreMarks(ctx.sessionManager.getEntries() as unknown as SessionEntry[]);
   });
 
