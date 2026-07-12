@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
+  delegationLabel,
+  formatElapsed,
   isSubagentTool,
   joinToolPermissions,
   mergeTrace,
@@ -131,5 +133,45 @@ describe("subagent trace extraction", () => {
   test("no results → empty trace (not a crash)", () => {
     expect(traceFromUpdate(undefined).results).toEqual([]);
     expect(traceFromEnd({}).results).toEqual([]);
+  });
+});
+
+// ── W1.2 floating run card helpers ───────────────────────────────────────────
+
+describe("delegationLabel", () => {
+  test("prefers intent over task", () => {
+    expect(delegationLabel({ intent: "map the auth flow", task: "long raw task text" })).toBe("map the auth flow");
+  });
+
+  test("falls back to task, collapsing whitespace", () => {
+    expect(delegationLabel({ task: "  say\n  hello " })).toBe("say hello");
+  });
+
+  test("truncates long labels with an ellipsis", () => {
+    const label = delegationLabel({ task: "x".repeat(300) });
+    expect(label.length).toBe(90);
+    expect(label.endsWith("…")).toBe(true);
+  });
+
+  test("empty/garbage args → empty label (not a crash)", () => {
+    expect(delegationLabel(undefined)).toBe("");
+    expect(delegationLabel({ intent: "   " })).toBe("");
+    expect(delegationLabel({ intent: 42, task: null })).toBe("");
+  });
+});
+
+describe("formatElapsed", () => {
+  test("seconds under a minute", () => {
+    expect(formatElapsed(0)).toBe("0s");
+    expect(formatElapsed(42_000)).toBe("42s");
+  });
+
+  test("minutes with zero-padded seconds", () => {
+    expect(formatElapsed(187_000)).toBe("3m 07s");
+    expect(formatElapsed(60_000)).toBe("1m 00s");
+  });
+
+  test("negative clamps to zero", () => {
+    expect(formatElapsed(-500)).toBe("0s");
   });
 });

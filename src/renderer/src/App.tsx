@@ -19,7 +19,7 @@ import {
 import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
-import { isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type ToolInfo } from "./agents";
+import { delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard } from "./streaming";
 
 type KeyState = "loading" | "missing" | "present";
@@ -51,11 +51,12 @@ export default function App(): React.JSX.Element {
   // B6: agent + tool inventories (from hv.agents / hv.tools notifies).
   const [agents, setAgents] = useState<AgentInfo[] | null>(null);
   const [tools, setTools] = useState<ToolInfo[] | null>(null);
-  // B6: active subagent delegation per session (agent name + start time). During
-  // delegation the main chat goes silent (main agent is blocked), so this drives
-  // an always-visible top-level "Delegating to <agent>…" signal with elapsed
-  // time — distinct from the collapsible nested subagent card.
-  const [delegations, setDelegations] = useState<Record<string, { agent: string; startedAt: number } | null>>({});
+  // W1.2: active subagent delegations per session, keyed by toolCallId (multiple
+  // concurrent runs stack). During delegation the main chat goes silent (main
+  // agent is blocked), so these drive the floating run cards at the top of the
+  // chat — the run lives OUTSIDE the chat flow (PRD "Subagents"). Completed runs
+  // linger ~2.5s (fade-out in the card) before removal.
+  const [delegations, setDelegations] = useState<Record<string, Record<string, DelegationRun>>>({});
   const [error, setError] = useState<string | null>(null);
   // B7: onboarding wow-flow overlay. Shown once for a brand-new user's first
   // session (no prior sessions), re-openable from the Help affordance.
@@ -176,8 +177,8 @@ export default function App(): React.JSX.Element {
       setUiQueue((q) => dropSession(q, sessionId));
       setDangerous((p) => ({ ...p, [sessionId]: false }));
       setBusy((p) => ({ ...p, [sessionId]: false }));
-      // Dead Pi won't emit tool_execution_end — drop any dangling delegation signal.
-      setDelegations((p) => (p[sessionId] ? { ...p, [sessionId]: null } : p));
+      // Dead Pi won't emit tool_execution_end — drop any dangling delegation cards.
+      setDelegations((p) => (p[sessionId] ? { ...p, [sessionId]: {} } : p));
       if (!intentional) {
         setCrashCodes((p) => ({ ...p, [sessionId]: code ?? -1 }));
         // B2: crash lands in the transcript too, with a retriable action.
@@ -208,10 +209,16 @@ export default function App(): React.JSX.Element {
           kind: "tool",
           card: { toolCallId: t.toolCallId, toolName: t.toolName, args: t.args, status: "running", approval },
         });
-        // B6: raise the top-level delegation signal (agent from args.agent).
+        // W1.2: raise a floating run card for this delegation (concurrent runs stack).
         if (isSubagentTool(t.toolName)) {
-          const agent = (t.args as { agent?: string } | undefined)?.agent ?? "subagent";
-          setDelegations((p) => ({ ...p, [sid]: { agent, startedAt: Date.now() } }));
+          const run: DelegationRun = {
+            toolCallId: t.toolCallId,
+            agent: (t.args as { agent?: string } | undefined)?.agent ?? "subagent",
+            label: delegationLabel(t.args),
+            startedAt: Date.now(),
+            status: "running",
+          };
+          setDelegations((p) => ({ ...p, [sid]: { ...p[sid], [run.toolCallId]: run } }));
         }
       }
       // B6: subagent delegation streams the child transcript live through
@@ -242,8 +249,23 @@ export default function App(): React.JSX.Element {
             ...(isSub ? { trace: mergeTrace(card.trace, traceFromEnd(t.result)) } : {}),
           })),
         }));
-        // B6: delegation done — clear the top-level signal.
-        if (isSub) setDelegations((p) => (p[sid] ? { ...p, [sid]: null } : p));
+        // W1.2: mark the run done/failed — the card shows the outcome and fades;
+        // remove it after the fade so the stack shrinks.
+        if (isSub) {
+          const status = t.isError ? ("error" as const) : ("done" as const);
+          setDelegations((p) => {
+            const run = p[sid]?.[t.toolCallId];
+            return run ? { ...p, [sid]: { ...p[sid], [t.toolCallId]: { ...run, status } } } : p;
+          });
+          setTimeout(() => {
+            setDelegations((p) => {
+              if (!p[sid]?.[t.toolCallId]) return p;
+              const next = { ...p[sid] };
+              delete next[t.toolCallId];
+              return { ...p, [sid]: next };
+            });
+          }, 2_500);
+        }
       }
       const ame = (e as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
       if (e.type === "message_update" && ame?.type === "text_delta" && ame.delta) {
@@ -525,7 +547,7 @@ export default function App(): React.JSX.Element {
             crashed={selectedId && statuses[selectedId] === "crashed" ? (crashCodes[selectedId] ?? -1) : null}
             turns={(selectedId && turns[selectedId]) || 0}
             queue={(selectedId ? queues[selectedId] : undefined) ?? emptyQueue}
-            delegation={(selectedId ? delegations[selectedId] : undefined) ?? null}
+            delegations={selectedId ? Object.values(delegations[selectedId] ?? {}) : []}
             contextSnapshot={(selectedId ? contextSnapshots[selectedId] : undefined) ?? null}
             fallbackWindow={fallbackWindow}
             onSend={send}

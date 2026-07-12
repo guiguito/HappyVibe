@@ -5,6 +5,7 @@ import { TokenGauge } from "./TokenGauge";
 import { ContextPanel } from "./ContextPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
+import { formatElapsed, type DelegationRun } from "../agents";
 
 export function ChatView({
   workspace,
@@ -16,7 +17,7 @@ export function ChatView({
   crashed,
   turns,
   queue = emptyQueue,
-  delegation = null,
+  delegations = [],
   contextSnapshot = null,
   fallbackWindow,
   onSend,
@@ -35,8 +36,8 @@ export function ChatView({
   crashed: number | null;
   turns: number;
   queue?: QueueState;
-  /** B6: active subagent delegation (agent name + start time), or null. */
-  delegation?: { agent: string; startedAt: number } | null;
+  /** W1.2: active subagent runs (stacking floating cards; done ones fade out). */
+  delegations?: DelegationRun[];
   contextSnapshot?: ContextSnapshot | null;
   fallbackWindow?: number | null;
   onSend: (msg: string, behavior?: "followUp") => void;
@@ -167,9 +168,20 @@ export function ChatView({
       {/* B6: always-visible top-level delegation signal. The main chat goes
           silent during a delegation (main agent is blocked); this makes it
           obvious WHO is running and that progress is happening. */}
-      {delegation && <DelegationBanner agent={delegation.agent} startedAt={delegation.startedAt} />}
-
-      <Transcript items={items} streaming={streaming} busy={busy} onRetry={onRetry} />
+      <div className="relative flex-1 min-h-0 flex flex-col">
+        {/* W1.2: floating run cards — the delegation lives OUTSIDE the chat
+            flow: sticky overlay at the top of the chat area, never scrolls
+            away. Concurrent runs stack; a finished run shows its outcome,
+            then fades (App removes it ~2.5s after tool_execution_end). */}
+        {delegations.length > 0 && (
+          <div className="absolute inset-x-0 top-0 z-10 flex flex-col items-center gap-2 px-6 pt-3 pointer-events-none">
+            {delegations.map((run) => (
+              <DelegationCard key={run.toolCallId} run={run} />
+            ))}
+          </div>
+        )}
+        <Transcript items={items} streaming={streaming} busy={busy} onRetry={onRetry} />
+      </div>
 
       {/* Composer */}
       <form
@@ -265,25 +277,41 @@ export function ChatView({
 }
 
 /**
- * B6: top-level "Delegating to <agent>…" banner with a live elapsed timer.
- * Distinct from the collapsible nested subagent card — this stays put so it's
- * always obvious a subagent is running while the main chat is quiet.
+ * W1.2: one floating run card — agent name, intent/task headline, live status
+ * with an elapsed timer while running; brief success/fail state then a ~2s
+ * fade-out (App removes the run shortly after). Distinct from the in-flow
+ * compact subagent call line, which stays in the transcript as the record.
  */
-function DelegationBanner({ agent, startedAt }: { agent: string; startedAt: number }): React.JSX.Element {
+function DelegationCard({ run }: { run: DelegationRun }): React.JSX.Element {
+  const running = run.status === "running";
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (!running) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
-  const secs = Math.max(0, Math.floor((now - startedAt) / 1000));
-  const elapsed = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  }, [running]);
   return (
-    <div className="flex items-center gap-3 px-6 py-2.5 bg-honey-soft border-b-2 border-honey/60 text-sm font-semibold">
-      <span className="size-2.5 rounded-full bg-sky animate-pulse shrink-0" />
-      <span className="flex-1">
-        Delegating to <span className="font-black text-tangerine-deep">{agent}</span>…
+    <div
+      className={`w-full max-w-xl flex items-center gap-3 rounded-xl border-2 bg-card px-4 py-2.5 shadow-sticker-lg text-sm font-semibold transition-opacity duration-[1500ms] ${
+        running ? "border-sky/60 opacity-100" : run.status === "done" ? "border-leaf/60 opacity-0 delay-700" : "border-berry/60 opacity-0 delay-700"
+      }`}
+    >
+      <span
+        className={`size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : run.status === "done" ? "bg-leaf" : "bg-berry"}`}
+      />
+      <span className="flex-1 min-w-0 truncate">
+        <span className="font-black text-tangerine-deep">{run.agent}</span>
+        {run.label && <span className="text-ink-soft font-medium"> — {run.label}</span>}
       </span>
-      <span className="font-mono text-xs text-ink-soft tabular-nums" title="Elapsed time">{elapsed}</span>
+      {running ? (
+        <span className="font-mono text-xs text-ink-soft tabular-nums shrink-0" title="Elapsed time">
+          working · {formatElapsed(now - run.startedAt)}
+        </span>
+      ) : (
+        <span className={`text-[11px] font-bold uppercase tracking-wide shrink-0 ${run.status === "done" ? "text-leaf" : "text-berry"}`}>
+          {run.status === "done" ? "done" : "failed"}
+        </span>
+      )}
     </div>
   );
 }

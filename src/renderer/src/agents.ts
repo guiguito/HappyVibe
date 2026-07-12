@@ -166,3 +166,33 @@ export function mergeTrace(live: SubagentTrace | undefined, final: SubagentTrace
 export function isSubagentTool(toolName: unknown): boolean {
   return toolName === "subagent";
 }
+
+// ── W1.2 floating run card (delegation-run state helpers) ────────────────────
+// A delegation run lives OUTSIDE the chat flow while running: App tracks every
+// in-flight subagent call keyed by toolCallId; ChatView stacks them as floating
+// sticky cards. Completed runs linger briefly (fade-out) before removal.
+
+export interface DelegationRun {
+  toolCallId: string;
+  agent: string;
+  /** headline: args.intent when present (W1.1 registered-tool param), else task. */
+  label: string;
+  startedAt: number;
+  status: "running" | "done" | "error";
+}
+
+const LABEL_MAX = 90;
+
+/** Human headline for a delegation: intent ("why") wins over the raw task. */
+export function delegationLabel(args: unknown): string {
+  const a = args as { intent?: unknown; task?: unknown } | undefined;
+  const s = typeof a?.intent === "string" && a.intent.trim() ? a.intent : typeof a?.task === "string" ? a.task : "";
+  const t = s.trim().replace(/\s+/g, " ");
+  return t.length > LABEL_MAX ? t.slice(0, LABEL_MAX - 1) + "…" : t;
+}
+
+/** "42s" / "3m 07s" elapsed formatting for run timers. */
+export function formatElapsed(ms: number): string {
+  const secs = Math.max(0, Math.floor(ms / 1000));
+  return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
+}

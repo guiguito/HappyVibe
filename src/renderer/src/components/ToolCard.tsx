@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
-import type { SubagentTrace } from "../agents";
+import { delegationLabel, type SubagentTrace } from "../agents";
 
 export interface ToolCardData {
   toolCallId: string;
@@ -46,33 +46,46 @@ function DiffView({ lines }: { lines: DiffLine[] }): React.JSX.Element {
 const fmtCost = (c?: number): string => (c != null ? `$${c.toFixed(c < 0.01 ? 5 : 4)}` : "");
 
 /**
- * Subagent delegation renders as a NESTED mini-conversation, distinct from a
- * normal tool card: the child transcript (live during the run, final at end),
- * per-agent model + usage + cost + turns. Collapsible; open while running so
- * the delegation is watchable, collapses on done.
+ * W1.2: the in-flow subagent card is a COMPACT call line — "→ asked <agent>:
+ * <intent>" plus status and a one-line result summary. Only the call and the
+ * final output are what actually occupied the main agent's context (s0.3
+ * addendum), so that's all the flow shows; the full nested child transcript
+ * (display-only) sits behind an expand toggle, collapsed by default. The live
+ * "it's running" signal is the floating run card (ChatView), not this line.
  */
 function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
   const running = card.status === "running";
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const req = card.args as { agent?: string; task?: string } | undefined;
   const results = card.trace?.results ?? [];
   const denied = card.status === "denied";
+  const label = delegationLabel(card.args);
+  const summary = results[0]?.finalOutput?.trim().replace(/\s+/g, " ") ?? "";
   return (
     <div className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-paper-deep/40 transition-colors"
+        className="w-full text-left cursor-pointer hover:bg-paper-deep/40 transition-colors px-3.5 py-2.5"
       >
-        <span className={`size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : denied ? "bg-berry" : "bg-leaf"}`} />
-        <span className="text-[11px] font-black uppercase tracking-wide text-sky shrink-0">subagent</span>
-        <span className="font-bold text-sm shrink-0">{req?.agent ?? results[0]?.agent ?? "?"}</span>
-        <span className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0" title={req?.task}>
-          {req?.task ?? ""}
+        <span className="flex items-center gap-2.5">
+          <span className={`size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : denied || card.status === "error" ? "bg-berry" : "bg-leaf"}`} />
+          <span className="text-sm min-w-0 truncate flex-1" title={req?.task}>
+            <span className="text-ink-soft">→ asked</span> <span className="font-bold">{req?.agent ?? results[0]?.agent ?? "?"}</span>
+            {label && <span className="text-ink-soft">: {label}</span>}
+          </span>
+          <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-soft">
+            {running ? "delegating…" : denied ? "denied" : card.status === "error" ? "failed" : "done"}
+          </span>
+          <span className="shrink-0 text-[11px] text-ink-soft" aria-hidden>
+            {open ? "▾" : "▸"}
+          </span>
         </span>
-        <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-soft">
-          {running ? "delegating…" : denied ? "denied" : "done"}
-        </span>
+        {!open && summary && (
+          <span className="block mt-1 pl-5 text-xs text-ink-soft truncate" title={summary}>
+            {summary}
+          </span>
+        )}
       </button>
       {open && (
         <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 flex flex-col gap-3">
