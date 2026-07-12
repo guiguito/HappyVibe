@@ -20,6 +20,8 @@ export interface SessionMeta {
   piSessionFile?: string;
   /** W1.3: process stopped to make room; restored transparently on reopen. Additive — absent = false. */
   hibernated?: boolean;
+  /** W2.1: per-session model override (hierarchy: session → workspace → global). Additive; survives hibernation/resume. */
+  model?: { provider: string; modelId: string };
   /** Who last set the title. "user" is never overwritten by generation. */
   titleSource: "fallback" | "model" | "user";
 }

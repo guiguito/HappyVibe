@@ -22,7 +22,7 @@ import { SessionActivity } from "./activity";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
-import { promptCommand, type PromptBehavior } from "./pi/commands";
+import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 
@@ -91,10 +91,13 @@ export function registerIpc(win: BrowserWindow): void {
   const activity = new SessionActivity();
 
   /** Everything a Pi spawn needs from provider config (B3) + rules delivery (B4).
-   *  Model resolution (W1.4): workspace override → global default. The session
-   *  tier (PRD: session → workspace → global) lands in Wave 2 — resolve it here. */
-  const spawnOpts = (workspace?: string, resumeFile?: string) => ({
-    model: (workspace ? workspaces.getModel(workspace) : null) ?? getDefaultModel(),
+   *  Model resolution (W2.1, full PRD hierarchy): session override → workspace
+   *  override → global default. Mirrors resolveModel in renderer composer.ts. */
+  const spawnOpts = (workspace?: string, resumeFile?: string, sessionId?: string) => ({
+    model:
+      (sessionId ? index.get(sessionId)?.model : null) ??
+      (workspace ? workspaces.getModel(workspace) : null) ??
+      getDefaultModel(),
     agentDir: agentDir(),
     providerEnv: providerEnv(),
     resumeFile,
@@ -103,8 +106,8 @@ export function registerIpc(win: BrowserWindow): void {
 
   const manager = new SessionManager({
     pidFile,
-    spawn: (workspace, resumeFile) =>
-      new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile))),
+    spawn: (workspace, resumeFile, sessionId) =>
+      new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile, sessionId))),
     // W1.3: called at the cap — hibernate the oldest idle session (stats
     // captured best-effort like close-session, index marked, renderer told),
     // or return null so the manager refuses honestly.
@@ -355,9 +358,17 @@ export function registerIpc(win: BrowserWindow): void {
 
   // behavior (B2, additive): renderer passes "steer" | "followUp" while the
   // agent is busy — Pi errors on a bare prompt mid-stream without it.
-  ipcMain.handle("hv:prompt-session", async (_e, sessionId: string, msg: string, behavior?: PromptBehavior) => {
+  // images (W2.1, additive): RPC ImageContent[] built renderer-side (composer.ts).
+  ipcMain.handle(
+    "hv:prompt-session",
+    async (_e, sessionId: string, msg: string, behavior?: PromptBehavior, images?: PromptImage[]) => {
     if (behavior !== undefined && behavior !== "steer" && behavior !== "followUp") {
       throw new Error("Invalid prompt behavior");
+    }
+    if (images !== undefined) {
+      const ok = Array.isArray(images) &&
+        images.every((i) => i?.type === "image" && typeof i.data === "string" && typeof i.mimeType === "string");
+      if (!ok) throw new Error("Invalid images payload");
     }
     let client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
@@ -373,7 +384,7 @@ export function registerIpc(win: BrowserWindow): void {
       index.update(sessionId, { title: truncateTitle(msg) }); // fallback until generation lands
       sessionsChanged();
     }
-    await client.send(promptCommand(msg, behavior));
+    await client.send(promptCommand(msg, behavior, images));
   });
 
   ipcMain.handle("hv:abort-session", async (_e, sessionId: string) => {
@@ -521,9 +532,10 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:list-models", async () => {
     const c = await ensureUtility();
     const res = await c.send({ type: "get_available_models" });
-    const models = ((res.data as { models?: { provider: string; id: string; name?: string; contextWindow?: number }[] })?.models ?? []);
+    const models = ((res.data as { models?: { provider: string; id: string; name?: string; contextWindow?: number; input?: string[] }[] })?.models ?? []);
     // contextWindow feeds B5's estimated-gauge fallback (when Pi didn't measure).
-    return models.map((m) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id, contextWindow: m.contextWindow }));
+    // input (W2.1) gates the image-attach button: only vision models accept images.
+    return models.map((m) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id, contextWindow: m.contextWindow, input: m.input }));
   });
   ipcMain.handle("hv:set-default-model", async (_e, provider: string, modelId: string) => {
     setDefaultModel({ provider, modelId });
@@ -603,6 +615,49 @@ export function registerIpc(win: BrowserWindow): void {
     readAppend(resolveWorkspaceAppend(workspaces.list(), workspaceId)));
   ipcMain.handle("hv:set-workspace-append", (_e, workspaceId: string, content: string) =>
     writeAppend(resolveWorkspaceAppend(workspaces.list(), workspaceId), String(content)));
+
+  // ── W2.1: per-session model override + image attach ─────────────────────
+  // Persists on SessionMeta (survives hibernation/resume — spawn resolution
+  // picks it up) AND applies live via RPC set_model when the session has a
+  // running Pi. Returns { live } so the renderer can show an honest
+  // "applies on restart" hint when the live switch didn't happen.
+  ipcMain.handle(
+    "hv:set-session-model",
+    async (_e, sessionId: string, m: { provider: string; modelId: string } | null): Promise<{ live: boolean }> => {
+      if (!index.get(sessionId)) throw new Error("Unknown session");
+      const model = m && typeof m.provider === "string" && typeof m.modelId === "string"
+        ? { provider: m.provider, modelId: m.modelId }
+        : undefined;
+      index.update(sessionId, { model }); // undefined clears (dropped by JSON.stringify)
+      sessionsChanged();
+      const client = manager.get(sessionId) as PiClient | null;
+      if (!client || !model) return { live: false };
+      try {
+        const res = await client.send({ type: "set_model", provider: model.provider, modelId: model.modelId });
+        return { live: res.success !== false };
+      } catch {
+        return { live: false }; // persisted — applies on next spawn
+      }
+    }
+  );
+
+  // Image picker for the "+" attach menu — main-side dialog, images only.
+  // Returns base64 + mimeType matching the RPC ImageContent shape (no data: prefix).
+  const IMAGE_MIME: Record<string, string> = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp",
+  };
+  ipcMain.handle("hv:pick-image", async () => {
+    const r = await dialog.showOpenDialog(win, {
+      properties: ["openFile"],
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+    });
+    const file = r.canceled ? null : r.filePaths[0];
+    if (!file) return null;
+    const mimeType = IMAGE_MIME[path.extname(file).toLowerCase()];
+    if (!mimeType) return null; // filter should prevent this — stay honest if bypassed
+    return { data: fs.readFileSync(file).toString("base64"), mimeType, name: path.basename(file) };
+  });
 
   // Per-workspace model override (spawn resolution: workspace → global default).
   // Applies to sessions spawned/restarted after the change.

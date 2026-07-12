@@ -7,7 +7,8 @@ import { ToolCard, type ToolCardData } from "./ToolCard";
 // on it instead of the array index lets React.memo skip re-parsing committed
 // markdown when new items arrive or the live streaming bubble updates.
 export type TranscriptItem = { id?: number } & (
-  | { kind: "user" | "assistant"; text: string }
+  // W2.1: `images` = data URLs of attached images (user bubbles only).
+  | { kind: "user" | "assistant"; text: string; images?: string[] }
   | { kind: "tool"; card: ToolCardData }
   // B2: provider errors / session crashes as first-class transcript items.
   | { kind: "error"; text: string; retriable?: boolean }
@@ -59,6 +60,19 @@ const MessageItem = memo(function MessageItem({
   return (
     <div className="self-end max-w-[85%]">
       <div className="bg-tangerine text-paper rounded-2xl rounded-br-md px-4 py-2.5 shadow-sticker border-2 border-tangerine-deep whitespace-pre-wrap text-[0.95rem]">
+        {/* W2.1: attached images ride the same bubble as small thumbnails. */}
+        {it.images && it.images.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {it.images.map((src, i) => (
+              <img
+                key={i}
+                src={src}
+                alt="attached image"
+                className="max-h-24 max-w-40 rounded-lg border-2 border-paper/60 object-cover"
+              />
+            ))}
+          </div>
+        )}
         {it.text}
       </div>
     </div>

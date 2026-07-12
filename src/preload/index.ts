@@ -18,9 +18,18 @@ contextBridge.exposeInMainWorld("hv", {
   renameSession: (sessionId: string, title: string) => ipcRenderer.invoke("hv:rename-session", sessionId, title),
   archiveSession: (sessionId: string, archived: boolean) =>
     ipcRenderer.invoke("hv:archive-session", sessionId, archived),
-  promptSession: (sessionId: string, msg: string, behavior?: "steer" | "followUp") =>
-    ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior),
+  promptSession: (
+    sessionId: string,
+    msg: string,
+    behavior?: "steer" | "followUp",
+    images?: Array<{ type: "image"; data: string; mimeType: string }>
+  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images),
   abortSession: (sessionId: string) => ipcRenderer.invoke("hv:abort-session", sessionId),
+
+  // ── W2.1: per-session model override + image attach (additive) ──
+  setSessionModel: (sessionId: string, m: { provider: string; modelId: string } | null) =>
+    ipcRenderer.invoke("hv:set-session-model", sessionId, m),
+  pickImage: () => ipcRenderer.invoke("hv:pick-image"),
 
   // ── B2: AGENTS.md (additive) ────────────────────────────────────
   readAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:read-agents-md", workspaceId),

@@ -10,6 +10,8 @@ interface SessionMeta {
   piSessionFile?: string;
   /** W1.3: hibernated to make room; opens transparently (Pi --session resume). */
   hibernated?: boolean;
+  /** W2.1: per-session model override (session → workspace → global). */
+  model?: { provider: string; modelId: string };
   titleSource: "fallback" | "model" | "user";
 }
 
@@ -30,6 +32,8 @@ interface HvModel {
   name: string;
   /** B5: model context window, for the estimated-gauge fallback. */
   contextWindow?: number;
+  /** W2.1: accepted input kinds (e.g. ["text","image"]) — gates image attach. */
+  input?: string[];
 }
 
 /** B6 — mirrors AgentDef in pi-runtime/extensions/hv-agents.ts (from the hv.agents notify). */
@@ -117,8 +121,16 @@ interface HvApi {
   closeSession(sessionId: string): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
   archiveSession(sessionId: string, archived: boolean): Promise<void>;
-  promptSession(sessionId: string, msg: string, behavior?: "steer" | "followUp"): Promise<void>;
+  promptSession(
+    sessionId: string,
+    msg: string,
+    behavior?: "steer" | "followUp",
+    images?: Array<{ type: "image"; data: string; mimeType: string }>
+  ): Promise<void>;
   abortSession(sessionId: string): Promise<void>;
+  // W2.1: per-session model override + image attach
+  setSessionModel(sessionId: string, m: { provider: string; modelId: string } | null): Promise<{ live: boolean }>;
+  pickImage(): Promise<{ data: string; mimeType: string; name: string } | null>;
 
   // B2: AGENTS.md
   readAgentsMd(workspaceId: string): Promise<string | null>;

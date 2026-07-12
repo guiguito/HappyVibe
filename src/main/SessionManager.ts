@@ -106,7 +106,8 @@ export class SessionManager extends EventEmitter {
 
   constructor(
     private readonly opts: {
-      spawn: (workspace: string, resumeFile?: string) => ManagedClient;
+      /** sessionId lets the factory resolve per-session options (W2.1 model override). */
+      spawn: (workspace: string, resumeFile?: string, sessionId?: string) => ManagedClient;
       pidFile: string;
       maxActive?: number;
       staggerMs?: number;
@@ -148,7 +149,7 @@ export class SessionManager extends EventEmitter {
         this.nextSpawnAt = Date.now() + wait + this.staggerMs;
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 
-        const client = this.opts.spawn(workspace, resumeFile);
+        const client = this.opts.spawn(workspace, resumeFile, sessionId);
         rec.client = client;
         client.on("exit", ({ code }) => {
           if (this.records.get(sessionId) !== rec) return; // superseded by a restart

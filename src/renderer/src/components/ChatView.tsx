@@ -6,11 +6,15 @@ import { ContextPanel } from "./ContextPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
 import { formatElapsed, type DelegationRun } from "../agents";
+import {
+  attachmentUrl, resolveModel, supportsVision, type ImageAttachment, type ModelRef,
+} from "../composer";
 
 export function ChatView({
   workspace,
   sessionId,
   title,
+  sessionModel = null,
   items,
   streaming,
   busy,
@@ -30,6 +34,8 @@ export function ChatView({
   workspace: string | null;
   sessionId: string | null;
   title: string | null;
+  /** W2.1: this session's persisted model override (from SessionMeta). */
+  sessionModel?: ModelRef | null;
   items: TranscriptItem[];
   streaming?: string;
   busy: boolean;
@@ -40,7 +46,7 @@ export function ChatView({
   delegations?: DelegationRun[];
   contextSnapshot?: ContextSnapshot | null;
   fallbackWindow?: number | null;
-  onSend: (msg: string, behavior?: "followUp") => void;
+  onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[]) => void;
   onAbort: () => void;
   onRestart: () => void;
   onRetry: () => void;
@@ -48,6 +54,53 @@ export function ChatView({
   onCompact: () => void;
 }): React.JSX.Element {
   const [input, setInput] = useState("");
+  // ── W2.1: model chip + attach menu state ─────────────────────────
+  const [models, setModels] = useState<HvModel[] | null>(null);
+  const [workspaceModel, setWorkspaceModel] = useState<ModelRef | null>(null);
+  const [defaultModel, setDefaultModel] = useState<ModelRef | null>(null);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  // Honest fallback: live set_model failed → override persisted, applies on next spawn.
+  const [restartHint, setRestartHint] = useState(false);
+  useEffect(() => {
+    window.hv.listModels().then(setModels).catch(() => setModels([]));
+    window.hv.getProviders().then((p) => setDefaultModel(p.defaultModel)).catch(() => {});
+  }, []);
+  useEffect(() => {
+    setWorkspaceModel(null);
+    if (workspace) window.hv.getWorkspaceModel(workspace).then(setWorkspaceModel).catch(() => {});
+  }, [workspace]);
+  // Session switch: attachments and the restart hint belong to the old session.
+  useEffect(() => {
+    setAttachments([]);
+    setRestartHint(false);
+    setModelMenuOpen(false);
+    setAttachMenuOpen(false);
+  }, [sessionId]);
+  const resolved = resolveModel(sessionModel, workspaceModel, defaultModel);
+  const vision = supportsVision(models, resolved);
+  const modelName = resolved
+    ? models?.find((m) => m.provider === resolved.provider && m.id === resolved.modelId)?.name ?? resolved.modelId
+    : null;
+
+  const pickModel = async (m: HvModel): Promise<void> => {
+    setModelMenuOpen(false);
+    if (!sessionId) return;
+    if (resolved && m.provider === resolved.provider && m.id === resolved.modelId) return;
+    try {
+      const { live } = await window.hv.setSessionModel(sessionId, { provider: m.provider, modelId: m.id });
+      setRestartHint(!live);
+    } catch {
+      /* unknown session (closed mid-click) — nothing to do */
+    }
+  };
+
+  const attachImage = async (): Promise<void> => {
+    setAttachMenuOpen(false);
+    const img = await window.hv.pickImage();
+    if (img) setAttachments((p) => [...p, img]);
+  };
   const [agentsMdOpen, setAgentsMdOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   // Fetched once per agent_end (turns bump); shared by the gauge and the panel.
@@ -97,10 +150,11 @@ export function ChatView({
 
   const queued = queue.steering.length + queue.followUp.length;
 
-  const submit = (): void => {
+  const submit = (behavior?: "followUp"): void => {
     if (!input.trim()) return;
-    onSend(input);
+    onSend(input, behavior, attachments.length ? attachments : undefined);
     setInput("");
+    setAttachments([]);
   };
 
   return (
@@ -220,7 +274,113 @@ export function ChatView({
             ))}
           </div>
         )}
+        {/* W2.1: attached-image chips — thumbnail + remove, sent with the next prompt. */}
+        {attachments.length > 0 && (
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
+            {attachments.map((a, i) => (
+              <span
+                key={i}
+                className="flex items-center gap-1.5 rounded-xl border-2 border-line-strong bg-card pl-1 pr-2 py-1 shadow-sticker"
+                title={a.name}
+              >
+                <img src={attachmentUrl(a)} alt={a.name} className="size-8 rounded-lg object-cover border border-line" />
+                <span className="max-w-32 truncate text-xs font-semibold">{a.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${a.name}`}
+                  onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}
+                  className="text-ink-soft hover:text-berry font-bold text-sm leading-none cursor-pointer"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {/* W2.1: honest fallback — live switch failed, override applies at next spawn. */}
+        {restartHint && (
+          <div className="max-w-3xl mx-auto px-1 pb-1.5 text-[11px] font-semibold text-ink-soft">
+            Model saved — applies when this session restarts.
+          </div>
+        )}
         <div className="max-w-3xl mx-auto flex gap-2 items-center rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-3 py-2 focus-within:border-tangerine transition-colors">
+          {/* W2.1: "+" attach menu — always visible; entries gate honestly. */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-label="Attach"
+              aria-expanded={attachMenuOpen}
+              onClick={() => { setAttachMenuOpen((o) => !o); setModelMenuOpen(false); }}
+              className="size-8 rounded-xl border-2 border-line-strong text-ink-soft font-black text-lg leading-none hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
+            >
+              +
+            </button>
+            {attachMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setAttachMenuOpen(false)} />
+                <div className="absolute bottom-full left-0 mb-2 z-20 w-56 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
+                  <button
+                    type="button"
+                    disabled={!vision}
+                    onClick={attachImage}
+                    title={vision ? "Attach an image to your next message" : `${modelName ?? "This model"} doesn't support image input`}
+                    className="w-full text-left px-3 py-2 enabled:hover:bg-paper-deep/40 enabled:cursor-pointer disabled:opacity-40"
+                  >
+                    Attach image
+                    {!vision && <span className="block text-[10px] font-medium text-ink-soft">model has no vision</span>}
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    title="File import is coming soon"
+                    className="w-full text-left px-3 py-2 opacity-40"
+                  >
+                    Attach file
+                    <span className="block text-[10px] font-medium text-ink-soft">coming soon</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global). */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-label="Change model for this session"
+              aria-expanded={modelMenuOpen}
+              onClick={() => { setModelMenuOpen((o) => !o); setAttachMenuOpen(false); }}
+              title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${sessionModel ? " (session override)" : ""}` : "No model configured"}
+              className="max-w-44 truncate font-mono text-[11px] rounded-full border-2 border-line bg-paper px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
+            >
+              {modelName ?? "model…"}
+            </button>
+            {modelMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setModelMenuOpen(false)} />
+                <div className="absolute bottom-full left-0 mb-2 z-20 w-72 max-h-72 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+                  {(models ?? []).map((m) => {
+                    const active = resolved != null && m.provider === resolved.provider && m.id === resolved.modelId;
+                    return (
+                      <button
+                        key={`${m.provider}/${m.id}`}
+                        type="button"
+                        onClick={() => void pickModel(m)}
+                        className={`w-full text-left px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer ${active ? "font-bold text-tangerine-deep" : "font-medium"}`}
+                      >
+                        <span className="block truncate">{m.name}</span>
+                        <span className="block truncate font-mono text-[10px] text-ink-soft">{m.provider}/{m.id}</span>
+                      </button>
+                    );
+                  })}
+                  {(models ?? []).length === 0 && (
+                    <div className="px-3 py-2 text-xs text-ink-soft font-medium">
+                      {models === null ? "Loading models…" : "No models — configure a provider in Settings."}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -232,19 +392,17 @@ export function ChatView({
               <button
                 type="button"
                 onClick={onAbort}
-                className="rounded-xl border-2 border-berry text-berry font-bold text-sm px-4 py-2 hover:bg-berry-soft cursor-pointer"
+                aria-label="Stop"
+                title="Stop the agent"
+                className="rounded-xl border-2 border-berry text-berry px-3 py-2 hover:bg-berry-soft cursor-pointer"
               >
-                Stop
+                <StopIcon />
               </button>
               <button
                 type="button"
                 disabled={!input.trim()}
                 title="Queue for after this turn"
-                onClick={() => {
-                  if (!input.trim()) return;
-                  onSend(input, "followUp");
-                  setInput("");
-                }}
+                onClick={() => submit("followUp")}
                 className="rounded-xl border-2 border-line-strong text-ink-soft font-bold text-sm px-4 py-2 enabled:hover:bg-paper-deep/40 enabled:cursor-pointer disabled:opacity-40"
               >
                 Queue
@@ -254,9 +412,11 @@ export function ChatView({
           <button
             type="submit"
             disabled={!input.trim()}
-            className="rounded-xl bg-tangerine text-paper font-bold text-sm px-5 py-2 border-2 border-tangerine-deep shadow-sticker transition-all enabled:hover:brightness-105 enabled:active:translate-x-[2px] enabled:active:translate-y-[2px] enabled:active:shadow-none enabled:cursor-pointer disabled:opacity-40"
+            aria-label={busy ? "Steer" : "Send"}
+            title={busy ? "Steer — lands between tool calls" : "Send"}
+            className="rounded-xl bg-tangerine text-paper px-4 py-2 border-2 border-tangerine-deep shadow-sticker transition-all enabled:hover:brightness-105 enabled:active:translate-x-[2px] enabled:active:translate-y-[2px] enabled:active:shadow-none enabled:cursor-pointer disabled:opacity-40"
           >
-            {busy ? "Steer" : "Send"}
+            <SendIcon />
           </button>
         </div>
       </form>
@@ -273,6 +433,25 @@ export function ChatView({
         />
       )}
     </div>
+  );
+}
+
+/** W2.1: inline paper-plane icon (no icon lib — strict self CSP). */
+function SendIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M22 2 11 13" />
+      <path d="M22 2 15 22l-4-9-9-4Z" />
+    </svg>
+  );
+}
+
+/** W2.1: inline stop-square icon. */
+function StopIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" fill="currentColor" aria-hidden="true">
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
   );
 }
 

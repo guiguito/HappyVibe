@@ -20,6 +20,7 @@ import { parseContextAck, parseContextSnapshot, type ContextSnapshot } from "./c
 import { AgentsView } from "./components/AgentsView";
 import { delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard } from "./streaming";
+import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -398,25 +399,27 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  const send = async (msg: string, behavior?: "followUp"): Promise<void> => {
+  const send = async (msg: string, behavior?: "followUp", attachments?: ImageAttachment[]): Promise<void> => {
     if (!selectedId) return;
     const sid = selectedId;
+    // W2.1: attached images ride the RPC `images` param (ImageContent[]).
+    const images = attachments?.length ? buildImages(attachments) : undefined;
     // B2: while the agent runs, a bare prompt errors — Enter steers, the Queue
     // button follows up. The message shows as a chip (queue_update) and only
     // joins the transcript when Pi delivers it.
     if (busy[sid]) {
       try {
-        await window.hv.promptSession(sid, msg, behavior ?? "steer");
+        await window.hv.promptSession(sid, msg, behavior ?? "steer", images);
       } catch (err) {
         surface(err);
       }
       return;
     }
-    appendItem(sid, { kind: "user", text: msg });
+    appendItem(sid, { kind: "user", text: msg, images: attachments?.map(attachmentUrl) });
     streaming.current[sid] = false;
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
-      await window.hv.promptSession(sid, msg);
+      await window.hv.promptSession(sid, msg, undefined, images);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
       surface(err);
@@ -551,6 +554,7 @@ export default function App(): React.JSX.Element {
             workspace={selected?.workspaceId ?? null}
             sessionId={selectedId}
             title={selected?.title ?? null}
+            sessionModel={selected?.model ?? null}
             items={(selectedId ? transcripts[selectedId] : undefined) ?? []}
             streaming={(selectedId ? streamText[selectedId] : undefined) || undefined}
             busy={(selectedId && busy[selectedId]) || false}
