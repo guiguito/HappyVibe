@@ -3,13 +3,25 @@ import { toolLabel } from "../src/renderer/src/toolLabel";
 
 // W1.1 — human headlines for tool cards (PRD "Chat experience").
 
-test("bash → Running: <command>, truncated at ~60 chars", () => {
-  expect(toolLabel("bash", { command: "npm test" })).toEqual({ icon: "terminal", label: "Running: npm test" });
+// V2.A: bash goes through describeCommand (parsed explanations, destructive
+// flag) — exhaustive parser coverage lives in tests/describe-command.test.ts;
+// here we assert the toolLabel integration.
+test("bash → parsed explanation via describeCommand", () => {
+  expect(toolLabel("bash", { command: "npm install" })).toEqual({ icon: "terminal", label: "Installing dependencies…" });
+  expect(toolLabel("bash", { command: "git status -sb" })).toEqual({ icon: "terminal", label: "Checking git status" });
+  // unknown commands keep the honest Running: <truncated> fallback
   const long = "x".repeat(200);
-  const { label } = toolLabel("bash", { command: long });
-  expect(label).toBe(`Running: ${"x".repeat(60)}…`);
-  // whitespace collapses so multi-line commands read as one line
-  expect(toolLabel("bash", { command: "git  status\n  -sb" }).label).toBe("Running: git status -sb");
+  expect(toolLabel("bash", { command: long }).label).toBe(`Running: ${"x".repeat(60)}…`);
+});
+
+test("bash destructive commands carry destructive: true", () => {
+  expect(toolLabel("bash", { command: "rm -rf dist" })).toEqual({
+    icon: "terminal",
+    label: "Deleting dist",
+    destructive: true,
+  });
+  // non-destructive commands DON'T carry the field (exact shape preserved)
+  expect(toolLabel("bash", { command: "npm test" })).toEqual({ icon: "terminal", label: "Running tests" });
 });
 
 // W2.2: file-ish tools also expose `path` — ToolCard turns it into the

@@ -10,6 +10,8 @@
  * Arg names verified against pi-coding-agent dist/core/tools/*.js.
  */
 
+import { describeCommand } from "./describeCommand";
+
 export type IconKind =
   | "terminal"
   | "edit"
@@ -25,6 +27,8 @@ export interface ToolLabel {
   label: string;
   /** W2.2: file the call touches (edit/write/read) — makes the card path clickable. */
   path?: string;
+  /** V2.A: destructive bash command (rm/rmdir) — the card badges it. */
+  destructive?: boolean;
 }
 
 const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
@@ -49,8 +53,12 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
 
   switch (toolName) {
     case "bash": {
+      // V2.A: parsed explanation ("Installing dependencies…", "Deleting X" +
+      // destructive flag) — falls back to "Running: <cmd>" for unknown commands.
       const cmd = str("command");
-      return { icon: "terminal", label: cmd ? `Running: ${truncate(cmd)}` : "Running a command" };
+      if (!cmd) return { icon: "terminal", label: "Running a command" };
+      const d = describeCommand(cmd);
+      return { icon: "terminal", label: d.label, ...(d.destructive ? { destructive: true } : {}) };
     }
     case "edit": {
       const p = str("path");

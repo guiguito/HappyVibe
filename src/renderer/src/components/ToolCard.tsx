@@ -305,7 +305,7 @@ export function ToolCard({
   const [details, setDetails] = useState(false);
   const s = STATUS[card.status];
   const denied = card.status === "denied";
-  const { icon, label, path: filePath } = toolLabel(card.toolName, card.args);
+  const { icon, label, path: filePath, destructive } = toolLabel(card.toolName, card.args);
   return (
     <div
       className={`rounded-xl border-2 bg-card shadow-sticker overflow-hidden ${
@@ -344,6 +344,12 @@ export function ToolCard({
         {denied && (
           <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-berry-soft text-berry border border-berry/40">
             denied
+          </span>
+        )}
+        {/* V2.A: destructive bash command (rm/rmdir) — flagged next to the status. */}
+        {destructive && (
+          <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-berry-soft text-berry border border-berry/40">
+            destructive
           </span>
         )}
         <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-soft">{s.label}</span>
