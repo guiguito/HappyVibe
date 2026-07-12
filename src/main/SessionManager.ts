@@ -7,8 +7,10 @@ import path from "node:path";
  * Runs N concurrent Pi processes keyed by our sessionId (electron-free,
  * vitest-importable — the PiClient factory is injected).
  *
- * - Cap: 4 active default, 8 hard (S0.1). Exceeding it throws a clear error
- *   the UI surfaces; nothing is queued.
+ * - Cap: 8 live processes, internal only — no visible session limit (W1.3).
+ *   Overflow hibernates the oldest IDLE session via the injected `hibernate`
+ *   callback; when every live session is genuinely active, start() rejects
+ *   with a clear error the UI surfaces. Nothing is queued.
  * - Spawn stagger: simultaneous starts are spaced ~1s apart (S0.1 measured
  *   5x ready-latency contention at 8-at-once).
  * - Crash isolation: each child's exit only affects its own record; a
@@ -17,7 +19,7 @@ import path from "node:path";
  *   orphans (verify command before kill).
  */
 
-export const DEFAULT_CAP = 4;
+export const DEFAULT_CAP = 8;
 export const HARD_CAP = 8;
 export const SPAWN_STAGGER_MS = 1000;
 
@@ -96,6 +98,8 @@ interface Record_ {
 
 export class SessionManager extends EventEmitter {
   private records = new Map<string, Record_>();
+  /** Victims mid-hibernation — excluded from further victim picks. */
+  private hibernating = new Set<string>();
   private nextSpawnAt = 0;
   private readonly maxActive: number;
   private readonly staggerMs: number;
@@ -106,6 +110,13 @@ export class SessionManager extends EventEmitter {
       pidFile: string;
       maxActive?: number;
       staggerMs?: number;
+      /**
+       * W1.3: pick + prepare the hibernation victim among `liveIds` (capture
+       * stats, log, mark the index). Return null when all are genuinely
+       * active. The manager then stops the returned session and waits for its
+       * exit before spawning the newcomer.
+       */
+      hibernate?: (liveIds: string[]) => Promise<string | null>;
     }
   ) {
     super();
@@ -124,14 +135,15 @@ export class SessionManager extends EventEmitter {
   start(sessionId: string, workspace: string, resumeFile?: string): Promise<ManagedClient> {
     const existing = this.records.get(sessionId);
     if (existing) return existing.startPromise; // active or mid-spawn — never double-spawn
-    if (this.records.size >= this.maxActive) {
-      return Promise.reject(
-        new Error(`Session cap reached (${this.maxActive} active). Stop a session to start another.`)
-      );
-    }
     const rec: Record_ = { client: null, stopping: false, startPromise: undefined as never };
     rec.startPromise = (async (): Promise<ManagedClient> => {
       try {
+        // W1.3: at the cap → hibernate the oldest idle session to make room,
+        // or refuse honestly. This runs synchronously before our own slot is
+        // reserved below (async body executes to the first await), so size
+        // does NOT include this session yet.
+        if (this.records.size >= this.maxActive) await this.makeRoom(sessionId);
+
         const wait = Math.max(0, this.nextSpawnAt - Date.now());
         this.nextSpawnAt = Date.now() + wait + this.staggerMs;
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -154,6 +166,38 @@ export class SessionManager extends EventEmitter {
     })();
     this.records.set(sessionId, rec); // reserve the slot before any await resolves
     return rec.startPromise;
+  }
+
+  /** Hibernate one idle session (stop + wait for its exit) or throw. */
+  private async makeRoom(newId: string): Promise<void> {
+    const live = [...this.records.keys()].filter(
+      (id) => id !== newId && !this.hibernating.has(id) && this.records.get(id)?.client
+    );
+    const victim = (await this.opts.hibernate?.(live)) ?? null;
+    if (!victim || !this.records.has(victim)) {
+      throw new Error(
+        `All ${this.maxActive} running sessions are actively working — stop one to open another.`
+      );
+    }
+    this.hibernating.add(victim);
+    try {
+      const exited = new Promise<void>((resolve) => {
+        const onExit = (e: SessionExit): void => {
+          if (e.sessionId !== victim) return;
+          this.off("session-exit", onExit);
+          resolve();
+        };
+        this.on("session-exit", onExit);
+      });
+      this.stop(victim);
+      // ponytail: 5s escape hatch — a kill-resistant child must not wedge new
+      // sessions; briefly running cap+1 processes beats blocking the user.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([exited, new Promise<void>((r) => { timer = setTimeout(r, 5_000); })]);
+      clearTimeout(timer);
+    } finally {
+      this.hibernating.delete(victim);
+    }
   }
 
   stop(sessionId: string): void {

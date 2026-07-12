@@ -58,6 +58,27 @@ test("corrupt index file starts empty instead of crashing", () => {
   expect(new SessionIndex(file()).list()).toHaveLength(1);
 });
 
+// W1.3 migration: `hibernated` is additive — a pre-W1.3 index (field absent)
+// parses fine and the flag round-trips once set.
+test("index without hibernated field parses; flag is settable and clears", () => {
+  fs.writeFileSync(
+    file(),
+    JSON.stringify([
+      {
+        id: "old-1", title: "Pre-W1.3 session", workspaceId: "/tmp/ws",
+        createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+        archived: false, titleSource: "fallback",
+      },
+    ])
+  );
+  const index = new SessionIndex(file());
+  expect(index.get("old-1")?.hibernated).toBeUndefined(); // absent = not hibernated
+  index.update("old-1", { hibernated: true });
+  expect(new SessionIndex(file()).get("old-1")?.hibernated).toBe(true);
+  index.update("old-1", { hibernated: false });
+  expect(new SessionIndex(file()).get("old-1")?.hibernated).toBe(false);
+});
+
 test("workspace registry adds, dedupes, removes, persists", () => {
   const wsFile = path.join(dir, "workspaces.json");
   const reg = new WorkspaceRegistry(wsFile);

@@ -18,6 +18,7 @@ import {
 } from "./providers";
 import { SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
+import { SessionActivity } from "./activity";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
@@ -55,6 +56,16 @@ function spawnOpts(resumeFile?: string) {
   };
 }
 
+/** True iff this ui-request is a HappyVibe permission prompt (mirrors renderer parsePermission). */
+function isPermissionPrompt(r: { method?: string; title?: string }): boolean {
+  if (r.method !== "select") return false;
+  try {
+    return (JSON.parse(r.title ?? "") as { kind?: string })?.kind === "hv.permission";
+  } catch {
+    return false;
+  }
+}
+
 /** hv.audit payload when this ui-request is the bridge's audit notify, else null. */
 function parseAuditNotify(r: { method?: string; message?: string }): Record<string, unknown> | null {
   if (r.method !== "notify") return null;
@@ -85,10 +96,40 @@ export function registerIpc(win: BrowserWindow): void {
     console.warn("[hv] built-in agent install failed:", e);
   }
 
+  // W1.3: main-side activity knowledge (busy / pending prompt / subagent) —
+  // hibernation must never touch a genuinely active session.
+  const activity = new SessionActivity();
+
   const manager = new SessionManager({
     pidFile,
     spawn: (workspace, resumeFile) =>
       new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(resumeFile))),
+    // W1.3: called at the cap — hibernate the oldest idle session (stats
+    // captured best-effort like close-session, index marked, renderer told),
+    // or return null so the manager refuses honestly.
+    hibernate: async (liveIds) => {
+      const victim = activity.oldestIdle(liveIds);
+      if (!victim) return null;
+      const client = manager.get(victim) as PiClient | null;
+      let stats: unknown = null;
+      if (client) {
+        try {
+          stats = (await client.send({ type: "get_session_stats" })).data ?? null;
+        } catch {
+          /* unresponsive — hibernate without stats */
+        }
+      }
+      const meta = index.get(victim);
+      void log.append({
+        type: "session.hibernate",
+        sessionId: victim,
+        workspaceId: meta?.workspaceId,
+        data: { stats: stats as Record<string, unknown> | null },
+      });
+      index.update(victim, { hibernated: true });
+      sessionsChanged();
+      return victim;
+    },
   });
 
   // Which client owns a pending extension_ui_request id (permission modal, auth flows).
@@ -169,6 +210,7 @@ export function registerIpc(win: BrowserWindow): void {
   const attach = (sessionId: string, client: PiClient): void => {
     const meta = index.get(sessionId);
     client.on("event", (e: Record<string, unknown>) => {
+      activity.event(sessionId, e); // W1.3: busy/subagent state + last-activity
       win.webContents.send("hv:pi-event", { ...e, sessionId });
       if (e.type === "agent_end") {
         maybeTitle(sessionId);
@@ -184,11 +226,14 @@ export function registerIpc(win: BrowserWindow): void {
         return;
       }
       uiOwners.set(r.id, sessionId);
+      // W1.3: an unanswered permission prompt protects the session from hibernation.
+      if (isPermissionPrompt(r)) activity.promptOpened(sessionId);
       win.webContents.send("hv:ui-request", { ...r, sessionId });
     });
   };
 
   manager.on("session-exit", ({ sessionId, code, intentional }: SessionExit) => {
+    activity.remove(sessionId);
     const meta = index.get(sessionId);
     if (!intentional) {
       void log.append({ type: "session.crash", sessionId, workspaceId: meta?.workspaceId, data: { code } });
@@ -204,6 +249,11 @@ export function registerIpc(win: BrowserWindow): void {
       resume ? meta.piSessionFile : undefined
     )) as PiClient;
     attach(meta.id, client);
+    // W1.3: waking a hibernated session — restore is otherwise the plain resume path.
+    if (index.get(meta.id)?.hibernated) {
+      index.update(meta.id, { hibernated: false });
+      sessionsChanged();
+    }
     void log.append({ type: "session.start", sessionId: meta.id, workspaceId: meta.workspaceId, data: { resume } });
     if (!resume) void captureSessionFile(meta.id, client);
     return client;
@@ -308,9 +358,15 @@ export function registerIpc(win: BrowserWindow): void {
     if (behavior !== undefined && behavior !== "steer" && behavior !== "followUp") {
       throw new Error("Invalid prompt behavior");
     }
-    const client = manager.get(sessionId) as PiClient | null;
-    if (!client) throw new Error("Session is not active");
+    let client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
+    if (!client) {
+      // W1.3: prompting a hibernated (or otherwise stopped) session wakes it
+      // transparently — the user is never blocked by our internal cap.
+      if (!meta) throw new Error("Unknown session");
+      client = await startClient(meta, !!meta.piSessionFile);
+    }
+    activity.prompted(sessionId);
     if (meta?.titleSource === "fallback" && !firstPrompt.has(sessionId) && meta.title === "New session") {
       firstPrompt.set(sessionId, msg);
       index.update(sessionId, { title: truncateTitle(msg) }); // fallback until generation lands
@@ -357,6 +413,7 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.on("hv:respond-permission", (_e, id: string, choice: string) => {
     const owner = uiOwners.get(id);
     uiOwners.delete(id);
+    if (owner && owner !== UTILITY) activity.promptClosed(owner);
     clientFor(owner)?.respondUi(id, { value: choice });
   });
 

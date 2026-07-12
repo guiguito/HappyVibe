@@ -31,7 +31,9 @@ beforeEach(() => {
   spawned = [];
 });
 
-const makeManager = (opts: { maxActive?: number; staggerMs?: number } = {}): SessionManager =>
+const makeManager = (
+  opts: { maxActive?: number; staggerMs?: number; hibernate?: (liveIds: string[]) => Promise<string | null> } = {}
+): SessionManager =>
   new SessionManager({
     pidFile,
     staggerMs: 0,
@@ -45,18 +47,58 @@ const makeManager = (opts: { maxActive?: number; staggerMs?: number } = {}): Ses
 
 const readPidFile = (): Record<string, string> => JSON.parse(fs.readFileSync(pidFile, "utf8"));
 
-test("enforces the active cap with a clear error", async () => {
-  const m = makeManager({ maxActive: 2 });
+test("at the cap with no hibernation candidate, start() refuses with a clear error", async () => {
+  const m = makeManager({ maxActive: 2 }); // no hibernate cb → nothing is idle
   await m.start("s1", "/ws");
   await m.start("s2", "/ws");
-  await expect(m.start("s3", "/ws")).rejects.toThrow(/cap reached \(2 active\)/i);
+  await expect(m.start("s3", "/ws")).rejects.toThrow(/all 2 running sessions are actively working/i);
   expect(m.activeIds().sort()).toEqual(["s1", "s2"]);
 });
 
 test("maxActive is clamped to the hard cap of 8", async () => {
   const m = makeManager({ maxActive: 50 });
   for (let i = 0; i < 8; i++) await m.start(`s${i}`, "/ws");
-  await expect(m.start("s9", "/ws")).rejects.toThrow(/cap/i);
+  await expect(m.start("s9", "/ws")).rejects.toThrow(/all 8 running sessions/i);
+});
+
+// ── W1.3: invisible auto-hibernation ────────────────────────────────────────
+
+test("overflow hibernates the callback's pick, then spawns the newcomer", async () => {
+  const asked: string[][] = [];
+  const m = makeManager({
+    maxActive: 2,
+    hibernate: async (live) => {
+      asked.push(live);
+      return "s1";
+    },
+  });
+  const exits: SessionExit[] = [];
+  m.on("session-exit", (e: SessionExit) => exits.push(e));
+  await m.start("s1", "/ws");
+  await m.start("s2", "/ws");
+  await m.start("s3", "/ws"); // over the cap — s1 hibernated to make room
+  expect(asked).toEqual([["s1", "s2"]]); // newcomer never offered as victim
+  expect(exits).toEqual([{ sessionId: "s1", code: null, intentional: true }]); // never a "crash"
+  expect(m.activeIds().sort()).toEqual(["s2", "s3"]);
+  expect(spawned).toHaveLength(3);
+});
+
+test("hibernate returning null (all active) rejects and spawns nothing extra", async () => {
+  const m = makeManager({ maxActive: 2, hibernate: async () => null });
+  await m.start("s1", "/ws");
+  await m.start("s2", "/ws");
+  await expect(m.start("s3", "/ws")).rejects.toThrow(/actively working — stop one/i);
+  expect(m.activeIds().sort()).toEqual(["s1", "s2"]);
+  expect(spawned).toHaveLength(2);
+});
+
+test("a hibernated session can be started again (restore path frees + reuses the slot)", async () => {
+  const m = makeManager({ maxActive: 2, hibernate: async (live) => live[0] });
+  await m.start("s1", "/ws");
+  await m.start("s2", "/ws");
+  await m.start("s3", "/ws"); // hibernates s1
+  await m.start("s1", "/ws", "/tmp/s1.session"); // reopen → hibernates s2
+  expect(m.activeIds().sort()).toEqual(["s1", "s3"]);
 });
 
 test("one crash does not affect other sessions and reports intentional=false", async () => {

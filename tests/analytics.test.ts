@@ -123,6 +123,18 @@ describe("analytics.aggregate — pure", () => {
     expect(a.crashes).toBe(1);
   });
 
+  test("unknown event types (e.g. session.hibernate, W1.3) are ignored gracefully", () => {
+    const a = aggregate([
+      ev({ type: "session.start", sessionId: "s1", workspaceId: "w1", ts: "2026-07-01T10:00:00.000Z" }),
+      ev({ type: "session.hibernate", sessionId: "s1", workspaceId: "w1", ts: "2026-07-01T10:30:00.000Z", data: startStats(9, 9, 9) }),
+      ev({ type: "totally.unknown", ts: "2026-07-01T10:31:00.000Z" }),
+    ]);
+    expect(a.totalSessions).toBe(1);
+    expect(a.crashes).toBe(0);
+    expect(a.tokens).toEqual({ input: 0, output: 0 }); // hibernate stats don't count as an end
+    expect(a.openSessions).toBe(1); // hibernated ≠ ended
+  });
+
   test("missing / null / partial stats degrade to zero, never throw", () => {
     const a = aggregate([
       ev({ type: "session.start", sessionId: "s1", ts: "2026-07-01T10:00:00.000Z" }),

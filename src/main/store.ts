@@ -18,6 +18,8 @@ export interface SessionMeta {
   updatedAt: string;
   archived: boolean;
   piSessionFile?: string;
+  /** W1.3: process stopped to make room; restored transparently on reopen. Additive — absent = false. */
+  hibernated?: boolean;
   /** Who last set the title. "user" is never overwritten by generation. */
   titleSource: "fallback" | "model" | "user";
 }
