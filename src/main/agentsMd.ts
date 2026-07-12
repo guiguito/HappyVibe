@@ -11,17 +11,37 @@ import { PI_CLI_RELPATH } from "./pi/spawn";
  * File access is STRICTLY confined to `<workspace>/AGENTS.md` for a registered
  * workspace: the renderer-supplied workspaceId is a trust boundary.
  */
-export function resolveAgentsMd(registeredWorkspaces: string[], workspaceId: string): string {
+function resolveWorkspaceFile(registeredWorkspaces: string[], workspaceId: string, name: string): string {
   const ws = path.resolve(workspaceId);
   if (!registeredWorkspaces.some((w) => path.resolve(w) === ws)) {
     throw new Error("Unknown workspace");
   }
-  const file = path.resolve(ws, "AGENTS.md");
-  // Belt-and-braces: the result must be exactly <workspace>/AGENTS.md.
-  if (file !== path.join(ws, "AGENTS.md") || path.dirname(file) !== ws) {
+  const file = path.resolve(ws, name);
+  // Belt-and-braces: the result must be exactly <workspace>/<name>.
+  if (file !== path.join(ws, name) || path.dirname(file) !== ws) {
     throw new Error("Path escapes workspace");
   }
   return file;
+}
+
+export function resolveAgentsMd(registeredWorkspaces: string[], workspaceId: string): string {
+  return resolveWorkspaceFile(registeredWorkspaces, workspaceId, "AGENTS.md");
+}
+
+// ── W2.3 missing-file flow: CLAUDE.md copy (same trust boundary) ────────────
+
+export function hasClaudeMd(registeredWorkspaces: string[], workspaceId: string): boolean {
+  return fs.existsSync(resolveWorkspaceFile(registeredWorkspaces, workspaceId, "CLAUDE.md"));
+}
+
+/**
+ * Copies <workspace>/CLAUDE.md → <workspace>/AGENTS.md (explicit user action —
+ * the ONE write this flow performs). Returns the copied content for the editor.
+ */
+export function copyClaudeMdToAgentsMd(registeredWorkspaces: string[], workspaceId: string): string {
+  const content = fs.readFileSync(resolveWorkspaceFile(registeredWorkspaces, workspaceId, "CLAUDE.md"), "utf8");
+  fs.writeFileSync(resolveAgentsMd(registeredWorkspaces, workspaceId), content, "utf8");
+  return content;
 }
 
 export function readAgentsMd(registeredWorkspaces: string[], workspaceId: string): string | null {

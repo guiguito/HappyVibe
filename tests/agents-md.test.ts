@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { readAgentsMd, resolveAgentsMd, workspaceFacts, writeAgentsMd } from "../src/main/agentsMd";
+import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, resolveAgentsMd, workspaceFacts, writeAgentsMd } from "../src/main/agentsMd";
 
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), "hv-agents-"));
 const registered = [ws];
@@ -41,4 +41,25 @@ test("workspaceFacts lists top-level entries and package.json name/scripts", () 
   expect(facts).toContain("src");
   expect(facts).toContain("demo");
   expect(facts).toContain('"dev":"vite"');
+});
+
+// ── W2.3 missing-file flow: CLAUDE.md copy (same trust boundary) ─────────────
+
+test("hasClaudeMd/copyClaudeMd are confined to registered workspaces", () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "hv-outside-"));
+  fs.writeFileSync(path.join(outside, "CLAUDE.md"), "secret");
+  expect(() => hasClaudeMd(registered, outside)).toThrow(/Unknown workspace/);
+  expect(() => copyClaudeMdToAgentsMd(registered, outside)).toThrow(/Unknown workspace/);
+  expect(fs.existsSync(path.join(outside, "AGENTS.md"))).toBe(false); // never touched disk
+});
+
+test("copyClaudeMdToAgentsMd copies <workspace>/CLAUDE.md → AGENTS.md and returns the content", () => {
+  const ws2 = fs.mkdtempSync(path.join(os.tmpdir(), "hv-claude-"));
+  const reg2 = [ws2];
+  expect(hasClaudeMd(reg2, ws2)).toBe(false);
+  expect(() => copyClaudeMdToAgentsMd(reg2, ws2)).toThrow(); // missing CLAUDE.md → plain fs error
+  fs.writeFileSync(path.join(ws2, "CLAUDE.md"), "# Rules\nBe kind.\n");
+  expect(hasClaudeMd(reg2, ws2)).toBe(true);
+  expect(copyClaudeMdToAgentsMd(reg2, ws2)).toBe("# Rules\nBe kind.\n");
+  expect(fs.readFileSync(path.join(ws2, "AGENTS.md"), "utf8")).toBe("# Rules\nBe kind.\n");
 });
