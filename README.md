@@ -65,6 +65,10 @@ npm run package    # unsigned .app in release/mac-arm64/ (bundles pi-runtime
 - Upgrading Pi = a deliberate change: bump the pin in `pi-runtime/package.json`, re-run the whole test suite, re-check the wire shapes in `docs/validation/d1.md`.
 - **`pi-subagents` is a second pinned-exact runtime dep** (`pi-runtime/package.json`, `0.33.1`) with the SAME upgrade-gate treatment as Pi: bump deliberately, re-run `tests/agents-bridge.test.ts` (it asserts the observed subagent `tool_execution_*` trace shapes — they moved between the S0.3 spike and 0.33.1) and re-check `docs/validation/d1.md §B6`. It loads as a second `-e` extension; its child Pi spawn is pinned to the embedded bin via `PI_SUBAGENT_PI_BINARY` (spawn env). The two built-in agents ship as `pi-runtime/agents/*.md` and install idempotently into the app-owned agent dir at startup.
 
+## Known limitations
+
+- **Queued messages can't be removed.** Pi 0.80.3's `queue_update` is read-only state — there is no dequeue RPC, so the chat bar can show queued steering/follow-up messages but never unqueue them. An upstream Pi feature request is the path; the chips say so honestly in their tooltip.
+
 ## Where to build next (per the HappyVibe PRD)
 
 Sessions list & parallel sessions · MCP via `pi-mcp-adapter` · sub-agents via `pi-subagents` (Code Explorer + Summarizer) · context inspection/editing · audit log · pretty diffs · real design. The PiClient event stream and the bridge pattern generalize to all of these.

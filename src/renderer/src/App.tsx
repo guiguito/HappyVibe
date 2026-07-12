@@ -457,9 +457,10 @@ export default function App(): React.JSX.Element {
     const sid = selectedId;
     // W2.1: attached images ride the RPC `images` param (ImageContent[]).
     const images = attachments?.length ? buildImages(attachments) : undefined;
-    // B2: while the agent runs, a bare prompt errors — Enter steers, the Queue
-    // button follows up. The message shows as a chip (queue_update) and only
-    // joins the transcript when Pi delivers it.
+    // B2: while the agent runs, a bare prompt errors — Enter/send steers
+    // (V2.A: the Queue button is gone; the followUp behavior plumbing stays).
+    // The message shows as a chip (queue_update) and only joins the
+    // transcript when Pi delivers it.
     if (busy[sid]) {
       try {
         await window.hv.promptSession(sid, msg, behavior ?? "steer", images);

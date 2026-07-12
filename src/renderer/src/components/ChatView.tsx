@@ -266,14 +266,14 @@ export function ChatView({
           <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-1.5 px-1 pb-2">
             <span
               className="text-[10px] font-bold uppercase tracking-widest text-ink-soft"
-              title="Queued messages are kept even if you press Stop."
+              title="Queued messages are kept even if you press Stop. Pi can't unqueue messages yet."
             >
               queued · kept on stop
             </span>
             {queue.steering.map((m, i) => (
               <span
                 key={`s-${i}`}
-                title={`Steering: delivered between tool calls — ${m}`}
+                title={`Queued — Pi can't unqueue messages yet. Delivered between tool calls: ${m}`}
                 className="max-w-56 truncate rounded-full border-2 border-honey bg-honey-soft px-2.5 py-0.5 text-xs font-semibold"
               >
                 ↪ {m}
@@ -282,7 +282,7 @@ export function ChatView({
             {queue.followUp.map((m, i) => (
               <span
                 key={`f-${i}`}
-                title={`Follow-up: runs after this turn — ${m}`}
+                title={`Queued — Pi can't unqueue messages yet. Runs after this turn: ${m}`}
                 className="max-w-56 truncate rounded-full border-2 border-sky/50 bg-card px-2.5 py-0.5 text-xs font-semibold"
               >
                 ⏭ {m}
@@ -409,27 +409,18 @@ export function ChatView({
             placeholder={busy ? "Steer the agent — lands between tool calls…" : "Ask for a change…"}
             className="flex-1 min-w-0 bg-transparent px-2 py-1.5 text-[0.95rem] focus:outline-none placeholder:text-ink-soft/60"
           />
+          {/* V2.A: no separate Queue button — send/Enter steers while busy
+              (App keeps the followUp behavior plumbing; it just has no UI). */}
           {busy && (
-            <>
-              <button
-                type="button"
-                onClick={onAbort}
-                aria-label="Stop"
-                title="Stop the agent"
-                className="rounded-xl border-2 border-berry text-berry px-3 py-2 hover:bg-berry-soft cursor-pointer"
-              >
-                <StopIcon />
-              </button>
-              <button
-                type="button"
-                disabled={!input.trim()}
-                title="Queue for after this turn"
-                onClick={() => submit("followUp")}
-                className="rounded-xl border-2 border-line-strong text-ink-soft font-bold text-sm px-4 py-2 enabled:hover:bg-paper-deep/40 enabled:cursor-pointer disabled:opacity-40"
-              >
-                Queue
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={onAbort}
+              aria-label="Stop"
+              title="Stop the agent"
+              className="rounded-xl border-2 border-berry text-berry px-3 py-2 hover:bg-berry-soft cursor-pointer"
+            >
+              <StopIcon />
+            </button>
           )}
           <button
             type="submit"
