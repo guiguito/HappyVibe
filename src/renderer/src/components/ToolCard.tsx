@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
+import { toolLabel, type IconKind } from "../toolLabel";
 import type { SubagentTrace } from "../agents";
 
 export interface ToolCardData {
@@ -20,6 +21,68 @@ const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
   error: { dot: "bg-berry", label: "error" },
   denied: { dot: "bg-berry", label: "denied" },
 };
+
+// ── W1.1 tool-kind icons (inline SVGs — no icon library) ────────────────────
+
+const ICON_PATHS: Record<IconKind, React.JSX.Element> = {
+  terminal: (
+    <>
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
+    </>
+  ),
+  edit: <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />,
+  "file-plus": (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="12" y1="18" x2="12" y2="12" />
+      <line x1="9" y1="15" x2="15" y2="15" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </>
+  ),
+  folder: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />,
+  robot: (
+    <>
+      <rect x="4" y="8" width="16" height="12" rx="2" />
+      <path d="M12 8V5" />
+      <circle cx="12" cy="4" r="1" />
+      <line x1="9" y1="13" x2="9" y2="15" />
+      <line x1="15" y1="13" x2="15" y2="15" />
+    </>
+  ),
+  wrench: (
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+  ),
+};
+
+export function ToolIcon({ kind, className }: { kind: IconKind; className?: string }): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className ?? "size-4 shrink-0 text-ink-soft"}
+      aria-hidden
+    >
+      {ICON_PATHS[kind]}
+    </svg>
+  );
+}
 
 const LINE_STYLE: Record<DiffLine["type"], { row: string; sign: string }> = {
   add: { row: "bg-leaf-soft", sign: "+" },
@@ -43,6 +106,41 @@ function DiffView({ lines }: { lines: DiffLine[] }): React.JSX.Element {
   );
 }
 
+/** W1.1: raw tool name + args + result — always behind the "details" toggle. */
+function TechnicalDetails({ card }: { card: ToolCardData }): React.JSX.Element {
+  const result =
+    card.result === undefined
+      ? null
+      : typeof card.result === "string"
+        ? card.result
+        : JSON.stringify(card.result, null, 2);
+  return (
+    <pre className="font-mono text-xs bg-paper-deep/60 border-t-2 border-line px-3.5 py-2.5 overflow-x-auto max-h-64 whitespace-pre-wrap">
+      <span className="font-bold">{card.toolName}</span>
+      {"\n"}
+      {JSON.stringify(card.args, null, 2)}
+      {result !== null && (
+        <>
+          {"\n── result ──\n"}
+          {result}
+        </>
+      )}
+    </pre>
+  );
+}
+
+function DetailsToggle({ open, onClick }: { open: boolean; onClick: () => void }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-ink-soft rounded-full px-2 py-0.5 border border-line hover:bg-paper-deep/60 cursor-pointer"
+    >
+      {open ? "hide details" : "details"}
+    </button>
+  );
+}
+
 const fmtCost = (c?: number): string => (c != null ? `$${c.toFixed(c < 0.01 ? 5 : 4)}` : "");
 
 /**
@@ -50,13 +148,16 @@ const fmtCost = (c?: number): string => (c != null ? `$${c.toFixed(c < 0.01 ? 5 
  * normal tool card: the child transcript (live during the run, final at end),
  * per-agent model + usage + cost + turns. Collapsible; open while running so
  * the delegation is watchable, collapses on done.
+ * W1.1: the headline is the shared treatment — robot icon + intent (model-
+ * provided, required on registered tools) with a derived fallback.
  */
 function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
   const running = card.status === "running";
   const [open, setOpen] = useState(true);
-  const req = card.args as { agent?: string; task?: string } | undefined;
+  const req = card.args as { task?: string } | undefined;
   const results = card.trace?.results ?? [];
   const denied = card.status === "denied";
+  const { icon, label } = toolLabel(card.toolName, card.args);
   return (
     <div className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}>
       <button
@@ -65,10 +166,9 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-paper-deep/40 transition-colors"
       >
         <span className={`size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : denied ? "bg-berry" : "bg-leaf"}`} />
-        <span className="text-[11px] font-black uppercase tracking-wide text-sky shrink-0">subagent</span>
-        <span className="font-bold text-sm shrink-0">{req?.agent ?? results[0]?.agent ?? "?"}</span>
-        <span className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0" title={req?.task}>
-          {req?.task ?? ""}
+        <ToolIcon kind={icon} className="size-4 shrink-0 text-sky" />
+        <span className="font-bold text-sm truncate flex-1 min-w-0" title={req?.task}>
+          {label}
         </span>
         <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-soft">
           {running ? "delegating…" : denied ? "denied" : "done"}
@@ -109,39 +209,40 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
 
 export function ToolCard({ card }: { card: ToolCardData }): React.JSX.Element {
   if (card.toolName === "subagent") return <SubagentCard card={card} />;
-  // Edit diffs open by default (the diff IS the payload); write stays collapsed
-  // (a full new file can be long). Bash keeps the raw output card.
+  // W1.1: headline = icon + human label; the technical block (raw name/args/
+  // result) lives behind the collapsed "details" toggle. Diffs are NOT
+  // technical — they ARE the human content for edit/write — so they render
+  // under the headline: edit open by default (the diff is the payload), write
+  // toggled by the headline (a full new file can be long).
   const diff = card.toolName === "edit" || card.toolName === "write" ? toolDiff(card.toolName, card.args) : null;
-  const [open, setOpen] = useState(diff?.kind === "edit");
+  const [openDiff, setOpenDiff] = useState(diff?.kind === "edit");
+  const [details, setDetails] = useState(false);
   const s = STATUS[card.status];
   const denied = card.status === "denied";
+  const { icon, label } = toolLabel(card.toolName, card.args);
   return (
     <div
       className={`rounded-xl border-2 bg-card shadow-sticker overflow-hidden ${
         denied ? "border-berry/50" : "border-line"
       }`}
     >
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-paper-deep/40 transition-colors"
-      >
-        <span className={`size-2.5 rounded-full shrink-0 ${s.dot}`} />
-        <span className="font-bold text-sm">{card.toolName}</span>
-        {diff ? (
-          <span className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0">
-            {diff.path}
-            {diff.kind === "write" && (
+      <div className="w-full flex items-center gap-2.5 px-3.5 py-2.5">
+        <button
+          type="button"
+          onClick={() => (diff ? setOpenDiff(!openDiff) : setDetails(!details))}
+          className="flex items-center gap-2.5 text-left cursor-pointer flex-1 min-w-0"
+        >
+          <span className={`size-2.5 rounded-full shrink-0 ${s.dot}`} />
+          <ToolIcon kind={icon} />
+          <span className="font-bold text-sm truncate flex-1 min-w-0" title={label}>
+            {label}
+            {diff?.kind === "write" && (
               <span className="ml-2 font-sans text-[10px] font-bold uppercase tracking-wide text-leaf">
                 new file · {diff.lines.length} lines
               </span>
             )}
           </span>
-        ) : (
-          <code className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0">
-            {typeof card.args === "string" ? card.args : JSON.stringify(card.args)?.slice(0, 160)}
-          </code>
-        )}
+        </button>
         {card.approval && (
           <span
             className={`shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 border ${
@@ -159,17 +260,12 @@ export function ToolCard({ card }: { card: ToolCardData }): React.JSX.Element {
           </span>
         )}
         <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-soft">{s.label}</span>
-      </button>
-      {open &&
-        (diff ? (
-          <DiffView lines={diff.lines} />
-        ) : (
-          <pre className="font-mono text-xs bg-paper-deep/60 border-t-2 border-line px-3.5 py-2.5 overflow-x-auto max-h-64">
-            {JSON.stringify(card.result ?? card.args, null, 2)}
-          </pre>
-        ))}
-      {/* Tool errors keep their message visible even when the diff view owns the body. */}
-      {card.status === "error" && diff && (
+        <DetailsToggle open={details} onClick={() => setDetails(!details)} />
+      </div>
+      {diff && openDiff && <DiffView lines={diff.lines} />}
+      {details && <TechnicalDetails card={card} />}
+      {/* Errors stay visible even though raw output otherwise sits behind details. */}
+      {card.status === "error" && !details && (
         <div className="border-t-2 border-berry/30 bg-berry-soft/60 px-3.5 py-2 font-mono text-xs text-berry whitespace-pre-wrap">
           {typeof card.result === "string" ? card.result : JSON.stringify(card.result)?.slice(0, 400)}
         </div>

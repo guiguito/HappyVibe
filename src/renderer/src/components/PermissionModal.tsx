@@ -1,5 +1,22 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import type { PermissionChoice, PermissionInfo, UiRequest } from "../permission";
+import { toolLabel } from "../toolLabel";
+import { ToolIcon } from "./ToolCard";
+
+/**
+ * W1.1: rebuild enough args from the bridge's summary to feed toolLabel — the
+ * wire shape ({tool, summary}) is unchanged. bash summaries ARE the command;
+ * other summaries are JSON.stringify(input) (may be truncated → parse fails →
+ * toolLabel falls back to a derived/prettified label).
+ */
+function argsFromSummary(tool: string, summary: string): unknown {
+  if (tool === "bash") return { command: summary };
+  try {
+    return JSON.parse(summary);
+  } catch {
+    return undefined;
+  }
+}
 
 const CHOICE_STYLE: Record<string, string> = {
   Allow: "bg-leaf text-paper border-ink/80 hover:brightness-105",
@@ -16,6 +33,7 @@ export function PermissionModal({
   info: PermissionInfo;
   onChoice: (c: PermissionChoice) => void;
 }): React.JSX.Element {
+  const { icon, label } = toolLabel(info.tool, argsFromSummary(info.tool, info.summary));
   return (
     <Dialog.Root open>
       <Dialog.Portal>
@@ -36,14 +54,24 @@ export function PermissionModal({
             </div>
             <div className="min-w-0">
               <Dialog.Title className="font-bold text-lg leading-tight">The agent wants to run something</Dialog.Title>
-              <Dialog.Description className="text-sm text-ink-soft">
-                Tool: <span className="font-bold text-ink">{info.tool || "unknown"}</span>
+              {/* W1.1: human summary line (same toolLabel as the tool cards). */}
+              <Dialog.Description className="text-sm text-ink flex items-center gap-1.5">
+                <ToolIcon kind={icon} className="size-4 shrink-0 text-ink-soft" />
+                <span className="font-bold break-words">{label}</span>
               </Dialog.Description>
             </div>
           </div>
-          <pre className="font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-x-auto whitespace-pre-wrap break-all max-h-48 mb-5">
-            {info.summary}
-          </pre>
+          {/* Raw tool name + summary stay available behind a collapsed toggle. */}
+          <details className="mb-5">
+            <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wide text-ink-soft">
+              details
+            </summary>
+            <pre className="mt-2 font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-x-auto whitespace-pre-wrap break-all max-h-48">
+              <span className="font-bold">{info.tool || "unknown"}</span>
+              {"\n"}
+              {info.summary}
+            </pre>
+          </details>
           <div className="flex flex-col gap-2">
             {(req.options ?? ["Allow", "Allow for session", "Deny"]).map((o) => (
               <button
