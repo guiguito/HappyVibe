@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld("hv", {
   writeAgentsMd: (workspaceId: string, content: string) =>
     ipcRenderer.invoke("hv:write-agents-md", workspaceId, content),
   proposeAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:propose-agents-md", workspaceId),
+  // W2.3 missing-file flow (additive)
+  hasClaudeMd: (workspaceId: string) => ipcRenderer.invoke("hv:has-claude-md", workspaceId),
+  copyClaudeMd: (workspaceId: string) => ipcRenderer.invoke("hv:copy-claude-md", workspaceId),
 
   // ── B3: providers & onboarding (additive; existing signatures unchanged) ──
   respondInput: (id: string, value: string | null) => ipcRenderer.send("hv:respond-input", id, value),

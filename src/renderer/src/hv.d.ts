@@ -136,6 +136,9 @@ interface HvApi {
   readAgentsMd(workspaceId: string): Promise<string | null>;
   writeAgentsMd(workspaceId: string, content: string): Promise<void>;
   proposeAgentsMd(workspaceId: string): Promise<string | null>;
+  // W2.3 missing-file flow
+  hasClaudeMd(workspaceId: string): Promise<boolean>;
+  copyClaudeMd(workspaceId: string): Promise<string>;
 
   onPiEvent(cb: (e: Record<string, unknown>) => void): () => void;
   onUiRequest(

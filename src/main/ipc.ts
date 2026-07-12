@@ -23,7 +23,7 @@ import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
-import { proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
+import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 
 /** Transcript rebuilt from Pi's get_messages on resume (renderer shape). */
@@ -569,6 +569,11 @@ export function registerIpc(win: BrowserWindow): void {
       model: getDefaultModel(),
       env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
     }));
+  // W2.3 missing-file flow: CLAUDE.md → AGENTS.md copy (same confinement).
+  ipcMain.handle("hv:has-claude-md", (_e, workspaceId: string) =>
+    hasClaudeMd(workspaces.list(), workspaceId));
+  ipcMain.handle("hv:copy-claude-md", (_e, workspaceId: string) =>
+    copyClaudeMdToAgentsMd(workspaces.list(), workspaceId));
 
   // ── B6: agents & tools ─────────────────────────────────────────────────
   // hv.agents / hv.tools ride the fire-and-forget /hv-* command channel (like

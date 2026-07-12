@@ -7,6 +7,7 @@ import {
   type AgentMessage, type MarkKey, type SessionEntry,
 } from "./hv-context";
 import { parseAgentFile, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
+import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 
 const sessionGrants = new Set<string>();
 
@@ -138,6 +139,20 @@ export default function (pi: ExtensionAPI) {
   // null until the first turn runs — before_agent_start is the capture point.
   let systemText: string | null = null;
 
+  // ── W2.3 nested AGENTS.md (docs/validation/d1.md §hv.context-files) ──────
+  // Absolute paths of nested AGENTS.md files discovered via file-tool calls
+  // this session. In-bridge-memory only — a respawn rediscovers them as soon
+  // as tools touch the same subtrees (injection is per-turn anyway).
+  const nestedAgentsMd = new Set<string>();
+  const readFileOrNull = (p: string): string | null => {
+    try {
+      return fs.readFileSync(p, "utf8");
+    } catch {
+      return null;
+    }
+  };
+  const nestedList = () => nestedFileList(nestedAgentsMd, process.cwd(), readFileOrNull);
+
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi); // all extensions have registered by now (idempotent across reloads)
     restoreMarks(ctx.sessionManager.getEntries() as unknown as SessionEntry[]);
@@ -145,20 +160,26 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("before_agent_start", async (event) => {
     const sp = (event.systemPrompt ?? "") as string;
-    systemText = sp;
+    // W2.3: nested AGENTS.md injection — content re-read at injection time so
+    // it's always current. Returning systemPrompt replaces it for THIS TURN
+    // ONLY (agent-session.js resets to the base prompt when we return nothing).
+    const section = renderNestedSection(nestedAgentsMd, process.cwd(), readFileOrNull);
+    const injected = sp + section;
+    systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
       contextFiles?: Array<{ path?: string; content?: string }>;
     };
     systemBlock = {
-      chars: sp.length,
-      estTokens: Math.ceil(sp.length / 4),
+      chars: injected.length,
+      estTokens: Math.ceil(injected.length / 4),
       toolCount: Array.isArray(opts.selectedTools) ? opts.selectedTools.length : 0,
       contextFiles: (opts.contextFiles ?? []).map((f) => {
         const chars = (f.content ?? "").length;
         return { path: f.path ?? "", chars, estTokens: Math.ceil(chars / 4) };
       }),
     };
+    if (section) return { systemPrompt: injected };
   });
 
   // The only place removal takes effect. Non-destructive: session file untouched.
@@ -181,7 +202,8 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.notify(
         ctxPayload({
           stage: "snapshot",
-          system: systemBlock,
+          // W2.3: nested list computed fresh — the set can grow mid-turn.
+          system: systemBlock ? { ...systemBlock, nested: nestedList() } : null,
           items: serializeEntries(entries),
           marks: [...contextMarks],
         }),
@@ -227,6 +249,19 @@ export default function (pi: ExtensionAPI) {
     const tool = event.toolName as string;
     const input = (event.input ?? {}) as Record<string, unknown>;
     const summary = summarize(tool, input);
+
+    // W2.3: nested AGENTS.md discovery — every file-tool call reveals which
+    // subtree the session touches; the nearest AGENTS.md above the target
+    // (below the session cwd, exclusive) is injected from the next turn on.
+    // Runs before the permission gate: discovery is read-only and harmless.
+    if (FILE_TOOLS.has(tool)) {
+      const fp = toolFilePath(input);
+      const found = fp ? nearestAgentsMd(fp, process.cwd(), fs.existsSync) : null;
+      if (found && !nestedAgentsMd.has(found)) {
+        nestedAgentsMd.add(found);
+        ctx.ui.notify(JSON.stringify({ kind: "hv.context-files", nested: nestedList() }), "info");
+      }
+    }
 
     // Dangerous mode: everything runs without prompting, but NEVER silently —
     // each call is audit-flagged and the renderer shows a permanent banner.

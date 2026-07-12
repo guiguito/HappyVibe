@@ -420,7 +420,7 @@ export function ChatView({
           </button>
         </div>
       </form>
-      {agentsMdOpen && <AgentsMdPanel workspace={workspace} onClose={() => setAgentsMdOpen(false)} />}
+      {agentsMdOpen && <AgentsMdPanel workspace={workspace} sessionId={sessionId} onClose={() => setAgentsMdOpen(false)} />}
       {contextOpen && (
         <ContextPanel
           sessionId={sessionId}

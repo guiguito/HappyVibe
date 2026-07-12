@@ -16,7 +16,7 @@ import {
   type QueuedPrompt,
 } from "./permission";
 import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
-import { parseContextAck, parseContextSnapshot, type ContextSnapshot } from "./context";
+import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
 import { delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard } from "./streaming";
@@ -171,6 +171,13 @@ export default function App(): React.JSX.Element {
         const ack = parseContextAck(r);
         // Update the mark set live (remove/restore) without re-fetching the snapshot.
         if (ack) setContextSnapshots((p) => (p[sid] ? { ...p, [sid]: { ...p[sid], marks: ack.marks } } : p));
+        // W2.3: live nested AGENTS.md list — patch an existing snapshot's system
+        // block (no snapshot yet → the panel's own refresh will carry it).
+        const nested = parseContextFiles(r);
+        if (nested)
+          setContextSnapshots((p) =>
+            p[sid]?.system ? { ...p, [sid]: { ...p[sid], system: { ...p[sid].system!, nested } } } : p,
+          );
       }
     });
 
