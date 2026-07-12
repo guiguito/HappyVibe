@@ -135,6 +135,14 @@ test.skipIf(!KEY)(
     try {
       await c.start();
       const seen = requests.length; // only inspect requests from this point on
+      // The model may legitimately try a DIFFERENT tool after the rule-deny
+      // ("let me use write instead") — that raises a real hv.permission ask,
+      // and prompts never time out by design, so an unanswered one hangs the
+      // turn forever (this was the recurring 180s "flake"). Auto-deny every
+      // follow-up prompt so the turn can complete.
+      c.on("ui-request", (r: UiReq) => {
+        if (isKind(r, "hv.permission")) c.respondUi(r.id, { value: "Deny" });
+      });
       const done = new Promise<void>((resolve) => c.on("event", (e) => { if (e.type === "agent_end") resolve(); }));
       await c.send({
         type: "prompt",
@@ -156,8 +164,14 @@ test.skipIf(!KEY)(
       expect(String(audit.summary)).toContain("touch");
 
       await done; // agent continued gracefully after the block
-      // No user prompt may have appeared — the rule decided, not the modal.
-      expect(requests.slice(seen).some((r) => isKind(r, "hv.permission"))).toBe(false);
+      // The DENIED call itself must never have prompted — the rule decided,
+      // not the modal. (Fallback attempts with OTHER tools may legitimately
+      // prompt; those are auto-denied above.)
+      const touchPrompts = requests
+        .slice(seen)
+        .filter((r) => isKind(r, "hv.permission"))
+        .filter((r) => String(payloadOf(r).summary ?? "").includes("touch"));
+      expect(touchPrompts).toEqual([]);
       expect(fs.existsSync(path.join(workDir, "forbidden.txt"))).toBe(false);
     } finally {
       c.stop();
