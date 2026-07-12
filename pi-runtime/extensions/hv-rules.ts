@@ -41,8 +41,10 @@ export interface Verdict {
   rule?: Rule & { scope: "global" | "workspace" };
 }
 
-/** Tools that never need approval by default (pre-B4 spike behavior). */
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls"]);
+/** Tools that never need approval by default (pre-B4 spike behavior).
+ * ask_user is UI-only (V2.B): prompting for permission to ask a question
+ * would stack two blocking modals for a harmless call. */
+export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user"]);
 
 export const EMPTY_RULES: RulesFile = { global: [], workspaces: {} };
 
