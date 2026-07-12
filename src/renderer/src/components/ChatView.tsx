@@ -30,6 +30,7 @@ export function ChatView({
   onRetry,
   onOpenFolder,
   onCompact,
+  onOpenFile,
 }: {
   workspace: string | null;
   sessionId: string | null;
@@ -52,6 +53,8 @@ export function ChatView({
   onRetry: () => void;
   onOpenFolder: () => void;
   onCompact: () => void;
+  /** W2.2: open a workspace-relative file in an editor tab (clickable card paths). */
+  onOpenFile?: (relPath: string) => void;
 }): React.JSX.Element {
   const [input, setInput] = useState("");
   // ── W2.1: model chip + attach menu state ─────────────────────────
@@ -234,7 +237,7 @@ export function ChatView({
             ))}
           </div>
         )}
-        <Transcript items={items} streaming={streaming} busy={busy} onRetry={onRetry} />
+        <Transcript items={items} streaming={streaming} busy={busy} onRetry={onRetry} workspace={workspace} onOpenFile={onOpenFile} />
       </div>
 
       {/* Composer */}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
 import { delegationLabel, type SubagentTrace } from "../agents";
+import { resolveCardPath } from "../tabs";
 
 export interface ToolCardData {
   toolCallId: string;
@@ -144,6 +145,69 @@ function DetailsToggle({ open, onClick }: { open: boolean; onClick: () => void }
 const fmtCost = (c?: number): string => (c != null ? `$${c.toFixed(c < 0.01 ? 5 : 4)}` : "");
 
 /**
+ * W2.2 — the file path on a card, made interactive (PRD "Chat experience"):
+ * click opens the file in an editor tab; small hover affordances reveal it in
+ * Finder (workspace-confined) and copy the absolute path. Paths that resolve
+ * outside the session workspace render as plain text (no link, no reveal).
+ */
+function PathActions({
+  raw,
+  workspace,
+  onOpenFile,
+}: {
+  raw: string;
+  workspace?: string | null;
+  onOpenFile?: (relPath: string) => void;
+}): React.JSX.Element {
+  const rel = workspace ? resolveCardPath(workspace, raw) : null;
+  if (!rel || !onOpenFile) {
+    return (
+      <span className="shrink-0 max-w-48 truncate font-mono text-[11px] text-ink-soft" title={raw}>
+        {raw}
+      </span>
+    );
+  }
+  const abs = `${workspace!.replace(/\/+$/, "")}/${rel}`;
+  return (
+    <span className="group/path shrink-0 flex items-center gap-1 min-w-0">
+      <button
+        type="button"
+        onClick={() => onOpenFile(rel)}
+        title={`Open ${rel} in the editor`}
+        className="max-w-48 truncate font-mono text-[11px] text-tangerine-deep hover:underline underline-offset-2 cursor-pointer"
+      >
+        {rel}
+      </button>
+      <span className="hidden group-hover/path:flex items-center gap-0.5">
+        <button
+          type="button"
+          aria-label="Reveal in Finder"
+          title="Reveal in Finder"
+          onClick={() => void window.hv.revealPath(workspace!, rel)}
+          className="rounded p-0.5 text-ink-soft hover:text-ink cursor-pointer"
+        >
+          <svg viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          aria-label="Copy path"
+          title="Copy absolute path"
+          onClick={() => void navigator.clipboard.writeText(abs)}
+          className="rounded p-0.5 text-ink-soft hover:text-ink cursor-pointer"
+        >
+          <svg viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        </button>
+      </span>
+    </span>
+  );
+}
+
+/**
  * W1.2: the in-flow subagent card is a COMPACT call line — "→ asked <agent>:
  * <intent>" plus status and a one-line result summary. Only the call and the
  * final output are what actually occupied the main agent's context (s0.3
@@ -220,7 +284,16 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
   );
 }
 
-export function ToolCard({ card }: { card: ToolCardData }): React.JSX.Element {
+export function ToolCard({
+  card,
+  workspace,
+  onOpenFile,
+}: {
+  card: ToolCardData;
+  /** W2.2: session workspace — card paths resolve against it. */
+  workspace?: string | null;
+  onOpenFile?: (relPath: string) => void;
+}): React.JSX.Element {
   if (card.toolName === "subagent") return <SubagentCard card={card} />;
   // W1.1: headline = icon + human label; the technical block (raw name/args/
   // result) lives behind the collapsed "details" toggle. Diffs are NOT
@@ -232,7 +305,7 @@ export function ToolCard({ card }: { card: ToolCardData }): React.JSX.Element {
   const [details, setDetails] = useState(false);
   const s = STATUS[card.status];
   const denied = card.status === "denied";
-  const { icon, label } = toolLabel(card.toolName, card.args);
+  const { icon, label, path: filePath } = toolLabel(card.toolName, card.args);
   return (
     <div
       className={`rounded-xl border-2 bg-card shadow-sticker overflow-hidden ${
@@ -256,6 +329,7 @@ export function ToolCard({ card }: { card: ToolCardData }): React.JSX.Element {
             )}
           </span>
         </button>
+        {filePath && <PathActions raw={filePath} workspace={workspace} onOpenFile={onOpenFile} />}
         {card.approval && (
           <span
             className={`shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 border ${

@@ -23,6 +23,8 @@ export type IconKind =
 export interface ToolLabel {
   icon: IconKind;
   label: string;
+  /** W2.2: file the call touches (edit/write/read) — makes the card path clickable. */
+  path?: string;
 }
 
 const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
@@ -52,15 +54,17 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     }
     case "edit": {
       const p = str("path");
-      return { icon: "edit", label: p ? `Editing ${basename(p)} (${p})` : "Editing a file" };
+      // W2.2: the path itself moved out of the label into the card's
+      // interactive path chip (ToolCard PathActions) — label keeps the basename.
+      return { icon: "edit", label: p ? `Editing ${basename(p)}` : "Editing a file", path: p ?? undefined };
     }
     case "write": {
       const p = str("path");
-      return { icon: "file-plus", label: p ? `Creating ${basename(p)}` : "Creating a file" };
+      return { icon: "file-plus", label: p ? `Creating ${basename(p)}` : "Creating a file", path: p ?? undefined };
     }
     case "read": {
       const p = str("path");
-      return { icon: "eye", label: p ? `Reading ${basename(p)}` : "Reading a file" };
+      return { icon: "eye", label: p ? `Reading ${basename(p)}` : "Reading a file", path: p ?? undefined };
     }
     case "grep":
     case "find": {
