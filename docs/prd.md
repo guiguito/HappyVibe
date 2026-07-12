@@ -19,7 +19,8 @@ A desktop GUI (Electron, macOS first) that ships a **curated distribution of the
 
 - Sidebar shows **all workspaces as a collapsible tree** with their sessions; title-only search over our index; archive = index flag.
 - Session titles: model-generated after the first exchange (truncated-first-message fallback; inline rename wins permanently).
-- **Parallel sessions with invisible auto-hibernation.** The active/inactive distinction is not the user's problem: no visible session limit. An internal live-process cap (~8) protects resources; when room is needed the **oldest idle** session (not mid-call, no pending permission, no subagent running) is hibernated — stats captured, process stopped, index marked — and **restored transparently** when reopened (Pi `--session` resume). Genuinely active sessions are never touched; the session the user is driving is never blocked.
+- **Parallel sessions with invisible auto-hibernation.** The active/inactive distinction is not the user's problem: no visible session limit and **no manual stop/end-session control anywhere** (the in-chat abort of a running response is the only stop). An internal live-process cap (~8) protects resources; when room is needed the **oldest idle** session (not mid-call, no pending permission, no subagent running) is hibernated — stats captured, process stopped, index marked — and **restored transparently** when reopened (Pi `--session` resume). Genuinely active sessions are never touched; the session the user is driving is never blocked.
+- Session row actions: rename, archive (index flag), and **delete** (confirmed trash: stops if live, removes the index entry and the app-owned Pi session file, audited). The new-session `+` stays positionally stable — hover actions never displace it.
 - Crash isolation per session; PID tracking + orphan sweep at startup; spawns staggered (~1s) to avoid cold-start contention.
 
 ## Providers & models
@@ -29,16 +30,18 @@ A desktop GUI (Electron, macOS first) that ships a **curated distribution of the
 
 ## Chat experience
 
-- Streaming markdown transcript (O(1) per-token render path), steering while the agent runs (Enter = steer between tool calls; explicit queue-for-after; queue chips mirror Pi's real queue and survive Stop), provider errors and crashes as first-class transcript items with retry.
-- Composer: **icon** Send/Stop; current-model chip with per-session dropdown (resolution session → workspace → global); a **"+" attach menu** (always visible) — image attach enabled when the model supports vision, disabled otherwise; extensible (file import later).
-- **Tool calls never show raw technical calls by default.** Every card leads with a tool-kind icon + a human headline: the model-provided **`intent`** ("why I'm doing this") on registered tools — the `subagent` tool and all future registered tools carry a required `intent` parameter — and a **derived label** built from tool + args for Pi's built-in tools (whose schemas can't be extended). Raw name/args/result sit behind a details toggle. Edit/write cards render real diffs.
+- Streaming markdown transcript (O(1) per-token render path), steering while the agent runs (send/Enter steers — delivered between tool calls; no separate queue button; queue chips mirror Pi's real queue, survive Stop, and carry an honest "can't unqueue yet" note — Pi exposes no dequeue API), provider errors and crashes as first-class transcript items with retry.
+- Composer: **icon** Send/Stop; current-model chip with per-session dropdown (resolution session → workspace → global, **tier source labeled** — "workspace default" / "session override"); the model list refreshes live when providers change; a **"+" attach menu** (always visible) — image attach enabled when the model supports vision, disabled otherwise; extensible (file import later).
+- **Tool calls never show raw technical calls by default.** Every card leads with a tool-kind icon + a human headline: the model-provided **`intent`** ("why I'm doing this") on registered tools — the `subagent` tool and all future registered tools carry a required `intent` parameter — and a **derived label** built from tool + args for Pi's built-in tools (whose schemas can't be extended). Bash commands get **parsed explanations** ("Installing dependencies (npm install)"; destructive operations flagged). Raw name/args/result sit behind a details toggle. Edit/write cards render real diffs.
 - File paths shown on tool/diff cards are **clickable**: open in the built-in editor, reveal in Finder, copy path.
+- **AskUserQuestion tool**: the model can surface a decision to the user via a registered tool — 1–4 questions, each with a ≤12-char header, single/multi-select, 2–4 options (label, description, optional monospace preview shown side-by-side). The UI always adds a free-text **"Other"**; recommended options come first labeled "(Recommended)". Blocking (never times out, permission invariant); background-session questions badge the sidebar; the answer joins the transcript as a user-style item.
 
 ## Subagents
 
 - Built-ins shipped: **Code Explorer** (read-only), **Summarizer**, **agents-md-maker** (generates a draft AGENTS.md for review; never auto-writes). Users can edit prompts, **duplicate** (no create-from-scratch), and set per-agent model. Installed idempotently to the app-owned agent dir; user edits never clobbered.
 - **Context isolation is the point of delegation**: only the call (agent + task + intent) and the final result may occupy the main agent's context. The child's working transcript is display-only.
-- **The run lives outside the chat flow**: while a subagent works, a floating sticky card at the top of the chat shows agent name, intent, live status and elapsed time (stacking for concurrent runs); it fades on completion and the result lands in the flow. In-flow rendering is just the call line + result; the full child transcript stays available behind a toggle.
+- **The run lives outside the chat flow**: while a subagent works, a **sticky in-flow section** at the top of the chat shows agent name, intent, live status and elapsed time (stacking for concurrent runs); **clicking it expands the live child transcript inline**; it slides away on completion and the result lands in the flow. In-flow rendering is just the call line + result; the full child transcript stays available behind a toggle.
+- **Chatting during a delegation**: the composer stays enabled; messages queue with honest copy ("…will be answered when <agent> finishes") — a delegation is one tool call, so delivery waits for it by design.
 - Tools list UI: name, description, source, and the tool's current permission state (evaluated by the same rule engine — logic never forks).
 
 ## Permissions
@@ -65,7 +68,7 @@ Order: **LLM Setup** → **System Prompt** → **Permissions (global)** → … 
 
 ## Files & editor
 
-- Right-side collapsible pane (closed by default): workspace file tree (fs access path-confined; node_modules/.git ignored).
+- Right-side collapsible pane (closed by default): workspace file tree (fs access path-confined; node_modules/.git ignored). Distinct folder vs per-type file icons; refresh at the panel's top-left, close at its top-right.
 - Center area is tabbed: the chat plus open files. Editor = CodeMirror 6, syntax highlighting for common languages, warm-workshop theme, editable with save, dirty indicator, external-change detection.
 
 ## AGENTS.md
