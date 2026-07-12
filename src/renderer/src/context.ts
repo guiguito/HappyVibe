@@ -96,6 +96,8 @@ export interface SystemBlock {
   estTokens: number;
   toolCount: number;
   contextFiles: Array<{ path: string; chars: number; estTokens: number }>;
+  /** W2.3: nested AGENTS.md discovered via file-tool calls (dir is cwd-relative). */
+  nested?: Array<{ dir: string; path: string; chars: number }>;
 }
 
 export interface ContextSnapshot {
@@ -131,6 +133,18 @@ export function parseContextAck(r: { method?: string; message?: string }): { mar
     const p = JSON.parse(r.message ?? "") as Record<string, unknown>;
     if (p.kind !== "hv.context" || (p.stage !== "removed" && p.stage !== "restored")) return null;
     return { marks: Array.isArray(p.marks) ? (p.marks as MarkKey[]) : [] };
+  } catch {
+    return null;
+  }
+}
+
+/** Parse an hv.context-files notify (live nested AGENTS.md list — W2.3). */
+export function parseContextFiles(r: { method?: string; message?: string }): SystemBlock["nested"] | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "") as Record<string, unknown>;
+    if (p.kind !== "hv.context-files" || !Array.isArray(p.nested)) return null;
+    return p.nested as NonNullable<SystemBlock["nested"]>;
   } catch {
     return null;
   }

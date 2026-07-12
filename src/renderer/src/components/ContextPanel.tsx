@@ -138,9 +138,15 @@ export function ContextPanel({
               <div className="text-[11px] text-ink-soft mt-1">
                 {snapshot.system.toolCount} tools · {snapshot.system.chars.toLocaleString()} chars
               </div>
-              {snapshot.system.contextFiles.length > 0 && (
+              {(snapshot.system.contextFiles.length > 0 || (snapshot.system.nested ?? []).length > 0) && (
                 <div className="mt-2">
-                  <GroupHeader label="Context files" est={snapshot.system.contextFiles.reduce((n, f) => n + f.estTokens, 0)} />
+                  <GroupHeader
+                    label="Context files"
+                    est={
+                      snapshot.system.contextFiles.reduce((n, f) => n + f.estTokens, 0) +
+                      (snapshot.system.nested ?? []).reduce((n, f) => n + Math.ceil(f.chars / 4), 0)
+                    }
+                  />
                   <ul className="mt-1 flex flex-col gap-1">
                     {snapshot.system.contextFiles.map((f) => (
                       <li key={f.path} className="flex items-center gap-2 text-xs">
@@ -148,6 +154,19 @@ export function ContextPanel({
                           {f.path.split("/").pop()}
                         </span>
                         <span className="text-ink-soft shrink-0">{estTok(f.estTokens)}</span>
+                      </li>
+                    ))}
+                    {/* W2.3: nested AGENTS.md, bridge-injected for touched subtrees. */}
+                    {(snapshot.system.nested ?? []).map((f) => (
+                      <li key={f.path} className="flex items-center gap-2 text-xs">
+                        <span className="font-mono shrink-0">AGENTS.md</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wide rounded border border-line px-1 py-0.5 text-ink-soft shrink-0">
+                          nested
+                        </span>
+                        <span className="font-mono text-[10px] text-ink-soft truncate flex-1 min-w-0" title={f.path}>
+                          {f.dir}/
+                        </span>
+                        <span className="text-ink-soft shrink-0">{estTok(Math.ceil(f.chars / 4))}</span>
                       </li>
                     ))}
                   </ul>
