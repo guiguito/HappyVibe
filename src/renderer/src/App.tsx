@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
 import { SettingsView } from "./components/SettingsView";
@@ -21,6 +21,10 @@ import { AgentsView } from "./components/AgentsView";
 import { delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
+import { bufferKey, closeFile, emptyTabs, openFile, type WorkspaceTabs } from "./tabs";
+import { TabStrip } from "./components/TabStrip";
+import { FileTree } from "./components/FileTree";
+import { FileTab } from "./components/FileTab";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -63,6 +67,14 @@ export default function App(): React.JSX.Element {
   const [onboarding, setOnboarding] = useState(false);
   // W1.4: workspace whose settings modal is open (gear on a sidebar workspace row).
   const [wsSettings, setWsSettings] = useState<string | null>(null);
+  // W2.2: center tabs (chat + open files), PER-WORKSPACE — switching sessions
+  // within a workspace keeps them; another workspace has its own set. The
+  // docked file-tree pane is a global toggle (closed by default).
+  const [tabsByWs, setTabsByWs] = useState<Record<string, WorkspaceTabs>>({});
+  const [treeOpen, setTreeOpen] = useState(false);
+  // bufferKey(ws, rel) → unsaved edits (feeds the tab-strip dirty dot; the
+  // buffers themselves live in the always-mounted FileTab components).
+  const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
   const seenOnboarding = useRef(true); // assume seen until config says otherwise
   const streaming = useRef<Record<string, boolean>>({});
   // Set when the user grants a permission; the next matching
@@ -349,6 +361,40 @@ export default function App(): React.JSX.Element {
     };
   }, []);
 
+  // ── W2.2: tab/editor handlers ──────────────────────────────────────
+  const openFileTab = useCallback((wsId: string, rel: string): void => {
+    setTabsByWs((p) => ({ ...p, [wsId]: openFile(p[wsId] ?? emptyTabs, rel) }));
+  }, []);
+
+  // Stable identity so memoized transcript items don't re-render per App
+  // update — the current workspace is read through a ref at click time.
+  const selectedWsRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedWsRef.current = sessions.find((s) => s.id === selectedId)?.workspaceId ?? null;
+  }, [selectedId, sessions]);
+  const openFileFromCard = useCallback(
+    (rel: string): void => {
+      if (selectedWsRef.current) openFileTab(selectedWsRef.current, rel);
+    },
+    [openFileTab]
+  );
+
+  const closeFileTab = (wsId: string, rel: string): void => {
+    const key = bufferKey(wsId, rel);
+    if (dirtyMap[key] && !window.confirm(`Close ${rel}? Unsaved changes will be lost.`)) return;
+    setTabsByWs((p) => ({ ...p, [wsId]: closeFile(p[wsId] ?? emptyTabs, rel) }));
+    setDirtyMap((p) => {
+      if (!(key in p)) return p;
+      const next = { ...p };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const setDirtyFlag = useCallback((key: string, d: boolean): void => {
+    setDirtyMap((p) => (!!p[key] === d ? p : { ...p, [key]: d }));
+  }, []);
+
   const surface = (err: unknown): void =>
     setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(err));
 
@@ -487,6 +533,16 @@ export default function App(): React.JSX.Element {
   const activeView: View = needsSetup ? "settings" : view;
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
+  // ── W2.2: current workspace's tab state + dirty flags for the strip ──
+  const wsId = selected?.workspaceId ?? null;
+  const wsTabs = (wsId ? tabsByWs[wsId] : undefined) ?? emptyTabs;
+  const chatTabActive = !selected || wsTabs.active === null;
+  const dirtyForWs: Record<string, boolean> = {};
+  if (wsId) for (const f of wsTabs.files) dirtyForWs[f] = !!dirtyMap[bufferKey(wsId, f)];
+  // Every open file across ALL workspaces stays mounted (hidden) so unsaved
+  // buffers survive session/workspace/view switches.
+  const openFileEntries = Object.entries(tabsByWs).flatMap(([w, t]) => t.files.map((f) => [w, f] as const));
+
   return (
     <div className="h-full flex">
       <Sidebar
@@ -538,7 +594,7 @@ export default function App(): React.JSX.Element {
             </button>
           </div>
         )}
-        {activeView === "settings" ? (
+        {activeView === "settings" && (
           <SettingsView
             firstRun={needsSetup}
             onSaved={() => {
@@ -549,15 +605,34 @@ export default function App(): React.JSX.Element {
             sessions={sessions}
             workspaces={workspaces}
           />
-        ) : activeView === "agents" ? (
+        )}
+        {activeView === "agents" && (
           <AgentsView
             agents={agents}
             tools={tools}
             sessionId={selectedId}
             workspaceId={selected?.workspaceId ?? null}
           />
-        ) : (
-          <ChatView
+        )}
+        {/* W2.2: the chat area stays MOUNTED (hidden) on other views so open
+            editor buffers and chat state survive a Settings detour. Center is
+            tabbed: chat tab + file tabs; the docked file tree sits to the
+            right IN FLOW (ContextPanel is a fixed overlay above it, z-40). */}
+        <div className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"}`}>
+          <div className="flex-1 min-w-0 flex flex-col">
+            {selected && wsId && (
+              <TabStrip
+                sessionTitle={selected.title}
+                tabs={wsTabs}
+                dirty={dirtyForWs}
+                treeOpen={treeOpen}
+                onSelect={(target) => setTabsByWs((p) => ({ ...p, [wsId]: { ...(p[wsId] ?? emptyTabs), active: target } }))}
+                onClose={(rel) => closeFileTab(wsId, rel)}
+                onToggleTree={() => setTreeOpen((o) => !o)}
+              />
+            )}
+            <div className={`flex-1 min-h-0 flex-col ${chatTabActive ? "flex" : "hidden"}`}>
+              <ChatView
             workspace={selected?.workspaceId ?? null}
             sessionId={selectedId}
             title={selected?.title ?? null}
@@ -584,9 +659,22 @@ export default function App(): React.JSX.Element {
               });
               await selectSession(selectedId);
             }}
-            onOpenFolder={addWorkspace}
-          />
-        )}
+                onOpenFolder={addWorkspace}
+                onOpenFile={openFileFromCard}
+              />
+            </div>
+            {openFileEntries.map(([w, f]) => (
+              <FileTab
+                key={bufferKey(w, f)}
+                workspace={w}
+                relPath={f}
+                active={activeView === "chat" && wsId === w && wsTabs.active === f}
+                onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
+              />
+            ))}
+          </div>
+          {treeOpen && wsId && <FileTree key={wsId} workspace={wsId} onOpenFile={(rel) => openFileTab(wsId, rel)} />}
+        </div>
       </main>
       {uiReq && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
       {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}

@@ -12,22 +12,26 @@ test("bash → Running: <command>, truncated at ~60 chars", () => {
   expect(toolLabel("bash", { command: "git  status\n  -sb" }).label).toBe("Running: git status -sb");
 });
 
-test("edit → Editing <basename> (<path>)", () => {
+// W2.2: file-ish tools also expose `path` — ToolCard turns it into the
+// clickable path chip (the label keeps just the basename).
+test("edit → Editing <basename> + path", () => {
   expect(toolLabel("edit", { path: "src/app/main.ts" })).toEqual({
     icon: "edit",
-    label: "Editing main.ts (src/app/main.ts)",
+    label: "Editing main.ts",
+    path: "src/app/main.ts",
   });
 });
 
-test("write → Creating <basename>", () => {
+test("write → Creating <basename> + path", () => {
   expect(toolLabel("write", { path: "/tmp/notes.md", content: "hi" })).toEqual({
     icon: "file-plus",
     label: "Creating notes.md",
+    path: "/tmp/notes.md",
   });
 });
 
-test("read → Reading <basename>", () => {
-  expect(toolLabel("read", { path: "docs/prd.md" })).toEqual({ icon: "eye", label: "Reading prd.md" });
+test("read → Reading <basename> + path", () => {
+  expect(toolLabel("read", { path: "docs/prd.md" })).toEqual({ icon: "eye", label: "Reading prd.md", path: "docs/prd.md" });
 });
 
 test("grep/find → Searching for <pattern>", () => {

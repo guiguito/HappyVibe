@@ -22,11 +22,16 @@ export type TranscriptItem = { id?: number } & (
 const MessageItem = memo(function MessageItem({
   it,
   onRetry,
+  workspace,
+  onOpenFile,
 }: {
   it: TranscriptItem;
   onRetry?: () => void;
+  /** W2.2: session workspace + open-in-editor for clickable card paths. */
+  workspace?: string | null;
+  onOpenFile?: (relPath: string) => void;
 }): React.JSX.Element {
-  if (it.kind === "tool") return <ToolCard card={it.card} />;
+  if (it.kind === "tool") return <ToolCard card={it.card} workspace={workspace} onOpenFile={onOpenFile} />;
   if (it.kind === "error") {
     return (
       <div className="flex items-center gap-3 rounded-xl border-2 border-berry/50 bg-berry-soft px-3.5 py-2.5 shadow-sticker">
@@ -97,12 +102,17 @@ export function Transcript({
   busy,
   streaming,
   onRetry,
+  workspace,
+  onOpenFile,
 }: {
   items: TranscriptItem[];
   busy: boolean;
   /** Perf: in-progress assistant text, rendered as one live bubble outside `items`. */
   streaming?: string;
   onRetry?: () => void;
+  /** W2.2: session workspace + open-in-editor for clickable card paths. */
+  workspace?: string | null;
+  onOpenFile?: (relPath: string) => void;
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -129,7 +139,7 @@ export function Transcript({
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
         {items.map((it, i) => (
-          <MessageItem key={it.id ?? i} it={it} onRetry={onRetry} />
+          <MessageItem key={it.id ?? i} it={it} onRetry={onRetry} workspace={workspace} onOpenFile={onOpenFile} />
         ))}
         {/* Perf: the in-progress turn renders here, outside `items`, so a delta
             re-renders only this bubble — committed messages stay memoized. */}

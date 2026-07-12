@@ -71,6 +71,17 @@ interface HvVerdict {
   rule?: HvRule & { scope: "global" | "workspace" };
 }
 
+/** W2.2 — mirrors FsEntry/ReadResult in src/main/files.ts (separate tsconfig roots). */
+interface HvFsEntry {
+  name: string;
+  kind: "dir" | "file";
+}
+
+type HvReadResult =
+  | { kind: "text"; content: string; mtimeMs: number }
+  | { kind: "too-large"; size: number }
+  | { kind: "binary" };
+
 /** Mirrors LogEvent in src/main/log.ts. */
 interface HvAuditEvent {
   ts: string;
@@ -131,6 +142,13 @@ interface HvApi {
   // W2.1: per-session model override + image attach
   setSessionModel(sessionId: string, m: { provider: string; modelId: string } | null): Promise<{ live: boolean }>;
   pickImage(): Promise<{ data: string; mimeType: string; name: string } | null>;
+
+  // W2.2: file tree + editor + card path actions
+  fsList(workspaceId: string, relDir: string): Promise<HvFsEntry[]>;
+  fsRead(workspaceId: string, relPath: string): Promise<HvReadResult>;
+  fsWrite(workspaceId: string, relPath: string, content: string): Promise<number>;
+  fsMtime(workspaceId: string, relPath: string): Promise<number | null>;
+  revealPath(workspaceId: string, relPath: string): Promise<void>;
 
   // B2: AGENTS.md
   readAgentsMd(workspaceId: string): Promise<string | null>;
