@@ -23,7 +23,7 @@ import { delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseTools, t
 import { applyDelta, updateToolCard } from "./streaming";
 
 type KeyState = "loading" | "missing" | "present";
-export type SessionStatus = "running" | "crashed";
+export type SessionStatus = "running" | "crashed" | "waking";
 
 export default function App(): React.JSX.Element {
   const [keyState, setKeyState] = useState<KeyState>("loading");
@@ -375,6 +375,9 @@ export default function App(): React.JSX.Element {
     setSelectedId(id);
     setView("chat");
     if (statuses[id] === "running") return;
+    // W1.3: a hibernated session restores transparently — show a brief
+    // "waking up…" pulse while its process resumes.
+    if (sessions.find((s) => s.id === id)?.hibernated) setStatuses((p) => ({ ...p, [id]: "waking" }));
     try {
       const { messages } = await window.hv.openSession(id);
       setStatuses((p) => ({ ...p, [id]: "running" }));
@@ -384,6 +387,12 @@ export default function App(): React.JSX.Element {
       }
       setError(null);
     } catch (err) {
+      setStatuses((p) => {
+        if (p[id] !== "waking") return p;
+        const next = { ...p };
+        delete next[id];
+        return next;
+      });
       surface(err);
     }
   };

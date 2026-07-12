@@ -40,7 +40,12 @@ function SessionRow({
       ? "bg-leaf animate-pulse"
       : status === "crashed"
         ? "bg-berry"
-        : "bg-line-strong";
+        : status === "waking"
+          ? "bg-honey animate-pulse"
+          : "bg-line-strong";
+
+  // W1.3: hibernated = a subtle moon instead of a status dot; opening it just works.
+  const asleep = !!session.hibernated && status === undefined;
 
   return (
     <div
@@ -50,7 +55,13 @@ function SessionRow({
       onClick={onSelect}
       title={session.title}
     >
-      <span className={`size-1.5 rounded-full shrink-0 ${dot}`} title={status ?? "idle"} />
+      {asleep ? (
+        <span className="text-[10px] leading-none shrink-0 text-ink-soft/80" title="Sleeping — opens right where you left off">
+          ☾
+        </span>
+      ) : (
+        <span className={`size-1.5 rounded-full shrink-0 ${dot}`} title={status === "waking" ? "waking up…" : status ?? "idle"} />
+      )}
       {pending > 0 && (
         <span
           className="min-w-4 h-4 px-1 rounded-full bg-honey text-ink border border-ink/60 text-[10px] font-black flex items-center justify-center shrink-0 animate-pulse"

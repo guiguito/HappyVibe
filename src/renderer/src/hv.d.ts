@@ -8,6 +8,8 @@ interface SessionMeta {
   updatedAt: string;
   archived: boolean;
   piSessionFile?: string;
+  /** W1.3: hibernated to make room; opens transparently (Pi --session resume). */
+  hibernated?: boolean;
   titleSource: "fallback" | "model" | "user";
 }
 
