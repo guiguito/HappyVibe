@@ -81,7 +81,7 @@ let client: PiClient;
 beforeAll(async () => {
   // Sanity: the spawn spec must carry the pi-subagents extension + child bin.
   const spec = resolvePiSpawn(workDir, sessionDir, runtime, { agentDir });
-  expect(spec.args.filter((a) => a === "-e")).toHaveLength(2);
+  expect(spec.args.filter((a) => a === "-e")).toHaveLength(3); // bridge + pi-subagents + pi-mcp-adapter
   expect(spec.args.some((a) => a.includes("pi-subagents"))).toBe(true);
   expect(spec.env.PI_SUBAGENT_PI_BINARY).toBe(path.join(runtime, "node_modules/.bin/pi"));
   expect(fs.existsSync(spec.env.PI_SUBAGENT_PI_BINARY)).toBe(true);

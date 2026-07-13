@@ -12,7 +12,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 
 ## Tests
 - Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated):
-  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-md-bridge,subagent-context,permission-coexistence}.test.ts
+  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-md-bridge,subagent-context,permission-coexistence,mcp-bridge}.test.ts
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
 - Contract tests are the Pi upgrade gate: any pi/pi-subagents pin bump must pass them.
@@ -22,7 +22,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - src/main/pi/{spawn,codec,PiClient}.ts — spawns the pinned Pi CLI per session, `--mode rpc`,
   NDJSON over stdio. spawn.ts is electron-free (vitest-importable). We deliberately do NOT
   use Pi's in-process SDK: process isolation is load-bearing (crash isolation, hibernation).
-- pi-runtime/ — vendored @earendil-works/pi-coding-agent + pi-subagents (pinned exact)
+- pi-runtime/ — vendored @earendil-works/pi-coding-agent + pi-subagents + pi-mcp-adapter (pinned exact)
   + extensions/ (happyvibe-bridge.ts + pure hv-*.ts modules shared with main and tests).
 - The bridge owns ALL permission UI/enforcement (Pi's permission pkg is TUI-only in RPC —
   docs/validation/v6.md). Permission prompts never auto-allow and never time out.
@@ -47,6 +47,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array
   (streamRef + rAF batching in App.tsx); tool cards update via the toolIndex map, never a full .map().
+- MCP: the adapter's proxy tool is `mcp`; the bridge unwraps it (hv-mcp.ts) to a virtual rule name `mcp:<serverKey>_<toolName>` (e.g. `mcp:github_create_issue`) for rules/grants/prompts/audit; discovery calls (search/describe/connect) are safe-default-allowed. Config read at session start — changes need a new session. stdio servers configured with `node`/`npx` need a runtime in the packaged app (same class as the pi-subagents shebang item). See docs/validation/m1.md.
 
 ## Docs workflow
 Locked product decisions go to BOTH the Notion PRD and docs/prd.md in the same session,
