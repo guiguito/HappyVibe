@@ -39,6 +39,7 @@
     "@fontsource-variable/gabarito": "^5.2.8",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@lezer/highlight": "^1.2.3",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@radix-ui/react-dialog": "^1.1.18",
     "@tailwindcss/vite": "^4.3.2",
     "diff": "^9.0.0",
