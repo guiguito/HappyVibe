@@ -16,11 +16,14 @@ import { tmpdir } from "node:os";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 import { authenticate } from "../src/main/mcpOAuth";
-import { readAuthEntry } from "../src/main/mcpAuthStore";
+import { readAuthEntry, writeAuthEntry } from "../src/main/mcpAuthStore";
 
 let server: Server;
 let base: string; // http://127.0.0.1:<port>
 let tmp: string;
+// redirect_uris registered via DCR this flow — /authorize enforces membership,
+// mirroring a real AS (e.g. Notion) that rejects an unregistered redirect_uri.
+let registeredRedirectUris: string[];
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
@@ -43,6 +46,7 @@ function mcpResult(res: ServerResponse, id: unknown, result: unknown) {
 
 beforeEach(async () => {
   tmp = mkdtempSync(join(tmpdir(), "mcp-oauth-test-"));
+  registeredRedirectUris = [];
 
   server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", base);
@@ -73,6 +77,7 @@ beforeEach(async () => {
     // RFC 7591 — dynamic client registration
     if (path === "/register" && req.method === "POST") {
       const meta = JSON.parse((await readBody(req)) || "{}");
+      registeredRedirectUris = meta.redirect_uris ?? [];
       return json(res, 201, {
         client_id: "mock-client-id",
         redirect_uris: meta.redirect_uris,
@@ -82,11 +87,20 @@ beforeEach(async () => {
       });
     }
 
-    // Authorization endpoint — immediately 302 back to the loopback callback with code+state
+    // Authorization endpoint — enforce that redirect_uri was registered (as a
+    // real AS does), then 302 back to the loopback callback with code+state.
     if (path === "/authorize") {
       const redirectUri = url.searchParams.get("redirect_uri")!;
       const state = url.searchParams.get("state") ?? "";
       const loc = new URL(redirectUri);
+      if (!registeredRedirectUris.includes(redirectUri)) {
+        // Mirror Notion: reject the unregistered redirect_uri. (We still 302 to
+        // the loopback so the test settles fast; a real AS shows an error page.)
+        loc.searchParams.set("error", "invalid_redirect_uri");
+        loc.searchParams.set("state", state);
+        res.writeHead(302, { location: loc.toString() });
+        return res.end();
+      }
       loc.searchParams.set("code", "TESTCODE");
       loc.searchParams.set("state", state);
       res.writeHead(302, { location: loc.toString() });
@@ -201,5 +215,31 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     expect((result as { ok: false; error: string }).error).toMatch(/timed? ?out/i);
     // Must settle within a reasonable bound (timeout + generous overhead).
     expect(elapsed).toBeLessThan(5_000);
+  });
+
+  it("re-registers when a stored client was registered for a stale redirect_uri (loopback port drift)", async () => {
+    // Seed a stale DCR client from a prior attempt: its redirect_uris point at a
+    // port that won't match this flow's OS-assigned callback port. Reusing it
+    // would make /authorize reject the new redirect_uri ("Invalid redirect_uri").
+    writeAuthEntry(tmp, "stale-client", {
+      clientInfo: { clientId: "stale-old-id", redirectUris: ["http://127.0.0.1:9/callback"] },
+      serverUrl: `${base}/mcp`,
+    });
+
+    const cfg = { url: `${base}/mcp` };
+    const result = await authenticate("stale-client", cfg, tmp, {
+      openExternal: (u: string) => {
+        void fetch(u, { redirect: "follow" }).catch(() => undefined);
+      },
+      timeoutMs: 10_000,
+    });
+
+    // Self-heals: the stale client is ignored, a fresh client is registered for
+    // the current port, /authorize accepts it, and auth completes.
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.tools.map((t) => t.name)).toContain("echo");
+    const entry = readAuthEntry(tmp, "stale-client");
+    expect(entry?.clientInfo?.clientId).toBe("mock-client-id"); // re-registered, not the stale id
+    expect(entry?.tokens?.accessToken).toBe("mock-access-token");
   });
 });

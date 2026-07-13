@@ -94,6 +94,14 @@ class HvOAuthProvider implements OAuthClientProvider {
   clientInformation(): OAuthClientInformation | undefined {
     const ci = this.read().clientInfo;
     if (!ci) return undefined;
+    // A dynamically-registered client is bound to the exact redirect_uri(s) it
+    // registered with. Our loopback callback port is OS-assigned and differs
+    // per flow, so reusing a client registered against a stale port makes the
+    // authorization server reject the new redirect_uri ("Invalid redirect_uri
+    // for OAuth client"). Only reuse the stored client when it was registered
+    // for our current redirect URL; otherwise return undefined to force fresh
+    // dynamic registration for this port.
+    if (!ci.redirectUris?.includes(this.redirectUrlValue)) return undefined;
     return { client_id: ci.clientId, client_secret: ci.clientSecret };
   }
 
