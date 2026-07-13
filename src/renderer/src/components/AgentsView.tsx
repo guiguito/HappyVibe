@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { joinToolPermissions, type AgentInfo, type PermState, type ToolInfo, type ToolRow } from "../agents";
+import { McpServersSection } from "./McpServersSection";
 
 const PERM_TONE: Record<PermState, string> = {
   deny: "bg-berry-soft text-berry border-berry/50",
@@ -151,6 +152,8 @@ export function AgentsView({
             ))}
           </div>
         )}
+
+        <McpServersSection workspaceId={workspaceId} />
       </div>
 
       {editing && (

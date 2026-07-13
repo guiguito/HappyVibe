@@ -83,3 +83,13 @@ test("missing/malformed args never throw — sensible fallbacks", () => {
   expect(toolLabel("read", { path: "   " }).label).toBe("Reading a file");
   expect(toolLabel("grep", {}).label).toBe("Searching");
 });
+
+test("mcp proxy invoke → unwrapped label, never bare 'mcp'", () => {
+  const l = toolLabel("mcp", { tool: "github_create_issue", args: "{}" });
+  expect(l.label).toBe("MCP → github_create_issue");
+  expect(l.icon).toBe("wrench");
+});
+
+test("mcp discovery → discovery label", () => {
+  expect(toolLabel("mcp", { search: "screenshot" }).label).toBe('MCP discovery: search "screenshot"');
+});

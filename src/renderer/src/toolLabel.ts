@@ -11,6 +11,7 @@
  */
 
 import { describeCommand } from "./describeCommand";
+import { unwrapMcpCall } from "../../../pi-runtime/extensions/hv-mcp";
 
 export type IconKind =
   | "terminal"
@@ -82,6 +83,10 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     case "ls": {
       const p = str("path");
       return { icon: "folder", label: `Listing ${p ? basename(p) : "the current directory"}` };
+    }
+    case "mcp": {
+      const info = unwrapMcpCall(a);
+      return { icon: "wrench", label: info.display };
     }
     case "subagent":
       return { icon: "robot", label: intent ?? `Delegating to ${str("agent") ?? "a subagent"}` };
