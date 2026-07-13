@@ -581,7 +581,11 @@ export default function App(): React.JSX.Element {
         onSelectSession={selectSession}
         onRenameSession={(id, title) => window.hv.renameSession(id, title)}
         onArchiveSession={(id, archived) => window.hv.archiveSession(id, archived)}
-        onCloseSession={(id) => window.hv.closeSession(id)}
+        onDeleteSession={async (id) => {
+          // V2.C2: deleting the selected session falls back to no-selection.
+          if (selectedId === id) setSelectedId(null);
+          await window.hv.deleteSession(id); // sessions-changed broadcast refreshes the list
+        }}
         onOpenHelp={() => setOnboarding(true)}
       />
       <main className="flex-1 min-w-0 flex flex-col">

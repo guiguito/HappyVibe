@@ -89,6 +89,22 @@ export class SessionIndex {
   }
 }
 
+/**
+ * V2.C2 session delete: remove a session's Pi session file, confined to the
+ * app-owned session dir. Never deletes outside it (piSessionFile is
+ * Pi-reported — treat as untrusted); a missing file is fine.
+ */
+export function deleteSessionFile(sessionDirPath: string, file: string | undefined): void {
+  if (!file) return;
+  const resolved = path.resolve(file);
+  if (!resolved.startsWith(path.resolve(sessionDirPath) + path.sep)) return; // confinement
+  try {
+    fs.rmSync(resolved, { force: true }); // force: missing file is fine
+  } catch {
+    /* unreadable/locked — the index entry is gone either way */
+  }
+}
+
 /** Per-workspace settings (W1.4). Model hierarchy: session → workspace → global;
  *  the session tier lands in Wave 2 — `model` here is the workspace tier. */
 export interface WorkspaceEntry {
