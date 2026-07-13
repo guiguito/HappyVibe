@@ -113,6 +113,14 @@ contextBridge.exposeInMainWorld("hv", {
   mcpGet: (workspaceId?: string) => ipcRenderer.invoke("hv:mcp-get", workspaceId),
   mcpSetServer: (scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: unknown) =>
     ipcRenderer.invoke("hv:mcp-set-server", scope, workspaceId, name, cfg),
+  mcpStatus: () => ipcRenderer.invoke("hv:mcp-status"),
+  mcpCheck: (scope: "global" | "workspace", workspaceId: string | null, name?: string) =>
+    ipcRenderer.invoke("hv:mcp-check", scope, workspaceId, name),
+  onMcpStatusChanged: (cb: (s: unknown[]) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, s: unknown): void => cb(s as unknown[]);
+    ipcRenderer.on("hv:mcp-status-changed", h);
+    return () => ipcRenderer.removeListener("hv:mcp-status-changed", h);
+  },
 
   // Each on* returns an unsubscribe function. Without it, React StrictMode's
   // dev double-mount registers listeners twice and every stream delta renders

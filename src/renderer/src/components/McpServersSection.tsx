@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface McpServer {
   scope: "global" | "workspace";
@@ -14,6 +14,10 @@ function flatten(file: { mcpServers?: Record<string, unknown> } | null, scope: "
   }));
 }
 
+function statusKey(scope: string, workspaceId: string | null, name: string): string {
+  return `${scope}:${workspaceId ?? ""}:${name}`;
+}
+
 /**
  * MCP servers CRUD (Agents & Tools page). Writes standard mcpServers JSON
  * vendored pi-mcp-adapter reads: global → app agent dir mcp.json,
@@ -24,16 +28,33 @@ export function McpServersSection({ workspaceId }: { workspaceId: string | null 
   const [servers, setServers] = useState<McpServer[] | null>(null);
   const [editing, setEditing] = useState<McpServer | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [statuses, setStatuses] = useState<Map<string, McpServerStatusLike>>(new Map());
+  const unsubRef = useRef<(() => void) | null>(null);
 
   const refresh = async (): Promise<void> => {
     const r = await window.hv.mcpGet(workspaceId ?? undefined);
     setServers([...flatten(r.global, "global"), ...flatten(r.workspace, "workspace")]);
   };
-  useEffect(() => { void refresh().catch((e) => setError(String(e))); }, [workspaceId]);
+
+  useEffect(() => {
+    void refresh().catch((e) => setError(String(e)));
+    void window.hv.mcpStatus().then((list) => {
+      setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
+    }).catch(() => { /* non-fatal */ });
+    unsubRef.current = window.hv.onMcpStatusChanged((list) => {
+      setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
+    });
+    return () => { unsubRef.current?.(); };
+  }, [workspaceId]);
 
   const remove = async (s: McpServer): Promise<void> => {
     await window.hv.mcpSetServer(s.scope, s.scope === "workspace" ? workspaceId : null, s.name, null);
     await refresh();
+  };
+
+  const reconnect = (s: McpServer): void => {
+    void window.hv.mcpCheck(s.scope, s.scope === "workspace" ? workspaceId : null, s.name)
+      .catch((e) => setError(String(e)));
   };
 
   return (
@@ -69,6 +90,7 @@ export function McpServersSection({ workspaceId }: { workspaceId: string | null 
               <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
                 {s.scope}
               </span>
+              <McpStatusBadge status={statuses.get(statusKey(s.scope, s.scope === "workspace" ? workspaceId : null, s.name))} />
               <span className="font-mono text-xs text-ink-soft flex-1 min-w-0 truncate">
                 {typeof s.cfg.url === "string"
                   ? s.cfg.url
@@ -79,6 +101,13 @@ export function McpServersSection({ workspaceId }: { workspaceId: string | null 
                   direct
                 </span>
               ) : null}
+              <button
+                type="button"
+                onClick={() => reconnect(s)}
+                className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer shrink-0"
+              >
+                Reconnect
+              </button>
               <button
                 type="button"
                 onClick={() => setEditing(s)}
@@ -106,6 +135,47 @@ export function McpServersSection({ workspaceId }: { workspaceId: string | null 
         />
       )}
     </div>
+  );
+}
+
+function McpStatusBadge({ status }: { status: McpServerStatusLike | undefined }): React.JSX.Element {
+  if (!status) {
+    return (
+      <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
+        —
+      </span>
+    );
+  }
+  const { state, toolCount, error } = status;
+  if (state === "connected") {
+    return (
+      <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-leaf-soft text-leaf border border-leaf/50 shrink-0">
+        {toolCount} {toolCount === 1 ? "tool" : "tools"}
+      </span>
+    );
+  }
+  if (state === "needs-auth") {
+    return (
+      <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-honey-soft text-tangerine-deep border border-honey/60 shrink-0">
+        needs auth
+      </span>
+    );
+  }
+  if (state === "failed") {
+    return (
+      <span
+        title={error ?? "Connection failed"}
+        className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-berry-soft text-berry border border-berry/50 shrink-0 cursor-help"
+      >
+        failed
+      </span>
+    );
+  }
+  // checking
+  return (
+    <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
+      checking…
+    </span>
   );
 }
 

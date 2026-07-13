@@ -121,6 +121,18 @@ interface HvAnalytics {
   };
 }
 
+/** MCP per-server runtime status (renderer-local; do not import from src/main). */
+interface McpServerStatusLike {
+  name: string;
+  scope: "global" | "workspace";
+  workspaceId: string | null;
+  state: "connected" | "needs-auth" | "failed" | "checking";
+  toolCount: number;
+  tools?: { name: string; description?: string }[];
+  error?: string;
+  lastChecked: number;
+}
+
 interface HvApi {
   getApiKey(): Promise<string | null>;
   setApiKey(key: string): Promise<void>;
@@ -221,6 +233,9 @@ interface HvApi {
     name: string,
     cfg: Record<string, unknown> | null,
   ): Promise<McpFileLike>;
+  mcpStatus(): Promise<McpServerStatusLike[]>;
+  mcpCheck(scope: "global" | "workspace", workspaceId: string | null, name?: string): Promise<void>;
+  onMcpStatusChanged(cb: (s: McpServerStatusLike[]) => void): () => void;
 
   // B7: local analytics + onboarding
   getAnalytics(filter?: { workspaceId?: string; sinceTs?: string }): Promise<HvAnalytics>;
