@@ -18,17 +18,127 @@ function statusKey(scope: string, workspaceId: string | null, name: string): str
   return `${scope}:${workspaceId ?? ""}:${name}`;
 }
 
+// ---------------------------------------------------------------------------
+// McpConnectResult — shown after authenticate/check resolves
+// ---------------------------------------------------------------------------
+
+type ConnectResultState =
+  | { phase: "connecting"; serverName: string }
+  | { phase: "ok"; serverName: string; tools: { name: string; description?: string }[] }
+  | { phase: "error"; serverName: string; error: string; retry: () => void };
+
+function McpConnectResult({
+  state,
+  onClose,
+}: {
+  state: ConnectResultState;
+  onClose: () => void;
+}): React.JSX.Element {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-6"
+      onMouseDown={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 max-h-[85vh] overflow-y-auto"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {state.phase === "connecting" && (
+          <>
+            <h2 className="font-black text-xl leading-tight mb-2">Connecting to {state.serverName}</h2>
+            <p className="text-sm text-ink-soft mb-4">
+              Opening your browser — approve access, then return to HappyVibe.
+            </p>
+            <div className="flex items-center gap-2 text-sm text-ink-soft">
+              {/* ponytail: CSS spinner, no lib */}
+              <span
+                className="inline-block w-4 h-4 rounded-full border-2 border-tangerine border-t-transparent animate-spin shrink-0"
+                aria-hidden
+              />
+              Waiting for authorisation…
+            </div>
+          </>
+        )}
+
+        {state.phase === "ok" && (
+          <>
+            <h2 className="font-black text-xl leading-tight mb-1">
+              Connected to {state.serverName}
+            </h2>
+            <p className="text-sm text-ink-soft mb-3">
+              {state.tools.length} {state.tools.length === 1 ? "tool" : "tools"} discovered.
+            </p>
+            {state.tools.length > 0 && (
+              <ul className="rounded-xl bg-card border border-line divide-y divide-line mb-4 max-h-48 overflow-y-auto">
+                {state.tools.map((t) => (
+                  <li key={t.name} className="px-3 py-2">
+                    <span className="font-mono text-xs font-bold">{t.name}</span>
+                    {t.description && (
+                      <span className="block text-xs text-ink-soft mt-0.5">{t.description}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl bg-tangerine text-paper font-bold text-sm px-5 py-2 border-2 border-tangerine-deep shadow-sticker hover:brightness-105 cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </>
+        )}
+
+        {state.phase === "error" && (
+          <>
+            <h2 className="font-black text-xl leading-tight mb-2 text-berry">
+              Could not connect to {state.serverName}
+            </h2>
+            <p className="text-sm font-mono bg-berry-soft/30 text-berry rounded-lg px-3 py-2 mb-4 break-all">
+              {state.error}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border-2 border-line px-4 py-2 text-sm font-bold text-ink-soft hover:bg-paper-deep/40 cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => { state.retry(); }}
+                className="rounded-xl bg-tangerine text-paper font-bold text-sm px-5 py-2 border-2 border-tangerine-deep shadow-sticker hover:brightness-105 cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// McpServersSection
+// ---------------------------------------------------------------------------
+
 /**
  * MCP servers CRUD (Agents & Tools page). Writes standard mcpServers JSON
  * vendored pi-mcp-adapter reads: global → app agent dir mcp.json,
  * workspace → <workspace>/.mcp.json (shareable with other MCP hosts).
- * Config read at session start — changes apply to NEW sessions.
+ * Config read at session start — changes apply NEW sessions.
  */
 export function McpServersSection({ workspaceId }: { workspaceId: string | null }): React.JSX.Element {
   const [servers, setServers] = useState<McpServer[] | null>(null);
   const [editing, setEditing] = useState<McpServer | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<Map<string, McpServerStatusLike>>(new Map());
+  const [connectResult, setConnectResult] = useState<ConnectResultState | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
 
   const refresh = async (): Promise<void> => {
@@ -57,6 +167,43 @@ export function McpServersSection({ workspaceId }: { workspaceId: string | null 
       .catch((e) => setError(String(e)));
   };
 
+  // Kick off mcpAuthenticate and show result modal.
+  // ponytail: single function covers add-time + per-row Authenticate flows.
+  const authenticate = (scope: "global" | "workspace", name: string): void => {
+    const wsId = scope === "workspace" ? workspaceId : null;
+    setConnectResult({ phase: "connecting", serverName: name });
+    void window.hv.mcpAuthenticate(scope, wsId, name).then((res) => {
+      if (res.ok) {
+        setConnectResult({ phase: "ok", serverName: name, tools: res.tools });
+      } else {
+        setConnectResult({
+          phase: "error",
+          serverName: name,
+          error: res.error,
+          retry: () => authenticate(scope, name),
+        });
+      }
+    }).catch((e: unknown) => {
+      setConnectResult({
+        phase: "error",
+        serverName: name,
+        error: String(e),
+        retry: () => authenticate(scope, name),
+      });
+    });
+  };
+
+  // Called by McpServerEditor after config is written.
+  // For HTTP servers: always attempt auth (mcpAuthenticate no-ops fast when tokens are valid).
+  // ponytail: skip mcpCheck round-trip — mcpAuthenticate fast-paths on valid tokens already.
+  const handleSaved = (savedScope: "global" | "workspace", savedName: string, isHttp: boolean): void => {
+    setEditing(null);
+    void refresh();
+    if (isHttp) {
+      authenticate(savedScope, savedName);
+    }
+  };
+
   return (
     <div className="mt-10">
       <div className="flex items-center gap-2 mb-1">
@@ -81,49 +228,74 @@ export function McpServersSection({ workspaceId }: { workspaceId: string | null 
         <p className="text-sm text-ink-soft">No MCP servers configured.</p>
       ) : (
         <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden">
-          {servers.map((s) => (
-            <div
-              key={`${s.scope}:${s.name}`}
-              className="px-4 py-2.5 border-b border-line last:border-b-0 flex items-center gap-2"
-            >
-              <span className="font-bold shrink-0">{s.name}</span>
-              <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
-                {s.scope}
-              </span>
-              <McpStatusBadge status={statuses.get(statusKey(s.scope, s.scope === "workspace" ? workspaceId : null, s.name))} />
-              <span className="font-mono text-xs text-ink-soft flex-1 min-w-0 truncate">
-                {typeof s.cfg.url === "string"
-                  ? s.cfg.url
-                  : [s.cfg.command, ...((s.cfg.args as string[]) ?? [])].filter(Boolean).join(" ")}
-              </span>
-              {s.cfg.directTools ? (
-                <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 bg-honey-soft text-tangerine-deep border-honey/60 shrink-0">
-                  direct
+          {servers.map((s) => {
+            const sKey = statusKey(s.scope, s.scope === "workspace" ? workspaceId : null, s.name);
+            const status = statuses.get(sKey);
+            const isHttp = typeof s.cfg.url === "string";
+            return (
+              <div
+                key={`${s.scope}:${s.name}`}
+                className="px-4 py-2.5 border-b border-line last:border-b-0 flex items-center gap-2"
+              >
+                <span className="font-bold shrink-0">{s.name}</span>
+                <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
+                  {s.scope}
                 </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => reconnect(s)}
-                className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer shrink-0"
-              >
-                Reconnect
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(s)}
-                className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer shrink-0"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => void remove(s).catch((e) => setError(String(e)))}
-                className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 text-berry hover:bg-berry-soft/40 cursor-pointer shrink-0"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
+                <McpStatusBadge status={status} />
+                <span className="font-mono text-xs text-ink-soft flex-1 min-w-0 truncate">
+                  {isHttp
+                    ? s.cfg.url as string
+                    : [s.cfg.command, ...((s.cfg.args as string[]) ?? [])].filter(Boolean).join(" ")}
+                </span>
+                {s.cfg.directTools ? (
+                  <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 bg-honey-soft text-tangerine-deep border-honey/60 shrink-0">
+                    direct
+                  </span>
+                ) : null}
+                {/* Authenticate — shown when needs-auth */}
+                {status?.state === "needs-auth" && (
+                  <button
+                    type="button"
+                    onClick={() => authenticate(s.scope, s.name)}
+                    className="text-xs font-bold rounded-lg border-2 border-honey/60 px-2.5 py-1 bg-honey-soft text-tangerine-deep hover:brightness-105 cursor-pointer shrink-0"
+                  >
+                    Authenticate
+                  </button>
+                )}
+                {/* Log out — shown when connected on an OAuth server (has url) */}
+                {status?.state === "connected" && isHttp && (
+                  <button
+                    type="button"
+                    onClick={() => void window.hv.mcpLogout(s.name).catch((e) => setError(String(e)))}
+                    className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 text-ink-soft hover:bg-paper-deep/40 cursor-pointer shrink-0"
+                  >
+                    Log out
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => reconnect(s)}
+                  className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer shrink-0"
+                >
+                  Reconnect
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(s)}
+                  className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer shrink-0"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void remove(s).catch((e) => setError(String(e)))}
+                  className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 text-berry hover:bg-berry-soft/40 cursor-pointer shrink-0"
+                >
+                  Remove
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
       {editing && (
@@ -131,7 +303,16 @@ export function McpServersSection({ workspaceId }: { workspaceId: string | null 
           server={editing === "new" ? null : editing}
           workspaceId={workspaceId}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); void refresh(); }}
+          onSaved={handleSaved}
+        />
+      )}
+      {connectResult && (
+        <McpConnectResult
+          state={connectResult}
+          onClose={() => {
+            // Allow close only when not mid-connect (connecting phase blocks dismiss — user must wait or navigate away)
+            if (connectResult.phase !== "connecting") setConnectResult(null);
+          }}
         />
       )}
     </div>
@@ -185,7 +366,7 @@ function McpServerEditor({
   server: McpServer | null;
   workspaceId: string | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (scope: "global" | "workspace", name: string, isHttp: boolean) => void;
 }): React.JSX.Element {
   const cfg = server?.cfg ?? {};
   const [name, setName] = useState(server?.name ?? "");
@@ -225,7 +406,7 @@ function McpServerEditor({
       if (server && (server.scope !== scope || server.name !== name)) {
         await window.hv.mcpSetServer(server.scope, server.scope === "workspace" ? workspaceId : null, server.name, null);
       }
-      onSaved();
+      onSaved(scope, name, kind === "http");
     } catch (e) {
       setError(String(e));
     }
