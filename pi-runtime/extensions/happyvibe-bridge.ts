@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
+import { unwrapMcpCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries,
   type AgentMessage, type MarkKey, type SessionEntry,
@@ -250,7 +251,11 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const tool = event.toolName as string;
     const input = (event.input ?? {}) as Record<string, unknown>;
-    const summary = summarize(tool, input);
+    // MCP proxy unwrapping: rules, grants, prompts and audit all operate on
+    // the real MCP tool ("mcp:<tool>"), never the bare proxy.
+    const mcp = tool === "mcp" ? unwrapMcpCall(input) : null;
+    const permTool = mcp?.ruleTool ?? tool;
+    const summary = mcp?.display ?? summarize(tool, input);
 
     // W2.3: nested AGENTS.md discovery — every file-tool call reveals which
     // subtree the session touches; the nearest AGENTS.md above the target
@@ -268,43 +273,51 @@ export default function (pi: ExtensionAPI) {
     // Dangerous mode: everything runs without prompting, but NEVER silently —
     // each call is audit-flagged and the renderer shows a permanent banner.
     if (dangerous) {
-      audit(ctx.ui, { tool, summary, decision: "allow", source: "dangerous" });
+      audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "dangerous" });
       return;
     }
 
-    const v = evaluate(rules, { tool, input, workspace: process.cwd() });
+    const v = evaluate(rules, { tool: permTool, input, workspace: process.cwd() });
 
     if (v.action === "deny") {
-      audit(ctx.ui, { tool, summary, decision: "deny", source: "rule", rule: v.rule });
+      audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule", rule: v.rule });
       return { block: true, reason: `Blocked by HappyVibe permission rule (${v.rule?.layer}: ${v.rule?.pattern})` };
     }
     if (v.action === "allow") {
-      audit(ctx.ui, { tool, summary, decision: "allow", source: v.source === "rule" ? "rule" : "safe-default", rule: v.rule });
+      audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: v.source === "rule" ? "rule" : "safe-default", rule: v.rule });
+      return;
+    }
+
+    // MCP discovery (search/describe/connect) is read-only against servers the
+    // user configured — allow by default; an explicit ask/deny rule still wins
+    // (handled above), matching the SAFE_TOOLS safe-default semantics.
+    if (mcp?.kind === "discovery" && v.source === "default") {
+      audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "safe-default" });
       return;
     }
 
     // ask — an earlier "Allow for session" grant covers default asks only;
     // an explicit ask RULE always re-prompts (that's what the rule is for).
-    if (v.source === "default" && sessionGrants.has(tool)) {
-      audit(ctx.ui, { tool, summary, decision: "allow", source: "user", grant: "session" });
+    if (v.source === "default" && sessionGrants.has(permTool)) {
+      audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "user", grant: "session" });
       return;
     }
 
-    const title = JSON.stringify({ kind: "hv.permission", tool, summary });
+    const title = JSON.stringify({ kind: "hv.permission", tool: permTool, summary });
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).
     // NO timeout, NO auto-allow: permission prompts wait indefinitely by design.
     const choice = await ctx.ui.select(title, ["Allow", "Allow for session", "Deny"]);
 
     if (choice === "Allow for session") {
-      sessionGrants.add(tool);
-      audit(ctx.ui, { tool, summary, decision: "allow-session", source: "user" });
+      sessionGrants.add(permTool);
+      audit(ctx.ui, { tool: permTool, summary, decision: "allow-session", source: "user" });
       return;
     }
     if (choice === "Allow") {
-      audit(ctx.ui, { tool, summary, decision: "allow", source: "user" });
+      audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "user" });
       return;
     }
-    audit(ctx.ui, { tool, summary, decision: "deny", source: "user" });
+    audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "user" });
     return { block: true, reason: "User denied this action in HappyVibe" };
   });
 
