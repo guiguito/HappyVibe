@@ -23,10 +23,27 @@ describe("mcpAuthStore", () => {
     const { getAuthEntryFilePath } = await import(
       "../pi-runtime/node_modules/pi-mcp-adapter/mcp-auth.ts"
     );
-    process.env.PI_CODING_AGENT_DIR = tmp;
-    const adapterPath = getAuthEntryFilePath("notion");
-    delete process.env.PI_CODING_AGENT_DIR;
-    expect(authEntryPath(tmp, "notion")).toBe(adapterPath);
+    // Harden: capture env state to prevent MCP_OAUTH_DIR leakage from other tests
+    const priorPiDir = process.env.PI_CODING_AGENT_DIR;
+    const priorMcpDir = process.env.MCP_OAUTH_DIR;
+    try {
+      process.env.PI_CODING_AGENT_DIR = tmp;
+      delete process.env.MCP_OAUTH_DIR; // Ensure adapter checks PI_CODING_AGENT_DIR
+      const adapterPath = getAuthEntryFilePath("notion");
+      expect(authEntryPath(tmp, "notion")).toBe(adapterPath);
+    } finally {
+      // Restore prior env state
+      if (priorPiDir !== undefined) {
+        process.env.PI_CODING_AGENT_DIR = priorPiDir;
+      } else {
+        delete process.env.PI_CODING_AGENT_DIR;
+      }
+      if (priorMcpDir !== undefined) {
+        process.env.MCP_OAUTH_DIR = priorMcpDir;
+      } else {
+        delete process.env.MCP_OAUTH_DIR;
+      }
+    }
   });
 
   // (b) write → read round-trip
