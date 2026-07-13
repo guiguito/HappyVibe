@@ -36,6 +36,11 @@ interface HvModel {
   input?: string[];
 }
 
+/** MCP server config file shape (renderer-local; do not import from src/main). */
+interface McpFileLike {
+  mcpServers: Record<string, Record<string, unknown>>;
+}
+
 /** B6 — mirrors AgentDef in pi-runtime/extensions/hv-agents.ts (from the hv.agents notify). */
 interface HvAgent {
   name: string;
@@ -207,6 +212,15 @@ interface HvApi {
   setWorkspaceAppend(workspaceId: string, content: string): Promise<void>;
   getWorkspaceModel(workspaceId: string): Promise<{ provider: string; modelId: string } | null>;
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
+
+  // MCP server config (additive). Changes apply to new sessions.
+  mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;
+  mcpSetServer(
+    scope: "global" | "workspace",
+    workspaceId: string | null,
+    name: string,
+    cfg: Record<string, unknown> | null,
+  ): Promise<McpFileLike>;
 
   // B7: local analytics + onboarding
   getAnalytics(filter?: { workspaceId?: string; sinceTs?: string }): Promise<HvAnalytics>;

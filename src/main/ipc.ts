@@ -26,6 +26,7 @@ import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/comma
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
 import { listDir, readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspaceFile } from "./files";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
+import { readMcpFile, writeMcpServer, type McpServerConfig } from "./mcp";
 
 /** Transcript rebuilt from Pi's get_messages on resume (renderer shape). */
 interface SimpleMessage {
@@ -722,4 +723,34 @@ export function registerIpc(win: BrowserWindow): void {
       : null);
     providersChanged(); // open chat bars refetch → the chip's tier updates live
   });
+
+  // ── MCP server config (adapter reads agentDir()/mcp.json + <ws>/.mcp.json;
+  //    changes apply to NEW sessions — the adapter loads config at startup) ──
+  const globalMcpFile = () => path.join(agentDir(), "mcp.json");
+  // Workspace tier: fixed filename at the workspace root. Guard: only paths
+  // registered in the WorkspaceRegistry are writable — uses path.resolve
+  // matching, same trust boundary as resolveWorkspaceAppend.
+  const workspaceMcpFile = (workspaceId: string): string => {
+    const ws = path.resolve(workspaceId);
+    if (!workspaces.list().some((w) => path.resolve(w) === ws)) {
+      throw new Error("Unknown workspace");
+    }
+    return path.join(ws, ".mcp.json");
+  };
+
+  ipcMain.handle("hv:mcp-get", (_e, workspaceId?: string) => ({
+    global: readMcpFile(globalMcpFile()),
+    workspace: workspaceId ? readMcpFile(workspaceMcpFile(workspaceId)) : null,
+  }));
+
+  ipcMain.handle(
+    "hv:mcp-set-server",
+    (_e, scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: McpServerConfig | null) => {
+      const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
+      writeMcpServer(file, name, cfg);
+      void log.append({ type: "mcp.config", workspaceId: workspaceId ?? undefined,
+        data: { scope, name, removed: cfg === null } });
+      return readMcpFile(file);
+    },
+  );
 }

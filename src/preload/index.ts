@@ -109,6 +109,11 @@ contextBridge.exposeInMainWorld("hv", {
   setWorkspaceModel: (workspaceId: string, m: { provider: string; modelId: string } | null) =>
     ipcRenderer.invoke("hv:set-workspace-model", workspaceId, m),
 
+  // ── MCP server config (additive). Changes apply to new sessions. ──
+  mcpGet: (workspaceId?: string) => ipcRenderer.invoke("hv:mcp-get", workspaceId),
+  mcpSetServer: (scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: unknown) =>
+    ipcRenderer.invoke("hv:mcp-set-server", scope, workspaceId, name, cfg),
+
   // Each on* returns an unsubscribe function. Without it, React StrictMode's
   // dev double-mount registers listeners twice and every stream delta renders
   // twice ("the the heading heading ...").
