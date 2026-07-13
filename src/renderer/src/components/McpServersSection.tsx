@@ -131,7 +131,7 @@ function McpConnectResult({
  * MCP servers CRUD (Agents & Tools page). Writes standard mcpServers JSON
  * vendored pi-mcp-adapter reads: global → app agent dir mcp.json,
  * workspace → <workspace>/.mcp.json (shareable with other MCP hosts).
- * Config read at session start — changes apply NEW sessions.
+ * Config read at session start — changes apply to new sessions.
  */
 export function McpServersSection({ workspaceId }: { workspaceId: string | null }): React.JSX.Element {
   const [servers, setServers] = useState<McpServer[] | null>(null);
