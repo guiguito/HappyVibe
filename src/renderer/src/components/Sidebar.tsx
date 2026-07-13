@@ -8,6 +8,28 @@ function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
 }
 
+/** Archive box (lid + arrow into it); unarchive reverses the arrow. Stroke style matches the existing icon set. */
+function ArchiveIcon({ out }: { out: boolean }): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+      {out ? <path d="M12 17v-5m-3 2 3-3 3 3" /> : <path d="M12 11v5m-3-2 3 3 3-3" />}
+    </svg>
+  );
+}
+
+function TrashIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
 function SessionRow({
   session,
   status,
@@ -16,7 +38,7 @@ function SessionRow({
   onSelect,
   onRename,
   onArchive,
-  onClose,
+  onDelete,
 }: {
   session: SessionMeta;
   status: SessionStatus | undefined;
@@ -26,7 +48,7 @@ function SessionRow({
   onSelect: () => void;
   onRename: (title: string) => void;
   onArchive: () => void;
-  onClose: () => void;
+  onDelete: () => void;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
@@ -97,20 +119,9 @@ function SessionRow({
         </span>
       )}
       {!editing && (
-        <span className="hidden group-hover:flex items-center gap-1 shrink-0">
-          {status === "running" && (
-            <button
-              type="button"
-              title="Stop session"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose();
-              }}
-              className="text-ink-soft hover:text-berry cursor-pointer text-[11px] font-bold px-0.5"
-            >
-              ■
-            </button>
-          )}
+        // V2.C2: reserved fixed-width slots — invisible until hover, so the
+        // row never shifts. No stop affordance: lifecycle is automatic (W1.3).
+        <span className="flex items-center gap-1 shrink-0 invisible group-hover:visible">
           <button
             type="button"
             title={session.archived ? "Unarchive" : "Archive"}
@@ -118,9 +129,20 @@ function SessionRow({
               e.stopPropagation();
               onArchive();
             }}
-            className="text-ink-soft hover:text-tangerine cursor-pointer text-[11px] font-bold px-0.5"
+            className="text-ink-soft hover:text-tangerine cursor-pointer px-0.5"
           >
-            {session.archived ? "⇧" : "⇩"}
+            <ArchiveIcon out={!!session.archived} />
+          </button>
+          <button
+            type="button"
+            title="Delete session"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="text-ink-soft hover:text-berry cursor-pointer px-0.5"
+          >
+            <TrashIcon />
           </button>
         </span>
       )}
@@ -143,7 +165,7 @@ export function Sidebar({
   onSelectSession,
   onRenameSession,
   onArchiveSession,
-  onCloseSession,
+  onDeleteSession,
   onOpenHelp,
 }: {
   workspaces: string[];
@@ -162,11 +184,13 @@ export function Sidebar({
   onSelectSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
   onArchiveSession: (id: string, archived: boolean) => void;
-  onCloseSession: (id: string) => void;
+  /** V2.C2: permanent delete (confirmed in-sidebar before this fires). */
+  onDeleteSession: (id: string) => void;
   /** B7: re-open the onboarding wow-flow. */
   onOpenHelp: () => void;
 }): React.JSX.Element {
   const [filter, setFilter] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<SessionMeta | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -247,19 +271,14 @@ export function Sidebar({
                 <span className="flex-1 min-w-0 truncate font-bold text-sm" title={ws}>
                   {basename(ws)}
                 </span>
-                <button
-                  type="button"
-                  title="New session"
-                  onClick={() => onNewSession(ws)}
-                  className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm shrink-0"
-                >
-                  +
-                </button>
+                {/* V2.C2: hover icons live in reserved slots (invisible, not
+                    removed) LEFT of an always-visible, always-LAST "+" — zero
+                    layout shift, "+" position stable. */}
                 <button
                   type="button"
                   title="Workspace settings"
                   onClick={() => onWorkspaceSettings(ws)}
-                  className="hidden group-hover:block text-ink-soft hover:text-tangerine cursor-pointer shrink-0"
+                  className="invisible group-hover:visible text-ink-soft hover:text-tangerine cursor-pointer shrink-0"
                 >
                   <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="3" />
@@ -270,9 +289,17 @@ export function Sidebar({
                   type="button"
                   title="Forget workspace"
                   onClick={() => onRemoveWorkspace(ws)}
-                  className="hidden group-hover:block text-ink-soft hover:text-berry cursor-pointer font-bold text-xs shrink-0"
+                  className="invisible group-hover:visible text-ink-soft hover:text-berry cursor-pointer font-bold text-xs w-3 shrink-0"
                 >
                   ×
+                </button>
+                <button
+                  type="button"
+                  title="New session"
+                  onClick={() => onNewSession(ws)}
+                  className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
+                >
+                  +
                 </button>
               </div>
               {!isCollapsed && (
@@ -292,7 +319,7 @@ export function Sidebar({
                       onSelect={() => onSelectSession(s.id)}
                       onRename={(title) => onRenameSession(s.id, title)}
                       onArchive={() => onArchiveSession(s.id, !s.archived)}
-                      onClose={() => onCloseSession(s.id)}
+                      onDelete={() => setConfirmDelete(s)}
                     />
                   ))}
                 </div>
@@ -354,6 +381,40 @@ export function Sidebar({
           Help
         </button>
       </div>
+
+      {/* V2.C2: delete confirm — same warm dialog pattern as CompactDialog. */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
+          <div
+            className="w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-black text-xl">Delete this session?</h2>
+            <p className="text-sm text-ink-soft mt-2">
+              &ldquo;{confirmDelete.title}&rdquo; — the conversation is permanently removed.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                className="rounded-xl border-2 border-line-strong text-ink-soft font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteSession(confirmDelete.id);
+                  setConfirmDelete(null);
+                }}
+                className="rounded-xl bg-berry text-paper font-bold text-sm px-5 py-2 border-2 border-berry shadow-sticker hover:brightness-105 cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

@@ -130,6 +130,7 @@ interface HvApi {
   createSession(workspaceId: string): Promise<SessionMeta>;
   openSession(sessionId: string): Promise<{ meta: SessionMeta; messages: SimpleMessage[] | null }>;
   closeSession(sessionId: string): Promise<void>;
+  deleteSession(sessionId: string): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
   archiveSession(sessionId: string, archived: boolean): Promise<void>;
   promptSession(

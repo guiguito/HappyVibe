@@ -4,6 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { SessionManager, sweepOrphans, type ManagedClient, type SessionExit } from "../src/main/SessionManager";
+import { deleteSessionFile, SessionIndex } from "../src/main/store";
+import { EventLog } from "../src/main/log";
 
 class FakeClient extends EventEmitter implements ManagedClient {
   static nextPid = 1000;
@@ -178,4 +180,39 @@ test("orphan sweep kills only tracked pids whose command matches our runtime", (
 
 test("orphan sweep with no pid file is a no-op", () => {
   expect(sweepOrphans(pidFile, () => null, () => { throw new Error("must not kill"); })).toEqual([]);
+});
+
+// ── V2.C2: delete flow — same order as the hv:delete-session handler ────────
+
+test("delete flow: live session is stopped first, index entry and confined file removed, events logged", async () => {
+  const sessions = path.join(dir, "sessions");
+  fs.mkdirSync(sessions, { recursive: true });
+  const index = new SessionIndex(path.join(dir, "session-index.json"));
+  const log = new EventLog(path.join(dir, "events.jsonl"));
+  const m = makeManager();
+
+  const meta = index.create("/ws");
+  const piFile = path.join(sessions, `${meta.id}.jsonl`);
+  fs.writeFileSync(piFile, "{}");
+  index.update(meta.id, { piSessionFile: piFile });
+  await m.start(meta.id, "/ws");
+
+  // Handler order: live → stop (session.end) → index.remove → confined file
+  // delete → session.delete event.
+  const exits: SessionExit[] = [];
+  m.on("session-exit", (e: SessionExit) => exits.push(e));
+  expect(m.get(meta.id)).not.toBeNull(); // live → stop-first branch taken
+  await log.append({ type: "session.end", sessionId: meta.id, workspaceId: meta.workspaceId });
+  m.stop(meta.id);
+  await new Promise((r) => setImmediate(r));
+  expect(exits).toEqual([{ sessionId: meta.id, code: null, intentional: true }]); // never a "crash"
+
+  index.remove(meta.id);
+  deleteSessionFile(sessions, index.get(meta.id)?.piSessionFile ?? piFile);
+  await log.append({ type: "session.delete", sessionId: meta.id, workspaceId: meta.workspaceId });
+
+  expect(index.get(meta.id)).toBeUndefined();
+  expect(fs.existsSync(piFile)).toBe(false);
+  const types = (await log.read({ sessionId: meta.id })).map((e) => e.type);
+  expect(types).toEqual(["session.end", "session.delete"]);
 });

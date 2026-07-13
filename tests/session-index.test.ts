@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SessionIndex, WorkspaceRegistry } from "../src/main/store";
+import { deleteSessionFile, SessionIndex, WorkspaceRegistry } from "../src/main/store";
 
 let dir: string;
 beforeEach(() => {
@@ -119,4 +119,56 @@ test("setModel persists an override; null clears it; unknown workspace is a no-o
   reloaded.setModel("/tmp/nope", model);
   expect(new WorkspaceRegistry(wsFile).getModel("/tmp/nope")).toBeNull();
   expect(new WorkspaceRegistry(wsFile).list()).toEqual(["/tmp/a"]);
+});
+
+// ── V2.C2: session delete ───────────────────────────────────────────────────
+
+test("remove of an unknown id is a no-op and leaves other sessions intact", () => {
+  const index = new SessionIndex(file());
+  const meta = index.create("/tmp/ws");
+  index.remove("not-a-session");
+  expect(new SessionIndex(file()).get(meta.id)).toBeDefined();
+});
+
+// Migration safety: a pre-delete-era entry (no piSessionFile) deletes cleanly.
+test("delete of a session without piSessionFile just drops the index entry", () => {
+  const index = new SessionIndex(file());
+  const meta = index.create("/tmp/ws");
+  expect(meta.piSessionFile).toBeUndefined();
+  deleteSessionFile(path.join(dir, "sessions"), meta.piSessionFile); // must not throw
+  index.remove(meta.id);
+  expect(new SessionIndex(file()).list()).toHaveLength(0);
+});
+
+test("deleteSessionFile removes a file inside the session dir", () => {
+  const sessions = path.join(dir, "sessions");
+  fs.mkdirSync(sessions, { recursive: true });
+  const f = path.join(sessions, "abc.jsonl");
+  fs.writeFileSync(f, "{}");
+  deleteSessionFile(sessions, f);
+  expect(fs.existsSync(f)).toBe(false);
+});
+
+test("deleteSessionFile tolerates a missing file", () => {
+  const sessions = path.join(dir, "sessions");
+  fs.mkdirSync(sessions, { recursive: true });
+  expect(() => deleteSessionFile(sessions, path.join(sessions, "gone.jsonl"))).not.toThrow();
+});
+
+test("deleteSessionFile NEVER deletes outside the session dir (confinement)", () => {
+  const sessions = path.join(dir, "sessions");
+  fs.mkdirSync(sessions, { recursive: true });
+  const outside = path.join(dir, "precious.txt");
+  fs.writeFileSync(outside, "keep me");
+  deleteSessionFile(sessions, outside); // sibling of the dir
+  deleteSessionFile(sessions, path.join(sessions, "..", "precious.txt")); // .. traversal
+  deleteSessionFile(sessions, "precious.txt"); // relative
+  expect(fs.readFileSync(outside, "utf8")).toBe("keep me");
+  // prefix trick: /x/sessions-evil must not match /x/sessions
+  const evil = sessions + "-evil";
+  fs.mkdirSync(evil, { recursive: true });
+  const evilFile = path.join(evil, "s.jsonl");
+  fs.writeFileSync(evilFile, "x");
+  deleteSessionFile(sessions, evilFile);
+  expect(fs.existsSync(evilFile)).toBe(true);
 });

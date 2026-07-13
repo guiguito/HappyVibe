@@ -16,7 +16,7 @@ import {
   authJsonProviders, BYOK_PROVIDERS, detectOllama, isByokProvider, syncOllamaModels,
   type ByokProvider,
 } from "./providers";
-import { SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
+import { deleteSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { EventLog } from "./log";
@@ -341,7 +341,9 @@ export function registerIpc(win: BrowserWindow): void {
     }
   );
 
-  ipcMain.handle("hv:close-session", async (_e, sessionId: string) => {
+  // Shared by close and delete: capture stats best-effort, log session.end,
+  // stop the process.
+  const endSession = async (sessionId: string): Promise<void> => {
     const client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
     let stats: unknown = null;
@@ -359,6 +361,21 @@ export function registerIpc(win: BrowserWindow): void {
       data: { stats: stats as Record<string, unknown> | null },
     });
     manager.stop(sessionId);
+  };
+
+  ipcMain.handle("hv:close-session", (_e, sessionId: string) => endSession(sessionId));
+
+  // V2.C2: permanent delete — confirm happens renderer-side. Stop first if
+  // live (same stats/session.end capture as close), drop the index entry,
+  // delete the Pi session file (sessionDir-confined; missing file fine).
+  ipcMain.handle("hv:delete-session", async (_e, sessionId: string) => {
+    const meta = index.get(sessionId);
+    if (!meta) return;
+    if (manager.get(sessionId)) await endSession(sessionId);
+    index.remove(sessionId);
+    deleteSessionFile(sessionDir(), meta.piSessionFile);
+    void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId });
+    sessionsChanged();
   });
 
   ipcMain.handle("hv:rename-session", (_e, sessionId: string, title: string) => {
