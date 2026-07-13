@@ -5,6 +5,8 @@ export const PI_CLI_RELPATH = "node_modules/@earendil-works/pi-coding-agent/dist
 export const PI_SUBAGENTS_RELPATH = "node_modules/pi-subagents/src/extension/index.ts";
 /** Embedded pi CLI the pi-subagents child spawn must use (no global `pi`; s0.3). */
 export const PI_SUBAGENT_BIN_RELPATH = "node_modules/.bin/pi";
+/** pi-mcp-adapter extension entry (its package.json `pi.extensions`) — MCP support. */
+export const PI_MCP_ADAPTER_RELPATH = "node_modules/pi-mcp-adapter/index.ts";
 
 export interface PiSpawnOptions {
   /** Global default model (config.ts); falls back to the spike default. */
@@ -47,6 +49,10 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // per its package.json `pi.extensions` entry; the subagent tool it
       // registers is a normal tool_call, so the bridge's permission gate applies.
       "-e", path.join(runtimeDir, PI_SUBAGENTS_RELPATH),
+      // MCP: pi-mcp-adapter registers the `mcp` proxy tool via registerTool,
+      // so the bridge's permission gate applies (docs/validation/m1.md).
+      // Config: PI_CODING_AGENT_DIR/mcp.json (global) + <cwd>/.mcp.json (workspace).
+      "-e", path.join(runtimeDir, PI_MCP_ADAPTER_RELPATH),
       "--session-dir", sessionDir,
       "--provider", model.provider,
       "--model", model.modelId,
