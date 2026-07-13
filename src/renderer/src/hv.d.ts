@@ -235,6 +235,12 @@ interface HvApi {
   ): Promise<McpFileLike>;
   mcpStatus(): Promise<McpServerStatusLike[]>;
   mcpCheck(scope: "global" | "workspace", workspaceId: string | null, name?: string): Promise<void>;
+  mcpAuthenticate(
+    scope: "global" | "workspace",
+    workspaceId: string | null,
+    name: string,
+  ): Promise<{ ok: true; tools: { name: string; description?: string }[] } | { ok: false; error: string }>;
+  mcpLogout(name: string): Promise<void>;
   onMcpStatusChanged(cb: (s: McpServerStatusLike[]) => void): () => void;
 
   // B7: local analytics + onboarding

@@ -116,6 +116,9 @@ contextBridge.exposeInMainWorld("hv", {
   mcpStatus: () => ipcRenderer.invoke("hv:mcp-status"),
   mcpCheck: (scope: "global" | "workspace", workspaceId: string | null, name?: string) =>
     ipcRenderer.invoke("hv:mcp-check", scope, workspaceId, name),
+  mcpAuthenticate: (scope: "global" | "workspace", workspaceId: string | null, name: string) =>
+    ipcRenderer.invoke("hv:mcp-authenticate", scope, workspaceId, name),
+  mcpLogout: (name: string) => ipcRenderer.invoke("hv:mcp-logout", name),
   onMcpStatusChanged: (cb: (s: unknown[]) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, s: unknown): void => cb(s as unknown[]);
     ipcRenderer.on("hv:mcp-status-changed", h);

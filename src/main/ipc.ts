@@ -28,6 +28,7 @@ import { listDir, readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspa
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, type McpServerConfig } from "./mcp";
 import { probe } from "./mcpClient";
+import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
 
 /** Transcript rebuilt from Pi's get_messages on resume (renderer shape). */
@@ -847,4 +848,60 @@ export function registerIpc(win: BrowserWindow): void {
       await Promise.all(servers.map((n) => checkServer(scope, workspaceId, n)));
     },
   );
+
+  // ── MCP OAuth: authenticate (add-time) + logout (per-server) ─────────────
+  // authenticate awaits the full browser OAuth flow (up to 5 min) — that's
+  // fine, it's a per-invoke promise; no global lock that would block other IPC.
+  ipcMain.handle(
+    "hv:mcp-authenticate",
+    async (_e, scope: "global" | "workspace", workspaceId: string | null, name: string) => {
+      // Guarded cfg resolution — same boundary as checkServer.
+      const file =
+        scope === "global"
+          ? path.join(agentDir(), "mcp.json")
+          : workspaceMcpFile(workspaceId ?? "");
+      const cfg = readMcpFile(file).mcpServers[name];
+      if (!cfg) return { ok: false, error: "server not found" };
+
+      const result = await authenticate(name, cfg, agentDir(), {
+        openExternal: (url) => shell.openExternal(url),
+      });
+
+      mcpStatusMap.set(statusKey(scope, workspaceId, name), {
+        name, scope, workspaceId,
+        state: result.ok ? "connected" : "needs-auth",
+        toolCount: result.ok ? result.tools.length : 0,
+        tools: result.ok ? result.tools : undefined,
+        error: result.ok ? undefined : result.error,
+        lastChecked: Date.now(),
+      });
+      mcpStatusChanged();
+      return result;
+    },
+  );
+
+  ipcMain.handle("hv:mcp-logout", async (_e, name: string) => {
+    logout(name, agentDir());
+    // Best-effort: drop any live runtime connection via the utility client.
+    try {
+      const c = await ensureUtility();
+      void c.send({ type: "prompt", message: `/mcp logout ${name}` }).catch(() => {});
+    } catch {
+      /* utility unavailable — non-fatal */
+    }
+    // Update every status-map entry for this server name → needs-auth.
+    for (const [key, entry] of mcpStatusMap) {
+      if (entry.name === name) {
+        mcpStatusMap.set(key, {
+          ...entry,
+          state: "needs-auth",
+          toolCount: 0,
+          tools: undefined,
+          error: undefined,
+          lastChecked: Date.now(),
+        });
+      }
+    }
+    mcpStatusChanged();
+  });
 }
