@@ -842,7 +842,7 @@ export function registerIpc(win: BrowserWindow): void {
       const file =
         scope === "global"
           ? path.join(agentDir(), "mcp.json")
-          : path.join(path.resolve(workspaceId ?? ""), ".mcp.json");
+          : workspaceMcpFile(workspaceId ?? "");
       const servers = Object.keys(readMcpFile(file).mcpServers);
       await Promise.all(servers.map((n) => checkServer(scope, workspaceId, n)));
     },
