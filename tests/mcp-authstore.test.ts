@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 // Module under test (not yet created — tests fail until Step 4)
 import {
   authEntryPath,
+  serverDir,
   readAuthEntry,
   writeAuthEntry,
   deleteAuthEntry,
@@ -74,6 +75,19 @@ describe("mcpAuthStore", () => {
     };
     writeAuthEntry(tmp, "notion", entry);
     expect(authState(tmp, "notion", "https://api.notion.com")).toBe("authenticated");
+  });
+
+  // (e2) deleteAuthEntry blanks then removes the server dir (no readable secrets left)
+  it("deleteAuthEntry removes the server directory", () => {
+    const entry: AuthEntry = {
+      tokens: { accessToken: "secret-tok" },
+      serverUrl: "https://api.notion.com",
+    };
+    writeAuthEntry(tmp, "notion", entry);
+    expect(existsSync(serverDir(tmp, "notion"))).toBe(true);
+    deleteAuthEntry(tmp, "notion");
+    expect(existsSync(serverDir(tmp, "notion"))).toBe(false);
+    expect(readAuthEntry(tmp, "notion")).toBeUndefined();
   });
 
   // (e) authenticated when entry lacks tokens (phase-2 mid-OAuth-handshake contract)

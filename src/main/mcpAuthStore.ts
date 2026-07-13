@@ -61,8 +61,14 @@ export function writeAuthEntry(agentDir: string, name: string, entry: AuthEntry)
   writeFileSync(authEntryPath(agentDir, name), JSON.stringify(entry, null, 2), { mode: 0o600 });
 }
 
-/** Remove the server directory (and tokens.json within it). */
+/**
+ * Remove all stored credentials for a server. Blanks tokens.json (mode 0o600)
+ * first, THEN removes the dir — mirrors adapter removeAuthEntry (mcp-auth.ts
+ * 142-155) so a partial failure never leaves readable secrets on disk.
+ */
 export function deleteAuthEntry(agentDir: string, name: string): void {
+  const p = authEntryPath(agentDir, name);
+  if (existsSync(p)) writeFileSync(p, "{}", { mode: 0o600 });
   const dir = serverDir(agentDir, name);
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
 }
