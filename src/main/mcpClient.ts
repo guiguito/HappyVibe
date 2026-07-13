@@ -43,15 +43,16 @@ export async function probe(
   );
 
   try {
-    await Promise.race([
-      (async () => {
-        await client.connect(transport);
-        settled = true; // connection opened — close is now client's responsibility
-      })(),
-      timer,
-    ]);
+    const connectTask = (async () => {
+      await client.connect(transport);
+      settled = true; // connection opened — close is now client's responsibility
+    })();
+    connectTask.catch(() => undefined); // suppress orphaned rejection if timer wins the race
+    await Promise.race([connectTask, timer]);
 
-    const { tools } = await Promise.race([client.listTools(), timer]);
+    const listToolsTask = client.listTools();
+    listToolsTask.catch(() => undefined); // suppress orphaned rejection if timer wins the race
+    const { tools } = await Promise.race([listToolsTask, timer]);
 
     return {
       state: "connected",
