@@ -75,4 +75,15 @@ describe("mcpAuthStore", () => {
     writeAuthEntry(tmp, "notion", entry);
     expect(authState(tmp, "notion", "https://api.notion.com")).toBe("authenticated");
   });
+
+  // (e) authenticated when entry lacks tokens (phase-2 mid-OAuth-handshake contract)
+  it("authState returns authenticated when entry lacks tokens field (phase-2 contract)", () => {
+    const entry: AuthEntry = {
+      clientInfo: { clientId: "x" },
+      codeVerifier: "v",
+      serverUrl: "https://ex.com/mcp",
+    };
+    writeAuthEntry(tmp, "notion", entry);
+    expect(authState(tmp, "notion", "https://ex.com/mcp")).toBe("authenticated");
+  });
 });
