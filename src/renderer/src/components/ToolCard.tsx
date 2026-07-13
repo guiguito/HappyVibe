@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
-import { delegationLabel, type SubagentTrace } from "../agents";
+import { delegationLabel, type SubagentResult, type SubagentTrace } from "../agents";
 import { resolveCardPath } from "../tabs";
 
 export interface ToolCardData {
@@ -213,7 +213,7 @@ function PathActions({
  * final output are what actually occupied the main agent's context (s0.3
  * addendum), so that's all the flow shows; the full nested child transcript
  * (display-only) sits behind an expand toggle, collapsed by default. The live
- * "it's running" signal is the floating run card (ChatView), not this line.
+ * "it's running" signal is the sticky delegation section (ChatView), not this line.
  * W1.1: shares the headline treatment — robot icon + intent-first label.
  */
 function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
@@ -253,34 +253,47 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
       </button>
       {open && (
         <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 flex flex-col gap-3">
-          {results.length === 0 && <p className="text-xs text-ink-soft italic">Waiting for the subagent to respond…</p>}
-          {results.map((r, i) => (
-            <div key={i} className="rounded-lg border border-line bg-card overflow-hidden">
-              <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-line text-[11px]">
-                <span className="font-bold">{r.agent}</span>
-                {r.model && <span className="font-mono text-ink-soft">{r.model}</span>}
-                <span className="flex-1" />
-                {r.usage && (
-                  <span className="font-mono text-ink-soft" title="input/output tokens · turns · cost">
-                    {(r.usage.input ?? 0) + (r.usage.output ?? 0)} tok
-                    {r.usage.turns != null ? ` · ${r.usage.turns} turn${r.usage.turns === 1 ? "" : "s"}` : ""}
-                    {r.usage.cost != null ? ` · ${fmtCost(r.usage.cost)}` : ""}
-                  </span>
-                )}
-              </div>
-              <div className="flex flex-col gap-1.5 px-2.5 py-2 max-h-64 overflow-y-auto">
-                {r.messages.map((m, j) => (
-                  <div key={j} className="text-xs">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mr-1.5">{m.role}</span>
-                    <span className="whitespace-pre-wrap break-words">{m.text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+          <SubagentTraceView results={results} />
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * V2.C1: the child-transcript rendering (live during tool_execution_update,
+ * final at end) — shared by the in-flow SubagentCard's expand toggle and the
+ * sticky delegation section (ChatView), so the two never drift apart.
+ */
+export function SubagentTraceView({ results }: { results: SubagentResult[] }): React.JSX.Element {
+  return (
+    <>
+      {results.length === 0 && <p className="text-xs text-ink-soft italic">Waiting for the subagent to respond…</p>}
+      {results.map((r, i) => (
+        <div key={i} className="rounded-lg border border-line bg-card overflow-hidden">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-line text-[11px]">
+            <span className="font-bold">{r.agent}</span>
+            {r.model && <span className="font-mono text-ink-soft">{r.model}</span>}
+            <span className="flex-1" />
+            {r.usage && (
+              <span className="font-mono text-ink-soft" title="input/output tokens · turns · cost">
+                {(r.usage.input ?? 0) + (r.usage.output ?? 0)} tok
+                {r.usage.turns != null ? ` · ${r.usage.turns} turn${r.usage.turns === 1 ? "" : "s"}` : ""}
+                {r.usage.cost != null ? ` · ${fmtCost(r.usage.cost)}` : ""}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5 px-2.5 py-2 max-h-64 overflow-y-auto">
+            {r.messages.map((m, j) => (
+              <div key={j} className="text-xs">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mr-1.5">{m.role}</span>
+                <span className="whitespace-pre-wrap break-words">{m.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
   );
 }
 

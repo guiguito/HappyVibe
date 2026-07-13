@@ -101,6 +101,7 @@ export function Transcript({
   items,
   busy,
   streaming,
+  header,
   onRetry,
   workspace,
   onOpenFile,
@@ -109,6 +110,9 @@ export function Transcript({
   busy: boolean;
   /** Perf: in-progress assistant text, rendered as one live bubble outside `items`. */
   streaming?: string;
+  /** V2.C1: sticky in-flow section (delegation runs) — first child of the
+      scroll container so it scrolls naturally yet pins at the top. */
+  header?: React.ReactNode;
   onRetry?: () => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
@@ -137,6 +141,7 @@ export function Transcript({
 
   return (
     <div className="flex-1 overflow-y-auto">
+      {header}
       <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
         {items.map((it, i) => (
           <MessageItem key={it.id ?? i} it={it} onRetry={onRetry} workspace={workspace} onOpenFile={onOpenFile} />

@@ -167,10 +167,12 @@ export function isSubagentTool(toolName: unknown): boolean {
   return toolName === "subagent";
 }
 
-// ── W1.2 floating run card (delegation-run state helpers) ────────────────────
+// ── W1.2/V2.C1 delegation-run helpers ────────────────────────────────────────
 // A delegation run lives OUTSIDE the chat flow while running: App tracks every
-// in-flight subagent call keyed by toolCallId; ChatView stacks them as floating
-// sticky cards. Completed runs linger briefly (fade-out) before removal.
+// in-flight subagent call keyed by toolCallId; ChatView renders them as a
+// sticky in-flow section at the top of the transcript scroll area. Completed
+// runs show a brief done/failed state, slide away, then App removes them
+// (~2.5s after tool_execution_end).
 
 export interface DelegationRun {
   toolCallId: string;
@@ -195,4 +197,31 @@ export function delegationLabel(args: unknown): string {
 export function formatElapsed(ms: number): string {
   const secs = Math.max(0, Math.floor(ms / 1000));
   return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
+}
+
+/**
+ * V2.C1: composer copy while a delegation runs — the composer stays fully
+ * enabled, but a delegation is one blocking tool call, so anything typed
+ * queues until it finishes. Null when nothing is running.
+ */
+export function delegationHint(runs: DelegationRun[]): string | null {
+  const active = runs.filter((r) => r.status === "running");
+  if (active.length === 0) return null;
+  const tail = active.length === 1 ? `${active[0].agent} finishes` : `${active.length} agents finish`;
+  return `Type away — messages will be answered when ${tail}`;
+}
+
+/**
+ * V2.C1: the live child transcript for a run — the in-flow subagent tool card
+ * already carries it (tool_execution_update merges the trace there), so the
+ * sticky section reads it from the transcript instead of duplicating state.
+ */
+export function traceFor(
+  items: ReadonlyArray<{ kind: string; card?: { toolCallId: string; trace?: SubagentTrace } }>,
+  toolCallId: string,
+): SubagentTrace | undefined {
+  for (const it of items) {
+    if (it.kind === "tool" && it.card?.toolCallId === toolCallId) return it.card.trace;
+  }
+  return undefined;
 }

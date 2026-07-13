@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  delegationHint,
   delegationLabel,
   formatElapsed,
   isSubagentTool,
@@ -7,8 +8,10 @@ import {
   mergeTrace,
   parseAgents,
   parseTools,
+  traceFor,
   traceFromEnd,
   traceFromUpdate,
+  type DelegationRun,
   type PermState,
 } from "../src/renderer/src/agents";
 
@@ -173,5 +176,51 @@ describe("formatElapsed", () => {
 
   test("negative clamps to zero", () => {
     expect(formatElapsed(-500)).toBe("0s");
+  });
+});
+
+describe("delegationHint (V2.C1 composer copy)", () => {
+  const run = (agent: string, status: DelegationRun["status"] = "running"): DelegationRun => ({
+    toolCallId: `t-${agent}`,
+    agent,
+    label: "",
+    startedAt: 0,
+    status,
+  });
+
+  test("null when nothing runs (empty or all finished)", () => {
+    expect(delegationHint([])).toBeNull();
+    expect(delegationHint([run("explorer", "done"), run("summarizer", "error")])).toBeNull();
+  });
+
+  test("one running agent → named copy", () => {
+    expect(delegationHint([run("code-explorer")])).toBe(
+      "Type away — messages will be answered when code-explorer finishes",
+    );
+  });
+
+  test("several running agents → counted copy, finished runs excluded", () => {
+    expect(delegationHint([run("a"), run("b"), run("c", "done")])).toBe(
+      "Type away — messages will be answered when 2 agents finish",
+    );
+  });
+});
+
+describe("traceFor (V2.C1 sticky-section trace lookup)", () => {
+  const trace = { results: [{ agent: "code-explorer", messages: [], finalOutput: "hi" }] };
+  const items = [
+    { kind: "user" },
+    { kind: "tool", card: { toolCallId: "other" } },
+    { kind: "tool", card: { toolCallId: "call-1", trace } },
+  ];
+
+  test("finds the trace on the matching subagent tool card", () => {
+    expect(traceFor(items, "call-1")).toBe(trace);
+  });
+
+  test("undefined for a card without a trace yet, or no matching card", () => {
+    expect(traceFor(items, "other")).toBeUndefined();
+    expect(traceFor(items, "missing")).toBeUndefined();
+    expect(traceFor([], "call-1")).toBeUndefined();
   });
 });

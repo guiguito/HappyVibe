@@ -57,11 +57,11 @@ export default function App(): React.JSX.Element {
   // B6: agent + tool inventories (from hv.agents / hv.tools notifies).
   const [agents, setAgents] = useState<AgentInfo[] | null>(null);
   const [tools, setTools] = useState<ToolInfo[] | null>(null);
-  // W1.2: active subagent delegations per session, keyed by toolCallId (multiple
-  // concurrent runs stack). During delegation the main chat goes silent (main
-  // agent is blocked), so these drive the floating run cards at the top of the
-  // chat — the run lives OUTSIDE the chat flow (PRD "Subagents"). Completed runs
-  // linger ~2.5s (fade-out in the card) before removal.
+  // W1.2/V2.C1: active subagent delegations per session, keyed by toolCallId
+  // (multiple concurrent runs stack). During delegation the main chat goes
+  // silent (main agent is blocked), so these drive the sticky run section at
+  // the top of the chat scroll area — the run lives OUTSIDE the chat flow (PRD
+  // "Subagents"). Completed runs linger ~2.5s (outcome + slide-away) before removal.
   const [delegations, setDelegations] = useState<Record<string, Record<string, DelegationRun>>>({});
   const [error, setError] = useState<string | null>(null);
   // B7: onboarding wow-flow overlay. Shown once for a brand-new user's first
@@ -236,7 +236,7 @@ export default function App(): React.JSX.Element {
           kind: "tool",
           card: { toolCallId: t.toolCallId, toolName: t.toolName, args: t.args, status: "running", approval },
         });
-        // W1.2: raise a floating run card for this delegation (concurrent runs stack).
+        // V2.C1: raise a run card in the sticky section (concurrent runs stack).
         if (isSubagentTool(t.toolName)) {
           const run: DelegationRun = {
             toolCallId: t.toolCallId,
@@ -276,8 +276,8 @@ export default function App(): React.JSX.Element {
             ...(isSub ? { trace: mergeTrace(card.trace, traceFromEnd(t.result)) } : {}),
           })),
         }));
-        // W1.2: mark the run done/failed — the card shows the outcome and fades;
-        // remove it after the fade so the stack shrinks.
+        // V2.C1: mark the run done/failed — the card shows the outcome briefly,
+        // then slides away; remove it after the animation so the stack shrinks.
         if (isSub) {
           const status = t.isError ? ("error" as const) : ("done" as const);
           setDelegations((p) => {
