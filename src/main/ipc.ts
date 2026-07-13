@@ -27,6 +27,8 @@ import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, wri
 import { listDir, readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspaceFile } from "./files";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, type McpServerConfig } from "./mcp";
+import { probe } from "./mcpClient";
+import { statusKey } from "./mcpStatusKey";
 
 /** Transcript rebuilt from Pi's get_messages on resume (renderer shape). */
 interface SimpleMessage {
@@ -87,6 +89,7 @@ export function registerIpc(win: BrowserWindow): void {
   } catch (e) {
     console.warn("[hv] built-in agent install failed:", e);
   }
+
 
   // W1.3: main-side activity knowledge (busy / pending prompt / subagent) —
   // hibernation must never touch a genuinely active session.
@@ -198,6 +201,78 @@ export function registerIpc(win: BrowserWindow): void {
   // default/workspace-model edits. The chat bar refetches its model list and
   // resolution tiers on it, so the chip and menu are never stale.
   const providersChanged = (): void => win.webContents.send("hv:providers-changed");
+
+  // ── MCP status model ─────────────────────────────────────────────────────
+  type McpState = "connected" | "needs-auth" | "failed" | "checking";
+  interface McpServerStatus {
+    name: string;
+    scope: "global" | "workspace";
+    workspaceId: string | null;
+    state: McpState;
+    toolCount: number;
+    tools?: { name: string; description?: string }[];
+    error?: string;
+    lastChecked: number;
+  }
+  const mcpStatusMap = new Map<string, McpServerStatus>();
+  const mcpStatusChanged = (): void =>
+    win.webContents.send("hv:mcp-status-changed", Array.from(mcpStatusMap.values()));
+
+  const checkServer = async (
+    scope: "global" | "workspace",
+    workspaceId: string | null,
+    name: string,
+  ): Promise<void> => {
+    const file =
+      scope === "global"
+        ? path.join(agentDir(), "mcp.json")
+        : (() => {
+            const ws = path.resolve(workspaceId ?? "");
+            if (!workspaces.list().some((w) => path.resolve(w) === ws)) {
+              throw new Error("Unknown workspace");
+            }
+            return path.join(ws, ".mcp.json");
+          })();
+    const cfg = readMcpFile(file).mcpServers[name];
+    if (!cfg) {
+      mcpStatusMap.delete(statusKey(scope, workspaceId, name));
+      mcpStatusChanged();
+      return;
+    }
+    mcpStatusMap.set(statusKey(scope, workspaceId, name), {
+      name, scope, workspaceId, state: "checking", toolCount: 0, lastChecked: Date.now(),
+    });
+    mcpStatusChanged();
+    const result = await probe(name, cfg, agentDir());
+    mcpStatusMap.set(statusKey(scope, workspaceId, name), {
+      name, scope, workspaceId,
+      state: result.state,
+      toolCount: result.tools?.length ?? 0,
+      tools: result.tools,
+      error: result.error,
+      lastChecked: Date.now(),
+    });
+    mcpStatusChanged();
+  };
+
+  // Startup connectivity sweep — fire-and-forget, never blocks boot.
+  // ponytail: stdio probes briefly spawn each server process; upgrade = persistent handles if startup time bites
+  void (async () => {
+    const globalServers = Object.keys(readMcpFile(path.join(agentDir(), "mcp.json")).mcpServers);
+    const wsPaths = workspaces.list();
+    const allChecks: Promise<void>[] = [
+      ...globalServers.map((n) => checkServer("global", null, n)),
+      ...wsPaths.flatMap((ws) =>
+        Object.keys(readMcpFile(path.join(ws, ".mcp.json")).mcpServers).map((n) =>
+          checkServer("workspace", ws, n),
+        ),
+      ),
+    ];
+    await Promise.allSettled(allChecks);
+    const byState: Record<string, number> = {};
+    for (const s of mcpStatusMap.values()) byState[s.state] = (byState[s.state] ?? 0) + 1;
+    void log.append({ type: "mcp.startup_check", data: { total: allChecks.length, byState } });
+  })().catch((e) => console.warn("[hv] mcp startup sweep failed:", e));
 
   const maybeTitle = (sessionId: string): void => {
     const meta = index.get(sessionId);
@@ -751,6 +826,25 @@ export function registerIpc(win: BrowserWindow): void {
       void log.append({ type: "mcp.config", workspaceId: workspaceId ?? undefined,
         data: { scope, name, removed: cfg === null } });
       return readMcpFile(file);
+    },
+  );
+
+  ipcMain.handle("hv:mcp-status", () => Array.from(mcpStatusMap.values()));
+
+  ipcMain.handle(
+    "hv:mcp-check",
+    async (_e, scope: "global" | "workspace", workspaceId: string | null, name?: string) => {
+      if (name) {
+        await checkServer(scope, workspaceId, name);
+        return;
+      }
+      // Check all servers in scope
+      const file =
+        scope === "global"
+          ? path.join(agentDir(), "mcp.json")
+          : path.join(path.resolve(workspaceId ?? ""), ".mcp.json");
+      const servers = Object.keys(readMcpFile(file).mcpServers);
+      await Promise.all(servers.map((n) => checkServer(scope, workspaceId, n)));
     },
   );
 }
