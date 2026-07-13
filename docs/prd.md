@@ -1,97 +1,333 @@
-# HappyVibe — Product Requirements
+# HappyVibe PRD — Direction v1
 
-*The reference spec. Kept in sync with the Notion main PRD; decision history lives in git and the Notion "Feedbacks V1" page.*
+*Mirror of the Notion main PRD (source of truth for product discussion). Decisions are folded in place using the document's "Decision (…)" convention.*
 
-## Vision
+## 1. Product Positioning
 
-A desktop GUI (Electron, macOS first) that ships a **curated distribution of the [Pi coding agent](https://pi.dev)** — runtime + extensions embedded at a pinned version — built around two differentiators: **first-class permission UX** and **honest context-window visibility**. Open-source community project and portfolio piece, not a startup play: community appeal and polish-per-effort weigh heavily in trade-offs.
+**HappyVibe is a local-first desktop app for beginner-friendly vibe coding — macOS first, with Windows and Linux support wherever possible.**
 
-## Architecture (fixed)
+Its promise:
 
-- Pinned `@earendil-works/pi-coding-agent` (currently 0.80.3) driven over **RPC / NDJSON stdio**. Every pin bump gates on the contract-test suite (`docs/validation/d1.md` is the wire-shape record). `pi-subagents` is pinned and gated the same way.
-- The **HappyVibe bridge extension owns all permission UI and enforcement** (Pi's own permission package is TUI-only). Permission prompts never auto-allow and never time out.
-- Bridge ⇄ app messaging: JSON envelopes (`kind: "hv.*"`) over Pi's `extension_ui_request` wire — blocking kinds ride `select`/`input`, fire-and-forget kinds ride `notify`. Bridge slash-commands (`/hv-*`) ride the RPC prompt channel.
-- **JSONL append-log** (frozen envelope `{ts, type, sessionId?, workspaceId?, data?}`) is the single store for audit + analytics. No SQLite (native-module ABI churn); documented ceiling: thousands of sessions per workspace.
-- Secrets: Electron `safeStorage` for BYOK keys. Pi's `auth.json` is Pi-owned plaintext in an **app-owned agent dir** (the user's real `~/.pi` is never touched).
-- Pi session files are **opaque blobs**; HappyVibe keeps its own minimal session index (id, title, workspace, timestamps, archived, session-file pointer).
+> **HappyVibe = vibe coding that allows you to actually understand what you and the agent are doing.**
 
-## Sessions & workspaces
+The wedge audience (V1 target) is:
 
-- Sidebar shows **all workspaces as a collapsible tree** with their sessions; title-only search over our index; archive = index flag.
-- Session titles: model-generated after the first exchange (truncated-first-message fallback; inline rename wins permanently).
-- **Parallel sessions with invisible auto-hibernation.** The active/inactive distinction is not the user's problem: no visible session limit and **no manual stop/end-session control anywhere** (the in-chat abort of a running response is the only stop). An internal live-process cap (~8) protects resources; when room is needed the **oldest idle** session (not mid-call, no pending permission, no subagent running) is hibernated — stats captured, process stopped, index marked — and **restored transparently** when reopened (Pi `--session` resume). Genuinely active sessions are never touched; the session the user is driving is never blocked.
-- Session row actions: rename, archive (index flag), and **delete** (confirmed trash: stops if live, removes the index entry and the app-owned Pi session file, audited). The new-session `+` stays positionally stable — hover actions never displace it.
-- Crash isolation per session; PID tracking + orphan sweep at startup; spawns staggered (~1s) to avoid cold-start contention.
+> **AI-curious tinkerers — junior developers, technical-adjacent people (PMs, designers, data analysts), and self-taught builders who want to *understand* what the agent is doing, not just get results.**
 
-## Providers & models
+The original persona — *an AI-curious person who is scared to vibe code* — remains the aspirational north star. But true beginners mostly want results, not understanding; the people who crave seeing the context window are one notch above. Product decisions target the tinkerer wedge first, while the UX must stay simple enough that the scared beginner can grow into it. Think: **a GUI-native Pi — radically simple surface, deep personalization underneath** (prompts, agents, permissions, models).
 
-- Settings → **LLM Setup**: configured-providers list + "add provider" page grouped as **Sign in with your plan** (Claude — with the honest "uses your plan's extra usage" caveat for Pro/Max — GitHub Copilot, ChatGPT/Codex; OAuth driven over RPC via `hv-login` bridge commands) · **Local** (Ollama, zero keys, auto-detected) · **Cloud API keys** (curated BYOK: DeepSeek, Anthropic, OpenAI, Google, OpenRouter; no custom-endpoint field).
-- **Model hierarchy: session → workspace → global.** Global default in Settings; per-workspace override in workspace settings; per-session override from the chat bar. Agents may pin their own model (agent frontmatter). Model list comes live from Pi's registry (auth-configured providers only).
+HappyVibe should feel like a **friendly learning tool for vibe coding**, but one that can become a serious coding tool when used carefully.
 
-## Chat experience
+The product should be accessible to beginners, while still giving experienced developers deep customization options:
+- system prompt editing;
+- agent prompt editing;
+- tool visibility;
+- permission configuration;
+- model/provider control;
+- context inspection;
+- eventually skills and custom agents.
 
-- Streaming markdown transcript (O(1) per-token render path), steering while the agent runs (send/Enter steers — delivered between tool calls; no separate queue button; queue chips mirror Pi's real queue, survive Stop, and carry an honest "can't unqueue yet" note — Pi exposes no dequeue API), provider errors and crashes as first-class transcript items with retry.
-- Composer: **icon** Send/Stop; current-model chip with per-session dropdown (resolution session → workspace → global, **tier source labeled** — "workspace default" / "session override"); the model list refreshes live when providers change; a **"+" attach menu** (always visible) — image attach enabled when the model supports vision, disabled otherwise; extensible (file import later).
-- **Tool calls never show raw technical calls by default.** Every card leads with a tool-kind icon + a human headline: the model-provided **`intent`** ("why I'm doing this") on registered tools — the `subagent` tool and all future registered tools carry a required `intent` parameter — and a **derived label** built from tool + args for Pi's built-in tools (whose schemas can't be extended). Bash commands get **parsed explanations** ("Installing dependencies (npm install)"; destructive operations flagged). Raw name/args/result sit behind a details toggle. Edit/write cards render real diffs.
-- File paths shown on tool/diff cards are **clickable**: open in the built-in editor, reveal in Finder, copy path.
-- **AskUserQuestion tool**: the model can surface a decision to the user via a registered tool — 1–4 questions, each with a ≤12-char header, single/multi-select, 2–4 options (label, description, optional monospace preview shown side-by-side). The UI always adds a free-text **"Other"**; recommended options come first labeled "(Recommended)". Blocking (never times out, permission invariant); background-session questions badge the sidebar; the answer joins the transcript as a user-style item.
+The tone should be **playful**, because working with AI should feel fun, but the product must remain trustworthy enough for real coding work.
 
-## Subagents
+## 2. Core Product Promise
 
-- Built-ins shipped: **Code Explorer** (read-only), **Summarizer**, **agents-md-maker** (generates a draft AGENTS.md for review; never auto-writes). Users can edit prompts, **duplicate** (no create-from-scratch), and set per-agent model. Installed idempotently to the app-owned agent dir; user edits never clobbered.
-- **Context isolation is the point of delegation**: only the call (agent + task + intent) and the final result may occupy the main agent's context. The child's working transcript is display-only.
-- **The run lives outside the chat flow**: while a subagent works, a **sticky in-flow section** at the top of the chat shows agent name, intent, live status and elapsed time (stacking for concurrent runs); **clicking it expands the live child transcript inline**; it slides away on completion and the result lands in the flow. In-flow rendering is just the call line + result; the full child transcript stays available behind a toggle.
-- **Chatting during a delegation**: the composer stays enabled; messages queue with honest copy ("…will be answered when <agent> finishes") — a delegation is one tool call, so delivery waits for it by design.
-- Tools list UI: name, description, source, and the tool's current permission state (evaluated by the same rule engine — logic never forks).
+Most agentic coding tools are powerful but opaque. Users often do not understand:
+- what the agent is doing;
+- what tools it is calling;
+- what permissions it has;
+- what context it sees;
+- why it edits a file;
+- what sub-agents are doing;
+- how much they are spending in tokens.
 
-## Permissions
+HappyVibe turns agentic coding into a visible, understandable, and editable workflow.
 
-- 3-layer rule engine inside the bridge: tool-level / project-path / command-pattern; allow-ask-deny; **most-restrictive wins** across **global rules + per-workspace overrides**. No match → safe defaults (read-only tools allowed, everything else asks).
-- Global rules edit in Settings → Permissions; **workspace rules edit in that workspace's settings**. Live "test a call" preview uses the same engine.
-- **Visible dangerous mode**: per-session, never persisted, permanent warning banner, one-click off; every bypassed call is flagged in the audit log.
-- Every decision (rule, user, dangerous, safe-default) is audited to the event log; audit view filterable by session and workspace.
-- Cross-session prompts: per-session queues, sidebar attention badges, dock badge; switching to a session surfaces its oldest pending prompt.
+The user should not feel like a mysterious terminal agent is running "Chinese bash commands in the background." Instead, they should see a clean, readable, human-friendly representation of the agent's work.
 
-## Context visibility ⭐
+## 3. Technical Foundation
 
-- Per-session token gauge: measured (Pi's `contextUsage`) whenever available, clearly-labeled estimate otherwise, explicit "measuring…" state when Pi can't yet measure (e.g. right after compaction). **Never an unlabeled number.**
-- Context panel opens on a **category summary** (system prompt, context files, conversation, tool calls, compaction summaries, subagent call+result — sizes and shares only); clicking a category drills into items.
-- **Manual removal**: pairing-aware (a tool call and its result drop atomically), **completed turns only**, reversible; marks persist in the session file and survive compaction, reload and resume.
-- Compaction: warn → suggest → confirm, never automatic; visible in-progress state; post-compaction the gauge shows "measuring…" until Pi re-measures.
+HappyVibe is a **tightly coupled wrapper above Pi Agent**.
 
-## Settings
+**Decision (Round 2):** HappyVibe ships as a **curated Pi distribution**: the Pi runtime and all required extensions are embedded with the app at a pinned, tested version. HappyVibe does not depend on a user-installed Pi, because the UI can only guarantee support for the exact Pi version it embeds.
 
-Order: **LLM Setup** → **System Prompt** → **Permissions (global)** → … → **Audit log** and **Dashboard** at the bottom (neither lives in the sidebar). Sections carry icons matching the sidebar style.
+Pi Agent is the underlying coding-agent harness. HappyVibe should not attempt to become a generic multi-runtime product in V1.
 
-- **System Prompt**: the full resolved main-agent prompt shown read-only; users edit an **additions layer** (global `APPEND_SYSTEM.md`; applies to new/restarted sessions). Overridable per workspace.
-- **Workspace settings** (small gear on each workspace row): model override, workspace permission rules, workspace system-prompt additions.
+However, because Pi appears intentionally minimal, the V1 architecture should probably include:
+1. **Pi Agent core**
+2. **A HappyVibe runtime layer**
+3. **A curated set of Pi extensions/packages**
+4. **A visual UI layer**
+5. **Local persistence for workspaces, sessions, permissions, settings, and audit logs**
 
-## Files & editor
+Pi's philosophy is extensibility rather than built-in product completeness. This means HappyVibe's V1 value is not only the interface. It is also the **curated agentic setup** that makes Pi feel usable to beginners out of the box.
 
-- Right-side collapsible pane (closed by default): workspace file tree (fs access path-confined; node_modules/.git ignored). Distinct folder vs per-type file icons; refresh at the panel's top-left, close at its top-right.
-- Center area is tabbed: the chat plus open files. Editor = CodeMirror 6, syntax highlighting for common languages, warm-workshop theme, editable with save, dirty indicator, external-change detection.
+## 4. Platform
 
-## AGENTS.md
+V1 is:
+- local-only;
+- desktop-only (macOS first; Windows and Linux builds where possible);
+- desktop-first;
+- no account system;
+- no cloud workspace;
+- BYOK only.
 
-- Follows the [agents.md standard](https://agents.md/): root `AGENTS.md` plus **nested `AGENTS.md` in subdirectories** — the nearest file for the subtree a tool touches is injected for that turn (bridge-side; Pi only discovers upward) and shown in the context panel.
-- Plain-markdown editor in the app. When missing: offer to copy an existing `CLAUDE.md`, or generate a draft with the bundled **agents-md-maker** subagent (reviewed in the editor before saving).
+Possible implementation frameworks: Electron; Tauri; React Native Desktop if the tech lead prefers; final choice left to technical leadership, but the framework must support cross-platform builds (macOS, Windows, Linux). The PRD should not over-specify the framework for now.
 
-## Analytics & onboarding
+## 5. Workspace Model
 
-- **Local-only** dashboard (reached via Settings): sessions, tokens, estimated cost, durations, per-workspace/per-model breakdowns, permission activity — computed on-device from the JSONL log; nothing is ever sent anywhere.
-- First-run onboarding: a dismissible checklist steering the first session toward the wow moments — the live agent trace and the context gauge. Shown once, re-openable from Help.
+In HappyVibe, a **workspace is a local project folder on disk**. The user can have multiple workspaces. Each workspace can contain multiple coding sessions, including sessions running in parallel.
 
-## Design language
+A workspace contains: local path; session history; active sessions; archived sessions; permission configuration; AGENTS.md files; model overrides; agent configuration; tool permissions; audit logs; context state/history.
 
-"Warm workshop": cream paper + warm ink, tangerine primary, chunky borders with hard offset shadows, Gabarito + JetBrains Mono bundled locally (strict `self` CSP). Playful microcopy. Never default-template aesthetics.
+Workspaces are added manually. No automatic GitHub import in V1. GitHub support is out of scope for V1.
 
-## Scope fences
+## 6. V1 Scope
 
-- **MCP: deferred** until after the current feedback round lands.
-- **Windows: deferred** past V1 (signing cost + unvalidated assumptions). macOS first; Linux with distribution work.
-- Telemetry: local-only, forever. Audit-log export: post-V1. No filename search (file access happens via the tree + clickable paths).
+### Must be in V1
 
-## Quality bar & release path
+HappyVibe V1 should include:
+- local desktop app;
+- manual workspace/project folder selection;
+- chat-first coding interface;
+- Pi Agent integration;
+- model provider setup using providers supported by Pi Agent;
+- BYOK setup;
+- global default model;
+- project-level model override;
+- agent-level model override;
+- readable agent activity display;
+- readable tool call display;
+- tool request/status/progress/result display;
+- expandable technical details where useful;
+- expandable diffs for file edits;
+- context usage indicator;
+- exact token counts;
+- context usage percentage;
+- color-coded context warning;
+- context breakdown;
+- manual context editing/removal;
+- compaction suggestion;
+- user confirmation before summarization/compaction;
+- permissions UI;
+- visible dangerous mode toggle;
+- permanent warning when dangerous mode is enabled;
+- one-click way to disable dangerous mode;
+- audit log of agent actions;
+- default Code Explorer Agent;
+- agent list visible to the user;
+- tool list visible to the user;
+- agent list and tool list shared with the model so it can call them when appropriate;
+- automatic or user-triggered sub-agent calls;
+- user ability to manually call the Code Explorer Agent;
+- editable sub-agent system prompt;
+- separate sub-agent context window;
+- AGENTS.md reading;
+- AGENTS.md editing;
+- proposal to create AGENTS.md if missing;
+- explanation of instruction priority/order if multiple instruction files exist;
+- session search;
+- archived session restore;
+- local-only session history;
+- embedded, pinned Pi runtime with curated extensions;
+- AskUserQuestion tool — the agent can surface a decision to the user in an interactive picker (1–4 questions, options with descriptions and optional previews, automatic free-text "Other");
+- a collapsible workspace file explorer with a built-in tabbed code editor (syntax highlighting, edit and save);
+- invisible session auto-hibernation — no visible session limit; idle sessions save and restore transparently;
+- session deletion (confirmed, permanent);
+- nested AGENTS.md files per subdirectory (following the [agents.md](https://agents.md/) standard);
+- Summarizer Agent for context compaction;
+- agent editing and duplication (built-in agents);
+- session-level and workspace-level audit log;
+- open a changed file from a diff in the built-in editor (reveal in Finder and copy path also available);
+- open the workspace folder in Finder / the OS file manager;
+- copy file paths;
+- local-only analytics dashboard;
+- macOS build (Windows and Linux where possible);
+- open-source distribution first.
 
-- Every keeper module has unit/contract tests; Pi and pi-subagents pin bumps gate on the contract suite; every new bridge wire shape is documented in `docs/validation/d1.md`.
-- Release gate: no tagged release without green unit + E2E + scripted demo on a **packaged** build. Known open items: packaged subagent spawn needs a node-capable child runtime; mac signing/notarization; Linux packaging; CONTRIBUTING + architecture doc + demo GIFs before the loud launch (`v0.2`: context visibility + permission cards are the pitch).
+### Explicitly not in V1
+
+The following should be shown as "coming soon" or omitted from V1:
+- skills support / import / creation;
+- custom agent creation from scratch and agent config import (editing/duplicating built-in agents **is** in V1);
+- CLI tool import; API tool import;
+- GitHub support;
+- cloud accounts; integrated billing; paid plan; team collaboration; marketplace;
+- file name search from the chat UI;
+- MCP support (deferred by the post-V1 feedback rounds — will ship via a bundled Pi extension once the current feature set is polished);
+- audit log export (JSON/Markdown);
+- opt-in remote telemetry.
+
+## 7. Chat Experience
+
+The product is chat-first. The user sees: their own messages; agent messages; high-level agent work state; readable tool requests; tool status/progress/results; expandable diffs; sub-agent activity; final answers.
+
+The user should **not** see raw chain-of-thought. They should see high-level working state — e.g. "Inspecting the project structure", "Reading authentication-related files", "Preparing an edit", "Running tests", "Asking Code Explorer to investigate the routing layer", "Summarizing previous context before continuing".
+
+Tool calls should be represented in readable product language:
+
+```
+Tool: Read file
+Purpose: Inspect the authentication middleware
+Status: Completed
+Result: Found the middleware in src/server/auth.ts
+```
+
+Expandable details may show raw command, path, output, or diff when useful.
+
+**Decision (Feedback round 1):** tool cards lead with a tool-kind icon and a human headline, never the raw call. Registered tools (sub-agent calls, AskUserQuestion, and every future registered tool) carry a required `intent` parameter — a customer-facing sentence saying what the model is doing and why. Pi's built-in tools cannot take extra parameters (their schemas are fixed), so their headlines are derived from the tool and its arguments — including parsed shell explanations ("Installing dependencies (npm install)", "Running tests (vitest)") with destructive commands flagged. The raw technical call always remains available behind a details toggle.
+
+**Decision (Feedback round 2):** the chat bar uses icon Send/Stop buttons; a model chip shows the session's current model with its tier source ("workspace default", "session override") and a dropdown to override per session; the model list refreshes live when providers change; a "+" attach menu offers image attachment when the model supports vision (disabled otherwise, extensible later). Sending while the agent runs steers — the message is delivered between tool calls; queued messages appear as chips. There is no separate queue button, and queued chips cannot be individually removed yet: Pi's RPC surface has no dequeue command (an upstream feature request is filed).
+
+**Decision (Feedback round 2) — AskUserQuestion:** the model can ask the user questions through a dedicated tool: 1–4 questions per call, each with a short header chip, single or multi select, and 2–4 options (label, description, optional monospace preview shown side-by-side). The UI always adds a free-text "Other" option; the recommended option comes first, labeled "(Recommended)". The picker blocks the agent until answered and never times out; questions from background sessions badge the sidebar like permission prompts, and the answer is echoed into the transcript.
+
+## 8. File Edits and Diffs
+
+When the agent edits files, the UI should show: which file changed; a short summary of the change; status; an expandable diff; whether the edit succeeded or failed. This is important because HappyVibe's educational value depends on users understanding what the agent changed.
+
+## 9. Context Management
+
+Context visibility is one of HappyVibe's core differentiators. The app should show: exact token count; percentage of context used; color-coded context state (green healthy / orange heavy / red needs attention); context composition; beginner-friendly explanation; technical details for advanced users.
+
+When context gets high, HappyVibe should: warn visually → suggest compaction → ask the user before summarizing → let the user manually remove context items.
+
+**Decision (Round 2):** Compaction is performed by a **dedicated Summarizer Agent**, not by ad-hoc prompting of the main session.
+
+**Decision (Round 2):** Users can remove **everything except mandatory system/runtime context** — previous chat messages, loaded files, tool results, and sub-agent outputs are all individually removable.
+
+Context breakdown should include, where possible: system prompt; AGENTS.md; current conversation; loaded files; tool definitions; available agents; sub-agent outputs; active task state; prior summaries. This feature is a core learning mechanism: users learn how agents work by seeing what the agent actually sees.
+
+**Decision (Feedback round 2):** the context panel opens on a **summary of the categories** (name, item count, size, share of the window) and the user clicks a category to drill into its items — the full detail was too visually complex as a landing view.
+
+**Decisions (Feedback round 1, implementation-verified):** the token gauge is always labeled — **measured** when Pi reports live context usage, **estimated** when derived, and an explicit "measuring…" state right after compaction (Pi cannot measure until the next response; showing cumulative totals there was misleading). Manual removal is pairing-aware (a tool call and its result are removed atomically — orphaning one causes provider errors) and only items from **completed turns** can be removed (removing the in-flight turn's items sends the model into a re-execution loop). Removal marks persist in the session file and survive compaction, reload, and resume.
+
+## 10. Permissions
+
+Permissions are central to the product. The app supports a layered permission model:
+- **Layer 1 — Tool permission** (e.g. allow file reading in this workspace);
+- **Layer 2 — Project permission** (e.g. allow file editing only inside this workspace folder);
+- **Layer 3 — Command pattern permission** (e.g. always allow `npm test`, ask before `rm`, deny dangerous shell commands).
+
+**Decision (Round 2):** HappyVibe is a **wrapper over Pi's permission capabilities**: enforcement delegated to Pi's extension ecosystem, HappyVibe providing the UI. **Superseded by the feasibility spike (V6) and shipped accordingly:** the candidate permission extension turned out to be TUI-only in RPC mode, so the **HappyVibe bridge extension owns the 3-layer rule engine itself** (tool / project-path / command-pattern; allow-ask-deny; most-restrictive-wins). Rules exist at two scopes — a **global ruleset plus per-workspace overrides** — with global rules edited in Settings and workspace rules edited in each workspace's own settings, and a live "test a call" preview using the same engine.
+
+Dangerous mode should be visible, not hidden. When enabled: it must remain visibly active; the UI should warn the user; there should be an obvious way to disable it; it does not need to expire automatically. HappyVibe maintains an audit log of agent actions.
+
+## 11. Audit Log
+
+The audit log records important agent actions: tool calls; command executions; file reads/edits; created/deleted files; permission approvals/denials; dangerous mode activation/deactivation; model/provider changes; context compactions; AGENTS.md edits; sub-agent invocations.
+
+**Decision (Round 2):** the audit log is available at **both session level and workspace level**. Export as JSON/Markdown is post-V1.
+
+## 12. Agents and Sub-Agents
+
+V1 includes three built-in agents:
+1. the **Code Explorer Agent** (sub-agent for codebase exploration);
+2. the **Summarizer Agent** (used for context compaction);
+3. the **agents-md-maker Agent** (explores a project and drafts an AGENTS.md for the user to review — it never writes the file itself; see §15).
+
+### Code Explorer Agent
+
+Purpose: explore the codebase and return structured findings to the main agent. Callable automatically by the main agent or manually by the user. The app maintains a visible list of available agents; the model receives a representation of available agents and tools so it can invoke them, subject to permissions. It has: name; description; editable system prompt; available tools; separate context window; result format; running status; readable output.
+
+**Decisions (Feedback rounds, implementation-verified):** a sub-agent's work stays in its **own context** — measured empirically, only the call (agent + task + intent) and the final result enter the main agent's context; the child transcript is display-only. While a sub-agent runs, a **sticky section at the top of the chat** shows the agent, its intent, live status and elapsed time — clicking it expands the live child transcript — and it slides away on completion, leaving the call line and result in the flow. The user can keep typing during a delegation: messages queue with honest copy ("answered when \<agent\> finishes"), because a delegation is a single tool call and delivery waits for it by design.
+
+### Summarizer Agent
+
+Purpose: summarize and compact session context when the user accepts a compaction suggestion. Own context window; can use a different model (agent-level override).
+
+### Agent creation and editing
+
+**Decision (Round 2):** In V1: editing built-in agents (including system prompts) and **duplicating** them. Coming soon (not V1): creating agents from scratch and importing agent configs. V1 has the conceptual UI area for agents even where creation is disabled.
+
+## 13. Tools
+
+The tools list includes: tool name; human-readable description; source; permission status; enabled/disabled state; whether built-in, extension-provided, or coming soon. Future tool categories: MCP tools; CLI tools; API tools; skills; custom workflow tools. For V1, API import and CLI import are not supported.
+
+**Decision (Round 2, revised in the feedback rounds):** MCP support is **deferred until after the post-V1 feedback improvements land**. When it ships, it will be provided through a Pi extension/package bundled in HappyVibe's curated runtime (candidate already identified: `pi-mcp-adapter`).
+
+**Decision (Feedback round 1):** the tools list shows each tool's live permission state (allow / ask / deny), evaluated by the same rule engine that enforces it — the logic never forks.
+
+## 14. Skills
+
+Skills (Claude Code-style skill folders) are not in MVP — treated as **coming soon**. Future scope: global/project skills, import, creation flow, marketplace/library, visual inspection.
+
+## 15. AGENTS.md
+
+HappyVibe supports AGENTS.md in V1: read it; show it in the context breakdown with its token cost; edit it (plain markdown editor); propose creating it if missing; explain which instruction files are active and their priority/order.
+
+**Decisions (Feedback round 2):** HappyVibe follows the [agents.md standard](https://agents.md/) — a root file plus **nested AGENTS.md files in subdirectories**: the nearest file for the subtree a tool touches is injected for that turn (Pi only discovers upward from the project root, so HappyVibe's bridge provides the nested behavior) and nested files appear in the context breakdown. When no AGENTS.md exists, the app offers to copy an existing CLAUDE.md, or to draft one with the built-in **agents-md-maker** agent — the draft lands in the editor for review and is only saved explicitly.
+
+## 16. Model Providers
+
+HappyVibe supports the model providers supported by Pi Agent.
+
+**Onboarding decision (updated after spike research):** first-run offers, in order: (1) **"Sign in with GitHub Copilot / ChatGPT / Claude"** (subscription OAuth); (2) **a free local option (Ollama)** — zero keys, zero billing; (3) raw API key entry (BYOK) as the pro fallback. The Claude Pro/Max "extra usage" billing caveat is communicated honestly in the UI.
+
+The model configuration hierarchy:
+1. global default model;
+2. workspace/project override;
+3. session-level override (from the chat bar, added in Feedback round 2);
+4. agent-level override.
+
+The chat bar's model chip labels which tier is in effect, and the available-model list refreshes live when providers change.
+
+**Decision (Feedback round 1) — provider setup organization:** Settings opens with an **LLM Setup** section — the configured providers plus an "add provider" page grouped as **Sign in with your plan** (ChatGPT / Claude / GitHub Copilot), **Local** (Ollama), and **Cloud API keys** (a curated list: DeepSeek, Anthropic, OpenAI, Google, OpenRouter) — no numbered setup steps. Below it, a **System Prompt** section shows the full resolved main-agent prompt read-only with an editable additions layer, overridable per workspace; global permission rules follow; the audit log and analytics dashboard sit at the bottom of Settings rather than in the sidebar. Each workspace row in the left panel opens its own settings (model override, workspace permission rules, workspace system-prompt additions).
+
+**Validation resolved (spike + implementation):** the OAuth sign-in flows ARE drivable from the embedded RPC-mode Pi via bridge commands.
+
+Sub-agents can use different models from the main agent. For V1, the must-have is provider setup, model selection, token count, and context size visibility.
+
+## 17. Sessions
+
+Each workspace can have multiple coding sessions; sessions can run in parallel.
+
+**Decision (Round 2):** parallelism means **multiple sessions can actively run agents at the same time**. Detached background jobs are out of scope for V1.
+
+The user can: create, resume, archive, restore, **delete permanently** (confirmed — removes the conversation and its session file), search (by title), and view session history.
+
+**Decision (Feedback rounds):** session lifecycle is **fully transparent** — no session limit visible to the user and no stop/end-session control anywhere (the in-chat abort of a running response is the only stop). An internal cap protects resources: when room is needed, the oldest **idle** session hibernates (never one that is mid-call, awaiting a permission answer, or running a sub-agent) and restores transparently when reopened. Sessions are titled automatically by the model after the first exchange (renameable).
+
+Session data is stored locally only. No account system, no cloud sync in V1.
+
+## 18. Distribution and Business Model
+
+Open source first. No monetization, no HappyVibe billing, no account system. Users bring their own provider keys. This reinforces the local-first, beginner-friendly trust model.
+
+## 19. Success Metrics
+
+MVP success: users complete coding tasks; users understand agent actions better than in CLI tools; users prefer HappyVibe to Claude Code for simple tasks.
+
+**Decision (Round 2):** no remote telemetry in V1 — metrics live in a **local-only analytics dashboard** (tokens consumed, retention, session duration, session count; more candidates later: completed edits, permission approval rate, dangerous mode usage, context warnings, compaction usage, sub-agent calls, restored sessions, satisfaction).
+
+## 20. Product Taste
+
+Inspired by Codex in layout, chat style, and workspace management — but not cold or enterprise. Playful, visually pleasant, easy to understand. Principles: simple; warm; clear; modern; friendly; not childish; transparent; low intimidation.
+
+**Shipped direction:** "warm workshop" — cream paper and warm ink, tangerine primary, chunky borders with hard offset shadows, playful microcopy, bundled friendly typefaces. It satisfies the principles above and is the house style unless revisited.
+
+## 21. File Access (V1)
+
+**Decision (Feedback round 1, superseding the original "no file explorer" stance):** V1 includes a collapsible **workspace file tree** (right-hand pane, closed by default, refresh top-left / close top-right, distinct folder and per-type file icons) and a **built-in tabbed code editor** (syntax highlighting, editing with save, external-change detection) — the chat and open files share the center area as tabs.
+
+File paths shown on tool and diff cards are clickable: open the file in the built-in editor, reveal it in Finder / the OS file manager, or copy its path. Searching file names from the chat UI is post-V1.
+
+## 22. Onboarding: First Wow Moment
+
+The first magical moment combines: (1) **visible agent work** — the user watches a clean, readable trace of the agent working (tool calls, statuses, diffs); (2) **context understanding** — the user sees the context window and understands exactly what the agent knows. Onboarding steers the first session toward experiencing both.
+
+---
+
+# Critical PRD Update: Pi Agent Reality Check
+
+Pi intentionally keeps its core small and pushes workflow-specific behavior into extensions, skills, prompt templates, and packages. HappyVibe V1 therefore defines a curated Pi-based runtime bundle that includes or implements the required capabilities.
+
+Validation research (July 2026) resolved the open questions: 15+ native providers with mid-session switching; `pi-subagents` for delegation (separate context per agent); extensions get full session access (`get_entries`, the `context` filtering event — the mechanism behind §9's manual removal); the `tool_call` extension event supports `{block: true}` (the RPC protocol alone cannot approve/deny — hence the bridge); RPC streams structured JSON events for the whole UI surface.
+
+**Key architecture note — the HappyVibe bridge extension:** a small bundled extension that listens to `tool_call` events inside Pi, forwards permission requests to the UI, and returns allow or `{block: true}` from the user's decision and stored rules. This grew into HappyVibe's core Pi-side component (permissions engine, context marks, auth commands, registered tools).
+
+**V1 runtime bundle (as shipped):** Pi core (`@earendil-works/pi-coding-agent`, pinned) · `pi-subagents` (pinned) · the HappyVibe bridge extension (in-house). `pi-mcp-adapter` joins when MCP ships (§13). `@gotgenes/pi-permission-system` was dropped after the spike's V6 finding (TUI-only in RPC mode) — it remains vendored solely for the regression test documenting that finding.
+
+**Remaining open items for the tech lead:** the Pi upgrade/release process is contract-test-gated (every pin bump re-validates the wire shapes); Windows validation (tmux dependency, extension portability) still precedes any Windows commitment; the packaged sub-agent child process needs a node-capable runtime before distribution.
+
+**Round-2 decisions already locked:** curated, embedded Pi runtime at a pinned version; MCP in V1 via a bundled extension; permission enforcement delegated to Pi extensions with HappyVibe providing the UI layer; compaction via a dedicated Summarizer Agent. *(Two of these were later revised: MCP was deferred past the feedback rounds — §13 — and the spike's V6 finding moved permission enforcement into HappyVibe's own bridge — §10.)*
+
+**→ Feasibility spike COMPLETE (2026-07-03):** Electron drives embedded pinned Pi over RPC (V1 PASS); `ctx.ui` requests surface over RPC natively (V4 PASS); the bridge blocks a real model's bash call and the agent continues (V5 PASS); a packaged `.app` runs its bundled runtime (V7 PASS); the third-party permission system is TUI-only in RPC mode (V6 FAIL — valuable finding). Full evidence: `docs/validation/`.
