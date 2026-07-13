@@ -244,6 +244,8 @@ The tools list includes: tool name; human-readable description; source; permissi
 
 **Decision (Round 2, revised in the feedback rounds):** MCP support is **deferred until after the post-V1 feedback improvements land**. When it ships, it will be provided through a Pi extension/package bundled in HappyVibe's curated runtime (candidate already identified: `pi-mcp-adapter`).
 
+**Decision (2026-07-13):** MCP ships via the vendored **`pi-mcp-adapter`** (exact-pinned), not a native client — it embeds the official MCP SDK and registers through `pi.registerTool()`, so every MCP call flows through the existing bridge permission gate as `mcp:<tool>`. **Proxy mode by default** (one low-token `mcp` tool; the UI unwraps to the real server/tool everywhere — transparency lives in the rendering layer, not burned context), with a per-server "expose tools directly" toggle. Config is standard `mcpServers` JSON: global tier in the app agent dir, workspace tier in `.mcp.json` (shareable with other MCP hosts). Managed from the Agents & Tools page. Out of scope for v1: roots, MCP prompts, live `tools/list_changed`, session-tier config. Spec: `docs/superpowers/specs/2026-07-13-mcp-support-design.md`; plan: `docs/superpowers/plans/2026-07-13-mcp-support.md`.
+
 **Decision (Feedback round 1):** the tools list shows each tool's live permission state (allow / ask / deny), evaluated by the same rule engine that enforces it — the logic never forks.
 
 ## 14. Skills
