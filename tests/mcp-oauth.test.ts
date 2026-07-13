@@ -166,4 +166,40 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     expect(entry?.tokens?.accessToken).toBe("mock-access-token");
     expect(entry?.clientInfo?.clientId).toBe("mock-client-id");
   });
+
+  it("rejects and does not persist tokens when callback state does not match (CSRF guard)", async () => {
+    const cfg = { url: `${base}/mcp` };
+    const result = await authenticate("csrf-test", cfg, tmp, {
+      // Replace the real state param with a bogus one before fetching the authorize URL.
+      // The mock server echoes back whatever state it receives, so the callback will
+      // arrive with the bogus state while oauthState on disk holds the real one → mismatch.
+      openExternal: (u: string) => {
+        const tampered = new URL(u);
+        tampered.searchParams.set("state", "bogus-csrf-state");
+        void fetch(tampered.toString(), { redirect: "follow" }).catch(() => undefined);
+      },
+      timeoutMs: 5_000,
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; error: string }).error).toMatch(/csrf|state/i);
+    // No tokens must be persisted — the handshake must not complete.
+    const entry = readAuthEntry(tmp, "csrf-test");
+    expect(entry?.tokens).toBeUndefined();
+  });
+
+  it("resolves { ok: false } when callback never arrives (timeout guard)", async () => {
+    const cfg = { url: `${base}/mcp` };
+    const start = Date.now();
+    const result = await authenticate("timeout-test", cfg, tmp, {
+      openExternal: () => { /* deliberately do nothing — callback never fires */ },
+      timeoutMs: 500,
+    });
+    const elapsed = Date.now() - start;
+
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; error: string }).error).toMatch(/timed? ?out/i);
+    // Must settle within a reasonable bound (timeout + generous overhead).
+    expect(elapsed).toBeLessThan(5_000);
+  });
 });
