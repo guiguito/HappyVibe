@@ -185,7 +185,7 @@ function McpServerEditor({
           className={inputCls + " cursor-pointer"}
         >
           <option value="global">Global (all workspaces)</option>
-          <option value="workspace">Workspace (.mcp.json shareable)</option>
+          <option value="workspace" disabled={!workspaceId}>Workspace (.mcp.json shareable)</option>
         </select>
 
         <label className={labelCls}>Type</label>
