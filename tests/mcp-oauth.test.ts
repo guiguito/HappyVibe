@@ -108,8 +108,14 @@ beforeEach(async () => {
       return res.end();
     }
 
-    // Token endpoint — exchange code (or refresh) for a bearer token
+    // Token endpoint — exchange code (or refresh) for a bearer token.
+    // Refresh tokens are client-bound: a refresh_token issued to a stale client
+    // is rejected the way Notion rejects it ("Client ID mismatch").
     if (path === "/token" && req.method === "POST") {
+      const params = new URLSearchParams(await readBody(req));
+      if (params.get("grant_type") === "refresh_token" && params.get("refresh_token") === "stale-refresh-token") {
+        return json(res, 400, { error: "invalid_grant", error_description: "Client ID mismatch" });
+      }
       return json(res, 200, {
         access_token: "mock-access-token",
         token_type: "Bearer",
@@ -242,6 +248,65 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     const entry = readAuthEntry(tmp, "stale-client");
     expect(entry?.clientInfo?.clientId).toBe("mock-client-id"); // re-registered, not the stale id
     expect(entry?.tokens?.accessToken).toBe("mock-access-token");
+  });
+
+  // Regression (Notion "Client ID mismatch"): a prior login left tokens whose
+  // refresh_token is bound to a stale DCR client (loopback port drift forces a
+  // fresh registration). The SDK would register a NEW client and then attempt a
+  // refresh with the OLD client's refresh_token — rejected by the AS with an
+  // OAuthError the SDK re-throws instead of falling back to authorize. The fix
+  // drops the doomed tokens before connecting, so the flow goes straight to a
+  // fresh authorize and completes.
+  it("re-authenticates cleanly when stored tokens are bound to a stale client (Notion 'Client ID mismatch')", async () => {
+    writeAuthEntry(tmp, "stale-tokens", {
+      tokens: {
+        accessToken: "expired-access-token",
+        refreshToken: "stale-refresh-token",
+        expiresAt: Math.floor(Date.now() / 1000) - 3600, // expired ⇒ SDK would try the refresh grant
+      },
+      clientInfo: { clientId: "stale-old-id", redirectUris: ["http://127.0.0.1:9/callback"] },
+      serverUrl: `${base}/mcp`,
+    });
+
+    const result = await authenticate("stale-tokens", { url: `${base}/mcp` }, tmp, {
+      openExternal: (u: string) => {
+        void fetch(u, { redirect: "follow" }).catch(() => undefined);
+      },
+      timeoutMs: 10_000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.tools.map((t) => t.name)).toContain("echo");
+    const entry = readAuthEntry(tmp, "stale-tokens");
+    expect(entry?.clientInfo?.clientId).toBe("mock-client-id");
+    expect(entry?.tokens?.accessToken).toBe("mock-access-token");
+  });
+
+  it("keeps a still-fresh access token but drops the stale client's refresh_token", async () => {
+    writeAuthEntry(tmp, "fresh-access", {
+      tokens: {
+        accessToken: "mock-access-token", // the mock MCP endpoint accepts this
+        refreshToken: "stale-refresh-token",
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      },
+      clientInfo: { clientId: "stale-old-id", redirectUris: ["http://127.0.0.1:9/callback"] },
+      serverUrl: `${base}/mcp`,
+    });
+
+    let browserOpened = false;
+    const result = await authenticate("fresh-access", { url: `${base}/mcp` }, tmp, {
+      openExternal: () => {
+        browserOpened = true;
+      },
+      timeoutMs: 10_000,
+    });
+
+    // Connects directly with the valid bearer — no OAuth dance, no browser.
+    expect(result.ok).toBe(true);
+    expect(browserOpened).toBe(false);
+    const entry = readAuthEntry(tmp, "fresh-access");
+    expect(entry?.tokens?.accessToken).toBe("mock-access-token");
+    expect(entry?.tokens?.refreshToken).toBeUndefined(); // unusable with any new client
   });
 
   // Regression: an authenticated OAuth server must probe as "connected", not

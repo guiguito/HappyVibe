@@ -39,18 +39,38 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
 // a customer-facing headline. The adapter's execute ignores the top-level intent
 // (it forwards only the `args` JSON to the server), so this is safe in proxy mode.
 const INTENT_TOOLS = ["subagent", "ask_user", "mcp"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+// Direct-mode MCP tools (adapter's "expose tools directly") get the same
+// required `intent`, BUT the direct executor forwards params VERBATIM to the
+// MCP server (pi-mcp-adapter direct-tools.ts `arguments: params`) — a strict
+// server would reject the unknown param. So the bridge strips `intent` from
+// these tools in its tool_call handler (event.input is Pi's documented mutable
+// pre-execution hook). Safe for the UI: tool_execution_start is emitted with
+// the ORIGINAL model args (agent-loop.js emits before beforeToolCall runs),
+// so tool cards see the intent while the server never does.
+const strippedIntentTools = new Set<string>();
+const INTENT_PARAM = {
+  type: "string",
+  description:
+    "REQUIRED on every call. One short customer-facing sentence: what you are doing and why (shown to the user as the headline for this call).",
+};
+type MutableParams = { properties?: Record<string, unknown>; required?: string[] };
 function requireIntent(pi: ExtensionAPI): void {
   for (const name of INTENT_TOOLS) {
-    const params = pi.getAllTools().find((t) => t.name === name)?.parameters as
-      | { properties?: Record<string, unknown>; required?: string[] }
-      | undefined;
+    const params = pi.getAllTools().find((t) => t.name === name)?.parameters as MutableParams | undefined;
     if (!params?.properties || params.properties.intent) continue; // tool absent or already wired
-    params.properties.intent = {
-      type: "string",
-      description:
-        "REQUIRED on every call. One short customer-facing sentence: what you are doing and why (shown to the user as the headline for this call).",
-    };
+    params.properties.intent = INTENT_PARAM;
     params.required = [...(params.required ?? []), "intent"];
+  }
+  // Direct MCP tools = everything else pi-mcp-adapter registered.
+  for (const t of pi.getAllTools()) {
+    if (INTENT_TOOLS.includes(t.name) || !t.sourceInfo?.path?.includes("pi-mcp-adapter")) continue;
+    if (strippedIntentTools.has(t.name)) continue; // already wired on an earlier session_start
+    const params = t.parameters as MutableParams | undefined;
+    if (!params?.properties) continue;
+    if (params.properties.intent) continue; // server tool has its OWN intent param — hands off (no strip)
+    params.properties.intent = INTENT_PARAM;
+    params.required = [...(params.required ?? []), "intent"];
+    strippedIntentTools.add(t.name);
   }
 }
 
@@ -254,6 +274,11 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const tool = event.toolName as string;
     const input = (event.input ?? {}) as Record<string, unknown>;
+    // Direct MCP tools: drop the injected intent BEFORE anything reads input
+    // (permission summaries stay factual, per the PRD) — the adapter would
+    // forward it verbatim to the MCP server otherwise. The UI already has it:
+    // tool_execution_start fired with the original args.
+    if (strippedIntentTools.has(tool)) delete input.intent;
     // MCP proxy unwrapping: rules, grants, prompts and audit all operate on
     // the real MCP tool ("mcp:<tool>"), never the bare proxy.
     const mcp = tool === "mcp" ? unwrapMcpCall(input) : null;

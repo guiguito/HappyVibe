@@ -41,6 +41,17 @@ export function readMcpFile(file: string): McpFile {
   }
 }
 
+/**
+ * True if any of the given config files still defines a server with this name.
+ * Used on removal to decide whether the (name-keyed, scope-agnostic) OAuth
+ * credentials can be revoked. ponytail: only sees the workspaces currently
+ * registered — a same-named server in an unregistered folder's .mcp.json loses
+ * its tokens; it re-auths on next use.
+ */
+export function serverNameInFiles(name: string, files: string[]): boolean {
+  return files.some((f) => name in readMcpFile(f).mcpServers);
+}
+
 /** Upsert (or remove, when cfg is null) one server. Returns the new file content. */
 export function writeMcpServer(file: string, name: string, cfg: McpServerConfig | null): McpFile {
   if (!isValidServerName(name)) throw new Error(`invalid MCP server name: ${JSON.stringify(name)}`);

@@ -284,6 +284,25 @@ export async function authenticate(
   try {
     let provider!: HvOAuthProvider;
     callback = await startCallbackServer(() => readAuthEntry(agentDir, name)?.oauthState);
+
+    // Refresh tokens are client-bound. Our loopback port is fresh per flow, so
+    // when the stored DCR client can't be reused for this redirect URL the SDK
+    // registers a NEW client — and then attempts a refresh with the OLD
+    // client's refresh_token, which the server rejects (Notion: "Client ID
+    // mismatch") and the SDK re-throws instead of falling back to authorize
+    // (auth.js authInternal: OAuthError !== ServerError). Drop the doomed
+    // refresh_token; keep a still-fresh access token (connect succeeds with it
+    // directly, no OAuth dance), drop expired tokens entirely.
+    const prior = readAuthEntry(agentDir, name);
+    if (prior?.tokens && !prior.clientInfo?.redirectUris?.includes(callback.redirectUrl)) {
+      const fresh =
+        prior.tokens.expiresAt !== undefined && prior.tokens.expiresAt - 60 > Date.now() / 1000;
+      writeAuthEntry(agentDir, name, {
+        ...prior,
+        tokens: fresh ? { ...prior.tokens, refreshToken: undefined } : undefined,
+      });
+    }
+
     provider = new HvOAuthProvider(name, serverUrl, agentDir, deps, callback.redirectUrl);
 
     transport = new StreamableHTTPClientTransport(new URL(serverUrl), { authProvider: provider });

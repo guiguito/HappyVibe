@@ -26,7 +26,8 @@ import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/comma
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
 import { listDir, readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspaceFile } from "./files";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
-import { readMcpFile, writeMcpServer, type McpServerConfig } from "./mcp";
+import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
+import { deleteAuthEntry } from "./mcpAuthStore";
 import { probe } from "./mcpClient";
 import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
@@ -921,6 +922,18 @@ export function registerIpc(win: BrowserWindow): void {
         // Removal: drop the now-stale status entry so it can't resurface.
         mcpStatusMap.delete(statusKey(scope, workspaceId, name));
         mcpStatusChanged();
+        // Revoke local OAuth credentials with the server. The token store is
+        // keyed by server NAME and shared across scopes/workspaces (adapter
+        // contract), so only when no remaining config still references it.
+        const files = [
+          path.join(agentDir(), "mcp.json"),
+          ...workspaces.list().map((w) => path.join(w, ".mcp.json")),
+        ];
+        if (!serverNameInFiles(name, files)) {
+          deleteAuthEntry(agentDir(), name);
+          void log.append({ type: "mcp.auth", workspaceId: workspaceId ?? undefined,
+            data: { name, action: "credentials-deleted", reason: "server-removed" } });
+        }
       }
       scheduleMcpReload(scope, workspaceId); // apply to running sessions
       return readMcpFile(file);

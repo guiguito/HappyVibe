@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { readMcpFile, writeMcpServer, isValidServerName } from "../src/main/mcp";
+import { readMcpFile, writeMcpServer, serverNameInFiles, isValidServerName } from "../src/main/mcp";
 
 const tmpFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-mcpcfg-")), "mcp.json");
 
@@ -28,6 +28,18 @@ test("unknown top-level keys survive (hand-edited imports/settings)", () => {
   const out = readMcpFile(f);
   expect(out.imports).toEqual(["cursor"]);
   expect(out.mcpServers.gh.url).toBe("https://example.com/mcp");
+});
+
+test("serverNameInFiles: credential-revocation guard on removal", () => {
+  const a = tmpFile();
+  const b = tmpFile();
+  writeMcpServer(a, "notion", { url: "https://mcp.notion.com/mcp" });
+  // Still referenced by file a (e.g. another workspace) → keep credentials.
+  expect(serverNameInFiles("notion", [a, b])).toBe(true);
+  // Missing files are tolerated (unregistered workspace without .mcp.json).
+  expect(serverNameInFiles("notion", ["/nonexistent/.mcp.json", b])).toBe(false);
+  writeMcpServer(a, "notion", null);
+  expect(serverNameInFiles("notion", [a, b])).toBe(false);
 });
 
 test("server name validation", () => {
