@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 import { authenticate } from "../src/main/mcpOAuth";
+import { probe } from "../src/main/mcpClient";
 import { readAuthEntry, writeAuthEntry } from "../src/main/mcpAuthStore";
 
 let server: Server;
@@ -241,5 +242,32 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     const entry = readAuthEntry(tmp, "stale-client");
     expect(entry?.clientInfo?.clientId).toBe("mock-client-id"); // re-registered, not the stale id
     expect(entry?.tokens?.accessToken).toBe("mock-access-token");
+  });
+
+  // Regression: an authenticated OAuth server must probe as "connected", not
+  // "failed". Before the fix the probe attached no token, so the server 401'd
+  // and (tokens present ⇒ not needs-auth) was misclassified as failed.
+  it("probe reports connected for a server with a valid stored token (no browser)", async () => {
+    writeAuthEntry(tmp, "seeded", {
+      tokens: {
+        accessToken: "mock-access-token",
+        refreshToken: "mock-refresh-token",
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      },
+      clientInfo: { clientId: "mock-client-id", redirectUris: ["http://127.0.0.1:1/callback"] },
+      serverUrl: `${base}/mcp`,
+    });
+
+    const result = await probe("seeded", { url: `${base}/mcp` }, tmp, { timeoutMs: 10_000 });
+
+    expect(result.state).toBe("connected");
+    expect(result.tools?.some((t) => t.name === "echo")).toBe(true);
+    // A probe must never mutate on-disk auth artifacts for a valid token.
+    expect(readAuthEntry(tmp, "seeded")?.tokens?.accessToken).toBe("mock-access-token");
+  });
+
+  it("probe reports needs-auth (not failed) for an unauthenticated OAuth server", async () => {
+    const result = await probe("unauthed", { url: `${base}/mcp` }, tmp, { timeoutMs: 10_000 });
+    expect(result.state).toBe("needs-auth");
   });
 });

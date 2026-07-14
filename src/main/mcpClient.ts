@@ -8,7 +8,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 
 import type { McpServerConfig } from "./mcp.js";
-import { authState } from "./mcpAuthStore.js";
+import { probeAuthProvider } from "./mcpOAuth.js";
 
 export type ProbeResult = {
   state: "connected" | "needs-auth" | "failed";
@@ -32,6 +32,10 @@ export async function probe(
         stderr: "ignore", // ponytail: suppress child stderr noise in probe
       })
     : new StreamableHTTPClientTransport(new URL(cfg.url!), {
+        // Non-interactive provider: attaches stored tokens (and refreshes them
+        // silently if possible) so an authenticated server connects; it never
+        // opens a browser during a background probe.
+        authProvider: probeAuthProvider(name, cfg.url!, agentDir),
         requestInit: { headers: cfg.headers },
       });
 
@@ -59,13 +63,15 @@ export async function probe(
       tools: tools.map((t) => ({ name: t.name, description: t.description })),
     };
   } catch (err: unknown) {
-    // Phase 1 auth detection: http-only, no OAuth attempt
+    // The http probe attaches a non-interactive auth provider that already
+    // supplied any stored tokens (and attempted a silent refresh). So an auth
+    // error here means the server genuinely needs interactive (re)auth —
+    // classify as needs-auth rather than a hard failure, regardless of what
+    // tokens are on disk (they may be present but stale).
     if (
       cfg.url &&
       (err instanceof UnauthorizedError ||
-        (err instanceof Error &&
-          /401|unauthorized/i.test(err.message))) &&
-      authState(agentDir, name, cfg.url) !== "authenticated"
+        (err instanceof Error && /401|unauthorized/i.test(err.message)))
     ) {
       return { state: "needs-auth" };
     }

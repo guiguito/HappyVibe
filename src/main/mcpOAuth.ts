@@ -58,6 +58,11 @@ class HvOAuthProvider implements OAuthClientProvider {
     private readonly agentDir: string,
     private readonly deps: AuthDeps,
     private readonly redirectUrlValue: string,
+    // Probe mode (background startup/reconnect sweep): supply stored tokens and
+    // allow silent refresh, but NEVER open a browser or mutate on-disk auth
+    // artifacts (DCR client, oauthState, codeVerifier). Only saveTokens persists
+    // (a legitimate non-interactive refresh should update disk).
+    private readonly probeMode = false,
   ) {}
 
   private read(): AuthEntry {
@@ -87,13 +92,17 @@ class HvOAuthProvider implements OAuthClientProvider {
 
   state(): string {
     const state = randomBytes(32).toString("hex");
-    this.write({ oauthState: state });
+    if (!this.probeMode) this.write({ oauthState: state });
     return state;
   }
 
   clientInformation(): OAuthClientInformation | undefined {
     const ci = this.read().clientInfo;
     if (!ci) return undefined;
+    // Probe mode reuses the stored client unconditionally (to enable silent
+    // refresh without triggering DCR); it never completes an interactive
+    // redirect, so the port-drift concern below doesn't apply.
+    if (this.probeMode) return { client_id: ci.clientId, client_secret: ci.clientSecret };
     // A dynamically-registered client is bound to the exact redirect_uri(s) it
     // registered with. Our loopback callback port is OS-assigned and differs
     // per flow, so reusing a client registered against a stale port makes the
@@ -106,6 +115,7 @@ class HvOAuthProvider implements OAuthClientProvider {
   }
 
   saveClientInformation(info: OAuthClientInformationFull): void {
+    if (this.probeMode) return; // never persist a DCR client during a background probe
     const clientInfo: StoredClientInfo = {
       clientId: info.client_id,
       clientSecret: info.client_secret,
@@ -139,6 +149,7 @@ class HvOAuthProvider implements OAuthClientProvider {
   }
 
   saveCodeVerifier(codeVerifier: string): void {
+    if (this.probeMode) return; // never persist PKCE verifier during a background probe
     this.write({ codeVerifier });
   }
 
@@ -151,6 +162,25 @@ class HvOAuthProvider implements OAuthClientProvider {
   redirectToAuthorization(authorizationUrl: URL): void {
     this.deps.openExternal(authorizationUrl.toString());
   }
+}
+
+/**
+ * A non-interactive OAuth provider for background probes (startup/reconnect
+ * sweep). It attaches stored tokens and permits silent refresh, but its
+ * openExternal is a no-op so a probe never launches a browser, and probeMode
+ * prevents any on-disk mutation of the DCR client / oauthState / codeVerifier.
+ * If interactive authorization is genuinely required, the connect surfaces an
+ * UnauthorizedError, which the probe maps to "needs-auth".
+ */
+export function probeAuthProvider(name: string, serverUrl: string, agentDir: string): OAuthClientProvider {
+  return new HvOAuthProvider(
+    name,
+    serverUrl,
+    agentDir,
+    { openExternal: () => undefined },
+    "http://127.0.0.1/mcp-probe", // unused: a probe never completes an interactive redirect
+    true,
+  );
 }
 
 /**
