@@ -1,4 +1,22 @@
 import path from "node:path";
+import { existsSync } from "node:fs";
+
+/**
+ * Node-capable exec path for Electron-as-node children. On macOS, LaunchServices
+ * registers any process whose binary lives in a regular .app bundle as a
+ * Foreground app — so ELECTRON_RUN_AS_NODE children spawned from the main
+ * Electron binary each get a generic "exec" Dock icon. The bundled Helper apps
+ * carry LSUIElement=1 (no Dock presence), so spawn through one instead (same
+ * trick as VS Code's extension host). Works in dev (Electron.app) and packaged
+ * builds (electron-builder renames helpers after productName).
+ */
+export function nodeExecPath(): string {
+  if (process.platform !== "darwin") return process.execPath;
+  const m = process.execPath.match(/^(.*)\/Contents\/MacOS\/([^/]+)$/);
+  if (!m) return process.execPath;
+  const helper = `${m[1]}/Contents/Frameworks/${m[2]} Helper (Plugin).app/Contents/MacOS/${m[2]} Helper (Plugin)`;
+  return existsSync(helper) ? helper : process.execPath;
+}
 
 export const PI_CLI_RELPATH = "node_modules/@earendil-works/pi-coding-agent/dist/cli.js";
 /** pi-subagents extension entry (its package.json `pi.extensions`) — B6. */
@@ -31,7 +49,7 @@ export interface PiSpawnOptions {
 export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir: string, opts: PiSpawnOptions = {}) {
   const model = opts.model ?? { provider: "deepseek", modelId: "deepseek-v4-flash" };
   return {
-    execPath: process.execPath,
+    execPath: nodeExecPath(),
     args: [
       path.join(runtimeDir, PI_CLI_RELPATH),
       "--mode", "rpc",

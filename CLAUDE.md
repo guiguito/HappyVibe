@@ -34,6 +34,10 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 
 ## Gotchas
 - One-shot pi CLI calls hang unless stdin is closed (`stdio: ["ignore", …]`). RPC mode unaffected.
+- macOS Dock icons: Electron-as-node children spawned from the main Electron binary each get a
+  generic "exec" Dock icon (LaunchServices registers any .app-bundled binary as Foreground, even
+  with ELECTRON_RUN_AS_NODE). All Pi child spawns must use `nodeExecPath()` (spawn.ts) — routes
+  through `<Bundle> Helper (Plugin).app` (LSUIElement=1) — never raw `process.execPath`.
 - Built-in Pi tools cannot take extra schema params (stripped before tool_call) — `intent`
   goes on registered tools only; built-ins get derived labels (toolLabel.ts / describeCommand.ts).
 - Pi has NO dequeue RPC; abort preserves the queue.

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { PI_CLI_RELPATH } from "./pi/spawn";
+import { PI_CLI_RELPATH, nodeExecPath } from "./pi/spawn";
 
 /**
  * AGENTS.md support (B2). Pi loads context files at session start (cwd upward,
@@ -100,7 +100,7 @@ export function proposeAgentsMd(
     workspaceFacts(workspace);
   return new Promise((resolve) => {
     const child = spawn(
-      process.execPath,
+      nodeExecPath(),
       [
         path.join(runtimeDir, PI_CLI_RELPATH),
         "-p", "--no-session", "--no-tools", "--no-extensions",

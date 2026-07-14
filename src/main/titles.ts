@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { PI_CLI_RELPATH } from "./pi/spawn";
+import { PI_CLI_RELPATH, nodeExecPath } from "./pi/spawn";
 
 /**
  * Model-generated session title via a one-shot `pi -p` (print mode) call.
@@ -28,7 +28,7 @@ export function generateTitle(
     `that starts with this request:\n\n${firstUserMessage.slice(0, 500)}\n\nReply with ONLY the title.`;
   return new Promise((resolve) => {
     const child = spawn(
-      process.execPath,
+      nodeExecPath(),
       [
         path.join(runtimeDir, PI_CLI_RELPATH),
         "-p", "--no-session", "--no-tools", "--no-extensions",
