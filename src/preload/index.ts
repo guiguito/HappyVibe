@@ -158,4 +158,10 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:sessions-changed", listener);
     return () => ipcRenderer.removeListener("hv:sessions-changed", listener);
   },
+  onSessionReloading: (cb: (i: { sessionId: string; reason: string }) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: unknown): void =>
+      cb(p as { sessionId: string; reason: string });
+    ipcRenderer.on("hv:session-reloading", listener);
+    return () => ipcRenderer.removeListener("hv:session-reloading", listener);
+  },
 });

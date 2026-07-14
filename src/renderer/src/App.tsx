@@ -358,11 +358,21 @@ export default function App(): React.JSX.Element {
 
     // Cleanup: without this, StrictMode's dev double-mount leaves two
     // listeners registered and every stream delta renders twice.
+    // MCP config/auth changed → main respawns this session (resumed) to apply it.
+    // The intentional exit clears the crash banner (onPiExit); note why it blinked.
+    const offReloading = window.hv.onSessionReloading(({ sessionId }) => {
+      appendItem(sessionId, {
+        kind: "notice",
+        text: "Reloading to apply MCP server changes — permission grants and dangerous mode reset to safe defaults.",
+      });
+    });
+
     return () => {
       offSessions();
       offUiRequest();
       offPiExit();
       offPiEvent();
+      offReloading();
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
   }, []);

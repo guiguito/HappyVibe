@@ -30,6 +30,7 @@ import { readMcpFile, writeMcpServer, type McpServerConfig } from "./mcp";
 import { probe } from "./mcpClient";
 import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
+import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 
 /** Transcript rebuilt from Pi's get_messages on resume (renderer shape). */
 interface SimpleMessage {
@@ -311,6 +312,7 @@ export function registerIpc(win: BrowserWindow): void {
       if (e.type === "agent_end") {
         maybeTitle(sessionId);
         if (meta && !index.get(sessionId)?.piSessionFile) void captureSessionFile(sessionId, client);
+        drainPendingReload(sessionId); // apply a deferred MCP reload now the turn is done
       }
     });
     client.on("ui-request", (r: { id: string; method?: string; message?: string }) => {
@@ -328,8 +330,12 @@ export function registerIpc(win: BrowserWindow): void {
     });
   };
 
+  // Sessions deferred for an MCP reload (declared here so session-exit can clear them).
+  const pendingMcpReload = new Set<string>();
+
   manager.on("session-exit", ({ sessionId, code, intentional }: SessionExit) => {
     activity.remove(sessionId);
+    pendingMcpReload.delete(sessionId); // don't reload a session that's gone
     const meta = index.get(sessionId);
     if (!intentional) {
       void log.append({ type: "session.crash", sessionId, workspaceId: meta?.workspaceId, data: { code } });
@@ -355,7 +361,89 @@ export function registerIpc(win: BrowserWindow): void {
     return client;
   };
 
+  // ── MCP live-reload ──────────────────────────────────────────────────────
+  // Pi/the adapter read MCP config only at spawn (no live tool-reload API), so
+  // "apply changes live" = respawn the affected sessions resumed (conversation
+  // preserved via the session file). Idle sessions reload now; busy ones defer
+  // to their next idle. A respawn resets that session's in-memory permission
+  // grants + dangerous mode to safe defaults — surfaced via hv:session-reloading.
+  // (pendingMcpReload is declared earlier so the session-exit handler can clear it.)
+  const reloadingMcp = new Set<string>();
+
+  const reloadSession = async (sessionId: string): Promise<void> => {
+    if (reloadingMcp.has(sessionId) || !manager.get(sessionId)) return;
+    reloadingMcp.add(sessionId);
+    try {
+      // Capture the session file first so the conversation survives the respawn.
+      if (!index.get(sessionId)?.piSessionFile) {
+        const c = manager.get(sessionId) as PiClient | null;
+        if (c) await captureSessionFile(sessionId, c);
+      }
+      const meta = index.get(sessionId);
+      if (!meta) return;
+      win.webContents.send("hv:session-reloading", { sessionId, reason: "mcp" });
+      const exited = new Promise<void>((resolve) => {
+        const onExit = (e: SessionExit): void => {
+          if (e.sessionId !== sessionId) return;
+          manager.off("session-exit", onExit);
+          resolve();
+        };
+        manager.on("session-exit", onExit);
+      });
+      manager.stop(sessionId); // intentional — renderer clears crash status
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([exited, new Promise<void>((r) => { timer = setTimeout(r, 5_000); })]);
+      clearTimeout(timer);
+      // If the process didn't exit within the grace window its record still
+      // exists — startClient would return the dying client (the manager never
+      // double-spawns the same id), losing the session. Abort: leave the old
+      // process running; the change applies on its next natural restart.
+      if (manager.get(sessionId)) {
+        void log.append({ type: "session.mcp_reload_failed", sessionId, data: { error: "stop timed out; left running" } });
+        return;
+      }
+      const client = await startClient(meta, !!meta.piSessionFile);
+      void client.send({ type: "prompt", message: "/hv-tools" }).catch(() => {}); // refresh renderer tool list
+    } catch (err) {
+      void log.append({ type: "session.mcp_reload_failed", sessionId, data: { error: String(err) } });
+    } finally {
+      reloadingMcp.delete(sessionId);
+    }
+  };
+
+  // Reload a deferred session once it goes idle (called from event/prompt-close paths).
+  const drainPendingReload = (sessionId: string): void => {
+    if (pendingMcpReload.has(sessionId) && activity.isIdle(sessionId)) {
+      pendingMcpReload.delete(sessionId);
+      void reloadSession(sessionId);
+    }
+  };
+
+  let mcpReloadTimer: ReturnType<typeof setTimeout> | undefined;
+  const pendingScopes: Array<{ scope: "global" | "workspace"; workspaceId: string | null }> = [];
+  const runMcpReloadPass = async (): Promise<void> => {
+    const scopes = pendingScopes.splice(0);
+    const live: ReloadSession[] = manager
+      .activeIds()
+      .map((id) => { const m = index.get(id); return m ? { id, workspaceId: m.workspaceId } : null; })
+      .filter((s): s is ReloadSession => s !== null);
+    const affected = new Set<string>();
+    for (const { scope, workspaceId } of scopes)
+      for (const id of affectedSessionIds(scope, workspaceId, live)) affected.add(id);
+    for (const id of affected) {
+      if (activity.isIdle(id)) await reloadSession(id); // sequential — avoid a spawn burst
+      else pendingMcpReload.add(id);
+    }
+  };
+  // Debounced so add-then-authenticate coalesces into a single reload pass.
+  const scheduleMcpReload = (scope: "global" | "workspace", workspaceId: string | null): void => {
+    pendingScopes.push({ scope, workspaceId });
+    clearTimeout(mcpReloadTimer);
+    mcpReloadTimer = setTimeout(() => { void runMcpReloadPass(); }, 500);
+  };
+
   app.on("will-quit", () => {
+    clearTimeout(mcpReloadTimer); // don't spawn during teardown
     manager.stopAll();
     utility?.stop();
   });
@@ -534,7 +622,10 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.on("hv:respond-permission", (_e, id: string, choice: string) => {
     const owner = uiOwners.get(id);
     uiOwners.delete(id);
-    if (owner && owner !== UTILITY) activity.promptClosed(owner);
+    if (owner && owner !== UTILITY) {
+      activity.promptClosed(owner);
+      drainPendingReload(owner); // prompt closed → session may be idle now
+    }
     clientFor(owner)?.respondUi(id, { value: choice });
   });
 
@@ -826,6 +917,12 @@ export function registerIpc(win: BrowserWindow): void {
       writeMcpServer(file, name, cfg);
       void log.append({ type: "mcp.config", workspaceId: workspaceId ?? undefined,
         data: { scope, name, removed: cfg === null } });
+      if (cfg === null) {
+        // Removal: drop the now-stale status entry so it can't resurface.
+        mcpStatusMap.delete(statusKey(scope, workspaceId, name));
+        mcpStatusChanged();
+      }
+      scheduleMcpReload(scope, workspaceId); // apply to running sessions
       return readMcpFile(file);
     },
   );
@@ -876,6 +973,7 @@ export function registerIpc(win: BrowserWindow): void {
         lastChecked: Date.now(),
       });
       mcpStatusChanged();
+      if (result.ok) scheduleMcpReload(scope, workspaceId); // server now usable → apply to sessions
       return result;
     },
   );
@@ -903,5 +1001,8 @@ export function registerIpc(win: BrowserWindow): void {
       }
     }
     mcpStatusChanged();
+    // A logged-out server must stop working everywhere; tokens are keyed by name
+    // (not scope), so reload all live sessions.
+    scheduleMcpReload("global", null);
   });
 }
