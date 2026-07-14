@@ -204,6 +204,12 @@ interface HvApi {
   setRules(rules: HvRulesFile): Promise<HvRulesFile>;
   /** Round 3 #13: append a tool-layer allow rule (workspace path, or null = global). */
   addPermissionRule(workspace: string | null, tool: string): Promise<HvRulesFile>;
+  /** Round 3 #14: persistent "bypass all permissions". */
+  getGlobalBypass(): Promise<boolean>;
+  setGlobalBypass(on: boolean): Promise<void>;
+  /** null = unset (inherit global). */
+  getWorkspaceBypass(workspace: string): Promise<boolean | null>;
+  setWorkspaceBypass(workspace: string, on: boolean | null): Promise<void>;
   evalRules(workspaceId: string, tool: string, input: Record<string, unknown>): Promise<HvVerdict>;
   readAudit(filter?: { sessionId?: string; workspaceId?: string }): Promise<HvAuditEvent[]>;
   setBadgeCount(n: number): void;

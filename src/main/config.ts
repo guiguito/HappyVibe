@@ -2,6 +2,7 @@ import { app, safeStorage } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { BYOK_PROVIDERS, buildProviderEnv, keySource, type ByokProvider, type KeySource } from "./providers";
+import { resolveBypass as resolveBypassPure } from "./bypass";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -13,6 +14,10 @@ interface ConfigFile {
   defaultModel?: { provider: string; modelId: string };
   /** B7: user has seen (or dismissed) the onboarding wow-flow. */
   onboardingSeen?: boolean;
+  /** Round 3 #14: persistent "bypass all permissions" — global default + per-
+      workspace override (tri-state: absent = inherit global). */
+  bypassAll?: boolean;
+  workspaceBypass?: Record<string, boolean>;
 }
 
 function load(): ConfigFile {
@@ -97,6 +102,38 @@ export function setOnboardingSeen(seen: boolean): void {
   const cfg = load();
   cfg.onboardingSeen = seen;
   save(cfg);
+}
+
+// Round 3 #14: persistent "bypass all permissions".
+export function getGlobalBypass(): boolean {
+  return load().bypassAll ?? false;
+}
+
+export function setGlobalBypass(on: boolean): void {
+  const cfg = load();
+  if (on) cfg.bypassAll = true;
+  else delete cfg.bypassAll;
+  save(cfg);
+}
+
+/** Per-workspace override, tri-state: null = unset (inherit global). */
+export function getWorkspaceBypass(workspace: string): boolean | null {
+  return load().workspaceBypass?.[workspace] ?? null;
+}
+
+export function setWorkspaceBypass(workspace: string, on: boolean | null): void {
+  const cfg = load();
+  cfg.workspaceBypass ??= {};
+  if (on === null) delete cfg.workspaceBypass[workspace];
+  else cfg.workspaceBypass[workspace] = on;
+  if (Object.keys(cfg.workspaceBypass).length === 0) delete cfg.workspaceBypass;
+  save(cfg);
+}
+
+/** Resolved bypass for a session: workspace override ?? global ?? off. */
+export function resolveBypass(workspace: string | null | undefined): boolean {
+  const cfg = load();
+  return resolveBypassPure(cfg.bypassAll ?? false, workspace ? cfg.workspaceBypass?.[workspace] : undefined);
 }
 
 // Legacy shims — existing window.hv.getApiKey/setApiKey surface (DeepSeek).

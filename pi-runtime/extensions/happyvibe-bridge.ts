@@ -79,8 +79,10 @@ function requireIntent(pi: ExtensionAPI): void {
 // and broadcasts /hv-rules-reload to every live session.
 let rules: RulesFile = EMPTY_RULES;
 let rulesError: string | null = null;
-// Per-session, never persisted — a respawn always starts safe.
-let dangerous = false;
+// Per-session toggle (/hv-dangerous). Round 3 #14: the persistent "bypass all
+// permissions" setting is delivered via HV_BYPASS at spawn and re-applied on
+// every respawn, so unlike the manual toggle it survives a respawn.
+let dangerous = process.env.HV_BYPASS === "1";
 
 // ── B5 context visibility (docs/validation/d1.md §hv.context) ───────────────
 // The kill-set of context marks. Persisted as `hv-context-marks` custom entries

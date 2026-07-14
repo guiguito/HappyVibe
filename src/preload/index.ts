@@ -69,6 +69,11 @@ contextBridge.exposeInMainWorld("hv", {
   setRules: (rules: unknown) => ipcRenderer.invoke("hv:set-rules", rules),
   addPermissionRule: (workspace: string | null, tool: string) =>
     ipcRenderer.invoke("hv:add-permission-rule", workspace, tool),
+  getGlobalBypass: () => ipcRenderer.invoke("hv:get-global-bypass"),
+  setGlobalBypass: (on: boolean) => ipcRenderer.invoke("hv:set-global-bypass", on),
+  getWorkspaceBypass: (workspace: string) => ipcRenderer.invoke("hv:get-workspace-bypass", workspace),
+  setWorkspaceBypass: (workspace: string, on: boolean | null) =>
+    ipcRenderer.invoke("hv:set-workspace-bypass", workspace, on),
   evalRules: (workspaceId: string, tool: string, input: Record<string, unknown>) =>
     ipcRenderer.invoke("hv:eval-rules", workspaceId, tool, input),
   readAudit: (filter?: { sessionId?: string; workspaceId?: string }) => ipcRenderer.invoke("hv:read-audit", filter),

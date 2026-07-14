@@ -7,9 +7,10 @@ import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getApiKey, getDefaultModel, getOnboardingSeen, installBuiltinAgents,
-  providerEnv, providerKeyStatus, removeProviderKey, rulesFile, sessionDir, setApiKey, setDefaultModel,
-  setOnboardingSeen, setProviderKey,
+  agentDir, builtinAgentsDir, getApiKey, getDefaultModel, getGlobalBypass, getOnboardingSeen,
+  getWorkspaceBypass, installBuiltinAgents, providerEnv, providerKeyStatus, removeProviderKey,
+  resolveBypass, rulesFile, sessionDir, setApiKey, setDefaultModel, setGlobalBypass, setOnboardingSeen,
+  setProviderKey, setWorkspaceBypass,
 } from "./config";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
@@ -110,6 +111,9 @@ export function registerIpc(win: BrowserWindow): void {
     providerEnv: providerEnv(),
     resumeFile,
     rulesFile: rulesFile(),
+    // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
+    // every (re)spawn so it survives respawns (unlike session dangerous mode).
+    bypass: resolveBypass(workspace ?? null),
   });
 
   const manager = new SessionManager({
@@ -725,6 +729,32 @@ export function registerIpc(win: BrowserWindow): void {
   // Settings "test a call" preview — the SAME pure engine the bridge runs.
   ipcMain.handle("hv:eval-rules", (_e, workspaceId: string, tool: string, input: Record<string, unknown>) =>
     evaluate(readRules(), { tool, input, workspace: workspaceId }));
+
+  // Round 3 #14: persistent "bypass all permissions". Resolved bypass is applied
+  // live to affected sessions via /hv-dangerous (idempotent) and re-applied on
+  // every respawn through HV_BYPASS (spawnOpts). Changing a persistent setting
+  // overrides any manual /hv-dangerous toggle on the affected sessions.
+  const applyBypassLive = (id: string): void => {
+    const ws = index.get(id)?.workspaceId ?? null;
+    const on = resolveBypass(ws);
+    void (manager.get(id) as PiClient | null)?.send({ type: "prompt", message: `/hv-dangerous ${on ? "on" : "off"}` }).catch(() => {});
+  };
+  ipcMain.handle("hv:get-global-bypass", () => getGlobalBypass());
+  ipcMain.handle("hv:set-global-bypass", (_e, on: boolean) => {
+    setGlobalBypass(on);
+    // Only sessions that inherit the global default (no explicit workspace override).
+    for (const id of manager.activeIds()) {
+      const ws = index.get(id)?.workspaceId ?? null;
+      if (!ws || getWorkspaceBypass(ws) === null) applyBypassLive(id);
+    }
+  });
+  ipcMain.handle("hv:get-workspace-bypass", (_e, workspace: string) => getWorkspaceBypass(workspace));
+  ipcMain.handle("hv:set-workspace-bypass", (_e, workspace: string, on: boolean | null) => {
+    setWorkspaceBypass(workspace, on);
+    for (const id of manager.activeIds()) {
+      if ((index.get(id)?.workspaceId ?? null) === workspace) applyBypassLive(id);
+    }
+  });
 
   ipcMain.handle("hv:read-audit", (_e, filter?: { sessionId?: string; workspaceId?: string }) =>
     log.read({ type: "permission.decision", ...filter }));

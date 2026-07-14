@@ -37,6 +37,9 @@ export interface PiSpawnOptions {
   resumeFile?: string;
   /** Permission rules JSON → HV_RULES_FILE (B4; bridge loads at startup, reloads on /hv-rules-reload). */
   rulesFile?: string;
+  /** Round 3 #14: persistent "bypass all permissions" resolved for this session
+      (workspace ?? global). true → HV_BYPASS=1 → bridge starts in dangerous mode. */
+  bypass?: boolean;
 }
 
 /**
@@ -86,6 +89,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.providerEnv ?? {}),
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
+      ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
       // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
       // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).
       PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, PI_SUBAGENT_BIN_RELPATH),

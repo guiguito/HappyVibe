@@ -36,12 +36,20 @@ export function WorkspaceSettingsModal({
   const [additions, setAdditions] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [bypass, setBypass] = useState<boolean | null>(null); // #14: tri-state override
+  const [confirmBypass, setConfirmBypass] = useState(false);
 
   useEffect(() => {
     void window.hv.listModels().then(setModels);
     void window.hv.getWorkspaceModel(workspace).then(setModel);
     void window.hv.getWorkspaceAppend(workspace).then((c) => setAdditions(c ?? ""));
+    void window.hv.getWorkspaceBypass(workspace).then(setBypass);
   }, [workspace]);
+
+  const applyBypass = (v: boolean | null): void => {
+    setBypass(v);
+    void window.hv.setWorkspaceBypass(workspace, v);
+  };
 
   const pickModel = (value: string): void => {
     // "" = use the global default (clears the override).
@@ -105,6 +113,56 @@ export function WorkspaceSettingsModal({
 
         <Block title="permission rules">
           <PermissionRulesSection workspace={workspace} />
+        </Block>
+
+        <Block title="bypass all permissions">
+          <div className="flex items-center gap-2">
+            <select
+              value={bypass === null ? "inherit" : bypass ? "on" : "off"}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "on") setConfirmBypass(true);
+                else applyBypass(v === "off" ? false : null);
+              }}
+              className="rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none focus:border-tangerine cursor-pointer"
+            >
+              <option value="inherit">Inherit global</option>
+              <option value="on">On — auto-approve everything</option>
+              <option value="off">Off — always ask</option>
+            </select>
+            {bypass === true && <span className="text-xs font-bold text-berry">⚠ prompts disabled here</span>}
+          </div>
+          <p className="text-xs text-ink-soft mt-1.5">
+            Overrides the global setting for this workspace. "On" auto-approves every action with no prompts (a red
+            banner shows in each session). Applies to new or restarted sessions.
+          </p>
+          {confirmBypass && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirmBypass(false)}>
+              <div className="w-full max-w-md rounded-2xl border-2 border-berry bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+                <div className="font-bold text-berry mb-1">⚠ Auto-approve every action in this workspace?</div>
+                <p className="text-sm text-ink-soft mb-4">
+                  The agent may write files and run shell commands here without asking. Only enable if you fully trust
+                  what you're running.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmBypass(false)}
+                    className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setConfirmBypass(false); applyBypass(true); }}
+                    className="rounded-xl bg-berry text-paper font-bold text-sm px-4 py-2 border-2 border-berry shadow-sticker cursor-pointer hover:brightness-105"
+                  >
+                    Enable bypass
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </Block>
 
         <Block title="system prompt additions">
