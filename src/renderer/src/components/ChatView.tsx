@@ -80,6 +80,7 @@ export function ChatView({
   const [pendingPaste, setPendingPaste] = useState<string | null>(null); // #3: large-paste confirm
   const [searchOpen, setSearchOpen] = useState(false); // #8: in-conversation search
   const [searchQuery, setSearchQuery] = useState("");
+  const [offerAgentsMd, setOfferAgentsMd] = useState(false); // #7: one-time AGENTS.md banner
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   // Honest fallback: live set_model failed → override persisted, applies on next spawn.
@@ -157,6 +158,18 @@ export function ChatView({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
+
+  // #7: on opening a workspace with no AGENTS.md, offer to create one — once per
+  // workspace (dismissal remembered in localStorage so it never nags).
+  useEffect(() => {
+    if (!workspace) return;
+    if (localStorage.getItem(`hv:agentsmd-dismissed:${workspace}`)) return;
+    let live = true;
+    void window.hv.readAgentsMd(workspace).then((c) => {
+      if (live) setOfferAgentsMd(c === null);
+    });
+    return () => { live = false; };
+  }, [workspace]);
 
   // B5: non-blocking auto-suggest banner, shown once per session when the gauge
   // first hits the red zone. Never auto-compacts.
@@ -287,6 +300,29 @@ export function ChatView({
           silent during a delegation (main agent is blocked); this makes it
           obvious WHO is running, that progress is happening, and — clicked —
           WHAT the child is doing (live trace, from the in-flow tool card). */}
+      {/* Round 3 #7: proactively offer to create AGENTS.md when the workspace has none. */}
+      {offerAgentsMd && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-honey-soft text-sm text-ink">
+          <span className="font-bold flex-1">No AGENTS.md found — add project context so the agent understands this codebase?</span>
+          <button
+            type="button"
+            onClick={() => { setOfferAgentsMd(false); setAgentsMdOpen(true); }}
+            className="rounded-lg bg-tangerine text-paper font-bold text-xs px-3 py-1 border-2 border-tangerine-deep shadow-sticker cursor-pointer hover:brightness-105"
+          >
+            Generate one
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (workspace) localStorage.setItem(`hv:agentsmd-dismissed:${workspace}`, "1");
+              setOfferAgentsMd(false);
+            }}
+            className="rounded-lg bg-card text-ink-soft font-bold text-xs px-3 py-1 border-2 border-line shadow-sticker cursor-pointer hover:text-ink"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       {/* Round 3 #2: resuming-from-hibernation loader (the "waking" status was
           previously set but never surfaced). */}
       {waking && (
