@@ -333,7 +333,7 @@ export function ToolCard({
         >
           <span className={`size-2.5 rounded-full shrink-0 ${s.dot}`} />
           <ToolIcon kind={icon} />
-          <span className="font-bold text-sm truncate flex-1 min-w-0" title={label}>
+          <span className="font-bold text-sm line-clamp-2 break-words flex-1 min-w-0" title={label}>
             {label}
             {diff?.kind === "write" && (
               <span className="ml-2 font-sans text-[10px] font-bold uppercase tracking-wide text-leaf">

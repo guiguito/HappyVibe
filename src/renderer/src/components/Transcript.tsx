@@ -1,7 +1,79 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolCard, type ToolCardData } from "./ToolCard";
+
+// Feedback round 3 #4: user messages longer than this render collapsed with a
+// "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
+const LONG_MESSAGE_CHARS = 3000;
+
+/** Copy-to-clipboard button (feedback round 3 #9). Brief "Copied" ack. */
+function CopyButton({ text, label }: { text: string; label: string }): React.JSX.Element {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={() => {
+        void navigator.clipboard.writeText(text);
+        setDone(true);
+        setTimeout(() => setDone(false), 1200);
+      }}
+      className="rounded-lg border-2 border-line bg-card px-2 py-0.5 text-[11px] font-bold text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
+    >
+      {done ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+/** Rewind button (feedback round 3 #11) — only rendered when onRewind is wired. */
+function RewindButton({ onClick }: { onClick: () => void }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label="Rewind to this message"
+      title="Rewind to this message (removes everything after; files are not rolled back)"
+      onClick={onClick}
+      className="rounded-lg border-2 border-line bg-card px-2 py-0.5 text-[11px] font-bold text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
+    >
+      ↺ Rewind
+    </button>
+  );
+}
+
+/** Click-to-zoom image + lightbox overlay (feedback round 3 #6). */
+function ZoomableImage({ src }: { src: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  return (
+    <>
+      <img
+        src={src}
+        alt="attached image"
+        onClick={() => setOpen(true)}
+        className="max-h-24 max-w-40 rounded-lg border-2 border-paper/60 object-cover cursor-zoom-in"
+      />
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-8 cursor-zoom-out"
+        >
+          <img src={src} alt="attached image (zoomed)" className="max-h-full max-w-full rounded-xl shadow-2xl" />
+        </div>
+      )}
+    </>
+  );
+}
 
 // Perf: `id` is a stable key assigned at append time (see App.appendItem). Keying
 // on it instead of the array index lets React.memo skip re-parsing committed
@@ -24,12 +96,15 @@ const MessageItem = memo(function MessageItem({
   onRetry,
   workspace,
   onOpenFile,
+  onRewind,
 }: {
   it: TranscriptItem;
   onRetry?: () => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
   onOpenFile?: (relPath: string) => void;
+  /** Round 3 #11: rewind to a user message (only wired for user items). */
+  onRewind?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
   if (it.kind === "tool") return <ToolCard card={it.card} workspace={workspace} onOpenFile={onOpenFile} />;
   if (it.kind === "error") {
@@ -61,37 +136,104 @@ const MessageItem = memo(function MessageItem({
       </div>
     );
   }
-  if (it.kind === "assistant") return <AssistantBubble text={it.text} />;
+  if (it.kind === "assistant") {
+    return (
+      <div className="group">
+        <AssistantBubble text={it.text} />
+        <div className="flex justify-start mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <CopyButton text={it.text} label="Copy answer" />
+        </div>
+      </div>
+    );
+  }
+  return <UserBubble it={it} onRewind={onRewind} />;
+});
+
+/** User message bubble: zoomable images, long-message collapse (#4),
+    per-message copy (#9) and optional rewind (#11). */
+function UserBubble({
+  it,
+  onRewind,
+}: {
+  it: TranscriptItem;
+  onRewind?: (it: TranscriptItem) => void;
+}): React.JSX.Element {
+  const text = "text" in it ? it.text : "";
+  const images = "images" in it ? it.images : undefined;
+  const [expanded, setExpanded] = useState(false);
+  const long = text.length > LONG_MESSAGE_CHARS;
+  const collapsed = long && !expanded;
   return (
-    <div className="self-end max-w-[85%]">
+    <div className="self-end max-w-[85%] group">
       <div className="bg-tangerine text-paper rounded-2xl rounded-br-md px-4 py-2.5 shadow-sticker border-2 border-tangerine-deep whitespace-pre-wrap text-[0.95rem]">
-        {/* W2.1: attached images ride the same bubble as small thumbnails. */}
-        {it.images && it.images.length > 0 && (
+        {/* W2.1: attached images ride the same bubble; click to zoom (#6). */}
+        {images && images.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
-            {it.images.map((src, i) => (
-              <img
-                key={i}
-                src={src}
-                alt="attached image"
-                className="max-h-24 max-w-40 rounded-lg border-2 border-paper/60 object-cover"
-              />
+            {images.map((src, i) => (
+              <ZoomableImage key={i} src={src} />
             ))}
           </div>
         )}
-        {it.text}
+        <div className={collapsed ? "relative max-h-64 overflow-hidden" : undefined}>
+          {text}
+          {collapsed && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-tangerine" />
+          )}
+        </div>
+        {long && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-1 text-[11px] font-bold text-paper/80 hover:text-paper underline cursor-pointer"
+          >
+            {expanded ? "Show less" : "Show more"}
+          </button>
+        )}
+      </div>
+      <div className="flex justify-end gap-1.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <CopyButton text={text} label="Copy message" />
+        {onRewind && <RewindButton onClick={() => onRewind(it)} />}
       </div>
     </div>
   );
-});
+}
 
 // The assistant bubble is shared by committed messages and the live streaming
 // bubble so their rendering (and markdown) stays byte-identical.
+/** Code-block wrapper with a hover copy button (feedback round 3 #12).
+    Overrides react-markdown's `pre` renderer; reads the rendered text so we
+    don't have to walk the markdown children. */
+function PreBlock(props: React.HTMLAttributes<HTMLPreElement>): React.JSX.Element {
+  const ref = useRef<HTMLPreElement>(null);
+  const [done, setDone] = useState(false);
+  return (
+    <div className="relative group/code">
+      <pre ref={ref} {...props} />
+      <button
+        type="button"
+        aria-label="Copy code"
+        title="Copy code"
+        onClick={() => {
+          void navigator.clipboard.writeText(ref.current?.innerText ?? "");
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        }}
+        className="absolute top-2 right-2 rounded-md border border-line bg-card px-2 py-0.5 text-[11px] font-bold text-ink-soft hover:text-ink opacity-0 group-hover/code:opacity-100 transition-opacity cursor-pointer"
+      >
+        {done ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+const MD_COMPONENTS = { pre: PreBlock };
+
 export function AssistantBubble({ text }: { text: string }): React.JSX.Element {
   return (
     <div>
       <div className="text-[11px] font-bold uppercase tracking-widest text-tangerine mb-1">agent</div>
       <div className="md">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</ReactMarkdown>
       </div>
     </div>
   );
@@ -105,6 +247,7 @@ export function Transcript({
   onRetry,
   workspace,
   onOpenFile,
+  onRewind,
 }: {
   items: TranscriptItem[];
   busy: boolean;
@@ -117,6 +260,8 @@ export function Transcript({
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
   onOpenFile?: (relPath: string) => void;
+  /** Round 3 #11: rewind a user message (removes everything after + re-edits). */
+  onRewind?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -144,7 +289,7 @@ export function Transcript({
       {header}
       <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
         {items.map((it, i) => (
-          <MessageItem key={it.id ?? i} it={it} onRetry={onRetry} workspace={workspace} onOpenFile={onOpenFile} />
+          <MessageItem key={it.id ?? i} it={it} onRetry={onRetry} workspace={workspace} onOpenFile={onOpenFile} onRewind={onRewind} />
         ))}
         {/* Perf: the in-progress turn renders here, outside `items`, so a delta
             re-renders only this bubble — committed messages stay memoized. */}

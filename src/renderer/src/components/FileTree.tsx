@@ -105,17 +105,18 @@ function Icon({ kind, className }: { kind: FileIconKind; className?: string }): 
 export function FileTree({
   workspace,
   onOpenFile,
+  onClose,
 }: {
   workspace: string;
   onOpenFile: (relPath: string) => void;
+  /** Round 3 #1: the reduce icon CLOSES the pane completely (App unmounts it),
+      rather than minimizing to a rail. */
+  onClose: () => void;
 }): React.JSX.Element {
   // Keyed by relative dir path ("" = root). App renders this pane with
   // key={workspace}, so a workspace switch remounts with fresh state.
   const [dirs, setDirs] = useState<Record<string, DirState>>({ "": { entries: null } });
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
-  // ponytail: collapse is pane-internal (slim rail) — no App wiring needed;
-  // the top-bar treeOpen toggle still controls whether the pane exists.
-  const [collapsedPane, setCollapsedPane] = useState(false);
 
   const fetchDir = (relDir: string): void => {
     window.hv
@@ -207,22 +208,6 @@ export function FileTree({
     );
   };
 
-  if (collapsedPane) {
-    return (
-      <aside className="w-9 shrink-0 border-l-2 border-line bg-paper flex flex-col items-center pt-3">
-        <button
-          type="button"
-          onClick={() => setCollapsedPane(false)}
-          title="Expand the file explorer"
-          aria-label="Expand file explorer"
-          className="text-ink-soft hover:text-ink cursor-pointer"
-        >
-          <Icon kind="folder" className="size-4 shrink-0" />
-        </button>
-      </aside>
-    );
-  }
-
   return (
     <aside className="w-64 shrink-0 border-l-2 border-line bg-paper flex flex-col min-h-0">
       <div className="px-3 py-3 border-b-2 border-line flex items-center gap-2">
@@ -240,9 +225,9 @@ export function FileTree({
         </span>
         <button
           type="button"
-          onClick={() => setCollapsedPane(true)}
-          title="Collapse the file explorer"
-          aria-label="Collapse file explorer"
+          onClick={onClose}
+          title="Close the file explorer"
+          aria-label="Close file explorer"
           className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer shrink-0"
         >
           ⇥

@@ -672,6 +672,7 @@ export default function App(): React.JSX.Element {
             items={(selectedId ? transcripts[selectedId] : undefined) ?? []}
             streaming={(selectedId ? streamText[selectedId] : undefined) || undefined}
             busy={(selectedId && busy[selectedId]) || false}
+            waking={(selectedId && statuses[selectedId] === "waking") || false}
             crashed={selectedId && statuses[selectedId] === "crashed" ? (crashCodes[selectedId] ?? -1) : null}
             turns={(selectedId && turns[selectedId]) || 0}
             queue={(selectedId ? queues[selectedId] : undefined) ?? emptyQueue}
@@ -705,7 +706,7 @@ export default function App(): React.JSX.Element {
               />
             ))}
           </div>
-          {treeOpen && wsId && <FileTree key={wsId} workspace={wsId} onOpenFile={(rel) => openFileTab(wsId, rel)} />}
+          {treeOpen && wsId && <FileTree key={wsId} workspace={wsId} onOpenFile={(rel) => openFileTab(wsId, rel)} onClose={() => setTreeOpen(false)} />}
         </div>
       </main>
       {uiReq?.kind === "permission" && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}

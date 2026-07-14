@@ -11,6 +11,9 @@ import {
   attachmentUrl, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
 
+/** Round 3 #3: pasting more than this many characters asks for confirmation. */
+const PASTE_CONFIRM_CHARS = 100_000;
+
 /** V2.A: chip subtext — which tier of session → workspace → global won. */
 const TIER_LABEL: Record<ModelTier, string> = {
   session: "session override",
@@ -26,6 +29,7 @@ export function ChatView({
   items,
   streaming,
   busy,
+  waking = false,
   crashed,
   turns,
   queue = emptyQueue,
@@ -48,6 +52,8 @@ export function ChatView({
   items: TranscriptItem[];
   streaming?: string;
   busy: boolean;
+  /** Round 3 #2: session is resuming from hibernation — show a loader. */
+  waking?: boolean;
   crashed: number | null;
   turns: number;
   queue?: QueueState;
@@ -70,6 +76,10 @@ export function ChatView({
   const [workspaceModel, setWorkspaceModel] = useState<ModelRef | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRef | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [modelFilter, setModelFilter] = useState(""); // #5: filter box when >5 models
+  const [pendingPaste, setPendingPaste] = useState<string | null>(null); // #3: large-paste confirm
+  const [searchOpen, setSearchOpen] = useState(false); // #8: in-conversation search
+  const [searchQuery, setSearchQuery] = useState("");
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   // Honest fallback: live set_model failed → override persisted, applies on next spawn.
@@ -133,11 +143,33 @@ export function ChatView({
     }, 500);
     return () => { live = false; clearTimeout(t); };
   }, [turns, sessionId]);
+  // #8: ⌘F / Ctrl-F opens in-conversation search; Escape closes it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setSearchOpen(true);
+      } else if (e.key === "Escape" && searchOpen) {
+        setSearchOpen(false);
+        setSearchQuery("");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [searchOpen]);
+
   // B5: non-blocking auto-suggest banner, shown once per session when the gauge
   // first hits the red zone. Never auto-compacts.
   const [suggestDismissed, setSuggestDismissed] = useState<Set<string>>(new Set());
   const gauge = computeGauge(stats, fallbackWindow);
   const suggestCompact = gauge?.zone === "red" && sessionId != null && !suggestDismissed.has(sessionId) && !contextOpen;
+
+  // #8: filter the transcript by search text (message kinds that carry text).
+  const searchLC = searchQuery.trim().toLowerCase();
+  const visibleItems =
+    searchOpen && searchLC
+      ? items.filter((it) => "text" in it && typeof it.text === "string" && it.text.toLowerCase().includes(searchLC))
+      : items;
 
   if (!workspace || !sessionId) {
     return (
@@ -196,6 +228,15 @@ export function ChatView({
         )}
         <button
           type="button"
+          onClick={() => setSearchOpen((o) => !o)}
+          title="Search this conversation (⌘F)"
+          aria-label="Search this conversation"
+          className="text-sm rounded-full border-2 border-line bg-card px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
+        >
+          ⌕
+        </button>
+        <button
+          type="button"
           onClick={() => setAgentsMdOpen(true)}
           title="Edit AGENTS.md — project context for the agent (applies to new or restarted sessions)"
           className="font-mono text-[11px] rounded-full border-2 border-line bg-card px-3 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
@@ -246,9 +287,64 @@ export function ChatView({
           silent during a delegation (main agent is blocked); this makes it
           obvious WHO is running, that progress is happening, and — clicked —
           WHAT the child is doing (live trace, from the in-flow tool card). */}
+      {/* Round 3 #2: resuming-from-hibernation loader (the "waking" status was
+          previously set but never surfaced). */}
+      {waking && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-honey-soft text-sm font-bold text-ink">
+          <span className="size-2.5 rounded-full bg-tangerine animate-pulse" />
+          Resuming session…
+        </div>
+      )}
+      {/* Round 3 #3: large-paste confirm. */}
+      {pendingPaste !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingPaste(null)}>
+          <div className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="font-bold text-ink mb-1">Paste {pendingPaste.length.toLocaleString()} characters?</div>
+            <p className="text-sm text-ink-soft mb-4">That's a large amount of text to add to the composer. Insert it anyway?</p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingPaste(null)}
+                className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { setInput((prev) => prev + pendingPaste); setPendingPaste(null); }}
+                className="rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker cursor-pointer hover:brightness-105"
+              >
+                Insert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* #8: in-conversation search strip. */}
+      {searchOpen && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-paper-deep/40">
+          <span className="text-ink-soft">⌕</span>
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search this conversation…"
+            className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-ink-soft/60"
+          />
+          {searchLC && <span className="text-xs text-ink-soft font-medium shrink-0">{visibleItems.length} match{visibleItems.length === 1 ? "" : "es"}</span>}
+          <button
+            type="button"
+            onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
+            aria-label="Close search"
+            className="text-ink-soft hover:text-ink cursor-pointer font-bold px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <Transcript
-        items={items}
-        streaming={streaming}
+        items={visibleItems}
+        streaming={searchLC ? undefined : streaming}
         busy={busy}
         header={delegations.length > 0 ? <DelegationSection runs={delegations} items={items} /> : undefined}
         onRetry={onRetry}
@@ -381,27 +477,52 @@ export function ChatView({
             </button>
             {modelMenuOpen && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setModelMenuOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-2 z-20 w-72 max-h-72 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
-                  {(models ?? []).map((m) => {
-                    const active = resolved != null && m.provider === resolved.provider && m.id === resolved.modelId;
-                    return (
-                      <button
-                        key={`${m.provider}/${m.id}`}
-                        type="button"
-                        onClick={() => void pickModel(m)}
-                        className={`w-full text-left px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer ${active ? "font-bold text-tangerine-deep" : "font-medium"}`}
-                      >
-                        <span className="block truncate">{m.name}</span>
-                        <span className="block truncate font-mono text-[10px] text-ink-soft">{m.provider}/{m.id}</span>
-                      </button>
-                    );
-                  })}
-                  {(models ?? []).length === 0 && (
-                    <div className="px-3 py-2 text-xs text-ink-soft font-medium">
-                      {models === null ? "Loading models…" : "No models — configure a provider in Settings."}
-                    </div>
+                <div className="fixed inset-0 z-10" onClick={() => { setModelMenuOpen(false); setModelFilter(""); }} />
+                <div className="absolute bottom-full left-0 mb-2 z-20 w-72 max-h-80 overflow-hidden flex flex-col rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+                  {/* #5: mini search bar once the list is long enough to warrant it. */}
+                  {(models ?? []).length > 5 && (
+                    <input
+                      autoFocus
+                      value={modelFilter}
+                      onChange={(e) => setModelFilter(e.target.value)}
+                      placeholder="Search models…"
+                      className="mx-2 mb-1 px-2 py-1 rounded-lg border-2 border-line bg-paper text-[13px] focus:outline-none focus:border-tangerine"
+                    />
                   )}
+                  <div className="overflow-y-auto">
+                    {(() => {
+                      const q = modelFilter.trim().toLowerCase();
+                      const shown = (models ?? []).filter(
+                        (m) => !q || `${m.name} ${m.provider} ${m.id}`.toLowerCase().includes(q),
+                      );
+                      return (
+                        <>
+                          {shown.map((m) => {
+                            const active = resolved != null && m.provider === resolved.provider && m.id === resolved.modelId;
+                            return (
+                              <button
+                                key={`${m.provider}/${m.id}`}
+                                type="button"
+                                onClick={() => { setModelFilter(""); void pickModel(m); }}
+                                className={`w-full text-left px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer ${active ? "font-bold text-tangerine-deep" : "font-medium"}`}
+                              >
+                                <span className="block truncate">{m.name}</span>
+                                <span className="block truncate font-mono text-[10px] text-ink-soft">{m.provider}/{m.id}</span>
+                              </button>
+                            );
+                          })}
+                          {(models ?? []).length === 0 && (
+                            <div className="px-3 py-2 text-xs text-ink-soft font-medium">
+                              {models === null ? "Loading models…" : "No models — configure a provider in Settings."}
+                            </div>
+                          )}
+                          {(models ?? []).length > 0 && shown.length === 0 && (
+                            <div className="px-3 py-2 text-xs text-ink-soft font-medium">No models match “{modelFilter}”.</div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               </>
             )}
@@ -409,6 +530,14 @@ export function ChatView({
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              // #3: guard against accidentally pasting a huge blob.
+              const t = e.clipboardData.getData("text");
+              if (t.length > PASTE_CONFIRM_CHARS) {
+                e.preventDefault();
+                setPendingPaste(t);
+              }
+            }}
             placeholder={hint ?? (busy ? "Steer the agent — lands between tool calls…" : "Ask for a change…")}
             className="flex-1 min-w-0 bg-transparent px-2 py-1.5 text-[0.95rem] focus:outline-none placeholder:text-ink-soft/60"
           />
