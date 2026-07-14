@@ -83,6 +83,10 @@ export default function App(): React.JSX.Element {
   // tool_execution_start in that session adopts it so the outcome shows on the card.
   const pendingApproval = useRef<Record<string, { tool: string; choice: "Allow" | "Allow for session" } | null>>({});
 
+  // #11 rewind: set when the user rewinds to a message; consumed by the next
+  // context snapshot to drop the truncated tail from Pi's context.
+  const pendingRewind = useRef<Record<string, { msgCount: number; toolIds: Set<string> }>>({});
+
   // Perf: in-progress assistant text lives HERE, keyed by sid, outside
   // `transcripts` — so a delta doesn't copy the whole transcript array and
   // Transcript doesn't re-parse committed markdown. `streamText` is the render
@@ -185,7 +189,24 @@ export default function App(): React.JSX.Element {
       const sid = r.sessionId;
       if (sid) {
         const snap = parseContextSnapshot(r);
-        if (snap) setContextSnapshots((p) => ({ ...p, [sid]: snap }));
+        if (snap) {
+          setContextSnapshots((p) => ({ ...p, [sid]: snap }));
+          // #11 rewind: a fresh snapshot was requested to drop the truncated tail
+          // from Pi's context (chat-only; files are NOT rolled back). Match the
+          // trailing removable conversation items by count and tools by exact id.
+          const pr = pendingRewind.current[sid];
+          if (pr) {
+            delete pendingRewind.current[sid];
+            const convo = snap.items.filter((i) => i.group === "conversation" && i.removable && i.markKey);
+            const keys = convo.slice(-pr.msgCount).map((i) => i.markKey as string);
+            for (const i of snap.items) {
+              if (i.group === "tool" && i.removable && i.markKey && i.toolCallId && pr.toolIds.has(i.toolCallId)) {
+                keys.push(i.markKey);
+              }
+            }
+            if (keys.length > 0) void window.hv.contextRemove(sid, keys);
+          }
+        }
         const ack = parseContextAck(r);
         // Update the mark set live (remove/restore) without re-fetching the snapshot.
         if (ack) setContextSnapshots((p) => (p[sid] ? { ...p, [sid]: { ...p[sid], marks: ack.marks } } : p));
@@ -565,6 +586,25 @@ export default function App(): React.JSX.Element {
     setUiQueue((q) => q.filter((e) => e.req.id !== uiReq.req.id));
   };
 
+  // #11 rewind: truncate the transcript at (and after) a user message and best-
+  // effort drop the matching tail from Pi's context. The composer repopulation is
+  // done in ChatView (which owns the input). Chat-only — files are NOT reverted.
+  const rewindTo = (it: TranscriptItem): void => {
+    const sid = selectedId;
+    if (!sid || it.id == null) return;
+    const items = transcripts[sid] ?? [];
+    const idx = items.findIndex((x) => x.id === it.id);
+    if (idx < 0) return;
+    const tail = items.slice(idx);
+    const msgCount = tail.filter((x) => x.kind === "user" || x.kind === "assistant").length;
+    const toolIds = new Set(
+      tail.flatMap((x) => (x.kind === "tool" ? [x.card.toolCallId] : [])),
+    );
+    setTranscripts((p) => ({ ...p, [sid]: (p[sid] ?? []).slice(0, idx) }));
+    pendingRewind.current[sid] = { msgCount, toolIds };
+    void window.hv.contextSnapshot(sid);
+  };
+
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
   }
@@ -706,6 +746,7 @@ export default function App(): React.JSX.Element {
             }}
                 onOpenFolder={addWorkspace}
                 onOpenFile={openFileFromCard}
+                onRewind={rewindTo}
               />
             </div>
             {openFileEntries.map(([w, f]) => (

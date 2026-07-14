@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { AgentsMdPanel } from "./AgentsMdPanel";
 import { TokenGauge } from "./TokenGauge";
@@ -43,6 +43,7 @@ export function ChatView({
   onOpenFolder,
   onCompact,
   onOpenFile,
+  onRewind,
 }: {
   workspace: string | null;
   sessionId: string | null;
@@ -69,8 +70,13 @@ export function ChatView({
   onCompact: () => void;
   /** W2.2: open a workspace-relative file in an editor tab (clickable card paths). */
   onOpenFile?: (relPath: string) => void;
+  /** Round 3 #11: truncate the conversation at a user message (App-side). */
+  onRewind?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
   const [input, setInput] = useState("");
+  const [pendingRewind, setPendingRewind] = useState<TranscriptItem | null>(null); // #11 confirm
+  // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
+  const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
   // ── W2.1: model chip + attach menu state ─────────────────────────
   const [models, setModels] = useState<HvModel[] | null>(null);
   const [workspaceModel, setWorkspaceModel] = useState<ModelRef | null>(null);
@@ -331,6 +337,40 @@ export function ChatView({
           Resuming session…
         </div>
       )}
+      {/* Round 3 #11: rewind confirm — files are NOT rolled back (chat-only V1). */}
+      {pendingRewind !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
+          <div className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="font-bold text-ink mb-1">Rewind to this message?</div>
+            <p className="text-sm text-ink-soft mb-4">
+              Every message after this point will be removed from the conversation and the agent's context, and this
+              message will move back into the composer so you can edit and resend it. <strong>Files on disk are not
+              rolled back.</strong>
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingRewind(null)}
+                className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const it = pendingRewind;
+                  onRewind?.(it);
+                  setInput("text" in it && typeof it.text === "string" ? it.text : "");
+                  setPendingRewind(null);
+                }}
+                className="rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker cursor-pointer hover:brightness-105"
+              >
+                Rewind
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Round 3 #3: large-paste confirm. */}
       {pendingPaste !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingPaste(null)}>
@@ -386,6 +426,7 @@ export function ChatView({
         onRetry={onRetry}
         workspace={workspace}
         onOpenFile={onOpenFile}
+        onRewind={onRewind && !busy ? openRewind : undefined}
       />
 
       {/* Composer */}
