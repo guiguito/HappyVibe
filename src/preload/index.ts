@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld("hv", {
   // ── B4: permissions v1 (additive) ───────────────────────────────
   getRules: () => ipcRenderer.invoke("hv:get-rules"),
   setRules: (rules: unknown) => ipcRenderer.invoke("hv:set-rules", rules),
+  addPermissionRule: (workspace: string | null, tool: string) =>
+    ipcRenderer.invoke("hv:add-permission-rule", workspace, tool),
   evalRules: (workspaceId: string, tool: string, input: Record<string, unknown>) =>
     ipcRenderer.invoke("hv:eval-rules", workspaceId, tool, input),
   readAudit: (filter?: { sessionId?: string; workspaceId?: string }) => ipcRenderer.invoke("hv:read-audit", filter),

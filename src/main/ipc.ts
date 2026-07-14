@@ -692,18 +692,34 @@ export function registerIpc(win: BrowserWindow): void {
     }
   };
 
-  ipcMain.handle("hv:get-rules", () => readRules());
-
-  ipcMain.handle("hv:set-rules", (_e, rules: RulesFile) => {
-    // Sanitize through the same parser the bridge uses — malformed rules never hit disk.
+  // Sanitize through the same parser the bridge uses (malformed rules never hit
+  // disk), persist, then broadcast reload to every live Pi (fire-and-forget
+  // slash command, B3 pattern).
+  const writeRulesAndReload = (rules: RulesFile): RulesFile => {
     const clean = parseRulesFile(JSON.stringify(rules));
     fs.writeFileSync(rulesFile(), JSON.stringify(clean, null, 2));
-    // Broadcast reload to every live Pi (fire-and-forget slash command, B3 pattern).
     for (const id of manager.activeIds()) {
       void (manager.get(id) as PiClient | null)?.send({ type: "prompt", message: "/hv-rules-reload" }).catch(() => {});
     }
     void utility?.send({ type: "prompt", message: "/hv-rules-reload" }).catch(() => {});
     return clean;
+  };
+
+  ipcMain.handle("hv:get-rules", () => readRules());
+
+  ipcMain.handle("hv:set-rules", (_e, rules: RulesFile) => writeRulesAndReload(rules));
+
+  // Round 3 #13: one-click persistent grant from the permission prompt.
+  // "Allow for Workspace" (workspace set) / "Always allow" (workspace null)
+  // append a tool-layer allow rule at the matching scope. ponytail: tool-layer
+  // granularity for V1; add command-pattern grants later if asked.
+  ipcMain.handle("hv:add-permission-rule", (_e, workspace: string | null, tool: string) => {
+    const rules = readRules();
+    const list = workspace ? (rules.workspaces[workspace] ??= []) : rules.global;
+    if (!list.some((r) => r.layer === "tool" && r.pattern === tool && r.action === "allow")) {
+      list.push({ layer: "tool", pattern: tool, action: "allow" });
+    }
+    return writeRulesAndReload(rules);
   });
 
   // Settings "test a call" preview — the SAME pure engine the bridge runs.

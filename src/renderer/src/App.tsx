@@ -521,9 +521,21 @@ export default function App(): React.JSX.Element {
   const respondPermission = (choice: PermissionChoice): void => {
     if (uiReq?.kind !== "permission") return;
     const sid = uiReq.req.sessionId;
-    window.hv.respondPermission(uiReq.req.id, choice);
+    const tool = uiReq.info.tool;
+    // Round 3 #13: persistent grants aren't understood by the bridge — respond
+    // with a plain "Allow" for this call and write a tool-layer allow rule at the
+    // chosen scope (workspace path, or global). The rules reload covers future calls.
+    let bridgeChoice: "Allow" | "Allow for session" | "Deny" = "Deny";
+    if (choice === "Allow for workspace" || choice === "Always allow") {
+      const ws = choice === "Allow for workspace" ? (sessions.find((s) => s.id === sid)?.workspaceId ?? null) : null;
+      void window.hv.addPermissionRule(ws, tool);
+      bridgeChoice = "Allow";
+    } else {
+      bridgeChoice = choice;
+    }
+    window.hv.respondPermission(uiReq.req.id, bridgeChoice);
     if (sid) {
-      if (choice === "Deny") {
+      if (bridgeChoice === "Deny") {
         // A denied call never reaches tool_execution_start — show the outcome as its own card.
         appendItem(sid, {
           kind: "tool",
@@ -535,7 +547,7 @@ export default function App(): React.JSX.Element {
           },
         });
       } else {
-        pendingApproval.current[sid] = { tool: uiReq.info.tool, choice };
+        pendingApproval.current[sid] = { tool: uiReq.info.tool, choice: bridgeChoice as "Allow" | "Allow for session" };
       }
     }
     // Pop the answered prompt (not necessarily the global head — B4 queues are per-session).

@@ -21,8 +21,21 @@ function argsFromSummary(tool: string, summary: string): unknown {
 const CHOICE_STYLE: Record<string, string> = {
   Allow: "bg-leaf text-paper border-ink/80 hover:brightness-105",
   "Allow for session": "bg-honey text-ink border-ink/80 hover:brightness-105",
+  "Allow for workspace": "bg-card text-ink border-ink/80 hover:bg-paper-deep",
+  "Always allow": "bg-card text-ink border-ink/80 hover:bg-paper-deep",
   Deny: "bg-card text-berry border-berry hover:bg-berry-soft",
 };
+
+/** Round 3 #13: the bridge only offers Allow / Allow for session / Deny. The
+    renderer adds two persistent-grant choices (workspace / global) that write a
+    rule; App maps them to a bridge "Allow". */
+const EXPANDED_CHOICES: PermissionChoice[] = [
+  "Allow",
+  "Allow for session",
+  "Allow for workspace",
+  "Always allow",
+  "Deny",
+];
 
 export function PermissionModal({
   req,
@@ -34,6 +47,10 @@ export function PermissionModal({
   onChoice: (c: PermissionChoice) => void;
 }): React.JSX.Element {
   const { icon, label } = toolLabel(info.tool, argsFromSummary(info.tool, info.summary));
+  // Standard allow/deny prompt → offer the expanded persistent-grant choices (#13);
+  // any non-standard option set from the bridge is shown verbatim.
+  const wire = req.options ?? ["Allow", "Allow for session", "Deny"];
+  const shown = wire.includes("Allow") && wire.includes("Deny") ? EXPANDED_CHOICES : (wire as PermissionChoice[]);
   return (
     <Dialog.Root open>
       <Dialog.Portal>
@@ -73,11 +90,11 @@ export function PermissionModal({
             </pre>
           </details>
           <div className="flex flex-col gap-2">
-            {(req.options ?? ["Allow", "Allow for session", "Deny"]).map((o) => (
+            {shown.map((o) => (
               <button
                 key={o}
                 type="button"
-                onClick={() => onChoice(o as PermissionChoice)}
+                onClick={() => onChoice(o)}
                 className={`rounded-xl border-2 px-4 py-2.5 font-bold text-sm shadow-sticker transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-none cursor-pointer ${
                   CHOICE_STYLE[o] ?? CHOICE_STYLE.Allow
                 }`}

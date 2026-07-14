@@ -12,7 +12,16 @@ export interface PermissionInfo {
   summary: string;
 }
 
-export type PermissionChoice = "Allow" | "Allow for session" | "Deny";
+// Round 3 #13: "Allow for workspace" / "Always allow" persist a rule (workspace /
+// global scope). They are renderer-level choices — the bridge only ever receives
+// Allow / Allow for session / Deny (the persistent ones map to a bridge "Allow"
+// plus a written rule).
+export type PermissionChoice =
+  | "Allow"
+  | "Allow for session"
+  | "Allow for workspace"
+  | "Always allow"
+  | "Deny";
 
 /**
  * Returns {tool, summary} iff this ui-request is a HappyVibe permission

@@ -202,6 +202,8 @@ interface HvApi {
   // B4: permissions v1
   getRules(): Promise<HvRulesFile>;
   setRules(rules: HvRulesFile): Promise<HvRulesFile>;
+  /** Round 3 #13: append a tool-layer allow rule (workspace path, or null = global). */
+  addPermissionRule(workspace: string | null, tool: string): Promise<HvRulesFile>;
   evalRules(workspaceId: string, tool: string, input: Record<string, unknown>): Promise<HvVerdict>;
   readAudit(filter?: { sessionId?: string; workspaceId?: string }): Promise<HvAuditEvent[]>;
   setBadgeCount(n: number): void;
