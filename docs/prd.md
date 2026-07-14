@@ -180,6 +180,8 @@ Expandable details may show raw command, path, output, or diff when useful.
 
 **Decision (Feedback round 2) — AskUserQuestion:** the model can ask the user questions through a dedicated tool: 1–4 questions per call, each with a short header chip, single or multi select, and 2–4 options (label, description, optional monospace preview shown side-by-side). The UI always adds a free-text "Other" option; the recommended option comes first, labeled "(Recommended)". The picker blocks the agent until answered and never times out; questions from background sessions badge the sidebar like permission prompts, and the answer is echoed into the transcript.
 
+**Decision (Feedback round 3, 2026-07-14):** several chat-readability refinements. (1) **Large-paste guard** — pasting more than 100k characters into the composer prompts a confirm before inserting. (2) **Long-message collapse** — a user message longer than ~10 "pages" renders collapsed with a "Show more" toggle. (3) **In-conversation search** — a message-text search with an icon and a keyboard shortcut (distinct from session-title search in §17 and the post-V1 file-name search in §21). (4) **Per-message copy** — a copy button at the bottom-right of every user question and every assistant answer. (5) **Code-block copy** — fenced code blocks in answers carry a copy-content button. (6) **Intent readability** — the tool-card intent headline may wrap (no longer clipped to one truncated line) so a long customer-facing sentence stays legible. (7) **Rewind a user message** — see §9.
+
 ## 8. File Edits and Diffs
 
 When the agent edits files, the UI should show: which file changed; a short summary of the change; status; an expandable diff; whether the edit succeeded or failed. This is important because HappyVibe's educational value depends on users understanding what the agent changed.
@@ -200,6 +202,8 @@ Context breakdown should include, where possible: system prompt; AGENTS.md; curr
 
 **Decisions (Feedback round 1, implementation-verified):** the token gauge is always labeled — **measured** when Pi reports live context usage, **estimated** when derived, and an explicit "measuring…" state right after compaction (Pi cannot measure until the next response; showing cumulative totals there was misleading). Manual removal is pairing-aware (a tool call and its result are removed atomically — orphaning one causes provider errors) and only items from **completed turns** can be removed (removing the in-flight turn's items sends the model into a re-execution loop). Removal marks persist in the session file and survive compaction, reload, and resume.
 
+**Decision (Feedback round 3, 2026-07-14) — rewind:** a user question carries a **rewind** (refresh) affordance. Rewinding shows a confirm dialog stating **files on disk are NOT rolled back**, then removes every message after that point from the transcript and from Pi's context, and returns that message to the composer for edit + resend. It builds on the existing completed-turn context-removal mechanism (above); the in-flight turn is never rewound (the session must be idle). **V1 scope is chat-only** — reverting file/shell side-effects is explicitly deferred to **V2**.
+
 ## 10. Permissions
 
 Permissions are central to the product. The app supports a layered permission model:
@@ -210,6 +214,10 @@ Permissions are central to the product. The app supports a layered permission mo
 **Decision (Round 2):** HappyVibe is a **wrapper over Pi's permission capabilities**: enforcement delegated to Pi's extension ecosystem, HappyVibe providing the UI. **Superseded by the feasibility spike (V6) and shipped accordingly:** the candidate permission extension turned out to be TUI-only in RPC mode, so the **HappyVibe bridge extension owns the 3-layer rule engine itself** (tool / project-path / command-pattern; allow-ask-deny; most-restrictive-wins). Rules exist at two scopes — a **global ruleset plus per-workspace overrides** — with global rules edited in Settings and workspace rules edited in each workspace's own settings, and a live "test a call" preview using the same engine.
 
 Dangerous mode should be visible, not hidden. When enabled: it must remain visibly active; the UI should warn the user; there should be an obvious way to disable it; it does not need to expire automatically. HappyVibe maintains an audit log of agent actions.
+
+**Decision (Feedback round 3, 2026-07-14) — workspace-scoped grant:** the permission prompt offers five choices — **Allow · Allow for session · Allow for Workspace · Always allow · Deny**. "Allow for session" stays ephemeral (in-memory, reset on respawn); "Allow for Workspace" persists an allow rule at the workspace scope and "Always allow" at the global scope, both written through the same rule engine as Settings (so they show up as editable rules). V1 persists these at the **tool layer** (allow this tool in this workspace / everywhere); command-pattern granularity for one-click grants can follow.
+
+**Decision (Feedback round 3, 2026-07-14) — persistent full bypass (reverses the "never auto-allow" invariant):** in addition to the session-only dangerous mode, a persistent **"Bypass ALL permissions"** toggle is available in **global and workspace settings**. This deliberately **supersedes the earlier invariant that permission prompts never auto-allow** — the user asked for a persistent YOLO mode. Guardrails: enabling requires a scary confirm dialog; while active a **red banner** shows in every affected session (reusing the dangerous-mode banner); every auto-allowed call is still audit-flagged. Precedence mirrors model resolution — **workspace overrides global** (`workspace ?? global ?? off`, per-workspace tri-state so a workspace can turn a global bypass off). The setting is resolved at spawn and re-applied on respawn (unlike session dangerous mode, which resets to safe on respawn). Changing it applies live to affected sessions (global → all; workspace → that workspace's), reusing the MCP live-reload scoping.
 
 ## 11. Audit Log
 
@@ -266,6 +274,8 @@ HappyVibe supports AGENTS.md in V1: read it; show it in the context breakdown wi
 
 **Decisions (Feedback round 2):** HappyVibe follows the [agents.md standard](https://agents.md/) — a root file plus **nested AGENTS.md files in subdirectories**: the nearest file for the subtree a tool touches is injected for that turn (Pi only discovers upward from the project root, so HappyVibe's bridge provides the nested behavior) and nested files appear in the context breakdown. When no AGENTS.md exists, the app offers to copy an existing CLAUDE.md, or to draft one with the built-in **agents-md-maker** agent — the draft lands in the editor for review and is only saved explicitly.
 
+**Decision (Feedback round 3, 2026-07-14):** the "propose creating it if missing" promise becomes **proactive**. Opening a workspace that has no AGENTS.md surfaces a one-time, dismissible banner offering "Generate one" (runs the agents-md-maker draft flow above) or "Dismiss". The dismissal is remembered per workspace so it never nags; the draft is still review-then-save (never auto-written).
+
 ## 16. Model Providers
 
 HappyVibe supports the model providers supported by Pi Agent.
@@ -279,6 +289,8 @@ The model configuration hierarchy:
 4. agent-level override.
 
 The chat bar's model chip labels which tier is in effect, and the available-model list refreshes live when providers change.
+
+**Decision (Feedback round 3, 2026-07-14):** every model-selection dropdown (chat-bar chip, workspace override, global default) shows a mini search/filter box when more than 5 models are available, so long provider lists stay navigable.
 
 **Decision (Feedback round 1) — provider setup organization:** Settings opens with an **LLM Setup** section — the configured providers plus an "add provider" page grouped as **Sign in with your plan** (ChatGPT / Claude / GitHub Copilot), **Local** (Ollama), and **Cloud API keys** (a curated list: DeepSeek, Anthropic, OpenAI, Google, OpenRouter) — no numbered setup steps. Below it, a **System Prompt** section shows the full resolved main-agent prompt read-only with an editable additions layer, overridable per workspace; global permission rules follow; the audit log and analytics dashboard sit at the bottom of Settings rather than in the sidebar. Each workspace row in the left panel opens its own settings (model override, workspace permission rules, workspace system-prompt additions).
 
@@ -319,6 +331,8 @@ Inspired by Codex in layout, chat style, and workspace management — but not co
 **Decision (Feedback round 1, superseding the original "no file explorer" stance):** V1 includes a collapsible **workspace file tree** (right-hand pane, closed by default, refresh top-left / close top-right, distinct folder and per-type file icons) and a **built-in tabbed code editor** (syntax highlighting, editing with save, external-change detection) — the chat and open files share the center area as tabs.
 
 File paths shown on tool and diff cards are clickable: open the file in the built-in editor, reveal it in Finder / the OS file manager, or copy its path. Searching file names from the chat UI is post-V1.
+
+**Decision (Feedback round 3, 2026-07-14):** the file-tree reduce icon **closes the pane completely** (unmounts it) rather than minimizing to a slim rail — matching the "close top-right" intent above. Related polish: opening/resuming a session shows a loader instead of a blank/instant swap (§17), and image attachments open a zoom lightbox on click (§7).
 
 ## 22. Onboarding: First Wow Moment
 

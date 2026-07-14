@@ -25,7 +25,11 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - pi-runtime/ — vendored @earendil-works/pi-coding-agent + pi-subagents + pi-mcp-adapter (pinned exact)
   + extensions/ (happyvibe-bridge.ts + pure hv-*.ts modules shared with main and tests).
 - The bridge owns ALL permission UI/enforcement (Pi's permission pkg is TUI-only in RPC —
-  docs/validation/v6.md). Permission prompts never auto-allow and never time out.
+  docs/validation/v6.md). Permission prompts never time out. They never auto-allow EXCEPT when
+  a full bypass is active: session-only dangerous mode (`/hv-dangerous`) OR the persistent
+  "Bypass ALL permissions" setting (global+workspace, workspace overrides global, resolved at
+  spawn via `HV_BYPASS`; PRD §10 round-3 reversal). Bypass still audit-flags every call and
+  shows the red banner.
 - Bridge⇄main protocol: JSON envelopes `kind:"hv.*"` over extension_ui_request
   (blocking = select/input; fire-and-forget = notify); bridge slash-commands `/hv-*` via RPC prompt.
 - JSONL EventLog, frozen envelope `{ts,type,sessionId?,workspaceId?,data?}` — audit + analytics. No SQLite.
