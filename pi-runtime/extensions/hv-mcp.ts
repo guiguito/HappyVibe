@@ -17,10 +17,44 @@ export interface McpCallInfo {
   display: string;
 }
 
+/** Arg keys worth surfacing in the factual label, in priority order. */
+const KEY_ARG_FIELDS = ["url", "uri", "query", "q", "path", "file", "name", "id", "title"];
+
+/**
+ * Parse the proxy `args` JSON string and return one short human-useful detail —
+ * the first present non-empty string among KEY_ARG_FIELDS, whitespace-collapsed
+ * and truncated. Never throws (malformed/non-object args → null).
+ */
+function keyArg(argsJson: unknown): string | null {
+  if (typeof argsJson !== "string" || !argsJson.trim()) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(argsJson);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const obj = parsed as Record<string, unknown>;
+  for (const k of KEY_ARG_FIELDS) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim()) {
+      const one = v.replace(/\s+/g, " ").trim();
+      return one.length > 60 ? `${one.slice(0, 60)}…` : one;
+    }
+  }
+  return null;
+}
+
 export function unwrapMcpCall(input: Record<string, unknown>): McpCallInfo {
   const tool = input.tool;
   if (typeof tool === "string" && tool.trim()) {
-    return { kind: "invoke", mcpTool: tool, ruleTool: `mcp:${tool}`, display: `MCP → ${tool}` };
+    const detail = keyArg(input.args);
+    return {
+      kind: "invoke",
+      mcpTool: tool,
+      ruleTool: `mcp:${tool}`,
+      display: detail ? `MCP → ${tool}: ${detail}` : `MCP → ${tool}`,
+    };
   }
   const str = (k: string): string | null =>
     typeof input[k] === "string" && (input[k] as string).trim() ? (input[k] as string) : null;

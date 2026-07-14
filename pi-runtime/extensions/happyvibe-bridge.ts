@@ -35,7 +35,10 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
 // param to the model and makes validation require it; the value then rides
 // tool_call.input and tool_execution_*.args untouched. New bundled tools:
 // add their name to INTENT_TOOLS.
-const INTENT_TOOLS = ["subagent", "ask_user"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+// "mcp" is the pi-mcp-adapter proxy tool: injecting intent gives every MCP call
+// a customer-facing headline. The adapter's execute ignores the top-level intent
+// (it forwards only the `args` JSON to the server), so this is safe in proxy mode.
+const INTENT_TOOLS = ["subagent", "ask_user", "mcp"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
 function requireIntent(pi: ExtensionAPI): void {
   for (const name of INTENT_TOOLS) {
     const params = pi.getAllTools().find((t) => t.name === name)?.parameters as

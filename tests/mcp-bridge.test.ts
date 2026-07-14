@@ -58,8 +58,12 @@ test.skipIf(!KEY)("mcp proxy call surfaces an unwrapped hv.permission prompt; Al
       else client.respondUi(req.id as string, { value: "Allow" }); // discovery etc. — let it through
     } catch { /* not ours */ }
   });
+  const toolStarts: Array<Record<string, unknown>> = [];
   const done = new Promise<void>((resolve) =>
-    client.on("event", (e) => { if (e.type === "agent_end") resolve(); }));
+    client.on("event", (e) => {
+      if (e.type === "tool_execution_start") toolStarts.push(e as unknown as Record<string, unknown>);
+      if (e.type === "agent_end") resolve();
+    }));
 
   await client.send({
     type: "prompt",
@@ -82,4 +86,17 @@ test.skipIf(!KEY)("mcp proxy call surfaces an unwrapped hv.permission prompt; Al
   // invoke is unexpected (discovery is safe-defaulted in the bridge).
   const nonInvoke = prompts.filter((p) => !(typeof p.tool === "string" && (p.tool as string).startsWith("mcp:")));
   expect(nonInvoke).toEqual([]);
+
+  // requireIntent injected a required `intent` into the adapter's proxy tool
+  // schema, so the model must author a customer-facing intent on the MCP invoke.
+  const mcpInvoke = toolStarts.find(
+    (t) =>
+      t.toolName === "mcp" &&
+      typeof (t.args as { tool?: unknown } | undefined)?.tool === "string" &&
+      ((t.args as { tool: string }).tool).includes("echo"),
+  );
+  expect(mcpInvoke, "expected an mcp invoke tool_execution_start").toBeDefined();
+  const intent = (mcpInvoke!.args as { intent?: unknown }).intent;
+  expect(typeof intent).toBe("string");
+  expect((intent as string).trim().length).toBeGreaterThan(0);
 }, 180_000);

@@ -85,8 +85,10 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       return { icon: "folder", label: `Listing ${p ? basename(p) : "the current directory"}` };
     }
     case "mcp": {
+      // Prefer the model-authored intent (injected on the proxy tool via
+      // requireIntent); fall back to the factual unwrapped display.
       const info = unwrapMcpCall(a);
-      return { icon: "wrench", label: info.display };
+      return { icon: "wrench", label: intent ?? info.display };
     }
     case "subagent":
       return { icon: "robot", label: intent ?? `Delegating to ${str("agent") ?? "a subagent"}` };

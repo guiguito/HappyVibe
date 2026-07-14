@@ -93,3 +93,19 @@ test("mcp proxy invoke → unwrapped label, never bare 'mcp'", () => {
 test("mcp discovery → discovery label", () => {
   expect(toolLabel("mcp", { search: "screenshot" }).label).toBe('MCP discovery: search "screenshot"');
 });
+
+test("mcp: model-authored intent takes precedence over the derived label", () => {
+  const l = toolLabel("mcp", {
+    tool: "notion_fetch",
+    args: '{"url":"https://notion.so/p/1"}',
+    intent: "Fetching this page to check opinions",
+  });
+  expect(l.label).toBe("Fetching this page to check opinions");
+  expect(l.icon).toBe("wrench");
+});
+
+test("mcp: without intent, falls back to the enriched factual display", () => {
+  expect(toolLabel("mcp", { tool: "notion_fetch", args: '{"url":"https://notion.so/p/1"}' }).label).toBe(
+    "MCP → notion_fetch: https://notion.so/p/1",
+  );
+});
