@@ -148,7 +148,25 @@ export function ContextPanel({
               <div className="text-sm text-ink-soft">Nothing in context yet.</div>
             ) : (
               <ul className="flex flex-col gap-2">
-                {summary.map((row) => (
+                {summary.map((row) => {
+                  // #9: unmeasured categories (tool definitions) aren't drillable —
+                  // render a static row that shows the count and labels the size.
+                  if (row.measured === false) {
+                    return (
+                      <li key={row.key}>
+                        <div className="rounded-xl border-2 border-dashed border-line px-3 py-2">
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-bold text-sm flex-1 min-w-0 truncate">{row.label}</span>
+                            <span className="font-mono text-[10px] text-ink-soft shrink-0">
+                              {row.count} {row.count === 1 ? "tool" : "tools"}
+                            </span>
+                            <span className="font-mono text-[10px] text-ink-soft/70 shrink-0">size not measured</span>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  }
+                  return (
                   <li key={row.key}>
                     <button
                       type="button"
@@ -171,7 +189,8 @@ export function ContextPanel({
                       )}
                     </button>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )
           )}

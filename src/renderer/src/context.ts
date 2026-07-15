@@ -180,7 +180,7 @@ export function groupItems(items: ContextItem[]): ContextGroupView[] {
 // ── W2.4: summary-first panel ────────────────────────────────────────────────
 
 export interface CategorySummary {
-  key: "system" | "files" | ContextItem["group"];
+  key: "system" | "files" | "tools" | ContextItem["group"];
   label: string;
   count: number;
   chars: number;
@@ -189,6 +189,9 @@ export interface CategorySummary {
   removedCount: number;
   /** integer % share of the total shown estTokens (0 when total is 0). */
   share: number;
+  /** false when the size can't be measured (e.g. tool definitions) — the UI
+      shows the count and labels the size "not measured" rather than "0". */
+  measured?: boolean;
 }
 
 /**
@@ -204,12 +207,12 @@ export function summarizeGroups(
   const removed = new Set(marks);
   const rows: CategorySummary[] = [];
   if (system) {
-    rows.push({ key: "system", label: "System prompt", count: 1, chars: system.chars, estTokens: system.estTokens, removedCount: 0, share: 0 });
+    rows.push({ key: "system", label: "System prompt + instructions", count: 1, chars: system.chars, estTokens: system.estTokens, removedCount: 0, share: 0 });
     const nested = system.nested ?? [];
     if (system.contextFiles.length > 0 || nested.length > 0) {
       rows.push({
         key: "files",
-        label: "Context files",
+        label: "Context files & AGENTS.md",
         count: system.contextFiles.length + nested.length,
         chars: system.contextFiles.reduce((n, f) => n + f.chars, 0) + nested.reduce((n, f) => n + f.chars, 0),
         estTokens:
@@ -217,6 +220,21 @@ export function summarizeGroups(
           nested.reduce((n, f) => n + Math.ceil(f.chars / 4), 0),
         removedCount: 0,
         share: 0,
+      });
+    }
+    // #9: surface the tool definitions as their own line. Their token weight
+    // isn't separately exposed by Pi (it's folded into the system prompt), so
+    // show the count and mark the size "not measured" rather than omitting them.
+    if (system.toolCount > 0) {
+      rows.push({
+        key: "tools",
+        label: "Tool definitions",
+        count: system.toolCount,
+        chars: 0,
+        estTokens: 0,
+        removedCount: 0,
+        share: 0,
+        measured: false,
       });
     }
   }

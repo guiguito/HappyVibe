@@ -96,11 +96,13 @@ test("summarizeGroups builds system, files (incl. nested AGENTS.md) and group ro
       nested: [{ dir: "pkg", path: "/w/pkg/AGENTS.md", chars: 40 }], // → ceil(40/4)=10
     },
   );
-  expect(rows.map((r) => r.key)).toEqual(["system", "files", "conversation", "tool"]);
+  // #9: a "tools" row is surfaced (unmeasured) after the files row.
+  expect(rows.map((r) => r.key)).toEqual(["system", "files", "tools", "conversation", "tool"]);
   const files = rows.find((r) => r.key === "files")!;
   expect(files).toMatchObject({ count: 2, chars: 100, estTokens: 25 });
-  // total = 25 + 25 + 30 + 20 = 100 → shares are exact percents
-  expect(rows.map((r) => r.share)).toEqual([25, 25, 30, 20]);
+  expect(rows.find((r) => r.key === "tools")).toMatchObject({ count: 3, measured: false, estTokens: 0 });
+  // total = 25 + 25 + 30 + 20 = 100 → shares are exact percents (tools contributes 0)
+  expect(rows.map((r) => r.share)).toEqual([25, 25, 0, 30, 20]);
   expect(rows.find((r) => r.key === "tool")).toMatchObject({ count: 2, estTokens: 20, removedCount: 0 });
 });
 
