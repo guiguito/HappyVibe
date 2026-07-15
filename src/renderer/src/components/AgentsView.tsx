@@ -13,8 +13,40 @@ const SOURCE_TONE: Record<string, string> = {
   project: "bg-leaf-soft text-leaf border-leaf/50",
 };
 
-function basename(p: string): string {
-  return p.split("/").filter(Boolean).pop() ?? p;
+/** Round 4 #5: a tool row that expands to show the full (often-truncated)
+    description, source path, and permission state. */
+function ToolRowItem({ t }: { t: ToolRow }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-b border-line last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-paper-deep/30 cursor-pointer"
+      >
+        <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 shrink-0 ${PERM_TONE[t.permission]}`}>
+          {t.permission}
+        </span>
+        <span className="font-bold shrink-0">{t.name}</span>
+        {!open && (
+          <span className="text-xs text-ink-soft truncate flex-1 min-w-0">{t.description}</span>
+        )}
+        <span className={`ml-auto shrink-0 text-ink-soft transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-3 pt-0 flex flex-col gap-2">
+          <p className="text-sm text-ink whitespace-pre-wrap">{t.description || "No description provided."}</p>
+          {t.source && (
+            <p className="font-mono text-[11px] text-ink-soft break-all">
+              <span className="uppercase tracking-wider text-ink-soft/70">source </span>
+              {t.source}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -139,16 +171,7 @@ export function AgentsView({
         ) : (
           <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden">
             {toolRows.map((t) => (
-              <div key={t.name} className="px-4 py-2.5 border-b border-line last:border-b-0 flex items-center gap-2">
-                <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 shrink-0 ${PERM_TONE[t.permission]}`}>
-                  {t.permission}
-                </span>
-                <span className="font-bold shrink-0">{t.name}</span>
-                <span className="text-xs text-ink-soft truncate flex-1 min-w-0" title={t.description}>
-                  {t.description}
-                </span>
-                {t.source && <span className="font-mono text-[10px] text-ink-soft/70 shrink-0">{basename(t.source)}</span>}
-              </div>
+              <ToolRowItem key={t.name} t={t} />
             ))}
           </div>
         )}
