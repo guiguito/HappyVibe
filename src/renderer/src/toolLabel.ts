@@ -21,7 +21,10 @@ export type IconKind =
   | "search"
   | "folder"
   | "robot"
-  | "wrench";
+  | "wrench"
+  | "copy"
+  | "rewind"
+  | "check";
 
 export interface ToolLabel {
   icon: IconKind;

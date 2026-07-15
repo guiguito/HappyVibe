@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ToolCard, type ToolCardData } from "./ToolCard";
+import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -20,9 +20,9 @@ function CopyButton({ text, label }: { text: string; label: string }): React.JSX
         setDone(true);
         setTimeout(() => setDone(false), 1200);
       }}
-      className="rounded-lg border-2 border-line bg-card px-2 py-0.5 text-[11px] font-bold text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
+      className="rounded-lg border-2 border-line bg-card p-1 text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
     >
-      {done ? "Copied" : "Copy"}
+      <ToolIcon kind={done ? "check" : "copy"} className="size-3.5" />
     </button>
   );
 }
@@ -35,9 +35,9 @@ function RewindButton({ onClick }: { onClick: () => void }): React.JSX.Element {
       aria-label="Rewind to this message"
       title="Rewind to this message (removes everything after; files are not rolled back)"
       onClick={onClick}
-      className="rounded-lg border-2 border-line bg-card px-2 py-0.5 text-[11px] font-bold text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
+      className="rounded-lg border-2 border-line bg-card p-1 text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
     >
-      ↺ Rewind
+      <ToolIcon kind="rewind" className="size-3.5" />
     </button>
   );
 }
@@ -218,9 +218,9 @@ function PreBlock(props: React.HTMLAttributes<HTMLPreElement>): React.JSX.Elemen
           setDone(true);
           setTimeout(() => setDone(false), 1200);
         }}
-        className="absolute top-2 right-2 rounded-md border border-line bg-card px-2 py-0.5 text-[11px] font-bold text-ink-soft hover:text-ink opacity-0 group-hover/code:opacity-100 transition-opacity cursor-pointer"
+        className="absolute top-2 right-2 rounded-md border border-line bg-card p-1 text-ink-soft hover:text-ink opacity-0 group-hover/code:opacity-100 transition-opacity cursor-pointer"
       >
-        {done ? "Copied" : "Copy"}
+        <ToolIcon kind={done ? "check" : "copy"} className="size-3.5" />
       </button>
     </div>
   );
@@ -248,6 +248,9 @@ export function Transcript({
   workspace,
   onOpenFile,
   onRewind,
+  searchQuery,
+  searchActiveIndex,
+  onSearchTotal,
 }: {
   items: TranscriptItem[];
   busy: boolean;
@@ -262,11 +265,56 @@ export function Transcript({
   onOpenFile?: (relPath: string) => void;
   /** Round 3 #11: rewind a user message (removes everything after + re-edits). */
   onRewind?: (it: TranscriptItem) => void;
+  /** Round 4 #1: in-conversation search — highlight matches (not filter). */
+  searchQuery?: string;
+  searchActiveIndex?: number;
+  onSearchTotal?: (n: number) => void;
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [items, busy, streaming]);
+
+  // Round 4 #1: highlight search matches in-place via the CSS Custom Highlight
+  // API — no DOM mutation, works uniformly across user text, markdown, and code.
+  // The active match gets its own highlight + is scrolled into view.
+  useEffect(() => {
+    const cssHighlights = (globalThis as unknown as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights;
+    const HighlightCtor = (globalThis as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
+    if (!cssHighlights || !HighlightCtor) return; // unsupported runtime → no-op
+    cssHighlights.delete("hv-search");
+    cssHighlights.delete("hv-search-active");
+    const q = (searchQuery ?? "").trim();
+    if (!q || !scrollRef.current) {
+      onSearchTotal?.(0);
+      return;
+    }
+    const ql = q.toLowerCase();
+    const ranges: Range[] = [];
+    const walker = document.createTreeWalker(scrollRef.current, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.nodeValue ?? "";
+      const lower = text.toLowerCase();
+      for (let idx = lower.indexOf(ql); idx !== -1; idx = lower.indexOf(ql, idx + q.length)) {
+        const r = document.createRange();
+        r.setStart(node, idx);
+        r.setEnd(node, idx + q.length);
+        ranges.push(r);
+      }
+    }
+    onSearchTotal?.(ranges.length);
+    if (ranges.length === 0) return;
+    const active = (((searchActiveIndex ?? 0) % ranges.length) + ranges.length) % ranges.length;
+    const rest = ranges.filter((_, i) => i !== active);
+    if (rest.length) cssHighlights.set("hv-search", new HighlightCtor(...rest));
+    cssHighlights.set("hv-search-active", new HighlightCtor(ranges[active]));
+    ranges[active].startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
+    return () => {
+      cssHighlights.delete("hv-search");
+      cssHighlights.delete("hv-search-active");
+    };
+  }, [searchQuery, searchActiveIndex, items, streaming, onSearchTotal]);
 
   if (items.length === 0 && !streaming) {
     return (
@@ -285,7 +333,7 @@ export function Transcript({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div ref={scrollRef} className="flex-1 overflow-y-auto">
       {header}
       <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
         {items.map((it, i) => (

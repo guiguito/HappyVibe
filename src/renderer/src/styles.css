@@ -32,6 +32,16 @@
   --shadow-pop: 4px 4px 0 0 var(--color-tangerine-deep);
 }
 
+/* Round 4 #1: in-conversation search highlights (CSS Custom Highlight API). */
+::highlight(hv-search) {
+  background-color: #fde08a; /* honey, dimmed */
+  color: #33251a;
+}
+::highlight(hv-search-active) {
+  background-color: var(--color-tangerine);
+  color: var(--color-paper);
+}
+
 @layer base {
   html,
   body,

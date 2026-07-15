@@ -86,6 +86,16 @@ export function ChatView({
   const [pendingPaste, setPendingPaste] = useState<string | null>(null); // #3: large-paste confirm
   const [searchOpen, setSearchOpen] = useState(false); // #8: in-conversation search
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchActive, setSearchActive] = useState(0); // #1: active match index
+  const [searchTotal, setSearchTotal] = useState(0);
+  const onSearchTotal = useCallback((n: number) => {
+    setSearchTotal(n);
+    setSearchActive((a) => (n === 0 ? 0 : Math.min(a, n - 1)));
+  }, []);
+  const stepMatch = (dir: 1 | -1): void => {
+    if (searchTotal === 0) return;
+    setSearchActive((a) => (a + dir + searchTotal) % searchTotal);
+  };
   const [offerAgentsMd, setOfferAgentsMd] = useState(false); // #7: one-time AGENTS.md banner
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -184,11 +194,6 @@ export function ChatView({
   const suggestCompact = gauge?.zone === "red" && sessionId != null && !suggestDismissed.has(sessionId) && !contextOpen;
 
   // #8: filter the transcript by search text (message kinds that carry text).
-  const searchLC = searchQuery.trim().toLowerCase();
-  const visibleItems =
-    searchOpen && searchLC
-      ? items.filter((it) => "text" in it && typeof it.text === "string" && it.text.toLowerCase().includes(searchLC))
-      : items;
 
   if (!workspace || !sessionId) {
     return (
@@ -396,18 +401,45 @@ export function ChatView({
           </div>
         </div>
       )}
-      {/* #8: in-conversation search strip. */}
+      {/* #1: in-conversation search strip — highlights matches, next/prev nav. */}
       {searchOpen && (
         <div className="flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-paper-deep/40">
           <span className="text-ink-soft">⌕</span>
           <input
             autoFocus
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setSearchActive(0); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); stepMatch(e.shiftKey ? -1 : 1); }
+            }}
             placeholder="Search this conversation…"
             className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-ink-soft/60"
           />
-          {searchLC && <span className="text-xs text-ink-soft font-medium shrink-0">{visibleItems.length} match{visibleItems.length === 1 ? "" : "es"}</span>}
+          {searchQuery.trim() && (
+            <span className="text-xs text-ink-soft font-medium shrink-0 tabular-nums">
+              {searchTotal === 0 ? "0/0" : `${searchActive + 1}/${searchTotal}`}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => stepMatch(-1)}
+            disabled={searchTotal === 0}
+            aria-label="Previous match"
+            title="Previous match (Shift+Enter)"
+            className="text-ink-soft hover:text-ink cursor-pointer font-bold px-1 disabled:opacity-30"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            onClick={() => stepMatch(1)}
+            disabled={searchTotal === 0}
+            aria-label="Next match"
+            title="Next match (Enter)"
+            className="text-ink-soft hover:text-ink cursor-pointer font-bold px-1 disabled:opacity-30"
+          >
+            ↓
+          </button>
           <button
             type="button"
             onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
@@ -419,14 +451,17 @@ export function ChatView({
         </div>
       )}
       <Transcript
-        items={visibleItems}
-        streaming={searchLC ? undefined : streaming}
+        items={items}
+        streaming={streaming}
         busy={busy}
         header={delegations.length > 0 ? <DelegationSection runs={delegations} items={items} /> : undefined}
         onRetry={onRetry}
         workspace={workspace}
         onOpenFile={onOpenFile}
         onRewind={onRewind && !busy ? openRewind : undefined}
+        searchQuery={searchOpen ? searchQuery : ""}
+        searchActiveIndex={searchActive}
+        onSearchTotal={onSearchTotal}
       />
 
       {/* Composer */}
