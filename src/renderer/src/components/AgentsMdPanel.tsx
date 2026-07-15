@@ -12,8 +12,9 @@ const unfence = (s: string): string =>
  *
  * W2.3 missing-file flow: offer a confined CLAUDE.md copy, and a draft via the
  * bundled agents-md-maker subagent — a NORMAL delegation on this session's
- * client (the user sees the W1.2 floating run card); the final output lands in
- * this editor for review and is only written when the user hits Save.
+ * client (the user sees the W1.2 floating run card). Round 4 #6: the finished
+ * draft is auto-saved to AGENTS.md (editable afterwards); manual edits still
+ * save explicitly.
  */
 export function AgentsMdPanel({
   workspace,
@@ -30,6 +31,7 @@ export function AgentsMdPanel({
   const [dirty, setDirty] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [justCreated, setJustCreated] = useState(false); // #6: auto-save acknowledgement
   // Live pi-event listener for the in-flight draft (unsubscribed on capture/close).
   const offDraft = useRef<(() => void) | null>(null);
 
@@ -87,7 +89,21 @@ export function AgentsMdPanel({
         const text = unfence(run.finalOutput ?? "");
         if (text) {
           setContent(text);
-          setDirty(true); // review + explicit Save — NEVER auto-written
+          // Round 4 #6: auto-save the generated draft — it's editable afterwards,
+          // so the review-before-first-save gate added friction without safety.
+          window.hv
+            .writeAgentsMd(workspace, text)
+            .then(() => {
+              setMissing(false);
+              setDirty(false);
+              setError(null);
+              setJustCreated(true);
+            })
+            .catch((err) => {
+              // Save failed — keep the draft dirty so the user can retry via Save.
+              setDirty(true);
+              setError(String(err));
+            });
         } else {
           setError("The draft came back empty — try again or write it by hand.");
         }
@@ -147,6 +163,7 @@ export function AgentsMdPanel({
                 onChange={(e) => {
                   setContent(e.target.value);
                   setDirty(true);
+                  setJustCreated(false);
                 }}
                 spellCheck={false}
                 placeholder={missing ? "No AGENTS.md yet. Write one, copy your CLAUDE.md, or let agents-md-maker draft it." : ""}
@@ -174,6 +191,9 @@ export function AgentsMdPanel({
                       {drafting ? "Drafting…" : "Draft with agents-md-maker"}
                     </button>
                   </>
+                )}
+                {justCreated && (
+                  <span className="text-sm font-bold text-leaf">✓ AGENTS.md created</span>
                 )}
                 <span className="flex-1" />
                 <button
