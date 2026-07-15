@@ -475,7 +475,12 @@ export default function App(): React.JSX.Element {
       setStatuses((p) => ({ ...p, [id]: "running" }));
       if (messages) {
         // Rebuilt from Pi's session file — only adopt when we hold nothing newer.
-        setTranscripts((p) => (p[id]?.length ? p : { ...p, [id]: messages.map((m) => ({ kind: m.role, text: m.text })) }));
+        // Assign stable ids (like appendItem) so rewind (#11) and React keys work
+        // on reopened sessions — restored items previously had no id, which made
+        // rewind bail at `it.id == null` (round-4 #3 bug).
+        setTranscripts((p) =>
+          p[id]?.length ? p : { ...p, [id]: messages.map((m) => ({ kind: m.role, text: m.text, id: idCounter.current++ })) },
+        );
       }
       setError(null);
     } catch (err) {
@@ -590,8 +595,14 @@ export default function App(): React.JSX.Element {
   // effort drop the matching tail from Pi's context. The composer repopulation is
   // done in ChatView (which owns the input). Chat-only — files are NOT reverted.
   const rewindTo = (it: TranscriptItem): void => {
-    const sid = selectedId;
-    if (!sid || it.id == null) return;
+    if (it.id == null) return;
+    // ids are globally unique (one monotonic counter), so locate the owning
+    // session by the item's id rather than trusting selectedId — robust even if
+    // the session changed while the confirm dialog was open.
+    const sid =
+      (selectedId && (transcripts[selectedId] ?? []).some((x) => x.id === it.id) && selectedId) ||
+      Object.keys(transcripts).find((k) => transcripts[k].some((x) => x.id === it.id));
+    if (!sid) return;
     const items = transcripts[sid] ?? [];
     const idx = items.findIndex((x) => x.id === it.id);
     if (idx < 0) return;
