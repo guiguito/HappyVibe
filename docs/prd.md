@@ -182,6 +182,8 @@ Expandable details may show raw command, path, output, or diff when useful.
 
 **Decision (Feedback round 3, 2026-07-14):** several chat-readability refinements. (1) **Large-paste guard** — pasting more than 100k characters into the composer prompts a confirm before inserting. (2) **Long-message collapse** — a user message longer than ~10 "pages" renders collapsed with a "Show more" toggle. (3) **In-conversation search** — a message-text search with an icon and a keyboard shortcut (distinct from session-title search in §17 and the post-V1 file-name search in §21). (4) **Per-message copy** — a copy button at the bottom-right of every user question and every assistant answer. (5) **Code-block copy** — fenced code blocks in answers carry a copy-content button. (6) **Intent readability** — the tool-card intent headline may wrap (no longer clipped to one truncated line) so a long customer-facing sentence stays legible. (7) **Rewind a user message** — see §9.
 
+**Decision (Feedback round 4, 2026-07-15):** two chat refinements. (1) **Search highlights, it does not filter** — the in-conversation search keeps every message visible and **highlights** matching substrings, with **next / previous** navigation (Enter / Shift-Enter and on-screen arrows, wrapping) and an `n / total` match counter; the active match scrolls into view. This supersedes the round-3 phrasing where search filtered non-matching messages out. (2) **Icon buttons** — the per-message copy, code-block copy, and rewind controls are **icon** buttons with tooltips (not text labels), for a quieter chat surface.
+
 ## 8. File Edits and Diffs
 
 When the agent edits files, the UI should show: which file changed; a short summary of the change; status; an expandable diff; whether the edit succeeded or failed. This is important because HappyVibe's educational value depends on users understanding what the agent changed.
@@ -203,6 +205,8 @@ Context breakdown should include, where possible: system prompt; AGENTS.md; curr
 **Decisions (Feedback round 1, implementation-verified):** the token gauge is always labeled — **measured** when Pi reports live context usage, **estimated** when derived, and an explicit "measuring…" state right after compaction (Pi cannot measure until the next response; showing cumulative totals there was misleading). Manual removal is pairing-aware (a tool call and its result are removed atomically — orphaning one causes provider errors) and only items from **completed turns** can be removed (removing the in-flight turn's items sends the model into a re-execution loop). Removal marks persist in the session file and survive compaction, reload, and resume.
 
 **Decision (Feedback round 3, 2026-07-14) — rewind:** a user question carries a **rewind** (refresh) affordance. Rewinding shows a confirm dialog stating **files on disk are NOT rolled back**, then removes every message after that point from the transcript and from Pi's context, and returns that message to the composer for edit + resend. It builds on the existing completed-turn context-removal mechanism (above); the in-flight turn is never rewound (the session must be idle). **V1 scope is chat-only** — reverting file/shell side-effects is explicitly deferred to **V2**.
+
+**Decision (Feedback round 4, 2026-07-15) — complete, itemized breakdown:** the context panel must make every consumer of the window individually visible, not lumped into one "system prompt" figure. It enumerates, each with its size: the **base system prompt**, **custom instructions** (root + nested AGENTS.md and the user's system-prompt additions), **tool definitions** (count and, where derivable, their token weight), context files, conversation, tool results, and prior summaries. Anything Pi does not expose a measurement for is **labeled "not measured"** rather than silently omitted — the panel's job is an honest, teachable account of what the agent sees.
 
 ## 10. Permissions
 
@@ -264,6 +268,8 @@ The tools list includes: tool name; human-readable description; source; permissi
 
 **Decision (Feedback round 1):** the tools list shows each tool's live permission state (allow / ask / deny), evaluated by the same rule engine that enforces it — the logic never forks.
 
+**Decision (Feedback round 4, 2026-07-15):** two readability improvements. (1) **MCP brand icons** — when an MCP tool call comes from a recognizable product (GitHub, Notion, Slack, Linear, …), its tool card shows that **brand's icon** instead of the generic MCP glyph, keyed by the (normalized) server name. Icons come from a **bundled brand icon font** (no network fetch — local-first); unknown servers keep the generic glyph. (2) **Tools list rows expand** — each row in the tools list is clickable to reveal the full tool description (previously truncated), its source, and permission state.
+
 ## 14. Skills
 
 Skills (Claude Code-style skill folders) are not in MVP — treated as **coming soon**. Future scope: global/project skills, import, creation flow, marketplace/library, visual inspection.
@@ -275,6 +281,8 @@ HappyVibe supports AGENTS.md in V1: read it; show it in the context breakdown wi
 **Decisions (Feedback round 2):** HappyVibe follows the [agents.md standard](https://agents.md/) — a root file plus **nested AGENTS.md files in subdirectories**: the nearest file for the subtree a tool touches is injected for that turn (Pi only discovers upward from the project root, so HappyVibe's bridge provides the nested behavior) and nested files appear in the context breakdown. When no AGENTS.md exists, the app offers to copy an existing CLAUDE.md, or to draft one with the built-in **agents-md-maker** agent — the draft lands in the editor for review and is only saved explicitly.
 
 **Decision (Feedback round 3, 2026-07-14):** the "propose creating it if missing" promise becomes **proactive**. Opening a workspace that has no AGENTS.md surfaces a one-time, dismissible banner offering "Generate one" (runs the agents-md-maker draft flow above) or "Dismiss". The dismissal is remembered per workspace so it never nags; the draft is still review-then-save (never auto-written).
+
+**Decision (Feedback round 4, 2026-07-15) — auto-save the generated draft (reverses the round-2 "never auto-written"):** when the agents-md-maker draft completes it is **written to `AGENTS.md` immediately** — the file is fully editable afterwards, so a review-gate before the first save added friction without safety. The editor opens on the saved file with an "AGENTS.md created" notice; subsequent edits still save explicitly. This supersedes the earlier "the draft lands in the editor for review and is only saved explicitly" rule for the initial generation.
 
 ## 16. Model Providers
 
@@ -291,6 +299,8 @@ The model configuration hierarchy:
 The chat bar's model chip labels which tier is in effect, and the available-model list refreshes live when providers change.
 
 **Decision (Feedback round 3, 2026-07-14):** every model-selection dropdown (chat-bar chip, workspace override, global default) shows a mini search/filter box when more than 5 models are available, so long provider lists stay navigable.
+
+**Decision (Feedback round 4, 2026-07-15) — system prompt visible at launch:** the read-only resolved system prompt in Settings is shown **at launch**, without first requiring a live session. The last-resolved prompt is cached so it's always available, refreshing live whenever a session reports a newer one. The UI labels the layers: the **base prompt is global** (identical for every session); **per-workspace additions** are a separate, labeled layer. (Implementation note: the prompt is only produced by a running turn, so the cache — not on-the-fly resolution — is what guarantees launch-time visibility.)
 
 **Decision (Feedback round 1) — provider setup organization:** Settings opens with an **LLM Setup** section — the configured providers plus an "add provider" page grouped as **Sign in with your plan** (ChatGPT / Claude / GitHub Copilot), **Local** (Ollama), and **Cloud API keys** (a curated list: DeepSeek, Anthropic, OpenAI, Google, OpenRouter) — no numbered setup steps. Below it, a **System Prompt** section shows the full resolved main-agent prompt read-only with an editable additions layer, overridable per workspace; global permission rules follow; the audit log and analytics dashboard sit at the bottom of Settings rather than in the sidebar. Each workspace row in the left panel opens its own settings (model override, workspace permission rules, workspace system-prompt additions).
 
@@ -333,6 +343,8 @@ Inspired by Codex in layout, chat style, and workspace management — but not co
 File paths shown on tool and diff cards are clickable: open the file in the built-in editor, reveal it in Finder / the OS file manager, or copy its path. Searching file names from the chat UI is post-V1.
 
 **Decision (Feedback round 3, 2026-07-14):** the file-tree reduce icon **closes the pane completely** (unmounts it) rather than minimizing to a slim rail — matching the "close top-right" intent above. Related polish: opening/resuming a session shows a loader instead of a blank/instant swap (§17), and image attachments open a zoom lightbox on click (§7).
+
+**Decision (Feedback round 4, 2026-07-15) — file-tree context menu:** right-clicking an entry in the workspace file tree opens a menu with **Open**, **Delete**, and **Details**. Delete always shows a confirm dialog and moves the item to the **OS Trash** (`shell.trashItem`) — never a hard delete, so it's recoverable, matching standard OS behavior; it works on files and folders and is path-confined to the workspace like every other fs operation. Details opens a popup with the item's kind, size, modified time, and workspace-relative path.
 
 ## 22. Onboarding: First Wow Moment
 
