@@ -117,9 +117,16 @@ function parseSysprompt(r: { method?: string; message?: string }): { text: strin
   }
 }
 
+// Round 4 #8: the resolved prompt is only produced by a running turn, so cache
+// the last one we saw — this is what makes it visible in Settings at launch
+// (before any session runs this app start).
+const SYSPROMPT_CACHE_KEY = "hv:sysprompt-cache";
+
 function SystemPromptSection({ sessionId }: { sessionId: string | null }): React.JSX.Element {
-  // undefined = still waiting for the notify; null = captured "no prompt yet".
-  const [resolved, setResolved] = useState<string | null | undefined>(undefined);
+  // undefined = nothing cached and no notify yet; null = captured "no prompt yet".
+  const cached = typeof localStorage !== "undefined" ? localStorage.getItem(SYSPROMPT_CACHE_KEY) : null;
+  const [resolved, setResolved] = useState<string | null | undefined>(cached ?? undefined);
+  const [fromCache, setFromCache] = useState(cached != null);
   const [additions, setAdditions] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -128,7 +135,14 @@ function SystemPromptSection({ sessionId }: { sessionId: string | null }): React
     void window.hv.getGlobalAppend().then((c) => setAdditions(c ?? ""));
     const off = window.hv.onUiRequest((r) => {
       const p = parseSysprompt(r);
-      if (p) setResolved(p.text);
+      if (!p) return;
+      // A live turn resolved the prompt — cache it and show it as current.
+      // A null payload (no turn yet) leaves any cached value in place.
+      if (p.text) {
+        localStorage.setItem(SYSPROMPT_CACHE_KEY, p.text);
+        setResolved(p.text);
+        setFromCache(false);
+      }
     });
     void window.hv.sysPromptSnapshot(sessionId ?? undefined);
     return off;
@@ -145,9 +159,12 @@ function SystemPromptSection({ sessionId }: { sessionId: string | null }): React
     <Section
       icon="sysprompt"
       title="System Prompt"
-      subtitle="What the main agent is told before every conversation."
+      subtitle="What the main agent is told before every conversation. The base prompt is the same (global) for every session; per-workspace additions layer on top."
     >
-      <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-2">resolved prompt (read-only)</div>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">resolved prompt (read-only)</span>
+        {resolved && fromCache && <span className="text-[10px] text-ink-soft/70">· from your last session</span>}
+      </div>
       {resolved ? (
         <pre className="font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-72 mb-4">
           {resolved}
@@ -156,7 +173,7 @@ function SystemPromptSection({ sessionId }: { sessionId: string | null }): React
         <p className="text-sm text-ink-soft rounded-xl border-2 border-dashed border-line px-4 py-3 mb-4">
           {resolved === undefined && sessionId
             ? "Fetching the resolved prompt…"
-            : "Start a session and send a message to see the fully resolved prompt here."}
+            : "Run a session once and the resolved prompt is captured and shown here (it stays visible afterwards)."}
         </p>
       )}
 
