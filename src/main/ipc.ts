@@ -25,7 +25,7 @@ import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
-import { listDir, readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspaceFile } from "./files";
+import { listDir, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { deleteAuthEntry } from "./mcpAuthStore";
@@ -927,6 +927,13 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:reveal-path", (_e, workspaceId: string, relPath: string) => {
     shell.showItemInFolder(resolveInWorkspace(workspaces.list(), workspaceId, relPath));
   });
+  // Round 4 #7: file-tree Details popup — kind/size/mtime, workspace-confined.
+  ipcMain.handle("hv:fs-stat", (_e, workspaceId: string, relPath: string) =>
+    statDetails(workspaces.list(), workspaceId, relPath));
+  // Round 4 #7: file-tree Delete — move to the OS Trash (recoverable, never a
+  // hard delete), workspace-confined like every other fs op.
+  ipcMain.handle("hv:fs-trash", (_e, workspaceId: string, relPath: string) =>
+    shell.trashItem(resolveInWorkspace(workspaces.list(), workspaceId, relPath)));
 
   // Per-workspace model override (spawn resolution: workspace → global default).
   // Applies to sessions spawned/restarted after the change.

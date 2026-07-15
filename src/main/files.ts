@@ -88,6 +88,19 @@ export function writeWorkspaceFile(
   return fs.statSync(abs).mtimeMs;
 }
 
+export interface FsDetails {
+  kind: "dir" | "file";
+  size: number;
+  mtimeMs: number;
+}
+
+/** Round 4 #7: file/folder details for the tree's right-click "Details" popup. */
+export function statDetails(registeredWorkspaces: string[], workspaceId: string, relPath: string): FsDetails {
+  const abs = resolveInWorkspace(registeredWorkspaces, workspaceId, relPath);
+  const st = fs.statSync(abs);
+  return { kind: st.isDirectory() ? "dir" : "file", size: st.size, mtimeMs: st.mtimeMs };
+}
+
 /** mtime for external-change detection; null when the file vanished. */
 export function statMtime(registeredWorkspaces: string[], workspaceId: string, relPath: string): number | null {
   const abs = resolveInWorkspace(registeredWorkspaces, workspaceId, relPath);

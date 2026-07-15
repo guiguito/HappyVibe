@@ -167,6 +167,9 @@ interface HvApi {
   fsWrite(workspaceId: string, relPath: string, content: string): Promise<number>;
   fsMtime(workspaceId: string, relPath: string): Promise<number | null>;
   revealPath(workspaceId: string, relPath: string): Promise<void>;
+  /** Round 4 #7: file-tree Details / Delete-to-Trash (workspace-confined). */
+  fsStat(workspaceId: string, relPath: string): Promise<{ kind: "dir" | "file"; size: number; mtimeMs: number }>;
+  fsTrash(workspaceId: string, relPath: string): Promise<void>;
 
   // B2: AGENTS.md
   readAgentsMd(workspaceId: string): Promise<string | null>;

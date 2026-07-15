@@ -117,6 +117,12 @@ export function FileTree({
   // key={workspace}, so a workspace switch remounts with fresh state.
   const [dirs, setDirs] = useState<Record<string, DirState>>({ "": { entries: null } });
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
+  // Round 4 #7: right-click menu + delete-confirm + details popup.
+  const [menu, setMenu] = useState<{ rel: string; kind: "dir" | "file"; x: number; y: number } | null>(null);
+  const [confirmDel, setConfirmDel] = useState<{ rel: string; kind: "dir" | "file" } | null>(null);
+  const [details, setDetails] = useState<{ rel: string; kind: "dir" | "file"; size: number; mtimeMs: number } | null>(null);
+
+  const parentOf = (rel: string): string => (rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "");
 
   const fetchDir = (relDir: string): void => {
     window.hv
@@ -178,6 +184,7 @@ export function FileTree({
                 <button
                   type="button"
                   onClick={() => toggleDir(rel)}
+                  onContextMenu={(ev) => { ev.preventDefault(); setMenu({ rel, kind: "dir", x: ev.clientX, y: ev.clientY }); }}
                   className="w-full flex items-center gap-1.5 px-3 py-1 text-left text-[13px] font-semibold hover:bg-paper-deep/50 cursor-pointer"
                   style={{ paddingLeft: depth * 14 + 12 }}
                 >
@@ -194,6 +201,7 @@ export function FileTree({
               key={rel}
               type="button"
               onClick={() => onOpenFile(rel)}
+              onContextMenu={(ev) => { ev.preventDefault(); setMenu({ rel, kind: "file", x: ev.clientX, y: ev.clientY }); }}
               title={rel}
               className="w-full flex items-center gap-1.5 px-3 py-1 text-left text-[13px] hover:bg-paper-deep/50 hover:text-tangerine-deep cursor-pointer"
               style={{ paddingLeft: depth * 14 + 12 }}
@@ -234,6 +242,105 @@ export function FileTree({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto py-1.5">{renderDir("", 0)}</div>
+
+      {/* Round 4 #7: right-click context menu. */}
+      {menu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
+          <div
+            className="fixed z-50 min-w-36 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm"
+            style={{ top: menu.y, left: menu.x }}
+          >
+            <button
+              type="button"
+              className="w-full text-left px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
+              onClick={() => { if (menu.kind === "file") onOpenFile(menu.rel); else toggleDir(menu.rel); setMenu(null); }}
+            >
+              Open
+            </button>
+            <button
+              type="button"
+              className="w-full text-left px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer text-berry"
+              onClick={() => { setConfirmDel({ rel: menu.rel, kind: menu.kind }); setMenu(null); }}
+            >
+              Delete…
+            </button>
+            <button
+              type="button"
+              className="w-full text-left px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
+              onClick={() => {
+                const { rel, kind } = menu;
+                setMenu(null);
+                void window.hv.fsStat(workspace, rel).then((s) => setDetails({ rel, kind, size: s.size, mtimeMs: s.mtimeMs }));
+              }}
+            >
+              Details
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Delete confirm — moves to the OS Trash (recoverable), never a hard delete. */}
+      {confirmDel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirmDel(null)}>
+          <div className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="font-bold text-ink mb-1">Move {confirmDel.kind === "dir" ? "folder" : "file"} to Trash?</div>
+            <p className="text-sm text-ink-soft mb-4">
+              <span className="font-mono break-all">{confirmDel.rel}</span> will be moved to your system Trash — you can restore it from there.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDel(null)}
+                className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { rel } = confirmDel;
+                  setConfirmDel(null);
+                  void window.hv.fsTrash(workspace, rel).then(() => fetchDir(parentOf(rel))).catch(() => {});
+                }}
+                className="rounded-xl bg-berry text-paper font-bold text-sm px-4 py-2 border-2 border-berry shadow-sticker cursor-pointer hover:brightness-105"
+              >
+                Move to Trash
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Details popup. */}
+      {details && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setDetails(null)}>
+          <div className="w-full max-w-sm rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="font-bold text-ink mb-3">{details.rel.split("/").pop()}</div>
+            <dl className="text-sm grid grid-cols-[5rem_1fr] gap-y-1.5">
+              <dt className="text-ink-soft font-bold">Kind</dt><dd>{details.kind === "dir" ? "Folder" : "File"}</dd>
+              <dt className="text-ink-soft font-bold">Size</dt><dd>{formatBytes(details.size)}</dd>
+              <dt className="text-ink-soft font-bold">Modified</dt><dd>{new Date(details.mtimeMs).toLocaleString()}</dd>
+              <dt className="text-ink-soft font-bold">Path</dt><dd className="font-mono text-xs break-all">{details.rel}</dd>
+            </dl>
+            <div className="flex justify-end mt-4">
+              <button
+                type="button"
+                onClick={() => setDetails(null)}
+                className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }

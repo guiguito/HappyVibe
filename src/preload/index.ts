@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:fs-write", workspaceId, relPath, content),
   fsMtime: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-mtime", workspaceId, relPath),
   revealPath: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:reveal-path", workspaceId, relPath),
+  fsStat: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-stat", workspaceId, relPath),
+  fsTrash: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-trash", workspaceId, relPath),
 
   // ── B2: AGENTS.md (additive) ────────────────────────────────────
   readAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:read-agents-md", workspaceId),
