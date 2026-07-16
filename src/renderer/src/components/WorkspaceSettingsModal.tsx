@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useState } from "react";
 import { PermissionRulesSection } from "./PermissionRulesSection";
+import { ModelSelect } from "./ModelSelect";
 
 /**
  * W1.4 workspace settings (PRD "Settings"): model override, workspace
@@ -87,24 +88,15 @@ export function WorkspaceSettingsModal({
         <Dialog.Description className="text-xs text-ink-soft font-mono truncate mb-5">{workspace}</Dialog.Description>
 
         <Block title="model override">
-          <select
-            value={model ? `${model.provider}/${model.modelId}` : ""}
-            onChange={(e) => pickModel(e.target.value)}
-            className="w-full rounded-xl border-2 border-line bg-paper px-3.5 py-2.5 text-sm font-bold focus:outline-none focus:border-tangerine cursor-pointer"
-          >
-            <option value="">Use global default</option>
-            {[...new Set(models.map((m) => m.provider))].map((prov) => (
-              <optgroup key={prov} label={prov}>
-                {models
-                  .filter((m) => m.provider === prov)
-                  .map((m) => (
-                    <option key={`${m.provider}/${m.id}`} value={`${m.provider}/${m.id}`}>
-                      {m.name}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
-          </select>
+          <ModelSelect
+            models={models}
+            value={model}
+            onPick={(m) => pickModel(`${m.provider}/${m.id}`)}
+            onClear={() => pickModel("")}
+            clearLabel="Use global default"
+            placeholder="Use global default"
+            menuWidthClassName="w-full"
+          />
           <p className="text-xs text-ink-soft mt-1.5">
             Sessions in this workspace start with this model instead of the global default. Applies to new or
             restarted sessions.

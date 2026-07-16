@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { AgentsMdPanel } from "./AgentsMdPanel";
+import { ModelSelect } from "./ModelSelect";
 import { TokenGauge } from "./TokenGauge";
 import { ContextPanel } from "./ContextPanel";
 import { emptyQueue, type QueueState } from "../queue";
@@ -80,7 +81,6 @@ export function ChatView({
   const [workspaceModel, setWorkspaceModel] = useState<ModelRef | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRef | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [modelFilter, setModelFilter] = useState(""); // #5: filter box when >5 models
   const [pendingPaste, setPendingPaste] = useState<string | null>(null); // #3: large-paste confirm
   const [searchOpen, setSearchOpen] = useState(false); // #8: in-conversation search
   const [searchQuery, setSearchQuery] = useState("");
@@ -565,75 +565,36 @@ export function ChatView({
               </>
             )}
           </div>
-          {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global). */}
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              aria-label="Change model for this session"
-              aria-expanded={modelMenuOpen}
-              onClick={() => { setModelMenuOpen((o) => !o); setAttachMenuOpen(false); }}
-              title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
-              className="max-w-44 text-left font-mono text-[11px] rounded-full border-2 border-line bg-paper px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
-            >
-              <span className="block truncate">{modelName ?? "model…"}</span>
-              {/* V2.A: tier-source subtext — honest about WHERE the model came from. */}
-              {resolution && (
-                <span className="block truncate font-sans text-[9px] font-semibold leading-tight text-ink-soft/80">
-                  {TIER_LABEL[resolution.tier]}
-                </span>
-              )}
-            </button>
-            {modelMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => { setModelMenuOpen(false); setModelFilter(""); }} />
-                <div className="absolute bottom-full left-0 mb-2 z-20 w-72 max-h-80 overflow-hidden flex flex-col rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
-                  {/* #5: mini search bar once the list is long enough to warrant it. */}
-                  {(models ?? []).length > 5 && (
-                    <input
-                      autoFocus
-                      value={modelFilter}
-                      onChange={(e) => setModelFilter(e.target.value)}
-                      placeholder="Search models…"
-                      className="mx-2 mb-1 px-2 py-1 rounded-lg border-2 border-line bg-paper text-[13px] focus:outline-none focus:border-tangerine"
-                    />
+          {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global).
+              WS1: shared ModelSelect (controlled open so a session switch force-closes it). */}
+          <div className="shrink-0">
+            <ModelSelect
+              models={models ?? []}
+              loading={models === null}
+              value={resolved ? { provider: resolved.provider, modelId: resolved.modelId } : null}
+              onPick={(m) => void pickModel(m)}
+              open={modelMenuOpen}
+              onOpenChange={(o) => { setModelMenuOpen(o); if (o) setAttachMenuOpen(false); }}
+              direction="up"
+              renderTrigger={({ toggle }) => (
+                <button
+                  type="button"
+                  aria-label="Change model for this session"
+                  aria-expanded={modelMenuOpen}
+                  onClick={toggle}
+                  title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
+                  className="max-w-44 text-left font-mono text-[11px] rounded-full border-2 border-line bg-paper px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
+                >
+                  <span className="block truncate">{modelName ?? "model…"}</span>
+                  {/* V2.A: tier-source subtext — honest about WHERE the model came from. */}
+                  {resolution && (
+                    <span className="block truncate font-sans text-[9px] font-semibold leading-tight text-ink-soft/80">
+                      {TIER_LABEL[resolution.tier]}
+                    </span>
                   )}
-                  <div className="overflow-y-auto">
-                    {(() => {
-                      const q = modelFilter.trim().toLowerCase();
-                      const shown = (models ?? []).filter(
-                        (m) => !q || `${m.name} ${m.provider} ${m.id}`.toLowerCase().includes(q),
-                      );
-                      return (
-                        <>
-                          {shown.map((m) => {
-                            const active = resolved != null && m.provider === resolved.provider && m.id === resolved.modelId;
-                            return (
-                              <button
-                                key={`${m.provider}/${m.id}`}
-                                type="button"
-                                onClick={() => { setModelFilter(""); void pickModel(m); }}
-                                className={`w-full text-left px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer ${active ? "font-bold text-tangerine-deep" : "font-medium"}`}
-                              >
-                                <span className="block truncate">{m.name}</span>
-                                <span className="block truncate font-mono text-[10px] text-ink-soft">{m.provider}/{m.id}</span>
-                              </button>
-                            );
-                          })}
-                          {(models ?? []).length === 0 && (
-                            <div className="px-3 py-2 text-xs text-ink-soft font-medium">
-                              {models === null ? "Loading models…" : "No models — configure a provider in Settings."}
-                            </div>
-                          )}
-                          {(models ?? []).length > 0 && shown.length === 0 && (
-                            <div className="px-3 py-2 text-xs text-ink-soft font-medium">No models match “{modelFilter}”.</div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </>
-            )}
+                </button>
+              )}
+            />
           </div>
           <input
             value={input}
