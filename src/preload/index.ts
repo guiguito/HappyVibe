@@ -1,6 +1,8 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("hv", {
+  // WS8: absolute OS path of a dragged File (Electron ≥32; replaces File.path).
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   getApiKey: () => ipcRenderer.invoke("hv:get-api-key"),
   setApiKey: (k: string) => ipcRenderer.invoke("hv:set-api-key", k),
   pickFolder: () => ipcRenderer.invoke("hv:pick-folder"),
@@ -41,6 +43,17 @@ contextBridge.exposeInMainWorld("hv", {
   revealPath: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:reveal-path", workspaceId, relPath),
   fsStat: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-stat", workspaceId, relPath),
   fsTrash: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-trash", workspaceId, relPath),
+  fsCreateFile: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-create-file", workspaceId, relPath),
+  fsCreateDir: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-create-dir", workspaceId, relPath),
+  fsMove: (workspaceId: string, srcRel: string, destDirRel: string) => ipcRenderer.invoke("hv:fs-move", workspaceId, srcRel, destDirRel),
+  fsImport: (workspaceId: string, destDirRel: string, srcAbsPaths: string[]) => ipcRenderer.invoke("hv:fs-import", workspaceId, destDirRel, srcAbsPaths),
+  watchWorkspace: (workspaceId: string) => ipcRenderer.invoke("hv:watch-workspace", workspaceId),
+  unwatchWorkspace: (workspaceId: string) => ipcRenderer.invoke("hv:unwatch-workspace", workspaceId),
+  onFsChanged: (cb: (p: { workspaceId: string; relDirs: string[] }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { workspaceId: string; relDirs: string[] });
+    ipcRenderer.on("hv:fs-changed", h);
+    return () => ipcRenderer.removeListener("hv:fs-changed", h);
+  },
 
   // ── B2: AGENTS.md (additive) ────────────────────────────────────
   readAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:read-agents-md", workspaceId),

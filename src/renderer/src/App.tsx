@@ -786,7 +786,15 @@ export default function App(): React.JSX.Element {
             tabbed: chat tab + file tabs; the docked file tree sits to the
             right IN FLOW (ContextPanel is a fixed overlay above it, z-40). */}
         <div className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"}`}>
-          <div className="flex-1 min-w-0 grid" style={gridStyle}>
+          <div
+            className="flex-1 min-w-0 grid"
+            style={gridStyle}
+            onDragOver={(e) => e.dataTransfer.types.includes("application/x-hv-relpath") && e.preventDefault()}
+            onDrop={(e) => {
+              const rel = e.dataTransfer.getData("application/x-hv-relpath");
+              if (rel && wsId) { e.preventDefault(); openFileTab(wsId, rel); }
+            }}
+          >
             {selected && wsId && (
               <div style={{ gridArea: "stripA" }} className="min-w-0">
                 <TabStrip

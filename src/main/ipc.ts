@@ -25,7 +25,8 @@ import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
-import { listDir, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
+import { createDir, createFile, importEntries, listDir, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
+import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
@@ -441,6 +442,7 @@ export function registerIpc(win: BrowserWindow): void {
     clearTimeout(mcpReloadTimer); // don't spawn during teardown
     manager.stopAll();
     utility?.stop();
+    unwatchAll(); // WS8: close fs watchers
   });
 
   // ── config / folder picking ──────────────────────────────────────
@@ -929,6 +931,23 @@ export function registerIpc(win: BrowserWindow): void {
   // hard delete), workspace-confined like every other fs op.
   ipcMain.handle("hv:fs-trash", (_e, workspaceId: string, relPath: string) =>
     shell.trashItem(resolveInWorkspace(workspaces.list(), workspaceId, relPath)));
+
+  // WS8: file-tree mutations (confined; refuse to clobber).
+  ipcMain.handle("hv:fs-create-file", (_e, workspaceId: string, relPath: string) =>
+    createFile(workspaces.list(), workspaceId, relPath));
+  ipcMain.handle("hv:fs-create-dir", (_e, workspaceId: string, relPath: string) =>
+    createDir(workspaces.list(), workspaceId, relPath));
+  ipcMain.handle("hv:fs-move", (_e, workspaceId: string, srcRel: string, destDirRel: string) =>
+    moveEntry(workspaces.list(), workspaceId, srcRel, destDirRel));
+  ipcMain.handle("hv:fs-import", (_e, workspaceId: string, destDirRel: string, srcAbsPaths: string[]) =>
+    importEntries(workspaces.list(), workspaceId, destDirRel, srcAbsPaths));
+  // WS8: native fs watching — auto-refresh the tree (replaces the refresh button).
+  ipcMain.handle("hv:watch-workspace", (_e, workspaceId: string) => {
+    resolveInWorkspace(workspaces.list(), workspaceId, ""); // confinement gate
+    watchWorkspace(workspaceId, (relDirs) =>
+      win.webContents.send("hv:fs-changed", { workspaceId, relDirs }));
+  });
+  ipcMain.handle("hv:unwatch-workspace", (_e, workspaceId: string) => unwatchWorkspace(workspaceId));
 
   // Per-workspace model override (spawn resolution: workspace → global default).
   // Applies to sessions spawned/restarted after the change.

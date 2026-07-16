@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  listDir, MAX_FILE_BYTES, readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspaceFile,
+  createDir, createFile, importEntries, listDir, MAX_FILE_BYTES, moveEntry,
+  readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspaceFile,
 } from "../src/main/files";
 
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), "hv-files-"));
@@ -80,4 +81,42 @@ test("NUL byte → binary state", () => {
 
 test("statMtime is null for a missing file (external delete detection)", () => {
   expect(statMtime(registered, ws, "gone.txt")).toBeNull();
+});
+
+// ── WS8: create / move / import (confined; refuse to clobber) ─────────
+
+test("createFile makes an empty file (mkdir parents) and refuses to clobber", () => {
+  createFile(registered, ws, "new/deep/x.ts");
+  expect(fs.readFileSync(path.join(ws, "new/deep/x.ts"), "utf8")).toBe("");
+  expect(() => createFile(registered, ws, "new/deep/x.ts")).toThrow(/already exists/);
+});
+
+test("createDir makes a folder and refuses to clobber; confinement enforced", () => {
+  createDir(registered, ws, "made/sub");
+  expect(fs.statSync(path.join(ws, "made/sub")).isDirectory()).toBe(true);
+  expect(() => createDir(registered, ws, "made/sub")).toThrow(/already exists/);
+  expect(() => createFile(registered, ws, "../escape.ts")).toThrow(/escapes workspace/);
+});
+
+test("moveEntry moves within the workspace, refuses overwrite and moving into itself", () => {
+  fs.writeFileSync(path.join(ws, "mv.txt"), "x");
+  fs.mkdirSync(path.join(ws, "dest"), { recursive: true });
+  const rel = moveEntry(registered, ws, "mv.txt", "dest");
+  expect(rel).toBe(path.join("dest", "mv.txt"));
+  expect(fs.existsSync(path.join(ws, "dest/mv.txt"))).toBe(true);
+  expect(fs.existsSync(path.join(ws, "mv.txt"))).toBe(false);
+  fs.writeFileSync(path.join(ws, "mv.txt"), "y");
+  expect(() => moveEntry(registered, ws, "mv.txt", "dest")).toThrow(/already exists/);
+  expect(() => moveEntry(registered, ws, "dest", "dest")).toThrow(/into itself/);
+});
+
+test("importEntries copies external OS paths into a confined dest, refusing overwrite", () => {
+  const ext = fs.mkdtempSync(path.join(os.tmpdir(), "hv-ext-"));
+  fs.writeFileSync(path.join(ext, "drop.txt"), "hello");
+  const written = importEntries(registered, ws, "imported", [path.join(ext, "drop.txt")]);
+  expect(written).toEqual([path.join("imported", "drop.txt")]);
+  expect(fs.readFileSync(path.join(ws, "imported/drop.txt"), "utf8")).toBe("hello");
+  expect(() => importEntries(registered, ws, "imported", [path.join(ext, "drop.txt")])).toThrow(/already exists/);
+  // dest is confined even though sources are external
+  expect(() => importEntries(registered, ws, "../evil", [path.join(ext, "drop.txt")])).toThrow(/escapes workspace/);
 });

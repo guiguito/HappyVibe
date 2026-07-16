@@ -171,6 +171,16 @@ interface HvApi {
   /** Round 4 #7: file-tree Details / Delete-to-Trash (workspace-confined). */
   fsStat(workspaceId: string, relPath: string): Promise<{ kind: "dir" | "file"; size: number; mtimeMs: number }>;
   fsTrash(workspaceId: string, relPath: string): Promise<void>;
+  /** WS8: file-tree mutations (confined; throw on clobber). */
+  fsCreateFile(workspaceId: string, relPath: string): Promise<void>;
+  fsCreateDir(workspaceId: string, relPath: string): Promise<void>;
+  fsMove(workspaceId: string, srcRel: string, destDirRel: string): Promise<string>;
+  fsImport(workspaceId: string, destDirRel: string, srcAbsPaths: string[]): Promise<string[]>;
+  /** WS8: native fs watching — auto-refresh the tree. */
+  watchWorkspace(workspaceId: string): Promise<void>;
+  unwatchWorkspace(workspaceId: string): Promise<void>;
+  onFsChanged(cb: (p: { workspaceId: string; relDirs: string[] }) => void): () => void;
+  getPathForFile(file: File): string;
 
   // B2: AGENTS.md
   readAgentsMd(workspaceId: string): Promise<string | null>;
