@@ -698,13 +698,37 @@ export default function App(): React.JSX.Element {
     return p >= 0 ? AREAS[p] : null;
   };
   const chatArea = selected ? areaFor(CHAT_TAB) : "contentA";
-  // Grid template for 0/1 split. Panes are visual-only; children carry grid-area.
+  // Divider between the two split panes (left border for v, top border for h).
+  const paneDivider = (area?: string | null): string =>
+    area === "contentB" ? (wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line") : "";
+  // The file tree is a full-height right COLUMN of the same grid, so it's never
+  // hidden by a split and always sits below the tab bar (the strip row spans over
+  // the tree column; the tree starts at the content row). Split strips extend
+  // across the tree column too, giving them a full right side for tab drops.
+  const TREE = treeOpen && !!wsId;
+  const treeCol = TREE ? " 16rem" : "";
   const gridStyle: React.CSSProperties =
     wsTabs.split === "v"
-      ? { gridTemplateColumns: "1fr 1fr", gridTemplateRows: "auto minmax(0,1fr)", gridTemplateAreas: '"stripA stripB" "contentA contentB"' }
+      ? {
+          gridTemplateColumns: `minmax(0,1fr) minmax(0,1fr)${treeCol}`,
+          gridTemplateRows: "auto minmax(0,1fr)",
+          gridTemplateAreas: TREE
+            ? '"stripA stripB stripB" "contentA contentB tree"'
+            : '"stripA stripB" "contentA contentB"',
+        }
       : wsTabs.split === "h"
-        ? { gridTemplateColumns: "1fr", gridTemplateRows: "auto minmax(0,1fr) auto minmax(0,1fr)", gridTemplateAreas: '"stripA" "contentA" "stripB" "contentB"' }
-        : { gridTemplateColumns: "1fr", gridTemplateRows: "auto minmax(0,1fr)", gridTemplateAreas: '"stripA" "contentA"' };
+        ? {
+            gridTemplateColumns: `minmax(0,1fr)${treeCol}`,
+            gridTemplateRows: "auto minmax(0,1fr) auto minmax(0,1fr)",
+            gridTemplateAreas: TREE
+              ? '"stripA stripA" "contentA tree" "stripB tree" "contentB tree"'
+              : '"stripA" "contentA" "stripB" "contentB"',
+          }
+        : {
+            gridTemplateColumns: `minmax(0,1fr)${treeCol}`,
+            gridTemplateRows: "auto minmax(0,1fr)",
+            gridTemplateAreas: TREE ? '"stripA stripA" "contentA tree"' : '"stripA" "contentA"',
+          };
 
   return (
     <div className="h-full flex">
@@ -787,7 +811,7 @@ export default function App(): React.JSX.Element {
             right IN FLOW (ContextPanel is a fixed overlay above it, z-40). */}
         <div className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"}`}>
           <div
-            className="flex-1 min-w-0 grid"
+            className="flex-1 min-w-0 min-h-0 grid"
             style={gridStyle}
             onDragOver={(e) => e.dataTransfer.types.includes("application/x-hv-relpath") && e.preventDefault()}
             onDrop={(e) => {
@@ -835,7 +859,7 @@ export default function App(): React.JSX.Element {
               </div>
             )}
             {selected && wsId && wsTabs.split && wsTabs.panes[1] && (
-              <div style={{ gridArea: "stripB" }} className="min-w-0">
+              <div style={{ gridArea: "stripB" }} className={`min-w-0 ${wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line"}`}>
                 <TabStrip
                   pane={wsTabs.panes[1]}
                   paneIndex={1}
@@ -854,13 +878,13 @@ export default function App(): React.JSX.Element {
             )}
             {/* WS6: empty-pane placeholder (a split pane with no active tab). */}
             {selected && wsTabs.split && wsTabs.panes[1] && wsTabs.panes[1].active === null && (
-              <div style={{ gridArea: "contentB" }} className="min-h-0 flex items-center justify-center text-sm text-ink-soft border-l-2 border-line">
+              <div style={{ gridArea: "contentB" }} className={`min-h-0 flex items-center justify-center text-sm text-ink-soft ${paneDivider("contentB")}`}>
                 Open a file or drag a tab here.
               </div>
             )}
             <div
               style={{ gridArea: chatArea ?? undefined }}
-              className={`min-h-0 flex-col ${activeView === "chat" && chatArea ? "flex" : "hidden"}`}
+              className={`min-h-0 min-w-0 flex-col ${paneDivider(chatArea)} ${activeView === "chat" && chatArea ? "flex" : "hidden"}`}
             >
               <ChatView
             workspace={selected?.workspaceId ?? null}
@@ -910,12 +934,19 @@ export default function App(): React.JSX.Element {
                   relPath={f}
                   active={activeView === "chat" && wsId === w && area !== null}
                   gridArea={area ?? undefined}
+                  className={paneDivider(area)}
                   onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
                 />
               );
             })}
+            {/* File tree: a full-height right COLUMN of the grid — below the tab
+                bar, never hidden by a split. */}
+            {TREE && (
+              <div style={{ gridArea: "tree" }} className="min-h-0 min-w-0 border-l-2 border-line">
+                <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setTreeOpen(false)} />
+              </div>
+            )}
           </div>
-          {treeOpen && wsId && <FileTree key={wsId} workspace={wsId} onOpenFile={(rel) => openFileTab(wsId, rel)} onClose={() => setTreeOpen(false)} />}
         </div>
       </main>
       {uiReq?.kind === "permission" && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}

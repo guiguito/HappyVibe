@@ -298,7 +298,7 @@ export function FileTree({
   };
 
   return (
-    <aside className="w-64 shrink-0 border-l-2 border-line bg-paper flex flex-col min-h-0">
+    <aside className="w-full h-full bg-paper flex flex-col min-h-0">
       <div className="px-3 py-3 border-b-2 border-line flex items-center gap-1.5">
         <span className="text-[11px] font-bold uppercase tracking-widest text-ink-soft flex-1 truncate" title={workspace}>
           {workspace.split("/").filter(Boolean).pop()}
