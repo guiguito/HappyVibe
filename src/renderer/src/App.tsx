@@ -23,7 +23,10 @@ import { AgentsView } from "./components/AgentsView";
 import { delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
-import { bufferKey, closeFile, emptyTabs, openFile, type WorkspaceTabs } from "./tabs";
+import {
+  activateTab, allFiles, bufferKey, CHAT_TAB, closeTab, emptyTabs, moveTab, openFile, splitPane, unsplit,
+  type TabId, type WorkspaceTabs,
+} from "./tabs";
 import { TabStrip } from "./components/TabStrip";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
@@ -416,10 +419,11 @@ export default function App(): React.JSX.Element {
     [openFileTab]
   );
 
-  const closeFileTab = (wsId: string, rel: string): void => {
-    const key = bufferKey(wsId, rel);
-    if (dirtyMap[key] && !window.confirm(`Close ${rel}? Unsaved changes will be lost.`)) return;
-    setTabsByWs((p) => ({ ...p, [wsId]: closeFile(p[wsId] ?? emptyTabs, rel) }));
+  const closeFileTab = (wsId: string, paneIdx: number, tab: TabId): void => {
+    if (tab === CHAT_TAB) return; // chat is never closable
+    const key = bufferKey(wsId, tab);
+    if (dirtyMap[key] && !window.confirm(`Close ${tab}? Unsaved changes will be lost.`)) return;
+    setTabsByWs((p) => ({ ...p, [wsId]: closeTab(p[wsId] ?? emptyTabs, paneIdx, tab) }));
     setDirtyMap((p) => {
       if (!(key in p)) return p;
       const next = { ...p };
@@ -427,6 +431,9 @@ export default function App(): React.JSX.Element {
       return next;
     });
   };
+  // WS6: mutate this workspace's tab layout with a pure tabs.ts helper.
+  const updateTabs = (wsId: string, fn: (t: WorkspaceTabs) => WorkspaceTabs): void =>
+    setTabsByWs((p) => ({ ...p, [wsId]: fn(p[wsId] ?? emptyTabs) }));
 
   const setDirtyFlag = useCallback((key: string, d: boolean): void => {
     setDirtyMap((p) => (!!p[key] === d ? p : { ...p, [key]: d }));
@@ -647,15 +654,29 @@ export default function App(): React.JSX.Element {
   const activeView: View = needsSetup ? "settings" : view;
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
-  // ── W2.2: current workspace's tab state + dirty flags for the strip ──
+  // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
   const wsId = selected?.workspaceId ?? null;
   const wsTabs = (wsId ? tabsByWs[wsId] : undefined) ?? emptyTabs;
-  const chatTabActive = !selected || wsTabs.active === null;
   const dirtyForWs: Record<string, boolean> = {};
-  if (wsId) for (const f of wsTabs.files) dirtyForWs[f] = !!dirtyMap[bufferKey(wsId, f)];
+  if (wsId) for (const f of allFiles(wsTabs)) dirtyForWs[f] = !!dirtyMap[bufferKey(wsId, f)];
   // Every open file across ALL workspaces stays mounted (hidden) so unsaved
   // buffers survive session/workspace/view switches.
-  const openFileEntries = Object.entries(tabsByWs).flatMap(([w, t]) => t.files.map((f) => [w, f] as const));
+  const openFileEntries = Object.entries(tabsByWs).flatMap(([w, t]) => allFiles(t).map((f) => [w, f] as const));
+  // WS6: which pane's content cell a tab occupies when it's that pane's active
+  // tab. Content is mounted flat and placed via CSS grid-area (never reparented).
+  const AREAS = ["contentA", "contentB"] as const;
+  const areaFor = (tab: TabId): string | null => {
+    const p = wsTabs.panes.findIndex((pane) => pane.active === tab);
+    return p >= 0 ? AREAS[p] : null;
+  };
+  const chatArea = selected ? areaFor(CHAT_TAB) : "contentA";
+  // Grid template for 0/1 split. Panes are visual-only; children carry grid-area.
+  const gridStyle: React.CSSProperties =
+    wsTabs.split === "v"
+      ? { gridTemplateColumns: "1fr 1fr", gridTemplateRows: "auto minmax(0,1fr)", gridTemplateAreas: '"stripA stripB" "contentA contentB"' }
+      : wsTabs.split === "h"
+        ? { gridTemplateColumns: "1fr", gridTemplateRows: "auto minmax(0,1fr) auto minmax(0,1fr)", gridTemplateAreas: '"stripA" "contentA" "stripB" "contentB"' }
+        : { gridTemplateColumns: "1fr", gridTemplateRows: "auto minmax(0,1fr)", gridTemplateAreas: '"stripA" "contentA"' };
 
   return (
     <div className="h-full flex">
@@ -737,19 +758,54 @@ export default function App(): React.JSX.Element {
             tabbed: chat tab + file tabs; the docked file tree sits to the
             right IN FLOW (ContextPanel is a fixed overlay above it, z-40). */}
         <div className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"}`}>
-          <div className="flex-1 min-w-0 flex flex-col">
+          <div className="flex-1 min-w-0 grid" style={gridStyle}>
             {selected && wsId && (
-              <TabStrip
-                sessionTitle={selected.title}
-                tabs={wsTabs}
-                dirty={dirtyForWs}
-                treeOpen={treeOpen}
-                onSelect={(target) => setTabsByWs((p) => ({ ...p, [wsId]: { ...(p[wsId] ?? emptyTabs), active: target } }))}
-                onClose={(rel) => closeFileTab(wsId, rel)}
-                onToggleTree={() => setTreeOpen((o) => !o)}
-              />
+              <div style={{ gridArea: "stripA" }} className="min-w-0">
+                <TabStrip
+                  pane={wsTabs.panes[0]}
+                  paneIndex={0}
+                  sessionTitle={selected.title}
+                  dirty={dirtyForWs}
+                  canSplit={!wsTabs.split}
+                  split={wsTabs.split}
+                  onSelect={(tab) => updateTabs(wsId, (t) => activateTab(t, 0, tab))}
+                  onClose={(tab) => closeFileTab(wsId, 0, tab)}
+                  onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
+                  onSplit={(dir) => updateTabs(wsId, (t) => splitPane(t, dir))}
+                  onUnsplit={() => updateTabs(wsId, unsplit)}
+                  trailing={
+                    <FilesToggle treeOpen={treeOpen} onToggle={() => setTreeOpen((o) => !o)} />
+                  }
+                />
+              </div>
             )}
-            <div className={`flex-1 min-h-0 flex-col ${chatTabActive ? "flex" : "hidden"}`}>
+            {selected && wsId && wsTabs.split && wsTabs.panes[1] && (
+              <div style={{ gridArea: "stripB" }} className="min-w-0">
+                <TabStrip
+                  pane={wsTabs.panes[1]}
+                  paneIndex={1}
+                  sessionTitle={selected.title}
+                  dirty={dirtyForWs}
+                  canSplit={false}
+                  split={wsTabs.split}
+                  onSelect={(tab) => updateTabs(wsId, (t) => activateTab(t, 1, tab))}
+                  onClose={(tab) => closeFileTab(wsId, 1, tab)}
+                  onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
+                  onSplit={(dir) => updateTabs(wsId, (t) => splitPane(t, dir))}
+                  onUnsplit={() => updateTabs(wsId, unsplit)}
+                />
+              </div>
+            )}
+            {/* WS6: empty-pane placeholder (a split pane with no active tab). */}
+            {selected && wsTabs.split && wsTabs.panes[1] && wsTabs.panes[1].active === null && (
+              <div style={{ gridArea: "contentB" }} className="min-h-0 flex items-center justify-center text-sm text-ink-soft border-l-2 border-line">
+                Open a file or drag a tab here.
+              </div>
+            )}
+            <div
+              style={{ gridArea: chatArea ?? undefined }}
+              className={`min-h-0 flex-col ${activeView === "chat" && chatArea ? "flex" : "hidden"}`}
+            >
               <ChatView
             workspace={selected?.workspaceId ?? null}
             sessionId={selectedId}
@@ -783,15 +839,19 @@ export default function App(): React.JSX.Element {
                 onRewind={rewindTo}
               />
             </div>
-            {openFileEntries.map(([w, f]) => (
-              <FileTab
-                key={bufferKey(w, f)}
-                workspace={w}
-                relPath={f}
-                active={activeView === "chat" && wsId === w && wsTabs.active === f}
-                onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
-              />
-            ))}
+            {openFileEntries.map(([w, f]) => {
+              const area = wsId === w ? areaFor(f) : null;
+              return (
+                <FileTab
+                  key={bufferKey(w, f)}
+                  workspace={w}
+                  relPath={f}
+                  active={activeView === "chat" && wsId === w && area !== null}
+                  gridArea={area ?? undefined}
+                  onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
+                />
+              );
+            })}
           </div>
           {treeOpen && wsId && <FileTree key={wsId} workspace={wsId} onOpenFile={(rel) => openFileTab(wsId, rel)} onClose={() => setTreeOpen(false)} />}
         </div>
@@ -803,5 +863,25 @@ export default function App(): React.JSX.Element {
       {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
     </div>
+  );
+}
+
+/** WS6: the file-tree toggle, rendered in the primary tab strip's trailing slot. */
+function FilesToggle({ treeOpen, onToggle }: { treeOpen: boolean; onToggle: () => void }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={treeOpen}
+      aria-label={treeOpen ? "Hide the file tree" : "Browse workspace files"}
+      title={treeOpen ? "Hide the file tree" : "Browse workspace files"}
+      className={`shrink-0 flex items-center border-l-2 border-line px-3 cursor-pointer transition-colors ${
+        treeOpen ? "text-tangerine-deep bg-paper-deep/50" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
+      }`}
+    >
+      <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      </svg>
+    </button>
   );
 }

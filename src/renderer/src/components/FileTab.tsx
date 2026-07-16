@@ -24,11 +24,14 @@ export function FileTab({
   workspace,
   relPath,
   active,
+  gridArea,
   onDirtyChange,
 }: {
   workspace: string;
   relPath: string;
   active: boolean;
+  /** WS6: which split pane's content cell this tab occupies when active. */
+  gridArea?: string;
   onDirtyChange: (dirty: boolean) => void;
 }): React.JSX.Element {
   const [buf, setBuf] = useState<BufferState>({ kind: "loading" });
@@ -116,7 +119,7 @@ export function FileTab({
   };
 
   return (
-    <div className={`flex-1 min-h-0 flex-col ${active ? "flex" : "hidden"}`}>
+    <div className={`min-h-0 flex-col ${active ? "flex" : "hidden"}`} style={gridArea ? { gridArea } : undefined}>
       {conflict && (
         <div className="flex items-center gap-3 px-6 py-2 bg-honey-soft border-b-2 border-honey/60 text-sm font-semibold">
           <span className="flex-1">
