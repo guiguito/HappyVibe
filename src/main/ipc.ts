@@ -64,6 +64,13 @@ function parseAuditNotify(r: { method?: string; message?: string }): Record<stri
 }
 
 export function registerIpc(win: BrowserWindow): void {
+  // Guard every renderer push: on quit a Pi child can flush a final event after
+  // the window/webContents is destroyed — sending then throws "Object has been
+  // destroyed". Drop those late sends instead of crashing.
+  const send = (channel: string, payload?: unknown): void => {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+    win.webContents.send(channel, payload);
+  };
   const userData = app.getPath("userData");
   const index = new SessionIndex(path.join(userData, "session-index.json"));
   // Heal stale absolute piSessionFile paths after a userData move (the
@@ -161,7 +168,7 @@ export function registerIpc(win: BrowserWindow): void {
     const c = new PiClient(resolvePiSpawn(os.homedir(), sessionDir(), piRuntimeDir(), spawnOpts()));
     c.on("ui-request", (r: { id: string; message?: string }) => {
       uiOwners.set(r.id, UTILITY);
-      win.webContents.send("hv:ui-request", { ...r, sessionId: UTILITY });
+      send("hv:ui-request", { ...r, sessionId: UTILITY });
       // Auth landed/left → the model list changed (OAuth results only flow as
       // hv.auth ui-requests, so this is where main learns about them).
       try {
@@ -192,13 +199,13 @@ export function registerIpc(win: BrowserWindow): void {
   // First user message per session, kept until the model title lands.
   const firstPrompt = new Map<string, string>();
 
-  const sessionsChanged = (): void => win.webContents.send("hv:sessions-changed", index.list());
+  const sessionsChanged = (): void => send("hv:sessions-changed", index.list());
 
   // V2.A: single "model config changed" broadcast — fired on BYOK key add/
   // remove, OAuth login/logout (main sees every utility hv.auth notify), and
   // default/workspace-model edits. The chat bar refetches its model list and
   // resolution tiers on it, so the chip and menu are never stale.
-  const providersChanged = (): void => win.webContents.send("hv:providers-changed");
+  const providersChanged = (): void => send("hv:providers-changed");
 
   // ── MCP status model ─────────────────────────────────────────────────────
   type McpState = "connected" | "needs-auth" | "failed" | "checking";
@@ -214,7 +221,7 @@ export function registerIpc(win: BrowserWindow): void {
   }
   const mcpStatusMap = new Map<string, McpServerStatus>();
   const mcpStatusChanged = (): void =>
-    win.webContents.send("hv:mcp-status-changed", Array.from(mcpStatusMap.values()));
+    send("hv:mcp-status-changed", Array.from(mcpStatusMap.values()));
 
   const checkServer = async (
     scope: "global" | "workspace",
@@ -304,7 +311,7 @@ export function registerIpc(win: BrowserWindow): void {
     const meta = index.get(sessionId);
     client.on("event", (e: Record<string, unknown>) => {
       activity.event(sessionId, e); // W1.3: busy/subagent state + last-activity
-      win.webContents.send("hv:pi-event", { ...e, sessionId });
+      send("hv:pi-event", { ...e, sessionId });
       if (e.type === "agent_end") {
         maybeTitle(sessionId);
         if (meta && !index.get(sessionId)?.piSessionFile) void captureSessionFile(sessionId, client);
@@ -322,7 +329,7 @@ export function registerIpc(win: BrowserWindow): void {
       uiOwners.set(r.id, sessionId);
       // W1.3: an unanswered permission prompt protects the session from hibernation.
       if (isPermissionPrompt(r)) activity.promptOpened(sessionId);
-      win.webContents.send("hv:ui-request", { ...r, sessionId });
+      send("hv:ui-request", { ...r, sessionId });
     });
   };
 
@@ -336,7 +343,7 @@ export function registerIpc(win: BrowserWindow): void {
     if (!intentional) {
       void log.append({ type: "session.crash", sessionId, workspaceId: meta?.workspaceId, data: { code } });
     }
-    win.webContents.send("hv:pi-exit", { sessionId, code, intentional });
+    send("hv:pi-exit", { sessionId, code, intentional });
   });
 
   const startClient = async (meta: SessionMeta, resume: boolean): Promise<PiClient> => {
@@ -377,7 +384,7 @@ export function registerIpc(win: BrowserWindow): void {
       }
       const meta = index.get(sessionId);
       if (!meta) return;
-      win.webContents.send("hv:session-reloading", { sessionId, reason: "mcp" });
+      send("hv:session-reloading", { sessionId, reason: "mcp" });
       const exited = new Promise<void>((resolve) => {
         const onExit = (e: SessionExit): void => {
           if (e.sessionId !== sessionId) return;
@@ -945,7 +952,7 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:watch-workspace", (_e, workspaceId: string) => {
     resolveInWorkspace(workspaces.list(), workspaceId, ""); // confinement gate
     watchWorkspace(workspaceId, (relDirs) =>
-      win.webContents.send("hv:fs-changed", { workspaceId, relDirs }));
+      send("hv:fs-changed", { workspaceId, relDirs }));
   });
   ipcMain.handle("hv:unwatch-workspace", (_e, workspaceId: string) => unwatchWorkspace(workspaceId));
 
