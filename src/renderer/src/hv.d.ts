@@ -15,10 +15,11 @@ interface SessionMeta {
   titleSource: "fallback" | "model" | "user";
 }
 
-interface SimpleMessage {
-  role: "user" | "assistant";
-  text: string;
-}
+/** Round-4: reopened sessions restore tool cards too (intent + result live in
+    the session file), not just user/assistant text. */
+type RestoreItem =
+  | { kind: "user" | "assistant"; text: string }
+  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean };
 
 interface HvByokProvider {
   id: string;
@@ -145,7 +146,7 @@ interface HvApi {
   removeWorkspace(ws: string): Promise<void>;
   listSessions(): Promise<SessionMeta[]>;
   createSession(workspaceId: string): Promise<SessionMeta>;
-  openSession(sessionId: string): Promise<{ meta: SessionMeta; messages: SimpleMessage[] | null }>;
+  openSession(sessionId: string): Promise<{ meta: SessionMeta; messages: RestoreItem[] | null }>;
   closeSession(sessionId: string): Promise<void>;
   deleteSession(sessionId: string): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;

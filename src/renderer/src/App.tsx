@@ -476,12 +476,34 @@ export default function App(): React.JSX.Element {
       setStatuses((p) => ({ ...p, [id]: "running" }));
       if (messages) {
         // Rebuilt from Pi's session file — only adopt when we hold nothing newer.
-        // Assign stable ids (like appendItem) so rewind (#11) and React keys work
-        // on reopened sessions — restored items previously had no id, which made
-        // rewind bail at `it.id == null` (round-4 #3 bug).
-        setTranscripts((p) =>
-          p[id]?.length ? p : { ...p, [id]: messages.map((m) => ({ kind: m.role, text: m.text, id: idCounter.current++ })) },
+        // Reconstructs tool cards too (intent + result persist in the session
+        // file); reconstructed cards are "done" and render collapsed by default.
+        // Stable ids (like appendItem) keep rewind (#11) + React keys working.
+        const items: TranscriptItem[] = messages.map((m) =>
+          m.kind === "tool"
+            ? {
+                kind: "tool",
+                id: idCounter.current++,
+                card: {
+                  toolCallId: m.toolCallId,
+                  toolName: m.toolName,
+                  args: m.args,
+                  status: m.error ? "error" : "done",
+                  result: m.result,
+                },
+              }
+            : { kind: m.kind, text: m.text, id: idCounter.current++ },
         );
+        setTranscripts((p) => {
+          if (p[id]?.length) return p;
+          // Rebuild the tool index so any late tool_execution_end still matches.
+          const map = new Map<string, number>();
+          items.forEach((it, i) => {
+            if (it.kind === "tool") map.set(it.card.toolCallId, i);
+          });
+          toolIndex.current[id] = map;
+          return { ...p, [id]: items };
+        });
       }
       setError(null);
     } catch (err) {

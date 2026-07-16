@@ -26,6 +26,7 @@ import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
 import { listDir, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
+import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { deleteAuthEntry } from "./mcpAuthStore";
@@ -34,24 +35,10 @@ import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 
-/** Transcript rebuilt from Pi's get_messages on resume (renderer shape). */
-interface SimpleMessage {
-  role: "user" | "assistant";
-  text: string;
-}
 
 function truncateTitle(msg: string): string {
   const oneLine = msg.replace(/\s+/g, " ").trim();
   return oneLine.length > 60 ? oneLine.slice(0, 57) + "…" : oneLine;
-}
-
-function messageText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((b) => ((b as { type?: string; text?: string }).type === "text" ? (b as { text?: string }).text ?? "" : ""))
-    .filter(Boolean)
-    .join("\n");
 }
 
 /** True iff this ui-request is a HappyVibe permission prompt (mirrors renderer parsePermission). */
@@ -488,20 +475,18 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle(
     "hv:open-session",
-    async (_e, sessionId: string): Promise<{ meta: SessionMeta; messages: SimpleMessage[] | null }> => {
+    async (_e, sessionId: string): Promise<{ meta: SessionMeta; messages: RestoreItem[] | null }> => {
       const meta = index.get(sessionId);
       if (!meta) throw new Error("Unknown session");
       if (manager.get(sessionId)) return { meta, messages: null }; // already active — renderer keeps its transcript
       const client = await startClient(meta, !!meta.piSessionFile);
-      let messages: SimpleMessage[] | null = null;
+      let messages: RestoreItem[] | null = null;
       if (meta.piSessionFile) {
         try {
           const res = await client.send({ type: "get_messages" });
-          const raw = (res.data as { messages?: Array<{ role?: string; content?: unknown }> })?.messages ?? [];
-          messages = raw
-            .filter((m) => m.role === "user" || m.role === "assistant")
-            .map((m) => ({ role: m.role as "user" | "assistant", text: messageText(m.content) }))
-            .filter((m) => m.text.trim() !== "");
+          const raw =
+            (res.data as { messages?: Parameters<typeof restoreItems>[0] })?.messages ?? [];
+          messages = restoreItems(raw);
         } catch {
           messages = []; // resumed but history unreadable — start visually fresh
         }

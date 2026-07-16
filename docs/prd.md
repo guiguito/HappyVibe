@@ -318,6 +318,8 @@ The user can: create, resume, archive, restore, **delete permanently** (confirme
 
 **Decision (Feedback rounds):** session lifecycle is **fully transparent** — no session limit visible to the user and no stop/end-session control anywhere (the in-chat abort of a running response is the only stop). An internal cap protects resources: when room is needed, the oldest **idle** session hibernates (never one that is mid-call, awaiting a permission answer, or running a sub-agent) and restores transparently when reopened. Sessions are titled automatically by the model after the first exchange (renameable).
 
+**Decision (Feedback round 4, 2026-07-15) — full transcript on reopen:** reopening a session reconstructs the **whole** visible transcript from the persisted history — user and assistant messages AND the tool cards (tool name, the model-authored intent headline, arguments, and result), not just the text. The intent and results are already persisted in the session file, so a reopened session reads the same as it did live. Reconstructed tool cards are shown **collapsed by default** to keep a long reopened conversation lean. (Live-only extras that aren't in the history — the approval badge and the expandable sub-agent trace — are not reconstructed.)
+
 Session data is stored locally only. No account system, no cloud sync in V1.
 
 ## 18. Distribution and Business Model
