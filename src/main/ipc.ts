@@ -24,7 +24,7 @@ import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
-import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd } from "./agentsMd";
+import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { listDir, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
@@ -802,6 +802,13 @@ export function registerIpc(win: BrowserWindow): void {
     readAgentsMd(workspaces.list(), workspaceId));
   ipcMain.handle("hv:write-agents-md", (_e, workspaceId: string, content: string) =>
     writeAgentsMd(workspaces.list(), workspaceId, String(content)));
+  // WS5: write the agents-md-maker structured draft (root + nested) — the app
+  // does the confined write + audit; the sub-agent stays read-only.
+  ipcMain.handle("hv:write-agents-md-files", (_e, workspaceId: string, files: Record<string, string>) => {
+    const written = writeAgentsMdFiles(workspaces.list(), workspaceId, files);
+    void log.append({ type: "agents_md.written", workspaceId, data: { files: written } });
+    return written;
+  });
   ipcMain.handle("hv:propose-agents-md", (_e, workspaceId: string) =>
     proposeAgentsMd(piRuntimeDir(), workspaces.list(), workspaceId, {
       model: getDefaultModel(),

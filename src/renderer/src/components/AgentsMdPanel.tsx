@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
-import { traceFromEnd } from "../agents";
+import { parseAgentsMdOutput, traceFromEnd } from "../agents";
 
 /** Strip an accidental markdown fence around a drafted file. */
 const unfence = (s: string): string =>
@@ -32,6 +32,7 @@ export function AgentsMdPanel({
   const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justCreated, setJustCreated] = useState(false); // #6: auto-save acknowledgement
+  const [savedFiles, setSavedFiles] = useState<string[]>([]); // WS5: root + nested written
   // Live pi-event listener for the in-flight draft (unsubscribed on capture/close).
   const offDraft = useRef<(() => void) | null>(null);
 
@@ -86,27 +87,32 @@ export function AgentsMdPanel({
         const run = traceFromEnd(e.result).results.find((r) => r.agent === "agents-md-maker");
         if (!run) return;
         stop();
-        const text = unfence(run.finalOutput ?? "");
-        if (text) {
-          setContent(text);
-          // Round 4 #6: auto-save the generated draft — it's editable afterwards,
-          // so the review-before-first-save gate added friction without safety.
-          window.hv
-            .writeAgentsMd(workspace, text)
-            .then(() => {
-              setMissing(false);
-              setDirty(false);
-              setError(null);
-              setJustCreated(true);
-            })
-            .catch((err) => {
-              // Save failed — keep the draft dirty so the user can retry via Save.
-              setDirty(true);
-              setError(String(err));
-            });
-        } else {
+        const raw = run.finalOutput ?? "";
+        // WS5: preferred path — structured {path → content} for root + nested,
+        // written by MAIN (path-confined + audited). Fallback: treat the whole
+        // output as a single root draft (old behavior) for a non-compliant model.
+        const structured = parseAgentsMdOutput(raw);
+        const files = structured ?? (unfence(raw) ? { "AGENTS.md": unfence(raw) } : null);
+        if (!files) {
           setError("The draft came back empty — try again or write it by hand.");
+          return;
         }
+        window.hv
+          .writeAgentsMdFiles(workspace, files)
+          .then((written) => {
+            // Editor shows the saved ROOT file; nested files are noted in the toast.
+            setContent(files["AGENTS.md"] ?? Object.values(files)[0]);
+            setMissing(false);
+            setDirty(false);
+            setError(null);
+            setSavedFiles(written);
+            setJustCreated(true);
+          })
+          .catch((err) => {
+            setContent(files["AGENTS.md"] ?? Object.values(files)[0]);
+            setDirty(true);
+            setError(String(err));
+          });
       } else if (e.type === "agent_end") {
         // Turn finished without a captured draft (model didn't delegate / errored).
         stop();
@@ -117,7 +123,8 @@ export function AgentsMdPanel({
       .promptSession(
         sessionId,
         'Use the subagent tool to delegate to the "agents-md-maker" agent with the task: ' +
-          '"Explore this project and draft the content of its AGENTS.md." ' +
+          '"Explore this project and draft its AGENTS.md (plus a nested AGENTS.md for any large subproject). ' +
+          'Return them in the structured json agents-md block as instructed." ' +
           "Do not create or modify any files yourself. When it finishes, reply with one short sentence " +
           "confirming the draft is ready — do not repeat its output.",
       )
@@ -193,7 +200,9 @@ export function AgentsMdPanel({
                   </>
                 )}
                 {justCreated && (
-                  <span className="text-sm font-bold text-leaf">✓ AGENTS.md created</span>
+                  <span className="text-sm font-bold text-leaf" title={savedFiles.join("\n")}>
+                    ✓ {savedFiles.length > 1 ? `${savedFiles.length} AGENTS.md files created` : "AGENTS.md created"}
+                  </span>
                 )}
                 <span className="flex-1" />
                 <button

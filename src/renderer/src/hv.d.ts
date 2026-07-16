@@ -175,6 +175,8 @@ interface HvApi {
   // B2: AGENTS.md
   readAgentsMd(workspaceId: string): Promise<string | null>;
   writeAgentsMd(workspaceId: string, content: string): Promise<void>;
+  /** WS5: write the agents-md-maker structured draft (root + nested). Returns written rel paths. */
+  writeAgentsMdFiles(workspaceId: string, files: Record<string, string>): Promise<string[]>;
   proposeAgentsMd(workspaceId: string): Promise<string | null>;
   // W2.3 missing-file flow
   hasClaudeMd(workspaceId: string): Promise<boolean>;

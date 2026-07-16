@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld("hv", {
   readAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:read-agents-md", workspaceId),
   writeAgentsMd: (workspaceId: string, content: string) =>
     ipcRenderer.invoke("hv:write-agents-md", workspaceId, content),
+  writeAgentsMdFiles: (workspaceId: string, files: Record<string, string>) =>
+    ipcRenderer.invoke("hv:write-agents-md-files", workspaceId, files),
   proposeAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:propose-agents-md", workspaceId),
   // W2.3 missing-file flow (additive)
   hasClaudeMd: (workspaceId: string) => ipcRenderer.invoke("hv:has-claude-md", workspaceId),

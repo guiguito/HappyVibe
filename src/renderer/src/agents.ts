@@ -225,3 +225,36 @@ export function traceFor(
   }
   return undefined;
 }
+
+/**
+ * WS5: parse the agents-md-maker subagent's structured output into a
+ * {relPath → content} map (root + nested AGENTS.md). Pure — the app writes the
+ * files (path-confined in main); the agent stays read-only (§15).
+ *
+ * Contract: exactly one fenced block tagged `json agents-md` whose body is
+ * {"files": {"AGENTS.md": "...", "pkg/AGENTS.md": "..."}}. Malformed → null,
+ * and the caller falls back to treating the whole output as a single root draft.
+ */
+const AGENTS_MD_FENCE = /```json\s+agents-md\s*\n([\s\S]*?)\n?```/;
+
+export function parseAgentsMdOutput(finalOutput: string): Record<string, string> | null {
+  const m = AGENTS_MD_FENCE.exec(finalOutput ?? "");
+  if (!m) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(m[1]);
+  } catch {
+    return null;
+  }
+  const files = (parsed as { files?: unknown })?.files;
+  if (!files || typeof files !== "object" || Array.isArray(files)) return null;
+  const out: Record<string, string> = {};
+  for (const [rel, content] of Object.entries(files as Record<string, unknown>)) {
+    if (typeof content !== "string") continue;
+    const norm = rel.replace(/\\/g, "/").replace(/^\.\//, "");
+    if (norm.startsWith("/") || norm.split("/").includes("..")) continue;
+    if (norm.split("/").pop() !== "AGENTS.md") continue;
+    out[norm] = content;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
