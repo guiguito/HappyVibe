@@ -6,6 +6,13 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpc } from './ipc'
 
+// Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
+// AND userData resolves to .../HappyVibe — in dev the process runs inside
+// Electron.app, so app.getName() would otherwise be "Electron". macOS ignores the
+// first menu item's label and always uses app.getName(), so setting it here is the
+// only thing that renames the bold app-menu title. Must run before getName/getPath.
+app.setName('HappyVibe')
+
 // App renamed to "HappyVibe" (was the scaffold "hv-scaffold"). Preserve existing
 // data — sessions, provider keys, settings — by migrating the userData dir once,
 // before anything reads it. Runs at module load (app.getPath works pre-ready).

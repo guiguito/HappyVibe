@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   EMPTY_RULES,
+  escapesWorkspace,
   evaluate,
   globToRegExp,
   parseRulesFile,
@@ -21,6 +22,45 @@ describe("no-match defaults (pre-B4 behavior preserved)", () => {
   test("everything else asks by default", () => {
     expect(evaluate(EMPTY_RULES, call("bash", { command: "ls" }))).toEqual({ action: "ask", source: "default" });
     expect(evaluate(EMPTY_RULES, call("write", { path: "a.txt" }))).toEqual({ action: "ask", source: "default" });
+  });
+});
+
+describe("v5: workspace confinement", () => {
+  test("escapesWorkspace: absolute inside/outside", () => {
+    expect(escapesWorkspace("/Users/me/proj/src/a.ts", WS)).toBe(false);
+    expect(escapesWorkspace("/Users/me/proj", WS)).toBe(false); // the root itself
+    expect(escapesWorkspace("/etc/passwd", WS)).toBe(true);
+    expect(escapesWorkspace("/Users/me/project2/x", WS)).toBe(true); // prefix but not a subdir
+  });
+  test("escapesWorkspace: relative climbs and home", () => {
+    expect(escapesWorkspace("src/a.ts", WS)).toBe(false);
+    expect(escapesWorkspace("a/../b", WS)).toBe(false);
+    expect(escapesWorkspace("../secret", WS)).toBe(true);
+    expect(escapesWorkspace("a/../../b", WS)).toBe(true);
+    expect(escapesWorkspace("~/.ssh/id_rsa", WS)).toBe(true);
+  });
+  test("a file tool reaching outside the workspace ASKS — even a read", () => {
+    expect(evaluate(EMPTY_RULES, call("read", { path: "/etc/passwd" }))).toMatchObject({
+      action: "ask", source: "outside-workspace", outsidePath: "/etc/passwd",
+    });
+    expect(evaluate(EMPTY_RULES, call("write", { path: "../escape.txt" }))).toMatchObject({
+      action: "ask", source: "outside-workspace",
+    });
+  });
+  test("in-workspace file tools keep their defaults", () => {
+    expect(evaluate(EMPTY_RULES, call("read", { path: "src/a.ts" }))).toEqual({ action: "allow", source: "safe-default" });
+    expect(evaluate(EMPTY_RULES, call("write", { path: "src/a.ts" }))).toEqual({ action: "ask", source: "default" });
+  });
+  test("bash is NOT path-confined (stays under command rules)", () => {
+    expect(evaluate(EMPTY_RULES, call("bash", { command: "cat /etc/passwd" }))).toEqual({ action: "ask", source: "default" });
+  });
+  test("an explicit allow rule overrides confinement", () => {
+    const r = rules([{ layer: "tool", pattern: "read", action: "allow" }]);
+    expect(evaluate(r, call("read", { path: "/etc/passwd" }))).toMatchObject({ action: "allow", source: "rule" });
+  });
+  test("a deny rule still denies an outside path", () => {
+    const r = rules([{ layer: "tool", pattern: "read", action: "deny" }]);
+    expect(evaluate(r, call("read", { path: "/etc/passwd" }))).toMatchObject({ action: "deny", source: "rule" });
   });
 });
 

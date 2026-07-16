@@ -186,6 +186,8 @@ export interface SystemBlock {
   estTokens: number;
   toolCount: number;
   contextFiles: Array<{ path: string; chars: number; estTokens: number }>;
+  /** v5: per-tool schema sizes (estimated from the LLM tool spec) for drill-in. */
+  toolDefs?: Array<{ name: string; chars: number }>;
 }
 
 export interface ContextItem {
@@ -230,6 +232,7 @@ function groupOf(entry: SessionEntry): ContextItem["group"] {
   if (entry.type !== "message") return "other";
   const role = entry.message?.role;
   if (role === "toolResult") return "tool";
+  if (role === "bashExecution") return "tool"; // v5: bash runs are tool activity, not "other"
   if (role === "assistant" && Array.isArray(entry.message?.content) && entry.message.content.some((b) => b.type === "toolCall")) return "tool";
   return "conversation";
 }

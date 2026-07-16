@@ -110,3 +110,62 @@ export function statMtime(registeredWorkspaces: string[], workspaceId: string, r
     return null;
   }
 }
+
+// ── WS8: file-tree mutations (all confined; refuse to clobber) ───────────────
+
+/** Create an empty file (mkdir parents). Refuses to overwrite an existing path. */
+export function createFile(registeredWorkspaces: string[], workspaceId: string, relPath: string): void {
+  const abs = resolveInWorkspace(registeredWorkspaces, workspaceId, relPath);
+  if (fs.existsSync(abs)) throw new Error("A file or folder already exists there");
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, "", "utf8");
+}
+
+/** Create a directory (recursive). Refuses if the path already exists. */
+export function createDir(registeredWorkspaces: string[], workspaceId: string, relPath: string): void {
+  const abs = resolveInWorkspace(registeredWorkspaces, workspaceId, relPath);
+  if (fs.existsSync(abs)) throw new Error("A file or folder already exists there");
+  fs.mkdirSync(abs, { recursive: true });
+}
+
+/** Move an entry into a destination directory (within the workspace). Refuses to overwrite. */
+export function moveEntry(
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  srcRel: string,
+  destDirRel: string,
+): string {
+  const src = resolveInWorkspace(registeredWorkspaces, workspaceId, srcRel);
+  const destDir = resolveInWorkspace(registeredWorkspaces, workspaceId, destDirRel);
+  const name = path.basename(src);
+  const dest = path.join(destDir, name);
+  if (dest === src || dest.startsWith(src + path.sep)) throw new Error("Cannot move into itself");
+  if (fs.existsSync(dest)) throw new Error(`"${name}" already exists there`);
+  fs.mkdirSync(destDir, { recursive: true });
+  fs.renameSync(src, dest);
+  return path.relative(path.resolve(workspaceId), dest);
+}
+
+/**
+ * Import external OS paths (from a drag-and-drop) into a workspace directory,
+ * copying recursively. Sources are absolute OS paths (NOT confined — they're
+ * external); only the destination is confined. Refuses to overwrite.
+ */
+export function importEntries(
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  destDirRel: string,
+  srcAbsPaths: string[],
+): string[] {
+  const destDir = resolveInWorkspace(registeredWorkspaces, workspaceId, destDirRel);
+  fs.mkdirSync(destDir, { recursive: true });
+  const written: string[] = [];
+  for (const src of srcAbsPaths) {
+    if (!path.isAbsolute(src) || !fs.existsSync(src)) continue;
+    const dest = path.join(destDir, path.basename(src));
+    if (fs.existsSync(dest)) throw new Error(`"${path.basename(src)}" already exists there`);
+    fs.cpSync(src, dest, { recursive: true });
+    written.push(path.relative(path.resolve(workspaceId), dest));
+  }
+  return written;
+}

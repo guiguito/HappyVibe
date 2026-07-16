@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { parseAuth, type AuthEvent, type AuthProviderStatus } from "../auth";
 import { AuthFlowModal } from "./AuthFlowModal";
 import { PermissionRulesSection } from "./PermissionRulesSection";
+import { ModelSelect } from "./ModelSelect";
 import { AuditView } from "./AuditView";
 import { DashboardView } from "./DashboardView";
 
@@ -579,31 +580,15 @@ export function SettingsView({
               {models.length === 0 ? (
                 <p className="text-sm text-ink-soft">No models available yet — configure a provider above.</p>
               ) : (
-                <select
-                  value={defaultModel ? `${defaultModel.provider}/${defaultModel.modelId}` : ""}
-                  onChange={(e) => {
-                    const [provider, ...rest] = e.target.value.split("/");
-                    const modelId = rest.join("/");
-                    setDefaultModel({ provider, modelId });
-                    void window.hv.setDefaultModel(provider, modelId);
+                <ModelSelect
+                  models={models}
+                  value={defaultModel}
+                  onPick={(m) => {
+                    setDefaultModel({ provider: m.provider, modelId: m.id });
+                    void window.hv.setDefaultModel(m.provider, m.id);
                   }}
-                  className="w-full rounded-xl border-2 border-line bg-paper px-3.5 py-2.5 text-sm font-bold focus:outline-none focus:border-tangerine cursor-pointer"
-                >
-                  <option value="" disabled>
-                    Pick a model…
-                  </option>
-                  {[...new Set(models.map((m) => m.provider))].map((prov) => (
-                    <optgroup key={prov} label={prov}>
-                      {models
-                        .filter((m) => m.provider === prov)
-                        .map((m) => (
-                          <option key={`${m.provider}/${m.id}`} value={`${m.provider}/${m.id}`}>
-                            {m.name}
-                          </option>
-                        ))}
-                    </optgroup>
-                  ))}
-                </select>
+                  menuWidthClassName="w-full"
+                />
               )}
               <p className="text-xs text-ink-soft mt-2">
                 Used for new sessions unless a workspace or session overrides it. Only models from configured

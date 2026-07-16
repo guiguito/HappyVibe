@@ -162,6 +162,7 @@ export default function (pi: ExtensionAPI) {
     estTokens: number;
     toolCount: number;
     contextFiles: Array<{ path: string; chars: number; estTokens: number }>;
+    toolDefs: Array<{ name: string; chars: number }>;
   } | null = null;
   // W1.4: full resolved system prompt text (read-only Settings display).
   // null until the first turn runs — before_agent_start is the capture point.
@@ -198,14 +199,24 @@ export default function (pi: ExtensionAPI) {
       selectedTools?: unknown[];
       contextFiles?: Array<{ path?: string; content?: string }>;
     };
+    // v5: per-tool schema size (estimated from the LLM tool spec) for the
+    // context-panel drill-in. Pi doesn't expose real token weight, so ≈chars/4.
+    const toolDefs = (Array.isArray(opts.selectedTools) ? opts.selectedTools : []).map((t) => {
+      const o = t as { name?: string; description?: string; parameters?: unknown };
+      return {
+        name: typeof o?.name === "string" ? o.name : "(tool)",
+        chars: JSON.stringify({ name: o?.name, description: o?.description, parameters: o?.parameters }).length,
+      };
+    });
     systemBlock = {
       chars: injected.length,
       estTokens: Math.ceil(injected.length / 4),
-      toolCount: Array.isArray(opts.selectedTools) ? opts.selectedTools.length : 0,
+      toolCount: toolDefs.length,
       contextFiles: (opts.contextFiles ?? []).map((f) => {
         const chars = (f.content ?? "").length;
         return { path: f.path ?? "", chars, estTokens: Math.ceil(chars / 4) };
       }),
+      toolDefs,
     };
     if (section) return { systemPrompt: injected };
   });
@@ -328,12 +339,18 @@ export default function (pi: ExtensionAPI) {
 
     // ask — an earlier "Allow for session" grant covers default asks only;
     // an explicit ask RULE always re-prompts (that's what the rule is for).
-    if (v.source === "default" && sessionGrants.has(permTool)) {
+    // v5: a session grant also covers the outside-workspace confinement ask.
+    if ((v.source === "default" || v.source === "outside-workspace") && sessionGrants.has(permTool)) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "user", grant: "session" });
       return;
     }
 
-    const title = JSON.stringify({ kind: "hv.permission", tool: permTool, summary });
+    // v5: outside-workspace asks show the FACTUAL reason + path (never masked).
+    const title = JSON.stringify(
+      v.source === "outside-workspace"
+        ? { kind: "hv.permission", tool: permTool, summary, reason: "outside-workspace", path: v.outsidePath }
+        : { kind: "hv.permission", tool: permTool, summary },
+    );
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).
     // NO timeout, NO auto-allow: permission prompts wait indefinitely by design.
     const choice = await ctx.ui.select(title, ["Allow", "Allow for session", "Deny"]);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
-import { AgentsMdPanel } from "./AgentsMdPanel";
-import { TokenGauge } from "./TokenGauge";
+import { ModelSelect } from "./ModelSelect";
+import { ContextBubble } from "./ContextBubble";
 import { ContextPanel } from "./ContextPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
@@ -35,6 +35,12 @@ export function ChatView({
   delegations = [],
   contextSnapshot = null,
   fallbackWindow,
+  stats = null,
+  searchOpen,
+  onSearchOpenChange,
+  contextOpen,
+  onContextOpenChange,
+  onOpenAgentsMd,
   onSend,
   onAbort,
   onRestart,
@@ -42,6 +48,7 @@ export function ChatView({
   onOpenFolder,
   onCompact,
   onOpenFile,
+  onOpenMcp,
   onRewind,
 }: {
   workspace: string | null;
@@ -60,6 +67,13 @@ export function ChatView({
   delegations?: DelegationRun[];
   contextSnapshot?: ContextSnapshot | null;
   fallbackWindow?: number | null;
+  /** WS7: stats/search/context are lifted to App so the controls live in the tab strip. */
+  stats?: SessionStats | null;
+  searchOpen: boolean;
+  onSearchOpenChange: (open: boolean) => void;
+  contextOpen: boolean;
+  onContextOpenChange: (open: boolean) => void;
+  onOpenAgentsMd: () => void;
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[]) => void;
   onAbort: () => void;
   onRestart: () => void;
@@ -68,6 +82,8 @@ export function ChatView({
   onCompact: () => void;
   /** W2.2: open a workspace-relative file in an editor tab (clickable card paths). */
   onOpenFile?: (relPath: string) => void;
+  /** v5: navigate to the MCP, Tools & Agents page (from the composer "+" menu). */
+  onOpenMcp?: () => void;
   /** Round 3 #11: truncate the conversation at a user message (App-side). */
   onRewind?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
@@ -80,9 +96,7 @@ export function ChatView({
   const [workspaceModel, setWorkspaceModel] = useState<ModelRef | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRef | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [modelFilter, setModelFilter] = useState(""); // #5: filter box when >5 models
   const [pendingPaste, setPendingPaste] = useState<string | null>(null); // #3: large-paste confirm
-  const [searchOpen, setSearchOpen] = useState(false); // #8: in-conversation search
   const [searchQuery, setSearchQuery] = useState("");
   const [searchActive, setSearchActive] = useState(0); // #1: active match index
   const [searchTotal, setSearchTotal] = useState(0);
@@ -96,7 +110,16 @@ export function ChatView({
   };
   const [offerAgentsMd, setOfferAgentsMd] = useState(false); // #7: one-time AGENTS.md banner
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [mcpSubOpen, setMcpSubOpen] = useState(false); // v5: "+" menu MCP submenu
+  const [mcpServers, setMcpServers] = useState<{ name: string; state: string }[] | null>(null);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  // v5: pull the cached MCP status when the submenu opens (read-only; no re-sweep).
+  useEffect(() => {
+    if (!mcpSubOpen) return;
+    window.hv.mcpStatus()
+      .then((list) => setMcpServers(list.map((s) => ({ name: s.name, state: s.state }))))
+      .catch(() => setMcpServers([]));
+  }, [mcpSubOpen]);
   // Honest fallback: live set_model failed → override persisted, applies on next spawn.
   const [restartHint, setRestartHint] = useState(false);
   // V2.A: fetch every resolution tier, and REFETCH whenever provider/model
@@ -143,35 +166,23 @@ export function ChatView({
     const img = await window.hv.pickImage();
     if (img) setAttachments((p) => [...p, img]);
   };
-  const [agentsMdOpen, setAgentsMdOpen] = useState(false);
-  const [contextOpen, setContextOpen] = useState(false);
-  // Fetched once per agent_end (turns bump); shared by the gauge and the panel.
-  const [stats, setStats] = useState<SessionStats | null>(null);
-  // Perf: `turns` bumps once per agent_end / compaction — during a burst of
-  // turns this fired an RPC each time. Debounce 500ms trailing so we fetch once
-  // after activity settles; still guarantees a final fetch.
-  useEffect(() => {
-    if (!sessionId) return;
-    let live = true;
-    const t = setTimeout(() => {
-      window.hv.getStats(sessionId).then((s) => live && setStats(s as SessionStats | null));
-    }, 500);
-    return () => { live = false; clearTimeout(t); };
-  }, [turns, sessionId]);
-  // #8: ⌘F / Ctrl-F opens in-conversation search; Escape closes it.
+  // #8: ⌘F / Ctrl-F opens in-conversation search; Escape closes it. searchOpen
+  // is lifted to App (WS7 — the toggle lives in the tab strip).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        // v5.1: when the code editor is focused, ⌘F is its search, not the chat's.
+        if (document.activeElement?.closest(".cm-editor")) return;
         e.preventDefault();
-        setSearchOpen(true);
+        onSearchOpenChange(true);
       } else if (e.key === "Escape" && searchOpen) {
-        setSearchOpen(false);
+        onSearchOpenChange(false);
         setSearchQuery("");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen]);
+  }, [searchOpen, onSearchOpenChange]);
 
   // #7: on opening a workspace with no AGENTS.md, offer to create one — once per
   // workspace (dismissal remembered in localStorage so it never nags).
@@ -234,37 +245,24 @@ export function ChatView({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {/* Header */}
-      <header className="flex items-center gap-3 px-6 py-3 border-b-2 border-line bg-paper">
-        {/* Session title + workspace removed — the tab strip already names the
-            session and the sidebar shows the workspace (redundant here). */}
-        <div className="flex-1 min-w-0" />
-        {busy && (
-          <span className="flex items-center gap-1.5 text-xs font-bold text-tangerine">
-            <span className="size-2 rounded-full bg-tangerine animate-pulse" />
-            working
-          </span>
-        )}
+      {/* v5.1: search + context bubble live IN the chat (a thin right-aligned bar
+          at the top of this pane) — not a floating overlay that could bleed over
+          an adjacent split pane. */}
+      <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
         <button
           type="button"
-          onClick={() => setSearchOpen((o) => !o)}
+          onClick={() => onSearchOpenChange(!searchOpen)}
+          aria-pressed={searchOpen}
           title="Search this conversation (⌘F)"
           aria-label="Search this conversation"
-          className="text-sm rounded-full border-2 border-line bg-card px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
+          className={`text-sm rounded-full border-2 px-2.5 py-0.5 cursor-pointer transition-colors ${
+            searchOpen ? "border-tangerine bg-honey-soft text-tangerine-deep" : "border-line bg-card text-ink-soft hover:border-honey hover:text-ink"
+          }`}
         >
           ⌕
         </button>
-        <button
-          type="button"
-          onClick={() => setAgentsMdOpen(true)}
-          title="Edit AGENTS.md — project context for the agent (applies to new or restarted sessions)"
-          className="font-mono text-[11px] rounded-full border-2 border-line bg-card px-3 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
-        >
-          AGENTS.md
-        </button>
-        <TokenGauge stats={stats} fallbackWindow={fallbackWindow} onOpen={() => setContextOpen(true)} />
-      </header>
-
+        <ContextBubble stats={stats} fallbackWindow={fallbackWindow} onOpen={() => onContextOpenChange(true)} />
+      </div>
       {/* Crash banner */}
       {crashed !== null && (
         <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/40 text-sm font-semibold text-berry">
@@ -285,7 +283,7 @@ export function ChatView({
           <span className="flex-1">Context is {gauge!.percent}% full. Open the context panel to review or compact.</span>
           <button
             type="button"
-            onClick={() => setContextOpen(true)}
+            onClick={() => onContextOpenChange(true)}
             className="rounded-lg bg-berry text-paper font-bold text-xs px-3 py-1.5 border-2 border-berry hover:brightness-110 cursor-pointer"
           >
             Review context
@@ -312,7 +310,7 @@ export function ChatView({
           <span className="font-bold flex-1">No AGENTS.md found — add project context so the agent understands this codebase?</span>
           <button
             type="button"
-            onClick={() => { setOfferAgentsMd(false); setAgentsMdOpen(true); }}
+            onClick={() => { setOfferAgentsMd(false); onOpenAgentsMd(); }}
             className="rounded-lg bg-tangerine text-paper font-bold text-xs px-3 py-1 border-2 border-tangerine-deep shadow-sticker cursor-pointer hover:brightness-105"
           >
             Generate one
@@ -429,7 +427,7 @@ export function ChatView({
           </button>
           <button
             type="button"
-            onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
+            onClick={() => { onSearchOpenChange(false); setSearchQuery(""); }}
             aria-label="Close search"
             className="text-ink-soft hover:text-ink cursor-pointer font-bold px-1"
           >
@@ -540,8 +538,8 @@ export function ChatView({
             </button>
             {attachMenuOpen && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setAttachMenuOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-2 z-20 w-56 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
+                <div className="fixed inset-0 z-10" onClick={() => { setAttachMenuOpen(false); setMcpSubOpen(false); }} />
+                <div className="absolute bottom-full left-0 mb-2 z-20 w-60 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
                   <button
                     type="button"
                     disabled={!vision}
@@ -561,79 +559,88 @@ export function ChatView({
                     Attach file
                     <span className="block text-[10px] font-medium text-ink-soft">coming soon</span>
                   </button>
+                  {/* WS7: AGENTS.md editor (replaces the removed header chip). */}
+                  <button
+                    type="button"
+                    onClick={() => { setAttachMenuOpen(false); onOpenAgentsMd(); }}
+                    className="w-full text-left px-3 py-2 hover:bg-paper-deep/40 cursor-pointer"
+                  >
+                    Edit AGENTS.md
+                    <span className="block text-[10px] font-medium text-ink-soft">project context for the agent</span>
+                  </button>
+                  {/* v5: MCP submenu — connected servers (read-only) + Manage shortcut. */}
+                  <button
+                    type="button"
+                    onClick={() => setMcpSubOpen((o) => !o)}
+                    aria-expanded={mcpSubOpen}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-paper-deep/40 cursor-pointer"
+                  >
+                    <span className="flex-1 text-left">MCP</span>
+                    <span className="text-[11px] text-ink-soft" aria-hidden>{mcpSubOpen ? "▾" : "▸"}</span>
+                  </button>
+                  {mcpSubOpen && (
+                    <div className="border-t border-line bg-paper-deep/30 py-1">
+                      {mcpServers === null ? (
+                        <div className="px-3 py-1.5 text-[11px] font-medium text-ink-soft">Loading…</div>
+                      ) : mcpServers.length === 0 ? (
+                        <div className="px-3 py-1.5 text-[11px] font-medium text-ink-soft">No MCP servers connected.</div>
+                      ) : (
+                        mcpServers.map((s) => (
+                          <div key={s.name} className="flex items-center gap-2 px-3 py-1.5">
+                            <span
+                              className={`size-2 rounded-full shrink-0 ${
+                                s.state === "connected" ? "bg-leaf" : s.state === "checking" ? "bg-honey" : "bg-berry"
+                              }`}
+                              title={s.state}
+                            />
+                            <span className="flex-1 min-w-0 truncate text-[12px] font-medium">{s.name}</span>
+                            <span className="text-[9px] uppercase tracking-wide text-ink-soft">{s.state}</span>
+                          </div>
+                        ))
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { setAttachMenuOpen(false); setMcpSubOpen(false); onOpenMcp?.(); }}
+                        className="w-full text-left px-3 py-1.5 text-[12px] font-bold text-tangerine-deep hover:bg-paper-deep/40 cursor-pointer"
+                      >
+                        Manage…
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             )}
           </div>
-          {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global). */}
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              aria-label="Change model for this session"
-              aria-expanded={modelMenuOpen}
-              onClick={() => { setModelMenuOpen((o) => !o); setAttachMenuOpen(false); }}
-              title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
-              className="max-w-44 text-left font-mono text-[11px] rounded-full border-2 border-line bg-paper px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
-            >
-              <span className="block truncate">{modelName ?? "model…"}</span>
-              {/* V2.A: tier-source subtext — honest about WHERE the model came from. */}
-              {resolution && (
-                <span className="block truncate font-sans text-[9px] font-semibold leading-tight text-ink-soft/80">
-                  {TIER_LABEL[resolution.tier]}
-                </span>
-              )}
-            </button>
-            {modelMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => { setModelMenuOpen(false); setModelFilter(""); }} />
-                <div className="absolute bottom-full left-0 mb-2 z-20 w-72 max-h-80 overflow-hidden flex flex-col rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
-                  {/* #5: mini search bar once the list is long enough to warrant it. */}
-                  {(models ?? []).length > 5 && (
-                    <input
-                      autoFocus
-                      value={modelFilter}
-                      onChange={(e) => setModelFilter(e.target.value)}
-                      placeholder="Search models…"
-                      className="mx-2 mb-1 px-2 py-1 rounded-lg border-2 border-line bg-paper text-[13px] focus:outline-none focus:border-tangerine"
-                    />
+          {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global).
+              WS1: shared ModelSelect (controlled open so a session switch force-closes it). */}
+          <div className="shrink-0">
+            <ModelSelect
+              models={models ?? []}
+              loading={models === null}
+              value={resolved ? { provider: resolved.provider, modelId: resolved.modelId } : null}
+              onPick={(m) => void pickModel(m)}
+              open={modelMenuOpen}
+              onOpenChange={(o) => { setModelMenuOpen(o); if (o) setAttachMenuOpen(false); }}
+              direction="up"
+              renderTrigger={({ toggle }) => (
+                <button
+                  type="button"
+                  aria-label="Change model for this session"
+                  aria-expanded={modelMenuOpen}
+                  onClick={toggle}
+                  title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
+                  className="max-w-44 text-left font-mono text-[11px] rounded-full border-2 border-line bg-paper px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
+                >
+                  <span className="block truncate">{modelName ?? "model…"}</span>
+                  {/* V2.A: tier-source subtext — honest about WHERE the model came from. */}
+                  {resolution && (
+                    <span className="block truncate font-sans text-[9px] font-semibold leading-tight text-ink-soft/80">
+                      {TIER_LABEL[resolution.tier]}
+                    </span>
                   )}
-                  <div className="overflow-y-auto">
-                    {(() => {
-                      const q = modelFilter.trim().toLowerCase();
-                      const shown = (models ?? []).filter(
-                        (m) => !q || `${m.name} ${m.provider} ${m.id}`.toLowerCase().includes(q),
-                      );
-                      return (
-                        <>
-                          {shown.map((m) => {
-                            const active = resolved != null && m.provider === resolved.provider && m.id === resolved.modelId;
-                            return (
-                              <button
-                                key={`${m.provider}/${m.id}`}
-                                type="button"
-                                onClick={() => { setModelFilter(""); void pickModel(m); }}
-                                className={`w-full text-left px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer ${active ? "font-bold text-tangerine-deep" : "font-medium"}`}
-                              >
-                                <span className="block truncate">{m.name}</span>
-                                <span className="block truncate font-mono text-[10px] text-ink-soft">{m.provider}/{m.id}</span>
-                              </button>
-                            );
-                          })}
-                          {(models ?? []).length === 0 && (
-                            <div className="px-3 py-2 text-xs text-ink-soft font-medium">
-                              {models === null ? "Loading models…" : "No models — configure a provider in Settings."}
-                            </div>
-                          )}
-                          {(models ?? []).length > 0 && shown.length === 0 && (
-                            <div className="px-3 py-2 text-xs text-ink-soft font-medium">No models match “{modelFilter}”.</div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </>
-            )}
+                </button>
+              )}
+            />
           </div>
           <input
             value={input}
@@ -673,15 +680,14 @@ export function ChatView({
           </button>
         </div>
       </form>
-      {agentsMdOpen && <AgentsMdPanel workspace={workspace} sessionId={sessionId} onClose={() => setAgentsMdOpen(false)} />}
-      {contextOpen && (
+      {contextOpen && sessionId && (
         <ContextPanel
           sessionId={sessionId}
           snapshot={contextSnapshot}
           stats={stats}
           fallbackWindow={fallbackWindow}
           turns={turns}
-          onClose={() => setContextOpen(false)}
+          onClose={() => onContextOpenChange(false)}
           onCompact={onCompact}
         />
       )}
@@ -773,13 +779,14 @@ function DelegationRunCard({ run, trace }: { run: DelegationRun; trace?: Subagen
               onClick={() => setOpen((o) => !o)}
               aria-expanded={open}
               title={open ? "Collapse the live subagent transcript" : "See what the subagent is doing"}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold cursor-pointer hover:bg-paper-deep/40 transition-colors"
+              className="w-full flex items-start gap-3 px-4 py-2.5 text-left text-sm font-semibold cursor-pointer hover:bg-paper-deep/40 transition-colors"
             >
               <span
-                className={`size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : run.status === "done" ? "bg-leaf" : "bg-berry"}`}
+                className={`mt-1 size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : run.status === "done" ? "bg-leaf" : "bg-berry"}`}
               />
-              <ToolIcon kind="robot" className="size-4 shrink-0 text-sky" />
-              <span className="flex-1 min-w-0 truncate">
+              <ToolIcon kind="robot" className="mt-0.5 size-4 shrink-0 text-sky" />
+              {/* v5: intent wraps instead of clipping with an ellipsis. */}
+              <span className="flex-1 min-w-0 break-words">
                 <span className="font-black text-tangerine-deep">{run.agent}</span>
                 {run.label && <span className="text-ink-soft font-medium"> — {run.label}</span>}
               </span>

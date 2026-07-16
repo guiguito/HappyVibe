@@ -23,10 +23,16 @@ import { AgentsView } from "./components/AgentsView";
 import { delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
-import { bufferKey, closeFile, emptyTabs, openFile, type WorkspaceTabs } from "./tabs";
+import {
+  activateTab, allFiles, bufferKey, CHAT_TAB, closeTab, emptyTabs, moveTab, openFile, splitPane, unsplit,
+  type TabId, type WorkspaceTabs,
+} from "./tabs";
 import { TabStrip } from "./components/TabStrip";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
+import { AgentsMdPanel } from "./components/AgentsMdPanel";
+import type { SessionStats } from "./context";
+import { basename as tabBasename } from "./tabs";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -74,6 +80,12 @@ export default function App(): React.JSX.Element {
   // docked file-tree pane is a global toggle (closed by default).
   const [tabsByWs, setTabsByWs] = useState<Record<string, WorkspaceTabs>>({});
   const [treeOpen, setTreeOpen] = useState(false);
+  // WS7: chat controls lifted from the removed ChatView header into the tab strip.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [selStats, setSelStats] = useState<SessionStats | null>(null);
+  // AGENTS.md editor — opened from the "+" menu (root) or the file tree (any path).
+  const [agentsMd, setAgentsMd] = useState<string | null>(null); // relPath, or null = closed
   // bufferKey(ws, rel) → unsaved edits (feeds the tab-strip dirty dot; the
   // buffers themselves live in the always-mounted FileTab components).
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
@@ -400,6 +412,11 @@ export default function App(): React.JSX.Element {
 
   // ── W2.2: tab/editor handlers ──────────────────────────────────────
   const openFileTab = useCallback((wsId: string, rel: string): void => {
+    // WS7: opening any AGENTS.md opens the edition dialog, not a plain editor tab.
+    if (tabBasename(rel) === "AGENTS.md") {
+      setAgentsMd(rel);
+      return;
+    }
     setTabsByWs((p) => ({ ...p, [wsId]: openFile(p[wsId] ?? emptyTabs, rel) }));
   }, []);
 
@@ -416,10 +433,24 @@ export default function App(): React.JSX.Element {
     [openFileTab]
   );
 
-  const closeFileTab = (wsId: string, rel: string): void => {
-    const key = bufferKey(wsId, rel);
-    if (dirtyMap[key] && !window.confirm(`Close ${rel}? Unsaved changes will be lost.`)) return;
-    setTabsByWs((p) => ({ ...p, [wsId]: closeFile(p[wsId] ?? emptyTabs, rel) }));
+  // WS7: session context stats for the tab-strip bubble + panel. Fetched once
+  // per agent_end (turns bump), debounced; reset search/context on session switch.
+  useEffect(() => {
+    setSearchOpen(false);
+    setContextOpen(false);
+    if (!selectedId) { setSelStats(null); return; }
+    let live = true;
+    const t = setTimeout(() => {
+      window.hv.getStats(selectedId).then((s) => live && setSelStats(s as SessionStats | null));
+    }, 500);
+    return () => { live = false; clearTimeout(t); };
+  }, [selectedId, selectedId ? turns[selectedId] : 0]);
+
+  const closeFileTab = (wsId: string, paneIdx: number, tab: TabId): void => {
+    if (tab === CHAT_TAB) return; // chat is never closable
+    const key = bufferKey(wsId, tab);
+    if (dirtyMap[key] && !window.confirm(`Close ${tab}? Unsaved changes will be lost.`)) return;
+    setTabsByWs((p) => ({ ...p, [wsId]: closeTab(p[wsId] ?? emptyTabs, paneIdx, tab) }));
     setDirtyMap((p) => {
       if (!(key in p)) return p;
       const next = { ...p };
@@ -427,6 +458,9 @@ export default function App(): React.JSX.Element {
       return next;
     });
   };
+  // WS6: mutate this workspace's tab layout with a pure tabs.ts helper.
+  const updateTabs = (wsId: string, fn: (t: WorkspaceTabs) => WorkspaceTabs): void =>
+    setTabsByWs((p) => ({ ...p, [wsId]: fn(p[wsId] ?? emptyTabs) }));
 
   const setDirtyFlag = useCallback((key: string, d: boolean): void => {
     setDirtyMap((p) => (!!p[key] === d ? p : { ...p, [key]: d }));
@@ -647,15 +681,47 @@ export default function App(): React.JSX.Element {
   const activeView: View = needsSetup ? "settings" : view;
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
-  // ── W2.2: current workspace's tab state + dirty flags for the strip ──
+  // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
   const wsId = selected?.workspaceId ?? null;
   const wsTabs = (wsId ? tabsByWs[wsId] : undefined) ?? emptyTabs;
-  const chatTabActive = !selected || wsTabs.active === null;
   const dirtyForWs: Record<string, boolean> = {};
-  if (wsId) for (const f of wsTabs.files) dirtyForWs[f] = !!dirtyMap[bufferKey(wsId, f)];
+  if (wsId) for (const f of allFiles(wsTabs)) dirtyForWs[f] = !!dirtyMap[bufferKey(wsId, f)];
   // Every open file across ALL workspaces stays mounted (hidden) so unsaved
   // buffers survive session/workspace/view switches.
-  const openFileEntries = Object.entries(tabsByWs).flatMap(([w, t]) => t.files.map((f) => [w, f] as const));
+  const openFileEntries = Object.entries(tabsByWs).flatMap(([w, t]) => allFiles(t).map((f) => [w, f] as const));
+  // WS6: which pane's content cell a tab occupies when it's that pane's active
+  // tab. Content is mounted flat and placed via CSS grid-area (never reparented).
+  const AREAS = ["contentA", "contentB"] as const;
+  const areaFor = (tab: TabId): string | null => {
+    const p = wsTabs.panes.findIndex((pane) => pane.active === tab);
+    return p >= 0 ? AREAS[p] : null;
+  };
+  const chatArea = selected ? areaFor(CHAT_TAB) : "contentA";
+  // Divider between the two split panes (left border for v, top border for h).
+  const paneDivider = (area?: string | null): string =>
+    area === "contentB" ? (wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line") : "";
+  // v5.1: a persistent `toolbar` area is pinned top-right (strip row only);
+  // content spans under it. The file tree is a separate absolute overlay (below),
+  // so opening it never shrinks the panes. Content stays mounted-flat (WS6).
+  const TREE = treeOpen && !!wsId;
+  const gridStyle: React.CSSProperties =
+    wsTabs.split === "v"
+      ? {
+          gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) auto",
+          gridTemplateRows: "auto minmax(0,1fr)",
+          gridTemplateAreas: '"stripA stripB toolbar" "contentA contentB contentB"',
+        }
+      : wsTabs.split === "h"
+        ? {
+            gridTemplateColumns: "minmax(0,1fr) auto",
+            gridTemplateRows: "auto minmax(0,1fr) auto minmax(0,1fr)",
+            gridTemplateAreas: '"stripA toolbar" "contentA contentA" "stripB stripB" "contentB contentB"',
+          }
+        : {
+            gridTemplateColumns: "minmax(0,1fr) auto",
+            gridTemplateRows: "auto minmax(0,1fr)",
+            gridTemplateAreas: '"stripA toolbar" "contentA contentA"',
+          };
 
   return (
     <div className="h-full flex">
@@ -737,19 +803,66 @@ export default function App(): React.JSX.Element {
             tabbed: chat tab + file tabs; the docked file tree sits to the
             right IN FLOW (ContextPanel is a fixed overlay above it, z-40). */}
         <div className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"}`}>
-          <div className="flex-1 min-w-0 flex flex-col">
+          <div
+            className="flex-1 min-w-0 min-h-0 grid relative"
+            style={gridStyle}
+            onDragOver={(e) => e.dataTransfer.types.includes("application/x-hv-relpath") && e.preventDefault()}
+            onDrop={(e) => {
+              const rel = e.dataTransfer.getData("application/x-hv-relpath");
+              if (rel && wsId) { e.preventDefault(); openFileTab(wsId, rel); }
+            }}
+          >
             {selected && wsId && (
-              <TabStrip
-                sessionTitle={selected.title}
-                tabs={wsTabs}
-                dirty={dirtyForWs}
-                treeOpen={treeOpen}
-                onSelect={(target) => setTabsByWs((p) => ({ ...p, [wsId]: { ...(p[wsId] ?? emptyTabs), active: target } }))}
-                onClose={(rel) => closeFileTab(wsId, rel)}
-                onToggleTree={() => setTreeOpen((o) => !o)}
-              />
+              <div style={{ gridArea: "stripA" }} className="min-w-0 h-11">
+                <TabStrip
+                  pane={wsTabs.panes[0]}
+                  paneIndex={0}
+                  sessionTitle={selected.title}
+                  dirty={dirtyForWs}
+                  onSelect={(tab) => updateTabs(wsId, (t) => activateTab(t, 0, tab))}
+                  onClose={(tab) => closeFileTab(wsId, 0, tab)}
+                  onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
+                  chatBusy={!!(selectedId && busy[selectedId])}
+                />
+              </div>
             )}
-            <div className={`flex-1 min-h-0 flex-col ${chatTabActive ? "flex" : "hidden"}`}>
+            {/* v5.1: persistent top-right toolbar — split + file-panel controls,
+                always visible regardless of split state. */}
+            {selected && wsId && (
+              <div style={{ gridArea: "toolbar" }} className="h-11 flex items-stretch border-b-2 border-line bg-paper">
+                <CenterToolbar
+                  split={wsTabs.split}
+                  treeOpen={treeOpen}
+                  onSplit={(dir) => updateTabs(wsId, (t) => splitPane(t, dir))}
+                  onUnsplit={() => updateTabs(wsId, unsplit)}
+                  onToggleTree={() => setTreeOpen((o) => !o)}
+                />
+              </div>
+            )}
+            {selected && wsId && wsTabs.split && wsTabs.panes[1] && (
+              <div style={{ gridArea: "stripB" }} className={`min-w-0 h-11 ${wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line"}`}>
+                <TabStrip
+                  pane={wsTabs.panes[1]}
+                  paneIndex={1}
+                  sessionTitle={selected.title}
+                  dirty={dirtyForWs}
+                  onSelect={(tab) => updateTabs(wsId, (t) => activateTab(t, 1, tab))}
+                  onClose={(tab) => closeFileTab(wsId, 1, tab)}
+                  onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
+                  chatBusy={!!(selectedId && busy[selectedId])}
+                />
+              </div>
+            )}
+            {/* WS6: empty-pane placeholder (a split pane with no active tab). */}
+            {selected && wsTabs.split && wsTabs.panes[1] && wsTabs.panes[1].active === null && (
+              <div style={{ gridArea: "contentB" }} className={`min-h-0 flex items-center justify-center text-sm text-ink-soft ${paneDivider("contentB")}`}>
+                Open a file or drag a tab here.
+              </div>
+            )}
+            <div
+              style={{ gridArea: chatArea ?? undefined }}
+              className={`min-h-0 min-w-0 flex-col ${paneDivider(chatArea)} ${activeView === "chat" && chatArea ? "flex" : "hidden"}`}
+            >
               <ChatView
             workspace={selected?.workspaceId ?? null}
             sessionId={selectedId}
@@ -764,6 +877,12 @@ export default function App(): React.JSX.Element {
             delegations={selectedId ? Object.values(delegations[selectedId] ?? {}) : []}
             contextSnapshot={(selectedId ? contextSnapshots[selectedId] : undefined) ?? null}
             fallbackWindow={fallbackWindow}
+            stats={selStats}
+            searchOpen={searchOpen}
+            onSearchOpenChange={setSearchOpen}
+            contextOpen={contextOpen}
+            onContextOpenChange={setContextOpen}
+            onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={send}
             onRetry={retryCrash}
             onCompact={() => selectedId && void window.hv.compactSession(selectedId)}
@@ -779,20 +898,33 @@ export default function App(): React.JSX.Element {
             }}
                 onOpenFolder={addWorkspace}
                 onOpenFile={openFileFromCard}
+                onOpenMcp={() => setView("agents")}
                 onRewind={rewindTo}
               />
             </div>
-            {openFileEntries.map(([w, f]) => (
-              <FileTab
-                key={bufferKey(w, f)}
-                workspace={w}
-                relPath={f}
-                active={activeView === "chat" && wsId === w && wsTabs.active === f}
-                onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
-              />
-            ))}
+            {openFileEntries.map(([w, f]) => {
+              const area = wsId === w ? areaFor(f) : null;
+              return (
+                <FileTab
+                  key={bufferKey(w, f)}
+                  workspace={w}
+                  relPath={f}
+                  active={activeView === "chat" && wsId === w && area !== null}
+                  gridArea={area ?? undefined}
+                  className={paneDivider(area)}
+                  onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
+                />
+              );
+            })}
+            {/* v5.1: file tree is a right-side OVERLAY drawer (top below the tab
+                bar, h-11) — it overlays the content instead of a grid column, so
+                opening it never shrinks the panes. Below the ContextPanel (z-40). */}
+            {TREE && (
+              <div className="absolute top-11 right-0 bottom-0 w-64 z-30 border-l-2 border-line bg-paper shadow-sticker-lg">
+                <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setTreeOpen(false)} />
+              </div>
+            )}
           </div>
-          {treeOpen && wsId && <FileTree key={wsId} workspace={wsId} onOpenFile={(rel) => openFileTab(wsId, rel)} onClose={() => setTreeOpen(false)} />}
         </div>
       </main>
       {uiReq?.kind === "permission" && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
@@ -801,6 +933,74 @@ export default function App(): React.JSX.Element {
       )}
       {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
+      {/* WS7: AGENTS.md editor — root from the "+" menu, any AGENTS.md from the tree. */}
+      {agentsMd && wsId && (
+        <AgentsMdPanel
+          workspace={wsId}
+          relPath={agentsMd}
+          sessionId={selectedId}
+          onClose={() => setAgentsMd(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** WS6: the file-tree toggle. */
+function FilesToggle({ treeOpen, onToggle }: { treeOpen: boolean; onToggle: () => void }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={treeOpen}
+      aria-label={treeOpen ? "Hide the file tree" : "Browse workspace files"}
+      title={treeOpen ? "Hide the file tree" : "Browse workspace files"}
+      className={`shrink-0 flex items-center border-l-2 border-line px-3 cursor-pointer transition-colors ${
+        treeOpen ? "text-tangerine-deep bg-paper-deep/50" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
+      }`}
+    >
+      <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      </svg>
+    </button>
+  );
+}
+
+/** v5.1: persistent top-right toolbar — split controls + file-panel toggle. */
+function CenterToolbar({
+  split,
+  treeOpen,
+  onSplit,
+  onUnsplit,
+  onToggleTree,
+}: {
+  split: "h" | "v" | null;
+  treeOpen: boolean;
+  onSplit: (dir: "h" | "v") => void;
+  onUnsplit: () => void;
+  onToggleTree: () => void;
+}): React.JSX.Element {
+  const btn = "shrink-0 flex items-center border-l-2 border-line px-2.5 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer transition-colors";
+  return (
+    <div className="flex items-stretch">
+      <button type="button" onClick={() => onSplit("v")} aria-pressed={split === "v"} title="Split — side by side" aria-label="Split vertically"
+        className={`${btn} ${split === "v" ? "text-tangerine-deep bg-paper-deep/50" : ""}`}>
+        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" />
+        </svg>
+      </button>
+      <button type="button" onClick={() => onSplit("h")} aria-pressed={split === "h"} title="Split — stacked" aria-label="Split horizontally"
+        className={`${btn} ${split === "h" ? "text-tangerine-deep bg-paper-deep/50" : ""}`}>
+        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 12h18" />
+        </svg>
+      </button>
+      {split && (
+        <button type="button" onClick={onUnsplit} title="Close split" aria-label="Close split" className={btn}>
+          <span className="text-sm font-bold leading-none">⊟</span>
+        </button>
+      )}
+      <FilesToggle treeOpen={treeOpen} onToggle={onToggleTree} />
     </div>
   );
 }

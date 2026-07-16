@@ -133,7 +133,14 @@ function McpConnectResult({
  * workspace → <workspace>/.mcp.json (shareable with other MCP hosts).
  * Config read at session start — changes apply to new sessions.
  */
-export function McpServersSection({ workspaceId }: { workspaceId: string | null }): React.JSX.Element {
+export function McpServersSection({
+  workspaceId,
+  embedded = false,
+}: {
+  workspaceId: string | null;
+  /** v5: rendered inside the "MCP" section card — drop the own heading + top margin. */
+  embedded?: boolean;
+}): React.JSX.Element {
   const [servers, setServers] = useState<McpServer[] | null>(null);
   const [editing, setEditing] = useState<McpServer | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,9 +212,9 @@ export function McpServersSection({ workspaceId }: { workspaceId: string | null 
   };
 
   return (
-    <div className="mt-10">
+    <div className={embedded ? "" : "mt-10"}>
       <div className="flex items-center gap-2 mb-1">
-        <h2 className="font-bold text-lg">MCP servers</h2>
+        {!embedded && <h2 className="font-bold text-lg">MCP servers</h2>}
         <span className="flex-1" />
         <button
           type="button"

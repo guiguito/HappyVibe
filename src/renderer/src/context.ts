@@ -27,9 +27,10 @@ export interface Gauge {
   zone: GaugeZone;
 }
 
-// Color thresholds (own the styling — warm-workshop tokens). ~70 / ~90.
-const AMBER = 70;
-const RED = 90;
+// Color thresholds (own the styling — warm-workshop tokens).
+// v5: green <35, orange 35–80, red >80 (per Feedbacks v5 context bubble).
+const AMBER = 35;
+const RED = 80;
 export const zoneOf = (percent: number): GaugeZone => (percent >= RED ? "red" : percent >= AMBER ? "amber" : "calm");
 
 /**
@@ -98,6 +99,8 @@ export interface SystemBlock {
   contextFiles: Array<{ path: string; chars: number; estTokens: number }>;
   /** W2.3: nested AGENTS.md discovered via file-tool calls (dir is cwd-relative). */
   nested?: Array<{ dir: string; path: string; chars: number }>;
+  /** v5: per-tool schema sizes (estimated) for the tool-definitions drill-in. */
+  toolDefs?: Array<{ name: string; chars: number }>;
 }
 
 export interface ContextSnapshot {
@@ -222,19 +225,21 @@ export function summarizeGroups(
         share: 0,
       });
     }
-    // #9: surface the tool definitions as their own line. Their token weight
-    // isn't separately exposed by Pi (it's folded into the system prompt), so
-    // show the count and mark the size "not measured" rather than omitting them.
+    // #9 / v5: tool definitions as their own line. If per-tool sizes are present
+    // (toolDefs), show an ESTIMATED total and allow drill-in; otherwise fall back
+    // to the count with the size labeled "not measured".
     if (system.toolCount > 0) {
+      const defs = system.toolDefs ?? [];
+      const chars = defs.reduce((n, d) => n + d.chars, 0);
       rows.push({
         key: "tools",
         label: "Tool definitions",
         count: system.toolCount,
-        chars: 0,
-        estTokens: 0,
+        chars,
+        estTokens: defs.reduce((n, d) => n + Math.ceil(d.chars / 4), 0),
         removedCount: 0,
         share: 0,
-        measured: false,
+        measured: defs.length > 0,
       });
     }
   }
@@ -252,6 +257,50 @@ export function summarizeGroups(
   const total = rows.reduce((n, r) => n + r.estTokens, 0);
   for (const r of rows) r.share = total > 0 ? Math.round((r.estTokens / total) * 100) : 0;
   return rows;
+}
+
+/** v5: warm-workshop color per category, for the composition surface. */
+export const CATEGORY_COLOR: Record<string, string> = {
+  system: "bg-ink/70",
+  files: "bg-sky",
+  tools: "bg-honey",
+  conversation: "bg-tangerine",
+  tool: "bg-leaf",
+  compaction: "bg-plum",
+  branch: "bg-berry",
+  other: "bg-line-strong",
+  free: "bg-line/40", // v5.1: empty/free context window
+};
+
+export interface CompositionSegment {
+  key: string;
+  label: string;
+  share: number;
+  color: string;
+}
+
+/**
+ * v5: proportional segments for the composition surface (a segmented bar).
+ * Drops zero-share rows; each segment carries its color + label for the legend.
+ * v5.1: when `usedPercent` (of the context window) is given, the bar is scaled to
+ * the WHOLE window — category widths shrink proportionally and a "Free space"
+ * segment fills the remainder, so the empty context is visible too.
+ */
+export function compositionSegments(rows: CategorySummary[], usedPercent?: number): CompositionSegment[] {
+  const scale = usedPercent != null ? usedPercent / 100 : 1;
+  const segs: CompositionSegment[] = rows
+    .filter((r) => r.estTokens > 0 && r.share > 0)
+    .map((r) => ({
+      key: r.key,
+      label: r.label,
+      share: Math.round(r.share * scale),
+      color: CATEGORY_COLOR[r.key] ?? "bg-line-strong",
+    }));
+  if (usedPercent != null) {
+    const free = Math.max(0, 100 - usedPercent);
+    if (free > 0) segs.push({ key: "free", label: "Free space", share: free, color: CATEGORY_COLOR.free });
+  }
+  return segs;
 }
 
 /** Total estimated tokens across the whole context (system + all items). */

@@ -121,6 +121,11 @@ export function FileTree({
   const [menu, setMenu] = useState<{ rel: string; kind: "dir" | "file"; x: number; y: number } | null>(null);
   const [confirmDel, setConfirmDel] = useState<{ rel: string; kind: "dir" | "file" } | null>(null);
   const [details, setDetails] = useState<{ rel: string; kind: "dir" | "file"; size: number; mtimeMs: number } | null>(null);
+  // WS8: inline new-file / new-folder input, and the drop-hover target dir.
+  const [creating, setCreating] = useState<{ parent: string; kind: "file" | "dir" } | null>(null);
+  const [newName, setNewName] = useState("");
+  const [dropDir, setDropDir] = useState<string | null>(null);
+  const [dropError, setDropError] = useState<string | null>(null);
 
   const parentOf = (rel: string): string => (rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "");
 
@@ -140,12 +145,71 @@ export function FileTree({
 
   useEffect(() => {
     fetchDir("");
+    // WS8: native fs watching — auto-refresh instead of a manual button. The
+    // main watcher reports changed parent dirs; re-list the ones we've expanded.
+    void window.hv.watchWorkspace(workspace).catch(() => {});
+    const off = window.hv.onFsChanged(({ workspaceId, relDirs }) => {
+      if (workspaceId !== workspace) return;
+      setExpanded((exp) => {
+        for (const d of relDirs) if (exp.has(d)) fetchDir(d);
+        return exp;
+      });
+    });
+    return () => {
+      off();
+      void window.hv.unwatchWorkspace(workspace).catch(() => {});
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; key={workspace} remounts
   }, [workspace]);
 
-  /** V2.C2: refresh re-lists every currently-expanded dir; expansion is kept. */
-  const refresh = (): void => {
-    for (const relDir of expanded) fetchDir(relDir);
+  const collapseAll = (): void => setExpanded(new Set([""]));
+
+  /** WS8: create a file/folder from the inline input; reveal it in the tree. */
+  const commitCreate = (): void => {
+    if (!creating || !newName.trim()) { setCreating(null); return; }
+    const rel = creating.parent ? `${creating.parent}/${newName.trim()}` : newName.trim();
+    const fn = creating.kind === "file" ? window.hv.fsCreateFile : window.hv.fsCreateDir;
+    void fn(workspace, rel)
+      .then(() => {
+        setCreating(null);
+        setNewName("");
+        fetchDir(creating.parent);
+        if (creating.kind === "file") onOpenFile(rel);
+      })
+      .catch((e) => setDropError(e instanceof Error ? e.message : String(e)));
+  };
+
+  // WS8: drag & drop — OS→tree (import copy), within-tree (move), tree→center
+  // (the center panes read this mime to open the file). Sibling name = relPath.
+  const RELPATH_MIME = "application/x-hv-relpath";
+  const doImport = (destDir: string, files: FileList): void => {
+    const paths = Array.from(files).map((f) => window.hv.getPathForFile(f)).filter(Boolean);
+    if (!paths.length) return;
+    void window.hv.fsImport(workspace, destDir, paths)
+      .then(() => fetchDir(destDir))
+      .catch((e) => setDropError(e instanceof Error ? e.message : String(e)));
+  };
+  const doMove = (src: string, destDir: string): void => {
+    if (parentOf(src) === destDir) return; // already there
+    void window.hv.fsMove(workspace, src, destDir)
+      .then(() => { fetchDir(parentOf(src)); fetchDir(destDir); })
+      .catch((e) => setDropError(e instanceof Error ? e.message : String(e)));
+  };
+  const onDropTo = (destDir: string) => (e: React.DragEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropDir(null);
+    if (e.dataTransfer.files.length) doImport(destDir, e.dataTransfer.files);
+    else {
+      const src = e.dataTransfer.getData(RELPATH_MIME);
+      if (src) doMove(src, destDir);
+    }
+  };
+  const allowDrop = (destDir: string) => (e: React.DragEvent): void => {
+    if (e.dataTransfer.types.includes(RELPATH_MIME) || e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+      setDropDir(destDir);
+    }
   };
 
   const toggleDir = (relDir: string): void => {
@@ -183,15 +247,23 @@ export function FileTree({
               <div key={rel}>
                 <button
                   type="button"
+                  draggable
+                  onDragStart={(ev) => ev.dataTransfer.setData(RELPATH_MIME, rel)}
+                  onDragOver={allowDrop(rel)}
+                  onDragLeave={() => setDropDir((d) => (d === rel ? null : d))}
+                  onDrop={onDropTo(rel)}
                   onClick={() => toggleDir(rel)}
                   onContextMenu={(ev) => { ev.preventDefault(); setMenu({ rel, kind: "dir", x: ev.clientX, y: ev.clientY }); }}
-                  className="w-full flex items-center gap-1.5 px-3 py-1 text-left text-[13px] font-semibold hover:bg-paper-deep/50 cursor-pointer"
+                  className={`w-full flex items-center gap-1.5 px-3 py-1 text-left text-[13px] font-semibold hover:bg-paper-deep/50 cursor-pointer ${dropDir === rel ? "bg-honey-soft ring-1 ring-honey" : ""}`}
                   style={{ paddingLeft: depth * 14 + 12 }}
                 >
                   <span className="text-[10px] text-ink-soft w-3 shrink-0" aria-hidden>{open ? "▾" : "▸"}</span>
                   <Icon kind={open ? "folder-open" : "folder"} className="size-3.5 shrink-0 text-honey" />
                   <span className="truncate">{e.name}</span>
                 </button>
+                {creating && creating.parent === rel && open && (
+                  <NewEntryInput depth={depth + 1} kind={creating.kind} value={newName} onChange={setNewName} onCommit={commitCreate} onCancel={() => setCreating(null)} />
+                )}
                 {open && renderDir(rel, depth + 1)}
               </div>
             );
@@ -200,6 +272,8 @@ export function FileTree({
             <button
               key={rel}
               type="button"
+              draggable
+              onDragStart={(ev) => ev.dataTransfer.setData(RELPATH_MIME, rel)}
               onClick={() => onOpenFile(rel)}
               onContextMenu={(ev) => { ev.preventDefault(); setMenu({ rel, kind: "file", x: ev.clientX, y: ev.clientY }); }}
               title={rel}
@@ -216,32 +290,41 @@ export function FileTree({
     );
   };
 
+  const startCreate = (kind: "file" | "dir"): void => {
+    setExpanded((p) => new Set(p).add("")); // root always open
+    setNewName("");
+    setDropError(null);
+    setCreating({ parent: "", kind });
+  };
+
   return (
-    <aside className="w-64 shrink-0 border-l-2 border-line bg-paper flex flex-col min-h-0">
-      <div className="px-3 py-3 border-b-2 border-line flex items-center gap-2">
-        <button
-          type="button"
-          onClick={refresh}
-          title="Refresh the file tree"
-          aria-label="Refresh"
-          className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer shrink-0"
-        >
-          ↻
-        </button>
+    <aside className="w-full h-full bg-paper flex flex-col min-h-0">
+      <div className="px-3 py-3 border-b-2 border-line flex items-center gap-1.5">
         <span className="text-[11px] font-bold uppercase tracking-widest text-ink-soft flex-1 truncate" title={workspace}>
           {workspace.split("/").filter(Boolean).pop()}
         </span>
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close the file explorer"
-          aria-label="Close file explorer"
-          className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer shrink-0"
-        >
-          ⇥
-        </button>
+        <HeaderBtn onClick={() => startCreate("file")} title="New file" label="New file"><NewFileGlyph /></HeaderBtn>
+        <HeaderBtn onClick={() => startCreate("dir")} title="New folder" label="New folder"><NewFolderGlyph /></HeaderBtn>
+        <HeaderBtn onClick={collapseAll} title="Collapse all folders" label="Collapse all"><CollapseGlyph /></HeaderBtn>
+        <HeaderBtn onClick={onClose} title="Close the file explorer" label="Close file explorer"><span className="text-xs font-bold">⇥</span></HeaderBtn>
       </div>
-      <div className="flex-1 overflow-y-auto py-1.5">{renderDir("", 0)}</div>
+      {dropError && (
+        <div className="px-3 py-1.5 text-xs text-berry bg-berry-soft border-b-2 border-berry/40 flex items-center gap-2">
+          <span className="flex-1">{dropError}</span>
+          <button type="button" onClick={() => setDropError(null)} className="font-bold cursor-pointer">✕</button>
+        </div>
+      )}
+      <div
+        className={`flex-1 overflow-y-auto py-1.5 ${dropDir === "" ? "bg-honey-soft/40" : ""}`}
+        onDragOver={allowDrop("")}
+        onDragLeave={() => setDropDir((d) => (d === "" ? null : d))}
+        onDrop={onDropTo("")}
+      >
+        {creating && creating.parent === "" && (
+          <NewEntryInput depth={0} kind={creating.kind} value={newName} onChange={setNewName} onCommit={commitCreate} onCancel={() => setCreating(null)} />
+        )}
+        {renderDir("", 0)}
+      </div>
 
       {/* Round 4 #7: right-click context menu. */}
       {menu && (
@@ -343,4 +426,63 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function HeaderBtn({ onClick, title, label, children }: { onClick: () => void; title: string; label: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <button type="button" onClick={onClick} title={title} aria-label={label} className="text-ink-soft hover:text-ink cursor-pointer shrink-0 p-0.5">
+      {children}
+    </button>
+  );
+}
+
+/** WS8: inline name input for a new file/folder. */
+function NewEntryInput({
+  depth, kind, value, onChange, onCommit, onCancel,
+}: {
+  depth: number; kind: "file" | "dir"; value: string;
+  onChange: (v: string) => void; onCommit: () => void; onCancel: () => void;
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1" style={{ paddingLeft: depth * 14 + 12 }}>
+      <span className="w-3 shrink-0" aria-hidden />
+      <Icon kind={kind === "dir" ? "folder" : "file"} className="size-3.5 shrink-0 text-ink-soft" />
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") onCommit(); else if (e.key === "Escape") onCancel(); }}
+        onBlur={onCommit}
+        placeholder={kind === "dir" ? "folder name" : "file name"}
+        className="flex-1 min-w-0 bg-paper border-2 border-tangerine rounded px-1 py-0.5 text-[13px] focus:outline-none"
+      />
+    </div>
+  );
+}
+
+function NewFileGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <path d="M12 12v6M9 15h6" />
+    </svg>
+  );
+}
+
+function NewFolderGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      <path d="M12 11v6M9 14h6" />
+    </svg>
+  );
+}
+
+function CollapseGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m7 13 5-5 5 5M7 18l5-5 5 5" />
+    </svg>
+  );
 }
