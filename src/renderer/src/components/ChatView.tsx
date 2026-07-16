@@ -734,13 +734,14 @@ function DelegationRunCard({ run, trace }: { run: DelegationRun; trace?: Subagen
               onClick={() => setOpen((o) => !o)}
               aria-expanded={open}
               title={open ? "Collapse the live subagent transcript" : "See what the subagent is doing"}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold cursor-pointer hover:bg-paper-deep/40 transition-colors"
+              className="w-full flex items-start gap-3 px-4 py-2.5 text-left text-sm font-semibold cursor-pointer hover:bg-paper-deep/40 transition-colors"
             >
               <span
-                className={`size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : run.status === "done" ? "bg-leaf" : "bg-berry"}`}
+                className={`mt-1 size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : run.status === "done" ? "bg-leaf" : "bg-berry"}`}
               />
-              <ToolIcon kind="robot" className="size-4 shrink-0 text-sky" />
-              <span className="flex-1 min-w-0 truncate">
+              <ToolIcon kind="robot" className="mt-0.5 size-4 shrink-0 text-sky" />
+              {/* v5: intent wraps instead of clipping with an ellipsis. */}
+              <span className="flex-1 min-w-0 break-words">
                 <span className="font-black text-tangerine-deep">{run.agent}</span>
                 {run.label && <span className="text-ink-soft font-medium"> — {run.label}</span>}
               </span>

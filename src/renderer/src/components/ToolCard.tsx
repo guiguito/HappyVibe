@@ -244,10 +244,11 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
         onClick={() => setOpen(!open)}
         className="w-full text-left cursor-pointer hover:bg-paper-deep/40 transition-colors px-3.5 py-2.5"
       >
-        <span className="flex items-center gap-2.5">
-          <span className={`size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : denied || card.status === "error" ? "bg-berry" : "bg-leaf"}`} />
-          <ToolIcon kind={"robot" as IconKind} className="size-4 shrink-0 text-sky" />
-          <span className="text-sm min-w-0 truncate flex-1" title={req?.task}>
+        {/* v5: intent wraps (break-words) instead of clipping to one ellipsized line. */}
+        <span className="flex items-start gap-2.5">
+          <span className={`mt-1 size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : denied || card.status === "error" ? "bg-berry" : "bg-leaf"}`} />
+          <ToolIcon kind={"robot" as IconKind} className="mt-0.5 size-4 shrink-0 text-sky" />
+          <span className="text-sm min-w-0 break-words flex-1" title={req?.task}>
             <span className="text-ink-soft">→ asked</span> <span className="font-bold">{req?.agent ?? results[0]?.agent ?? "?"}</span>
             {label && <span className="text-ink-soft">: {label}</span>}
           </span>
