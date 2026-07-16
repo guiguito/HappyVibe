@@ -13,6 +13,53 @@ const SOURCE_TONE: Record<string, string> = {
   project: "bg-leaf-soft text-leaf border-leaf/50",
 };
 
+/** v5: how many tools to show before the "Show more" toggle. */
+const TOOLS_PREVIEW = 10;
+
+/** Icon-titled section, matching the Settings page style. */
+const SECTION_ICONS: Record<string, React.JSX.Element> = {
+  mcp: (
+    <>
+      <path d="M4 12l8-8 8 8-8 8z" />
+      <path d="M8 12l4-4 4 4-4 4z" />
+    </>
+  ),
+  tools: <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.6-.6-2.5z" />,
+  agents: (
+    <>
+      <rect x="5" y="8" width="14" height="10" rx="2" />
+      <path d="M12 4v4M9 13h.01M15 13h.01M2 12h3M19 12h3" />
+    </>
+  ),
+};
+
+function Section({
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: string;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <section className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg p-6 mb-6">
+      <div className="flex items-center gap-2.5 mb-1">
+        <div className="size-8 rounded-lg bg-paper-deep border-2 border-line flex items-center justify-center shrink-0">
+          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            {SECTION_ICONS[icon]}
+          </svg>
+        </div>
+        <h2 className="font-bold text-lg">{title}</h2>
+      </div>
+      <p className="text-sm text-ink-soft mb-4">{subtitle}</p>
+      {children}
+    </section>
+  );
+}
+
 /** Round 4 #5: a tool row that expands to show the full (often-truncated)
     description, source path, and permission state. */
 function ToolRowItem({ t }: { t: ToolRow }): React.JSX.Element {
@@ -68,6 +115,7 @@ export function AgentsView({
 }): React.JSX.Element {
   const [editing, setEditing] = useState<AgentInfo | null>(null);
   const [toolRows, setToolRows] = useState<ToolRow[] | null>(null);
+  const [showAllTools, setShowAllTools] = useState(false); // v5: tools list shows 10, then "Show more"
 
   // Refresh both inventories on mount (fire-and-forget; results stream back as
   // hv.agents / hv.tools notifies the parent captures).
@@ -103,22 +151,55 @@ export function AgentsView({
     void window.hv.listAgents(sessionId ?? undefined); // refresh
   };
 
+  const visibleTools = toolRows && !showAllTools ? toolRows.slice(0, TOOLS_PREVIEW) : toolRows;
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
-        <h1 className="font-black text-3xl tracking-tight mb-2">Agents &amp; tools</h1>
+        <h1 className="font-black text-3xl tracking-tight mb-2">MCP, Tools &amp; Agents</h1>
         <p className="text-sm text-ink-soft mb-8">
-          Built-in and project subagents you can delegate to, and the tools available to the agent.
+          External MCP servers, the tools available to the agent, and the subagents you can delegate to.
         </p>
 
+        {/* MCP */}
+        <Section icon="mcp" title="MCP" subtitle="Connected Model Context Protocol servers, and adding more.">
+          <McpServersSection workspaceId={workspaceId} embedded />
+        </Section>
+
+        {/* Tools */}
+        <Section icon="tools" title="Tools" subtitle="Everything the agent can call. Permission state comes from your rules (Settings → Permissions).">
+          {toolRows === null ? (
+            <p className="text-sm text-ink-soft">Loading…</p>
+          ) : toolRows.length === 0 ? (
+            <p className="text-sm text-ink-soft">No tools reported.</p>
+          ) : (
+            <>
+              <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
+                {visibleTools!.map((t) => (
+                  <ToolRowItem key={t.name} t={t} />
+                ))}
+              </div>
+              {toolRows.length > TOOLS_PREVIEW && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllTools((s) => !s)}
+                  className="mt-3 text-xs font-bold rounded-lg border-2 border-line px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
+                >
+                  {showAllTools ? "Show fewer" : `Show all ${toolRows.length} tools`}
+                </button>
+              )}
+            </>
+          )}
+        </Section>
+
         {/* Agents */}
-        <h2 className="font-bold text-lg mb-3">Agents</h2>
+        <Section icon="agents" title="Agents" subtitle="Built-in and project subagents you can delegate to.">
         {sortedAgents === null ? (
-          <p className="text-sm text-ink-soft mb-8">Loading…</p>
+          <p className="text-sm text-ink-soft">Loading…</p>
         ) : sortedAgents.length === 0 ? (
-          <p className="text-sm text-ink-soft mb-8">No agents found.</p>
+          <p className="text-sm text-ink-soft">No agents found.</p>
         ) : (
-          <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden mb-10">
+          <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
             {sortedAgents.map((a) => (
               <div key={a.path} className="px-4 py-3 border-b border-line last:border-b-0">
                 <div className="flex items-center gap-2">
@@ -157,26 +238,7 @@ export function AgentsView({
             ))}
           </div>
         )}
-
-        {/* Tools */}
-        <h2 className="font-bold text-lg mb-1">Tools</h2>
-        <p className="text-xs text-ink-soft mb-3">
-          Permission state comes from your rules. Edit them in{" "}
-          <span className="font-bold">Settings → Permissions</span>.
-        </p>
-        {toolRows === null ? (
-          <p className="text-sm text-ink-soft">Loading…</p>
-        ) : toolRows.length === 0 ? (
-          <p className="text-sm text-ink-soft">No tools reported.</p>
-        ) : (
-          <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden">
-            {toolRows.map((t) => (
-              <ToolRowItem key={t.name} t={t} />
-            ))}
-          </div>
-        )}
-
-        <McpServersSection workspaceId={workspaceId} />
+        </Section>
       </div>
 
       {editing && (

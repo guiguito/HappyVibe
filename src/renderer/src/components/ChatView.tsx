@@ -43,6 +43,7 @@ export function ChatView({
   onOpenFolder,
   onCompact,
   onOpenFile,
+  onOpenMcp,
   onRewind,
 }: {
   workspace: string | null;
@@ -69,6 +70,8 @@ export function ChatView({
   onCompact: () => void;
   /** W2.2: open a workspace-relative file in an editor tab (clickable card paths). */
   onOpenFile?: (relPath: string) => void;
+  /** v5: navigate to the MCP, Tools & Agents page (from the composer "+" menu). */
+  onOpenMcp?: () => void;
   /** Round 3 #11: truncate the conversation at a user message (App-side). */
   onRewind?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
@@ -96,7 +99,16 @@ export function ChatView({
   };
   const [offerAgentsMd, setOfferAgentsMd] = useState(false); // #7: one-time AGENTS.md banner
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [mcpSubOpen, setMcpSubOpen] = useState(false); // v5: "+" menu MCP submenu
+  const [mcpServers, setMcpServers] = useState<{ name: string; state: string }[] | null>(null);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  // v5: pull the cached MCP status when the submenu opens (read-only; no re-sweep).
+  useEffect(() => {
+    if (!mcpSubOpen) return;
+    window.hv.mcpStatus()
+      .then((list) => setMcpServers(list.map((s) => ({ name: s.name, state: s.state }))))
+      .catch(() => setMcpServers([]));
+  }, [mcpSubOpen]);
   // Honest fallback: live set_model failed → override persisted, applies on next spawn.
   const [restartHint, setRestartHint] = useState(false);
   // V2.A: fetch every resolution tier, and REFETCH whenever provider/model
@@ -540,8 +552,8 @@ export function ChatView({
             </button>
             {attachMenuOpen && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setAttachMenuOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-2 z-20 w-56 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
+                <div className="fixed inset-0 z-10" onClick={() => { setAttachMenuOpen(false); setMcpSubOpen(false); }} />
+                <div className="absolute bottom-full left-0 mb-2 z-20 w-60 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
                   <button
                     type="button"
                     disabled={!vision}
@@ -561,6 +573,45 @@ export function ChatView({
                     Attach file
                     <span className="block text-[10px] font-medium text-ink-soft">coming soon</span>
                   </button>
+                  {/* v5: MCP submenu — connected servers (read-only) + Manage shortcut. */}
+                  <button
+                    type="button"
+                    onClick={() => setMcpSubOpen((o) => !o)}
+                    aria-expanded={mcpSubOpen}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-paper-deep/40 cursor-pointer"
+                  >
+                    <span className="flex-1 text-left">MCP</span>
+                    <span className="text-[11px] text-ink-soft" aria-hidden>{mcpSubOpen ? "▾" : "▸"}</span>
+                  </button>
+                  {mcpSubOpen && (
+                    <div className="border-t border-line bg-paper-deep/30 py-1">
+                      {mcpServers === null ? (
+                        <div className="px-3 py-1.5 text-[11px] font-medium text-ink-soft">Loading…</div>
+                      ) : mcpServers.length === 0 ? (
+                        <div className="px-3 py-1.5 text-[11px] font-medium text-ink-soft">No MCP servers connected.</div>
+                      ) : (
+                        mcpServers.map((s) => (
+                          <div key={s.name} className="flex items-center gap-2 px-3 py-1.5">
+                            <span
+                              className={`size-2 rounded-full shrink-0 ${
+                                s.state === "connected" ? "bg-leaf" : s.state === "checking" ? "bg-honey" : "bg-berry"
+                              }`}
+                              title={s.state}
+                            />
+                            <span className="flex-1 min-w-0 truncate text-[12px] font-medium">{s.name}</span>
+                            <span className="text-[9px] uppercase tracking-wide text-ink-soft">{s.state}</span>
+                          </div>
+                        ))
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { setAttachMenuOpen(false); setMcpSubOpen(false); onOpenMcp?.(); }}
+                        className="w-full text-left px-3 py-1.5 text-[12px] font-bold text-tangerine-deep hover:bg-paper-deep/40 cursor-pointer"
+                      >
+                        Manage…
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             )}

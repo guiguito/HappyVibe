@@ -779,6 +779,7 @@ export default function App(): React.JSX.Element {
             }}
                 onOpenFolder={addWorkspace}
                 onOpenFile={openFileFromCard}
+                onOpenMcp={() => setView("agents")}
                 onRewind={rewindTo}
               />
             </div>
