@@ -50,6 +50,8 @@ HappyVibe is a **tightly coupled wrapper above Pi Agent**.
 
 **Decision (Round 2):** HappyVibe ships as a **curated Pi distribution**: the Pi runtime and all required extensions are embedded with the app at a pinned, tested version. HappyVibe does not depend on a user-installed Pi, because the UI can only guarantee support for the exact Pi version it embeds.
 
+**Decision (2026-07-16):** the packaged app is **fully standalone** — it must run on a machine with no developer tooling installed (no Node, no npm, no Pi). Everything the runtime needs ships inside the bundle; child processes (Pi, sub-agents) run through the bundled Electron helper as Node (`pi-runtime/bin/pi-node.sh`). The only accepted exception: MCP stdio servers the *user* configures with `node`/`npx` commands require those on their machine — that is user config, not part of the distribution.
+
 Pi Agent is the underlying coding-agent harness. HappyVibe should not attempt to become a generic multi-runtime product in V1.
 
 However, because Pi appears intentionally minimal, the V1 architecture should probably include:
@@ -364,7 +366,7 @@ Validation research (July 2026) resolved the open questions: 15+ native provider
 
 **V1 runtime bundle (as shipped):** Pi core (`@earendil-works/pi-coding-agent`, pinned) · `pi-subagents` (pinned) · the HappyVibe bridge extension (in-house). `pi-mcp-adapter` joins when MCP ships (§13). `@gotgenes/pi-permission-system` was dropped after the spike's V6 finding (TUI-only in RPC mode) — it remains vendored solely for the regression test documenting that finding.
 
-**Remaining open items for the tech lead:** the Pi upgrade/release process is contract-test-gated (every pin bump re-validates the wire shapes); Windows validation (tmux dependency, extension portability) still precedes any Windows commitment; the packaged sub-agent child process needs a node-capable runtime before distribution.
+**Remaining open items for the tech lead:** the Pi upgrade/release process is contract-test-gated (every pin bump re-validates the wire shapes); Windows validation (tmux dependency, extension portability) still precedes any Windows commitment. *(Resolved 2026-07-16: the packaged sub-agent child process now runs through the bundled Electron helper as Node — `pi-runtime/bin/pi-node.sh` — no system Node required; see §3 standalone decision.)*
 
 **Round-2 decisions already locked:** curated, embedded Pi runtime at a pinned version; MCP in V1 via a bundled extension; permission enforcement delegated to Pi extensions with HappyVibe providing the UI layer; compaction via a dedicated Summarizer Agent. *(Two of these were later revised: MCP was deferred past the feedback rounds — §13 — and the spike's V6 finding moved permission enforcement into HappyVibe's own bridge — §10.)*
 

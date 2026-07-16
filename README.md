@@ -54,7 +54,22 @@ npm test           # 11 unit/integration tests; bridge + coexistence tests
 npm run package    # unsigned .app in release/mac-arm64/ (bundles pi-runtime
                    # via build/afterPack.mjs — electron-builder drops
                    # node_modules on its own)
+npm run build:mac  # installable .dmg in release/ (ad-hoc re-signed)
 ```
+
+## Installing the .dmg (macOS)
+
+The app is **ad-hoc signed, not notarized** by Apple. After dragging it to
+Applications, macOS Gatekeeper blocks it. Clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/HappyVibe.app
+```
+
+(Or right-click the app → **Open** → **Open**.) Without this you'll see
+"HappyVibe is damaged and can't be opened" — that's Gatekeeper on an
+un-notarized app, not a broken download. Notarizing (needs a $99/yr Apple
+Developer ID) would remove this step.
 
 ## Gotchas discovered during the spike
 

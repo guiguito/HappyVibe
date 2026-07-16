@@ -83,7 +83,7 @@ beforeAll(async () => {
   const spec = resolvePiSpawn(workDir, sessionDir, runtime, { agentDir });
   expect(spec.args.filter((a) => a === "-e")).toHaveLength(3); // bridge + pi-subagents + pi-mcp-adapter
   expect(spec.args.some((a) => a.includes("pi-subagents"))).toBe(true);
-  expect(spec.env.PI_SUBAGENT_PI_BINARY).toBe(path.join(runtime, "node_modules/.bin/pi"));
+  expect(spec.env.PI_SUBAGENT_PI_BINARY).toBe(path.join(runtime, "bin/pi-node.sh"));
   expect(fs.existsSync(spec.env.PI_SUBAGENT_PI_BINARY)).toBe(true);
 
   client = makeClient({});

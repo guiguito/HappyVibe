@@ -21,8 +21,11 @@ export function nodeExecPath(): string {
 export const PI_CLI_RELPATH = "node_modules/@earendil-works/pi-coding-agent/dist/cli.js";
 /** pi-subagents extension entry (its package.json `pi.extensions`) — B6. */
 export const PI_SUBAGENTS_RELPATH = "node_modules/pi-subagents/src/extension/index.ts";
-/** Embedded pi CLI the pi-subagents child spawn must use (no global `pi`; s0.3). */
-export const PI_SUBAGENT_BIN_RELPATH = "node_modules/.bin/pi";
+/** Embedded pi CLI the pi-subagents child spawn must use (no global `pi`; s0.3).
+    A shell wrapper, not .bin/pi: the packaged app has no `node` for the shebang,
+    so the wrapper routes through the bundled Electron helper (ELECTRON_RUN_AS_NODE)
+    and falls back to `node` in dev. */
+export const PI_SUBAGENT_BIN_RELPATH = "bin/pi-node.sh";
 /** pi-mcp-adapter extension entry (its package.json `pi.extensions`) — MCP support. */
 export const PI_MCP_ADAPTER_RELPATH = "node_modules/pi-mcp-adapter/index.ts";
 
@@ -79,11 +82,10 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       "--model", model.modelId,
     ],
     env: {
-      // Env is passed through wholesale (incl. ELECTRON_RUN_AS_NODE) and inherited
-      // by pi-subagents child spawns. Trimming it is NOT a subagent-speed lever:
-      // the child spawns `.bin/pi` (a `#!/usr/bin/env node` shebang) directly, so
-      // it runs as plain `node` off PATH, not Electron — ELECTRON_RUN_AS_NODE has
-      // no effect on it. See docs/validation/s0.3.md "Subagent spawn cost".
+      // Env is passed through wholesale and inherited by pi-subagents child
+      // spawns. The child runs bin/pi-node.sh: packaged → bundled Electron
+      // helper as node (ELECTRON_RUN_AS_NODE); dev → `node` off PATH.
+      // See docs/validation/s0.3.md "Subagent spawn cost".
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
       ...(opts.providerEnv ?? {}),

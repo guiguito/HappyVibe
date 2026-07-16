@@ -8,6 +8,6 @@ extraResources:
   - from: pi-runtime
     to: pi-runtime
 mac:
-  target: dir
+  target: dmg
   identity: null
 afterPack: build/afterPack.mjs

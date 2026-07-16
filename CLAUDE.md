@@ -49,8 +49,9 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   re-execution loop); toolCall/toolResult always removed atomically.
 - `contextUsage.tokens` is null right after compaction; `stats.tokens` is cumulative-since-
   session-start — never present it as live context (gauge shows "measuring…").
-- pi-subagents children need `PI_SUBAGENT_PI_BINARY` (set in spawn.ts). Packaged app has no
-  standalone `node` for its shebang — open distribution item.
+- pi-subagents children need `PI_SUBAGENT_PI_BINARY` (set in spawn.ts) — it points at
+  `pi-runtime/bin/pi-node.sh`, which routes through the bundled Electron helper
+  (ELECTRON_RUN_AS_NODE) when packaged and falls back to `node` in dev. No system Node required.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array
