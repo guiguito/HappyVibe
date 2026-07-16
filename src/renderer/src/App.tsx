@@ -731,7 +731,6 @@ export default function App(): React.JSX.Element {
               <ChatView
             workspace={selected?.workspaceId ?? null}
             sessionId={selectedId}
-            title={selected?.title ?? null}
             sessionModel={selected?.model ?? null}
             items={(selectedId ? transcripts[selectedId] : undefined) ?? []}
             streaming={(selectedId ? streamText[selectedId] : undefined) || undefined}

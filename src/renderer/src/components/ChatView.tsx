@@ -24,7 +24,6 @@ const TIER_LABEL: Record<ModelTier, string> = {
 export function ChatView({
   workspace,
   sessionId,
-  title,
   sessionModel = null,
   items,
   streaming,
@@ -47,7 +46,6 @@ export function ChatView({
 }: {
   workspace: string | null;
   sessionId: string | null;
-  title: string | null;
   /** W2.1: this session's persisted model override (from SessionMeta). */
   sessionModel?: ModelRef | null;
   items: TranscriptItem[];
@@ -238,12 +236,9 @@ export function ChatView({
     <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <header className="flex items-center gap-3 px-6 py-3 border-b-2 border-line bg-paper">
-        <div className="flex-1 min-w-0 flex items-baseline gap-2">
-          <span className="font-bold truncate" title={title ?? undefined}>{title ?? "Session"}</span>
-          <span className="text-xs text-ink-soft truncate shrink-0" title={workspace}>
-            {workspace.split("/").filter(Boolean).pop()}
-          </span>
-        </div>
+        {/* Session title + workspace removed — the tab strip already names the
+            session and the sidebar shows the workspace (redundant here). */}
+        <div className="flex-1 min-w-0" />
         {busy && (
           <span className="flex items-center gap-1.5 text-xs font-bold text-tangerine">
             <span className="size-2 rounded-full bg-tangerine animate-pulse" />
