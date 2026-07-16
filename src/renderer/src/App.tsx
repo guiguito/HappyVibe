@@ -882,7 +882,6 @@ export default function App(): React.JSX.Element {
             onSearchOpenChange={setSearchOpen}
             contextOpen={contextOpen}
             onContextOpenChange={setContextOpen}
-            treeOpen={TREE}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={send}
             onRetry={retryCrash}

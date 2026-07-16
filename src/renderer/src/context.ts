@@ -269,6 +269,7 @@ export const CATEGORY_COLOR: Record<string, string> = {
   compaction: "bg-plum",
   branch: "bg-berry",
   other: "bg-line-strong",
+  free: "bg-line/40", // v5.1: empty/free context window
 };
 
 export interface CompositionSegment {
@@ -281,11 +282,25 @@ export interface CompositionSegment {
 /**
  * v5: proportional segments for the composition surface (a segmented bar).
  * Drops zero-share rows; each segment carries its color + label for the legend.
+ * v5.1: when `usedPercent` (of the context window) is given, the bar is scaled to
+ * the WHOLE window — category widths shrink proportionally and a "Free space"
+ * segment fills the remainder, so the empty context is visible too.
  */
-export function compositionSegments(rows: CategorySummary[]): CompositionSegment[] {
-  return rows
+export function compositionSegments(rows: CategorySummary[], usedPercent?: number): CompositionSegment[] {
+  const scale = usedPercent != null ? usedPercent / 100 : 1;
+  const segs: CompositionSegment[] = rows
     .filter((r) => r.estTokens > 0 && r.share > 0)
-    .map((r) => ({ key: r.key, label: r.label, share: r.share, color: CATEGORY_COLOR[r.key] ?? "bg-line-strong" }));
+    .map((r) => ({
+      key: r.key,
+      label: r.label,
+      share: Math.round(r.share * scale),
+      color: CATEGORY_COLOR[r.key] ?? "bg-line-strong",
+    }));
+  if (usedPercent != null) {
+    const free = Math.max(0, 100 - usedPercent);
+    if (free > 0) segs.push({ key: "free", label: "Free space", share: free, color: CATEGORY_COLOR.free });
+  }
+  return segs;
 }
 
 /** Total estimated tokens across the whole context (system + all items). */

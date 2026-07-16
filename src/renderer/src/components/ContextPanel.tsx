@@ -154,9 +154,11 @@ export function ContextPanel({
             ) : (
               <>
               {/* v5: proportional composition surface (a segmented bar), inspired
-                  by Claude Code's /context. Sizes are estimated (chars/4). */}
+                  by Claude Code's /context. Sizes are estimated (chars/4). v5.1:
+                  scaled to the whole window (incl. free space) when measured. */}
               {(() => {
-                const segs = compositionSegments(summary);
+                const usedPercent = gauge && gauge.source !== "pending" ? gauge.percent ?? undefined : undefined;
+                const segs = compositionSegments(summary, usedPercent);
                 if (segs.length === 0) return null;
                 return (
                   <div className="mb-1">

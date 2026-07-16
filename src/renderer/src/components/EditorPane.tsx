@@ -69,6 +69,39 @@ const hvTheme = EditorView.theme({
   ".cm-activeLineGutter": { backgroundColor: "#f2e7d2", color: "#33251a" },
   ".cm-matchingBracket": { backgroundColor: "#f5a62344", outline: "1px solid #cbb693" },
   ".cm-scroller": { overflow: "auto" },
+  // v5.1: style the built-in search panel to the warm-workshop look.
+  ".cm-panels": { backgroundColor: "#faf4e8", color: "#33251a" }, // paper / ink
+  ".cm-panels.cm-panels-top": { borderBottom: "2px solid #e3d3b8" }, // line
+  ".cm-panel.cm-search": { padding: "8px 10px", fontFamily: '"Gabarito Variable", ui-sans-serif, system-ui, sans-serif' },
+  ".cm-panel.cm-search label": { fontSize: "12px", color: "#8d7a63", display: "inline-flex", alignItems: "center", gap: "3px" },
+  ".cm-panel.cm-search input[type=checkbox]": { accentColor: "#ee5a24" },
+  ".cm-textfield": {
+    backgroundColor: "#fffcf5", // card
+    border: "2px solid #e3d3b8", // line
+    borderRadius: "8px",
+    padding: "3px 8px",
+    color: "#33251a",
+    fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace',
+    fontSize: "12px",
+  },
+  ".cm-textfield:focus": { outline: "none", borderColor: "#ee5a24" }, // tangerine
+  ".cm-button": {
+    backgroundColor: "#fffcf5",
+    backgroundImage: "none",
+    border: "2px solid #e3d3b8",
+    borderRadius: "8px",
+    padding: "2px 10px",
+    color: "#33251a",
+    fontWeight: "700",
+    fontSize: "12px",
+    cursor: "pointer",
+  },
+  ".cm-button:hover": { backgroundColor: "#f2e7d2" }, // paper-deep
+  ".cm-button:active": { backgroundColor: "#e3d3b8" },
+  ".cm-panel.cm-search [name=close]": { color: "#8d7a63", fontSize: "18px", cursor: "pointer" },
+  ".cm-panel.cm-search [name=close]:hover": { color: "#ee5a24" },
+  ".cm-searchMatch": { backgroundColor: "#f5a62355" }, // honey
+  ".cm-searchMatch-selected": { backgroundColor: "#ee5a2455" }, // tangerine
 });
 
 const hvHighlight = HighlightStyle.define([

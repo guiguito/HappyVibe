@@ -47,7 +47,7 @@ export function TabStrip({
   const [dropHover, setDropHover] = useState(false);
   return (
     <div
-      className={`flex items-stretch border-b-2 border-line shrink-0 min-h-[2.6rem] ${dropHover ? "bg-honey-soft" : "bg-paper"}`}
+      className={`flex items-stretch border-b-2 border-line shrink-0 h-full ${dropHover ? "bg-honey-soft" : "bg-paper"}`}
       role="tablist"
       onDragOver={(e) => { if (e.dataTransfer.types.includes(DRAG_MIME)) { e.preventDefault(); setDropHover(true); } }}
       onDragLeave={() => setDropHover(false)}

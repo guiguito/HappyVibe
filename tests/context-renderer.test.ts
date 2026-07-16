@@ -129,6 +129,20 @@ test("v5: compositionSegments drops zero-share rows and carries colors", () => {
   expect(segs.reduce((n, s) => n + s.share, 0)).toBeLessThanOrEqual(100);
 });
 
+test("v5.1: compositionSegments scales to the window and adds a Free space segment", () => {
+  const rows = summarizeGroups(
+    [item({ group: "conversation", estTokens: 75, chars: 300 })],
+    { chars: 100, estTokens: 25, toolCount: 0, contextFiles: [] },
+  );
+  // 40% of the window used → categories scaled to 40, free = 60.
+  const segs = compositionSegments(rows, 40);
+  expect(segs.at(-1)).toMatchObject({ key: "free", share: 60 });
+  const used = segs.filter((s) => s.key !== "free").reduce((n, s) => n + s.share, 0);
+  expect(used).toBeLessThanOrEqual(40);
+  // no usedPercent → no free segment (unchanged behavior)
+  expect(compositionSegments(rows).some((s) => s.key === "free")).toBe(false);
+});
+
 test("summarizeGroups counts removed items per category from marks", () => {
   const rows = summarizeGroups(
     [

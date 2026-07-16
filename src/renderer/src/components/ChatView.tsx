@@ -40,7 +40,6 @@ export function ChatView({
   onSearchOpenChange,
   contextOpen,
   onContextOpenChange,
-  treeOpen = false,
   onOpenAgentsMd,
   onSend,
   onAbort,
@@ -74,8 +73,6 @@ export function ChatView({
   onSearchOpenChange: (open: boolean) => void;
   contextOpen: boolean;
   onContextOpenChange: (open: boolean) => void;
-  /** v5.1: file panel is open — shift the floating cluster left so it isn't covered. */
-  treeOpen?: boolean;
   onOpenAgentsMd: () => void;
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[]) => void;
   onAbort: () => void;
@@ -247,20 +244,18 @@ export function ChatView({
   };
 
   return (
-    <div className="relative flex-1 flex flex-col min-h-0">
-      {/* v5.1: search + context bubble float at the top-right of the chat (over
-          the transcript); they shift left when the file panel overlay is open. */}
-      <div
-        className="absolute top-2 z-20 flex items-center gap-1.5"
-        style={{ right: treeOpen ? "calc(16rem + 0.6rem)" : "0.6rem" }}
-      >
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* v5.1: search + context bubble live IN the chat (a thin right-aligned bar
+          at the top of this pane) — not a floating overlay that could bleed over
+          an adjacent split pane. */}
+      <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
         <button
           type="button"
           onClick={() => onSearchOpenChange(!searchOpen)}
           aria-pressed={searchOpen}
           title="Search this conversation (⌘F)"
           aria-label="Search this conversation"
-          className={`text-sm rounded-full border-2 px-2.5 py-1 cursor-pointer transition-colors shadow-sticker ${
+          className={`text-sm rounded-full border-2 px-2.5 py-0.5 cursor-pointer transition-colors ${
             searchOpen ? "border-tangerine bg-honey-soft text-tangerine-deep" : "border-line bg-card text-ink-soft hover:border-honey hover:text-ink"
           }`}
         >
