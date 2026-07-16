@@ -1,0 +1,10 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- HappyVibe app icon: warm-workshop sticker — tangerine squircle, ink border,
+       friendly cream face. -->
+  <rect x="42" y="42" width="940" height="940" rx="228" ry="228"
+        fill="#ee5a24" stroke="#33251a" stroke-width="38"/>
+  <circle cx="392" cy="422" r="54" fill="#faf4e8"/>
+  <circle cx="632" cy="422" r="54" fill="#faf4e8"/>
+  <path d="M356 560 Q512 742 668 560" fill="none" stroke="#faf4e8"
+        stroke-width="66" stroke-linecap="round"/>
+</svg>

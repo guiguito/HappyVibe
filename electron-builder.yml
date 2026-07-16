@@ -1,5 +1,5 @@
-appId: dev.happyvibe.spike
-productName: HappyVibe Spike
+appId: dev.happyvibe.app
+productName: HappyVibe
 directories:
   output: release
 files:

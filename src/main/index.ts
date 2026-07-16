@@ -1,9 +1,22 @@
 import "dotenv/config";
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, nativeImage } from 'electron'
 import { join } from 'path'
+import { existsSync, renameSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpc } from './ipc'
+
+// App renamed to "HappyVibe" (was the scaffold "hv-scaffold"). Preserve existing
+// data — sessions, provider keys, settings — by migrating the userData dir once,
+// before anything reads it. Runs at module load (app.getPath works pre-ready).
+try {
+  const appData = app.getPath('appData')
+  const legacy = join(appData, 'hv-scaffold')
+  const current = join(appData, app.getName()) // now "HappyVibe" (package.json productName)
+  if (existsSync(legacy) && !existsSync(current)) renameSync(legacy, current)
+} catch {
+  /* non-fatal: fall back to a fresh userData dir */
+}
 
 function createWindow(): BrowserWindow {
   // Create the browser window.
@@ -54,7 +67,13 @@ function createWindow(): BrowserWindow {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('dev.happyvibe.app')
+
+  // Dev dock icon: packaged builds use build/icon.icns (electron-builder), but
+  // in dev the dock would show the default Electron icon — set ours explicitly.
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(nativeImage.createFromPath(icon))
+  }
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
