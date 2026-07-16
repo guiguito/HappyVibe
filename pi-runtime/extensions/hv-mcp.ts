@@ -15,6 +15,9 @@ export interface McpCallInfo {
   mcpTool?: string;
   ruleTool: string;
   display: string;
+  /** Round 4 #4: server key for brand-icon lookup — the explicit `server`
+      param when present, else the prefix before the first "_" of the tool. */
+  server?: string;
 }
 
 /** Arg keys worth surfacing in the factual label, in priority order. */
@@ -49,11 +52,14 @@ export function unwrapMcpCall(input: Record<string, unknown>): McpCallInfo {
   const tool = input.tool;
   if (typeof tool === "string" && tool.trim()) {
     const detail = keyArg(input.args);
+    const explicitServer = typeof input.server === "string" && input.server.trim() ? input.server.trim() : undefined;
+    const server = explicitServer ?? (tool.includes("_") ? tool.slice(0, tool.indexOf("_")) : undefined);
     return {
       kind: "invoke",
       mcpTool: tool,
       ruleTool: `mcp:${tool}`,
       display: detail ? `MCP → ${tool}: ${detail}` : `MCP → ${tool}`,
+      server,
     };
   }
   const str = (k: string): string | null =>

@@ -33,6 +33,62 @@ export interface ToolLabel {
   path?: string;
   /** V2.A: destructive bash command (rm/rmdir) — the card badges it. */
   destructive?: boolean;
+  /** Round 4 #4: simple-icons brand class (e.g. "si-github") when an MCP call's
+      server maps to a known product — the card renders it instead of the icon. */
+  brand?: string;
+}
+
+/** Round 4 #4: MCP server key → simple-icons class (curated). Unknown → generic
+    MCP glyph. Keys are normalized (lowercased, non-alphanumerics stripped). */
+const BRAND_ICONS: Record<string, string> = {
+  github: "si-github",
+  gitlab: "si-gitlab",
+  notion: "si-notion",
+  slack: "si-slack",
+  linear: "si-linear",
+  jira: "si-jira",
+  atlassian: "si-atlassian",
+  confluence: "si-confluence",
+  figma: "si-figma",
+  sentry: "si-sentry",
+  vercel: "si-vercel",
+  netlify: "si-netlify",
+  cloudflare: "si-cloudflare",
+  stripe: "si-stripe",
+  supabase: "si-supabase",
+  firebase: "si-firebase",
+  postgresql: "si-postgresql",
+  postgres: "si-postgresql",
+  mongodb: "si-mongodb",
+  redis: "si-redis",
+  docker: "si-docker",
+  kubernetes: "si-kubernetes",
+  aws: "si-amazonwebservices",
+  gcp: "si-googlecloud",
+  googlecloud: "si-googlecloud",
+  google: "si-google",
+  googledrive: "si-googledrive",
+  gmail: "si-gmail",
+  googlecalendar: "si-googlecalendar",
+  openai: "si-openai",
+  anthropic: "si-anthropic",
+  huggingface: "si-huggingface",
+  discord: "si-discord",
+  telegram: "si-telegram",
+  asana: "si-asana",
+  trello: "si-trello",
+  airtable: "si-airtable",
+  intercom: "si-intercom",
+  posthog: "si-posthog",
+  sqlite: "si-sqlite",
+  playwright: "si-playwright",
+  puppeteer: "si-puppeteer",
+};
+
+/** Look up a brand icon class for an MCP server key, or undefined. */
+export function brandIconFor(server: string | undefined): string | undefined {
+  if (!server) return undefined;
+  return BRAND_ICONS[server.toLowerCase().replace(/[^a-z0-9]/g, "")];
 }
 
 const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
@@ -89,9 +145,10 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     }
     case "mcp": {
       // Prefer the model-authored intent (injected on the proxy tool via
-      // requireIntent); fall back to the factual unwrapped display.
+      // requireIntent); fall back to the factual unwrapped display. #4: show the
+      // server's brand icon when recognized, else the generic MCP glyph.
       const info = unwrapMcpCall(a);
-      return { icon: "wrench", label: intent ?? info.display };
+      return { icon: "wrench", label: intent ?? info.display, brand: brandIconFor(info.server) };
     }
     case "subagent":
       return { icon: "robot", label: intent ?? `Delegating to ${str("agent") ?? "a subagent"}` };

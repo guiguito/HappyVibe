@@ -331,7 +331,7 @@ export function ToolCard({
   const [details, setDetails] = useState(false);
   const s = STATUS[card.status];
   const denied = card.status === "denied";
-  const { icon, label, path: filePath, destructive } = toolLabel(card.toolName, card.args);
+  const { icon, label, path: filePath, destructive, brand } = toolLabel(card.toolName, card.args);
   return (
     <div
       className={`rounded-xl border-2 bg-card shadow-sticker overflow-hidden ${
@@ -345,7 +345,7 @@ export function ToolCard({
           className="flex items-center gap-2.5 text-left cursor-pointer flex-1 min-w-0"
         >
           <span className={`size-2.5 rounded-full shrink-0 ${s.dot}`} />
-          <ToolIcon kind={icon} />
+          {brand ? <i className={`si ${brand} text-[15px] shrink-0 text-ink-soft`} aria-hidden /> : <ToolIcon kind={icon} />}
           <span className="font-bold text-sm line-clamp-2 break-words flex-1 min-w-0" title={label}>
             {label}
             {diff?.kind === "write" && (

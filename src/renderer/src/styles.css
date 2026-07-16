@@ -1,5 +1,6 @@
 @import "@fontsource-variable/gabarito";
 @import "@fontsource-variable/jetbrains-mono";
+@import "simple-icons-font/font/simple-icons.min.css"; /* #4: MCP brand icons (bundled, offline) */
 @import "tailwindcss";
 
 /* ── HappyVibe "warm workshop" theme ─────────────────────────────

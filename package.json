@@ -46,6 +46,7 @@
     "dotenv": "^17.4.2",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "simple-icons-font": "^16.26.0",
     "tailwindcss": "^4.3.2"
   },
   "devDependencies": {
