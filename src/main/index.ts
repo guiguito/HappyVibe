@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, shell, BrowserWindow, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, Menu } from 'electron'
 import { join } from 'path'
 import { existsSync, renameSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -73,6 +73,35 @@ app.whenReady().then(() => {
   // in dev the dock would show the default Electron icon — set ours explicitly.
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(nativeImage.createFromPath(icon))
+  }
+
+  // macOS menu-bar app name: in dev the app runs inside Electron.app, so the
+  // bold app-menu title is read from that bundle ("Electron") regardless of
+  // productName. Install an explicit menu whose first item is "HappyVibe";
+  // keep the standard Edit/View/Window roles so shortcuts (copy/paste, quit,
+  // devtools) still work.
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        {
+          label: 'HappyVibe',
+          submenu: [
+            { role: 'about' },
+            { type: 'separator' },
+            { role: 'services' },
+            { type: 'separator' },
+            { role: 'hide' },
+            { role: 'hideOthers' },
+            { role: 'unhide' },
+            { type: 'separator' },
+            { role: 'quit' },
+          ],
+        },
+        { role: 'editMenu' },
+        { role: 'viewMenu' },
+        { role: 'windowMenu' },
+      ]),
+    )
   }
 
   // Default open or close DevTools by F12 in development
