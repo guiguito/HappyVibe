@@ -85,10 +85,30 @@ const BRAND_ICONS: Record<string, string> = {
   puppeteer: "si-puppeteer",
 };
 
-/** Look up a brand icon class for an MCP server key, or undefined. */
-export function brandIconFor(server: string | undefined): string | undefined {
-  if (!server) return undefined;
-  return BRAND_ICONS[server.toLowerCase().replace(/[^a-z0-9]/g, "")];
+// Brand keys long enough to prefix-match a server-key variant without risking
+// false hits (avoids short keys like "aws"/"gcp" matching inside words).
+const LONG_BRAND_KEYS = Object.keys(BRAND_ICONS)
+  .filter((k) => k.length >= 5)
+  .sort((a, b) => b.length - a.length); // longest first: "googledrive" before "google"
+
+/**
+ * Round 4 #4: resolve a brand icon from an MCP tool identifier. Works for both
+ * the proxy tool name ("notion_fetch") and direct-mode tool names, and tolerates
+ * server-key variants ("notionApi_create-pages", "notion-mcp_fetch"). Tokenizes
+ * on non-alphanumerics, matching an exact token first, then a ≥5-char prefix.
+ */
+export function brandIconFor(identifier: string | undefined): string | undefined {
+  if (!identifier) return undefined;
+  const tokens = identifier.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  for (const tok of tokens) {
+    if (BRAND_ICONS[tok]) return BRAND_ICONS[tok];
+  }
+  for (const tok of tokens) {
+    for (const key of LONG_BRAND_KEYS) {
+      if (tok.startsWith(key)) return BRAND_ICONS[key];
+    }
+  }
+  return undefined;
 }
 
 const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
@@ -148,12 +168,14 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       // requireIntent); fall back to the factual unwrapped display. #4: show the
       // server's brand icon when recognized, else the generic MCP glyph.
       const info = unwrapMcpCall(a);
-      return { icon: "wrench", label: intent ?? info.display, brand: brandIconFor(info.server) };
+      return { icon: "wrench", label: intent ?? info.display, brand: brandIconFor(info.mcpTool ?? info.server) };
     }
     case "subagent":
       return { icon: "robot", label: intent ?? `Delegating to ${str("agent") ?? "a subagent"}` };
     default:
       // Unknown/registered tool: the intent it carries, else a prettified name.
-      return { icon: "wrench", label: intent ?? prettify(toolName) };
+      // #4: direct-mode MCP tools land here (not the `mcp` proxy) with names like
+      // "notion_create-pages" — surface their brand icon too.
+      return { icon: "wrench", label: intent ?? prettify(toolName), brand: brandIconFor(toolName) };
   }
 }

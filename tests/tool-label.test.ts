@@ -109,3 +109,25 @@ test("mcp: without intent, falls back to the enriched factual display", () => {
     "MCP → notion_fetch: https://notion.so/p/1",
   );
 });
+
+// #4 (round-4 follow-up): brand icon resolution from the tool identifier.
+test("mcp proxy call resolves a brand icon from the server prefix", () => {
+  expect(toolLabel("mcp", { tool: "notion_create-pages", args: "{}" }).brand).toBe("si-notion");
+  expect(toolLabel("mcp", { tool: "github_create_issue", args: "{}" }).brand).toBe("si-github");
+});
+
+test("brand resolution tolerates server-key variants and hyphens", () => {
+  // notionApi_… → prefix-match "notion"; notion-mcp_… → token "notion"
+  expect(toolLabel("mcp", { tool: "notionApi_create-pages", args: "{}" }).brand).toBe("si-notion");
+  expect(toolLabel("mcp", { tool: "notion-mcp_fetch", args: "{}" }).brand).toBe("si-notion");
+});
+
+test("direct-mode MCP tool (not the proxy) still resolves its brand", () => {
+  // In "expose tools directly" mode the tool name hits the default case.
+  expect(toolLabel("notion_create-pages", {}).brand).toBe("si-notion");
+});
+
+test("non-brand tools carry no brand icon", () => {
+  expect(toolLabel("ask_user", {}).brand).toBeUndefined();
+  expect(toolLabel("mcp", { tool: "customserver_dostuff", args: "{}" }).brand).toBeUndefined();
+});
