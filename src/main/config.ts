@@ -217,5 +217,20 @@ export function installBuiltinAgents(bundleDir: string): void {
     stamps[name] = { version, installedMtime: fs.statSync(target).mtimeMs };
     changed = true;
   }
+  // v5: a builtin we USED to ship (e.g. summarizer — compaction is Pi-native)
+  // is gone from the bundle. Remove the copy we installed IF the user hasn't
+  // edited it; an edited copy is now theirs (a custom agent) — leave it, just
+  // stop tracking it as a builtin.
+  const bundled = new Set(files);
+  for (const name of Object.keys(stamps)) {
+    if (bundled.has(name)) continue;
+    const target = path.join(dest, name);
+    const stamp = stamps[name];
+    if (fs.existsSync(target) && Math.abs(fs.statSync(target).mtimeMs - stamp.installedMtime) <= 1) {
+      fs.rmSync(target, { force: true });
+    }
+    delete stamps[name];
+    changed = true;
+  }
   if (changed) fs.writeFileSync(stampFile, JSON.stringify(stamps));
 }

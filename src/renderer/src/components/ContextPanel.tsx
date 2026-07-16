@@ -121,23 +121,28 @@ export function ContextPanel({
           </div>
         </div>
 
-        {/* Red-zone compaction affordance */}
-        {redZone && (
-          <div className="mx-5 mt-3 rounded-xl border-2 border-berry/50 bg-berry-soft px-4 py-3">
-            <div className="font-bold text-berry text-sm">Context is filling up.</div>
-            <p className="text-xs text-ink-soft mt-1">
-              Compaction summarizes older turns to free space, keeping recent work and key decisions. Nothing is
-              deleted from your session file.
-            </p>
-            <button
-              type="button"
-              onClick={() => setConfirmCompact(true)}
-              className="mt-2 rounded-lg bg-berry text-paper font-bold text-xs px-3 py-1.5 border-2 border-berry hover:brightness-110 cursor-pointer"
-            >
-              Compact now…
-            </button>
-          </div>
-        )}
+        {/* v5: compaction is always available (Pi-native compact) — urgent
+            styling only in the red zone, otherwise a quiet manual control. */}
+        <div
+          className={`mx-5 mt-3 rounded-xl border-2 px-4 py-3 ${redZone ? "border-berry/50 bg-berry-soft" : "border-line bg-paper-deep/30"}`}
+        >
+          {redZone && <div className="font-bold text-berry text-sm">Context is filling up.</div>}
+          <p className={`text-xs text-ink-soft ${redZone ? "mt-1" : ""}`}>
+            Compaction summarizes older turns to free space, keeping recent work and key decisions. Nothing is
+            deleted from your session file.
+          </p>
+          <button
+            type="button"
+            onClick={() => setConfirmCompact(true)}
+            className={`mt-2 rounded-lg font-bold text-xs px-3 py-1.5 border-2 cursor-pointer ${
+              redZone
+                ? "bg-berry text-paper border-berry hover:brightness-110"
+                : "bg-card border-line-strong hover:bg-paper-deep/40"
+            }`}
+          >
+            Compact now…
+          </button>
+        </div>
 
         {/* Body: category summary first; click a category to drill in */}
         <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-4">

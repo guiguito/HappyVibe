@@ -99,7 +99,7 @@ test("/hv-agents lists the two bundled built-in agents", async () => {
   const agents = payload(req).agents as Array<{ name: string; source: string; description: string; path: string; tools?: string[] }>;
   const names = agents.map((a) => a.name).sort();
   expect(names).toContain("code-explorer");
-  expect(names).toContain("summarizer");
+  expect(names).toContain("agents-md-maker"); // v5: summarizer removed — compaction is Pi-native
   const explorer = agents.find((a) => a.name === "code-explorer")!;
   expect(explorer.source).toBe("builtin");
   expect(explorer.description.length).toBeGreaterThan(0);
