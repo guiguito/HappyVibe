@@ -99,6 +99,8 @@ export interface SystemBlock {
   contextFiles: Array<{ path: string; chars: number; estTokens: number }>;
   /** W2.3: nested AGENTS.md discovered via file-tool calls (dir is cwd-relative). */
   nested?: Array<{ dir: string; path: string; chars: number }>;
+  /** v5: per-tool schema sizes (estimated) for the tool-definitions drill-in. */
+  toolDefs?: Array<{ name: string; chars: number }>;
 }
 
 export interface ContextSnapshot {
@@ -223,19 +225,21 @@ export function summarizeGroups(
         share: 0,
       });
     }
-    // #9: surface the tool definitions as their own line. Their token weight
-    // isn't separately exposed by Pi (it's folded into the system prompt), so
-    // show the count and mark the size "not measured" rather than omitting them.
+    // #9 / v5: tool definitions as their own line. If per-tool sizes are present
+    // (toolDefs), show an ESTIMATED total and allow drill-in; otherwise fall back
+    // to the count with the size labeled "not measured".
     if (system.toolCount > 0) {
+      const defs = system.toolDefs ?? [];
+      const chars = defs.reduce((n, d) => n + d.chars, 0);
       rows.push({
         key: "tools",
         label: "Tool definitions",
         count: system.toolCount,
-        chars: 0,
-        estTokens: 0,
+        chars,
+        estTokens: defs.reduce((n, d) => n + Math.ceil(d.chars / 4), 0),
         removedCount: 0,
         share: 0,
-        measured: false,
+        measured: defs.length > 0,
       });
     }
   }
@@ -253,6 +257,35 @@ export function summarizeGroups(
   const total = rows.reduce((n, r) => n + r.estTokens, 0);
   for (const r of rows) r.share = total > 0 ? Math.round((r.estTokens / total) * 100) : 0;
   return rows;
+}
+
+/** v5: warm-workshop color per category, for the composition surface. */
+export const CATEGORY_COLOR: Record<string, string> = {
+  system: "bg-ink/70",
+  files: "bg-sky",
+  tools: "bg-honey",
+  conversation: "bg-tangerine",
+  tool: "bg-leaf",
+  compaction: "bg-plum",
+  branch: "bg-berry",
+  other: "bg-line-strong",
+};
+
+export interface CompositionSegment {
+  key: string;
+  label: string;
+  share: number;
+  color: string;
+}
+
+/**
+ * v5: proportional segments for the composition surface (a segmented bar).
+ * Drops zero-share rows; each segment carries its color + label for the legend.
+ */
+export function compositionSegments(rows: CategorySummary[]): CompositionSegment[] {
+  return rows
+    .filter((r) => r.estTokens > 0 && r.share > 0)
+    .map((r) => ({ key: r.key, label: r.label, share: r.share, color: CATEGORY_COLOR[r.key] ?? "bg-line-strong" }));
 }
 
 /** Total estimated tokens across the whole context (system + all items). */

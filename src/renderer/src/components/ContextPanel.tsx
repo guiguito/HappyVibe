@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  computeGauge, groupItems, summarizeGroups, totalEstTokens,
+  compositionSegments, computeGauge, groupItems, summarizeGroups, totalEstTokens,
   type CategorySummary, type ContextItem, type ContextSnapshot, type Gauge, type SessionStats,
 } from "../context";
 
@@ -152,6 +152,36 @@ export function ContextPanel({
             summary.length === 0 ? (
               <div className="text-sm text-ink-soft">Nothing in context yet.</div>
             ) : (
+              <>
+              {/* v5: proportional composition surface (a segmented bar), inspired
+                  by Claude Code's /context. Sizes are estimated (chars/4). */}
+              {(() => {
+                const segs = compositionSegments(summary);
+                if (segs.length === 0) return null;
+                return (
+                  <div className="mb-1">
+                    <div className="flex h-4 w-full overflow-hidden rounded-lg border-2 border-line">
+                      {segs.map((s) => (
+                        <div
+                          key={s.key}
+                          className={`${s.color} h-full`}
+                          style={{ width: `${s.share}%` }}
+                          title={`${s.label} · ${s.share}%`}
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                      {segs.map((s) => (
+                        <span key={s.key} className="flex items-center gap-1 text-[10px] text-ink-soft">
+                          <span className={`size-2 rounded-sm ${s.color}`} />
+                          {s.label} {s.share}%
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-1 text-[10px] text-ink-soft/70">estimated (≈ chars/4)</div>
+                  </div>
+                );
+              })()}
               <ul className="flex flex-col gap-2">
                 {summary.map((row) => {
                   // #9: unmeasured categories (tool definitions) aren't drillable —
@@ -197,6 +227,7 @@ export function ContextPanel({
                   );
                 })}
               </ul>
+              </>
             )
           )}
 
@@ -240,6 +271,23 @@ export function ContextPanel({
                       <span className="text-ink-soft shrink-0">{estTok(Math.ceil(f.chars / 4))}</span>
                     </li>
                   ))}
+                </ul>
+              )}
+
+              {/* v5: per-tool estimated sizes (labeled estimated). */}
+              {drilled.key === "tools" && snapshot.system?.toolDefs && (
+                <ul className="mt-1.5 flex flex-col gap-1">
+                  {[...snapshot.system.toolDefs]
+                    .sort((a, b) => b.chars - a.chars)
+                    .map((t) => (
+                      <li key={t.name} className="flex items-center gap-2 text-xs">
+                        <span className="font-mono truncate flex-1 min-w-0" title={t.name}>{t.name}</span>
+                        <span className="text-ink-soft shrink-0">{estTok(Math.ceil(t.chars / 4))}</span>
+                      </li>
+                    ))}
+                  <li className="mt-1 pt-1 border-t border-line text-[10px] text-ink-soft/70">
+                    estimated from each tool's schema (≈ chars/4)
+                  </li>
                 </ul>
               )}
 

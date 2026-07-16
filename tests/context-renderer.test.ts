@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import {
-  computeGauge, groupItems, parseContextAck, parseContextSnapshot, summarizeGroups, totalEstTokens, zoneOf,
+  compositionSegments, computeGauge, groupItems, parseContextAck, parseContextSnapshot, summarizeGroups, totalEstTokens, zoneOf,
   type ContextItem,
 } from "../src/renderer/src/context";
 
@@ -104,6 +104,29 @@ test("summarizeGroups builds system, files (incl. nested AGENTS.md) and group ro
   // total = 25 + 25 + 30 + 20 = 100 → shares are exact percents (tools contributes 0)
   expect(rows.map((r) => r.share)).toEqual([25, 25, 0, 30, 20]);
   expect(rows.find((r) => r.key === "tool")).toMatchObject({ count: 2, estTokens: 20, removedCount: 0 });
+});
+
+test("v5: tool definitions become MEASURED (estimated) when toolDefs are present", () => {
+  const rows = summarizeGroups(
+    [item({ group: "conversation", estTokens: 10, chars: 40 })],
+    {
+      chars: 100, estTokens: 25, toolCount: 2, contextFiles: [],
+      toolDefs: [{ name: "read", chars: 400 }, { name: "bash", chars: 800 }], // ceil(400/4)+ceil(800/4)=300
+    },
+  );
+  const tools = rows.find((r) => r.key === "tools")!;
+  expect(tools).toMatchObject({ count: 2, measured: true, chars: 1200, estTokens: 300 });
+});
+
+test("v5: compositionSegments drops zero-share rows and carries colors", () => {
+  const rows = summarizeGroups(
+    [item({ group: "conversation", estTokens: 75, chars: 300 })],
+    { chars: 100, estTokens: 25, toolCount: 0, contextFiles: [] },
+  );
+  const segs = compositionSegments(rows);
+  expect(segs.map((s) => s.key)).toEqual(["system", "conversation"]);
+  expect(segs.every((s) => s.color.startsWith("bg-"))).toBe(true);
+  expect(segs.reduce((n, s) => n + s.share, 0)).toBeLessThanOrEqual(100);
 });
 
 test("summarizeGroups counts removed items per category from marks", () => {
