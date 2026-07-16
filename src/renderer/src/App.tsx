@@ -30,6 +30,10 @@ import {
 import { TabStrip } from "./components/TabStrip";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
+import { ContextBubble } from "./components/ContextBubble";
+import { AgentsMdPanel } from "./components/AgentsMdPanel";
+import type { SessionStats } from "./context";
+import { basename as tabBasename } from "./tabs";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -77,6 +81,12 @@ export default function App(): React.JSX.Element {
   // docked file-tree pane is a global toggle (closed by default).
   const [tabsByWs, setTabsByWs] = useState<Record<string, WorkspaceTabs>>({});
   const [treeOpen, setTreeOpen] = useState(false);
+  // WS7: chat controls lifted from the removed ChatView header into the tab strip.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [selStats, setSelStats] = useState<SessionStats | null>(null);
+  // AGENTS.md editor — opened from the "+" menu (root) or the file tree (any path).
+  const [agentsMd, setAgentsMd] = useState<string | null>(null); // relPath, or null = closed
   // bufferKey(ws, rel) → unsaved edits (feeds the tab-strip dirty dot; the
   // buffers themselves live in the always-mounted FileTab components).
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
@@ -403,6 +413,11 @@ export default function App(): React.JSX.Element {
 
   // ── W2.2: tab/editor handlers ──────────────────────────────────────
   const openFileTab = useCallback((wsId: string, rel: string): void => {
+    // WS7: opening any AGENTS.md opens the edition dialog, not a plain editor tab.
+    if (tabBasename(rel) === "AGENTS.md") {
+      setAgentsMd(rel);
+      return;
+    }
     setTabsByWs((p) => ({ ...p, [wsId]: openFile(p[wsId] ?? emptyTabs, rel) }));
   }, []);
 
@@ -418,6 +433,19 @@ export default function App(): React.JSX.Element {
     },
     [openFileTab]
   );
+
+  // WS7: session context stats for the tab-strip bubble + panel. Fetched once
+  // per agent_end (turns bump), debounced; reset search/context on session switch.
+  useEffect(() => {
+    setSearchOpen(false);
+    setContextOpen(false);
+    if (!selectedId) { setSelStats(null); return; }
+    let live = true;
+    const t = setTimeout(() => {
+      window.hv.getStats(selectedId).then((s) => live && setSelStats(s as SessionStats | null));
+    }, 500);
+    return () => { live = false; clearTimeout(t); };
+  }, [selectedId, selectedId ? turns[selectedId] : 0]);
 
   const closeFileTab = (wsId: string, paneIdx: number, tab: TabId): void => {
     if (tab === CHAT_TAB) return; // chat is never closable
@@ -773,8 +801,27 @@ export default function App(): React.JSX.Element {
                   onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
                   onSplit={(dir) => updateTabs(wsId, (t) => splitPane(t, dir))}
                   onUnsplit={() => updateTabs(wsId, unsplit)}
+                  chatBusy={!!(selectedId && busy[selectedId])}
                   trailing={
-                    <FilesToggle treeOpen={treeOpen} onToggle={() => setTreeOpen((o) => !o)} />
+                    <>
+                      {/* WS7: search + context bubble moved here from the removed header. */}
+                      <button
+                        type="button"
+                        onClick={() => setSearchOpen((o) => !o)}
+                        aria-pressed={searchOpen}
+                        title="Search this conversation (⌘F)"
+                        aria-label="Search this conversation"
+                        className={`shrink-0 flex items-center border-l-2 border-line px-2.5 cursor-pointer transition-colors ${
+                          searchOpen ? "text-tangerine-deep bg-paper-deep/50" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
+                        }`}
+                      >
+                        ⌕
+                      </button>
+                      <span className="flex items-center border-l-2 border-line pl-2 pr-1">
+                        <ContextBubble stats={selStats} fallbackWindow={fallbackWindow} onOpen={() => setContextOpen(true)} />
+                      </span>
+                      <FilesToggle treeOpen={treeOpen} onToggle={() => setTreeOpen((o) => !o)} />
+                    </>
                   }
                 />
               </div>
@@ -793,6 +840,7 @@ export default function App(): React.JSX.Element {
                   onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
                   onSplit={(dir) => updateTabs(wsId, (t) => splitPane(t, dir))}
                   onUnsplit={() => updateTabs(wsId, unsplit)}
+                  chatBusy={!!(selectedId && busy[selectedId])}
                 />
               </div>
             )}
@@ -820,6 +868,12 @@ export default function App(): React.JSX.Element {
             delegations={selectedId ? Object.values(delegations[selectedId] ?? {}) : []}
             contextSnapshot={(selectedId ? contextSnapshots[selectedId] : undefined) ?? null}
             fallbackWindow={fallbackWindow}
+            stats={selStats}
+            searchOpen={searchOpen}
+            onSearchOpenChange={setSearchOpen}
+            contextOpen={contextOpen}
+            onContextOpenChange={setContextOpen}
+            onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={send}
             onRetry={retryCrash}
             onCompact={() => selectedId && void window.hv.compactSession(selectedId)}
@@ -862,6 +916,15 @@ export default function App(): React.JSX.Element {
       )}
       {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
+      {/* WS7: AGENTS.md editor — root from the "+" menu, any AGENTS.md from the tree. */}
+      {agentsMd && wsId && (
+        <AgentsMdPanel
+          workspace={wsId}
+          relPath={agentsMd}
+          sessionId={selectedId}
+          onClose={() => setAgentsMd(null)}
+        />
+      )}
     </div>
   );
 }

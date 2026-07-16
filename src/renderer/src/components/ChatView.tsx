@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
-import { AgentsMdPanel } from "./AgentsMdPanel";
 import { ModelSelect } from "./ModelSelect";
-import { ContextBubble } from "./ContextBubble";
 import { ContextPanel } from "./ContextPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
@@ -36,6 +34,12 @@ export function ChatView({
   delegations = [],
   contextSnapshot = null,
   fallbackWindow,
+  stats = null,
+  searchOpen,
+  onSearchOpenChange,
+  contextOpen,
+  onContextOpenChange,
+  onOpenAgentsMd,
   onSend,
   onAbort,
   onRestart,
@@ -62,6 +66,13 @@ export function ChatView({
   delegations?: DelegationRun[];
   contextSnapshot?: ContextSnapshot | null;
   fallbackWindow?: number | null;
+  /** WS7: stats/search/context are lifted to App so the controls live in the tab strip. */
+  stats?: SessionStats | null;
+  searchOpen: boolean;
+  onSearchOpenChange: (open: boolean) => void;
+  contextOpen: boolean;
+  onContextOpenChange: (open: boolean) => void;
+  onOpenAgentsMd: () => void;
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[]) => void;
   onAbort: () => void;
   onRestart: () => void;
@@ -85,7 +96,6 @@ export function ChatView({
   const [defaultModel, setDefaultModel] = useState<ModelRef | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [pendingPaste, setPendingPaste] = useState<string | null>(null); // #3: large-paste confirm
-  const [searchOpen, setSearchOpen] = useState(false); // #8: in-conversation search
   const [searchQuery, setSearchQuery] = useState("");
   const [searchActive, setSearchActive] = useState(0); // #1: active match index
   const [searchTotal, setSearchTotal] = useState(0);
@@ -155,35 +165,21 @@ export function ChatView({
     const img = await window.hv.pickImage();
     if (img) setAttachments((p) => [...p, img]);
   };
-  const [agentsMdOpen, setAgentsMdOpen] = useState(false);
-  const [contextOpen, setContextOpen] = useState(false);
-  // Fetched once per agent_end (turns bump); shared by the gauge and the panel.
-  const [stats, setStats] = useState<SessionStats | null>(null);
-  // Perf: `turns` bumps once per agent_end / compaction — during a burst of
-  // turns this fired an RPC each time. Debounce 500ms trailing so we fetch once
-  // after activity settles; still guarantees a final fetch.
-  useEffect(() => {
-    if (!sessionId) return;
-    let live = true;
-    const t = setTimeout(() => {
-      window.hv.getStats(sessionId).then((s) => live && setStats(s as SessionStats | null));
-    }, 500);
-    return () => { live = false; clearTimeout(t); };
-  }, [turns, sessionId]);
-  // #8: ⌘F / Ctrl-F opens in-conversation search; Escape closes it.
+  // #8: ⌘F / Ctrl-F opens in-conversation search; Escape closes it. searchOpen
+  // is lifted to App (WS7 — the toggle lives in the tab strip).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
-        setSearchOpen(true);
+        onSearchOpenChange(true);
       } else if (e.key === "Escape" && searchOpen) {
-        setSearchOpen(false);
+        onSearchOpenChange(false);
         setSearchQuery("");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen]);
+  }, [searchOpen, onSearchOpenChange]);
 
   // #7: on opening a workspace with no AGENTS.md, offer to create one — once per
   // workspace (dismissal remembered in localStorage so it never nags).
@@ -246,37 +242,9 @@ export function ChatView({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {/* Header */}
-      <header className="flex items-center gap-3 px-6 py-3 border-b-2 border-line bg-paper">
-        {/* Session title + workspace removed — the tab strip already names the
-            session and the sidebar shows the workspace (redundant here). */}
-        <div className="flex-1 min-w-0" />
-        {busy && (
-          <span className="flex items-center gap-1.5 text-xs font-bold text-tangerine">
-            <span className="size-2 rounded-full bg-tangerine animate-pulse" />
-            working
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => setSearchOpen((o) => !o)}
-          title="Search this conversation (⌘F)"
-          aria-label="Search this conversation"
-          className="text-sm rounded-full border-2 border-line bg-card px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
-        >
-          ⌕
-        </button>
-        <button
-          type="button"
-          onClick={() => setAgentsMdOpen(true)}
-          title="Edit AGENTS.md — project context for the agent (applies to new or restarted sessions)"
-          className="font-mono text-[11px] rounded-full border-2 border-line bg-card px-3 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
-        >
-          AGENTS.md
-        </button>
-        <ContextBubble stats={stats} fallbackWindow={fallbackWindow} onOpen={() => setContextOpen(true)} />
-      </header>
-
+      {/* WS7: the header (session title, search, AGENTS.md chip, context bubble)
+          is gone — search + context bubble now live in the tab strip, and the
+          AGENTS.md editor opens from the "+" menu or the file tree. */}
       {/* Crash banner */}
       {crashed !== null && (
         <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/40 text-sm font-semibold text-berry">
@@ -297,7 +265,7 @@ export function ChatView({
           <span className="flex-1">Context is {gauge!.percent}% full. Open the context panel to review or compact.</span>
           <button
             type="button"
-            onClick={() => setContextOpen(true)}
+            onClick={() => onContextOpenChange(true)}
             className="rounded-lg bg-berry text-paper font-bold text-xs px-3 py-1.5 border-2 border-berry hover:brightness-110 cursor-pointer"
           >
             Review context
@@ -324,7 +292,7 @@ export function ChatView({
           <span className="font-bold flex-1">No AGENTS.md found — add project context so the agent understands this codebase?</span>
           <button
             type="button"
-            onClick={() => { setOfferAgentsMd(false); setAgentsMdOpen(true); }}
+            onClick={() => { setOfferAgentsMd(false); onOpenAgentsMd(); }}
             className="rounded-lg bg-tangerine text-paper font-bold text-xs px-3 py-1 border-2 border-tangerine-deep shadow-sticker cursor-pointer hover:brightness-105"
           >
             Generate one
@@ -441,7 +409,7 @@ export function ChatView({
           </button>
           <button
             type="button"
-            onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
+            onClick={() => { onSearchOpenChange(false); setSearchQuery(""); }}
             aria-label="Close search"
             className="text-ink-soft hover:text-ink cursor-pointer font-bold px-1"
           >
@@ -573,6 +541,15 @@ export function ChatView({
                     Attach file
                     <span className="block text-[10px] font-medium text-ink-soft">coming soon</span>
                   </button>
+                  {/* WS7: AGENTS.md editor (replaces the removed header chip). */}
+                  <button
+                    type="button"
+                    onClick={() => { setAttachMenuOpen(false); onOpenAgentsMd(); }}
+                    className="w-full text-left px-3 py-2 hover:bg-paper-deep/40 cursor-pointer"
+                  >
+                    Edit AGENTS.md
+                    <span className="block text-[10px] font-medium text-ink-soft">project context for the agent</span>
+                  </button>
                   {/* v5: MCP submenu — connected servers (read-only) + Manage shortcut. */}
                   <button
                     type="button"
@@ -685,15 +662,14 @@ export function ChatView({
           </button>
         </div>
       </form>
-      {agentsMdOpen && <AgentsMdPanel workspace={workspace} sessionId={sessionId} onClose={() => setAgentsMdOpen(false)} />}
-      {contextOpen && (
+      {contextOpen && sessionId && (
         <ContextPanel
           sessionId={sessionId}
           snapshot={contextSnapshot}
           stats={stats}
           fallbackWindow={fallbackWindow}
           turns={turns}
-          onClose={() => setContextOpen(false)}
+          onClose={() => onContextOpenChange(false)}
           onCompact={onCompact}
         />
       )}

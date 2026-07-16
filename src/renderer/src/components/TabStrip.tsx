@@ -16,6 +16,7 @@ export function TabStrip({
   dirty,
   canSplit,
   split,
+  chatBusy = false,
   onSelect,
   onClose,
   onMoveTab,
@@ -28,6 +29,8 @@ export function TabStrip({
   sessionTitle: string;
   /** relPath → has unsaved edits. */
   dirty: Record<string, boolean>;
+  /** WS7: pulse dot on the chat tab while the agent works (moved from the header). */
+  chatBusy?: boolean;
   /** show the split button (only when not already split). */
   canSplit: boolean;
   split: "h" | "v" | null;
@@ -78,6 +81,7 @@ export function TabStrip({
             >
               {isChat && <ChatGlyph />}
               <span className="truncate">{isChat ? sessionTitle : basename(id)}</span>
+              {isChat && chatBusy && <span className="size-1.5 rounded-full bg-tangerine animate-pulse shrink-0" title="Working…" />}
               {!isChat && dirty[id] && <span className="size-1.5 rounded-full bg-tangerine shrink-0" title="Unsaved changes" />}
               {!isChat && (
                 <button

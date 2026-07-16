@@ -18,13 +18,19 @@ const unfence = (s: string): string =>
  */
 export function AgentsMdPanel({
   workspace,
+  relPath = "AGENTS.md",
   sessionId,
   onClose,
 }: {
   workspace: string;
-  sessionId: string;
+  /** WS7: which AGENTS.md — root by default, or any nested one opened from the tree. */
+  relPath?: string;
+  sessionId: string | null;
   onClose: () => void;
 }): React.JSX.Element {
+  // Root AGENTS.md keeps the missing-file affordances (CLAUDE.md copy, draft);
+  // a nested one is a plain confined read/write via the generic fs API.
+  const isRoot = relPath === "AGENTS.md";
   const [content, setContent] = useState<string | null>(null); // null = loading
   const [missing, setMissing] = useState(false);
   const [claudeMd, setClaudeMd] = useState(false);
@@ -37,21 +43,29 @@ export function AgentsMdPanel({
   const offDraft = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    window.hv
-      .readAgentsMd(workspace)
-      .then((c) => {
-        setMissing(c === null);
-        setContent(c ?? "");
-      })
-      .catch((e) => setError(String(e)));
-    window.hv.hasClaudeMd(workspace).then(setClaudeMd).catch(() => setClaudeMd(false));
+    if (isRoot) {
+      window.hv
+        .readAgentsMd(workspace)
+        .then((c) => {
+          setMissing(c === null);
+          setContent(c ?? "");
+        })
+        .catch((e) => setError(String(e)));
+      window.hv.hasClaudeMd(workspace).then(setClaudeMd).catch(() => setClaudeMd(false));
+    } else {
+      window.hv
+        .fsRead(workspace, relPath)
+        .then((r) => setContent(r.kind === "text" ? r.content : ""))
+        .catch((e) => setError(String(e)));
+    }
     return () => offDraft.current?.();
-  }, [workspace]);
+  }, [workspace, relPath, isRoot]);
 
   const save = async (): Promise<void> => {
     if (content === null) return;
     try {
-      await window.hv.writeAgentsMd(workspace, content);
+      if (isRoot) await window.hv.writeAgentsMd(workspace, content);
+      else await window.hv.fsWrite(workspace, relPath, content);
       setMissing(false);
       setDirty(false);
       setError(null);
@@ -74,6 +88,7 @@ export function AgentsMdPanel({
   };
 
   const draft = (): void => {
+    if (!sessionId) return; // draft needs a live session to delegate on
     setDrafting(true);
     setError(null);
     const stop = (): void => {
@@ -144,7 +159,7 @@ export function AgentsMdPanel({
               <span className="font-black text-xs rotate-3">MD</span>
             </div>
             <div className="min-w-0 flex-1">
-              <Dialog.Title className="font-bold text-lg leading-tight">AGENTS.md</Dialog.Title>
+              <Dialog.Title className="font-bold text-lg leading-tight">{isRoot ? "AGENTS.md" : relPath}</Dialog.Title>
               <Dialog.Description className="text-sm text-ink-soft truncate" title={workspace}>
                 {workspace.split("/").filter(Boolean).pop()} — applies to new or restarted sessions
               </Dialog.Description>
@@ -192,7 +207,8 @@ export function AgentsMdPanel({
                     <button
                       type="button"
                       onClick={draft}
-                      disabled={drafting}
+                      disabled={drafting || !sessionId}
+                      title={sessionId ? undefined : "Open a session to generate a draft"}
                       className="rounded-xl bg-honey text-ink font-bold text-sm px-4 py-2 border-2 border-ink/80 shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-50"
                     >
                       {drafting ? "Drafting…" : "Draft with agents-md-maker"}
