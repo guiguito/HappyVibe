@@ -334,14 +334,6 @@ export function ChatView({
           </button>
         </div>
       )}
-      {/* Round 3 #2: resuming-from-hibernation loader (the "waking" status was
-          previously set but never surfaced). */}
-      {waking && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-honey-soft text-sm font-bold text-ink">
-          <span className="size-2.5 rounded-full bg-tangerine animate-pulse" />
-          Resuming session…
-        </div>
-      )}
       {/* Round 3 #11: rewind confirm — files are NOT rolled back (chat-only V1). */}
       {pendingRewind !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
@@ -450,19 +442,28 @@ export function ChatView({
           </button>
         </div>
       )}
-      <Transcript
-        items={items}
-        streaming={streaming}
-        busy={busy}
-        header={delegations.length > 0 ? <DelegationSection runs={delegations} items={items} /> : undefined}
-        onRetry={onRetry}
-        workspace={workspace}
-        onOpenFile={onOpenFile}
-        onRewind={onRewind && !busy ? openRewind : undefined}
-        searchQuery={searchOpen ? searchQuery : ""}
-        searchActiveIndex={searchActive}
-        onSearchTotal={onSearchTotal}
-      />
+      {/* Round 3 #2 (fixed round 4): loader while the session opens/resumes —
+          shown for any not-yet-running open, not just hibernated resumes. */}
+      {waking && items.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-ink-soft">
+          <span className="size-8 rounded-full border-[3px] border-line border-t-tangerine animate-spin" />
+          <span className="text-sm font-bold">Opening session…</span>
+        </div>
+      ) : (
+        <Transcript
+          items={items}
+          streaming={streaming}
+          busy={busy}
+          header={delegations.length > 0 ? <DelegationSection runs={delegations} items={items} /> : undefined}
+          onRetry={onRetry}
+          workspace={workspace}
+          onOpenFile={onOpenFile}
+          onRewind={onRewind && !busy ? openRewind : undefined}
+          searchQuery={searchOpen ? searchQuery : ""}
+          searchActiveIndex={searchActive}
+          onSearchTotal={onSearchTotal}
+        />
+      )}
 
       {/* Composer */}
       <form

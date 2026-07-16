@@ -467,9 +467,10 @@ export default function App(): React.JSX.Element {
     setSelectedId(id);
     setView("chat");
     if (statuses[id] === "running") return;
-    // W1.3: a hibernated session restores transparently — show a brief
-    // "waking up…" pulse while its process resumes.
-    if (sessions.find((s) => s.id === id)?.hibernated) setStatuses((p) => ({ ...p, [id]: "waking" }));
+    // Show a loader while the Pi process starts / the session file loads — for
+    // ANY not-yet-running open, not only hibernated resumes (round-4 follow-up:
+    // a fresh open showed a static empty state with no loader).
+    setStatuses((p) => ({ ...p, [id]: "waking" }));
     try {
       const { messages } = await window.hv.openSession(id);
       setStatuses((p) => ({ ...p, [id]: "running" }));
