@@ -87,6 +87,27 @@ export class SessionIndex {
     this.sessions = this.sessions.filter((s) => s.id !== id);
     this.save();
   }
+
+  /**
+   * Repair stale `piSessionFile` paths. They're stored absolute, so anything
+   * that moves the userData dir (e.g. the hv-scaffold → HappyVibe rename) leaves
+   * them pointing at a path that no longer exists, and resume silently loads no
+   * history. When a stored path is missing but a file of the same name lives in
+   * the current session dir, rebase onto it. Idempotent; persists on change.
+   */
+  rebaseSessionFiles(sessionDirPath: string): void {
+    let changed = false;
+    for (const s of this.sessions) {
+      const f = s.piSessionFile;
+      if (!f || fs.existsSync(f)) continue;
+      const candidate = path.join(sessionDirPath, path.basename(f));
+      if (fs.existsSync(candidate)) {
+        s.piSessionFile = candidate;
+        changed = true;
+      }
+    }
+    if (changed) this.save();
+  }
 }
 
 /**

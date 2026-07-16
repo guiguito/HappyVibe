@@ -65,6 +65,9 @@ function parseAuditNotify(r: { method?: string; message?: string }): Record<stri
 export function registerIpc(win: BrowserWindow): void {
   const userData = app.getPath("userData");
   const index = new SessionIndex(path.join(userData, "session-index.json"));
+  // Heal stale absolute piSessionFile paths after a userData move (the
+  // hv-scaffold → HappyVibe rename), else resume loads no history.
+  index.rebaseSessionFiles(sessionDir());
   const workspaces = new WorkspaceRegistry(path.join(userData, "workspaces.json"));
   const log = new EventLog(path.join(userData, "events.jsonl"));
   const pidFile = path.join(userData, "pi-pids.json");
