@@ -23,9 +23,19 @@ function createWindow(): BrowserWindow {
     mainWindow.show()
   })
 
+  // Open links in the OS browser, not inside the app window.
+  // setWindowOpenHandler covers target=_blank / window.open; will-navigate
+  // covers a plain <a href> click (e.g. links in chat answers), which would
+  // otherwise navigate the whole SPA away from the app.
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== mainWindow.webContents.getURL() && /^(https?|mailto):/.test(url)) {
+      event.preventDefault()
+      void shell.openExternal(url)
+    }
   })
 
   // HMR for renderer base on electron-vite cli.
