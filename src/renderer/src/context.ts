@@ -27,9 +27,10 @@ export interface Gauge {
   zone: GaugeZone;
 }
 
-// Color thresholds (own the styling — warm-workshop tokens). ~70 / ~90.
-const AMBER = 70;
-const RED = 90;
+// Color thresholds (own the styling — warm-workshop tokens).
+// v5: green <35, orange 35–80, red >80 (per Feedbacks v5 context bubble).
+const AMBER = 35;
+const RED = 80;
 export const zoneOf = (percent: number): GaugeZone => (percent >= RED ? "red" : percent >= AMBER ? "amber" : "calm");
 
 /**

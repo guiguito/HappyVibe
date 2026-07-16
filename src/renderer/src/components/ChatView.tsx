@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { AgentsMdPanel } from "./AgentsMdPanel";
 import { ModelSelect } from "./ModelSelect";
-import { TokenGauge } from "./TokenGauge";
+import { ContextBubble } from "./ContextBubble";
 import { ContextPanel } from "./ContextPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
@@ -262,7 +262,7 @@ export function ChatView({
         >
           AGENTS.md
         </button>
-        <TokenGauge stats={stats} fallbackWindow={fallbackWindow} onOpen={() => setContextOpen(true)} />
+        <ContextBubble stats={stats} fallbackWindow={fallbackWindow} onOpen={() => setContextOpen(true)} />
       </header>
 
       {/* Crash banner */}

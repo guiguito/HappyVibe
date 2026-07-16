@@ -30,12 +30,12 @@ test("computeGauge returns null when there is nothing honest to show", () => {
   expect(computeGauge({ tokens: { input: 5 } })).toBeNull(); // no window
 });
 
-test("zoneOf thresholds: calm < 70 <= amber < 90 <= red", () => {
+test("zoneOf thresholds (v5): calm < 35 <= amber < 80 <= red", () => {
   expect(zoneOf(0)).toBe("calm");
-  expect(zoneOf(69)).toBe("calm");
-  expect(zoneOf(70)).toBe("amber");
-  expect(zoneOf(89)).toBe("amber");
-  expect(zoneOf(90)).toBe("red");
+  expect(zoneOf(34)).toBe("calm");
+  expect(zoneOf(35)).toBe("amber");
+  expect(zoneOf(79)).toBe("amber");
+  expect(zoneOf(80)).toBe("red");
   expect(zoneOf(100)).toBe("red");
 });
 
