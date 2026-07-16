@@ -77,13 +77,13 @@ export function TabStrip({
         type="button"
         onClick={onToggleTree}
         aria-pressed={treeOpen}
+        aria-label={treeOpen ? "Hide the file tree" : "Browse workspace files"}
         title={treeOpen ? "Hide the file tree" : "Browse workspace files"}
-        className={`shrink-0 flex items-center gap-1.5 border-l-2 border-line px-3 text-[11px] font-bold uppercase tracking-wide cursor-pointer transition-colors ${
+        className={`shrink-0 flex items-center border-l-2 border-line px-3 cursor-pointer transition-colors ${
           treeOpen ? "text-tangerine-deep bg-paper-deep/50" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
         }`}
       >
         <FolderGlyph />
-        files
       </button>
     </div>
   );
