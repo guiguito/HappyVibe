@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { basename, CHAT_TAB, type Pane, type TabId } from "../tabs";
 
 /**
@@ -54,14 +55,21 @@ export function TabStrip({
     }
   };
 
+  const [dropHover, setDropHover] = useState(false);
   return (
     <div
-      className="flex items-stretch border-b-2 border-line bg-paper shrink-0"
+      className={`flex items-stretch border-b-2 border-line shrink-0 min-h-[2.6rem] ${dropHover ? "bg-honey-soft" : "bg-paper"}`}
       role="tablist"
-      onDragOver={(e) => e.dataTransfer.types.includes(DRAG_MIME) && e.preventDefault()}
-      onDrop={onDrop}
+      onDragOver={(e) => { if (e.dataTransfer.types.includes(DRAG_MIME)) { e.preventDefault(); setDropHover(true); } }}
+      onDragLeave={() => setDropHover(false)}
+      onDrop={(e) => { setDropHover(false); onDrop(e); }}
     >
       <div className="flex-1 min-w-0 flex items-stretch overflow-x-auto">
+        {pane.tabs.length === 0 && (
+          <span className="flex items-center px-3.5 text-[12px] italic text-ink-soft select-none">
+            Drag a tab here
+          </span>
+        )}
         {pane.tabs.map((id) => {
           const active = pane.active === id;
           const isChat = id === CHAT_TAB;
