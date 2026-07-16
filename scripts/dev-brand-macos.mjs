@@ -12,12 +12,25 @@ const plist = "node_modules/electron/dist/Electron.app/Contents/Info.plist";
 if (!existsSync(plist)) process.exit(0); // electron binary not installed yet
 
 const NAME = "HappyVibe";
+const APP = "node_modules/electron/dist/Electron.app";
 try {
+  let changed = false;
   for (const key of ["CFBundleName", "CFBundleDisplayName"]) {
     const cur = execFileSync("plutil", ["-extract", key, "raw", "-o", "-", plist], { encoding: "utf8" }).trim();
-    if (cur !== NAME) execFileSync("plutil", ["-replace", key, "-string", NAME, plist]);
+    if (cur !== NAME) {
+      execFileSync("plutil", ["-replace", key, "-string", NAME, plist]);
+      changed = true;
+    }
   }
-  console.log(`[dev-brand] Electron.app menu name set to "${NAME}"`);
+  // The Dock tooltip + app menu read the name from LaunchServices' cache, not the
+  // file directly — re-register the bundle so the OS picks up the new Info.plist.
+  if (changed) {
+    execFileSync("touch", [APP]);
+    const lsregister =
+      "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+    if (existsSync(lsregister)) execFileSync(lsregister, ["-f", APP]);
+  }
+  console.log(`[dev-brand] Electron.app name = "${NAME}"${changed ? " (re-registered)" : ""}`);
 } catch (e) {
   console.warn(`[dev-brand] skipped (non-fatal): ${e instanceof Error ? e.message : e}`);
 }
