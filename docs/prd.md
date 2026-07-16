@@ -186,6 +186,8 @@ Expandable details may show raw command, path, output, or diff when useful.
 
 **Decision (Feedback round 4, 2026-07-15):** two chat refinements. (1) **Search highlights, it does not filter** — the in-conversation search keeps every message visible and **highlights** matching substrings, with **next / previous** navigation (Enter / Shift-Enter and on-screen arrows, wrapping) and an `n / total` match counter; the active match scrolls into view. This supersedes the round-3 phrasing where search filtered non-matching messages out. (2) **Icon buttons** — the per-message copy, code-block copy, and rewind controls are **icon** buttons with tooltips (not text labels), for a quieter chat surface. (3) **Links open in the OS browser** — clicking a link in a chat answer opens it in the user's default browser via the system, never inside the app window (which would navigate the SPA away).
 
+**Decision (Feedback round 5, 2026-07-16) — chat-surface restructure:** (1) **Split view** — the center area supports one 2-way split, horizontal or vertical; each pane has its own tab strip and tabs (the chat included) can be dragged between panes. (2) The in-conversation **search icon and the context bubble move into the tab-strip row**, next to the files icon; the chat header (the AGENTS.md chip and the whole section above the chat) is removed. (3) The composer "+" menu gains an **MCP submenu** — connected servers with status (read-only) plus a "Manage…" shortcut to the MCP, Tools & Agents page (§13). (4) **Intent wrapping** extends to the delegation call line — it wraps rather than truncating with an ellipsis.
+
 ## 8. File Edits and Diffs
 
 When the agent edits files, the UI should show: which file changed; a short summary of the change; status; an expandable diff; whether the edit succeeded or failed. This is important because HappyVibe's educational value depends on users understanding what the agent changed.
@@ -210,6 +212,8 @@ Context breakdown should include, where possible: system prompt; AGENTS.md; curr
 
 **Decision (Feedback round 4, 2026-07-15) — complete, itemized breakdown:** the context panel must make every consumer of the window individually visible, not lumped into one "system prompt" figure. It enumerates, each with its size: the **base system prompt**, **custom instructions** (root + nested AGENTS.md and the user's system-prompt additions), **tool definitions** (count and, where derivable, their token weight), context files, conversation, tool results, and prior summaries. Anything Pi does not expose a measurement for is **labeled "not measured"** rather than silently omitted — the panel's job is an honest, teachable account of what the agent sees.
 
+**Decision (Feedback round 5, 2026-07-16) — context UX overhaul:** the chat chip becomes a small clickable **% bubble** — green <35%, orange 35–80%, red >80% (supersedes the earlier 70/90 thresholds) — that opens the context panel. The panel gains a **visual composition surface** (color-coded proportional segments, inspired by Claude Code's `/context` view); **tool definitions become a drill-in** listing every tool with an *estimated* token size and a total (estimates from schemas, labeled "estimated" per the honesty rule); the **"Other" category is eliminated** by categorizing items properly bridge-side — it appears only when genuinely needed, clearly labeled, and is hidden when empty. **Compaction is Pi-native:** the implementation always used Pi's `compact` RPC — this supersedes the Round-2 "dedicated Summarizer Agent" decision (the agent was never wired to compaction and is removed, §12) — and a manual **"Compact now"** is always visible in the context panel, not only in the red zone.
+
 ## 10. Permissions
 
 Permissions are central to the product. The app supports a layered permission model:
@@ -225,6 +229,8 @@ Dangerous mode should be visible, not hidden. When enabled: it must remain visib
 
 **Decision (Feedback round 3, 2026-07-14) — persistent full bypass (reverses the "never auto-allow" invariant):** in addition to the session-only dangerous mode, a persistent **"Bypass ALL permissions"** toggle is available in **global and workspace settings**. This deliberately **supersedes the earlier invariant that permission prompts never auto-allow** — the user asked for a persistent YOLO mode. Guardrails: enabling requires a scary confirm dialog; while active a **red banner** shows in every affected session (reusing the dangerous-mode banner); every auto-allowed call is still audit-flagged. Precedence mirrors model resolution — **workspace overrides global** (`workspace ?? global ?? off`, per-workspace tri-state so a workspace can turn a global bypass off). The setting is resolved at spawn and re-applied on respawn (unlike session dangerous mode, which resets to safe on respawn). Changing it applies live to affected sessions (global → all; workspace → that workspace's), reusing the MCP live-reload scoping.
 
+**Decision (Feedback round 5, 2026-07-16) — workspace confinement:** by default, file tools (read/write/edit/grep/glob/ls/…) targeting a path **outside the workspace root** trigger an **ask** prompt — including reads that are normally auto-allowed inside the workspace. Bash is deliberately not path-inspected (it stays under command-pattern rules — honest about what is enforceable). Explicit rules and one-click grants take precedence through the normal rule engine, and the full-bypass setting bypasses this check like everything else.
+
 ## 11. Audit Log
 
 The audit log records important agent actions: tool calls; command executions; file reads/edits; created/deleted files; permission approvals/denials; dangerous mode activation/deactivation; model/provider changes; context compactions; AGENTS.md edits; sub-agent invocations.
@@ -238,6 +244,8 @@ V1 includes three built-in agents:
 2. the **Summarizer Agent** (used for context compaction);
 3. the **agents-md-maker Agent** (explores a project and drafts an AGENTS.md for the user to review — it never writes the file itself; see §15).
 
+**Decision (Feedback round 5, 2026-07-16):** the **Summarizer Agent is removed** — compaction always ran on Pi's native `compact` and the agent was never wired to it (§9). V1 ships **two** built-in agents: Code Explorer and agents-md-maker. The agents-md-maker's write behavior is also revised (structured output written by the app — see §15).
+
 ### Code Explorer Agent
 
 Purpose: explore the codebase and return structured findings to the main agent. Callable automatically by the main agent or manually by the user. The app maintains a visible list of available agents; the model receives a representation of available agents and tools so it can invoke them, subject to permissions. It has: name; description; editable system prompt; available tools; separate context window; result format; running status; readable output.
@@ -246,7 +254,7 @@ Purpose: explore the codebase and return structured findings to the main agent. 
 
 ### Summarizer Agent
 
-Purpose: summarize and compact session context when the user accepts a compaction suggestion. Own context window; can use a different model (agent-level override).
+Purpose: summarize and compact session context when the user accepts a compaction suggestion. Own context window; can use a different model (agent-level override). *(Removed in Feedback round 5 — see the decision above; compaction is Pi-native.)*
 
 ### Agent creation and editing
 
@@ -272,6 +280,8 @@ The tools list includes: tool name; human-readable description; source; permissi
 
 **Decision (Feedback round 4, 2026-07-15):** two readability improvements. (1) **MCP brand icons** — when an MCP tool call comes from a recognizable product (GitHub, Notion, Slack, Linear, …), its tool card shows that **brand's icon** instead of the generic MCP glyph, keyed by the (normalized) server name. Icons come from a **bundled brand icon font** (no network fetch — local-first); unknown servers keep the generic glyph. (2) **Tools list rows expand** — each row in the tools list is clickable to reveal the full tool description (previously truncated), its source, and permission state.
 
+**Decision (Feedback round 5, 2026-07-16):** the Agents & Tools page is renamed **"MCP, Tools & Agents"** and restructured into three icon-titled sections (same style as Settings): **MCP** (connected servers + add more), **Tools** (max 10 rows shown, "Show more" reveals all), and **Agents** (unchanged). The composer "+" menu's MCP submenu (§7) links here.
+
 ## 14. Skills
 
 Skills (Claude Code-style skill folders) are not in MVP — treated as **coming soon**. Future scope: global/project skills, import, creation flow, marketplace/library, visual inspection.
@@ -285,6 +295,8 @@ HappyVibe supports AGENTS.md in V1: read it; show it in the context breakdown wi
 **Decision (Feedback round 3, 2026-07-14):** the "propose creating it if missing" promise becomes **proactive**. Opening a workspace that has no AGENTS.md surfaces a one-time, dismissible banner offering "Generate one" (runs the agents-md-maker draft flow above) or "Dismiss". The dismissal is remembered per workspace so it never nags; the draft is still review-then-save (never auto-written).
 
 **Decision (Feedback round 4, 2026-07-15) — auto-save the generated draft (reverses the round-2 "never auto-written"):** when the agents-md-maker draft completes it is **written to `AGENTS.md` immediately** — the file is fully editable afterwards, so a review-gate before the first save added friction without safety. The editor opens on the saved file with an "AGENTS.md created" notice; subsequent edits still save explicitly. This supersedes the earlier "the draft lands in the editor for review and is only saved explicitly" rule for the initial generation.
+
+**Decision (Feedback round 5, 2026-07-16) — structured, nested, app-written:** the agents-md-maker stays **read-only** and returns **structured output** covering the root AND any nested AGENTS.md it drafts (`{path → content}`); the **app (main process)** writes the files — path-confined and audited — extending round-4's root-only auto-save. The editor opens on the saved root file with a notice; unparseable output falls back to the draft-in-editor flow. Also: opening any AGENTS.md from the file tree opens the **AGENTS.md edition dialog** for that file rather than a plain editor tab (the chat-header AGENTS.md chip is removed, §7).
 
 ## 16. Model Providers
 
@@ -301,6 +313,8 @@ The model configuration hierarchy:
 The chat bar's model chip labels which tier is in effect, and the available-model list refreshes live when providers change.
 
 **Decision (Feedback round 3, 2026-07-14):** every model-selection dropdown (chat-bar chip, workspace override, global default) shows a mini search/filter box when more than 5 models are available, so long provider lists stay navigable.
+
+**Decision (Feedback round 5, 2026-07-16):** the round-3 search box actually ships in **all** model dropdowns — the Settings global default and workspace override had remained plain native selects — via one shared searchable component extracted from the chat chip.
 
 **Decision (Feedback round 4, 2026-07-15) — system prompt visible at launch:** the read-only resolved system prompt in Settings is shown **at launch**, without first requiring a live session. The last-resolved prompt is cached so it's always available, refreshing live whenever a session reports a newer one. The UI labels the layers: the **base prompt is global** (identical for every session); **per-workspace additions** are a separate, labeled layer. (Implementation note: the prompt is only produced by a running turn, so the cache — not on-the-fly resolution — is what guarantees launch-time visibility.)
 
@@ -349,6 +363,8 @@ File paths shown on tool and diff cards are clickable: open the file in the buil
 **Decision (Feedback round 3, 2026-07-14):** the file-tree reduce icon **closes the pane completely** (unmounts it) rather than minimizing to a slim rail — matching the "close top-right" intent above. Related polish: opening/resuming a session shows a loader instead of a blank/instant swap (§17), and image attachments open a zoom lightbox on click (§7).
 
 **Decision (Feedback round 4, 2026-07-15) — file-tree context menu:** right-clicking an entry in the workspace file tree opens a menu with **Open**, **Delete**, and **Details**. Delete always shows a confirm dialog and moves the item to the **OS Trash** (`shell.trashItem`) — never a hard delete, so it's recoverable, matching standard OS behavior; it works on files and folders and is path-confined to the workspace like every other fs operation. Details opens a popup with the item's kind, size, modified time, and workspace-relative path.
+
+**Decision (Feedback round 5, 2026-07-16) — files panel upgrade:** the panel's top edge aligns with the tab strip (same level as the chat); the tree **auto-refreshes via native filesystem watching** — catching agent, user, and external changes — and the refresh button is removed; **drag & drop** works in all three directions (OS → tree copy-in, within-tree move, tree → center open / composer attach); header icons offer **new file**, **new folder**, and **collapse all**.
 
 ## 22. Onboarding: First Wow Moment
 
