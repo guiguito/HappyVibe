@@ -30,7 +30,6 @@ import {
 import { TabStrip } from "./components/TabStrip";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
-import { ContextBubble } from "./components/ContextBubble";
 import { AgentsMdPanel } from "./components/AgentsMdPanel";
 import type { SessionStats } from "./context";
 import { basename as tabBasename } from "./tabs";
@@ -701,33 +700,27 @@ export default function App(): React.JSX.Element {
   // Divider between the two split panes (left border for v, top border for h).
   const paneDivider = (area?: string | null): string =>
     area === "contentB" ? (wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line") : "";
-  // The file tree is a full-height right COLUMN of the same grid, so it's never
-  // hidden by a split and always sits below the tab bar (the strip row spans over
-  // the tree column; the tree starts at the content row). Split strips extend
-  // across the tree column too, giving them a full right side for tab drops.
+  // v5.1: a persistent `toolbar` area is pinned top-right (strip row only);
+  // content spans under it. The file tree is a separate absolute overlay (below),
+  // so opening it never shrinks the panes. Content stays mounted-flat (WS6).
   const TREE = treeOpen && !!wsId;
-  const treeCol = TREE ? " 16rem" : "";
   const gridStyle: React.CSSProperties =
     wsTabs.split === "v"
       ? {
-          gridTemplateColumns: `minmax(0,1fr) minmax(0,1fr)${treeCol}`,
+          gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) auto",
           gridTemplateRows: "auto minmax(0,1fr)",
-          gridTemplateAreas: TREE
-            ? '"stripA stripB stripB" "contentA contentB tree"'
-            : '"stripA stripB" "contentA contentB"',
+          gridTemplateAreas: '"stripA stripB toolbar" "contentA contentB contentB"',
         }
       : wsTabs.split === "h"
         ? {
-            gridTemplateColumns: `minmax(0,1fr)${treeCol}`,
+            gridTemplateColumns: "minmax(0,1fr) auto",
             gridTemplateRows: "auto minmax(0,1fr) auto minmax(0,1fr)",
-            gridTemplateAreas: TREE
-              ? '"stripA stripA" "contentA tree" "stripB tree" "contentB tree"'
-              : '"stripA" "contentA" "stripB" "contentB"',
+            gridTemplateAreas: '"stripA toolbar" "contentA contentA" "stripB stripB" "contentB contentB"',
           }
         : {
-            gridTemplateColumns: `minmax(0,1fr)${treeCol}`,
+            gridTemplateColumns: "minmax(0,1fr) auto",
             gridTemplateRows: "auto minmax(0,1fr)",
-            gridTemplateAreas: TREE ? '"stripA stripA" "contentA tree"' : '"stripA" "contentA"',
+            gridTemplateAreas: '"stripA toolbar" "contentA contentA"',
           };
 
   return (
@@ -811,7 +804,7 @@ export default function App(): React.JSX.Element {
             right IN FLOW (ContextPanel is a fixed overlay above it, z-40). */}
         <div className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"}`}>
           <div
-            className="flex-1 min-w-0 min-h-0 grid"
+            className="flex-1 min-w-0 min-h-0 grid relative"
             style={gridStyle}
             onDragOver={(e) => e.dataTransfer.types.includes("application/x-hv-relpath") && e.preventDefault()}
             onDrop={(e) => {
@@ -820,58 +813,42 @@ export default function App(): React.JSX.Element {
             }}
           >
             {selected && wsId && (
-              <div style={{ gridArea: "stripA" }} className="min-w-0">
+              <div style={{ gridArea: "stripA" }} className="min-w-0 h-11">
                 <TabStrip
                   pane={wsTabs.panes[0]}
                   paneIndex={0}
                   sessionTitle={selected.title}
                   dirty={dirtyForWs}
-                  canSplit={!wsTabs.split}
-                  split={wsTabs.split}
                   onSelect={(tab) => updateTabs(wsId, (t) => activateTab(t, 0, tab))}
                   onClose={(tab) => closeFileTab(wsId, 0, tab)}
                   onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
+                  chatBusy={!!(selectedId && busy[selectedId])}
+                />
+              </div>
+            )}
+            {/* v5.1: persistent top-right toolbar — split + file-panel controls,
+                always visible regardless of split state. */}
+            {selected && wsId && (
+              <div style={{ gridArea: "toolbar" }} className="h-11 flex items-stretch border-b-2 border-line bg-paper">
+                <CenterToolbar
+                  split={wsTabs.split}
+                  treeOpen={treeOpen}
                   onSplit={(dir) => updateTabs(wsId, (t) => splitPane(t, dir))}
                   onUnsplit={() => updateTabs(wsId, unsplit)}
-                  chatBusy={!!(selectedId && busy[selectedId])}
-                  trailing={
-                    <>
-                      {/* WS7: search + context bubble moved here from the removed header. */}
-                      <button
-                        type="button"
-                        onClick={() => setSearchOpen((o) => !o)}
-                        aria-pressed={searchOpen}
-                        title="Search this conversation (⌘F)"
-                        aria-label="Search this conversation"
-                        className={`shrink-0 flex items-center border-l-2 border-line px-2.5 cursor-pointer transition-colors ${
-                          searchOpen ? "text-tangerine-deep bg-paper-deep/50" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
-                        }`}
-                      >
-                        ⌕
-                      </button>
-                      <span className="flex items-center border-l-2 border-line pl-2 pr-1">
-                        <ContextBubble stats={selStats} fallbackWindow={fallbackWindow} onOpen={() => setContextOpen(true)} />
-                      </span>
-                      <FilesToggle treeOpen={treeOpen} onToggle={() => setTreeOpen((o) => !o)} />
-                    </>
-                  }
+                  onToggleTree={() => setTreeOpen((o) => !o)}
                 />
               </div>
             )}
             {selected && wsId && wsTabs.split && wsTabs.panes[1] && (
-              <div style={{ gridArea: "stripB" }} className={`min-w-0 ${wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line"}`}>
+              <div style={{ gridArea: "stripB" }} className={`min-w-0 h-11 ${wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line"}`}>
                 <TabStrip
                   pane={wsTabs.panes[1]}
                   paneIndex={1}
                   sessionTitle={selected.title}
                   dirty={dirtyForWs}
-                  canSplit={false}
-                  split={wsTabs.split}
                   onSelect={(tab) => updateTabs(wsId, (t) => activateTab(t, 1, tab))}
                   onClose={(tab) => closeFileTab(wsId, 1, tab)}
                   onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
-                  onSplit={(dir) => updateTabs(wsId, (t) => splitPane(t, dir))}
-                  onUnsplit={() => updateTabs(wsId, unsplit)}
                   chatBusy={!!(selectedId && busy[selectedId])}
                 />
               </div>
@@ -905,6 +882,7 @@ export default function App(): React.JSX.Element {
             onSearchOpenChange={setSearchOpen}
             contextOpen={contextOpen}
             onContextOpenChange={setContextOpen}
+            treeOpen={TREE}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={send}
             onRetry={retryCrash}
@@ -939,10 +917,11 @@ export default function App(): React.JSX.Element {
                 />
               );
             })}
-            {/* File tree: a full-height right COLUMN of the grid — below the tab
-                bar, never hidden by a split. */}
+            {/* v5.1: file tree is a right-side OVERLAY drawer (top below the tab
+                bar, h-11) — it overlays the content instead of a grid column, so
+                opening it never shrinks the panes. Below the ContextPanel (z-40). */}
             {TREE && (
-              <div style={{ gridArea: "tree" }} className="min-h-0 min-w-0 border-l-2 border-line">
+              <div className="absolute top-11 right-0 bottom-0 w-64 z-30 border-l-2 border-line bg-paper shadow-sticker-lg">
                 <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setTreeOpen(false)} />
               </div>
             )}
@@ -968,7 +947,7 @@ export default function App(): React.JSX.Element {
   );
 }
 
-/** WS6: the file-tree toggle, rendered in the primary tab strip's trailing slot. */
+/** WS6: the file-tree toggle. */
 function FilesToggle({ treeOpen, onToggle }: { treeOpen: boolean; onToggle: () => void }): React.JSX.Element {
   return (
     <button
@@ -985,5 +964,44 @@ function FilesToggle({ treeOpen, onToggle }: { treeOpen: boolean; onToggle: () =
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
       </svg>
     </button>
+  );
+}
+
+/** v5.1: persistent top-right toolbar — split controls + file-panel toggle. */
+function CenterToolbar({
+  split,
+  treeOpen,
+  onSplit,
+  onUnsplit,
+  onToggleTree,
+}: {
+  split: "h" | "v" | null;
+  treeOpen: boolean;
+  onSplit: (dir: "h" | "v") => void;
+  onUnsplit: () => void;
+  onToggleTree: () => void;
+}): React.JSX.Element {
+  const btn = "shrink-0 flex items-center border-l-2 border-line px-2.5 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer transition-colors";
+  return (
+    <div className="flex items-stretch">
+      <button type="button" onClick={() => onSplit("v")} aria-pressed={split === "v"} title="Split — side by side" aria-label="Split vertically"
+        className={`${btn} ${split === "v" ? "text-tangerine-deep bg-paper-deep/50" : ""}`}>
+        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" />
+        </svg>
+      </button>
+      <button type="button" onClick={() => onSplit("h")} aria-pressed={split === "h"} title="Split — stacked" aria-label="Split horizontally"
+        className={`${btn} ${split === "h" ? "text-tangerine-deep bg-paper-deep/50" : ""}`}>
+        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 12h18" />
+        </svg>
+      </button>
+      {split && (
+        <button type="button" onClick={onUnsplit} title="Close split" aria-label="Close split" className={btn}>
+          <span className="text-sm font-bold leading-none">⊟</span>
+        </button>
+      )}
+      <FilesToggle treeOpen={treeOpen} onToggle={onToggleTree} />
+    </div>
   );
 }

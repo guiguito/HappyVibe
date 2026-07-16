@@ -188,6 +188,8 @@ Expandable details may show raw command, path, output, or diff when useful.
 
 **Decision (Feedback round 5, 2026-07-16) — chat-surface restructure:** (1) **Split view** — the center area supports one 2-way split, horizontal or vertical; each pane has its own tab strip and tabs (the chat included) can be dragged between panes. (2) The in-conversation **search icon and the context bubble move into the tab-strip row**, next to the files icon; the chat header (the AGENTS.md chip and the whole section above the chat) is removed. (3) The composer "+" menu gains an **MCP submenu** — connected servers with status (read-only) plus a "Manage…" shortcut to the MCP, Tools & Agents page (§13). (4) **Intent wrapping** extends to the delegation call line — it wraps rather than truncating with an ellipsis.
 
+**Decision (Feedback round 5.1, 2026-07-17) — chat-UI corrections (after GUI testing):** (1) The **search icon and context bubble leave the tab strip** for a small **floating cluster at the top-right of the session chat** (over the transcript) — this reverses round-5's tab-strip placement. (2) The **code editor gains ⌘F search** (CodeMirror's built-in find/next/prev/highlight), the same keyboard trigger as chat search; editor focus routes ⌘F to the editor, chat focus to the chat. (3) The **split-view buttons (vertical/horizontal), unsplit, and the file-panel toggle live in a persistent toolbar pinned to the top-right of the center area** — always visible regardless of split; the tab strips become tabs-only. (4) The **file panel is a right-side overlay drawer** (top aligned below the tab bar) that overlays the content instead of a grid column, so it no longer shrinks the split panes (refines §21).
+
 ## 8. File Edits and Diffs
 
 When the agent edits files, the UI should show: which file changed; a short summary of the change; status; an expandable diff; whether the edit succeeded or failed. This is important because HappyVibe's educational value depends on users understanding what the agent changed.
@@ -365,6 +367,8 @@ File paths shown on tool and diff cards are clickable: open the file in the buil
 **Decision (Feedback round 4, 2026-07-15) — file-tree context menu:** right-clicking an entry in the workspace file tree opens a menu with **Open**, **Delete**, and **Details**. Delete always shows a confirm dialog and moves the item to the **OS Trash** (`shell.trashItem`) — never a hard delete, so it's recoverable, matching standard OS behavior; it works on files and folders and is path-confined to the workspace like every other fs operation. Details opens a popup with the item's kind, size, modified time, and workspace-relative path.
 
 **Decision (Feedback round 5, 2026-07-16) — files panel upgrade:** the panel's top edge aligns with the tab strip (same level as the chat); the tree **auto-refreshes via native filesystem watching** — catching agent, user, and external changes — and the refresh button is removed; **drag & drop** works in all three directions (OS → tree copy-in, within-tree move, tree → center open / composer attach); header icons offer **new file**, **new folder**, and **collapse all**.
+
+**Decision (Feedback round 5.1, 2026-07-17):** the files panel is a **right-side overlay drawer** (opened from the persistent top-right toolbar, §7) — its top aligns below the tab bar and it **overlays** the content rather than occupying a grid column, so opening it no longer shrinks the chat or split panes.
 
 ## 22. Onboarding: First Wow Moment
 

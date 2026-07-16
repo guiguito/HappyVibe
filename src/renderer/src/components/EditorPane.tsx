@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting, HighlightStyle, type LanguageSupport } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { tags } from "@lezer/highlight";
@@ -126,6 +127,9 @@ export default function CodeEditor({
           history(),
           indentOnInput(),
           bracketMatching(),
+          // v5.1: ⌘F search in the editor (built-in CM panel + match highlight).
+          search({ top: true }),
+          highlightSelectionMatches(),
           hvTheme,
           syntaxHighlighting(hvHighlight),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -133,6 +137,7 @@ export default function CodeEditor({
           keymap.of([
             { key: "Mod-s", preventDefault: true, run: () => (cbs.current.onSave(), true) },
             indentWithTab,
+            ...searchKeymap,
             ...defaultKeymap,
             ...historyKeymap,
           ]),

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { ModelSelect } from "./ModelSelect";
+import { ContextBubble } from "./ContextBubble";
 import { ContextPanel } from "./ContextPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
@@ -39,6 +40,7 @@ export function ChatView({
   onSearchOpenChange,
   contextOpen,
   onContextOpenChange,
+  treeOpen = false,
   onOpenAgentsMd,
   onSend,
   onAbort,
@@ -72,6 +74,8 @@ export function ChatView({
   onSearchOpenChange: (open: boolean) => void;
   contextOpen: boolean;
   onContextOpenChange: (open: boolean) => void;
+  /** v5.1: file panel is open — shift the floating cluster left so it isn't covered. */
+  treeOpen?: boolean;
   onOpenAgentsMd: () => void;
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[]) => void;
   onAbort: () => void;
@@ -170,6 +174,8 @@ export function ChatView({
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        // v5.1: when the code editor is focused, ⌘F is its search, not the chat's.
+        if (document.activeElement?.closest(".cm-editor")) return;
         e.preventDefault();
         onSearchOpenChange(true);
       } else if (e.key === "Escape" && searchOpen) {
@@ -241,10 +247,27 @@ export function ChatView({
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      {/* WS7: the header (session title, search, AGENTS.md chip, context bubble)
-          is gone — search + context bubble now live in the tab strip, and the
-          AGENTS.md editor opens from the "+" menu or the file tree. */}
+    <div className="relative flex-1 flex flex-col min-h-0">
+      {/* v5.1: search + context bubble float at the top-right of the chat (over
+          the transcript); they shift left when the file panel overlay is open. */}
+      <div
+        className="absolute top-2 z-20 flex items-center gap-1.5"
+        style={{ right: treeOpen ? "calc(16rem + 0.6rem)" : "0.6rem" }}
+      >
+        <button
+          type="button"
+          onClick={() => onSearchOpenChange(!searchOpen)}
+          aria-pressed={searchOpen}
+          title="Search this conversation (⌘F)"
+          aria-label="Search this conversation"
+          className={`text-sm rounded-full border-2 px-2.5 py-1 cursor-pointer transition-colors shadow-sticker ${
+            searchOpen ? "border-tangerine bg-honey-soft text-tangerine-deep" : "border-line bg-card text-ink-soft hover:border-honey hover:text-ink"
+          }`}
+        >
+          ⌕
+        </button>
+        <ContextBubble stats={stats} fallbackWindow={fallbackWindow} onOpen={() => onContextOpenChange(true)} />
+      </div>
       {/* Crash banner */}
       {crashed !== null && (
         <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/40 text-sm font-semibold text-berry">

@@ -2,11 +2,11 @@ import { useState } from "react";
 import { basename, CHAT_TAB, type Pane, type TabId } from "../tabs";
 
 /**
- * WS6 — center tab strip for ONE pane. The chat tab (session title, never
+ * WS6 — center tab strip for ONE pane: the chat tab (session title, never
  * closable) + one tab per open file (basename, dirty dot, close X, middle-click
  * close). Tabs are draggable between a split's two strips (HTML5 DnD carrying
- * the TabId). A `trailing` slot hosts the pane's right-end controls (files
- * toggle, and — WS7 — search + context bubble).
+ * the TabId). v5.1: tabs-only — split/unsplit + file-panel controls live in the
+ * App-level top-right toolbar, and search + context bubble float over the chat.
  */
 const DRAG_MIME = "application/x-hv-tabid";
 
@@ -15,15 +15,10 @@ export function TabStrip({
   paneIndex,
   sessionTitle,
   dirty,
-  canSplit,
-  split,
   chatBusy = false,
   onSelect,
   onClose,
   onMoveTab,
-  onSplit,
-  onUnsplit,
-  trailing,
 }: {
   pane: Pane;
   paneIndex: 0 | 1;
@@ -32,15 +27,9 @@ export function TabStrip({
   dirty: Record<string, boolean>;
   /** WS7: pulse dot on the chat tab while the agent works (moved from the header). */
   chatBusy?: boolean;
-  /** show the split button (only when not already split). */
-  canSplit: boolean;
-  split: "h" | "v" | null;
   onSelect: (tab: TabId) => void;
   onClose: (tab: TabId) => void;
   onMoveTab: (tab: TabId, toPane: 0 | 1) => void;
-  onSplit: (dir: "h" | "v") => void;
-  onUnsplit: () => void;
-  trailing?: React.ReactNode;
 }): React.JSX.Element {
   const tab = (active: boolean): string =>
     `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors ${
@@ -108,47 +97,7 @@ export function TabStrip({
           );
         })}
       </div>
-      {/* Split / unsplit controls */}
-      {canSplit ? (
-        <>
-          <StripButton onClick={() => onSplit("v")} label="Split right" title="Split — side by side">
-            <SplitVGlyph />
-          </StripButton>
-          <StripButton onClick={() => onSplit("h")} label="Split down" title="Split — stacked">
-            <SplitHGlyph />
-          </StripButton>
-        </>
-      ) : split ? (
-        <StripButton onClick={onUnsplit} label="Close split" title="Close split">
-          <span className="text-sm font-bold leading-none">⊟</span>
-        </StripButton>
-      ) : null}
-      {trailing}
     </div>
-  );
-}
-
-function StripButton({
-  onClick,
-  label,
-  title,
-  children,
-}: {
-  onClick: () => void;
-  label: string;
-  title: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      title={title}
-      className="shrink-0 flex items-center border-l-2 border-line px-2.5 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer transition-colors"
-    >
-      {children}
-    </button>
   );
 }
 
@@ -156,24 +105,6 @@ function ChatGlyph(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function SplitVGlyph(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M12 4v16" />
-    </svg>
-  );
-}
-
-function SplitHGlyph(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M3 12h18" />
     </svg>
   );
 }
