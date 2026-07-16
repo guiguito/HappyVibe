@@ -328,12 +328,18 @@ export default function (pi: ExtensionAPI) {
 
     // ask — an earlier "Allow for session" grant covers default asks only;
     // an explicit ask RULE always re-prompts (that's what the rule is for).
-    if (v.source === "default" && sessionGrants.has(permTool)) {
+    // v5: a session grant also covers the outside-workspace confinement ask.
+    if ((v.source === "default" || v.source === "outside-workspace") && sessionGrants.has(permTool)) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "user", grant: "session" });
       return;
     }
 
-    const title = JSON.stringify({ kind: "hv.permission", tool: permTool, summary });
+    // v5: outside-workspace asks show the FACTUAL reason + path (never masked).
+    const title = JSON.stringify(
+      v.source === "outside-workspace"
+        ? { kind: "hv.permission", tool: permTool, summary, reason: "outside-workspace", path: v.outsidePath }
+        : { kind: "hv.permission", tool: permTool, summary },
+    );
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).
     // NO timeout, NO auto-allow: permission prompts wait indefinitely by design.
     const choice = await ctx.ui.select(title, ["Allow", "Allow for session", "Deny"]);

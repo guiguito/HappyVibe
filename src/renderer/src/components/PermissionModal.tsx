@@ -78,6 +78,13 @@ export function PermissionModal({
               </Dialog.Description>
             </div>
           </div>
+          {/* v5: the call reaches outside the workspace — surface the factual path. */}
+          {info.reason === "outside-workspace" && (
+            <div className="mb-4 rounded-xl border-2 border-berry/50 bg-berry-soft px-3 py-2 text-xs font-semibold text-berry break-all">
+              This is outside your workspace{info.path ? ": " : "."}
+              {info.path && <span className="font-mono">{info.path}</span>}
+            </div>
+          )}
           {/* Raw tool name + summary stay available behind a collapsed toggle. */}
           <details className="mb-5">
             <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wide text-ink-soft">

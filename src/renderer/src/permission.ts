@@ -10,6 +10,10 @@ export interface UiRequest {
 export interface PermissionInfo {
   tool: string;
   summary: string;
+  /** v5: set when the call reached outside the workspace root. */
+  reason?: "outside-workspace";
+  /** v5: the offending path, for the outside-workspace badge. */
+  path?: string;
 }
 
 // Round 3 #13: "Allow for workspace" / "Always allow" persist a rule (workspace /
@@ -34,7 +38,12 @@ export function parsePermission(r: UiRequest): PermissionInfo | null {
   try {
     const p = JSON.parse(r.title ?? "");
     if (p?.kind === "hv.permission") {
-      return { tool: String(p.tool ?? ""), summary: String(p.summary ?? "") };
+      const info: PermissionInfo = { tool: String(p.tool ?? ""), summary: String(p.summary ?? "") };
+      if (p.reason === "outside-workspace") {
+        info.reason = "outside-workspace";
+        if (typeof p.path === "string") info.path = p.path;
+      }
+      return info;
     }
   } catch {
     /* not JSON → not ours */

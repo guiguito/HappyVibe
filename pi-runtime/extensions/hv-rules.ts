@@ -35,16 +35,47 @@ export interface ToolCall {
 
 export interface Verdict {
   action: RuleAction;
-  /** "rule" when a rule decided; defaults mirror the pre-B4 bridge. */
-  source: "rule" | "safe-default" | "default";
+  /** "rule" when a rule decided; defaults mirror the pre-B4 bridge.
+   *  "outside-workspace" (v5): a file tool reached outside the workspace root. */
+  source: "rule" | "safe-default" | "default" | "outside-workspace";
   /** The most-restrictive matching rule when source is "rule". */
   rule?: Rule & { scope: "global" | "workspace" };
+  /** The offending path when source is "outside-workspace" (for the prompt). */
+  outsidePath?: string;
 }
 
 /** Tools that never need approval by default (pre-B4 spike behavior).
  * ask_user is UI-only (V2.B): prompting for permission to ask a question
  * would stack two blocking modals for a harmless call. */
 export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user"]);
+
+/** v5: Pi's built-in FILE tools — the ones whose path args we confine to the
+ * workspace by default. bash is deliberately NOT here (it stays under
+ * command-pattern rules; path-inspecting arbitrary shell is out of scope). */
+export const FILE_TOOLS = new Set([
+  "read", "write", "edit", "multi_edit", "multiedit", "grep", "glob", "ls", "list",
+]);
+
+/**
+ * v5: does a file path point OUTSIDE the workspace root? Pure, posix-only
+ * (the app is mac/linux-first). Absolute paths must sit under the workspace;
+ * relative paths must not climb above it with `..`; `~` is treated as outside.
+ * ponytail: no realpath (this module is import-free) — a symlink inside the
+ * workspace that points out won't be caught; upgrade to fs.realpath in main
+ * if that ever matters.
+ */
+export function escapesWorkspace(p: string, workspace: string): boolean {
+  const ws = workspace.replace(/\/+$/, "");
+  if (p.startsWith("~")) return true;
+  if (p.startsWith("/")) return p !== ws && !p.startsWith(ws + "/");
+  let depth = 0;
+  for (const seg of p.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") { depth--; if (depth < 0) return true; }
+    else depth++;
+  }
+  return false;
+}
 
 export const EMPTY_RULES: RulesFile = { global: [], workspaces: {} };
 
@@ -145,6 +176,12 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
     if (!winner || RESTRICTIVENESS[r.action] > RESTRICTIVENESS[winner.action]) winner = r;
   }
   if (winner) return { action: winner.action, source: "rule", rule: winner };
+  // v5: a file tool reaching outside the workspace asks — even reads that would
+  // otherwise be safe-default-allowed. Explicit rules above still win.
+  if (FILE_TOOLS.has(call.tool)) {
+    const outside = pathArgs(call.input).find((p) => escapesWorkspace(p, call.workspace));
+    if (outside) return { action: "ask", source: "outside-workspace", outsidePath: outside };
+  }
   if (SAFE_TOOLS.has(call.tool)) return { action: "allow", source: "safe-default" };
   return { action: "ask", source: "default" };
 }
