@@ -234,3 +234,30 @@ export function installBuiltinAgents(bundleDir: string): void {
   }
   if (changed) fs.writeFileSync(stampFile, JSON.stringify(stamps));
 }
+
+/**
+ * Enable async-by-default subagent delegations (PRD §12, 2026-07-17). pi-subagents
+ * reads `<PI_CODING_AGENT_DIR>/extensions/subagent/config.json` at spawn; with
+ * `asyncByDefault` a delegation returns immediately (detached runner) so the
+ * user keeps chatting. `completionBatch.enabled:false` → one completion notify
+ * per run, which the renderer maps 1:1 to a run card. The dir is app-owned, so
+ * we merge-write (preserve any keys a future version adds). Idempotent.
+ */
+export function writeSubagentConfig(): void {
+  const file = path.join(agentDir(), "extensions", "subagent", "config.json");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  let config: Record<string, unknown> = {};
+  try {
+    config = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    /* absent or corrupt — start fresh */
+  }
+  config.asyncByDefault = true;
+  config.completionBatch = { ...(config.completionBatch as object | undefined), enabled: false };
+  // pi-subagents' agent-to-agent "intercom" result relay defaults to "always",
+  // but HappyVibe delivers results via the independent async-complete →
+  // subagent-notify path and never acks intercom — leaving it on just logs
+  // "intercom delivery was not acknowledged" on every run. Off = quiet, no loss.
+  config.intercomBridge = { ...(config.intercomBridge as object | undefined), mode: "off" };
+  fs.writeFileSync(file, `${JSON.stringify(config, null, "\t")}\n`);
+}

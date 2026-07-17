@@ -13,6 +13,13 @@ interface Activity {
   busy: boolean;
   pendingPrompts: number;
   subagents: number;
+  /**
+   * Detached (async) subagent runs still alive for this session, by runId. Unlike
+   * `subagents` (foreground tool-call counter, zeroed on agent_end), these OUTLIVE
+   * the turn, so they are tracked turn-independently: a live async run must keep
+   * the session non-idle or a respawn (hibernation / MCP reload) would kill it.
+   */
+  asyncRuns: Set<string>;
   lastActivityAt: number;
 }
 
@@ -22,7 +29,7 @@ export class SessionActivity {
   private rec(id: string): Activity {
     let a = this.map.get(id);
     if (!a) {
-      a = { busy: false, pendingPrompts: 0, subagents: 0, lastActivityAt: Date.now() };
+      a = { busy: false, pendingPrompts: 0, subagents: 0, asyncRuns: new Set(), lastActivityAt: Date.now() };
       this.map.set(id, a);
     }
     return a;
@@ -59,6 +66,24 @@ export class SessionActivity {
     if (a) a.pendingPrompts = Math.max(0, a.pendingPrompts - 1);
   }
 
+  /** A detached async subagent started (hv.subagent started). Idempotent. */
+  asyncStarted(id: string, runId: string): void {
+    const a = this.rec(id);
+    a.asyncRuns.add(runId);
+    a.lastActivityAt = Date.now();
+  }
+
+  /** A detached async subagent finished/interrupted (hv.subagent complete). */
+  asyncEnded(id: string, runId: string): void {
+    const a = this.map.get(id);
+    if (a) a.asyncRuns.delete(runId);
+  }
+
+  /** Authoritative resync from /hv-subagent-list after a respawn. */
+  asyncSet(id: string, runIds: string[]): void {
+    this.rec(id).asyncRuns = new Set(runIds);
+  }
+
   /** Session process exited — forget everything about it. */
   remove(id: string): void {
     this.map.delete(id);
@@ -66,7 +91,7 @@ export class SessionActivity {
 
   isIdle(id: string): boolean {
     const a = this.map.get(id);
-    return !a || (!a.busy && a.pendingPrompts === 0 && a.subagents === 0);
+    return !a || (!a.busy && a.pendingPrompts === 0 && a.subagents === 0 && a.asyncRuns.size === 0);
   }
 
   /**

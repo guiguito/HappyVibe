@@ -4,8 +4,10 @@ import {
   editAgentFile,
   joinToolPermissions,
   parseAgentFile,
+  renderSubagentSection,
   serializeAgentFile,
   toAgentDef,
+  type AgentDef,
   type PermState,
 } from "../pi-runtime/extensions/hv-agents";
 
@@ -127,5 +129,32 @@ describe("joinToolPermissions", () => {
       { name: "read", description: "", source: "", permission: "allow" },
       { name: "write", description: "", source: "", permission: "ask" },
     ]);
+  });
+});
+
+describe("renderSubagentSection", () => {
+  const mk = (name: string, description: string): AgentDef => ({ name, description, source: "builtin", path: `/x/${name}.md` });
+
+  test("empty list injects nothing", () => {
+    expect(renderSubagentSection([])).toBe("");
+  });
+
+  test("lists each agent with name + description under a heading + guidance", () => {
+    const s = renderSubagentSection([mk("code-explorer", "Read-only investigator"), mk("agents-md-maker", "Drafts AGENTS.md")]);
+    expect(s).toContain("## Available subagents");
+    expect(s).toContain("subagent"); // guidance mentions the tool
+    expect(s).toContain("- **code-explorer** — Read-only investigator");
+    expect(s).toContain("- **agents-md-maker** — Drafts AGENTS.md");
+    // Countermand the tool description's "call { action: list } first" so the
+    // model delegates directly, and its background/wait guidance.
+    expect(s).toContain('Do NOT call `{ action: "list" }`');
+    expect(s).toContain("wait");
+  });
+
+  test("clamps long descriptions to ~200 chars", () => {
+    const long = "x".repeat(500);
+    const s = renderSubagentSection([mk("verbose", long)]);
+    expect(s).toContain("x".repeat(200));
+    expect(s).not.toContain("x".repeat(201));
   });
 });

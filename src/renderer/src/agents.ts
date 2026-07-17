@@ -175,12 +175,60 @@ export function isSubagentTool(toolName: unknown): boolean {
 // (~2.5s after tool_execution_end).
 
 export interface DelegationRun {
-  toolCallId: string;
+  /** Map key: the runId for async runs, the toolCallId for foreground runs. */
+  id: string;
+  /**
+   * "fg" = a blocking (`async:false`) delegation — one tool call, transcript
+   * streamed live onto the in-flow tool card (traceFor). "async" = a detached
+   * run (the default) tracked by runId across its whole life via hv.subagent
+   * events; its live progress comes from the status poller, not a tool card.
+   */
+  kind: "fg" | "async";
+  /** Foreground only — the tool card to read the live transcript from. */
+  toolCallId?: string;
   agent: string;
   /** headline: args.intent when present (W1.1 registered-tool param), else task. */
   label: string;
   startedAt: number;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "interrupted";
+  /** Async only — latest status-poll snapshot (currentTool, activityState, …). */
+  live?: { currentTool?: string; activityState?: string; turnCount?: number; recentTools?: Array<{ tool: string; args?: string }> };
+}
+
+// ── async subagent lifecycle (hv.subagent notify) ────────────────────────────
+
+export interface SubagentEvent {
+  stage: "started" | "control" | "complete" | "active" | "interrupt-sent" | "interrupt-error";
+  runId?: string;
+  agent?: string;
+  task?: string;
+  asyncDir?: string;
+  status?: "success" | "error" | "interrupted";
+  activityState?: "long-running" | "needs_attention";
+  runs?: Array<{ runId: string; agent?: string; task?: string; asyncDir?: string }>;
+}
+
+/** The hv.subagent payload when this notify is a subagent lifecycle relay, else null. */
+export function parseSubagentEvent(r: { method?: string; message?: string }): SubagentEvent | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "") as { kind?: string; stage?: string };
+    if (p.kind !== "hv.subagent" || typeof p.stage !== "string") return null;
+    return p as unknown as SubagentEvent;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * When a `subagent` tool_execution_end carries `details.asyncId`, the delegation
+ * was dispatched async (returned immediately, detached runner owns the rest).
+ * The foreground card raised on tool_execution_start is then discarded — the
+ * async card (keyed by runId, raised by the `started` notify) owns the life.
+ */
+export function asyncResultInfo(result: unknown): { asyncId: string } | null {
+  const id = (result as { details?: { asyncId?: unknown } } | undefined)?.details?.asyncId;
+  return typeof id === "string" && id ? { asyncId: id } : null;
 }
 
 const LABEL_MAX = 90;
@@ -200,13 +248,18 @@ export function formatElapsed(ms: number): string {
 }
 
 /**
- * V2.C1: composer copy while a delegation runs — the composer stays fully
- * enabled, but a delegation is one blocking tool call, so anything typed
- * queues until it finishes. Null when nothing is running.
+ * Composer copy while a delegation runs. Async delegations (the default) don't
+ * block the main agent — the turn ends at spawn and the user chats normally, so
+ * the copy just reassures that results will arrive. A foreground (`async:false`)
+ * delegation still blocks the one turn, so it keeps the "queues until it
+ * finishes" copy. Null when nothing is running.
  */
 export function delegationHint(runs: DelegationRun[]): string | null {
   const active = runs.filter((r) => r.status === "running");
   if (active.length === 0) return null;
+  if (active.some((r) => r.kind === "async")) {
+    return "Subagents are working in the background — keep chatting; results drop in when they finish";
+  }
   const tail = active.length === 1 ? `${active[0].agent} finishes` : `${active.length} agents finish`;
   return `Type away — messages will be answered when ${tail}`;
 }

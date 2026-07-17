@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  asyncResultInfo,
   delegationHint,
   delegationLabel,
   formatElapsed,
@@ -7,6 +8,7 @@ import {
   joinToolPermissions,
   mergeTrace,
   parseAgents,
+  parseSubagentEvent,
   parseTools,
   traceFor,
   traceFromEnd,
@@ -179,9 +181,19 @@ describe("formatElapsed", () => {
   });
 });
 
-describe("delegationHint (V2.C1 composer copy)", () => {
+describe("delegationHint (composer copy)", () => {
   const run = (agent: string, status: DelegationRun["status"] = "running"): DelegationRun => ({
+    id: `t-${agent}`,
+    kind: "fg",
     toolCallId: `t-${agent}`,
+    agent,
+    label: "",
+    startedAt: 0,
+    status,
+  });
+  const asyncRun = (agent: string, status: DelegationRun["status"] = "running"): DelegationRun => ({
+    id: `r-${agent}`,
+    kind: "async",
     agent,
     label: "",
     startedAt: 0,
@@ -193,16 +205,47 @@ describe("delegationHint (V2.C1 composer copy)", () => {
     expect(delegationHint([run("explorer", "done"), run("summarizer", "error")])).toBeNull();
   });
 
-  test("one running agent → named copy", () => {
+  test("one running FOREGROUND agent → blocking copy", () => {
     expect(delegationHint([run("code-explorer")])).toBe(
       "Type away — messages will be answered when code-explorer finishes",
     );
   });
 
-  test("several running agents → counted copy, finished runs excluded", () => {
+  test("several running foreground agents → counted copy, finished runs excluded", () => {
     expect(delegationHint([run("a"), run("b"), run("c", "done")])).toBe(
       "Type away — messages will be answered when 2 agents finish",
     );
+  });
+
+  test("any running ASYNC run → non-blocking background copy", () => {
+    expect(delegationHint([asyncRun("code-explorer")])).toBe(
+      "Subagents are working in the background — keep chatting; results drop in when they finish",
+    );
+    // mixed: async copy wins (chatting works)
+    expect(delegationHint([run("fg"), asyncRun("bg")])).toContain("in the background");
+  });
+});
+
+describe("parseSubagentEvent", () => {
+  test("parses each lifecycle stage; ignores non-subagent notifies", () => {
+    expect(parseSubagentEvent(notify({ kind: "hv.subagent", stage: "started", runId: "r1", agent: "scout", asyncDir: "/tmp/x" }))).toMatchObject({ stage: "started", runId: "r1", agent: "scout" });
+    expect(parseSubagentEvent(notify({ kind: "hv.subagent", stage: "control", runId: "r1", activityState: "needs_attention" }))?.activityState).toBe("needs_attention");
+    expect(parseSubagentEvent(notify({ kind: "hv.subagent", stage: "complete", runId: "r1", status: "success" }))?.status).toBe("success");
+    expect(parseSubagentEvent(notify({ kind: "hv.subagent", stage: "active", runs: [{ runId: "r1", asyncDir: "/tmp/x" }] }))?.runs).toHaveLength(1);
+    expect(parseSubagentEvent(notify({ kind: "hv.agents", agents: [] }))).toBeNull();
+    expect(parseSubagentEvent({ method: "select" })).toBeNull();
+    expect(parseSubagentEvent({ method: "notify", message: "not json" })).toBeNull();
+  });
+});
+
+describe("asyncResultInfo", () => {
+  test("detects details.asyncId on an async-dispatch tool result", () => {
+    expect(asyncResultInfo({ content: [], details: { asyncId: "run-9", results: [] } })).toEqual({ asyncId: "run-9" });
+  });
+  test("null for a foreground result (no asyncId)", () => {
+    expect(asyncResultInfo({ details: { results: [{ agent: "x", finalOutput: "hi" }] } })).toBeNull();
+    expect(asyncResultInfo(undefined)).toBeNull();
+    expect(asyncResultInfo({ details: { asyncId: "" } })).toBeNull();
   });
 });
 

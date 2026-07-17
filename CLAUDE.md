@@ -12,7 +12,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 
 ## Tests
 - Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated):
-  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-md-bridge,subagent-context,permission-coexistence,mcp-bridge}.test.ts
+  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-md-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge}.test.ts
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
 - Contract tests are the Pi upgrade gate: any pi/pi-subagents pin bump must pass them.
@@ -52,6 +52,14 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - pi-subagents children need `PI_SUBAGENT_PI_BINARY` (set in spawn.ts) — it points at
   `pi-runtime/bin/pi-node.sh`, which routes through the bundled Electron helper
   (ELECTRON_RUN_AS_NODE) when packaged and falls back to `node` in dev. No system Node required.
+- Async subagents (PRD §12): delegations are async-by-default (`writeSubagentConfig` in
+  config.ts writes `asyncByDefault` at startup). Detached runs are `unref`'d — they SURVIVE a
+  parent respawn, but pi-subagents drops their completion unless the resumed session keeps the
+  SAME Pi session id, so ALWAYS resume via the session file (`startClient(meta,true)`). An active
+  async run must keep the session non-idle (`activity.asyncRuns`, gated in `isIdle`) or
+  hibernation/MCP-reload would `manager.stop()` mid-run. Lifecycle is relayed off pi-subagents'
+  in-process `pi.events` bus by the bridge as `hv.subagent` notifies (never on RPC stdout);
+  `/hv-subagent-list` resyncs cards after a respawn (restoreActiveJobs does NOT re-emit started).
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array

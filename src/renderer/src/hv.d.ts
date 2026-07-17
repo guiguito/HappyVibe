@@ -237,6 +237,10 @@ interface HvApi {
   // B6: agents & tools
   listAgents(sessionId?: string): Promise<void>;
   listTools(sessionId?: string): Promise<void>;
+  /** Async subagents: interrupt a running detached run (stop button). */
+  subagentInterrupt(sessionId: string, runId: string): Promise<void>;
+  /** Live status pushes for detached runs (currentTool, activityState, …). */
+  onSubagentStatus(cb: (i: { sessionId: string; runId: string; status: Record<string, unknown> }) => void): () => void;
   readAgent(filePath: string): Promise<{ body: string; model?: string }>;
   writeAgent(filePath: string, edit: { body?: string; model?: string | null }): Promise<void>;
   duplicateAgent(filePath: string): Promise<string>;

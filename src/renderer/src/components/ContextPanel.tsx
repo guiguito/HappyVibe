@@ -250,6 +250,25 @@ export function ContextPanel({
                 </div>
               )}
 
+              {/* Discoverability: the injected "Available subagents" roster. */}
+              {drilled.key === "system" && (snapshot.system?.agents?.length ?? 0) > 0 && (
+                <ul className="mt-1.5 flex flex-col gap-1">
+                  {snapshot.system!.agents!.map((a) => (
+                    <li key={a.name} className="flex items-center gap-2 text-xs">
+                      <span className="font-mono shrink-0">{a.name}</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wide rounded border border-line px-1 py-0.5 text-ink-soft shrink-0">
+                        subagent
+                      </span>
+                      <span className="flex-1" />
+                      <span className="text-ink-soft shrink-0">{estTok(Math.ceil(a.chars / 4))}</span>
+                    </li>
+                  ))}
+                  <li className="mt-1 pt-1 border-t border-line text-[10px] text-ink-soft/70">
+                    injected so the model can delegate (part of the system prompt above)
+                  </li>
+                </ul>
+              )}
+
               {drilled.key === "files" && snapshot.system && (
                 <ul className="mt-1 flex flex-col gap-1">
                   {snapshot.system.contextFiles.map((f) => (

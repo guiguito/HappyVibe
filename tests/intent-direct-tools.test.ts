@@ -60,7 +60,10 @@ test("requireIntent injects a required intent into direct MCP tools only", () =>
   expect(byName("github_create_issue").parameters.properties.intent).toBeTruthy();
   expect(byName("github_create_issue").parameters.required).toEqual(["title", "intent"]);
   expect(byName("mcp").parameters.properties.intent).toBeTruthy(); // proxy, via INTENT_TOOLS
-  expect(byName("subagent").parameters.properties.intent).toBeTruthy(); // via INTENT_TOOLS
+  // subagent advertises intent but does NOT require it (task is the headline
+  // fallback) — a required intent made looser models fail their first delegation.
+  expect(byName("subagent").parameters.properties.intent).toBeTruthy();
+  expect(byName("subagent").parameters.required ?? []).not.toContain("intent");
   // Server tool with its own intent param: untouched (no duplicate required).
   expect(byName("srv_own_intent").parameters.required).toEqual(["intent"]);
 });

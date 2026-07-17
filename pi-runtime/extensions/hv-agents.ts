@@ -90,6 +90,32 @@ export function editAgentFile(
   return serializeAgentFile(frontmatter, edit.body ?? body);
 }
 
+/**
+ * System-prompt suffix listing the subagents the model can delegate to. The
+ * `subagent` tool's own description is static and tells the model to call
+ * `{action:"list"}` to discover agents — which it rarely does — so we inject the
+ * roster directly (same per-turn injection mechanism as renderNestedSection in
+ * hv-agents-md.ts). Returns "" when there are no agents (inject nothing).
+ */
+export function renderSubagentSection(agents: AgentDef[]): string {
+  if (agents.length === 0) return "";
+  const lines = agents.map((a) => `- **${a.name}** — ${a.description.slice(0, 200)}`);
+  return (
+    "\n\n## Available subagents\n\n" +
+    "These subagents are ready to delegate to right now. Prefer delegating exploration, long " +
+    "searches, and self-contained research to the most fitting one instead of doing it inline — " +
+    "each runs in its own context and reports back a concise result.\n\n" +
+    lines.join("\n") +
+    "\n\n**How to delegate:** call the `subagent` tool directly with `{ agent: \"<name>\", task: \"<what to do>\" }`. " +
+    "Do NOT call `{ action: \"list\" }` first — the agents above are the full, current list. " +
+    "Delegations run in the background by default. After you delegate, **end your turn** with a brief " +
+    "note that the work is running in the background — do NOT call the `wait` tool and do NOT poll with " +
+    "`subagent` status. This is an interactive session: the subagent's result is delivered to you " +
+    "automatically as a new turn the moment it finishes, and you answer the user then. Meanwhile the " +
+    "user can keep chatting with you."
+  );
+}
+
 /** Suggest a unique agent name for a duplicate (`x` → `x-copy`, `x-copy-2`, …). */
 export function duplicateName(base: string, existing: Set<string>): string {
   const first = `${base}-copy`;
