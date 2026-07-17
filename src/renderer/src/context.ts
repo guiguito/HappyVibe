@@ -101,6 +101,8 @@ export interface SystemBlock {
   nested?: Array<{ dir: string; path: string; chars: number }>;
   /** v5: per-tool schema sizes (estimated) for the tool-definitions drill-in. */
   toolDefs?: Array<{ name: string; chars: number }>;
+  /** Discoverability: the injected "Available subagents" roster, per agent. */
+  agents?: Array<{ name: string; chars: number }>;
 }
 
 export interface ContextSnapshot {

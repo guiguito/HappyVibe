@@ -8,7 +8,7 @@ import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
   agentDir, builtinAgentsDir, getApiKey, getDefaultModel, getGlobalBypass, getOnboardingSeen,
-  getWorkspaceBypass, installBuiltinAgents, providerEnv, providerKeyStatus, removeProviderKey,
+  getWorkspaceBypass, installBuiltinAgents, providerEnv, providerKeyStatus, removeProviderKey, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, setApiKey, setDefaultModel, setGlobalBypass, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass,
 } from "./config";
@@ -20,6 +20,8 @@ import {
 import { deleteSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
+import { parseSubagentNotify } from "./subagentEvents";
+import { pollSubagentStatus } from "./subagentStatus";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
@@ -90,6 +92,13 @@ export function registerIpc(win: BrowserWindow): void {
     installBuiltinAgents(path.join(piRuntimeDir(), "agents"));
   } catch (e) {
     console.warn("[hv] built-in agent install failed:", e);
+  }
+
+  // Async-by-default subagents (PRD §12) — pi-subagents reads this at spawn.
+  try {
+    writeSubagentConfig();
+  } catch (e) {
+    console.warn("[hv] subagent config write failed:", e);
   }
 
 
@@ -326,6 +335,30 @@ export function registerIpc(win: BrowserWindow): void {
         void log.append({ type: "permission.decision", sessionId, workspaceId: meta?.workspaceId, data: audit });
         return;
       }
+      // Async subagents: lifecycle relays drive activity gating (a live async run
+      // keeps the session non-idle so a respawn can't kill it), status polling,
+      // and the audit log. The envelope still forwards to the renderer below.
+      const sub = parseSubagentNotify(r);
+      if (sub) {
+        if (sub.stage === "started" && sub.runId) {
+          activity.asyncStarted(sessionId, sub.runId);
+          startSubagentPoll(sessionId, sub.runId, sub.asyncDir);
+          void log.append({ type: "subagent.async_started", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, agent: sub.agent } });
+        } else if (sub.stage === "complete" && sub.runId) {
+          activity.asyncEnded(sessionId, sub.runId);
+          stopSubagentPoll(sub.runId);
+          drainPendingReload(sessionId); // a deferred reload can now proceed
+          void log.append({ type: "subagent.async_complete", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, status: sub.status } });
+        } else if (sub.stage === "active") {
+          const runs = sub.runs ?? [];
+          activity.asyncSet(sessionId, runs.map((x) => x.runId));
+          reconcileSubagentPolls(sessionId, runs);
+        } else if (sub.stage === "interrupt-sent" && sub.runId) {
+          void log.append({ type: "subagent.interrupt", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId } });
+        }
+        send("hv:ui-request", { ...r, sessionId });
+        return;
+      }
       uiOwners.set(r.id, sessionId);
       // W1.3: an unanswered permission prompt protects the session from hibernation.
       if (isPermissionPrompt(r)) activity.promptOpened(sessionId);
@@ -336,9 +369,31 @@ export function registerIpc(win: BrowserWindow): void {
   // Sessions deferred for an MCP reload (declared here so session-exit can clear them).
   const pendingMcpReload = new Set<string>();
 
+  // ── Async subagent status pollers (one per live detached run, by runId) ────
+  const subagentPollers = new Map<string, { sessionId: string; stop: () => void }>();
+  const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
+    if (!asyncDir || subagentPollers.has(runId)) return;
+    const stop = pollSubagentStatus(asyncDir, (status) => send("hv:subagent-status", { sessionId, runId, status }));
+    subagentPollers.set(runId, { sessionId, stop });
+  };
+  const stopSubagentPoll = (runId: string): void => {
+    subagentPollers.get(runId)?.stop();
+    subagentPollers.delete(runId);
+  };
+  // Resync after a respawn: start pollers for this session's runs we aren't
+  // watching, stop this session's runs that are gone (leave other sessions' be).
+  const reconcileSubagentPolls = (sessionId: string, runs: Array<{ runId: string; asyncDir: string }>): void => {
+    const live = new Set(runs.map((r) => r.runId));
+    for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId && !live.has(runId)) stopSubagentPoll(runId);
+    for (const r of runs) startSubagentPoll(sessionId, r.runId, r.asyncDir);
+  };
+
   manager.on("session-exit", ({ sessionId, code, intentional }: SessionExit) => {
     activity.remove(sessionId);
     pendingMcpReload.delete(sessionId); // don't reload a session that's gone
+    // Stop this session's status pollers. The detached runners survive (they're
+    // unref'd); a resume re-adopts + re-polls via /hv-subagent-list.
+    for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId) stopSubagentPoll(runId);
     const meta = index.get(sessionId);
     if (!intentional) {
       void log.append({ type: "session.crash", sessionId, workspaceId: meta?.workspaceId, data: { code } });
@@ -347,6 +402,22 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   const startClient = async (meta: SessionMeta, resume: boolean): Promise<PiClient> => {
+    // The workspace dir is the pi child's cwd. If the app can't stat it, the
+    // child can't getcwd() and dies with a cryptic `EPERM: uv_cwd`. Two distinct
+    // causes, two honest messages: EPERM/EACCES = macOS TCC denying the app
+    // access to a protected folder (Documents/Desktop/Downloads — grant it in
+    // System Settings → Privacy & Security → Files & Folders); anything else =
+    // the folder is genuinely gone (deleted repo / cleaned-up worktree).
+    try {
+      if (!fs.statSync(meta.workspaceId).isDirectory()) throw new Error("not a directory");
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      throw new Error(
+        code === "EPERM" || code === "EACCES"
+          ? `macOS denied access to ${meta.workspaceId} — grant HappyVibe/Electron access to this folder in System Settings → Privacy & Security → Files & Folders`
+          : `Workspace folder no longer exists: ${meta.workspaceId}`,
+      );
+    }
     await syncOllamaModels(agentDir()).catch(() => {});
     const client = (await manager.start(
       meta.id,
@@ -361,6 +432,10 @@ export function registerIpc(win: BrowserWindow): void {
     }
     void log.append({ type: "session.start", sessionId: meta.id, workspaceId: meta.workspaceId, data: { resume } });
     if (!resume) void captureSessionFile(meta.id, client);
+    // A resume keeps the same Pi session file → same session id, so detached
+    // async runs are still deliverable. restoreActiveJobs re-adopts them but does
+    // NOT re-emit started, so resync our run cards + activity counter from disk.
+    if (resume) void client.send({ type: "prompt", message: "/hv-subagent-list" }).catch(() => {});
     return client;
   };
 
@@ -845,6 +920,11 @@ export function registerIpc(win: BrowserWindow): void {
   });
   ipcMain.handle("hv:list-tools", async (_e, sessionId?: string) => {
     void (await anyClient(sessionId)).send({ type: "prompt", message: "/hv-tools" }).catch(() => {});
+  });
+  // Interrupt a running async subagent (stop button). Fire-and-forget prompt to
+  // that session's client; the bridge drives pi-subagents' RPC and notifies back.
+  ipcMain.handle("hv:subagent-interrupt", (_e, sessionId: string, runId: string) => {
+    void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-interrupt ${runId}` }).catch(() => {});
   });
 
   // Agent file edit/duplicate — path-confined to allowed agent dirs (agents.ts).

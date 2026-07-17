@@ -9,8 +9,16 @@ import {
   acceptableMarks, filterMessages, serializeEntries,
   type AgentMessage, type MarkKey, type SessionEntry,
 } from "./hv-context";
-import { parseAgentFile, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
+import { parseAgentFile, renderSubagentSection, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
+// Async subagents (PRD §12): pi-subagents is co-resident on the SAME pi.events
+// bus, so the bridge subscribes to its in-process lifecycle events and relays
+// them as hv.subagent notifies (they never reach RPC stdout on their own). The
+// active-run list + run dir root come straight from pi-subagents so a respawn
+// can resync cards. Deep imports (no exports map) — pin-coupled like the rest of
+// the bridge; contract tests gate pin bumps.
+import { listAsyncRuns } from "pi-subagents/src/runs/background/async-status.ts";
+import { ASYNC_DIR } from "pi-subagents/src/shared/types.ts";
 
 const sessionGrants = new Set<string>();
 
@@ -38,7 +46,13 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
 // "mcp" is the pi-mcp-adapter proxy tool: injecting intent gives every MCP call
 // a customer-facing headline. The adapter's execute ignores the top-level intent
 // (it forwards only the `args` JSON to the server), so this is safe in proxy mode.
-const INTENT_TOOLS = ["subagent", "ask_user", "mcp"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+const INTENT_TOOLS = ["ask_user", "mcp"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+// `subagent` advertises intent but does NOT require it: the delegation `task` is
+// already a fine customer-facing headline (the UI uses intent ?? task), and a
+// hard requirement made looser models (e.g. Kimi) fail their first delegation
+// with "intent: must have required properties intent" and retry. Optional keeps
+// the nice model-authored headline when provided, without the failure.
+const OPTIONAL_INTENT_TOOLS = ["subagent"];
 // Direct-mode MCP tools (adapter's "expose tools directly") get the same
 // required `intent`, BUT the direct executor forwards params VERBATIM to the
 // MCP server (pi-mcp-adapter direct-tools.ts `arguments: params`) — a strict
@@ -53,6 +67,11 @@ const INTENT_PARAM = {
   description:
     "REQUIRED on every call. One short customer-facing sentence: what you are doing and why (shown to the user as the headline for this call).",
 };
+const OPTIONAL_INTENT_PARAM = {
+  type: "string",
+  description:
+    "Optional but recommended. One short customer-facing sentence describing this delegation (shown as the headline; falls back to the task text if omitted).",
+};
 type MutableParams = { properties?: Record<string, unknown>; required?: string[] };
 function requireIntent(pi: ExtensionAPI): void {
   for (const name of INTENT_TOOLS) {
@@ -60,6 +79,12 @@ function requireIntent(pi: ExtensionAPI): void {
     if (!params?.properties || params.properties.intent) continue; // tool absent or already wired
     params.properties.intent = INTENT_PARAM;
     params.required = [...(params.required ?? []), "intent"];
+  }
+  // Optional-intent tools: advertise the param but never add it to `required`.
+  for (const name of OPTIONAL_INTENT_TOOLS) {
+    const params = pi.getAllTools().find((t) => t.name === name)?.parameters as MutableParams | undefined;
+    if (!params?.properties || params.properties.intent) continue;
+    params.properties.intent = OPTIONAL_INTENT_PARAM;
   }
   // Direct MCP tools = everything else pi-mcp-adapter registered.
   for (const t of pi.getAllTools()) {
@@ -163,6 +188,8 @@ export default function (pi: ExtensionAPI) {
     toolCount: number;
     contextFiles: Array<{ path: string; chars: number; estTokens: number }>;
     toolDefs: Array<{ name: string; chars: number }>;
+    /** Discoverability: the injected "Available subagents" roster, per agent. */
+    agents: Array<{ name: string; chars: number }>;
   } | null = null;
   // W1.4: full resolved system prompt text (read-only Settings display).
   // null until the first turn runs — before_agent_start is the capture point.
@@ -182,9 +209,15 @@ export default function (pi: ExtensionAPI) {
   };
   const nestedList = () => nestedFileList(nestedAgentsMd, process.cwd(), readFileOrNull);
 
+  // Async subagent bus events fire outside any handler, so we relay them
+  // through the latest session's ui (captured here). One session per pi process
+  // in RPC, refreshed on resume.
+  let busUi: { notify(message: string, type?: "info" | "warning" | "error"): void } | null = null;
+
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi); // all extensions have registered by now (idempotent across reloads)
     restoreMarks(ctx.sessionManager.getEntries() as unknown as SessionEntry[]);
+    busUi = ctx.ui;
   });
 
   pi.on("before_agent_start", async (event) => {
@@ -193,7 +226,12 @@ export default function (pi: ExtensionAPI) {
     // it's always current. Returning systemPrompt replaces it for THIS TURN
     // ONLY (agent-session.js resets to the base prompt when we return nothing).
     const section = renderNestedSection(nestedAgentsMd, process.cwd(), readFileOrNull);
-    const injected = sp + section;
+    // Discoverability: inject the delegable-subagent roster (same per-turn
+    // replacement mechanism as the nested section). enumerateAgents is a hoisted
+    // function declaration below in this closure.
+    const agents = enumerateAgents();
+    const agentsSection = renderSubagentSection(agents);
+    const injected = sp + section + agentsSection;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -217,8 +255,10 @@ export default function (pi: ExtensionAPI) {
         return { path: f.path ?? "", chars, estTokens: Math.ceil(chars / 4) };
       }),
       toolDefs,
+      // Per-agent weight of the injected roster (name line ≈ chars/4 tokens).
+      agents: agents.map((a) => ({ name: a.name, chars: `- **${a.name}** — ${a.description.slice(0, 200)}`.length })),
     };
-    if (section) return { systemPrompt: injected };
+    if (section || agentsSection) return { systemPrompt: injected };
   });
 
   // The only place removal takes effect. Non-destructive: session file untouched.
@@ -287,6 +327,23 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const tool = event.toolName as string;
     const input = (event.input ?? {}) as Record<string, unknown>;
+    // Async subagents (PRD §12): HappyVibe is always interactive and delivers a
+    // subagent's result to the main agent AUTOMATICALLY as a new turn. The
+    // pi-subagents async-started tool result nonetheless tells the model to call
+    // `wait()` when it has nothing else to do — which blocks the turn and defeats
+    // the whole "keep chatting while subagents run" promise. So we intercept
+    // `wait` and hand back guidance instead of letting it block. (No audit — this
+    // is a behavioral guard, not a permission decision.)
+    if (tool === "wait") {
+      return {
+        block: true,
+        reason:
+          "Do NOT wait. This is an interactive HappyVibe session: the subagent's result " +
+          "will be delivered to you automatically as a new turn the moment it finishes. End " +
+          "your turn now with a brief note that the work is running in the background — do not " +
+          "call wait() or poll with subagent status. You will be prompted with the result.",
+      };
+    }
     // Direct MCP tools: drop the injected intent BEFORE anything reads input
     // (permission summaries stay factual, per the PRD) — the adapter would
     // forward it verbatim to the MCP server otherwise. The UI already has it:
@@ -523,6 +580,81 @@ export default function (pi: ExtensionAPI) {
     description: "HappyVibe: emit the agent inventory (hv.agents notify)",
     handler: async (_args, ctx) => {
       ctx.ui.notify(JSON.stringify({ kind: "hv.agents", agents: enumerateAgents() }), "info");
+    },
+  });
+
+  // ── Async subagents (docs/validation/d1.md §hv.subagent) ────────────────────
+  // pi-subagents emits lifecycle events on the shared pi.events bus (never on
+  // RPC stdout). We relay each as a fire-and-forget hv.subagent notify. The run
+  // dir is named by its id, so control events (which carry only asyncDir) map
+  // back to a runId via basename.
+  const subEnvelope = (o: Record<string, unknown>): string => JSON.stringify({ kind: "hv.subagent", ...o });
+  const relay = (o: Record<string, unknown>, type: "info" | "warning" = "info"): void => busUi?.notify(subEnvelope(o), type);
+
+  // pi.events is absent in the module-level test mocks (real pi always has it).
+  if (pi.events) {
+    pi.events.on("subagent:async-started", (raw) => {
+      const d = raw as { id?: string; agent?: string; task?: string; asyncDir?: string };
+      if (!d.id) return;
+      relay({ stage: "started", runId: d.id, agent: d.agent, task: d.task, asyncDir: d.asyncDir });
+    });
+    pi.events.on("subagent:async-complete", (raw) => {
+      const d = raw as { runId?: string; id?: string; agent?: string; success?: boolean; summary?: string; state?: string };
+      const runId = d.runId ?? d.id;
+      if (!runId) return;
+      const status = d.success === true ? "success" : d.state === "paused" ? "interrupted" : "error";
+      relay({ stage: "complete", runId, agent: d.agent, status, summary: d.summary?.slice(0, 500) });
+    });
+    pi.events.on("subagent:control-event", (raw) => {
+      const d = raw as { event?: { type?: string }; asyncDir?: string };
+      if (!d.asyncDir || !d.event?.type) return;
+      const activityState = d.event.type === "needs_attention" ? "needs_attention" : "long-running";
+      relay({ stage: "control", runId: path.basename(d.asyncDir), activityState });
+    });
+  }
+
+  // main→bridge is RPC-prompt only, so run control rides slash commands.
+  // /hv-subagent-interrupt drives pi-subagents' versioned event-bus RPC
+  // (subagents:rpc:v1); /hv-subagent-list resyncs active runs after a respawn.
+  let rpcSeq = 0;
+  const rpcRequest = (method: string, params: Record<string, unknown>): Promise<{ ok: boolean }> =>
+    new Promise((resolve) => {
+      const requestId = `hv-${method}-${++rpcSeq}-${Date.now()}`;
+      const replyChannel = `subagents:rpc:v1:reply:${requestId}`;
+      const t = setTimeout(() => { off(); resolve({ ok: false }); }, 10_000);
+      const off = pi.events.on(replyChannel, (reply) => {
+        clearTimeout(t);
+        off();
+        resolve({ ok: (reply as { success?: boolean })?.success === true });
+      });
+      pi.events.emit("subagents:rpc:v1:request", { version: 1, requestId, method, params });
+    });
+
+  pi.registerCommand("hv-subagent-interrupt", {
+    description: "HappyVibe: interrupt a running async subagent. Usage: /hv-subagent-interrupt <runId>",
+    handler: async (args, ctx) => {
+      const runId = args.trim();
+      if (!runId) return;
+      const { ok } = await rpcRequest("interrupt", { runId });
+      ctx.ui.notify(subEnvelope({ stage: ok ? "interrupt-sent" : "interrupt-error", runId }), ok ? "info" : "warning");
+    },
+  });
+
+  pi.registerCommand("hv-subagent-list", {
+    description: "HappyVibe: emit the active async subagent runs (hv.subagent active notify)",
+    handler: async (_args, ctx) => {
+      const sessionId = ctx.sessionManager.getSessionId() ?? undefined;
+      let runs: Array<{ runId: string; agent?: string; task?: string; asyncDir: string }> = [];
+      try {
+        runs = listAsyncRuns(ASYNC_DIR, { states: ["queued", "running"], sessionId }).map((r) => ({
+          runId: r.id,
+          agent: r.steps?.[0]?.agent,
+          asyncDir: r.asyncDir,
+        }));
+      } catch {
+        /* runs dir absent — no active runs */
+      }
+      ctx.ui.notify(subEnvelope({ stage: "active", runs }), "info");
     },
   });
 

@@ -115,6 +115,14 @@ contextBridge.exposeInMainWorld("hv", {
   // notifies through onUiRequest (parsed by the renderer).
   listAgents: (sessionId?: string) => ipcRenderer.invoke("hv:list-agents", sessionId),
   listTools: (sessionId?: string) => ipcRenderer.invoke("hv:list-tools", sessionId),
+  // Async subagents: stop button + live status. Lifecycle (started/complete/
+  // control/active) arrives as hv.subagent notifies through onUiRequest.
+  subagentInterrupt: (sessionId: string, runId: string) => ipcRenderer.invoke("hv:subagent-interrupt", sessionId, runId),
+  onSubagentStatus: (cb: (i: { sessionId: string; runId: string; status: Record<string, unknown> }) => void): (() => void) => {
+    const listener = (_e: unknown, i: { sessionId: string; runId: string; status: Record<string, unknown> }): void => cb(i);
+    ipcRenderer.on("hv:subagent-status", listener);
+    return () => ipcRenderer.removeListener("hv:subagent-status", listener);
+  },
   readAgent: (filePath: string) => ipcRenderer.invoke("hv:read-agent", filePath),
   writeAgent: (filePath: string, edit: { body?: string; model?: string | null }) =>
     ipcRenderer.invoke("hv:write-agent", filePath, edit),

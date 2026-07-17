@@ -20,7 +20,7 @@ import { AskUserModal } from "./components/AskUserModal";
 import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
-import { delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type ToolInfo } from "./agents";
+import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
@@ -181,6 +181,63 @@ export default function App(): React.JSX.Element {
 
     const offSessions = window.hv.onSessionsChanged(setSessions);
 
+    // Async subagent lifecycle → sticky run cards. Cards are keyed by runId
+    // (async) and coexist with foreground cards (keyed by toolCallId).
+    const handleSubagentEvent = (sid: string, sub: SubagentEvent): void => {
+      if (sub.stage === "started" && sub.runId) {
+        const run: DelegationRun = {
+          id: sub.runId,
+          kind: "async",
+          agent: sub.agent ?? "subagent",
+          label: sub.task ?? "",
+          startedAt: Date.now(),
+          status: "running",
+        };
+        setDelegations((p) => ({ ...p, [sid]: { ...p[sid], [run.id]: run } }));
+      } else if (sub.stage === "control" && sub.runId) {
+        setDelegations((p) => {
+          const run = p[sid]?.[sub.runId!];
+          return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, live: { ...run.live, activityState: sub.activityState } } } } : p;
+        });
+      } else if (sub.stage === "complete" && sub.runId) {
+        const status = sub.status === "success" ? ("done" as const) : sub.status === "interrupted" ? ("interrupted" as const) : ("error" as const);
+        setDelegations((p) => {
+          const run = p[sid]?.[sub.runId!];
+          return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, status } } } : p;
+        });
+        // Hand-off notice: the actual result streams in on the triggered turn.
+        appendItem(sid, { kind: "notice", text: `${sub.agent ?? "Subagent"} finished — delivering results…`, pending: false });
+        setTimeout(() => {
+          setDelegations((p) => {
+            if (!p[sid]?.[sub.runId!]) return p;
+            const next = { ...p[sid] };
+            delete next[sub.runId!];
+            return { ...p, [sid]: next };
+          });
+        }, 2_500);
+      } else if (sub.stage === "active") {
+        // Respawn resync: replace this session's async cards with the live set.
+        const runs = sub.runs ?? [];
+        setDelegations((p) => {
+          const cur = p[sid] ?? {};
+          const fg = Object.fromEntries(Object.entries(cur).filter(([, r]) => r.kind === "fg"));
+          const async: Record<string, DelegationRun> = {};
+          for (const x of runs) {
+            const existing = cur[x.runId];
+            async[x.runId] = existing ?? {
+              id: x.runId, kind: "async", agent: x.agent ?? "subagent", label: x.task ?? "", startedAt: Date.now(), status: "running",
+            };
+          }
+          return { ...p, [sid]: { ...fg, ...async } };
+        });
+      } else if (sub.stage === "interrupt-sent" && sub.runId) {
+        setDelegations((p) => {
+          const run = p[sid]?.[sub.runId!];
+          return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, status: "interrupted" } } } : p;
+        });
+      }
+    };
+
     // Only hv.permission select prompts open the modal. Other ui-requests
     // (setStatus etc.) are fire-and-forget — routing them here was a CRITICAL bug.
     const offUiRequest = window.hv.onUiRequest((r) => {
@@ -229,7 +286,26 @@ export default function App(): React.JSX.Element {
           setContextSnapshots((p) =>
             p[sid]?.system ? { ...p, [sid]: { ...p[sid], system: { ...p[sid].system!, nested } } } : p,
           );
+        // Async subagents: lifecycle relays drive the sticky run cards (fire-and-
+        // forget; never open the modal). The completion also arrives as a
+        // triggered assistant turn — this just manages the card + a flow notice.
+        const sub = parseSubagentEvent(r);
+        if (sub) handleSubagentEvent(sid, sub);
       }
+    });
+
+    const offSubStatus = window.hv.onSubagentStatus(({ sessionId, runId, status }) => {
+      setDelegations((p) => {
+        const run = p[sessionId]?.[runId];
+        if (!run) return p;
+        const live = {
+          currentTool: status.currentTool as string | undefined,
+          activityState: status.activityState as string | undefined,
+          turnCount: status.turnCount as number | undefined,
+          recentTools: status.recentTools as Array<{ tool: string; args?: string }> | undefined,
+        };
+        return { ...p, [sessionId]: { ...p[sessionId], [runId]: { ...run, live } } };
+      });
     });
 
     const offPiExit = window.hv.onPiExit(({ sessionId, code, intentional }) => {
@@ -237,8 +313,15 @@ export default function App(): React.JSX.Element {
       setUiQueue((q) => dropSession(q, sessionId));
       setDangerous((p) => ({ ...p, [sessionId]: false }));
       setBusy((p) => ({ ...p, [sessionId]: false }));
-      // Dead Pi won't emit tool_execution_end — drop any dangling delegation cards.
-      setDelegations((p) => (p[sessionId] ? { ...p, [sessionId]: {} } : p));
+      // Dead Pi won't emit tool_execution_end — drop any dangling FOREGROUND
+      // delegation cards. Async (detached) runs survive the process; a resume
+      // re-syncs their cards via /hv-subagent-list.
+      setDelegations((p) => {
+        const cur = p[sessionId];
+        if (!cur) return p;
+        const kept = Object.fromEntries(Object.entries(cur).filter(([, r]) => r.kind === "async"));
+        return { ...p, [sessionId]: kept };
+      });
       if (!intentional) {
         setCrashCodes((p) => ({ ...p, [sessionId]: code ?? -1 }));
         // B2: crash lands in the transcript too, with a retriable action.
@@ -259,6 +342,10 @@ export default function App(): React.JSX.Element {
     const offPiEvent = window.hv.onPiEvent((e) => {
       const sid = e.sessionId as string | undefined;
       if (!sid) return;
+      // The `wait` tool is always intercepted by the bridge in HappyVibe (async
+      // results auto-deliver as a new turn), so it never does anything useful —
+      // hide its card entirely instead of showing a scary blocked-tool error.
+      if ((e as { toolName?: string }).toolName === "wait") return;
       if (e.type === "tool_execution_start") {
         const t = e as unknown as { toolCallId: string; toolName: string; args: unknown };
         commitStream(sid); // flush the live bubble before the tool card (order preserved)
@@ -270,15 +357,20 @@ export default function App(): React.JSX.Element {
           card: { toolCallId: t.toolCallId, toolName: t.toolName, args: t.args, status: "running", approval },
         });
         // V2.C1: raise a run card in the sticky section (concurrent runs stack).
+        // Raised as "fg"; if the delegation turns out async (tool_execution_end
+        // carries details.asyncId) this card is dropped and the async card
+        // (keyed by runId, raised by the hv.subagent `started` notify) takes over.
         if (isSubagentTool(t.toolName)) {
           const run: DelegationRun = {
+            id: t.toolCallId,
+            kind: "fg",
             toolCallId: t.toolCallId,
             agent: (t.args as { agent?: string } | undefined)?.agent ?? "subagent",
             label: delegationLabel(t.args),
             startedAt: Date.now(),
             status: "running",
           };
-          setDelegations((p) => ({ ...p, [sid]: { ...p[sid], [run.toolCallId]: run } }));
+          setDelegations((p) => ({ ...p, [sid]: { ...p[sid], [run.id]: run } }));
         }
       }
       // B6: subagent delegation streams the child transcript live through
@@ -309,22 +401,33 @@ export default function App(): React.JSX.Element {
             ...(isSub ? { trace: mergeTrace(card.trace, traceFromEnd(t.result)) } : {}),
           })),
         }));
-        // V2.C1: mark the run done/failed — the card shows the outcome briefly,
-        // then slides away; remove it after the animation so the stack shrinks.
         if (isSub) {
-          const status = t.isError ? ("error" as const) : ("done" as const);
-          setDelegations((p) => {
-            const run = p[sid]?.[t.toolCallId];
-            return run ? { ...p, [sid]: { ...p[sid], [t.toolCallId]: { ...run, status } } } : p;
-          });
-          setTimeout(() => {
+          // Async dispatch: this tool call returned immediately (details.asyncId).
+          // Drop the fg card — the async card (keyed by runId) owns the life.
+          if (asyncResultInfo(t.result)) {
             setDelegations((p) => {
               if (!p[sid]?.[t.toolCallId]) return p;
               const next = { ...p[sid] };
               delete next[t.toolCallId];
               return { ...p, [sid]: next };
             });
-          }, 2_500);
+          } else {
+            // Foreground (async:false): mark done/failed — the card shows the
+            // outcome briefly, then slides away; remove after the animation.
+            const status = t.isError ? ("error" as const) : ("done" as const);
+            setDelegations((p) => {
+              const run = p[sid]?.[t.toolCallId];
+              return run ? { ...p, [sid]: { ...p[sid], [t.toolCallId]: { ...run, status } } } : p;
+            });
+            setTimeout(() => {
+              setDelegations((p) => {
+                if (!p[sid]?.[t.toolCallId]) return p;
+                const next = { ...p[sid] };
+                delete next[t.toolCallId];
+                return { ...p, [sid]: next };
+              });
+            }, 2_500);
+          }
         }
       }
       const ame = (e as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
@@ -334,6 +437,12 @@ export default function App(): React.JSX.Element {
         streamRef.current[sid] = applyDelta(streamRef.current, sid, ame.delta, streaming.current[sid]);
         streaming.current[sid] = true;
         scheduleFlush();
+      }
+      // A triggered turn (e.g. an async subagent completion delivering its
+      // result) starts without a local send, so mark busy here too — otherwise
+      // the composer would send a fresh prompt instead of steering into it.
+      if (e.type === "agent_start") {
+        setBusy((p) => (p[sid] ? p : { ...p, [sid]: true }));
       }
       if (e.type === "agent_end") {
         commitStream(sid); // finalize the live bubble into the transcript
@@ -406,6 +515,7 @@ export default function App(): React.JSX.Element {
       offPiExit();
       offPiEvent();
       offReloading();
+      offSubStatus();
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
   }, []);
@@ -875,6 +985,7 @@ export default function App(): React.JSX.Element {
             turns={(selectedId && turns[selectedId]) || 0}
             queue={(selectedId ? queues[selectedId] : undefined) ?? emptyQueue}
             delegations={selectedId ? Object.values(delegations[selectedId] ?? {}) : []}
+            onStopRun={(runId) => selectedId && void window.hv.subagentInterrupt(selectedId, runId)}
             contextSnapshot={(selectedId ? contextSnapshots[selectedId] : undefined) ?? null}
             fallbackWindow={fallbackWindow}
             stats={selStats}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
-import { delegationLabel, type SubagentResult, type SubagentTrace } from "../agents";
+import { asyncResultInfo, delegationLabel, type SubagentResult, type SubagentTrace } from "../agents";
 import { resolveCardPath } from "../tabs";
 
 export interface ToolCardData {
@@ -236,7 +236,25 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
   const results = card.trace?.results ?? [];
   const denied = card.status === "denied";
   const label = delegationLabel(card.args);
-  const summary = results[0]?.finalOutput?.trim().replace(/\s+/g, " ") ?? "";
+  // Async dispatch: the tool call returned immediately (details.asyncId) — the
+  // real result arrives later as its own turn, so this line records the handoff,
+  // not an outcome. Foreground runs keep the finalOutput summary.
+  const async = asyncResultInfo(card.result);
+  // A failed delegation carries its reason in the tool result's text content, not
+  // in the (empty) trace — surface it so "FAILED" is explainable, not a dead end.
+  const errorText =
+    card.status === "error"
+      ? ((card.result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content ?? [])
+          .filter((b) => b.type === "text")
+          .map((b) => b.text ?? "")
+          .join("\n")
+          .trim()
+      : "";
+  const summary = async
+    ? "running in the background — result arrives when it finishes"
+    : errorText
+      ? errorText.replace(/\s+/g, " ")
+      : (results[0]?.finalOutput?.trim().replace(/\s+/g, " ") ?? "");
   return (
     <div className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}>
       <button
@@ -253,7 +271,7 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
             {label && <span className="text-ink-soft">: {label}</span>}
           </span>
           <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-soft">
-            {running ? "delegating…" : denied ? "denied" : card.status === "error" ? "failed" : "done"}
+            {running ? "delegating…" : denied ? "denied" : card.status === "error" ? "failed" : async ? "dispatched" : "done"}
           </span>
           <span className="shrink-0 text-[11px] text-ink-soft" aria-hidden>
             {open ? "▾" : "▸"}
@@ -267,7 +285,11 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
       </button>
       {open && (
         <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 flex flex-col gap-3">
-          <SubagentTraceView results={results} />
+          {errorText && results.length === 0 ? (
+            <p className="text-xs text-berry whitespace-pre-wrap break-words">{errorText}</p>
+          ) : (
+            <SubagentTraceView results={results} />
+          )}
         </div>
       )}
     </div>

@@ -33,6 +33,7 @@ export function ChatView({
   turns,
   queue = emptyQueue,
   delegations = [],
+  onStopRun,
   contextSnapshot = null,
   fallbackWindow,
   stats = null,
@@ -65,6 +66,8 @@ export function ChatView({
   queue?: QueueState;
   /** V2.C1: active subagent runs (sticky in-flow section; done ones slide away). */
   delegations?: DelegationRun[];
+  /** Interrupt a running async subagent (stop button on its card). */
+  onStopRun?: (runId: string) => void;
   contextSnapshot?: ContextSnapshot | null;
   fallbackWindow?: number | null;
   /** WS7: stats/search/context are lifted to App so the controls live in the tab strip. */
@@ -447,7 +450,7 @@ export function ChatView({
           items={items}
           streaming={streaming}
           busy={busy}
-          header={delegations.length > 0 ? <DelegationSection runs={delegations} items={items} /> : undefined}
+          header={delegations.length > 0 ? <DelegationSection runs={delegations} items={items} onStopRun={onStopRun} /> : undefined}
           onRetry={onRetry}
           workspace={workspace}
           onOpenFile={onOpenFile}
@@ -724,12 +727,20 @@ const OUTCOME_LINGER_MS = 1100;
  * the top while subagents run. Concurrent runs stack vertically. Above the
  * transcript content (z-20), below modals/panels (z-40+).
  */
-function DelegationSection({ runs, items }: { runs: DelegationRun[]; items: TranscriptItem[] }): React.JSX.Element {
+function DelegationSection({ runs, items, onStopRun }: { runs: DelegationRun[]; items: TranscriptItem[]; onStopRun?: (runId: string) => void }): React.JSX.Element {
   return (
     <div className="sticky top-0 z-20 px-6">
       <div className="max-w-3xl mx-auto w-full flex flex-col">
         {runs.map((run) => (
-          <DelegationRunCard key={run.toolCallId} run={run} trace={traceFor(items, run.toolCallId)} />
+          <DelegationRunCard
+            key={run.id}
+            run={run}
+            // Foreground runs stream their child transcript onto the in-flow tool
+            // card; async (detached) runs have none — their live progress rides
+            // run.live from the status poller instead.
+            trace={run.kind === "fg" && run.toolCallId ? traceFor(items, run.toolCallId) : undefined}
+            onStopRun={onStopRun}
+          />
         ))}
       </div>
     </div>
@@ -744,8 +755,9 @@ function DelegationSection({ runs, items }: { runs: DelegationRun[]; items: Tran
  * brief done/failed state, then a height-collapse slide-away; the in-flow call
  * line + result remain in the transcript as the record.
  */
-function DelegationRunCard({ run, trace }: { run: DelegationRun; trace?: SubagentTrace }): React.JSX.Element {
+function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trace?: SubagentTrace; onStopRun?: (runId: string) => void }): React.JSX.Element {
   const running = run.status === "running";
+  const attention = running && run.live?.activityState === "needs_attention";
   const [open, setOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -761,6 +773,12 @@ function DelegationRunCard({ run, trace }: { run: DelegationRun; trace?: Subagen
     const t = setTimeout(() => setLeaving(true), OUTCOME_LINGER_MS);
     return () => clearTimeout(t);
   }, [running]);
+  // Border: sky while working, amber if it needs attention, leaf on success,
+  // berry on failed/stopped.
+  const border = attention ? "border-tangerine/70" : running ? "border-sky/60" : run.status === "done" ? "border-leaf/60" : "border-berry/60";
+  const dot = attention ? "bg-tangerine animate-pulse" : running ? "bg-sky animate-pulse" : run.status === "done" ? "bg-leaf" : "bg-berry";
+  const canStop = running && run.kind === "async" && onStopRun;
+  const currentTool = run.live?.currentTool;
   return (
     <div
       className={`grid transition-[grid-template-rows,opacity] duration-350 ease-in-out ${
@@ -769,46 +787,72 @@ function DelegationRunCard({ run, trace }: { run: DelegationRun; trace?: Subagen
     >
       <div className="overflow-hidden min-h-0">
         <div className="pt-3">
-          <div
-            className={`rounded-xl border-2 bg-card shadow-sticker-lg overflow-hidden ${
-              running ? "border-sky/60" : run.status === "done" ? "border-leaf/60" : "border-berry/60"
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => setOpen((o) => !o)}
-              aria-expanded={open}
-              title={open ? "Collapse the live subagent transcript" : "See what the subagent is doing"}
-              className="w-full flex items-start gap-3 px-4 py-2.5 text-left text-sm font-semibold cursor-pointer hover:bg-paper-deep/40 transition-colors"
-            >
-              <span
-                className={`mt-1 size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : run.status === "done" ? "bg-leaf" : "bg-berry"}`}
-              />
-              <ToolIcon kind="robot" className="mt-0.5 size-4 shrink-0 text-sky" />
-              {/* v5: intent wraps instead of clipping with an ellipsis. */}
-              <span className="flex-1 min-w-0 break-words">
-                <span className="font-black text-tangerine-deep">{run.agent}</span>
-                {run.label && <span className="text-ink-soft font-medium"> — {run.label}</span>}
-              </span>
+          <div className={`rounded-xl border-2 bg-card shadow-sticker-lg overflow-hidden ${border}`}>
+            <div className="w-full flex items-start gap-3 px-4 py-2.5 text-sm font-semibold">
+              <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                aria-expanded={open}
+                title={open ? "Collapse the subagent details" : "See what the subagent is doing"}
+                className="flex-1 min-w-0 flex items-start gap-3 text-left cursor-pointer"
+              >
+                <span className={`mt-1 size-2.5 rounded-full shrink-0 ${dot}`} />
+                <ToolIcon kind="robot" className="mt-0.5 size-4 shrink-0 text-sky" />
+                {/* v5: intent wraps instead of clipping with an ellipsis. */}
+                <span className="flex-1 min-w-0 break-words">
+                  <span className="font-black text-tangerine-deep">{run.agent}</span>
+                  {run.label && <span className="text-ink-soft font-medium"> — {run.label}</span>}
+                </span>
+              </button>
               {running ? (
                 <span className="font-mono text-xs text-ink-soft tabular-nums shrink-0" title="Elapsed time">
-                  working · {formatElapsed(now - run.startedAt)}
+                  {attention ? "needs attention" : currentTool ? currentTool : "working"} · {formatElapsed(now - run.startedAt)}
                 </span>
               ) : (
                 <span
                   className={`text-[11px] font-bold uppercase tracking-wide shrink-0 ${run.status === "done" ? "text-leaf" : "text-berry"}`}
                 >
-                  {run.status === "done" ? "done" : "failed"}
+                  {run.status === "done" ? "done" : run.status === "interrupted" ? "stopped" : "failed"}
                 </span>
               )}
-              <span className="shrink-0 text-[11px] text-ink-soft" aria-hidden>
+              {canStop && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onStopRun!(run.id); }}
+                  title="Stop this subagent"
+                  className="shrink-0 rounded-md border border-berry/50 text-berry px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide hover:bg-berry/10 cursor-pointer"
+                >
+                  ◼ Stop
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                aria-hidden
+                tabIndex={-1}
+                className="shrink-0 text-[11px] text-ink-soft cursor-pointer"
+              >
                 {open ? "▾" : "▸"}
-              </span>
-            </button>
-            {running && !open && <div className="h-1 hv-shimmer" aria-hidden />}
+              </button>
+            </div>
+            {running && !open && <div className={`h-1 ${attention ? "bg-tangerine/40" : "hv-shimmer"}`} aria-hidden />}
             {open && (
               <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 max-h-72 overflow-y-auto flex flex-col gap-3">
-                <SubagentTraceView results={trace?.results ?? []} />
+                {run.kind === "fg" ? (
+                  <SubagentTraceView results={trace?.results ?? []} />
+                ) : (
+                  // Detached run: no child transcript on the parent stream — show
+                  // the live status snapshot from the poller instead.
+                  <div className="text-xs text-ink-soft flex flex-col gap-1">
+                    {run.live?.turnCount != null && <div>turn {run.live.turnCount}{currentTool ? ` · ${currentTool}` : ""}</div>}
+                    {(run.live?.recentTools ?? []).slice(-8).map((t, i) => (
+                      <div key={i} className="font-mono truncate">
+                        {t.tool}{t.args ? ` ${t.args}` : ""}
+                      </div>
+                    ))}
+                    {!run.live?.turnCount && !(run.live?.recentTools ?? []).length && <div>working in the background…</div>}
+                  </div>
+                )}
               </div>
             )}
           </div>

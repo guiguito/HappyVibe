@@ -77,3 +77,33 @@ test("remove() forgets a session's state entirely", () => {
   a.remove("s1");
   expect(a.isIdle("s1")).toBe(true);
 });
+
+// Async subagents: a detached run outlives the turn, so it must NOT be zeroed
+// by agent_end (unlike the foreground subagent counter) — else a respawn kills it.
+test("async run keeps a session non-idle across agent_end", () => {
+  const a = new SessionActivity();
+  a.asyncStarted("s1", "run-A");
+  a.event("s1", { type: "agent_end" }); // turn ends but the detached run lives on
+  expect(a.isIdle("s1")).toBe(false);
+  a.asyncEnded("s1", "run-A");
+  expect(a.isIdle("s1")).toBe(true);
+});
+
+test("asyncStarted is idempotent by runId", () => {
+  const a = new SessionActivity();
+  a.asyncStarted("s1", "run-A");
+  a.asyncStarted("s1", "run-A");
+  a.asyncEnded("s1", "run-A"); // one delete clears the single run
+  expect(a.isIdle("s1")).toBe(true);
+});
+
+test("asyncSet resyncs the run set authoritatively (respawn)", () => {
+  const a = new SessionActivity();
+  a.asyncStarted("s1", "stale");
+  a.asyncSet("s1", ["run-B", "run-C"]);
+  expect(a.isIdle("s1")).toBe(false);
+  a.asyncEnded("s1", "run-B");
+  expect(a.isIdle("s1")).toBe(false); // run-C still live
+  a.asyncSet("s1", []);
+  expect(a.isIdle("s1")).toBe(true);
+});
