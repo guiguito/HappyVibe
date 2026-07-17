@@ -460,8 +460,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("hv-auth-status", {
     description: "HappyVibe: report provider auth status (never leaks credential values)",
     handler: async (_args, ctx) => {
-      const auth = ctx.modelRegistry.authStorage;
-      const ids = new Set([...STATUS_PROVIDERS, ...auth.list()]);
+      // 0.80.8+: authStorage is gone; ModelRuntime is the facade's (private-in-TS,
+      // plain-in-JS) `runtime` property — no public extension-facing auth API exists.
+      const runtime = (ctx.modelRegistry as any).runtime;
+      const stored = (await runtime.listCredentials()).map((c: { providerId: string }) => c.providerId);
+      const ids = new Set([...STATUS_PROVIDERS, ...stored]);
       const providers: Record<string, unknown> = {};
       // getProviderAuthStatus also accounts for models.json apiKey (Ollama).
       for (const id of ids) providers[id] = ctx.modelRegistry.getProviderAuthStatus(id);
@@ -473,46 +476,51 @@ export default function (pi: ExtensionAPI) {
     description: "HappyVibe: OAuth login. Usage: /hv-login <provider>",
     handler: async (args, ctx) => {
       const provider = args.trim();
-      const auth = ctx.modelRegistry.authStorage;
-      if (!auth.getOAuthProviders().some((p) => p.id === provider)) {
+      // 0.80.8+: ModelRuntime owns login/logout (AuthStorage removed); see /hv-auth-status.
+      const runtime = (ctx.modelRegistry as any).runtime;
+      if (!runtime.getProviders().some((p: { id: string; auth?: { oauth?: unknown } }) => p.id === provider && p.auth?.oauth)) {
         ctx.ui.notify(authPayload({ stage: "error", provider, message: `Unknown OAuth provider: ${provider}` }), "error");
         return;
       }
       const ac = new AbortController();
       loginAborts.set(provider, ac);
       try {
-        // AuthStorage.login persists to auth.json AND updates the in-memory
-        // credential map — no respawn needed afterwards (s0.2 §2).
-        await auth.login(provider, {
+        // ModelRuntime.login persists the credential AND updates the in-memory
+        // store — no respawn needed afterwards (s0.2 §2).
+        await runtime.login(provider, "oauth", {
           signal: ac.signal,
-          onAuth: (info) =>
-            ctx.ui.notify(authPayload({ stage: "auth_url", provider, url: info.url, instructions: info.instructions }), "info"),
-          onDeviceCode: (i) =>
-            ctx.ui.notify(authPayload({
-              stage: "device_code", provider,
-              userCode: i.userCode, verificationUri: i.verificationUri,
-              intervalSeconds: i.intervalSeconds, expiresInSeconds: i.expiresInSeconds,
-            }), "info"),
-          onProgress: (message) => ctx.ui.notify(authPayload({ stage: "progress", provider, message }), "info"),
-          onPrompt: async (p) => {
-            const v = await ctx.ui.input(
-              authPayload({ stage: "prompt", provider, message: p.message, placeholder: p.placeholder }),
-              p.placeholder,
-            );
+          notify: (event: Record<string, any>) => {
+            if (event.type === "auth_url") {
+              ctx.ui.notify(authPayload({ stage: "auth_url", provider, url: event.url, instructions: event.instructions }), "info");
+            } else if (event.type === "device_code") {
+              ctx.ui.notify(authPayload({
+                stage: "device_code", provider,
+                userCode: event.userCode, verificationUri: event.verificationUri,
+                intervalSeconds: event.intervalSeconds, expiresInSeconds: event.expiresInSeconds,
+              }), "info");
+            } else {
+              // "info" | "progress" both ride the progress stage the renderer knows.
+              ctx.ui.notify(authPayload({ stage: "progress", provider, message: event.message }), "info");
+            }
+          },
+          prompt: async (p: Record<string, any>) => {
+            if (p.type === "select") {
+              const label = await ctx.ui.select(
+                authPayload({ stage: "select", provider, message: p.message }),
+                p.options.map((o: { label: string }) => o.label),
+              );
+              const id = p.options.find((o: { label: string }) => o.label === label)?.id;
+              if (id === undefined) throw new Error("Login cancelled");
+              return id;
+            }
+            const v = p.type === "manual_code"
+              ? await ctx.ui.input(authPayload({ stage: "manual_code", provider, message: p.message ?? "Paste the authorization code" }))
+              : await ctx.ui.input(
+                  authPayload({ stage: "prompt", provider, message: p.message, placeholder: p.placeholder }),
+                  p.placeholder,
+                );
             if (v === undefined) throw new Error("Login cancelled");
             return v;
-          },
-          onManualCodeInput: async () => {
-            const v = await ctx.ui.input(authPayload({ stage: "manual_code", provider, message: "Paste the authorization code" }));
-            if (v === undefined) throw new Error("Login cancelled");
-            return v;
-          },
-          onSelect: async (p) => {
-            const label = await ctx.ui.select(
-              authPayload({ stage: "select", provider, message: p.message }),
-              p.options.map((o) => o.label),
-            );
-            return p.options.find((o) => o.label === label)?.id;
           },
         });
         ctx.ui.notify(authPayload({ stage: "success", provider }), "info");
@@ -533,7 +541,7 @@ export default function (pi: ExtensionAPI) {
     description: "HappyVibe: remove stored credentials. Usage: /hv-logout <provider>",
     handler: async (args, ctx) => {
       const provider = args.trim();
-      ctx.modelRegistry.authStorage.logout(provider);
+      await (ctx.modelRegistry as any).runtime.logout(provider);
       ctx.ui.notify(authPayload({ stage: "logged_out", provider }), "info");
     },
   });
