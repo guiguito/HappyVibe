@@ -543,6 +543,21 @@ export default function App(): React.JSX.Element {
     [openFileTab]
   );
 
+  // F6: keep a workspace watched whenever it has an open editor tab, so an agent
+  // edit auto-refreshes the tab (FileTab subscribes to hv:fs-changed) even when
+  // the file drawer — which owns its own watch — is closed. Refcounted main-side,
+  // so this coexists with the tree's watch.
+  const watchedWsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const want = new Set(
+      Object.entries(tabsByWs).filter(([, t]) => allFiles(t).length > 0).map(([w]) => w),
+    );
+    const have = watchedWsRef.current;
+    for (const w of want) if (!have.has(w)) void window.hv.watchWorkspace(w).catch(() => {});
+    for (const w of have) if (!want.has(w)) void window.hv.unwatchWorkspace(w).catch(() => {});
+    watchedWsRef.current = want;
+  }, [tabsByWs]);
+
   // WS7: session context stats for the tab-strip bubble + panel. Fetched once
   // per agent_end (turns bump), debounced; reset search/context on session switch.
   useEffect(() => {
@@ -661,18 +676,21 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  const send = async (msg: string, behavior?: "followUp", attachments?: ImageAttachment[]): Promise<void> => {
+  const send = async (msg: string, behavior?: "followUp", attachments?: ImageAttachment[], mentions?: string[]): Promise<void> => {
     if (!selectedId) return;
     const sid = selectedId;
     // W2.1: attached images ride the RPC `images` param (ImageContent[]).
     const images = attachments?.length ? buildImages(attachments) : undefined;
+    // F3: @file mention warnings (skipped binaries, over-cap dirs) surface as notices.
+    const noteWarnings = (w: string[]): void => w.forEach((text) => appendItem(sid, { kind: "notice", text }));
     // B2: while the agent runs, a bare prompt errors — Enter/send steers
     // (V2.A: the Queue button is gone; the followUp behavior plumbing stays).
     // The message shows as a chip (queue_update) and only joins the
     // transcript when Pi delivers it.
     if (busy[sid]) {
       try {
-        await window.hv.promptSession(sid, msg, behavior ?? "steer", images);
+        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions);
+        noteWarnings(warnings);
       } catch (err) {
         surface(err);
       }
@@ -682,7 +700,8 @@ export default function App(): React.JSX.Element {
     streaming.current[sid] = false;
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
-      await window.hv.promptSession(sid, msg, undefined, images);
+      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions);
+      noteWarnings(warnings);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
       surface(err);

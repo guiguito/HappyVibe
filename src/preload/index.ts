@@ -25,8 +25,9 @@ contextBridge.exposeInMainWorld("hv", {
     sessionId: string,
     msg: string,
     behavior?: "steer" | "followUp",
-    images?: Array<{ type: "image"; data: string; mimeType: string }>
-  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images),
+    images?: Array<{ type: "image"; data: string; mimeType: string }>,
+    mentions?: string[]
+  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images, mentions),
   abortSession: (sessionId: string) => ipcRenderer.invoke("hv:abort-session", sessionId),
 
   // ── W2.1: per-session model override + image attach (additive) ──
@@ -36,6 +37,7 @@ contextBridge.exposeInMainWorld("hv", {
 
   // ── W2.2: file tree + editor + card path actions (additive) ─────
   fsList: (workspaceId: string, relDir: string) => ipcRenderer.invoke("hv:fs-list", workspaceId, relDir),
+  fsListRecursive: (workspaceId: string) => ipcRenderer.invoke("hv:fs-list-recursive", workspaceId),
   fsRead: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:fs-read", workspaceId, relPath),
   fsWrite: (workspaceId: string, relPath: string, content: string) =>
     ipcRenderer.invoke("hv:fs-write", workspaceId, relPath, content),

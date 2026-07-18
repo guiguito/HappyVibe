@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { basename } from "../tabs";
 
 // Code-split: CodeMirror lives in its own chunk; chat never pays for it.
@@ -69,34 +69,42 @@ export function FileTab({
 
   useEffect(load, [workspace, relPath]);
 
-  // External-change detection: compare mtime on window focus and on tab focus.
+  // External-change detection: compare mtime against disk. F6: driven by the
+  // filesystem watch (push) so an agent edit refreshes an open tab immediately —
+  // clean buffer reloads silently, a dirty buffer offers Reload / Keep mine.
+  // The window/tab-focus poll stays as the fallback (e.g. Linux, where fs.watch
+  // recursion is unavailable).
   const bufRef = useRef(buf);
   useEffect(() => {
     bufRef.current = buf;
   }, [buf]);
+  const check = useCallback(async (): Promise<void> => {
+    const b = bufRef.current;
+    if (b.kind !== "text") return;
+    const mtime = await window.hv.fsMtime(workspace, relPath).catch(() => b.mtimeMs);
+    if (mtime === null) {
+      if (dirtyRef.current) setConflict("deleted");
+      else setBuf({ kind: "error", message: "This file no longer exists on disk." });
+      return;
+    }
+    if (mtime !== b.mtimeMs) {
+      if (dirtyRef.current) setConflict("changed");
+      else load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, relPath]);
   useEffect(() => {
-    const check = async (): Promise<void> => {
-      const b = bufRef.current;
-      if (b.kind !== "text") return;
-      const mtime = await window.hv.fsMtime(workspace, relPath).catch(() => b.mtimeMs);
-      if (mtime === null) {
-        if (dirtyRef.current) setConflict("deleted");
-        else setBuf({ kind: "error", message: "This file no longer exists on disk." });
-        return;
-      }
-      if (mtime !== b.mtimeMs) {
-        // Clean buffer → reload silently (nothing of the user's to lose).
-        // Dirty buffer → offer Reload / Keep mine.
-        if (dirtyRef.current) setConflict("changed");
-        else load();
-      }
-    };
     if (active) void check();
     const onFocus = (): void => void check();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, workspace, relPath]);
+  }, [active, check]);
+  // F6: react to the workspace fs-watch. A single mtime stat per event is cheap
+  // (the watch is already debounced), so we recheck on any change in this
+  // workspace rather than diffing relDirs against the file's parent.
+  useEffect(() =>
+    window.hv.onFsChanged((p) => { if (p.workspaceId === workspace) void check(); }),
+  [workspace, check]);
 
   const save = async (): Promise<void> => {
     if (bufRef.current.kind !== "text" || saving) return;

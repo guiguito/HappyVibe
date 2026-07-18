@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  createDir, createFile, importEntries, listDir, MAX_FILE_BYTES, moveEntry,
-  readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspaceFile,
+  buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, MAX_FILE_BYTES,
+  moveEntry, readWorkspaceFile, resolveInWorkspace, statMtime, writeWorkspaceFile,
 } from "../src/main/files";
 
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), "hv-files-"));
@@ -119,4 +119,48 @@ test("importEntries copies external OS paths into a confined dest, refusing over
   expect(() => importEntries(registered, ws, "imported", [path.join(ext, "drop.txt")])).toThrow(/already exists/);
   // dest is confined even though sources are external
   expect(() => importEntries(registered, ws, "../evil", [path.join(ext, "drop.txt")])).toThrow(/escapes workspace/);
+});
+
+// ── F3: listRecursive + buildMentionBlocks ───────────────────────────
+
+test("listRecursive walks the tree, skipping ignored dirs and dotfiles", () => {
+  const rels = listRecursive(registered, ws).map((e) => e.rel);
+  expect(rels).toContain("src");
+  expect(rels).toContain(path.join("src", "a.ts"));
+  expect(rels).toContain("readme.md");
+  expect(rels).not.toContain("node_modules");
+  expect(rels.some((r) => r === ".git" || r.startsWith(".git" + path.sep))).toBe(false);
+  expect(rels).not.toContain(".env");
+});
+
+test("listRecursive respects the entry cap", () => {
+  expect(listRecursive(registered, ws, 2).length).toBe(2);
+});
+
+test("buildMentionBlocks inlines a file's content", () => {
+  const rel = path.join("src", "a.ts");
+  const { blocks, warnings } = buildMentionBlocks(registered, ws, [rel]);
+  expect(blocks).toContain(`<file path="${rel}">`);
+  expect(blocks).toContain("export const a ="); // content may be rewritten by an earlier test
+  expect(warnings).toEqual([]);
+});
+
+test("buildMentionBlocks warns on a missing path", () => {
+  const { blocks, warnings } = buildMentionBlocks(registered, ws, ["nope.ts"]);
+  expect(blocks).toBe("");
+  expect(warnings[0]).toMatch(/not found/);
+});
+
+test("buildMentionBlocks injects a directory's text files recursively", () => {
+  const { blocks } = buildMentionBlocks(registered, ws, ["src"]);
+  expect(blocks).toContain("export const a =");
+});
+
+test("buildMentionBlocks falls back to a listing when a directory exceeds the cap", () => {
+  fs.mkdirSync(path.join(ws, "big"), { recursive: true });
+  fs.writeFileSync(path.join(ws, "big", "huge.txt"), "x".repeat(5000));
+  const { blocks, warnings } = buildMentionBlocks(registered, ws, ["big"], 500);
+  expect(blocks).toContain('<file-listing path="big">');
+  expect(blocks).toContain(path.join("big", "huge.txt"));
+  expect(warnings[0]).toMatch(/too large/);
 });

@@ -88,6 +88,146 @@ export function writeWorkspaceFile(
   return fs.statSync(abs).mtimeMs;
 }
 
+// ── F3: @file mentions — recursive listing + context-block assembly ──────────
+
+export interface FsEntryRec {
+  /** Workspace-relative path (OS separators). */
+  rel: string;
+  kind: "dir" | "file";
+}
+
+/**
+ * Recursive listing for @-mention autocomplete — visible entries only, capped.
+ * Dirs first then files at each level (name-sorted). Symlinks are listed as
+ * files and never recursed into (avoids symlink cycles).
+ */
+export function listRecursive(
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  maxEntries = 5000,
+): FsEntryRec[] {
+  const root = resolveInWorkspace(registeredWorkspaces, workspaceId, "");
+  const out: FsEntryRec[] = [];
+  const walk = (abs: string): void => {
+    if (out.length >= maxEntries) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(abs, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    const sorted = entries
+      .filter((e) => isVisibleEntry(e.name) && (e.isDirectory() || e.isFile() || e.isSymbolicLink()))
+      .sort((a, b) => {
+        const ad = a.isDirectory(), bd = b.isDirectory();
+        return ad === bd ? a.name.localeCompare(b.name) : ad ? -1 : 1;
+      });
+    for (const e of sorted) {
+      if (out.length >= maxEntries) return;
+      const childAbs = path.join(abs, e.name);
+      if (e.isDirectory()) {
+        out.push({ rel: path.relative(root, childAbs), kind: "dir" });
+        walk(childAbs);
+      } else {
+        out.push({ rel: path.relative(root, childAbs), kind: "file" });
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
+/** Visible files under a directory, recursively (rel to workspace root). */
+function walkFiles(absDir: string, root: string): string[] {
+  const out: string[] = [];
+  const walk = (abs: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(abs, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!isVisibleEntry(e.name)) continue;
+      const childAbs = path.join(abs, e.name);
+      if (e.isDirectory()) walk(childAbs);
+      else if (e.isFile() || e.isSymbolicLink()) out.push(path.relative(root, childAbs));
+    }
+  };
+  walk(absDir);
+  return out.sort();
+}
+
+/** @-mention injection budget — total chars across all referenced content. */
+export const MENTION_CONTEXT_CAP = 200_000;
+
+export interface MentionBlocks {
+  /** The assembled `<file>`/`<file-listing>` blocks, or "" if nothing usable. */
+  blocks: string;
+  /** Human-readable notices (skipped binaries, over-cap dirs, missing paths). */
+  warnings: string[];
+}
+
+/**
+ * Assemble hidden context blocks for @-mentioned paths (files and directories),
+ * path-confined. Files inject `<file path>content</file>`; directories inject
+ * every text file recursively, but if that would blow the char cap they fall
+ * back to a `<file-listing>` of the paths instead (with a warning).
+ */
+export function buildMentionBlocks(
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  relPaths: string[],
+  cap = MENTION_CONTEXT_CAP,
+): MentionBlocks {
+  const warnings: string[] = [];
+  const parts: string[] = [];
+  let total = 0;
+  const fileBlock = (rel: string, content: string): string => `<file path="${rel}">\n${content}\n</file>`;
+  const push = (s: string): void => { parts.push(s); total += s.length + 1; };
+  const kchars = (n: number): string => `${Math.round(n / 1000)}k chars`;
+
+  for (const rel of relPaths) {
+    let isDir: boolean;
+    try {
+      isDir = fs.statSync(resolveInWorkspace(registeredWorkspaces, workspaceId, rel)).isDirectory();
+    } catch {
+      warnings.push(`Could not read ${rel} — not found.`);
+      continue;
+    }
+    if (isDir) {
+      const files = walkFiles(
+        resolveInWorkspace(registeredWorkspaces, workspaceId, rel),
+        resolveInWorkspace(registeredWorkspaces, workspaceId, ""),
+      );
+      const blocks: string[] = [];
+      let dirLen = 0;
+      for (const f of files) {
+        const r = readWorkspaceFile(registeredWorkspaces, workspaceId, f);
+        if (r.kind !== "text") continue; // skip binaries / too-large silently within a dir
+        const b = fileBlock(f, r.content);
+        blocks.push(b);
+        dirLen += b.length + 1;
+      }
+      if (total + dirLen > cap) {
+        const listing = `<file-listing path="${rel}">\n${files.join("\n")}\n</file-listing>`;
+        if (total + listing.length <= cap) push(listing);
+        warnings.push(`${rel} is too large to inline (${kchars(dirLen)}) — injected a file listing instead.`);
+      } else {
+        for (const b of blocks) push(b);
+      }
+    } else {
+      const r = readWorkspaceFile(registeredWorkspaces, workspaceId, rel);
+      if (r.kind === "binary") { warnings.push(`Skipped ${rel} — looks like a binary file.`); continue; }
+      if (r.kind === "too-large") { warnings.push(`Skipped ${rel} — too large (${kchars(r.size)}).`); continue; }
+      const b = fileBlock(rel, r.content);
+      if (total + b.length > cap) { warnings.push(`Skipped ${rel} — would exceed the ${kchars(cap)} context cap.`); continue; }
+      push(b);
+    }
+  }
+  return { blocks: parts.join("\n"), warnings };
+}
+
 export interface FsDetails {
   kind: "dir" | "file";
   size: number;
