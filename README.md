@@ -47,6 +47,8 @@ npm run dev
 
 Flow: setup screen is auto-skipped when `.env` has a key → pick a project folder → chat. Ask for a change; tool calls show as cards; shell commands raise the Allow / Allow for session / Deny modal.
 
+Debugging (Chrome DevTools / `electron-debug` MCP): `HV_DEBUG_PORT=9222 npm run dev` — see [`docs/debugging.md`](docs/debugging.md).
+
 ```bash
 npm test           # 11 unit/integration tests; bridge + coexistence tests
                    # make real DeepSeek calls when DEEPSEEK_API_KEY is set,
