@@ -13,6 +13,12 @@ import { registerIpc } from './ipc'
 // only thing that renames the bold app-menu title. Must run before getName/getPath.
 app.setName('HappyVibe')
 
+// Opt-in Chrome DevTools Protocol port for external debuggers (electron-debug MCP,
+// Chrome inspector). Inert unless HV_DEBUG_PORT is set — safe to leave in.
+if (process.env.HV_DEBUG_PORT) {
+  app.commandLine.appendSwitch('remote-debugging-port', process.env.HV_DEBUG_PORT)
+}
+
 // App renamed to "HappyVibe" (was the scaffold "hv-scaffold"). Preserve existing
 // data — sessions, provider keys, settings — by migrating the userData dir once,
 // before anything reads it. Runs at module load (app.getPath works pre-ready).
