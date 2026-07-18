@@ -106,7 +106,17 @@ app.whenReady().then(() => {
         },
         { role: 'editMenu' },
         { role: 'viewMenu' },
-        { role: 'windowMenu' },
+        // F6: free ⌘W for the renderer (close the active file tab); window close
+        // moves to ⌘⇧W. Otherwise the default windowMenu's ⌘W closes the window.
+        {
+          label: 'Window',
+          submenu: [
+            { role: 'minimize' },
+            { role: 'zoom' },
+            { type: 'separator' },
+            { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' },
+          ],
+        },
       ]),
     )
   }

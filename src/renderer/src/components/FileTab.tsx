@@ -1,5 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { basename } from "../tabs";
+
+// F6: files that get a rendered/raw preview toggle (rendered by default).
+const PREVIEWABLE = /\.(md|markdown|html|htm)$/i;
+const IS_HTML = /\.(html|htm)$/i;
 
 // Code-split: CodeMirror lives in its own chunk; chat never pays for it.
 const CodeEditor = lazy(() => import("./EditorPane"));
@@ -40,6 +46,11 @@ export function FileTab({
   const [buf, setBuf] = useState<BufferState>({ kind: "loading" });
   const [content, setContent] = useState("");
   const [docVersion, setDocVersion] = useState(0);
+  // F6: md/html render in a preview by default; toggle to raw, editable source.
+  const previewable = PREVIEWABLE.test(relPath);
+  const isHtml = IS_HTML.test(relPath);
+  const [view, setView] = useState<"rendered" | "raw">(previewable ? "rendered" : "raw");
+  const showPreview = previewable && view === "rendered";
   // External change detected while dirty — never silently clobber either side.
   const [conflict, setConflict] = useState<"changed" | "deleted" | null>(null);
   const [saving, setSaving] = useState(false);
@@ -160,14 +171,41 @@ export function FileTab({
       {buf.kind === "text" && (
         <>
           <div className="flex-1 min-h-0">
-            <Suspense
-              fallback={<div className="h-full flex items-center justify-center text-sm text-ink-soft">Opening editor…</div>}
-            >
-              <CodeEditor path={relPath} doc={content} docVersion={docVersion} onChange={setContent} onSave={() => void save()} />
-            </Suspense>
+            {showPreview ? (
+              isHtml ? (
+                // Sandboxed: no scripts, no same-origin. Relative asset/style
+                // paths won't resolve (accepted — this is a quick visual check).
+                <iframe title={relPath} sandbox="" srcDoc={content} className="h-full w-full bg-white" />
+              ) : (
+                <div className="h-full overflow-y-auto px-6 py-4">
+                  <div className="md max-w-3xl mx-auto">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                  </div>
+                </div>
+              )
+            ) : (
+              <Suspense
+                fallback={<div className="h-full flex items-center justify-center text-sm text-ink-soft">Opening editor…</div>}
+              >
+                <CodeEditor path={relPath} doc={content} docVersion={docVersion} onChange={setContent} onSave={() => void save()} />
+              </Suspense>
+            )}
           </div>
           <div className="flex items-center gap-3 px-4 py-1.5 border-t-2 border-line bg-paper text-xs">
             <span className="font-mono text-ink-soft truncate flex-1" title={relPath}>{relPath}</span>
+            {previewable && (
+              <button
+                type="button"
+                onClick={() => setView((v) => (v === "rendered" ? "raw" : "rendered"))}
+                aria-pressed={showPreview}
+                title={showPreview ? "Edit source" : "Preview rendered"}
+                aria-label={showPreview ? "Edit source" : "Preview rendered"}
+                className="flex items-center gap-1.5 rounded-lg border-2 border-line-strong font-bold px-2 py-1 hover:bg-paper-deep/40 cursor-pointer"
+              >
+                {showPreview ? <CodeGlyph /> : <EyeGlyph />}
+                {showPreview ? "Source" : "Preview"}
+              </button>
+            )}
             {dirty && <span className="font-bold text-tangerine-deep shrink-0">unsaved changes</span>}
             <button
               type="button"
@@ -217,5 +255,23 @@ export function FileTab({
         </div>
       )}
     </div>
+  );
+}
+
+/** F6: preview toggle glyphs (inline SVG — strict self CSP, no icon lib). */
+function EyeGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+function CodeGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m16 18 6-6-6-6" />
+      <path d="m8 6-6 6 6 6" />
+    </svg>
   );
 }
