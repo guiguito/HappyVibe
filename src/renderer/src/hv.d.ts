@@ -155,8 +155,10 @@ interface HvApi {
     sessionId: string,
     msg: string,
     behavior?: "steer" | "followUp",
-    images?: Array<{ type: "image"; data: string; mimeType: string }>
-  ): Promise<void>;
+    images?: Array<{ type: "image"; data: string; mimeType: string }>,
+    /** F3: workspace-relative paths of @file references — content injected main-side. */
+    mentions?: string[]
+  ): Promise<{ warnings: string[] }>;
   abortSession(sessionId: string): Promise<void>;
   // W2.1: per-session model override + image attach
   setSessionModel(sessionId: string, m: { provider: string; modelId: string } | null): Promise<{ live: boolean }>;
@@ -164,6 +166,8 @@ interface HvApi {
 
   // W2.2: file tree + editor + card path actions
   fsList(workspaceId: string, relDir: string): Promise<HvFsEntry[]>;
+  /** F3: recursive listing for @-mention autocomplete (capped). */
+  fsListRecursive(workspaceId: string): Promise<Array<{ rel: string; kind: "dir" | "file" }>>;
   fsRead(workspaceId: string, relPath: string): Promise<HvReadResult>;
   fsWrite(workspaceId: string, relPath: string, content: string): Promise<number>;
   fsMtime(workspaceId: string, relPath: string): Promise<number | null>;

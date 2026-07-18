@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
+import { splitMentionSegments, stripInjectedBlocks } from "../mentions";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -158,7 +159,9 @@ function UserBubble({
   it: TranscriptItem;
   onRewind?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
-  const text = "text" in it ? it.text : "";
+  // F3: strip the hidden @file context blocks so the bubble (and copy/search)
+  // shows only what the user wrote; @tokens render as chips.
+  const text = stripInjectedBlocks("text" in it ? it.text : "");
   const images = "images" in it ? it.images : undefined;
   const [expanded, setExpanded] = useState(false);
   const long = text.length > LONG_MESSAGE_CHARS;
@@ -175,7 +178,13 @@ function UserBubble({
           </div>
         )}
         <div className={collapsed ? "relative max-h-64 overflow-hidden" : undefined}>
-          {text}
+          {splitMentionSegments(text).map((seg, i) =>
+            seg.kind === "mention" ? (
+              <span key={i} className="rounded-md bg-paper/25 px-1 font-semibold">{seg.value}</span>
+            ) : (
+              <span key={i}>{seg.value}</span>
+            ),
+          )}
           {collapsed && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-tangerine" />
           )}

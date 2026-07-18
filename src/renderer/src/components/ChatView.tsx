@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { ModelSelect } from "./ModelSelect";
 import { ContextBubble } from "./ContextBubble";
@@ -10,6 +10,9 @@ import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import {
   attachmentUrl, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
+import {
+  activeMentionQuery, completeMention, extractMentions, filterEntries, mentionLabel, type MentionEntry,
+} from "../mentions";
 
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
 const PASTE_CONFIRM_CHARS = 100_000;
@@ -77,7 +80,7 @@ export function ChatView({
   contextOpen: boolean;
   onContextOpenChange: (open: boolean) => void;
   onOpenAgentsMd: () => void;
-  onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[]) => void;
+  onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[]) => void;
   onAbort: () => void;
   onRestart: () => void;
   onRetry: () => void;
@@ -91,6 +94,55 @@ export function ChatView({
   onRewind?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
   const [input, setInput] = useState("");
+  // F4: auto-growing textarea — reset to auto then clamp to scrollHeight (~8 lines).
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const autoGrow = useCallback(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+  }, []);
+  useEffect(() => { autoGrow(); }, [input, autoGrow]);
+  // F3: @file mentions — label→relPath map for the composed text, a recursive
+  // workspace index (fetched lazily, invalidated on fs change / workspace switch),
+  // and the live dropdown state.
+  const mentionMap = useRef<Map<string, string>>(new Map());
+  const mentionIndex = useRef<MentionEntry[] | null>(null);
+  const [mention, setMention] = useState<{ start: number; items: MentionEntry[]; sel: number } | null>(null);
+  useEffect(() => {
+    mentionIndex.current = null;
+    mentionMap.current = new Map();
+    setMention(null);
+    return window.hv.onFsChanged((p) => { if (p.workspaceId === workspace) mentionIndex.current = null; });
+  }, [workspace]);
+  const ensureMentionIndex = useCallback(async (): Promise<MentionEntry[]> => {
+    if (mentionIndex.current) return mentionIndex.current;
+    if (!workspace) return [];
+    try {
+      const list = await window.hv.fsListRecursive(workspace);
+      mentionIndex.current = list;
+      return list;
+    } catch {
+      return [];
+    }
+  }, [workspace]);
+  const refreshMention = useCallback(async (text: string, caret: number): Promise<void> => {
+    const q = activeMentionQuery(text, caret);
+    if (!q) { setMention(null); return; }
+    const items = filterEntries(await ensureMentionIndex(), q.query);
+    setMention({ start: q.start, items, sel: 0 });
+  }, [ensureMentionIndex]);
+  const pickMention = (entry: MentionEntry): void => {
+    const el = taRef.current;
+    if (!el || !mention) return;
+    const caret = el.selectionStart ?? input.length;
+    const label = mentionLabel(entry.rel, mentionMap.current);
+    mentionMap.current.set(label, entry.rel);
+    const done = completeMention(input, mention.start, caret, label);
+    setInput(done.text);
+    setMention(null);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(done.caret, done.caret); autoGrow(); });
+  };
   const [pendingRewind, setPendingRewind] = useState<TranscriptItem | null>(null); // #11 confirm
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
   const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
@@ -241,9 +293,12 @@ export function ChatView({
 
   const submit = (behavior?: "followUp"): void => {
     if (!input.trim()) return;
-    onSend(input, behavior, attachments.length ? attachments : undefined);
+    const mentions = extractMentions(input, mentionMap.current);
+    onSend(input, behavior, attachments.length ? attachments : undefined, mentions.length ? mentions : undefined);
     setInput("");
     setAttachments([]);
+    mentionMap.current = new Map();
+    setMention(null);
   };
 
   return (
@@ -527,7 +582,7 @@ export function ChatView({
             Model saved — applies when this session restarts.
           </div>
         )}
-        <div className="max-w-3xl mx-auto flex gap-2 items-center rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-3 py-2 focus-within:border-tangerine transition-colors">
+        <div className="max-w-3xl mx-auto flex gap-2 items-end rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-3 py-2 focus-within:border-tangerine transition-colors">
           {/* W2.1: "+" attach menu — always visible; entries gate honestly. */}
           <div className="relative shrink-0">
             <button
@@ -645,20 +700,65 @@ export function ChatView({
               )}
             />
           </div>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onPaste={(e) => {
-              // #3: guard against accidentally pasting a huge blob.
-              const t = e.clipboardData.getData("text");
-              if (t.length > PASTE_CONFIRM_CHARS) {
-                e.preventDefault();
-                setPendingPaste(t);
-              }
-            }}
-            placeholder={hint ?? (busy ? "Steer the agent — lands between tool calls…" : "Ask for a change…")}
-            className="flex-1 min-w-0 bg-transparent px-2 py-1.5 text-[0.95rem] focus:outline-none placeholder:text-ink-soft/60"
-          />
+          <div className="relative flex-1 min-w-0">
+            {/* F3: @file autocomplete — opens above the composer, styled like the attach menu. */}
+            {mention && mention.items.length > 0 && (
+              <div className="absolute bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+                {mention.items.map((it, i) => {
+                  const base = it.rel.split(/[\\/]/).pop() ?? it.rel;
+                  return (
+                    <button
+                      key={it.rel}
+                      type="button"
+                      // preventDefault keeps the textarea focused so the caret survives the pick.
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pickMention(it)}
+                      className={`w-full text-left px-3 py-1.5 cursor-pointer ${i === mention.sel ? "bg-honey-soft" : "hover:bg-paper-deep/40"}`}
+                    >
+                      <span className="font-semibold">{base}{it.kind === "dir" ? "/" : ""}</span>
+                      <span className="block truncate text-[11px] font-medium text-ink-soft">{it.rel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <textarea
+              ref={taRef}
+              rows={1}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                void refreshMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
+              }}
+              onBlur={() => { window.setTimeout(() => setMention(null), 120); }}
+              onKeyDown={(e) => {
+                // F3: while the @-dropdown is open it owns the nav keys.
+                if (mention) {
+                  const n = mention.items.length;
+                  if (e.key === "ArrowDown" && n) { e.preventDefault(); setMention((m) => m && { ...m, sel: (m.sel + 1) % n }); return; }
+                  if (e.key === "ArrowUp" && n) { e.preventDefault(); setMention((m) => m && { ...m, sel: (m.sel - 1 + n) % n }); return; }
+                  if ((e.key === "Tab" || e.key === "Enter") && n) { e.preventDefault(); pickMention(mention.items[mention.sel]); return; }
+                  if (e.key === "Escape") { e.preventDefault(); setMention(null); return; }
+                }
+                // F4: Enter sends, Shift+Enter inserts a newline. Never send mid-IME
+                // composition (e.g. accented input, CJK) — that Enter commits text.
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              onPaste={(e) => {
+                // #3: guard against accidentally pasting a huge blob.
+                const t = e.clipboardData.getData("text");
+                if (t.length > PASTE_CONFIRM_CHARS) {
+                  e.preventDefault();
+                  setPendingPaste(t);
+                }
+              }}
+              placeholder={hint ?? (busy ? "Steer the agent — lands between tool calls…" : "Ask for a change… (@ to add a file)")}
+              className="w-full resize-none bg-transparent px-2 py-1.5 text-[0.95rem] leading-relaxed focus:outline-none placeholder:text-ink-soft/60"
+            />
+          </div>
           {/* V2.A: no separate Queue button — send/Enter steers while busy
               (App keeps the followUp behavior plumbing; it just has no UI). */}
           {busy && (

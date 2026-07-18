@@ -27,7 +27,7 @@ import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
-import { createDir, createFile, importEntries, listDir, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
+import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
@@ -633,9 +633,12 @@ export function registerIpc(win: BrowserWindow): void {
   // behavior (B2, additive): renderer passes "steer" | "followUp" while the
   // agent is busy — Pi errors on a bare prompt mid-stream without it.
   // images (W2.1, additive): RPC ImageContent[] built renderer-side (composer.ts).
+  // mentions (F3, additive): workspace-relative paths of @file references. Main
+  // assembles the hidden <file> context blocks (files.ts) and appends them to
+  // the message the model sees; the raw msg is still used for the title/echo.
   ipcMain.handle(
     "hv:prompt-session",
-    async (_e, sessionId: string, msg: string, behavior?: PromptBehavior, images?: PromptImage[]) => {
+    async (_e, sessionId: string, msg: string, behavior?: PromptBehavior, images?: PromptImage[], mentions?: string[]) => {
     if (behavior !== undefined && behavior !== "steer" && behavior !== "followUp") {
       throw new Error("Invalid prompt behavior");
     }
@@ -643,6 +646,9 @@ export function registerIpc(win: BrowserWindow): void {
       const ok = Array.isArray(images) &&
         images.every((i) => i?.type === "image" && typeof i.data === "string" && typeof i.mimeType === "string");
       if (!ok) throw new Error("Invalid images payload");
+    }
+    if (mentions !== undefined && !(Array.isArray(mentions) && mentions.every((m) => typeof m === "string"))) {
+      throw new Error("Invalid mentions payload");
     }
     let client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
@@ -658,7 +664,15 @@ export function registerIpc(win: BrowserWindow): void {
       index.update(sessionId, { title: truncateTitle(msg) }); // fallback until generation lands
       sessionsChanged();
     }
-    await client.send(promptCommand(msg, behavior, images));
+    let outgoing = msg;
+    let warnings: string[] = [];
+    if (mentions && mentions.length && meta?.workspaceId) {
+      const { blocks, warnings: w } = buildMentionBlocks(workspaces.list(), meta.workspaceId, mentions);
+      if (blocks) outgoing = `${msg}\n\n${blocks}`;
+      warnings = w;
+    }
+    await client.send(promptCommand(outgoing, behavior, images));
+    return { warnings };
   });
 
   ipcMain.handle("hv:abort-session", async (_e, sessionId: string) => {
@@ -1001,6 +1015,9 @@ export function registerIpc(win: BrowserWindow): void {
   // ── W2.2: workspace file tree + editor (additive; files.ts confinement) ──
   ipcMain.handle("hv:fs-list", (_e, workspaceId: string, relDir: string) =>
     listDir(workspaces.list(), workspaceId, relDir));
+  // F3: recursive listing for @-mention autocomplete (visible entries, capped).
+  ipcMain.handle("hv:fs-list-recursive", (_e, workspaceId: string) =>
+    listRecursive(workspaces.list(), workspaceId));
   ipcMain.handle("hv:fs-read", (_e, workspaceId: string, relPath: string) =>
     readWorkspaceFile(workspaces.list(), workspaceId, relPath));
   ipcMain.handle("hv:fs-write", (_e, workspaceId: string, relPath: string, content: string) =>

@@ -19,15 +19,23 @@ interface Watch {
   watcher: fs.FSWatcher;
   timer: NodeJS.Timeout | null;
   pending: Set<string>;
+  refs: number;
 }
 
 const watches = new Map<string, Watch>();
 
 const DEBOUNCE_MS = 150;
 
-/** Start (or replace) a recursive watch on a workspace root. */
+/**
+ * Start a recursive watch on a workspace root (refcounted). F6: the tree AND
+ * open editor tabs both want the watch, and each may come and go independently,
+ * so we keep one FSWatcher per workspace alive until the last watcher releases
+ * it. The onChange callback is the same broadcast for every caller, so a repeat
+ * start keeps the existing one.
+ */
 export function watchWorkspace(workspaceId: string, onChange: (relDirs: string[]) => void): void {
-  unwatchWorkspace(workspaceId);
+  const existing = watches.get(workspaceId);
+  if (existing) { existing.refs++; return; }
   const root = path.resolve(workspaceId);
   let watcher: fs.FSWatcher;
   try {
@@ -35,7 +43,7 @@ export function watchWorkspace(workspaceId: string, onChange: (relDirs: string[]
   } catch {
     return; // watching unsupported (e.g. Linux recursive) — renderer keeps manual refresh
   }
-  const w: Watch = { watcher, timer: null, pending: new Set() };
+  const w: Watch = { watcher, timer: null, pending: new Set(), refs: 1 };
   watches.set(workspaceId, w);
   watcher.on("error", () => unwatchWorkspace(workspaceId));
   watcher.on("change", (_event, filename) => {
@@ -58,11 +66,16 @@ export function watchWorkspace(workspaceId: string, onChange: (relDirs: string[]
 export function unwatchWorkspace(workspaceId: string): void {
   const w = watches.get(workspaceId);
   if (!w) return;
+  if (--w.refs > 0) return; // still referenced (e.g. tree closed but a tab is open)
   if (w.timer) clearTimeout(w.timer);
   w.watcher.close();
   watches.delete(workspaceId);
 }
 
 export function unwatchAll(): void {
-  for (const id of [...watches.keys()]) unwatchWorkspace(id);
+  for (const [, w] of watches) {
+    if (w.timer) clearTimeout(w.timer);
+    w.watcher.close();
+  }
+  watches.clear();
 }

@@ -19,6 +19,40 @@ function ArchiveIcon({ out }: { out: boolean }): React.JSX.Element {
   );
 }
 
+/** F6: nav icons shared by the expanded footer and the collapsed rail. */
+function AgentsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
+  );
+}
+function GearIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
+    </svg>
+  );
+}
+function HelpIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3M12 17h.01" />
+    </svg>
+  );
+}
+function KeyboardIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+    </svg>
+  );
+}
+
 function TrashIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -167,6 +201,9 @@ export function Sidebar({
   onArchiveSession,
   onDeleteSession,
   onOpenHelp,
+  onOpenShortcuts,
+  railCollapsed,
+  onToggleCollapsed,
 }: {
   workspaces: string[];
   sessions: SessionMeta[];
@@ -176,6 +213,11 @@ export function Sidebar({
   selectedId: string | null;
   view: View;
   onNavigate: (v: View) => void;
+  /** F6: open the keyboard-shortcuts cheat sheet (⌘/). */
+  onOpenShortcuts: () => void;
+  /** F6: slim icon-rail mode + its toggle (⌘B); state persisted in App. */
+  railCollapsed: boolean;
+  onToggleCollapsed: () => void;
   onAddWorkspace: () => void;
   onRemoveWorkspace: (ws: string) => void;
   /** W1.4: open the workspace-settings surface (model override, rules, prompt additions). */
@@ -208,21 +250,77 @@ export function Sidebar({
 
   const archivedCount = sessions.filter((s) => s.archived).length;
 
+  // F6: collapsed icon rail — brand, workspace initials (click expands), and the
+  // MCP/Settings/Help nav at the bottom. ⌘B (App) and the chevron toggle it.
+  if (railCollapsed) {
+    const railBtn = (active: boolean): string =>
+      `size-9 flex items-center justify-center rounded-xl border-2 cursor-pointer transition-colors ${
+        active ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70 text-ink-soft hover:text-ink"
+      }`;
+    return (
+      <aside className="w-12 shrink-0 bg-paper-deep pegboard border-r-2 border-line flex flex-col items-center py-3 gap-2">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          title="Expand sidebar (⌘B)"
+          aria-label="Expand sidebar"
+          className="size-9 rounded-xl bg-tangerine border-2 border-ink/80 shadow-sticker rotate-3 flex items-center justify-center hover:rotate-6 transition-transform cursor-pointer"
+        >
+          <span className="text-paper font-black text-sm -rotate-3">hv</span>
+        </button>
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1.5 w-full pt-2">
+          {workspaces.map((ws) => (
+            <button
+              key={ws}
+              type="button"
+              onClick={onToggleCollapsed}
+              title={basename(ws)}
+              className="size-8 shrink-0 flex items-center justify-center rounded-lg border-2 border-line bg-card text-[11px] font-black uppercase text-ink-soft hover:text-ink hover:border-honey cursor-pointer"
+            >
+              {basename(ws).replace(/[^a-z0-9]/gi, "").slice(0, 2) || "·"}
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={() => onNavigate("agents")} title="MCP, Tools & Agents" aria-label="MCP, Tools & Agents" className={railBtn(view === "agents")}>
+          <AgentsIcon />
+        </button>
+        <button type="button" onClick={() => onNavigate("settings")} title="Settings" aria-label="Settings" className={railBtn(view === "settings")}>
+          <GearIcon />
+        </button>
+        <button type="button" onClick={onOpenHelp} title="Help" aria-label="Help" className={railBtn(false)}>
+          <HelpIcon />
+        </button>
+        <button type="button" onClick={onOpenShortcuts} title="Keyboard shortcuts (⌘/)" aria-label="Keyboard shortcuts" className={railBtn(false)}>
+          <KeyboardIcon />
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside className="w-64 shrink-0 bg-paper-deep pegboard border-r-2 border-line flex flex-col">
       {/* Brand */}
-      <div className="px-5 pt-5 pb-4">
+      <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={() => onNavigate("chat")}
-          className="flex items-center gap-2.5 cursor-pointer group"
+          className="flex items-center gap-2.5 cursor-pointer group min-w-0"
         >
-          <div className="size-9 rounded-xl bg-tangerine border-2 border-ink/80 shadow-sticker rotate-3 flex items-center justify-center group-hover:rotate-6 transition-transform">
+          <div className="size-9 rounded-xl bg-tangerine border-2 border-ink/80 shadow-sticker rotate-3 flex items-center justify-center group-hover:rotate-6 transition-transform shrink-0">
             <span className="text-paper font-black text-sm -rotate-3">hv</span>
           </div>
-          <div className="font-black text-lg tracking-tight leading-none">
+          <div className="font-black text-lg tracking-tight leading-none truncate">
             Happy<span className="text-tangerine">Vibe</span>
           </div>
+        </button>
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          title="Collapse sidebar (⌘B)"
+          aria-label="Collapse sidebar"
+          className="shrink-0 text-ink-soft hover:text-ink cursor-pointer text-lg leading-none px-1"
+        >
+          «
         </button>
       </div>
 
@@ -374,11 +472,17 @@ export function Sidebar({
           title="Show the getting-started guide"
           className="w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
         >
-          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3M12 17h.01" />
-          </svg>
+          <HelpIcon />
           Help
+        </button>
+        <button
+          type="button"
+          onClick={onOpenShortcuts}
+          title="Keyboard shortcuts (⌘/)"
+          className="w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
+        >
+          <KeyboardIcon />
+          Keyboard shortcuts
         </button>
       </div>
 

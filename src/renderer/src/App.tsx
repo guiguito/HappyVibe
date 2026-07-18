@@ -6,6 +6,7 @@ import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
 import { WorkspaceSettingsModal } from "./components/WorkspaceSettingsModal";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
+import { ShortcutsDialog } from "./components/ShortcutsDialog";
 import {
   dropSession,
   headFor,
@@ -80,6 +81,19 @@ export default function App(): React.JSX.Element {
   // docked file-tree pane is a global toggle (closed by default).
   const [tabsByWs, setTabsByWs] = useState<Record<string, WorkspaceTabs>>({});
   const [treeOpen, setTreeOpen] = useState(false);
+  // F6: collapsible sidebar (slim icon rail); persisted across launches.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
+  useEffect(() => { localStorage.setItem("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false); // F6: ⌘/ help dialog
+  // F6: global shortcuts. The handler closure is refreshed each render (reads
+  // live wsId/tabs/newSession); a single listener reads it through the ref so we
+  // don't re-subscribe every render. ⌘F/⌘S stay owned by chat/editor.
+  const shortcutRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    const on = (e: KeyboardEvent): void => shortcutRef.current(e);
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
   // WS7: chat controls lifted from the removed ChatView header into the tab strip.
   const [searchOpen, setSearchOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
@@ -543,6 +557,21 @@ export default function App(): React.JSX.Element {
     [openFileTab]
   );
 
+  // F6: keep a workspace watched whenever it has an open editor tab, so an agent
+  // edit auto-refreshes the tab (FileTab subscribes to hv:fs-changed) even when
+  // the file drawer — which owns its own watch — is closed. Refcounted main-side,
+  // so this coexists with the tree's watch.
+  const watchedWsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const want = new Set(
+      Object.entries(tabsByWs).filter(([, t]) => allFiles(t).length > 0).map(([w]) => w),
+    );
+    const have = watchedWsRef.current;
+    for (const w of want) if (!have.has(w)) void window.hv.watchWorkspace(w).catch(() => {});
+    for (const w of have) if (!want.has(w)) void window.hv.unwatchWorkspace(w).catch(() => {});
+    watchedWsRef.current = want;
+  }, [tabsByWs]);
+
   // WS7: session context stats for the tab-strip bubble + panel. Fetched once
   // per agent_end (turns bump), debounced; reset search/context on session switch.
   useEffect(() => {
@@ -661,18 +690,21 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  const send = async (msg: string, behavior?: "followUp", attachments?: ImageAttachment[]): Promise<void> => {
+  const send = async (msg: string, behavior?: "followUp", attachments?: ImageAttachment[], mentions?: string[]): Promise<void> => {
     if (!selectedId) return;
     const sid = selectedId;
     // W2.1: attached images ride the RPC `images` param (ImageContent[]).
     const images = attachments?.length ? buildImages(attachments) : undefined;
+    // F3: @file mention warnings (skipped binaries, over-cap dirs) surface as notices.
+    const noteWarnings = (w: string[]): void => w.forEach((text) => appendItem(sid, { kind: "notice", text }));
     // B2: while the agent runs, a bare prompt errors — Enter/send steers
     // (V2.A: the Queue button is gone; the followUp behavior plumbing stays).
     // The message shows as a chip (queue_update) and only joins the
     // transcript when Pi delivers it.
     if (busy[sid]) {
       try {
-        await window.hv.promptSession(sid, msg, behavior ?? "steer", images);
+        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions);
+        noteWarnings(warnings);
       } catch (err) {
         surface(err);
       }
@@ -682,7 +714,8 @@ export default function App(): React.JSX.Element {
     streaming.current[sid] = false;
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
-      await window.hv.promptSession(sid, msg, undefined, images);
+      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions);
+      noteWarnings(warnings);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
       surface(err);
@@ -794,6 +827,24 @@ export default function App(): React.JSX.Element {
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
   const wsId = selected?.workspaceId ?? null;
   const wsTabs = (wsId ? tabsByWs[wsId] : undefined) ?? emptyTabs;
+  // F6: refresh the global-shortcut closure with the current render's state.
+  shortcutRef.current = (e: KeyboardEvent): void => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    switch (e.key.toLowerCase()) {
+      case "b": e.preventDefault(); setSidebarCollapsed((c) => !c); break;
+      case "e": if (e.shiftKey) { e.preventDefault(); setTreeOpen((o) => !o); } break;
+      case "n": { e.preventDefault(); const ws = wsId ?? workspaces[0]; if (ws) void newSession(ws); break; }
+      case ",": e.preventDefault(); if (!needsSetup) setView("settings"); break;
+      case "/": e.preventDefault(); setShortcutsOpen(true); break;
+      case "w": {
+        // Close the first closable (non-chat) active tab; window close is ⌘⇧W.
+        if (!wsId) break;
+        const i = wsTabs.panes.findIndex((p) => p.active && p.active !== CHAT_TAB);
+        if (i >= 0) { e.preventDefault(); closeFileTab(wsId, i, wsTabs.panes[i].active!); }
+        break;
+      }
+    }
+  };
   const dirtyForWs: Record<string, boolean> = {};
   if (wsId) for (const f of allFiles(wsTabs)) dirtyForWs[f] = !!dirtyMap[bufferKey(wsId, f)];
   // Every open file across ALL workspaces stays mounted (hidden) so unsaved
@@ -859,6 +910,9 @@ export default function App(): React.JSX.Element {
           await window.hv.deleteSession(id); // sessions-changed broadcast refreshes the list
         }}
         onOpenHelp={() => setOnboarding(true)}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
+        railCollapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
       <main className="flex-1 min-w-0 flex flex-col">
         {error && (
@@ -1044,6 +1098,7 @@ export default function App(): React.JSX.Element {
       )}
       {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
+      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
       {/* WS7: AGENTS.md editor — root from the "+" menu, any AGENTS.md from the tree. */}
       {agentsMd && wsId && (
         <AgentsMdPanel
