@@ -8,3 +8,6 @@ release
 .env
 
 *.tsbuildinfo
+
+# tokensave code-graph index (local-only, not shared)
+.tokensave/
