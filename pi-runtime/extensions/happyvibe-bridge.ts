@@ -169,7 +169,11 @@ function applyPlanTools(pi: ExtensionAPI): void {
     if (!get || !set) return;
     if (plan.enabled) {
       if (!toolsBeforePlan) toolsBeforePlan = get.call(pi);
-      set.call(pi, toolsBeforePlan.filter((t) => !["edit", "write", "multi_edit", "subagent"].includes(t)));
+      // Drop mutating tools; ALWAYS keep the plan tools + ask_user offered, even
+      // if they weren't in the captured baseline (else the model can't finish).
+      const kept = toolsBeforePlan.filter((t) => !["edit", "write", "multi_edit", "subagent"].includes(t));
+      const required = ["plan_complete", "plan_status_update", "ask_user"];
+      set.call(pi, [...new Set([...kept, ...required])]);
     } else if (toolsBeforePlan) {
       set.call(pi, toolsBeforePlan);
       toolsBeforePlan = undefined;
@@ -265,8 +269,10 @@ export default function (pi: ExtensionAPI) {
     // §23: plan state SURVIVES respawn (unlike dangerous mode). Restore + re-emit
     // so the renderer resyncs its banner/toggle after a hibernation/MCP respawn.
     plan = restorePlanState(entries as unknown as PlanSessionEntry[]);
-    if (plan.enabled) applyPlanTools(pi);
-    emitPlan(ctx.ui);
+    // Only re-emit when there's real state to resync after a respawn — a spurious
+    // "disabled" notify on every fresh session would be the first ui-request other
+    // bridge tests wait on, and it's redundant (the renderer defaults to off).
+    if (plan.enabled || plan.planPath) { applyPlanTools(pi); emitPlan(ctx.ui); }
     busUi = ctx.ui;
   });
 
