@@ -44,6 +44,8 @@ export function ChatView({
   onSearchOpenChange,
   contextOpen,
   onContextOpenChange,
+  planEnabled = false,
+  onTogglePlan,
   onOpenAgentsMd,
   onSend,
   onAbort,
@@ -79,6 +81,9 @@ export function ChatView({
   onSearchOpenChange: (open: boolean) => void;
   contextOpen: boolean;
   onContextOpenChange: (open: boolean) => void;
+  /** §23: plan-mode toggle state + setter (composer chip). */
+  planEnabled?: boolean;
+  onTogglePlan?: (on: boolean) => void;
   onOpenAgentsMd: () => void;
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[]) => void;
   onAbort: () => void;
@@ -700,6 +705,23 @@ export function ChatView({
               )}
             />
           </div>
+          {/* §23: plan-mode toggle — read-only "think first" for this session. */}
+          {onTogglePlan && (
+            <button
+              type="button"
+              aria-pressed={planEnabled}
+              onClick={() => onTogglePlan(!planEnabled)}
+              title={planEnabled ? "Plan mode on — read-only. Click to exit." : "Plan mode — explore and draft a plan before changing anything"}
+              className={`shrink-0 flex items-center gap-1 text-[11px] font-bold rounded-full border-2 px-2.5 py-1 cursor-pointer transition-colors ${
+                planEnabled
+                  ? "border-sky bg-sky-soft text-sky"
+                  : "border-line bg-paper text-ink-soft hover:border-sky hover:text-sky"
+              }`}
+            >
+              <span aria-hidden>🧭</span>
+              <span>Plan</span>
+            </button>
+          )}
           <div className="relative flex-1 min-w-0">
             {/* F3: @file autocomplete — opens above the composer, styled like the attach menu. */}
             {mention && mention.items.length > 0 && (

@@ -100,3 +100,29 @@ export function parseDangerous(r: UiRequest & { message?: string }): boolean | n
   }
   return null;
 }
+
+/** §23: an hv.plan mode notify → {enabled, planPath}, null otherwise. */
+export function parsePlan(r: UiRequest & { message?: string }): { enabled: boolean; planPath?: string } | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "");
+    if (p?.kind === "hv.plan" && typeof p.enabled === "boolean") {
+      return { enabled: p.enabled, planPath: typeof p.planPath === "string" ? p.planPath : undefined };
+    }
+  } catch {
+    /* not ours */
+  }
+  return null;
+}
+
+/** §23: an hv.plan.blocked notify → the blocked tool-call id, null otherwise. */
+export function parsePlanBlocked(r: UiRequest & { message?: string }): { toolCallId: string } | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "");
+    if (p?.kind === "hv.plan.blocked" && typeof p.toolCallId === "string") return { toolCallId: p.toolCallId };
+  } catch {
+    /* not ours */
+  }
+  return null;
+}
