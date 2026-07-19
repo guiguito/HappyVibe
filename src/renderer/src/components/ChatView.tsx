@@ -99,13 +99,18 @@ export function ChatView({
   onRewind?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
   const [input, setInput] = useState("");
+  // Composer row aligns centered on one line; when the textarea wraps to multiple
+  // lines the controls pin to the top instead (all on the same horizontal line).
+  const [multiline, setMultiline] = useState(false);
   // F4: auto-growing textarea — reset to auto then clamp to scrollHeight (~8 lines).
   const taRef = useRef<HTMLTextAreaElement>(null);
   const autoGrow = useCallback(() => {
     const el = taRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+    const sh = el.scrollHeight;
+    el.style.height = `${Math.min(sh, 192)}px`;
+    setMultiline(sh > 44); // one line ≈ 36px; > 44 means it wrapped
   }, []);
   useEffect(() => { autoGrow(); }, [input, autoGrow]);
   // F3: @file mentions — label→relPath map for the composed text, a recursive
@@ -208,6 +213,9 @@ export function ChatView({
   const modelName = resolved
     ? models?.find((m) => m.provider === resolved.provider && m.id === resolved.modelId)?.name ?? resolved.modelId
     : null;
+  // Chip shows the bare model name — strip any leading "Provider: " prefix Pi bakes
+  // into the display name (e.g. "Z.ai: GLM 5.2" → "GLM 5.2").
+  const modelLabel = modelName?.replace(/^[^:]+:\s+/, "") ?? null;
 
   const pickModel = async (m: HvModel): Promise<void> => {
     setModelMenuOpen(false);
@@ -587,7 +595,7 @@ export function ChatView({
             Model saved — applies when this session restarts.
           </div>
         )}
-        <div className="max-w-3xl mx-auto flex gap-2 items-end rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-3 py-2 focus-within:border-tangerine transition-colors">
+        <div className={`max-w-3xl mx-auto flex gap-2 ${multiline ? "items-start" : "items-center"} rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-3 py-2 focus-within:border-tangerine transition-colors`}>
           {/* W2.1: "+" attach menu — always visible; entries gate honestly. */}
           <div className="relative shrink-0">
             <button
@@ -595,7 +603,7 @@ export function ChatView({
               aria-label="Attach"
               aria-expanded={attachMenuOpen}
               onClick={() => { setAttachMenuOpen((o) => !o); setModelMenuOpen(false); }}
-              className="size-8 rounded-xl border-2 border-line-strong text-ink-soft font-black text-lg leading-none hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
+              className="size-8 rounded-xl text-ink-soft font-black text-lg leading-none hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
             >
               +
             </button>
@@ -692,15 +700,9 @@ export function ChatView({
                   aria-expanded={modelMenuOpen}
                   onClick={toggle}
                   title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
-                  className="max-w-44 text-left font-mono text-[11px] rounded-full border-2 border-line bg-paper px-2.5 py-1 text-ink-soft hover:border-honey hover:text-ink cursor-pointer transition-colors"
+                  className="max-w-44 text-left font-mono text-[11px] rounded-full px-2.5 py-1.5 text-ink-soft hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
                 >
-                  <span className="block truncate">{modelName ?? "model…"}</span>
-                  {/* V2.A: tier-source subtext — honest about WHERE the model came from. */}
-                  {resolution && (
-                    <span className="block truncate font-sans text-[9px] font-semibold leading-tight text-ink-soft/80">
-                      {TIER_LABEL[resolution.tier]}
-                    </span>
-                  )}
+                  <span className="block truncate">{modelLabel ?? "model…"}</span>
                 </button>
               )}
             />
@@ -712,10 +714,10 @@ export function ChatView({
               aria-pressed={planEnabled}
               onClick={() => onTogglePlan(!planEnabled)}
               title={planEnabled ? "Plan mode on — read-only. Click to exit." : "Plan mode — explore and draft a plan before changing anything"}
-              className={`shrink-0 flex items-center gap-1 text-[11px] font-bold rounded-full border-2 px-2.5 py-1 cursor-pointer transition-colors ${
+              className={`shrink-0 flex items-center gap-1 text-[11px] font-bold rounded-full px-2.5 py-1.5 cursor-pointer transition-colors ${
                 planEnabled
-                  ? "border-sky bg-sky-soft text-sky"
-                  : "border-line bg-paper text-ink-soft hover:border-sky hover:text-sky"
+                  ? "bg-sky-soft text-sky"
+                  : "text-ink-soft hover:bg-paper-deep/40 hover:text-sky"
               }`}
             >
               <span aria-hidden>🧭</span>
@@ -789,7 +791,7 @@ export function ChatView({
               onClick={onAbort}
               aria-label="Stop"
               title="Stop the agent"
-              className="rounded-xl border-2 border-berry text-berry px-3 py-2 hover:bg-berry-soft cursor-pointer"
+              className="rounded-xl text-berry px-3 py-2 hover:bg-berry-soft cursor-pointer transition-colors"
             >
               <StopIcon />
             </button>
@@ -799,7 +801,7 @@ export function ChatView({
             disabled={!input.trim()}
             aria-label={busy ? "Steer" : "Send"}
             title={busy ? "Steer — lands between tool calls" : "Send"}
-            className="rounded-xl bg-tangerine text-paper px-4 py-2 border-2 border-tangerine-deep shadow-sticker transition-all enabled:hover:brightness-105 enabled:active:translate-x-[2px] enabled:active:translate-y-[2px] enabled:active:shadow-none enabled:cursor-pointer disabled:opacity-40"
+            className="rounded-xl bg-tangerine text-paper px-4 py-2 transition-all enabled:hover:brightness-105 enabled:active:translate-x-[2px] enabled:active:translate-y-[2px] enabled:cursor-pointer disabled:opacity-40"
           >
             <SendIcon />
           </button>
