@@ -143,6 +143,7 @@ HappyVibe V1 should include:
 - open the workspace folder in Finder / the OS file manager;
 - copy file paths;
 - local-only analytics dashboard;
+- a read-only **Plan Mode** — the agent explores and drafts an implementation plan (saved as a workspace file) without being able to modify anything, and the user approves implementation with one click (see §23);
 - macOS build (Windows and Linux where possible);
 - open-source distribution first.
 
@@ -255,6 +256,8 @@ V1 includes three built-in agents:
 **Decision (2026-07-17, refinement) — never block on the result:** to actually deliver "keep chatting", the main agent must NOT sit and wait after delegating. pi-subagents otherwise steers the model to call its `wait` tool (which re-blocks the turn); HappyVibe intercepts `wait` and returns guidance to end the turn instead — the result folds in on its own turn when ready. The model is told which sub-agents exist and to delegate directly (skip the discovery `list` step). Behavior varies by model: instruction-following models do this cleanly, looser ones occasionally still list first — acceptable, not a correctness issue.
 
 **Decision (2026-07-17) — sub-agent `intent` is optional (carve-out from §7):** the delegation `task` is already a good customer-facing headline, so `subagent` **advertises but does not require** the model-authored `intent` (the UI uses `intent ?? task`). This reverses §7's "every registered tool requires intent" for `subagent` only — a hard requirement made looser models fail their first delegation on a missing `intent`. `mcp`/AskUserQuestion keep required intent (they have their own factual fallbacks).
+
+**Decision (2026-07-19, locked) — sub-agents are blocked in Plan Mode (V1):** while a session is in Plan Mode (§23) the `subagent` tool is blocked — a child Pi process carries its own tool set, so guaranteeing read-only across the child needs its own validation pass, deferred past V1. An in-flight async delegation started *before* Plan Mode is entered is **not** cancelled (the plan gate applies to new calls only); its completion lands normally.
 
 ### Code Explorer Agent
 
@@ -389,6 +392,28 @@ File paths shown on tool and diff cards are clickable: open the file in the buil
 ## 22. Onboarding: First Wow Moment
 
 The first magical moment combines: (1) **visible agent work** — the user watches a clean, readable trace of the agent working (tool calls, statuses, diffs); (2) **context understanding** — the user sees the context window and understands exactly what the agent knows. Onboarding steers the first session toward experiencing both.
+
+## 23. Plan Mode
+
+**Decision (2026-07-19, locked)** — full proposal in Notion ("Plan mode proposal", page `3a0d33dfffca80848f85c0ff0b6df04f`).
+
+Plan Mode is a **per-session, read-only "think before you touch" mode**: the agent explores the codebase, asks clarifying questions, and delivers a structured implementation plan — **without being able to modify anything** — and the user approves implementation with one click. It is the permission story told forward (safety *before* the action, not only a gate *at* it) and the calm inverse of dangerous mode. Built natively in the HappyVibe bridge (not a vendored extension); the read-only bash allowlist and the 3-phase planning prompt are adapted from `@narumitw/pi-plan-mode` (MIT), the durable-plan-file and file-referencing implement handoff from `@bacnh85/pi-plan`.
+
+**Entering / leaving.** A composer **toggle** turns Plan Mode on for the session; the model can also enter it from chat by calling a `plan_start` tool ("let's plan this first"). A persistent **calm banner** (dangerous-mode banner's twin, in a calm color) shows while active, with a one-click **Exit** and a **"Wrap up the plan"** nudge. Leaving Plan Mode — and starting implementation — is **human-only** (see the security invariant).
+
+**Read-only gate.** While Plan Mode is active, the bridge's `tool_call` gate runs a plan clamp **before** the normal permission engine and **before** the dangerous/bypass check (Plan Mode wins over bypass — "read-only" must mean read-only or the banner lies): mutating built-ins (`edit`, `write`) and `subagent` are **blocked**; `bash` is limited to a **fail-closed read-only allowlist** (inspection commands + safe `git`/`gh`/`npm` queries; redirects, substitutions, background jobs, and chains with any unsafe segment are rejected); read-only built-ins (`read`/`grep`/`glob`/`list`/`ls`) auto-run; **everything else** (MCP, unknown extension tools) falls through to the normal rule engine with a **floor of ask** (never auto-allowed in Plan Mode; explicit deny still denies). A blocked call renders as a quiet "Skipped — not allowed in plan mode" card, audit-logged like any gate decision.
+
+**The plan is a workspace file.** On completion the model calls `plan_complete({plan})`; the **app (main process)** writes the plan to `.agents/plans/NNN-<slug>.md` (path-confined + audited, the agents-md-maker write pattern). The plan markdown must contain a **Tasks checklist** (`- [ ]` items) and a **Verification** section. The plan then lives on disk — visible in the file tree, openable in the built-in editor, hand-editable — so compaction can never eat it (the agent re-reads the file), and drift is handled by the plan being a **living document** the agent updates as reality differs. The implement handoff **references the file** ("Execute the approved plan in `<path>`: read it if needed, keep it scoped, update it if reality differs, run its verification") rather than pasting the plan into context.
+
+**Status lifecycle.** The plan file carries **front-matter status** `draft → implementing → implemented | cancelled` (timestamped). "Implemented" comes from an **explicit signal, never inference**: the implementing agent calls `plan_status_update` when the Verification passes — the same structured-tool-call philosophy as `plan_complete`. If it forgets, status stays `implementing` (no worse than a latch) and the checklist `n/m` progress still tells the story. The **PlanCard** in the transcript shows the plan, live checklist progress, and status-dependent actions (draft → Implement / Keep planning / Discard · implementing → progress + Stop · implemented → ✓ · cancelled → Reopen). The user can always override the status from the card, including **Reopen** (human-only).
+
+**Security invariant.** The model may only **restrict itself** (`plan_start`) or **record terminal facts** (`plan_status_update` → implemented/cancelled). Every transition that **grants power** — Implement (restores full tools), exiting Plan Mode, Reopen — is **human-only** (button/confirm). There is no `plan_off` tool. Model-side transitions are auto-allowed (they never touch permissions) but audited with **who** set them (model | human).
+
+**Model nudges (Decision, 2026-07-20).** Because planning rewards reasoning and implementation rewards throughput, the UI **nudges both ways**: entering Plan Mode suggests using your **smartest model** for planning; the Implement action lets the user **pick a reasonable model** for the implementation turn (pre-filled with the session model, reusing the session model override).
+
+**Lifecycle & interplay.** Exiting mid-turn **aborts the running turn first**, then restores tools (the "must be idle" rule, like rewind). Each fresh entry into Plan Mode starts a **new** numbered plan file; a revision within one planning phase updates the **same** file. Discard clears the session's plan state but **leaves the file on disk** (the user's artifact). Plan state is **persisted in the session file** (`pi.appendEntry`) and restored on respawn — unlike dangerous mode, it survives hibernation and MCP live-reload. Parallel sessions in one workspace never collide because the main process serializes plan-file numbering. Sub-agents in Plan Mode: see §12.
+
+**Out of scope for V1 (post-V1 pointers):** a per-tool selector for opting extra tools into planning; a git-baseline capture at Implement with one-click file-rollback (concrete prior art in `@bacnh85/pi-plan`'s `/rewind`; the natural anchor for the file-rollback rewind §9/§13 defer to V2). Wire shapes: `docs/validation/d1.md` §Plan Mode.
 
 ---
 
