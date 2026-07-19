@@ -791,7 +791,7 @@ export function ChatView({
               onClick={onAbort}
               aria-label="Stop"
               title="Stop the agent"
-              className="rounded-xl text-berry px-3 py-2 hover:bg-berry-soft cursor-pointer transition-colors"
+              className="shrink-0 size-8 flex items-center justify-center rounded-xl text-berry hover:bg-berry-soft cursor-pointer transition-colors"
             >
               <StopIcon />
             </button>
@@ -801,7 +801,7 @@ export function ChatView({
             disabled={!input.trim()}
             aria-label={busy ? "Steer" : "Send"}
             title={busy ? "Steer — lands between tool calls" : "Send"}
-            className="rounded-xl bg-tangerine text-paper px-4 py-2 transition-all enabled:hover:brightness-105 enabled:active:translate-x-[2px] enabled:active:translate-y-[2px] enabled:cursor-pointer disabled:opacity-40"
+            className="shrink-0 size-8 flex items-center justify-center rounded-xl text-tangerine hover:bg-paper-deep/40 transition-colors enabled:cursor-pointer disabled:opacity-40"
           >
             <SendIcon />
           </button>
