@@ -11,6 +11,9 @@ import {
 } from "./hv-context";
 import { parseAgentFile, renderSubagentSection, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
+import {
+  buildPlanPrompt, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, type PlanState, type PlanSessionEntry,
+} from "./hv-plan";
 // Async subagents (PRD §12): pi-subagents is co-resident on the SAME pi.events
 // bus, so the bridge subscribes to its in-process lifecycle events and relays
 // them as hv.subagent notifies (they never reach RPC stdout on their own). The
@@ -109,6 +112,19 @@ let rulesError: string | null = null;
 // every respawn, so unlike the manual toggle it survives a respawn.
 let dangerous = process.env.HV_BYPASS === "1";
 
+// ── §23 Plan Mode ───────────────────────────────────────────────────────────
+// Per-session read-only mode. State is {enabled, planPath?}; plan TEXT + STATUS
+// live only in the workspace file (main writes it). Persisted via pi.appendEntry
+// (like context marks) and — unlike dangerous mode — RESTORED on respawn, so a
+// hibernation/MCP-reload respawn keeps the session in plan mode. The tool_call
+// clamp (gatePlanCall) runs BEFORE the dangerous/bypass check: plan mode wins
+// over bypass ("read-only" must mean read-only). setActiveTools is best-effort
+// hygiene only; the clamp is the real enforcement.
+let plan: PlanState = { enabled: false };
+// Tool-call id of the last plan_complete, so /hv-plan off can mark its call/
+// result out of future model context (reuse the context-marks mechanism).
+let lastPlanCompleteCallId: string | undefined;
+let toolsBeforePlan: string[] | undefined;
 // ── B5 context visibility (docs/validation/d1.md §hv.context) ───────────────
 // The kill-set of context marks. Persisted as `hv-context-marks` custom entries
 // (pi.appendEntry — do NOT enter LLM context), restored on session_start, and
@@ -135,6 +151,34 @@ function persistMarks(pi: ExtensionAPI): void {
   pi.appendEntry(CONTEXT_MARKS_TYPE, { marks: [...contextMarks] });
 }
 
+// §23 plan-state persistence — full snapshot, newest wins (mirrors marks).
+function persistPlan(pi: ExtensionAPI): void {
+  pi.appendEntry(PLAN_STATE_TYPE, { ...plan });
+}
+function emitPlan(ui: { notify(m: string, t?: "info" | "warning" | "error"): void }): void {
+  ui.notify(JSON.stringify({ kind: "hv.plan", enabled: plan.enabled, planPath: plan.planPath ?? null }), "info");
+}
+// Best-effort model-facing hygiene: hide mutating tools from the model while
+// planning. The tool_call clamp is the real enforcement; these APIs are unused
+// elsewhere in the app, so failures are swallowed.
+// ponytail: gate is enforcement; setActiveTools is cosmetic, unproven in this repo.
+function applyPlanTools(pi: ExtensionAPI): void {
+  try {
+    const get = (pi as unknown as { getActiveTools?: () => string[] }).getActiveTools;
+    const set = (pi as unknown as { setActiveTools?: (t: string[]) => void }).setActiveTools;
+    if (!get || !set) return;
+    if (plan.enabled) {
+      if (!toolsBeforePlan) toolsBeforePlan = get.call(pi);
+      set.call(pi, toolsBeforePlan.filter((t) => !["edit", "write", "multi_edit", "subagent"].includes(t)));
+    } else if (toolsBeforePlan) {
+      set.call(pi, toolsBeforePlan);
+      toolsBeforePlan = undefined;
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
 function loadRules(): void {
   rulesError = null;
   const file = process.env.HV_RULES_FILE;
@@ -149,7 +193,7 @@ function loadRules(): void {
 }
 
 type AuditDecision = "allow" | "allow-session" | "deny";
-type AuditSource = "rule" | "user" | "dangerous" | "safe-default";
+type AuditSource = "rule" | "user" | "dangerous" | "safe-default" | "plan";
 
 /** Every permission decision emits one hv.audit notify — main's audit channel. */
 function audit(
@@ -216,7 +260,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi); // all extensions have registered by now (idempotent across reloads)
-    restoreMarks(ctx.sessionManager.getEntries() as unknown as SessionEntry[]);
+    const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
+    restoreMarks(entries);
+    // §23: plan state SURVIVES respawn (unlike dangerous mode). Restore + re-emit
+    // so the renderer resyncs its banner/toggle after a hibernation/MCP respawn.
+    plan = restorePlanState(entries as unknown as PlanSessionEntry[]);
+    if (plan.enabled) applyPlanTools(pi);
+    emitPlan(ctx.ui);
     busUi = ctx.ui;
   });
 
@@ -231,7 +281,10 @@ export default function (pi: ExtensionAPI) {
     // function declaration below in this closure.
     const agents = enumerateAgents();
     const agentsSection = renderSubagentSection(agents);
-    const injected = sp + section + agentsSection;
+    // §23: while planning, prepend the read-only planning directive (single-turn
+    // replacement, same mechanism as the nested/agents sections).
+    const planSection = plan.enabled ? "\n\n" + buildPlanPrompt() : "";
+    const injected = sp + section + agentsSection + planSection;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -258,7 +311,7 @@ export default function (pi: ExtensionAPI) {
       // Per-agent weight of the injected roster (name line ≈ chars/4 tokens).
       agents: agents.map((a) => ({ name: a.name, chars: `- **${a.name}** — ${a.description.slice(0, 200)}`.length })),
     };
-    if (section || agentsSection) return { systemPrompt: injected };
+    if (section || agentsSection || planSection) return { systemPrompt: injected };
   });
 
   // The only place removal takes effect. Non-destructive: session file untouched.
@@ -368,9 +421,24 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
+    // §23 Plan Mode clamp — runs BEFORE dangerous/bypass and the rule engine, so
+    // plan mode wins over bypass (read-only must mean read-only). Applies to NEW
+    // calls only; an in-flight async delegation is untouched.
+    let planFloorAsk = false;
+    if (plan.enabled) {
+      const g = gatePlanCall(tool, input);
+      if (g.kind === "block") {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "plan" });
+        ctx.ui.notify(JSON.stringify({ kind: "hv.plan.blocked", toolName: tool, toolCallId: event.toolCallId, reason: g.reason }), "info");
+        return { block: true, reason: g.reason };
+      }
+      planFloorAsk = g.kind === "floor-ask"; // clamp allow→ask below; deny still denies
+    }
+
     // Dangerous mode: everything runs without prompting, but NEVER silently —
     // each call is audit-flagged and the renderer shows a permanent banner.
-    if (dangerous) {
+    // (Skipped while planning: plan mode ignores bypass entirely.)
+    if (dangerous && !plan.enabled) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "dangerous" });
       return;
     }
@@ -381,7 +449,10 @@ export default function (pi: ExtensionAPI) {
       audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule", rule: v.rule });
       return { block: true, reason: `Blocked by HappyVibe permission rule (${v.rule?.layer}: ${v.rule?.pattern})` };
     }
-    if (v.action === "allow") {
+    // §23 floor-of-ask: while planning, "everything else" (MCP/unknown tools)
+    // never auto-allows — an allow becomes an ask; deny already returned above,
+    // explicit rules are honored by falling through to the prompt.
+    if (v.action === "allow" && !planFloorAsk) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: v.source === "rule" ? "rule" : "safe-default", rule: v.rule });
       return;
     }
@@ -389,7 +460,8 @@ export default function (pi: ExtensionAPI) {
     // MCP discovery (search/describe/connect) is read-only against servers the
     // user configured — allow by default; an explicit ask/deny rule still wins
     // (handled above), matching the SAFE_TOOLS safe-default semantics.
-    if (mcp?.kind === "discovery" && v.source === "default") {
+    // (Not while planning: the floor-of-ask covers discovery too.)
+    if (mcp?.kind === "discovery" && v.source === "default" && !planFloorAsk) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "safe-default" });
       return;
     }
@@ -720,6 +792,120 @@ export default function (pi: ExtensionAPI) {
       let text = answers ? answersMarkdown(answers) : `The user answered: ${value}`;
       if (notes.length) text += `\n\n(Your input was adjusted: ${notes.join("; ")}.)`;
       return { content: [{ type: "text", text }], details: { answers } };
+    },
+  });
+
+  // ── §23 Plan Mode: registered tools ──────────────────────────────────────
+  // plan_complete: model submits the finished plan. Blocking round-trip — main
+  // writes the workspace file and answers with its path (becomes the tool result
+  // AND planPath). Same blocking channel as ask_user (JSON in the input title).
+  pi.registerTool({
+    name: "plan_complete",
+    label: "Complete plan",
+    description:
+      "Submit the finished, decision-complete implementation plan for the user to review. " +
+      "Only available in Plan Mode, and only as your FINAL action of the turn (call it alone). " +
+      "Pass the complete plan as Markdown with a '# title', a '## Tasks' GFM checklist (- [ ] …), " +
+      "and a '## Verification' section. On revision, pass a complete replacement plan, not a delta.",
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence describing the plan." }),
+      plan: Type.String({ description: "The complete implementation plan as Markdown (title + summary + ## Tasks checklist + ## Verification)." }),
+    }),
+    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+      if (!plan.enabled) return { content: [{ type: "text", text: "plan_complete is only available in Plan Mode." }], details: {} };
+      const { plan: planMd } = params as { plan?: string };
+      if (typeof planMd !== "string" || !planMd.trim()) {
+        return { content: [{ type: "text", text: "plan_complete requires a non-empty plan." }], details: {} };
+      }
+      // Main writes .agents/plans/NNN-slug.md and returns the workspace-relative
+      // path; on failure it returns an error string (never leaves us blocked).
+      const relPath = await ctx.ui.input(JSON.stringify({ kind: "hv.plan-write", plan: planMd }), "");
+      if (typeof relPath !== "string" || !relPath) {
+        return { content: [{ type: "text", text: "The plan could not be saved. Stay in Plan Mode and try plan_complete again." }], details: {} };
+      }
+      plan.planPath = relPath;
+      lastPlanCompleteCallId = toolCallId;
+      persistPlan(pi);
+      emitPlan(ctx.ui);
+      return {
+        content: [{ type: "text", text: `Plan saved to ${relPath}. It is ready for the user to review and implement — do not implement it yourself; wait for the user.` }],
+        details: { planPath: relPath },
+      };
+    },
+  });
+
+  // plan_start: model enters Plan Mode from normal chat. Restrictive-only —
+  // leaving Plan Mode is human-only (no plan_off tool exists), the §23 invariant.
+  pi.registerTool({
+    name: "plan_start",
+    label: "Start plan mode",
+    description:
+      "Enter Plan Mode for this session when the user asks you to plan before acting. In Plan Mode " +
+      "you explore read-only and draft an implementation plan; you cannot modify anything. Leaving " +
+      "Plan Mode and starting implementation are the user's choice — you cannot exit it yourself.",
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you will plan." }),
+    }),
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+      if (!plan.enabled) {
+        plan = { enabled: true, planPath: undefined };
+        applyPlanTools(pi);
+        persistPlan(pi);
+        emitPlan(ctx.ui);
+      }
+      return { content: [{ type: "text", text: "Plan Mode is on. Explore read-only, ask any decisions via ask_user, then finish with plan_complete." }], details: {} };
+    },
+  });
+
+  // plan_status_update: model records a TERMINAL fact (never grants power). Main
+  // rewrites the plan file's front-matter and audits {who:"model"}.
+  pi.registerTool({
+    name: "plan_status_update",
+    label: "Update plan status",
+    description:
+      "Record the terminal status of the current plan: 'implemented' once you have completed the plan " +
+      "AND its Verification passes, or 'cancelled' if the user abandons it. Only these two values.",
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence." }),
+      status: Type.Union([Type.Literal("implemented"), Type.Literal("cancelled")], { description: "'implemented' (verification passed) or 'cancelled'." }),
+      note: Type.Optional(Type.String({ description: "Optional short note (e.g. what verification confirmed)." })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const { status, note } = params as { status?: string; note?: string };
+      if (!plan.planPath) return { content: [{ type: "text", text: "No plan is associated with this session." }], details: {} };
+      if (status !== "implemented" && status !== "cancelled") {
+        return { content: [{ type: "text", text: "status must be 'implemented' or 'cancelled'." }], details: {} };
+      }
+      ctx.ui.notify(JSON.stringify({ kind: "hv.plan-status", status, note: note ?? "" }), "info");
+      return { content: [{ type: "text", text: `Plan marked ${status}.` }], details: { status } };
+    },
+  });
+
+  // /hv-plan on|off — driven from main (the toggle, Implement, Discard). Enter is
+  // also reachable via plan_start; exit/implement is human-only via this command.
+  pi.registerCommand("hv-plan", {
+    description: "HappyVibe: plan mode. Usage: /hv-plan on|off",
+    handler: async (args, ctx) => {
+      const arg = args.trim();
+      if (arg !== "on" && arg !== "off") {
+        ctx.ui.notify(JSON.stringify({ kind: "hv.plan", stage: "error", message: "Usage: /hv-plan on|off" }), "error");
+        return;
+      }
+      if (arg === "on") {
+        if (!plan.enabled) plan = { enabled: true, planPath: undefined };
+      } else {
+        plan.enabled = false;
+        // Context hygiene: drop the plan_complete call/result from future model
+        // context (it's a completed turn by now) — reuse the marks mechanism.
+        if (lastPlanCompleteCallId) {
+          contextMarks.add(`tool:${lastPlanCompleteCallId}` as MarkKey);
+          persistMarks(pi);
+          lastPlanCompleteCallId = undefined;
+        }
+      }
+      applyPlanTools(pi);
+      persistPlan(pi);
+      emitPlan(ctx.ui);
     },
   });
 
