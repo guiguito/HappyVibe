@@ -21,6 +21,13 @@ export interface RawMessage {
   isError?: boolean;
 }
 
+/**
+ * §23: plan-mode tools are internal transitions, not raw tool cards. On reopen
+ * the PlanCard is rebuilt from the bridge's hv.plan notify (planPath) instead,
+ * so these are skipped here to avoid a confusing duplicate.
+ */
+const PLAN_TOOLS = new Set(["plan_complete", "plan_start", "plan_status_update"]);
+
 /** Concatenate the text blocks of a message's content (drops thinking/tool blocks). */
 export function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -36,6 +43,7 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
   const byCallId = new Map<string, Extract<RestoreItem, { kind: "tool" }>>();
   for (const m of raw) {
     if (m.role === "toolResult") {
+      if (m.toolName && PLAN_TOOLS.has(m.toolName)) continue; // §23: not a card
       const tool = m.toolCallId ? byCallId.get(m.toolCallId) : undefined;
       if (tool) {
         tool.result = messageText(m.content);
@@ -55,7 +63,7 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
       const block = b as { type?: string; text?: string; id?: string; name?: string; arguments?: unknown };
       if (block.type === "text" && block.text?.trim()) {
         items.push({ kind: "assistant", text: block.text });
-      } else if (block.type === "toolCall" && block.id && block.name) {
+      } else if (block.type === "toolCall" && block.id && block.name && !PLAN_TOOLS.has(block.name)) {
         const tool: Extract<RestoreItem, { kind: "tool" }> = {
           kind: "tool",
           toolCallId: block.id,
