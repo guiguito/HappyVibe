@@ -595,7 +595,7 @@ export function ChatView({
             Model saved — applies when this session restarts.
           </div>
         )}
-        <div className={`max-w-3xl mx-auto flex gap-2 ${multiline ? "items-start" : "items-center"} rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-3 py-2 focus-within:border-tangerine transition-colors`}>
+        <div className={`max-w-3xl mx-auto flex gap-1.5 ${multiline ? "items-start" : "items-center"} rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-2 py-1.5 focus-within:border-tangerine transition-colors`}>
           {/* W2.1: "+" attach menu — always visible; entries gate honestly. */}
           <div className="relative shrink-0">
             <button
