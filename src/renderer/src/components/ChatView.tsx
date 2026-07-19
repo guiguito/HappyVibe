@@ -320,6 +320,44 @@ export function ChatView({
           at the top of this pane) — not a floating overlay that could bleed over
           an adjacent split pane. */}
       <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
+        {/* §23: compact plan-mode indicator (left) — read-only badge with a
+            wrap-up nudge and one-click exit. Replaces the full-width banner. */}
+        {planEnabled && (
+          <div className="mr-auto flex items-center gap-1.5">
+            <span
+              className="flex items-center gap-1 rounded-full bg-sky-soft text-sky text-[11px] font-bold px-2 py-0.5"
+              title="Plan mode — read-only. I can explore and draft a plan but can't change anything. Tip: planning loves your smartest model."
+            >
+              <span aria-hidden>🧭</span> Plan mode
+            </span>
+            {sessionId && (
+              <button
+                type="button"
+                onClick={() =>
+                  void window.hv.promptSession(
+                    sessionId,
+                    "Finalize the implementation plan now. If a material decision remains, ask me via ask_user. Otherwise call plan_complete alone as your final action with the complete decision-ready plan.",
+                  )
+                }
+                title="Ask the agent to finalize the plan now"
+                className="text-[11px] font-semibold text-sky/80 hover:text-sky cursor-pointer"
+              >
+                Wrap up
+              </button>
+            )}
+            {onTogglePlan && (
+              <button
+                type="button"
+                onClick={() => onTogglePlan(false)}
+                title="Exit plan mode"
+                aria-label="Exit plan mode"
+                className="text-sky/70 hover:text-sky cursor-pointer leading-none text-sm"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
         <button
           type="button"
           onClick={() => onSearchOpenChange(!searchOpen)}

@@ -829,10 +829,12 @@ export function registerIpc(win: BrowserWindow): void {
       planCmd(sessionId, "/hv-plan off");
       const busy = !activity.isIdle(sessionId);
       const msg =
-        `Plan mode is off, full tools restored. Execute the approved plan in ${relPath}: read it if ` +
-        `needed, keep the implementation scoped to it, update it if reality differs materially, and run ` +
-        `the verification it describes. When the verification passes, call plan_status_update with ` +
-        `status "implemented".`;
+        `Plan mode is off, full tools restored. Execute the approved plan in ${relPath}. ` +
+        `Keep the plan file in sync with your progress AS YOU GO: the moment you finish a task, ` +
+        `use the edit tool on ${relPath} to change that task's "- [ ]" to "- [x]" (do this immediately ` +
+        `after each task, not all at the end). Keep the implementation scoped to the plan, and if reality ` +
+        `differs materially, edit the plan to match. When every task is done and the plan's Verification ` +
+        `section passes, call plan_status_update with status "implemented".`;
       await client?.send(promptCommand(msg, busy ? "followUp" : undefined)).catch(() => {});
       activity.prompted(sessionId);
       void log.append({ type: "plan.implement", sessionId, workspaceId: wsId, data: { path: relPath } });

@@ -57,6 +57,10 @@ export default function App(): React.JSX.Element {
   // B2: pending steering/follow-up queue per session (mirrors Pi queue_update).
   const [queues, setQueues] = useState<Record<string, QueueState>>({});
   const queueRef = useRef<Record<string, QueueState>>({});
+  // Fresh sessions snapshot for the (stale-closure) ui-request handler — the
+  // listener effect runs once, so it can't read the `sessions` state directly.
+  const sessionsRef = useRef<SessionMeta[]>([]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   // Per-session permission prompt queues (B4): the modal shows the focused
   // session's oldest pending prompt; the rest badge the sidebar + dock.
   const [uiQueue, setUiQueue] = useState<QueuedPrompt[]>([]);
@@ -302,7 +306,7 @@ export default function App(): React.JSX.Element {
       if (pl !== null && r.sessionId) {
         const sid = r.sessionId;
         setPlanMode((p) => ({ ...p, [sid]: pl }));
-        const wsId = sessions.find((s) => s.id === sid)?.workspaceId;
+        const wsId = sessionsRef.current.find((s) => s.id === sid)?.workspaceId;
         if (pl.planPath && wsId) ensurePlanCard(sid, wsId, pl.planPath);
       }
       const pb = parsePlanBlocked(r);
@@ -1001,34 +1005,6 @@ export default function App(): React.JSX.Element {
               className="text-xs font-bold rounded-lg border-2 border-berry px-2.5 py-1 hover:bg-berry hover:text-paper cursor-pointer"
             >
               Turn off
-            </button>
-          </div>
-        )}
-        {/* §23: calm read-only Plan Mode banner (twin of the dangerous banner). */}
-        {activeView === "chat" && selectedId && planMode[selectedId]?.enabled && (
-          <div className="flex items-center gap-3 px-6 py-2.5 bg-sky-soft border-b-2 border-sky/50 text-sm font-semibold text-sky">
-            <span className="flex-1">
-              Plan mode — read-only. I can explore your project and draft a plan, but can't change anything.
-              <span className="ml-2 font-normal text-sky/80">Tip: planning loves your smartest model.</span>
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                void window.hv.promptSession(
-                  selectedId,
-                  "Finalize the implementation plan now. If a material decision remains, ask me via ask_user. Otherwise call plan_complete alone as your final action with the complete decision-ready plan.",
-                )
-              }
-              className="shrink-0 text-xs font-bold rounded-lg border-2 border-sky px-2.5 py-1 hover:bg-sky hover:text-paper cursor-pointer"
-            >
-              Wrap up the plan
-            </button>
-            <button
-              type="button"
-              onClick={() => void window.hv.planSet(selectedId, false)}
-              className="shrink-0 text-xs font-bold rounded-lg border-2 border-sky px-2.5 py-1 hover:bg-sky hover:text-paper cursor-pointer"
-            >
-              Exit
             </button>
           </div>
         )}
