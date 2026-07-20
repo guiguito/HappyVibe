@@ -12,7 +12,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 
 ## Tests
 - Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated):
-  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-md-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge}.test.ts
+  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-md-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge,plan-bridge}.test.ts
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
 - Contract tests are the Pi upgrade gate: any pi/pi-subagents pin bump must pass them.
@@ -69,6 +69,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - MCP OAuth is host-driven in main (`src/main/mcpOAuth.ts`): `OAuthClientProvider` + loopback callback + `shell.openExternal` + `state` CSRF check + `transport.finishAuth` + fresh transport reconnect. Tokens written as `AuthEntry` (stamped `serverUrl`) so the adapter reads them at runtime. IPC: `hv:mcp-authenticate` / `hv:mcp-logout`. Add-time confirm-with-tools modal; per-server Authenticate / Log out; startup status sweep. Contract test `tests/mcp-adapter-authformat.test.ts` must pass on any pi-mcp-adapter pin bump. See docs/validation/m1.md.
 - MCP intent: `mcp` is in `INTENT_TOOLS` (happyvibe-bridge.ts) — `requireIntent` injects a required `intent` into the adapter's proxy schema, so the model authors a customer-facing headline per MCP call (toolLabel.ts mcp case = `intent ?? unwrapMcpCall().display`). Proxy mode: the proxy `execute` ignores the top-level intent (not forwarded to the server). DIRECT MODE: the direct executor forwards params VERBATIM, so `requireIntent` also injects intent into every adapter-registered direct tool (`sourceInfo.path` contains pi-mcp-adapter) and the bridge's `tool_call` handler STRIPS `input.intent` for those tools before anything reads input (Pi's mutable-input hook; `strippedIntentTools` set). UI still sees intent — `tool_execution_start` fires with original args BEFORE tool_call handlers. Server tools with their own `intent` param: no injection, no strip. The permission prompt uses the FACTUAL `unwrapMcpCall().display` (now enriched with a key arg like url/query), NOT the model's intent (safety). `unwrapMcpCall` is the single source for that factual display (gate + renderer). Unit contract: tests/intent-direct-tools.test.ts.
 - MCP live-reload: Pi/the adapter read MCP config only at spawn (no live tool-reload API). So `hv:mcp-set-server`/`hv:mcp-authenticate`/`hv:mcp-logout` call `scheduleMcpReload` (debounced, coalesces add+auth) → respawn affected live sessions RESUMED (`startClient(meta,true)` — the hibernation path; conversation preserved via the session file). Scope: global change → all live sessions, workspace change → that workspace's (`affectedSessionIds`, `mcpReloadScope.ts`). Only IDLE sessions (`activity.isIdle`) reload immediately; busy ones defer via `pendingMcpReload`, drained on `agent_end` / permission-prompt close. A respawn RESETS that session's in-memory `sessionGrants` + dangerous mode to safe defaults (`hv:session-reloading` → renderer notice). After respawn, main fires `/hv-tools` to refresh the displayed tool list.
+
+- Plan Mode (§23, `hv-plan.ts` + bridge + `src/main/plans.ts`): per-session read-only mode. The
+  `gatePlanCall` clamp runs in the tool_call handler BEFORE the dangerous/bypass check and the rule
+  engine — plan mode wins over bypass. plan_complete/plan_start/plan_status_update are in `SAFE_TOOLS`
+  (hv-rules.ts) so they never raise a permission prompt (they're app-internal control tools, not
+  side effects) — forgetting this makes plan_complete hang on a permission modal that auto-denies.
+  The plan is a workspace file `.agents/plans/NNN-slug.md` written by MAIN (path-confined, numbering
+  serialized) — the bridge only gets the path back via the BLOCKING hv.plan-write input round-trip
+  (main must ALWAYS respondUi, error string on failure, else the bridge hangs). Plan state
+  `{enabled,planPath}` persists via appendEntry and is restored + re-emitted (hv.plan notify) on
+  session_start — SURVIVES respawn, unlike dangerous mode. `.agents` is in files.ts DOTFILE_ALLOW so
+  plans show in the tree + the watcher pushes hv:plan-changed for live n/m checklist progress. Implement/
+  exit/reopen are human-only IPC (no plan_off tool) — the security invariant.
 
 ## Docs workflow
 Locked product decisions go to BOTH the Notion PRD and docs/prd.md in the same session,

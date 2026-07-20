@@ -29,6 +29,8 @@ import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/comma
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
+import { readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
+import type { PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
@@ -60,6 +62,29 @@ function parseAuditNotify(r: { method?: string; message?: string }): Record<stri
   try {
     const p = JSON.parse(r.message ?? "") as Record<string, unknown>;
     return p?.kind === "hv.audit" ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/** §23: a plan-family notify (hv.plan | hv.plan-status | hv.plan.blocked), else null. */
+function parsePlanNotify(r: { method?: string; message?: string }): Record<string, unknown> | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "") as Record<string, unknown>;
+    const k = p?.kind;
+    return k === "hv.plan" || k === "hv.plan-status" || k === "hv.plan.blocked" ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/** §23: the blocking plan-write input payload (main writes the file, answers with the path), else null. */
+function parsePlanWrite(r: { method?: string; title?: string }): { plan: string } | null {
+  if (r.method !== "input") return null;
+  try {
+    const p = JSON.parse(r.title ?? "") as { kind?: string; plan?: unknown };
+    return p?.kind === "hv.plan-write" && typeof p.plan === "string" ? { plan: p.plan } : null;
   } catch {
     return null;
   }
@@ -359,6 +384,55 @@ export function registerIpc(win: BrowserWindow): void {
         send("hv:ui-request", { ...r, sessionId });
         return;
       }
+      // §23 Plan Mode. plan-write is a BLOCKING input: main writes the workspace
+      // file and answers with its path (never forwards to the renderer, never
+      // leaves the bridge hanging — an error still resolves with a message).
+      const planWrite = parsePlanWrite(r as { method?: string; title?: string });
+      if (planWrite) {
+        void (async () => {
+          const rid = r.id;
+          const wsId = meta?.workspaceId;
+          try {
+            if (!wsId) throw new Error("No workspace for this session");
+            const now = new Date().toISOString();
+            const relPath = await writePlanFile(workspaces.list(), wsId, planWrite.plan, now, planState.get(sessionId)?.planPath);
+            planState.set(sessionId, { enabled: true, planPath: relPath });
+            void log.append({ type: "plan.ready", sessionId, workspaceId: wsId, data: { path: relPath } });
+            client.respondUi(rid, { value: relPath });
+          } catch (e) {
+            client.respondUi(rid, { value: `ERROR: ${e instanceof Error ? e.message : String(e)}` });
+          }
+        })();
+        return;
+      }
+      // Plan-family notifies (mode toggle, terminal status, blocked tool) —
+      // fire-and-forget: audit, update main-side plan state, forward to renderer.
+      const planN = parsePlanNotify(r);
+      if (planN) {
+        const wsId = meta?.workspaceId;
+        if (planN.kind === "hv.plan" && typeof planN.enabled === "boolean") {
+          const prev = planState.get(sessionId);
+          planState.set(sessionId, { enabled: planN.enabled, planPath: (typeof planN.planPath === "string" ? planN.planPath : undefined) ?? prev?.planPath });
+          if (prev?.enabled !== planN.enabled) {
+            void log.append({ type: planN.enabled ? "plan.enter" : "plan.exit", sessionId, workspaceId: wsId, data: {} });
+          }
+        } else if (planN.kind === "hv.plan-status" && wsId) {
+          const relPath = planState.get(sessionId)?.planPath;
+          const status = planN.status;
+          if (relPath && (status === "implemented" || status === "cancelled")) {
+            void setPlanStatus(workspaces.list(), wsId, relPath, status, new Date().toISOString())
+              .then((parsed) => {
+                void log.append({ type: "plan.status", sessionId, workspaceId: wsId, data: { path: relPath, status, who: "model", note: planN.note ?? "" } });
+                send("hv:plan-changed", { workspaceId: wsId, path: relPath, status: parsed.status, done: parsed.done, total: parsed.total });
+              })
+              .catch(() => {});
+          }
+        } else if (planN.kind === "hv.plan.blocked") {
+          void log.append({ type: "plan.blocked", sessionId, workspaceId: wsId, data: { toolName: planN.toolName } });
+        }
+        send("hv:ui-request", { ...r, sessionId });
+        return;
+      }
       uiOwners.set(r.id, sessionId);
       // W1.3: an unanswered permission prompt protects the session from hibernation.
       if (isPermissionPrompt(r)) activity.promptOpened(sessionId);
@@ -368,6 +442,9 @@ export function registerIpc(win: BrowserWindow): void {
 
   // Sessions deferred for an MCP reload (declared here so session-exit can clear them).
   const pendingMcpReload = new Set<string>();
+
+  // §23: per-session plan mode + current plan-file path (fed by hv.plan notifies).
+  const planState = new Map<string, { enabled: boolean; planPath?: string }>();
 
   // ── Async subagent status pollers (one per live detached run, by runId) ────
   const subagentPollers = new Map<string, { sessionId: string; stop: () => void }>();
@@ -709,6 +786,80 @@ export function registerIpc(win: BrowserWindow): void {
     void client.send({ type: "compact" }).catch(() => {});
   });
 
+  // ── §23 Plan Mode: renderer-driven transitions ────────────────────────────
+  // All power-granting transitions (implement, exit, reopen) live here — the
+  // model can never invoke them (there is no plan_off tool), per the invariant.
+  const planCmd = (sessionId: string, message: string): void => {
+    void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message }).catch(() => {});
+  };
+  // Aborts a mid-turn session before flipping plan mode off, so no half-planning
+  // turn survives with restored tools (the "must be idle" rule, like rewind).
+  const abortIfBusy = async (sessionId: string): Promise<void> => {
+    if (!activity.isIdle(sessionId)) {
+      await (manager.get(sessionId) as PiClient | null)?.send({ type: "abort" }).catch(() => {});
+    }
+  };
+
+  // Enter/leave plan mode (composer toggle). Enter is restrictive-only; leaving
+  // aborts a running turn first.
+  ipcMain.handle("hv:plan-set", async (_e, sessionId: string, enabled: boolean) => {
+    if (!index.get(sessionId)) throw new Error("Unknown session");
+    if (!enabled) await abortIfBusy(sessionId);
+    planCmd(sessionId, `/hv-plan ${enabled ? "on" : "off"}`);
+  });
+
+  // Implement: exit plan mode, restore tools, hand the plan file to a normal
+  // turn. Optional per-implementation model override (the reasonable-model nudge).
+  ipcMain.handle(
+    "hv:plan-implement",
+    async (_e, sessionId: string, relPath: string, model?: { provider: string; modelId: string } | null) => {
+      const meta = index.get(sessionId);
+      if (!meta?.workspaceId) throw new Error("Unknown session");
+      const wsId = meta.workspaceId;
+      const client = manager.get(sessionId) as PiClient | null;
+      if (model && typeof model.provider === "string" && typeof model.modelId === "string") {
+        index.update(sessionId, { model });
+        sessionsChanged();
+        await client?.send({ type: "set_model", provider: model.provider, modelId: model.modelId }).catch(() => {});
+      }
+      let parsed: Awaited<ReturnType<typeof setPlanStatus>> | null = null;
+      try {
+        parsed = await setPlanStatus(workspaces.list(), wsId, relPath, "implementing", new Date().toISOString());
+      } catch { /* file may have been removed; proceed to hand off anyway */ }
+      planCmd(sessionId, "/hv-plan off");
+      const busy = !activity.isIdle(sessionId);
+      const msg =
+        `Plan mode is off, full tools restored. Execute the approved plan in ${relPath}. ` +
+        `Keep the plan file in sync with your progress AS YOU GO: the moment you finish a task, ` +
+        `use the edit tool on ${relPath} to change that task's "- [ ]" to "- [x]" (do this immediately ` +
+        `after each task, not all at the end). Keep the implementation scoped to the plan, and if reality ` +
+        `differs materially, edit the plan to match. When every task is done and the plan's Verification ` +
+        `section passes, call plan_status_update with status "implemented".`;
+      await client?.send(promptCommand(msg, busy ? "followUp" : undefined)).catch(() => {});
+      activity.prompted(sessionId);
+      void log.append({ type: "plan.implement", sessionId, workspaceId: wsId, data: { path: relPath } });
+      if (parsed) send("hv:plan-changed", { workspaceId: wsId, path: relPath, status: parsed.status, done: parsed.done, total: parsed.total });
+    }
+  );
+
+  // Discard: leave plan mode; the plan file stays on disk (the user's artifact).
+  ipcMain.handle("hv:plan-discard", async (_e, sessionId: string) => {
+    const meta = index.get(sessionId);
+    if (!meta) throw new Error("Unknown session");
+    await abortIfBusy(sessionId);
+    planCmd(sessionId, "/hv-plan off");
+    void log.append({ type: "plan.exit", sessionId, workspaceId: meta.workspaceId, data: { discard: true } });
+  });
+
+  // Human status override (mark implemented / cancelled / reopen→implementing).
+  ipcMain.handle("hv:plan-status", async (_e, sessionId: string, relPath: string, status: PlanStatus) => {
+    const meta = index.get(sessionId);
+    if (!meta?.workspaceId) throw new Error("Unknown session");
+    const parsed = await setPlanStatus(workspaces.list(), meta.workspaceId, relPath, status, new Date().toISOString());
+    void log.append({ type: "plan.status", sessionId, workspaceId: meta.workspaceId, data: { path: relPath, status, who: "human" } });
+    send("hv:plan-changed", { workspaceId: meta.workspaceId, path: relPath, status: parsed.status, done: parsed.done, total: parsed.total });
+  });
+
   // Payload field must match docs/validation/d1.md — select permission response uses { value: <choice string> }
   ipcMain.on("hv:respond-permission", (_e, id: string, choice: string) => {
     const owner = uiOwners.get(id);
@@ -1048,8 +1199,20 @@ export function registerIpc(win: BrowserWindow): void {
   // WS8: native fs watching — auto-refresh the tree (replaces the refresh button).
   ipcMain.handle("hv:watch-workspace", (_e, workspaceId: string) => {
     resolveInWorkspace(workspaces.list(), workspaceId, ""); // confinement gate
-    watchWorkspace(workspaceId, (relDirs) =>
-      send("hv:fs-changed", { workspaceId, relDirs }));
+    watchWorkspace(workspaceId, (relDirs) => {
+      send("hv:fs-changed", { workspaceId, relDirs });
+      // §23: when a plan dir changed, re-parse plan files and push live progress.
+      if (relDirs.some((d) => d === PLAN_DIR || d === ".agents" || d === "")) {
+        let names: { name: string; kind: string }[] = [];
+        try { names = listDir(workspaces.list(), workspaceId, PLAN_DIR); } catch { /* no plans yet */ }
+        for (const f of names) {
+          if (f.kind !== "file" || !f.name.endsWith(".md")) continue;
+          const rel = `${PLAN_DIR}/${f.name}`;
+          const parsed = readPlan(workspaces.list(), workspaceId, rel);
+          if (parsed) send("hv:plan-changed", { workspaceId, path: rel, status: parsed.status, done: parsed.done, total: parsed.total });
+        }
+      }
+    });
   });
   ipcMain.handle("hv:unwatch-workspace", (_e, workspaceId: string) => unwatchWorkspace(workspaceId));
 

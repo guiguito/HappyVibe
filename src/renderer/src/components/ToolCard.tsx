@@ -8,7 +8,7 @@ export interface ToolCardData {
   toolCallId: string;
   toolName: string;
   args: unknown;
-  status: "running" | "done" | "error" | "denied";
+  status: "running" | "done" | "error" | "denied" | "skipped";
   result?: unknown;
   /** Set when the permission modal granted this call. */
   approval?: "Allow" | "Allow for session";
@@ -21,6 +21,7 @@ const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
   done: { dot: "bg-leaf", label: "done" },
   error: { dot: "bg-berry", label: "error" },
   denied: { dot: "bg-berry", label: "denied" },
+  skipped: { dot: "bg-honey", label: "skipped" },
 };
 
 // ── W1.1 tool-kind icons (inline SVGs — no icon library) ────────────────────
@@ -393,6 +394,12 @@ export function ToolCard({
         {denied && (
           <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-berry-soft text-berry border border-berry/40">
             denied
+          </span>
+        )}
+        {/* §23: a tool blocked by plan mode reads as calm guidance, not an error. */}
+        {card.status === "skipped" && (
+          <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-honey-soft text-tangerine-deep border border-honey/60">
+            not in plan mode
           </span>
         )}
         {/* V2.A: destructive bash command (rm/rmdir) — flagged next to the status. */}

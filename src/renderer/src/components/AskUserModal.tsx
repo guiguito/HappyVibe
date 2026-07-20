@@ -216,21 +216,33 @@ export function AskUserModal({
             onChange={(next) => setStates((p) => p.map((s, i) => (i === active ? next : s)))}
           />
 
-          <div className="flex items-center justify-between mt-5">
-            <button type="button" className={ghostBtn} onClick={onDismiss}>
-              Dismiss
-            </button>
-            <div className="flex items-center gap-3">
-              {ask.questions.length > 1 && !allAnswered && active < ask.questions.length - 1 && (
-                <button type="button" className={ghostBtn} onClick={() => setActive(active + 1)}>
-                  Next
+          {/* One primary button: it advances ("Next") until the last question,
+              then submits ("Submit"). Disabled until the info it needs is filled —
+              the current question for Next, every question for Submit. */}
+          {(() => {
+            const isLast = active === ask.questions.length - 1;
+            return (
+              <div className="flex items-center justify-between mt-5">
+                <button type="button" className={ghostBtn} onClick={onDismiss}>
+                  Dismiss
                 </button>
-              )}
-              <button type="button" className={primaryBtn} disabled={!allAnswered} onClick={submit}>
-                Submit
-              </button>
-            </div>
-          </div>
+                {isLast ? (
+                  <button type="button" className={primaryBtn} disabled={!allAnswered} onClick={submit}>
+                    Submit
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={primaryBtn}
+                    disabled={!answered(states[active])}
+                    onClick={() => setActive(active + 1)}
+                  >
+                    Next
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

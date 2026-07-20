@@ -270,11 +270,13 @@ export function delegationHint(runs: DelegationRun[]): string | null {
  * sticky section reads it from the transcript instead of duplicating state.
  */
 export function traceFor(
-  items: ReadonlyArray<{ kind: string; card?: { toolCallId: string; trace?: SubagentTrace } }>,
+  items: ReadonlyArray<{ kind: string; card?: unknown }>,
   toolCallId: string,
 ): SubagentTrace | undefined {
   for (const it of items) {
-    if (it.kind === "tool" && it.card?.toolCallId === toolCallId) return it.card.trace;
+    if (it.kind !== "tool") continue;
+    const card = it.card as { toolCallId?: string; trace?: SubagentTrace } | undefined;
+    if (card?.toolCallId === toolCallId) return card.trace;
   }
   return undefined;
 }

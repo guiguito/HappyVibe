@@ -47,7 +47,9 @@ export interface Verdict {
 /** Tools that never need approval by default (pre-B4 spike behavior).
  * ask_user is UI-only (V2.B): prompting for permission to ask a question
  * would stack two blocking modals for a harmless call. */
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user"]);
+// §23: plan_* are app-internal control tools (mode transitions / plan submission),
+// not model-driven side effects — they must never raise a permission prompt.
+export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update"]);
 
 /** v5: Pi's built-in FILE tools — the ones whose path args we confine to the
  * workspace by default. bash is deliberately NOT here (it stays under

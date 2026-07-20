@@ -12,6 +12,8 @@ import {
   headFor,
   parseDangerous,
   parsePermission,
+  parsePlan,
+  parsePlanBlocked,
   pendingCounts,
   type PermissionChoice,
   type QueuedPrompt,
@@ -38,6 +40,9 @@ import { basename as tabBasename } from "./tabs";
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
 
+// §23: plan-mode transition tools — never rendered as raw tool cards.
+const PLAN_TOOL_NAMES = new Set(["plan_complete", "plan_start", "plan_status_update"]);
+
 export default function App(): React.JSX.Element {
   const [keyState, setKeyState] = useState<KeyState>("loading");
   const [view, setView] = useState<View>("chat");
@@ -52,11 +57,20 @@ export default function App(): React.JSX.Element {
   // B2: pending steering/follow-up queue per session (mirrors Pi queue_update).
   const [queues, setQueues] = useState<Record<string, QueueState>>({});
   const queueRef = useRef<Record<string, QueueState>>({});
+  // Fresh sessions snapshot for the (stale-closure) ui-request handler — the
+  // listener effect runs once, so it can't read the `sessions` state directly.
+  const sessionsRef = useRef<SessionMeta[]>([]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   // Per-session permission prompt queues (B4): the modal shows the focused
   // session's oldest pending prompt; the rest badge the sidebar + dock.
   const [uiQueue, setUiQueue] = useState<QueuedPrompt[]>([]);
   // Sessions currently in /hv-dangerous mode (bridge-notified, never persisted).
   const [dangerous, setDangerous] = useState<Record<string, boolean>>({});
+  // §23: per-session plan mode + current plan-file path (bridge-notified; SURVIVES
+  // respawn — the bridge re-emits hv.plan on session_start).
+  const [planMode, setPlanMode] = useState<Record<string, { enabled: boolean; planPath?: string }>>({});
+  // §23: tool-call ids blocked by plan mode → their cards render "skipped".
+  const planBlocked = useRef<Record<string, Set<string>>>({});
   // B5: latest context breakdown snapshot per session (from hv.context notify).
   const [contextSnapshots, setContextSnapshots] = useState<Record<string, ContextSnapshot>>({});
   // B5: the default model's context window — fallback for the estimated gauge.
@@ -139,6 +153,30 @@ export default function App(): React.JSX.Element {
         (toolIndex.current[sid] ??= new Map()).set(withId.card.toolCallId, items.length);
       }
       return { ...p, [sid]: [...items, withId] };
+    });
+
+  // §23: append a PlanCard for a plan path once (progress fills in via
+  // onPlanChanged); no-op if a card for that path already exists in the session.
+  const ensurePlanCard = (sid: string, wsId: string, planPath: string): void =>
+    setTranscripts((p) => {
+      const items = p[sid] ?? [];
+      if (items.some((i) => i.kind === "plan" && i.card.path === planPath)) return p;
+      const withId = { kind: "plan" as const, card: { sessionId: sid, workspaceId: wsId, path: planPath, status: "draft", done: 0, total: 0 }, id: idCounter.current++ };
+      return { ...p, [sid]: [...items, withId] };
+    });
+
+  // §23: patch a PlanCard (status/progress) by path across sessions.
+  const updatePlanCardByPath = (planPath: string, patch: Partial<{ status: string; done: number; total: number }>): void =>
+    setTranscripts((p) => {
+      let changed = false;
+      const next: Record<string, TranscriptItem[]> = {};
+      for (const [sid, items] of Object.entries(p)) {
+        next[sid] = items.map((i) => {
+          if (i.kind === "plan" && i.card.path === planPath) { changed = true; return { ...i, card: { ...i.card, ...patch } }; }
+          return i;
+        });
+      }
+      return changed ? next : p;
     });
 
   // Perf: coalesce text deltas to one React update per frame. Deltas accumulate
@@ -263,6 +301,21 @@ export default function App(): React.JSX.Element {
       if (ask) setUiQueue((q) => [...q, { kind: "askUser", req: r, ask }]);
       const dng = parseDangerous(r);
       if (dng !== null && r.sessionId) setDangerous((p) => ({ ...p, [r.sessionId!]: dng }));
+      // §23: plan-mode toggle + plan-ready card + skipped-tool marking.
+      const pl = parsePlan(r);
+      if (pl !== null && r.sessionId) {
+        const sid = r.sessionId;
+        setPlanMode((p) => ({ ...p, [sid]: pl }));
+        const wsId = sessionsRef.current.find((s) => s.id === sid)?.workspaceId;
+        if (pl.planPath && wsId) ensurePlanCard(sid, wsId, pl.planPath);
+      }
+      const pb = parsePlanBlocked(r);
+      if (pb && r.sessionId) {
+        const sid = r.sessionId;
+        (planBlocked.current[sid] ??= new Set()).add(pb.toolCallId);
+        const idx = toolIndex.current[sid] ??= new Map();
+        setTranscripts((p) => ({ ...p, [sid]: updateToolCard(p[sid] ?? [], idx, pb.toolCallId, (card) => ({ ...card, status: "skipped" as const })) }));
+      }
       // B6: agent/tool inventories are fire-and-forget (never open the modal).
       const ags = parseAgents(r);
       if (ags) setAgents(ags);
@@ -322,6 +375,11 @@ export default function App(): React.JSX.Element {
       });
     });
 
+    // §23: live plan-file progress (checklist n/m + status) from the fs watcher.
+    const offPlanChanged = window.hv.onPlanChanged(({ path, status, done, total }) => {
+      updatePlanCardByPath(path, { status, done, total });
+    });
+
     const offPiExit = window.hv.onPiExit(({ sessionId, code, intentional }) => {
       // Dead Pi: its prompts are unanswerable and dangerous mode never survives a respawn.
       setUiQueue((q) => dropSession(q, sessionId));
@@ -360,6 +418,9 @@ export default function App(): React.JSX.Element {
       // results auto-deliver as a new turn), so it never does anything useful —
       // hide its card entirely instead of showing a scary blocked-tool error.
       if ((e as { toolName?: string }).toolName === "wait") return;
+      // §23: plan-mode tools are internal transitions — the PlanCard/banner
+      // represent them, so never render them as raw tool cards.
+      if (PLAN_TOOL_NAMES.has((e as { toolName?: string }).toolName ?? "")) return;
       if (e.type === "tool_execution_start") {
         const t = e as unknown as { toolCallId: string; toolName: string; args: unknown };
         commitStream(sid); // flush the live bubble before the tool card (order preserved)
@@ -403,12 +464,15 @@ export default function App(): React.JSX.Element {
       if (e.type === "tool_execution_end") {
         const t = e as unknown as { toolCallId: string; toolName?: string; result: unknown; isError: boolean };
         const isSub = isSubagentTool(t.toolName);
+        // §23: a plan-mode block arrives as an error end — keep it calm ("skipped").
+        const blocked = planBlocked.current[sid]?.has(t.toolCallId);
+        if (blocked) planBlocked.current[sid]?.delete(t.toolCallId);
         const idx = toolIndex.current[sid] ??= new Map();
         setTranscripts((p) => ({
           ...p,
           [sid]: updateToolCard(p[sid] ?? [], idx, t.toolCallId, (card) => ({
             ...card,
-            status: t.isError ? ("error" as const) : ("done" as const),
+            status: blocked ? ("skipped" as const) : t.isError ? ("error" as const) : ("done" as const),
             result: t.result,
             // The end lacks the transcript — merge the outcome onto the
             // live trace so messages captured during _update survive.
@@ -528,6 +592,7 @@ export default function App(): React.JSX.Element {
       offUiRequest();
       offPiExit();
       offPiEvent();
+      offPlanChanged();
       offReloading();
       offSubStatus();
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
@@ -891,6 +956,7 @@ export default function App(): React.JSX.Element {
         sessions={sessions}
         statuses={statuses}
         pending={pendingCounts(uiQueue)}
+        planning={Object.fromEntries(Object.entries(planMode).map(([sid, p]) => [sid, p.enabled]))}
         selectedId={selectedId}
         view={activeView}
         onNavigate={(v) => !needsSetup && setView(v)}
@@ -1047,6 +1113,8 @@ export default function App(): React.JSX.Element {
             onSearchOpenChange={setSearchOpen}
             contextOpen={contextOpen}
             onContextOpenChange={setContextOpen}
+            planEnabled={(selectedId && planMode[selectedId]?.enabled) || false}
+            onTogglePlan={(on) => selectedId && void window.hv.planSet(selectedId, on)}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={send}
             onRetry={retryCrash}

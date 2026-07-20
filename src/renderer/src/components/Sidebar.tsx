@@ -68,6 +68,7 @@ function SessionRow({
   session,
   status,
   pending,
+  planning,
   selected,
   onSelect,
   onRename,
@@ -78,6 +79,8 @@ function SessionRow({
   status: SessionStatus | undefined;
   /** Unanswered permission prompts (B4) — attention badge. */
   pending: number;
+  /** §23: this session is in plan mode. */
+  planning?: boolean;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
@@ -125,6 +128,11 @@ function SessionRow({
           title={`${pending} permission prompt${pending === 1 ? "" : "s"} waiting`}
         >
           {pending}
+        </span>
+      )}
+      {planning && (
+        <span className="text-[10px] leading-none shrink-0" title="Plan mode — read-only" aria-label="plan mode">
+          🧭
         </span>
       )}
       {editing ? (
@@ -189,6 +197,7 @@ export function Sidebar({
   sessions,
   statuses,
   pending,
+  planning,
   selectedId,
   view,
   onNavigate,
@@ -210,6 +219,8 @@ export function Sidebar({
   statuses: Record<string, SessionStatus>;
   /** Pending permission prompts per session (B4). */
   pending: Record<string, number>;
+  /** §23: sessions currently in plan mode → a 🧭 badge. */
+  planning?: Record<string, boolean>;
   selectedId: string | null;
   view: View;
   onNavigate: (v: View) => void;
@@ -413,6 +424,7 @@ export function Sidebar({
                       session={s}
                       status={statuses[s.id]}
                       pending={pending[s.id] ?? 0}
+                      planning={planning?.[s.id] ?? false}
                       selected={view === "chat" && s.id === selectedId}
                       onSelect={() => onSelectSession(s.id)}
                       onRename={(title) => onRenameSession(s.id, title)}

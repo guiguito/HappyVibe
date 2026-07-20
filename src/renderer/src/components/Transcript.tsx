@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
+import { PlanCard, type PlanCardData } from "./PlanCard";
 import { splitMentionSegments, stripInjectedBlocks } from "../mentions";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
@@ -83,6 +84,8 @@ export type TranscriptItem = { id?: number } & (
   // W2.1: `images` = data URLs of attached images (user bubbles only).
   | { kind: "user" | "assistant"; text: string; images?: string[] }
   | { kind: "tool"; card: ToolCardData }
+  // §23: the plan-ready card (read from the workspace plan file).
+  | { kind: "plan"; card: PlanCardData }
   // B2: provider errors / session crashes as first-class transcript items.
   | { kind: "error"; text: string; retriable?: boolean }
   // A neutral, warm status line (not an error). `pending` shows an ongoing
@@ -108,6 +111,7 @@ const MessageItem = memo(function MessageItem({
   onRewind?: (it: TranscriptItem) => void;
 }): React.JSX.Element {
   if (it.kind === "tool") return <ToolCard card={it.card} workspace={workspace} onOpenFile={onOpenFile} />;
+  if (it.kind === "plan") return <PlanCard card={it.card} onOpenFile={onOpenFile} />;
   if (it.kind === "error") {
     return (
       <div className="flex items-center gap-3 rounded-xl border-2 border-berry/50 bg-berry-soft px-3.5 py-2.5 shadow-sticker">

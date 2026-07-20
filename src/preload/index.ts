@@ -57,6 +57,24 @@ contextBridge.exposeInMainWorld("hv", {
     return () => ipcRenderer.removeListener("hv:fs-changed", h);
   },
 
+  // ── §23 Plan Mode (additive) ────────────────────────────────────
+  // Enter/leave plan mode; implement / discard / status are human-only
+  // transitions (the model has no way to invoke them). hv.plan mode notifies
+  // arrive through onUiRequest; live checklist progress via onPlanChanged.
+  planSet: (sessionId: string, enabled: boolean) => ipcRenderer.invoke("hv:plan-set", sessionId, enabled),
+  planImplement: (sessionId: string, relPath: string, model?: { provider: string; modelId: string } | null) =>
+    ipcRenderer.invoke("hv:plan-implement", sessionId, relPath, model ?? null),
+  planDiscard: (sessionId: string) => ipcRenderer.invoke("hv:plan-discard", sessionId),
+  planStatus: (sessionId: string, relPath: string, status: string) =>
+    ipcRenderer.invoke("hv:plan-status", sessionId, relPath, status),
+  onPlanChanged: (
+    cb: (p: { workspaceId: string; path: string; status: string; done: number; total: number }) => void,
+  ): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { workspaceId: string; path: string; status: string; done: number; total: number });
+    ipcRenderer.on("hv:plan-changed", h);
+    return () => ipcRenderer.removeListener("hv:plan-changed", h);
+  },
+
   // ── B2: AGENTS.md (additive) ────────────────────────────────────
   readAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:read-agents-md", workspaceId),
   writeAgentsMd: (workspaceId: string, content: string) =>

@@ -12,7 +12,7 @@ import path from "node:path";
 /** Directories never shown or read (PRD: node_modules/.git ignored). */
 const IGNORED_DIRS = new Set(["node_modules", ".git", ".pi-subagents"]);
 /** Dotfiles are hidden except these (they carry agent/project config). */
-const DOTFILE_ALLOW = new Set([".pi", ".github"]);
+const DOTFILE_ALLOW = new Set([".pi", ".github", ".agents"]);
 /** Editor size cap — beyond this the UI shows an honest "too large" state. */
 export const MAX_FILE_BYTES = 1_000_000;
 

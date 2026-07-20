@@ -184,6 +184,12 @@ interface HvApi {
   watchWorkspace(workspaceId: string): Promise<void>;
   unwatchWorkspace(workspaceId: string): Promise<void>;
   onFsChanged(cb: (p: { workspaceId: string; relDirs: string[] }) => void): () => void;
+  // §23 Plan Mode
+  planSet(sessionId: string, enabled: boolean): Promise<void>;
+  planImplement(sessionId: string, relPath: string, model?: { provider: string; modelId: string } | null): Promise<void>;
+  planDiscard(sessionId: string): Promise<void>;
+  planStatus(sessionId: string, relPath: string, status: string): Promise<void>;
+  onPlanChanged(cb: (p: { workspaceId: string; path: string; status: string; done: number; total: number }) => void): () => void;
   getPathForFile(file: File): string;
 
   // B2: AGENTS.md

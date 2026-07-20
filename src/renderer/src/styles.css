@@ -27,6 +27,7 @@
   --color-berry: #cf3f2e;
   --color-berry-soft: #fbe3de;
   --color-sky: #4f83c2;
+  --color-sky-soft: #e2ecf7;
 
   --shadow-sticker: 3px 3px 0 0 var(--color-line);
   --shadow-sticker-lg: 5px 5px 0 0 var(--color-line-strong);
