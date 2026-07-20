@@ -9,6 +9,7 @@ import {
   PLAN_STATE_TYPE,
   PLAN_SAFE_SUBCOMMANDS,
   restorePlanState,
+  shouldReconcilePlanOff,
   withPlanStatus,
   type PlanSessionEntry,
 } from "../pi-runtime/extensions/hv-plan";
@@ -174,5 +175,30 @@ describe("buildPlanPrompt", () => {
     expect(p).toContain("Verification");
     expect(p).toContain("plan_complete");
     expect(p.toLowerCase()).toContain("read-only");
+  });
+});
+
+describe("shouldReconcilePlanOff — self-heal a wedged respawn (§23 mid-turn-toggle fix)", () => {
+  // The bug: clicking Plan mid-implementation persisted enabled:true; a respawn
+  // restored plan mode ON over an implementing plan, wedging the session
+  // read-only. Main forces off only on a RESTORED notify whose plan file is no
+  // longer a draft.
+  test("forces off: restored + enabled over a non-draft plan", () => {
+    expect(shouldReconcilePlanOff(true, true, "implementing")).toBe(true);
+    expect(shouldReconcilePlanOff(true, true, "implemented")).toBe(true);
+    expect(shouldReconcilePlanOff(true, true, "cancelled")).toBe(true);
+  });
+  test("forces off: restored + enabled over a missing plan file (status null)", () => {
+    expect(shouldReconcilePlanOff(true, true, null)).toBe(true);
+  });
+  test("keeps on: restored + enabled while the plan is still a draft (legit plan mode)", () => {
+    expect(shouldReconcilePlanOff(true, true, "draft")).toBe(false);
+  });
+  test("never reconciles a LIVE toggle (restored=false) — re-planning after implementing is honored", () => {
+    expect(shouldReconcilePlanOff(false, true, "implementing")).toBe(false);
+    expect(shouldReconcilePlanOff(false, true, null)).toBe(false);
+  });
+  test("never reconciles when plan mode is already off", () => {
+    expect(shouldReconcilePlanOff(true, false, "implementing")).toBe(false);
   });
 });

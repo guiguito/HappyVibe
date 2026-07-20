@@ -30,7 +30,7 @@ import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, wri
 import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import { readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
-import type { PlanStatus } from "../../pi-runtime/extensions/hv-plan";
+import { shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
@@ -411,6 +411,21 @@ export function registerIpc(win: BrowserWindow): void {
       if (planN) {
         const wsId = meta?.workspaceId;
         if (planN.kind === "hv.plan" && typeof planN.enabled === "boolean") {
+          // Self-heal a wedged respawn: plan mode only makes sense while the plan
+          // file is still a draft. A `restored` (session_start) notify that comes
+          // back enabled:true over a non-draft or missing plan file is the
+          // mid-turn-toggle wedge surviving a respawn — force it off so the
+          // session isn't stuck read-only. Only on restore: a live toggle to "on"
+          // (e.g. re-planning after implementing) must be honored, not reverted.
+          if (planN.restored === true && planN.enabled && wsId && typeof planN.planPath === "string") {
+            const parsed = readPlan(workspaces.list(), wsId, planN.planPath);
+            if (shouldReconcilePlanOff(true, true, parsed?.status ?? null)) {
+              planCmd(sessionId, "/hv-plan off"); // emits a corrected hv.plan notify
+              planState.set(sessionId, { enabled: false, planPath: planN.planPath });
+              void log.append({ type: "plan.exit", sessionId, workspaceId: wsId, data: { reconciled: true, status: parsed?.status ?? "missing" } });
+              return;
+            }
+          }
           const prev = planState.get(sessionId);
           planState.set(sessionId, { enabled: planN.enabled, planPath: (typeof planN.planPath === "string" ? planN.planPath : undefined) ?? prev?.planPath });
           if (prev?.enabled !== planN.enabled) {
@@ -800,11 +815,14 @@ export function registerIpc(win: BrowserWindow): void {
     }
   };
 
-  // Enter/leave plan mode (composer toggle). Enter is restrictive-only; leaving
-  // aborts a running turn first.
+  // Enter/leave plan mode (composer toggle). Abort a running turn in BOTH
+  // directions first: flipping plan mode must never stack `/hv-plan on|off`
+  // behind (or race) a live turn. Enabling mid-turn used to skip the abort, so
+  // clicking Plan while implementing left the on/off commands queued behind the
+  // turn — they interleaved with the abort and wedged the session busy.
   ipcMain.handle("hv:plan-set", async (_e, sessionId: string, enabled: boolean) => {
     if (!index.get(sessionId)) throw new Error("Unknown session");
-    if (!enabled) await abortIfBusy(sessionId);
+    await abortIfBusy(sessionId);
     planCmd(sessionId, `/hv-plan ${enabled ? "on" : "off"}`);
   });
 

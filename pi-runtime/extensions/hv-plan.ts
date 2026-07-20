@@ -37,6 +37,18 @@ export interface PlanSessionEntry {
   data?: unknown;
 }
 
+/**
+ * On a `restored` (session_start / respawn) plan notify, decide whether main
+ * must force plan mode OFF. Plan mode only makes sense while the plan file is a
+ * `draft`: a resume that comes back `enabled` over a non-draft or missing plan
+ * (status === null) is the mid-turn-toggle wedge surviving a respawn — force it
+ * off so the session isn't stuck read-only. Live toggles (restored === false)
+ * are always honored, so re-entering plan mode after implementing still works.
+ */
+export function shouldReconcilePlanOff(restored: boolean, enabled: boolean, status: PlanStatus | null): boolean {
+  return restored && enabled && status !== "draft";
+}
+
 /** Newest hv-plan-state custom entry wins — it's a full snapshot. */
 export function restorePlanState(entries: PlanSessionEntry[]): PlanState {
   let state: PlanState = { enabled: false };

@@ -1114,12 +1114,28 @@ export default function App(): React.JSX.Element {
             contextOpen={contextOpen}
             onContextOpenChange={setContextOpen}
             planEnabled={(selectedId && planMode[selectedId]?.enabled) || false}
-            onTogglePlan={(on) => selectedId && void window.hv.planSet(selectedId, on)}
+            onTogglePlan={(on) => {
+              if (!selectedId) return;
+              // main aborts any live turn before flipping plan mode (hv:plan-set);
+              // mirror the Stop path and clear busy now so the composer unlocks
+              // even if the aborted turn's agent_end never arrives.
+              void window.hv.planSet(selectedId, on);
+              commitStream(selectedId);
+              setBusy((p) => ({ ...p, [selectedId]: false }));
+            }}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={send}
             onRetry={retryCrash}
             onCompact={() => selectedId && void window.hv.compactSession(selectedId)}
-            onAbort={() => selectedId && window.hv.abortSession(selectedId)}
+            onAbort={() => {
+              if (!selectedId) return;
+              void window.hv.abortSession(selectedId);
+              // Stop is an explicit end: clear busy now instead of waiting for an
+              // agent_end that an abort may not emit (else the composer stays
+              // stuck in steer-only mode). A late agent_end is idempotent here.
+              commitStream(selectedId);
+              setBusy((p) => ({ ...p, [selectedId]: false }));
+            }}
             onRestart={async () => {
               if (!selectedId) return;
               setStatuses((p) => {
