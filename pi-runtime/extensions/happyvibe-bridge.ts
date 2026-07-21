@@ -155,8 +155,11 @@ function persistMarks(pi: ExtensionAPI): void {
 function persistPlan(pi: ExtensionAPI): void {
   pi.appendEntry(PLAN_STATE_TYPE, { ...plan });
 }
-function emitPlan(ui: { notify(m: string, t?: "info" | "warning" | "error"): void }): void {
-  ui.notify(JSON.stringify({ kind: "hv.plan", enabled: plan.enabled, planPath: plan.planPath ?? null }), "info");
+// `restored` marks the one emit that replays persisted state on session_start
+// (respawn/hibernation) — main uses it to reconcile a stale enabled:true against
+// the plan file, without reverting a live re-entry into plan mode.
+function emitPlan(ui: { notify(m: string, t?: "info" | "warning" | "error"): void }, restored = false): void {
+  ui.notify(JSON.stringify({ kind: "hv.plan", enabled: plan.enabled, planPath: plan.planPath ?? null, restored }), "info");
 }
 // Best-effort model-facing hygiene: hide mutating tools from the model while
 // planning. The tool_call clamp is the real enforcement; these APIs are unused
@@ -272,7 +275,7 @@ export default function (pi: ExtensionAPI) {
     // Only re-emit when there's real state to resync after a respawn — a spurious
     // "disabled" notify on every fresh session would be the first ui-request other
     // bridge tests wait on, and it's redundant (the renderer defaults to off).
-    if (plan.enabled || plan.planPath) { applyPlanTools(pi); emitPlan(ctx.ui); }
+    if (plan.enabled || plan.planPath) { applyPlanTools(pi); emitPlan(ctx.ui, true); }
     busUi = ctx.ui;
   });
 
