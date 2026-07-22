@@ -29,6 +29,11 @@ Pi facts this design builds on:
   saw them).
 - The approval registry persists as a JSONL-backed store (existing persistence pattern —
   no SQLite), scoped global vs workspace.
+- **Approval vs activation are separate.** Approval ("I reviewed this content") lives at
+  the skill's scope. Activation ("this skill runs here") is **per-workspace**: each
+  workspace holds a checklist over all approved skills — global and its own — so a global
+  skill can be active in one workspace and off in another. Spawn loads
+  approved ∩ active-for-this-workspace.
 
 ## 3. Enforcement
 
@@ -39,6 +44,9 @@ Pi facts this design builds on:
   idle-only, deferred while busy, session resumed from the session file). One mechanism,
   two config sources.
 - A file watcher on skill dirs (same watcher infra as plans) flags on-disk changes live.
+- **Bypass is orthogonal.** Dangerous mode (`/hv-dangerous`) and `HV_BYPASS` affect
+  tool-call gating only — they never cause an unapproved skill to load. The skill gate is
+  config resolved at spawn, not a permission prompt, and has no bypass path.
 
 ## 4. Import
 
@@ -71,9 +79,14 @@ SKILL.md via the file tree.
   description, source badge (managed / linked / project), status (active / disabled /
   needs review / error). Row click → inspector: rendered SKILL.md, file list, provenance,
   approve/disable actions. Import/create entry points live here.
-- **Workspace settings**: `WorkspaceSettingsModal` embeds the workspace-scoped
-  SkillsSection (project `.agents/skills` + workspace imports), alongside the existing
-  PermissionRulesSection — review/enable available in both places.
+- **Workspace settings**: `WorkspaceSettingsModal` embeds a Skills section showing the
+  activation checklist — every approved skill (global and workspace) with an on/off
+  toggle for this workspace — plus review actions for the workspace's own project skills,
+  alongside the existing PermissionRulesSection.
+- **Context visibility**: skills' system-prompt overhead surfaces in the context panel as
+  two lines — global skills and workspace skills — each with an estimated token weight;
+  the skill inspector shows the per-skill estimate (name + description are paid on every
+  turn; the SKILL.md body only when loaded).
 - **Tools list**: loaded skills appear under a "skill" category (PRD §13 future-categories
   slot) as a read-only pointer to the SkillsSection.
 - **Composer**: `/skill:name` autocomplete from the active session's approved skill set
