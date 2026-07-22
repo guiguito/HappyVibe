@@ -91,7 +91,10 @@ SKILL.md via the file tree.
   at once, so workspace-scoped skills don't belong on this screen. Each row: name,
   description, source badge (managed / linked / bundled), status (active / disabled /
   needs review / error). Row click → inspector: rendered SKILL.md, file list, provenance,
-  approve/disable actions. Global import/create entry points live here.
+  approve/disable actions. Global import/create entry points live here. The section is
+  titled **"Global skills"**, with a persistent hint under the title: *"Workspace-specific
+  skills are managed in each workspace's settings"* (linking to the workspace settings of
+  the current session's workspace when one is selected).
 - **Workspace settings**: `WorkspaceSettingsModal` is the ONLY management surface for
   workspace-scoped skills (project `.agents/skills` + workspace imports): discovery,
   review, approve — plus the activation checklist over every approved skill (global and
