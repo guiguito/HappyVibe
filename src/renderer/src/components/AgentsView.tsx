@@ -175,7 +175,7 @@ export function AgentsView({
           title="Global skills"
           subtitle="Reviewed, gated capability packs the agent can load. Workspace-specific skills are managed in each workspace's settings."
         >
-          <SkillsSection workspaceId={workspaceId} />
+          <SkillsSection workspaceId={workspaceId} sessionId={sessionId} />
         </Section>
 
         {/* MCP */}

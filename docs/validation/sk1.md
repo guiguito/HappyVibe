@@ -94,7 +94,38 @@ surfaced as two context-panel lines (`skills-global` / `skills-workspace`).
 `skill.activation` · `skill.invoked` (with `detected` for raw-read heuristics) ·
 `skill.imported` (Phase 2) · `skill.created` / `skill.promoted` (Phase 3).
 
-## Known Phase-1 deferrals (ponytail)
+## Phase 2 — Imports
+
+- **Bundled** (`pi-runtime/skills/`): skill-creator + frontend-design +
+  brand-guidelines, vendored from `github.com/anthropics/skills` @
+  `1f630fdf9259cec4a14913127dfd7c3b69ef72eb` via the pinned-commit tarball
+  (`bundled.json` records provenance). `installBundledSkills` pre-approves them
+  at startup with `enabled:false` (off by default; one "Enable" turns one on) and
+  re-approves across bundle bumps without clobbering the user's on/off.
+- **Local folder / git-URL**: two-phase scan → pick → copy. Git import
+  (`src/main/skills/gitImport.ts`) downloads a forge archive over HTTPS (no git
+  binary), extracts with the `tar` npm package, scans, and copies chosen skills
+  into the managed dir (global) or `<ws>/.agents/skills` (workspace), approved at
+  import with provenance `{source, sourceUrl, ref, commitSha=archiveHash}`.
+  `parseForgeUrl` (GitHub/GitLab/Bitbucket/Codeberg) is pure + unit-tested;
+  `tests/skills-git-import.test.ts`, `tests/skills-bundled.test.ts`.
+- **Linked dirs / curated shortlist**: `linkedSkillDirs` in config (scanned in
+  place, source badge "linked"); a static shortlist prefills the git importer.
+
+## Phase 3 — Creation
+
+- **"New skill"** button (`hv:skills-new-skill`): enables + activates the bundled
+  skill-creator for the session's workspace, respawn-resumes if it wasn't loaded,
+  then the renderer fires `/skill:skill-creator` so the skill interviews the user
+  and writes into `.agents/skills` via normal gated tools.
+- **Auto-approval**: the workspace watcher auto-approves a BRAND-NEW workspace
+  skill (`provenance:"created"`) only while skill-creator is active in a live
+  session for that workspace; content changes to an approved skill still flip to
+  needs-review.
+- **Promote to global** (`hv:skills-promote`): main-side confined copy of a
+  workspace skill into the managed dir, approved (identical content → same hash).
+
+## Known deferrals (ponytail)
 
 - **Composer `/skill:name` autocomplete** — the app has no slash-command menu
   framework (only @-mention autocomplete). `/skill:name` already WORKS by typing
@@ -104,3 +135,8 @@ surfaced as two context-panel lines (`skills-global` / `skills-workspace`).
 - **Per-skill rows in the Tools list** — skills have a dedicated Global-skills
   section, and `use_skill` already appears in the Tools list. Duplicating each
   skill as a pseudo-tool (with a meaningless permission state) was skipped.
+- **"New skill" placement** — the design put it "at the top of the workspace
+  view" (chat). The v5 refactor removed the chat header (actions moved to the tab
+  strip), so adding a chat-header button was invasive. It lives in the Global
+  skills section's import bar, wired to the focused session — same capability,
+  less churn. Move to the chat surface if a natural slot appears.

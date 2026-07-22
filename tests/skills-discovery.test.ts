@@ -95,3 +95,11 @@ test("scanSkillsDir: dir with SKILL.md is a root, no deeper recursion; sibling d
 test("scanSkillsDir: missing root → empty", () => {
   expect(scanSkillsDir(path.join(root, "nope"), "managed")).toEqual([]);
 });
+
+test("hash is location-independent (promote copies content → same hash, trust carries)", () => {
+  const src = writeSkill("ws/.agents/skills/my-skill", "name: my-skill\ndescription: Portable.", { "scripts/x.sh": "echo hi" });
+  const dst = path.join(root, "managed", "my-skill");
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.cpSync(src, dst, { recursive: true });
+  expect(readSkillDir(dst, "managed").hash).toBe(readSkillDir(src, "workspace").hash);
+});

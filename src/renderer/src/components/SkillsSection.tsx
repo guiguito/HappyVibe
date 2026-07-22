@@ -48,14 +48,34 @@ const importBtn =
 export function ImportControls({
   scope,
   workspaceId,
+  sessionId,
 }: {
   scope: "global" | "workspace";
   workspaceId: string | null;
+  /** When set, shows the "New skill" (guided, skill-creator) button targeting this session. */
+  sessionId?: string | null;
 }): React.JSX.Element {
   const [scan, setScan] = useState<HvSkillImportScan | null>(null);
   const [gitOpen, setGitOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const newSkill = async (): Promise<void> => {
+    if (!sessionId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await window.hv.skillsNewSkill(sessionId);
+      if (!r.ok) { setError(r.error ?? "Could not start the skill creator."); return; }
+      // skill-creator is now loaded in the session — fire it as a prompt so it
+      // interviews the user and writes the skill into .agents/skills.
+      await window.hv.promptSession(sessionId, "/skill:skill-creator");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const runScan = async (fn: () => Promise<HvSkillImportScan | null>): Promise<void> => {
     setBusy(true);
@@ -76,6 +96,11 @@ export function ImportControls({
   return (
     <div className="mb-3">
       <div className="flex flex-wrap items-center gap-2">
+        {sessionId && (
+          <button type="button" disabled={busy} className="text-xs font-bold rounded-lg bg-tangerine text-paper border-2 border-tangerine-deep px-3 py-1.5 shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40" onClick={() => void newSkill()}>
+            + New skill
+          </button>
+        )}
         <button type="button" disabled={busy} className={importBtn} onClick={() => void runScan(() => window.hv.skillsImportLocal())}>
           Import folder
         </button>
@@ -196,7 +221,7 @@ function ImportPicker({
   );
 }
 
-export function SkillsSection({ workspaceId }: { workspaceId: string | null }): React.JSX.Element {
+export function SkillsSection({ workspaceId, sessionId }: { workspaceId: string | null; sessionId?: string | null }): React.JSX.Element {
   const [skills, setSkills] = useState<HvSkillView[] | null>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);
 
@@ -213,7 +238,7 @@ export function SkillsSection({ workspaceId }: { workspaceId: string | null }): 
 
   return (
     <>
-      <ImportControls scope="global" workspaceId={workspaceId} />
+      <ImportControls scope="global" workspaceId={workspaceId} sessionId={sessionId} />
       {needsReview > 0 && (
         <div className="mb-3 rounded-xl border-2 border-honey/60 bg-honey-soft px-3 py-2 text-sm font-semibold text-tangerine-deep">
           {needsReview} skill{needsReview > 1 ? "s" : ""} need{needsReview > 1 ? "" : "s"} review before they can run.
@@ -382,6 +407,17 @@ export function SkillInspector({
             )}
 
             <div className="mt-4 flex justify-end gap-2">
+              {detail.source === "workspace" && detail.status !== "needs-review" && detail.status !== "error" && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void act(() => window.hv.skillsPromote(id).then(() => undefined))}
+                  className="rounded-xl border-2 border-line font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 enabled:cursor-pointer disabled:opacity-40 mr-auto"
+                  title="Copy this workspace skill into the global managed dir"
+                >
+                  Promote to global
+                </button>
+              )}
               {detail.status === "error" ? (
                 <span className="text-sm text-berry font-semibold self-center">This skill cannot be loaded.</span>
               ) : detail.status === "needs-review" ? (

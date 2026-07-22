@@ -1300,8 +1300,12 @@ export function registerIpc(win: BrowserWindow): void {
     watchWorkspace(workspaceId, (relDirs) => {
       send("hv:fs-changed", { workspaceId, relDirs });
       // §14: a change under .agents/skills may flip an approved workspace skill
-      // back to needs-review (hash mismatch) — tell the renderer to re-fetch.
-      if (relDirs.some((d) => d.startsWith(".agents/skills") || d === ".agents" || d === "")) skillsChanged();
+      // back to needs-review (hash mismatch) — tell the renderer to re-fetch, and
+      // auto-approve skills the agent just authored via skill-creator.
+      if (relDirs.some((d) => d.startsWith(".agents/skills") || d === ".agents" || d === "")) {
+        skillsChanged();
+        autoApproveCreatedSkills(workspaceId);
+      }
       // §23: when a plan dir changed, re-parse plan files and push live progress.
       if (relDirs.some((d) => d === PLAN_DIR || d === ".agents" || d === "")) {
         let names: { name: string; kind: string }[] = [];
@@ -1638,6 +1642,74 @@ export function registerIpc(win: BrowserWindow): void {
       return importedNames;
     },
   );
+
+  // ── §14 Creation (Phase 3) ──────────────────────────────────────────────
+  const SKILL_CREATOR = "skill-creator";
+  const findGlobalSkillByName = (name: string): DiscoveredSkill | undefined =>
+    discoverGlobalSkills().find((s) => s.name === name);
+  const sessionHasSkill = (sessionId: string, name: string): boolean => {
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(skillsManifestDir, `${sessionId}.json`), "utf8")) as { skills?: Array<{ name: string }> };
+      return (m.skills ?? []).some((s) => s.name === name);
+    } catch {
+      return false;
+    }
+  };
+
+  // "New skill" button: ensure the bundled skill-creator is enabled + active for
+  // this session's workspace (respawn-resume if it wasn't loaded), so a following
+  // `/skill:skill-creator` prompt from the renderer expands. Returns readiness.
+  ipcMain.handle("hv:skills-new-skill", async (_e, sessionId: string): Promise<{ ok: boolean; error?: string }> => {
+    const meta = index.get(sessionId);
+    if (!meta) return { ok: false, error: "No active session." };
+    const creator = findGlobalSkillByName(SKILL_CREATOR);
+    if (!creator) return { ok: false, error: "The skill-creator skill isn't installed." };
+    skillRegistry.approve(creator, new Date().toISOString(), { enabled: true, provenance: skillRegistry.record(creator.id)?.provenance });
+    workspaces.setSkillActive(meta.workspaceId, creator.id, true);
+    skillsChanged();
+    if (!sessionHasSkill(sessionId, SKILL_CREATOR)) {
+      reloadReasons.set(sessionId, "skills");
+      await reloadSession(sessionId); // respawn-resume so /skill:skill-creator is loaded
+    }
+    return { ok: true };
+  });
+
+  // Promote a workspace skill to global: copy it into the managed dir, approved
+  // (same content → carries over). Confined; only from a workspace .agents/skills.
+  ipcMain.handle("hv:skills-promote", (_e, id: string) => {
+    const abs = path.resolve(id);
+    const fromWorkspace = workspaces.list().some((w) => abs.startsWith(path.resolve(path.join(w, ".agents", "skills")) + path.sep));
+    if (!fromWorkspace) throw new Error("Only workspace skills can be promoted.");
+    const skill = readSkillDir(id, "workspace");
+    const destParent = managedSkillsDir(agentDir());
+    fs.mkdirSync(destParent, { recursive: true });
+    const dest = path.join(destParent, path.basename(id));
+    fs.rmSync(dest, { recursive: true, force: true });
+    fs.cpSync(id, dest, { recursive: true });
+    const promoted = readSkillDir(dest, "managed");
+    skillRegistry.approve(promoted, new Date().toISOString(), { enabled: true, provenance: { source: "promoted", importedAt: new Date().toISOString() } });
+    void log.append({ type: "skill.promoted", data: { name: skill.name, from: id, to: dest } });
+    skillsChanged();
+    scheduleSkillReload("global", null);
+    return dest;
+  });
+
+  // Auto-approve a NEW workspace skill the agent authored while skill-creator is
+  // active in a live session for that workspace (the user drove the creation, so
+  // no separate review). Content changes to an already-approved skill still flip
+  // to needs-review (unchanged). Called from the workspace watcher.
+  const autoApproveCreatedSkills = (workspaceId: string): void => {
+    const liveInWs = manager.activeIds().some((id) => index.get(id)?.workspaceId === workspaceId && sessionHasSkill(id, SKILL_CREATOR));
+    if (!liveInWs) return;
+    let approvedAny = false;
+    for (const skill of discoverWorkspace(workspaceId)) {
+      if (!skill.loadable || skillRegistry.record(skill.id)) continue; // only brand-new skills
+      skillRegistry.approve(skill, new Date().toISOString(), { enabled: true, provenance: { source: "created", importedAt: new Date().toISOString() } });
+      void log.append({ type: "skill.created", workspaceId, data: { name: skill.name } });
+      approvedAny = true;
+    }
+    if (approvedAny) { skillsChanged(); scheduleSkillReload("workspace", workspaceId); }
+  };
 
   // Live on-disk change detection for the managed global dir (workspace skill
   // dirs ride the existing workspace watcher below). A change may flip an

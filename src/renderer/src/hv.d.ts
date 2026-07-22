@@ -325,6 +325,8 @@ interface HvApi {
   skillsImportLocal(): Promise<HvSkillImportScan | null>;
   skillsImportGit(url: string): Promise<HvSkillImportScan>;
   skillsImportSelect(token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null): Promise<string[]>;
+  skillsNewSkill(sessionId: string): Promise<{ ok: boolean; error?: string }>;
+  skillsPromote(id: string): Promise<string>;
   onSkillsChanged(cb: () => void): () => void;
 
   // MCP server config (additive). Changes apply to new sessions.
