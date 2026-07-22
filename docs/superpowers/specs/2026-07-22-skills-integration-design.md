@@ -50,19 +50,30 @@ Pi facts this design builds on:
 
 ## 4. Import
 
-Three sources, one funnel — copied imports land in the managed global dir or workspace
-`.agents/skills/`; linked dirs are referenced in place:
+Copied imports land in the managed global dir or workspace `.agents/skills/`; linked
+dirs are referenced in place; bundled skills ship inside the runtime:
 
+- **Bundled skills** — a small curated set shipped in the runtime bundle (the
+  skill-authoring skill plus 2–3 essentials), pre-approved like the authoring skill but
+  **off by default** — the user just toggles them on. Zero install steps; "curated
+  distribution" applied to skills.
 - **Local folder** — copy in (single skill or a parent containing many).
 - **Claude Code dirs** — *linked in place* (not copied): a `linkedDirs` list in HappyVibe
   settings; skills from linked dirs still go through review-before-active.
+- **Git URL (tarball-based — no git binary required)** — main downloads the forge's
+  archive over HTTPS (GitHub `codeload`, GitLab/Bitbucket/Codeberg archive endpoints),
+  extracts to a temp dir (`tar` npm package), scans it; a skill-pack repo shows a picker
+  so the user imports only the skills they want. Selected skills copy into the managed
+  dir with provenance `{sourceUrl, ref, commitSha-or-archiveHash, importedAt}` shown in
+  the inspector. "Update" = re-fetch → hash changes → back to needs-review. **No
+  auto-update.** SSH/private repos and a system-git fallback are V2.
 - **Curated shortlist** — a static in-app list (entries from anthropics/skills,
-  badlogic/pi-skills) linking to the repos; the user downloads and brings a skill in via
-  the local-folder import. Not a marketplace.
+  badlogic/pi-skills): bundled entries are a toggle; the rest pre-fill the git-URL
+  importer with a pinned URL. One click either way. Not a marketplace.
 
-Git-URL import was cut from V1 (Notion edit, 2026-07-22) — moved to Out of scope.
-
-All imports are path-confined writes (the `resolveInWorkspace` pattern).
+All imports are path-confined writes (the `resolveInWorkspace` pattern), and every
+source flows into the same review-before-active gate (bundled skills excepted — we
+authored them).
 
 ## 5. Creation (agent-assisted)
 
@@ -110,5 +121,6 @@ show in the transcript like other tool activity.
 
 ## 9. Out of scope (V2+)
 
-Marketplace/library, git-URL import (and update/provenance flows), a skill-editing UI, honoring the
-experimental `allowed-tools` frontmatter, per-skill tool-permission narrowing.
+Marketplace/library, SSH/private-repo git import (and a system-git fallback), upstream
+update notifications, a skill-editing UI, honoring the experimental `allowed-tools`
+frontmatter, per-skill tool-permission narrowing.
