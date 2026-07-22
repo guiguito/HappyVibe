@@ -1,7 +1,8 @@
 # Skills Integration — Design (V1)
 
 Date: 2026-07-22
-Status: Approved design (brainstorm); PRD §14 currently marks skills "coming soon" — this is the proposal to fill that section.
+Status: **Locked 2026-07-23** — folded into PRD §14 (repo + Notion). Implementation plan:
+`docs/superpowers/plans/2026-07-23-skills-integration.md`.
 
 ## 1. Concept
 
@@ -54,7 +55,8 @@ Copied imports land in the managed global dir or workspace `.agents/skills/`; li
 dirs are referenced in place; bundled skills ship inside the runtime:
 
 - **Bundled skills** — a small curated set shipped in the runtime bundle
-  (**skill-creator** plus 2–3 essentials), pre-approved (we authored them) but
+  (**skill-creator** plus 2–3 curated skills vendored from `anthropics/skills`,
+  pinned commit + provenance recorded — set fixed 2026-07-23), pre-approved (we vetted them) but
   **off by default** — the user just toggles them on. Zero install steps; "curated
   distribution" applied to skills.
 - **Local folder** — copy in (single skill or a parent containing many).
