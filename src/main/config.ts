@@ -18,6 +18,9 @@ interface ConfigFile {
       workspace override (tri-state: absent = inherit global). */
   bypassAll?: boolean;
   workspaceBypass?: Record<string, boolean>;
+  /** §14 Skills: external skill dirs linked in place (e.g. ~/.claude/skills).
+      Scanned for skills that still go through review-before-active. */
+  linkedSkillDirs?: string[];
 }
 
 function load(): ConfigFile {
@@ -134,6 +137,19 @@ export function setWorkspaceBypass(workspace: string, on: boolean | null): void 
 export function resolveBypass(workspace: string | null | undefined): boolean {
   const cfg = load();
   return resolveBypassPure(cfg.bypassAll ?? false, workspace ? cfg.workspaceBypass?.[workspace] : undefined);
+}
+
+// §14 Skills: linked external skill dirs (referenced in place, not copied).
+export function getLinkedSkillDirs(): string[] {
+  return load().linkedSkillDirs ?? [];
+}
+
+export function setLinkedSkillDirs(dirs: string[]): void {
+  const cfg = load();
+  const clean = [...new Set(dirs.filter((d) => typeof d === "string" && d.trim()))];
+  if (clean.length) cfg.linkedSkillDirs = clean;
+  else delete cfg.linkedSkillDirs;
+  save(cfg);
 }
 
 // Legacy shims — existing window.hv.getApiKey/setApiKey surface (DeepSeek).

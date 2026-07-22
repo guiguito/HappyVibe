@@ -59,6 +59,48 @@ interface HvTool {
   source: string;
 }
 
+/** §14 — mirrors SkillView in src/main/skills/view.ts (from hv:skills-list). */
+interface HvSkillView {
+  id: string;
+  name: string;
+  description: string;
+  source: "managed" | "workspace" | "linked" | "bundled";
+  status: "active" | "disabled" | "needs-review" | "error";
+  scriptCount: number;
+  disableModelInvocation: boolean;
+  estTokens: { card: number; body: number };
+  changed: boolean;
+  provenance?: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string };
+}
+
+/** §14 — per-workspace activation checklist entry. */
+interface HvSkillChecklistItem {
+  id: string;
+  name: string;
+  source: "managed" | "workspace" | "linked" | "bundled";
+  scope: "global" | "workspace";
+  active: boolean;
+}
+
+interface HvSkillsList {
+  global: HvSkillView[];
+  workspace: { skills: HvSkillView[]; checklist: HvSkillChecklistItem[] } | null;
+}
+
+/** §14 — the inspector payload (hv:skills-read): current content + approved snapshot for the diff. */
+interface HvSkillDetail {
+  name: string;
+  description: string;
+  source: "managed" | "workspace" | "linked" | "bundled";
+  files: string[];
+  scriptCount: number;
+  estTokens: { card: number; body: number };
+  status: "active" | "disabled" | "needs-review" | "error";
+  provenance: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string } | null;
+  current: string;
+  approved: string | null;
+}
+
 /** Mirrors Rule/RulesFile/Verdict in pi-runtime/extensions/hv-rules.ts (separate tsconfig roots). */
 interface HvRule {
   layer: "tool" | "path" | "command";
@@ -263,6 +305,16 @@ interface HvApi {
   setWorkspaceAppend(workspaceId: string, content: string): Promise<void>;
   getWorkspaceModel(workspaceId: string): Promise<{ provider: string; modelId: string } | null>;
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
+
+  // §14 Skills (additive)
+  skillsList(workspaceId?: string): Promise<HvSkillsList>;
+  skillsRead(id: string): Promise<HvSkillDetail>;
+  skillsApprove(id: string): Promise<void>;
+  skillsSetEnabled(id: string, enabled: boolean): Promise<void>;
+  skillsSetActive(workspaceId: string, id: string, on: boolean | null): Promise<void>;
+  skillsGetLinked(): Promise<string[]>;
+  skillsSetLinked(dirs: string[]): Promise<void>;
+  onSkillsChanged(cb: () => void): () => void;
 
   // MCP server config (additive). Changes apply to new sessions.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;

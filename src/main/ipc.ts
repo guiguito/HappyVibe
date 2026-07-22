@@ -7,11 +7,15 @@ import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getApiKey, getDefaultModel, getGlobalBypass, getOnboardingSeen,
-  getWorkspaceBypass, installBuiltinAgents, providerEnv, providerKeyStatus, removeProviderKey, writeSubagentConfig,
+  agentDir, builtinAgentsDir, getApiKey, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getOnboardingSeen,
+  getWorkspaceBypass, installBuiltinAgents, providerEnv, providerKeyStatus, removeProviderKey, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, setApiKey, setDefaultModel, setGlobalBypass, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass,
 } from "./config";
+import {
+  bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, managedSkillsDir,
+  readSkillDir, resolveActiveSkills, SkillRegistry, toSkillView, type DiscoveredSkill,
+} from "./skills";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
   authJsonProviders, BYOK_PROVIDERS, detectOllama, isByokProvider, syncOllamaModels,
@@ -67,6 +71,17 @@ function parseAuditNotify(r: { method?: string; message?: string }): Record<stri
   }
 }
 
+/** §14: an hv.skill invocation notify (skill loaded via use_skill or raw read), else null. */
+function parseSkillNotify(r: { method?: string; message?: string }): Record<string, unknown> | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "") as Record<string, unknown>;
+    return p?.kind === "hv.skill" ? p : null;
+  } catch {
+    return null;
+  }
+}
+
 /** §23: a plan-family notify (hv.plan | hv.plan-status | hv.plan.blocked), else null. */
 function parsePlanNotify(r: { method?: string; message?: string }): Record<string, unknown> | null {
   if (r.method !== "notify") return null;
@@ -107,6 +122,37 @@ export function registerIpc(win: BrowserWindow): void {
   const log = new EventLog(path.join(userData, "events.jsonl"));
   const pidFile = path.join(userData, "pi-pids.json");
 
+  // ── §14 Skills ─────────────────────────────────────────────────────────────
+  const skillRegistry = new SkillRegistry(path.join(userData, "skills-approvals.jsonl"));
+  const skillsManifestDir = path.join(userData, "skills-manifests");
+  const globalScanDirs = () => ({
+    managedDir: managedSkillsDir(agentDir()),
+    bundledDir: bundledSkillsDir(piRuntimeDir()),
+    linkedDirs: getLinkedSkillDirs(),
+  });
+  /** Global-scope skills (bundled + managed + linked), current on-disk snapshot. */
+  const discoverGlobalSkills = (): DiscoveredSkill[] => discoverGlobal(globalScanDirs());
+  /** The (skill, scope) entries a session in this workspace should spawn with. */
+  const activeSkillEntries = (workspace: string): Array<{ skill: DiscoveredSkill; scope: "global" | "workspace" }> => {
+    const activation = workspaces.getSkillsActive(workspace);
+    const global = discoverGlobalSkills();
+    const ws = discoverWorkspace(workspace);
+    const activeGlobal = new Set(resolveActiveSkills(global, skillRegistry, activation));
+    const activeWs = new Set(resolveActiveSkills(ws, skillRegistry, activation));
+    return [
+      ...global.filter((s) => activeGlobal.has(s.id)).map((skill) => ({ skill, scope: "global" as const })),
+      ...ws.filter((s) => activeWs.has(s.id)).map((skill) => ({ skill, scope: "workspace" as const })),
+    ];
+  };
+  /** Write this session's loaded-skills manifest → HV_SKILLS_FILE. Returns the path. */
+  const writeSkillsManifest = (sessionId: string, entries: ReturnType<typeof activeSkillEntries>): string => {
+    fs.mkdirSync(skillsManifestDir, { recursive: true });
+    const file = path.join(skillsManifestDir, `${sessionId}.json`);
+    fs.writeFileSync(file, JSON.stringify(buildManifest(entries)));
+    return file;
+  };
+  const skillsChanged = (): void => send("hv:skills-changed");
+
   // Kill pi processes a previous app run left behind (crash / force-quit).
   const swept = sweepOrphans(pidFile);
   if (swept.length) console.warn("[hv] swept orphan pi processes:", swept);
@@ -134,19 +180,27 @@ export function registerIpc(win: BrowserWindow): void {
   /** Everything a Pi spawn needs from provider config (B3) + rules delivery (B4).
    *  Model resolution (W2.1, full PRD hierarchy): session override → workspace
    *  override → global default. Mirrors resolveModel in renderer composer.ts. */
-  const spawnOpts = (workspace?: string, resumeFile?: string, sessionId?: string) => ({
-    model:
-      (sessionId ? index.get(sessionId)?.model : null) ??
-      (workspace ? workspaces.getModel(workspace) : null) ??
-      getDefaultModel(),
-    agentDir: agentDir(),
-    providerEnv: providerEnv(),
-    resumeFile,
-    rulesFile: rulesFile(),
-    // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
-    // every (re)spawn so it survives respawns (unlike session dangerous mode).
-    bypass: resolveBypass(workspace ?? null),
-  });
+  const spawnOpts = (workspace?: string, resumeFile?: string, sessionId?: string) => {
+    // §14: resolve the approved ∩ enabled ∩ active-for-workspace skill set and
+    // write the per-session manifest the bridge reads (HV_SKILLS_FILE). Only for
+    // real chat sessions — the utility client ($HOME, no workspace/id) loads none.
+    const entries = workspace && sessionId ? activeSkillEntries(workspace) : [];
+    return {
+      model:
+        (sessionId ? index.get(sessionId)?.model : null) ??
+        (workspace ? workspaces.getModel(workspace) : null) ??
+        getDefaultModel(),
+      agentDir: agentDir(),
+      providerEnv: providerEnv(),
+      resumeFile,
+      rulesFile: rulesFile(),
+      // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
+      // every (re)spawn so it survives respawns (unlike session dangerous mode).
+      bypass: resolveBypass(workspace ?? null),
+      skills: entries.map((e) => e.skill.id),
+      skillsFile: sessionId ? writeSkillsManifest(sessionId, entries) : undefined,
+    };
+  };
 
   const manager = new SessionManager({
     pidFile,
@@ -360,6 +414,14 @@ export function registerIpc(win: BrowserWindow): void {
         void log.append({ type: "permission.decision", sessionId, workspaceId: meta?.workspaceId, data: audit });
         return;
       }
+      // §14: skill invocation — audit it and forward to the renderer (invocation
+      // card). Raw-read fallbacks are flagged heuristic (detected:true).
+      const skill = parseSkillNotify(r);
+      if (skill) {
+        void log.append({ type: "skill.invoked", sessionId, workspaceId: meta?.workspaceId, data: skill });
+        send("hv:ui-request", { ...r, sessionId });
+        return;
+      }
       // Async subagents: lifecycle relays drive activity gating (a live async run
       // keeps the session non-idle so a respawn can't kill it), status polling,
       // and the audit log. The envelope still forwards to the renderer below.
@@ -540,9 +602,13 @@ export function registerIpc(win: BrowserWindow): void {
   // (pendingMcpReload is declared earlier so the session-exit handler can clear it.)
   const reloadingMcp = new Set<string>();
 
+  // Reason for each pending/in-flight reload (mcp | skills) — cosmetic (renderer
+  // notice text); coalesced last-writer-wins per session.
+  const reloadReasons = new Map<string, "mcp" | "skills">();
   const reloadSession = async (sessionId: string): Promise<void> => {
     if (reloadingMcp.has(sessionId) || !manager.get(sessionId)) return;
     reloadingMcp.add(sessionId);
+    const reason = reloadReasons.get(sessionId) ?? "mcp";
     try {
       // Capture the session file first so the conversation survives the respawn.
       if (!index.get(sessionId)?.piSessionFile) {
@@ -551,7 +617,7 @@ export function registerIpc(win: BrowserWindow): void {
       }
       const meta = index.get(sessionId);
       if (!meta) return;
-      send("hv:session-reloading", { sessionId, reason: "mcp" });
+      send("hv:session-reloading", { sessionId, reason });
       const exited = new Promise<void>((resolve) => {
         const onExit = (e: SessionExit): void => {
           if (e.sessionId !== sessionId) return;
@@ -578,6 +644,7 @@ export function registerIpc(win: BrowserWindow): void {
       void log.append({ type: "session.mcp_reload_failed", sessionId, data: { error: String(err) } });
     } finally {
       reloadingMcp.delete(sessionId);
+      reloadReasons.delete(sessionId);
     }
   };
 
@@ -590,7 +657,7 @@ export function registerIpc(win: BrowserWindow): void {
   };
 
   let mcpReloadTimer: ReturnType<typeof setTimeout> | undefined;
-  const pendingScopes: Array<{ scope: "global" | "workspace"; workspaceId: string | null }> = [];
+  const pendingScopes: Array<{ scope: "global" | "workspace"; workspaceId: string | null; reason: "mcp" | "skills" }> = [];
   const runMcpReloadPass = async (): Promise<void> => {
     const scopes = pendingScopes.splice(0);
     const live: ReloadSession[] = manager
@@ -598,19 +665,25 @@ export function registerIpc(win: BrowserWindow): void {
       .map((id) => { const m = index.get(id); return m ? { id, workspaceId: m.workspaceId } : null; })
       .filter((s): s is ReloadSession => s !== null);
     const affected = new Set<string>();
-    for (const { scope, workspaceId } of scopes)
-      for (const id of affectedSessionIds(scope, workspaceId, live)) affected.add(id);
+    for (const { scope, workspaceId, reason } of scopes)
+      for (const id of affectedSessionIds(scope, workspaceId, live)) { affected.add(id); reloadReasons.set(id, reason); }
     for (const id of affected) {
       if (activity.isIdle(id)) await reloadSession(id); // sequential — avoid a spawn burst
       else pendingMcpReload.add(id);
     }
   };
-  // Debounced so add-then-authenticate coalesces into a single reload pass.
-  const scheduleMcpReload = (scope: "global" | "workspace", workspaceId: string | null): void => {
-    pendingScopes.push({ scope, workspaceId });
+  // Debounced so add-then-authenticate (or approve-then-toggle) coalesces into a
+  // single reload pass. §14 skills reuse the exact same machinery (one mechanism,
+  // two config sources) — only the reason label differs.
+  const scheduleRuntimeReload = (reason: "mcp" | "skills", scope: "global" | "workspace", workspaceId: string | null): void => {
+    pendingScopes.push({ scope, workspaceId, reason });
     clearTimeout(mcpReloadTimer);
     mcpReloadTimer = setTimeout(() => { void runMcpReloadPass(); }, 500);
   };
+  const scheduleMcpReload = (scope: "global" | "workspace", workspaceId: string | null): void =>
+    scheduleRuntimeReload("mcp", scope, workspaceId);
+  const scheduleSkillReload = (scope: "global" | "workspace", workspaceId: string | null): void =>
+    scheduleRuntimeReload("skills", scope, workspaceId);
 
   app.on("will-quit", () => {
     clearTimeout(mcpReloadTimer); // don't spawn during teardown
@@ -1219,6 +1292,9 @@ export function registerIpc(win: BrowserWindow): void {
     resolveInWorkspace(workspaces.list(), workspaceId, ""); // confinement gate
     watchWorkspace(workspaceId, (relDirs) => {
       send("hv:fs-changed", { workspaceId, relDirs });
+      // §14: a change under .agents/skills may flip an approved workspace skill
+      // back to needs-review (hash mismatch) — tell the renderer to re-fetch.
+      if (relDirs.some((d) => d.startsWith(".agents/skills") || d === ".agents" || d === "")) skillsChanged();
       // §23: when a plan dir changed, re-parse plan files and push live progress.
       if (relDirs.some((d) => d === PLAN_DIR || d === ".agents" || d === "")) {
         let names: { name: string; kind: string }[] = [];
@@ -1370,4 +1446,115 @@ export function registerIpc(win: BrowserWindow): void {
     // (not scope), so reload all live sessions.
     scheduleMcpReload("global", null);
   });
+
+  // ── §14 Skills ─────────────────────────────────────────────────────────────
+  // Trust gate lives in main: discovery + content-hash approval + per-workspace
+  // activation, enforced at spawn (--no-skills + --skill). Changes apply live via
+  // scheduleSkillReload (the MCP live-reload machinery). Every skill dir the
+  // renderer names must sit in a known location — never approve an arbitrary path.
+  const knownSkillDirs = (): string[] => {
+    const { managedDir, bundledDir, linkedDirs } = globalScanDirs();
+    return [managedDir, bundledDir, ...linkedDirs, ...workspaces.list().map((w) => path.join(w, ".agents", "skills"))];
+  };
+  const isKnownSkillDir = (id: string): boolean => {
+    const abs = path.resolve(id);
+    return knownSkillDirs().some((root) => {
+      const r = path.resolve(root);
+      return abs === r || abs.startsWith(r + path.sep);
+    });
+  };
+  /** Read one skill dir as a DiscoveredSkill (source inferred from location). */
+  const readKnownSkill = (id: string): DiscoveredSkill => {
+    if (!isKnownSkillDir(id)) throw new Error("Unknown skill location");
+    const { managedDir, bundledDir, linkedDirs } = globalScanDirs();
+    const abs = path.resolve(id);
+    const under = (root: string) => abs === path.resolve(root) || abs.startsWith(path.resolve(root) + path.sep);
+    const source = under(bundledDir) ? "bundled" : under(managedDir) ? "managed" : linkedDirs.some(under) ? "linked" : "workspace";
+    return readSkillDir(id, source);
+  };
+
+  ipcMain.handle("hv:skills-list", (_e, workspaceId?: string) => {
+    const global = discoverGlobalSkills().map((s) => toSkillView(s, skillRegistry));
+    if (!workspaceId) return { global, workspace: null };
+    const activation = workspaces.getSkillsActive(workspaceId);
+    const wsSkills = discoverWorkspace(workspaceId).map((s) => toSkillView(s, skillRegistry, activation));
+    // Activation checklist over every APPROVED skill (global + this workspace),
+    // showing its active state for this workspace (bundled default off, else on).
+    const checklist = [...discoverGlobalSkills(), ...discoverWorkspace(workspaceId)]
+      .filter((s) => s.loadable && skillRegistry.approvalStatus(s) === "approved" && skillRegistry.record(s.id)?.enabled)
+      .map((s) => {
+        const v = toSkillView(s, skillRegistry, activation);
+        return { id: s.id, name: s.name, source: s.source, scope: s.source === "workspace" ? "workspace" : "global", active: v.status === "active" };
+      });
+    return { global, workspace: { skills: wsSkills, checklist } };
+  });
+
+  ipcMain.handle("hv:skills-read", (_e, id: string) => {
+    const skill = readKnownSkill(id);
+    let current = "";
+    try { current = fs.readFileSync(skill.skillMdPath, "utf8"); } catch { /* unreadable */ }
+    const rec = skillRegistry.record(id);
+    return {
+      name: skill.name,
+      description: skill.description,
+      source: skill.source,
+      files: skill.files,
+      scriptCount: skill.scriptCount,
+      estTokens: skill.estTokens,
+      status: toSkillView(skill, skillRegistry).status,
+      provenance: rec?.provenance ?? null,
+      current,
+      // Re-review diff: the approved snapshot ("before") vs current ("after").
+      approved: rec?.snapshot ? rec.snapshot.skillMd : null,
+    };
+  });
+
+  ipcMain.handle("hv:skills-approve", (_e, id: string) => {
+    const skill = readKnownSkill(id);
+    skillRegistry.approve(skill, new Date().toISOString());
+    void log.append({ type: "skill.approved", data: { id, name: skill.name, source: skill.source } });
+    skillsChanged();
+    scheduleSkillReload("global", null); // approved skill can now load everywhere it's active
+  });
+
+  // "Disable" in the inspector — global off without losing trust (approve re-enables).
+  ipcMain.handle("hv:skills-set-enabled", (_e, id: string, enabled: boolean) => {
+    if (!isKnownSkillDir(id)) throw new Error("Unknown skill location");
+    skillRegistry.setEnabled(id, !!enabled, new Date().toISOString());
+    void log.append({ type: enabled ? "skill.enabled" : "skill.disabled", data: { id } });
+    skillsChanged();
+    scheduleSkillReload("global", null);
+  });
+
+  // Per-workspace activation checklist toggle (on|false|null=default).
+  ipcMain.handle("hv:skills-set-active", (_e, workspaceId: string, id: string, on: boolean | null) => {
+    if (!workspaces.list().some((w) => path.resolve(w) === path.resolve(workspaceId))) throw new Error("Unknown workspace");
+    workspaces.setSkillActive(workspaceId, id, on);
+    void log.append({ type: "skill.activation", workspaceId, data: { id, active: on } });
+    skillsChanged();
+    scheduleSkillReload("workspace", workspaceId);
+  });
+
+  ipcMain.handle("hv:skills-get-linked", () => getLinkedSkillDirs());
+  ipcMain.handle("hv:skills-set-linked", (_e, dirs: string[]) => {
+    setLinkedSkillDirs(Array.isArray(dirs) ? dirs : []);
+    skillsChanged();
+    scheduleSkillReload("global", null);
+  });
+
+  // Live on-disk change detection for the managed global dir (workspace skill
+  // dirs ride the existing workspace watcher below). A change may flip an
+  // approved skill back to needs-review (hash mismatch) — recompute + notify.
+  const managedDir = managedSkillsDir(agentDir());
+  fs.mkdirSync(managedDir, { recursive: true });
+  try {
+    let skillWatchTimer: ReturnType<typeof setTimeout> | undefined;
+    const w = fs.watch(managedDir, { recursive: true }, () => {
+      clearTimeout(skillWatchTimer);
+      skillWatchTimer = setTimeout(() => skillsChanged(), 200);
+    });
+    app.on("will-quit", () => { try { w.close(); } catch { /* already closed */ } });
+  } catch {
+    /* recursive watch unsupported (Linux) — renderer re-fetches on navigation */
+  }
 }

@@ -49,7 +49,9 @@ export interface Verdict {
  * would stack two blocking modals for a harmless call. */
 // §23: plan_* are app-internal control tools (mode transitions / plan submission),
 // not model-driven side effects — they must never raise a permission prompt.
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update"]);
+// §14: use_skill returns SKILL.md content (read-only, app-internal) — a permission
+// prompt for loading an already-approved skill would be pure friction.
+export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill"]);
 
 /** v5: Pi's built-in FILE tools — the ones whose path args we confine to the
  * workspace by default. bash is deliberately NOT here (it stays under

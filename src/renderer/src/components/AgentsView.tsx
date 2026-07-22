@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { joinToolPermissions, type AgentInfo, type PermState, type ToolInfo, type ToolRow } from "../agents";
 import { McpServersSection } from "./McpServersSection";
+import { SkillsSection } from "./SkillsSection";
 
 const PERM_TONE: Record<PermState, string> = {
   deny: "bg-berry-soft text-berry border-berry/50",
@@ -22,6 +23,12 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
     <>
       <path d="M4 12l8-8 8 8-8 8z" />
       <path d="M8 12l4-4 4 4-4 4z" />
+    </>
+  ),
+  skills: (
+    <>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
     </>
   ),
   tools: <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.6-.6-2.5z" />,
@@ -156,10 +163,20 @@ export function AgentsView({
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
-        <h1 className="font-black text-3xl tracking-tight mb-2">MCP, Tools &amp; Agents</h1>
+        <h1 className="font-black text-3xl tracking-tight mb-2">Skills, MCP, Agents &amp; Tools</h1>
         <p className="text-sm text-ink-soft mb-8">
-          External MCP servers, the tools available to the agent, and the subagents you can delegate to.
+          Skills the agent can load, external MCP servers, the tools available to the agent, and the subagents you can
+          delegate to.
         </p>
+
+        {/* Skills — global only (workspace skills are managed in each workspace's settings) */}
+        <Section
+          icon="skills"
+          title="Global skills"
+          subtitle="Reviewed, gated capability packs the agent can load. Workspace-specific skills are managed in each workspace's settings."
+        >
+          <SkillsSection workspaceId={workspaceId} />
+        </Section>
 
         {/* MCP */}
         <Section icon="mcp" title="MCP" subtitle="Connected Model Context Protocol servers, and adding more.">

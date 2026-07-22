@@ -358,6 +358,19 @@ export default function App(): React.JSX.Element {
         // triggered assistant turn — this just manages the card + a flow notice.
         const sub = parseSubagentEvent(r);
         if (sub) handleSubagentEvent(sid, sub);
+        // §14: raw-read fallback — the model loaded a skill by reading SKILL.md
+        // instead of use_skill. Surface a lightweight notice (the use_skill happy
+        // path already renders as its own tool card, so only detected reads here).
+        if (r.method === "notify") {
+          try {
+            const p = JSON.parse(r.message ?? "") as { kind?: string; name?: string; detected?: boolean };
+            if (p?.kind === "hv.skill" && p.detected) {
+              appendItem(sid, { kind: "notice", text: `Loaded skill “${p.name ?? ""}” by reading it directly` });
+            }
+          } catch {
+            /* not JSON — ignore */
+          }
+        }
       }
     });
 

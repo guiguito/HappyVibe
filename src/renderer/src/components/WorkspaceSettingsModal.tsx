@@ -1,7 +1,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
+import { SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
 
 /**
  * W1.4 workspace settings (PRD "Settings"): model override, workspace
@@ -107,6 +108,10 @@ export function WorkspaceSettingsModal({
           <PermissionRulesSection workspace={workspace} />
         </Block>
 
+        <Block title="skills">
+          <WorkspaceSkillsBlock workspace={workspace} />
+        </Block>
+
         <Block title="bypass all permissions">
           <div className="flex items-center gap-2">
             <select
@@ -188,5 +193,82 @@ export function WorkspaceSettingsModal({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/**
+ * §14: the ONLY surface for workspace-scoped skills — review of project
+ * `.agents/skills`, plus the per-workspace activation checklist over EVERY
+ * approved skill (global + workspace). A session in this workspace spawns with
+ * the skills toggled on here (bundled off by default, others on).
+ */
+function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.Element {
+  const [data, setData] = useState<HvSkillsList["workspace"]>(null);
+  const [inspecting, setInspecting] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    void window.hv.skillsList(workspace).then((l) => setData(l.workspace));
+  }, [workspace]);
+  useEffect(() => {
+    refresh();
+    return window.hv.onSkillsChanged(refresh);
+  }, [refresh]);
+
+  if (!data) return <p className="text-sm text-ink-soft">Loading…</p>;
+
+  const toggle = (id: string, on: boolean): void => {
+    void window.hv.skillsSetActive(workspace, id, on);
+  };
+
+  return (
+    <>
+      {data.skills.length > 0 && (
+        <div className="mb-4">
+          <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Project skills (.agents/skills)</div>
+          <div className="rounded-xl border-2 border-line overflow-hidden">
+            {data.skills.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setInspecting(s.id)}
+                className="w-full text-left px-3 py-2 border-b border-line last:border-b-0 hover:bg-paper-deep/30 cursor-pointer flex items-center gap-2"
+              >
+                <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 shrink-0 ${STATUS_TONE[s.status]}`}>
+                  {STATUS_LABEL[s.status]}
+                </span>
+                <span className="font-bold text-sm">{s.name}</span>
+                {s.scriptCount > 0 && <span className="text-[10px] text-berry font-bold">· {s.scriptCount} script{s.scriptCount > 1 ? "s" : ""}</span>}
+                <span className="ml-auto text-ink-soft">›</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Active in this workspace</div>
+      {data.checklist.length === 0 ? (
+        <p className="text-xs text-ink-soft">No approved skills yet. Approve skills in the Global skills view or review project skills above.</p>
+      ) : (
+        <div className="rounded-xl border-2 border-line overflow-hidden">
+          {data.checklist.map((c) => (
+            <label key={c.id} className="flex items-center gap-2 px-3 py-2 border-b border-line last:border-b-0 cursor-pointer hover:bg-paper-deep/30">
+              <input
+                type="checkbox"
+                checked={c.active}
+                onChange={(e) => toggle(c.id, e.target.checked)}
+                className="size-4 accent-tangerine cursor-pointer"
+              />
+              <span className="font-bold text-sm">{c.name}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-soft">{c.scope}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-ink-soft mt-1.5">
+        Toggling a skill respawns this workspace's sessions to apply the change (the conversation is preserved).
+      </p>
+
+      {inspecting && <SkillInspector id={inspecting} onClose={() => setInspecting(null)} onChanged={refresh} />}
+    </>
   );
 }

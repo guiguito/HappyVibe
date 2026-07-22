@@ -80,6 +80,12 @@ const ICON_PATHS: Record<IconKind, React.JSX.Element> = {
     </>
   ),
   check: <polyline points="20 6 9 17 4 12" />,
+  book: (
+    <>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </>
+  ),
 };
 
 export function ToolIcon({ kind, className }: { kind: IconKind; className?: string }): React.JSX.Element {

@@ -103,6 +103,8 @@ export interface SystemBlock {
   toolDefs?: Array<{ name: string; chars: number }>;
   /** Discoverability: the injected "Available subagents" roster, per agent. */
   agents?: Array<{ name: string; chars: number }>;
+  /** §14: skill system-prompt weight (card estimate) + count, per scope. */
+  skills?: { global: { tokens: number; count: number }; workspace: { tokens: number; count: number } };
 }
 
 export interface ContextSnapshot {
@@ -185,7 +187,7 @@ export function groupItems(items: ContextItem[]): ContextGroupView[] {
 // ── W2.4: summary-first panel ────────────────────────────────────────────────
 
 export interface CategorySummary {
-  key: "system" | "files" | "tools" | ContextItem["group"];
+  key: "system" | "files" | "tools" | "skills-global" | "skills-workspace" | ContextItem["group"];
   label: string;
   count: number;
   chars: number;
@@ -243,6 +245,16 @@ export function summarizeGroups(
         share: 0,
         measured: defs.length > 0,
       });
+    }
+    // §14: skills' system-prompt weight — two lines (global / workspace).
+    const sk = system.skills;
+    if (sk) {
+      if (sk.global.count > 0) {
+        rows.push({ key: "skills-global", label: "Global skills", count: sk.global.count, chars: sk.global.tokens * 4, estTokens: sk.global.tokens, removedCount: 0, share: 0 });
+      }
+      if (sk.workspace.count > 0) {
+        rows.push({ key: "skills-workspace", label: "Workspace skills", count: sk.workspace.count, chars: sk.workspace.tokens * 4, estTokens: sk.workspace.tokens, removedCount: 0, share: 0 });
+      }
     }
   }
   for (const g of groupItems(items)) {

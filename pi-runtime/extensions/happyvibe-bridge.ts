@@ -14,6 +14,9 @@ import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolF
 import {
   buildPlanPrompt, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
+import {
+  buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
+} from "./hv-skills";
 // Async subagents (PRD §12): pi-subagents is co-resident on the SAME pi.events
 // bus, so the bridge subscribes to its in-process lifecycle events and relays
 // them as hv.subagent notifies (they never reach RPC stdout on their own). The
@@ -49,7 +52,11 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
 // "mcp" is the pi-mcp-adapter proxy tool: injecting intent gives every MCP call
 // a customer-facing headline. The adapter's execute ignores the top-level intent
 // (it forwards only the `args` JSON to the server), so this is safe in proxy mode.
-const INTENT_TOOLS = ["ask_user", "mcp"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+// "use_skill" (§14): loading a skill goes through requireIntent like MCP, so a
+// skill load surfaces as a transcript card with a model-authored "why". Built-in
+// `read` can't carry intent (params stripped), which is exactly why a raw read of
+// a SKILL.md only gets the derived-label fallback card.
+const INTENT_TOOLS = ["ask_user", "mcp", "use_skill"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
 // `subagent` advertises intent but does NOT require it: the delegation `task` is
 // already a fine customer-facing headline (the UI uses intent ?? task), and a
 // hard requirement made looser models (e.g. Kimi) fail their first delegation
@@ -132,6 +139,12 @@ let toolsBeforePlan: string[] | undefined;
 // the `context` handler (proven non-destructive in s0.3).
 const CONTEXT_MARKS_TYPE = "hv-context-marks";
 let contextMarks = new Set<MarkKey>();
+
+// ── §14 Skills ───────────────────────────────────────────────────────────────
+// The session's loaded-skills manifest (HV_SKILLS_FILE), written by main to the
+// exact set of skills this session spawned with (approved ∩ enabled ∩ active).
+// Re-read on session_start so a respawn (hibernation/reload) reflects new config.
+let skillManifest: SkillManifest = { skills: [] };
 
 /** JSON envelope for the fire-and-forget bridge→main channel (B4 hv.audit precedent). */
 const ctxPayload = (o: Record<string, unknown>): string => JSON.stringify({ kind: "hv.context", ...o });
@@ -267,6 +280,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi); // all extensions have registered by now (idempotent across reloads)
+    skillManifest = loadManifest(); // §14: reflect this session's loaded skills
     const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
     restoreMarks(entries);
     // §23: plan state SURVIVES respawn (unlike dangerous mode). Restore + re-emit
@@ -293,7 +307,9 @@ export default function (pi: ExtensionAPI) {
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
     const planSection = plan.enabled ? "\n\n" + buildPlanPrompt() : "";
-    const injected = sp + section + agentsSection + planSection;
+    // §14: steer the model to use_skill (intent card) over a raw SKILL.md read.
+    const skillSection = buildUseSkillGuidance(skillManifest);
+    const injected = sp + section + agentsSection + planSection + skillSection;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -320,7 +336,7 @@ export default function (pi: ExtensionAPI) {
       // Per-agent weight of the injected roster (name line ≈ chars/4 tokens).
       agents: agents.map((a) => ({ name: a.name, chars: `- **${a.name}** — ${a.description.slice(0, 200)}`.length })),
     };
-    if (section || agentsSection || planSection) return { systemPrompt: injected };
+    if (section || agentsSection || planSection || skillSection) return { systemPrompt: injected };
   });
 
   // The only place removal takes effect. Non-destructive: session file untouched.
@@ -344,7 +360,8 @@ export default function (pi: ExtensionAPI) {
         ctxPayload({
           stage: "snapshot",
           // W2.3: nested list computed fresh — the set can grow mid-turn.
-          system: systemBlock ? { ...systemBlock, nested: nestedList() } : null,
+          // §14: skills carries the two system-prompt weight lines (global/workspace).
+          system: systemBlock ? { ...systemBlock, nested: nestedList(), skills: skillTokenLines(skillManifest) } : null,
           items: serializeEntries(entries),
           marks: [...contextMarks],
         }),
@@ -427,6 +444,18 @@ export default function (pi: ExtensionAPI) {
       if (found && !nestedAgentsMd.has(found)) {
         nestedAgentsMd.add(found);
         ctx.ui.notify(JSON.stringify({ kind: "hv.context-files", nested: nestedList() }), "info");
+      }
+    }
+
+    // §14: raw-read fallback — the model loaded a skill by reading its SKILL.md
+    // instead of calling use_skill (built-ins can't carry intent). Surface it as
+    // a skill card with a derived label (no intent) + flag it heuristic for audit.
+    // The read still proceeds through the normal gate below (SKILL.md is inside
+    // the workspace or an approved dir); this is a transparency signal, not a gate.
+    if (tool === "read") {
+      const hit = matchReadPath(skillManifest, input, process.cwd());
+      if (hit) {
+        ctx.ui.notify(JSON.stringify({ kind: "hv.skill", stage: "invoked", name: hit.name, scope: hit.scope, detected: true }), "info");
       }
     }
 
@@ -801,6 +830,45 @@ export default function (pi: ExtensionAPI) {
       let text = answers ? answersMarkdown(answers) : `The user answered: ${value}`;
       if (notes.length) text += `\n\n(Your input was adjusted: ${notes.join("; ")}.)`;
       return { content: [{ type: "text", text }], details: { answers } };
+    },
+  });
+
+  // ── §14 Skills: use_skill tool (docs/validation/sk1.md §hv.skill) ─────────
+  // Loading a skill = calling use_skill(name), which returns the SKILL.md body.
+  // It's in INTENT_TOOLS (requireIntent injects a required `intent`), so a skill
+  // load surfaces as a transcript card with a model-authored "why", and each
+  // invocation is auditable (hv.skill notify). Prompting is steered here via the
+  // <happyvibe-skills> system block; a raw read is caught by the fallback above.
+  pi.registerTool({
+    name: "use_skill",
+    label: "Use skill",
+    description:
+      "Load a HappyVibe skill's full instructions when a task matches it. Pass the skill `name` " +
+      "(as shown in the available skills) and a short `intent`. Returns the skill's SKILL.md so " +
+      "you can follow its workflow. Prefer this over reading a SKILL.md file directly.",
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are loading this skill." }),
+      name: Type.String({ description: "The skill name to load (from the available skills list)." }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const { name } = params as { name?: string };
+      const entry = name ? findByName(skillManifest, name) : undefined;
+      if (!entry) {
+        const available = skillManifest.skills.map((s) => s.name).join(", ") || "(none loaded)";
+        return { content: [{ type: "text", text: `No loaded skill named "${name ?? ""}". Available skills: ${available}.` }], details: {} };
+      }
+      let body: string;
+      try {
+        body = fs.readFileSync(entry.skillMdPath, "utf8");
+      } catch (e) {
+        return { content: [{ type: "text", text: `Could not read skill "${entry.name}": ${e instanceof Error ? e.message : String(e)}` }], details: {} };
+      }
+      // Audit + (renderer) invocation card. Not a raw-read (detected:false).
+      ctx.ui.notify(JSON.stringify({ kind: "hv.skill", stage: "invoked", name: entry.name, scope: entry.scope, detected: false }), "info");
+      return {
+        content: [{ type: "text", text: `<skill name="${entry.name}" location="${entry.skillMdPath}">\nReferences are relative to ${entry.dir}.\n\n${body}\n</skill>` }],
+        details: { skill: entry.name },
+      };
     },
   });
 

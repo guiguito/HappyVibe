@@ -43,6 +43,15 @@ export interface PiSpawnOptions {
   /** Round 3 #14: persistent "bypass all permissions" resolved for this session
       (workspace ?? global). true → HV_BYPASS=1 → bridge starts in dangerous mode. */
   bypass?: boolean;
+  /** §14 Skills: absolute skill-dir paths this session is allowed to load
+      (approved ∩ enabled ∩ active-for-workspace). Enforced with `--no-skills`
+      (kills Pi's own discovery — Pi never sees an unapproved skill) plus one
+      `--skill <dir>` per entry (additive even with --no-skills). Always
+      `--no-skills`, even when empty, so discovery is off by default. */
+  skills?: string[];
+  /** §14: per-session skills manifest JSON → HV_SKILLS_FILE (the bridge serves
+      use_skill and detects raw SKILL.md reads from it). */
+  skillsFile?: string;
 }
 
 /**
@@ -77,6 +86,11 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // so the bridge's permission gate applies (docs/validation/m1.md).
       // Config: PI_CODING_AGENT_DIR/mcp.json (global) + <cwd>/.mcp.json (workspace).
       "-e", path.join(runtimeDir, PI_MCP_ADAPTER_RELPATH),
+      // §14 Skills: disable Pi's own discovery (so no unapproved skill ever
+      // loads) and add back exactly the approved+active ones. --skill is
+      // additive even with --no-skills (verified against pinned Pi 0.80.10).
+      "--no-skills",
+      ...(opts.skills ?? []).flatMap((s) => ["--skill", s]),
       "--session-dir", sessionDir,
       "--provider", model.provider,
       "--model", model.modelId,
@@ -92,6 +106,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
+      ...(opts.skillsFile ? { HV_SKILLS_FILE: opts.skillsFile } : {}),
       // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
       // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).
       PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, PI_SUBAGENT_BIN_RELPATH),
