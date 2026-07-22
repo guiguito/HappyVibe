@@ -42,16 +42,17 @@ Pi facts this design builds on:
 
 ## 4. Import
 
-Four sources, one funnel — everything lands in the managed global dir or workspace
-`.agents/skills/`, except linked dirs:
+Three sources, one funnel — copied imports land in the managed global dir or workspace
+`.agents/skills/`; linked dirs are referenced in place:
 
 - **Local folder** — copy in (single skill or a parent containing many).
 - **Claude Code dirs** — *linked in place* (not copied): a `linkedDirs` list in HappyVibe
   settings; skills from linked dirs still go through review-before-active.
-- **Git URL** — shallow clone into the managed dir; record source URL + commit for
-  provenance. "Update" = re-fetch → hash changes → re-review. No auto-update.
 - **Curated shortlist** — a static in-app list (entries from anthropics/skills,
-  badlogic/pi-skills) that pre-fills the Git import. Not a marketplace.
+  badlogic/pi-skills) linking to the repos; the user downloads and brings a skill in via
+  the local-folder import. Not a marketplace.
+
+Git-URL import was cut from V1 (Notion edit, 2026-07-22) — moved to Out of scope.
 
 All imports are path-confined writes (the `resolveInWorkspace` pattern).
 
@@ -67,7 +68,7 @@ SKILL.md via the file tree.
 
 - **SkillsSection** (scope-aware, same shape as `McpServersSection`): rendered in the
   "MCP, Tools & Agents" view with Global and This-workspace lists. Each row shows name,
-  description, source badge (managed / linked / project / git), status (active / disabled /
+  description, source badge (managed / linked / project), status (active / disabled /
   needs review / error). Row click → inspector: rendered SKILL.md, file list, provenance,
   approve/disable actions. Import/create entry points live here.
 - **Workspace settings**: `WorkspaceSettingsModal` embeds the workspace-scoped
@@ -96,5 +97,5 @@ show in the transcript like other tool activity.
 
 ## 9. Out of scope (V2+)
 
-Marketplace/library, auto-updates for git imports, a skill-editing UI, honoring the
+Marketplace/library, git-URL import (and update/provenance flows), a skill-editing UI, honoring the
 experimental `allowed-tools` frontmatter, per-skill tool-permission narrowing.
