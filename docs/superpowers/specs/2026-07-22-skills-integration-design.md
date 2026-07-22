@@ -85,21 +85,26 @@ SKILL.md via the file tree.
 
 ## 6. UI
 
-- **SkillsSection** (scope-aware, same shape as `McpServersSection`): rendered in the
-  "MCP, Tools & Agents" view with Global and This-workspace lists. Each row shows name,
-  description, source badge (managed / linked / project), status (active / disabled /
+- **SkillsSection** (same shape as `McpServersSection`): rendered in the current
+  "MCP, Tools & Agents" view, renamed **"Skills, MCP, Agents & Tools"**. Shows **global
+  skills only** (managed dir + linked dirs + bundled) — multiple workspaces can be live
+  at once, so workspace-scoped skills don't belong on this screen. Each row: name,
+  description, source badge (managed / linked / bundled), status (active / disabled /
   needs review / error). Row click → inspector: rendered SKILL.md, file list, provenance,
-  approve/disable actions. Import/create entry points live here.
-- **Workspace settings**: `WorkspaceSettingsModal` embeds a Skills section showing the
-  activation checklist — every approved skill (global and workspace) with an on/off
-  toggle for this workspace — plus review actions for the workspace's own project skills,
-  alongside the existing PermissionRulesSection.
+  approve/disable actions. Global import/create entry points live here.
+- **Workspace settings**: `WorkspaceSettingsModal` is the ONLY management surface for
+  workspace-scoped skills (project `.agents/skills` + workspace imports): discovery,
+  review, approve — plus the activation checklist over every approved skill (global and
+  workspace) with an on/off toggle for this workspace. Sits alongside the existing
+  PermissionRulesSection.
 - **Context visibility**: skills' system-prompt overhead surfaces in the context panel as
   two lines — global skills and workspace skills — each with an estimated token weight;
   the skill inspector shows the per-skill estimate (name + description are paid on every
   turn; the SKILL.md body only when loaded).
-- **Tools list**: loaded skills appear under a "skill" category (PRD §13 future-categories
-  slot) as a read-only pointer to the SkillsSection.
+- **Tools list**: per-session (as today — `listTools(sessionId)`), so it shows exactly the
+  skills the selected session loaded — global-active AND that session's workspace skills,
+  each with a scope badge — under a "skill" category (PRD §13 future-categories slot).
+  Read-only; rows link to the SkillsSection (global) or workspace settings (workspace).
 - **Composer**: `/skill:name` autocomplete from the active session's approved skill set
   (Pi's `enableSkillCommands` provides the RPC command; HappyVibe surfaces it).
 - **Review prompt**: opening a workspace with unreviewed project skills shows a
