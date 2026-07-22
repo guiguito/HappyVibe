@@ -62,10 +62,11 @@ test("workspace activation view: opt-out drops a normal approved skill to disabl
   expect(toSkillView(s, reg, { [s.id]: false }).status).toBe("disabled");
 });
 
-test("workspace activation view: bundled approved skill is disabled by default, active when opted in", () => {
+test("bundled approved skill shows disabled until globally enabled", () => {
   const s = mk("f", "name: f\ndescription: Bundled.", "bundled");
   const reg = new SkillRegistry(path.join(root, "r.jsonl"));
-  reg.approve(s, NOW, { enabled: true });
-  expect(toSkillView(s, reg, {}).status).toBe("disabled"); // bundled default off
-  expect(toSkillView(s, reg, { [s.id]: true }).status).toBe("active");
+  reg.approve(s, NOW, { enabled: false }); // bundled default: trusted but off
+  expect(toSkillView(s, reg).status).toBe("disabled");
+  reg.setEnabled(s.id, true, NOW);
+  expect(toSkillView(s, reg).status).toBe("active"); // one enable turns it on
 });

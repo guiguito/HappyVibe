@@ -173,6 +173,11 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:skills-set-active", workspaceId, id, on),
   skillsGetLinked: () => ipcRenderer.invoke("hv:skills-get-linked"),
   skillsSetLinked: (dirs: string[]) => ipcRenderer.invoke("hv:skills-set-linked", dirs),
+  skillsAddLinked: () => ipcRenderer.invoke("hv:skills-add-linked"),
+  skillsImportLocal: () => ipcRenderer.invoke("hv:skills-import-local"),
+  skillsImportGit: (url: string) => ipcRenderer.invoke("hv:skills-import-git", url),
+  skillsImportSelect: (token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null) =>
+    ipcRenderer.invoke("hv:skills-import-select", token, ids, scope, workspaceId),
   onSkillsChanged: (cb: () => void): (() => void) => {
     const listener = (): void => cb();
     ipcRenderer.on("hv:skills-changed", listener);

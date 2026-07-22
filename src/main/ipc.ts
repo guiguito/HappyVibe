@@ -13,8 +13,9 @@ import {
   setProviderKey, setWorkspaceBypass,
 } from "./config";
 import {
-  bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, managedSkillsDir,
-  readSkillDir, resolveActiveSkills, SkillRegistry, toSkillView, type DiscoveredSkill,
+  bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
+  managedSkillsDir, parseForgeUrl, readSkillDir, resolveActiveSkills, scanSkillsDir, SkillRegistry, toSkillView,
+  type DiscoveredSkill, type SkillProvenance,
 } from "./skills";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
@@ -124,6 +125,12 @@ export function registerIpc(win: BrowserWindow): void {
 
   // ── §14 Skills ─────────────────────────────────────────────────────────────
   const skillRegistry = new SkillRegistry(path.join(userData, "skills-approvals.jsonl"));
+  // Pre-approve bundled starter skills (off by default) — idempotent.
+  try {
+    installBundledSkills(bundledSkillsDir(piRuntimeDir()), skillRegistry, new Date().toISOString());
+  } catch (e) {
+    console.warn("[hv] bundled skills install failed:", e);
+  }
   const skillsManifestDir = path.join(userData, "skills-manifests");
   const globalScanDirs = () => ({
     managedDir: managedSkillsDir(agentDir()),
@@ -1541,6 +1548,96 @@ export function registerIpc(win: BrowserWindow): void {
     skillsChanged();
     scheduleSkillReload("global", null);
   });
+  ipcMain.handle("hv:skills-add-linked", async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Link a skills directory" });
+    if (r.canceled || !r.filePaths[0]) return getLinkedSkillDirs();
+    setLinkedSkillDirs([...getLinkedSkillDirs(), r.filePaths[0]]);
+    skillsChanged();
+    scheduleSkillReload("global", null);
+    return getLinkedSkillDirs();
+  });
+
+  // ── §14 Import (Phase 2): local folder + git-URL tarball, both two-phase
+  //    (scan → pick → copy). A scan registers a session token; select copies the
+  //    chosen skill dirs into the managed dir (global) or <ws>/.agents/skills,
+  //    approved at import (the user already saw them). ──────────────────────────
+  interface ImportSession {
+    skills: Array<{ id: string; name: string; description: string; scriptCount: number }>;
+    dirById: Map<string, string>;
+    provenance: SkillProvenance;
+    cleanup?: () => void;
+  }
+  const importSessions = new Map<string, ImportSession>();
+  let importSeq = 0;
+  const registerImport = (skills: DiscoveredSkill[], provenance: SkillProvenance, cleanup?: () => void): { token: string; skills: ImportSession["skills"] } => {
+    const token = `imp-${++importSeq}-${Date.now()}`;
+    const dirById = new Map(skills.map((s) => [s.id, s.id] as const));
+    const view = skills.filter((s) => s.loadable).map((s) => ({ id: s.id, name: s.name, description: s.description, scriptCount: s.scriptCount }));
+    importSessions.set(token, { skills: view, dirById, provenance, cleanup });
+    return { token, skills: view };
+  };
+  app.on("will-quit", () => { for (const s of importSessions.values()) s.cleanup?.(); });
+
+  ipcMain.handle("hv:skills-import-local", async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Import a skill folder (or a folder of skills)" });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const picked = r.filePaths[0];
+    const found = scanSkillsDir(picked, "managed");
+    if (found.length === 0) return { token: null, skills: [], error: "No SKILL.md found in that folder." };
+    return registerImport(found, { source: "local", importedAt: new Date().toISOString() });
+  });
+
+  ipcMain.handle("hv:skills-import-git", async (_e, url: string) => {
+    const archive = parseForgeUrl(String(url));
+    if (!archive) return { token: null, skills: [], error: "Unsupported URL. Use a GitHub/GitLab/Bitbucket/Codeberg repo URL." };
+    const workDir = path.join(userData, "skills-import", `dl-${++importSeq}-${Date.now()}`);
+    try {
+      const { root, archiveHash } = await downloadAndExtract(archive, workDir);
+      const found = scanSkillsDir(root, "managed");
+      if (found.length === 0) { fs.rmSync(workDir, { recursive: true, force: true }); return { token: null, skills: [], error: "No skills (SKILL.md) found in that repository." }; }
+      return registerImport(
+        found,
+        { source: "git", sourceUrl: archive.archiveUrl, ref: archive.ref, commitSha: archiveHash, importedAt: new Date().toISOString() },
+        () => fs.rmSync(workDir, { recursive: true, force: true }),
+      );
+    } catch (e) {
+      fs.rmSync(workDir, { recursive: true, force: true });
+      return { token: null, skills: [], error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  // Copy chosen skill dirs into the destination parent, confined; approve each.
+  ipcMain.handle(
+    "hv:skills-import-select",
+    (_e, token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null) => {
+      const session = importSessions.get(token);
+      if (!session) throw new Error("Import session expired — scan again.");
+      const destParent =
+        scope === "workspace"
+          ? resolveInWorkspace(workspaces.list(), workspaceId ?? "", path.join(".agents", "skills"))
+          : managedSkillsDir(agentDir());
+      fs.mkdirSync(destParent, { recursive: true });
+      const now = new Date().toISOString();
+      const importedNames: string[] = [];
+      for (const id of ids) {
+        const srcDir = session.dirById.get(id);
+        if (!srcDir) continue;
+        const dest = path.join(destParent, path.basename(srcDir));
+        if (path.resolve(dest) !== destParent && !path.resolve(dest).startsWith(path.resolve(destParent) + path.sep)) continue; // confinement
+        fs.rmSync(dest, { recursive: true, force: true });
+        fs.cpSync(srcDir, dest, { recursive: true });
+        const skill = readSkillDir(dest, scope === "workspace" ? "workspace" : "managed");
+        skillRegistry.approve(skill, now, { enabled: true, provenance: session.provenance });
+        importedNames.push(skill.name);
+        void log.append({ type: "skill.imported", workspaceId: scope === "workspace" ? workspaceId ?? undefined : undefined, data: { name: skill.name, source: session.provenance.source, scope } });
+      }
+      session.cleanup?.();
+      importSessions.delete(token);
+      skillsChanged();
+      scheduleSkillReload(scope, scope === "workspace" ? workspaceId : null);
+      return importedNames;
+    },
+  );
 
   // Live on-disk change detection for the managed global dir (workspace skill
   // dirs ride the existing workspace watcher below). A change may flip an

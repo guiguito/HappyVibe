@@ -2,7 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
-import { SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
+import { ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
 
 /**
  * W1.4 workspace settings (PRD "Settings"): model override, workspace
@@ -222,6 +222,7 @@ function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.E
 
   return (
     <>
+      <ImportControls scope="workspace" workspaceId={workspace} />
       {data.skills.length > 0 && (
         <div className="mb-4">
           <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Project skills (.agents/skills)</div>

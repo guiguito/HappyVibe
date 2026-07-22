@@ -121,10 +121,11 @@ export class SkillRegistry {
 /**
  * Which skill dir paths a session in `workspace` should spawn with (`--skill`
  * args). A skill loads iff: trusted (approved at current hash), globally enabled,
- * loadable (Pi will load it), and active for this workspace. Activation default
- * is opt-OUT for normal skills (active unless explicitly toggled off) and opt-IN
- * for bundled skills (off unless toggled on) — matching "bundled off by default".
- * PURE so it's unit-testable and mirrors nothing else (single source of truth).
+ * loadable (Pi will load it), and active for this workspace. Per-workspace
+ * activation is opt-OUT (active unless explicitly toggled off). "Bundled off by
+ * default" is NOT modeled here — it's the bundled skills' initial enabled=false
+ * record (installBundledSkills), so a single "Enable" turns one on. PURE, the
+ * single source of truth for what spawns.
  */
 export function resolveActiveSkills(
   discovered: DiscoveredSkill[],
@@ -136,8 +137,7 @@ export function resolveActiveSkills(
     if (!skill.loadable) continue;
     if (registry.approvalStatus(skill) !== "approved") continue;
     if (!registry.record(skill.id)?.enabled) continue;
-    const activeDefault = skill.source !== "bundled";
-    if ((activation?.[skill.id] ?? activeDefault) !== true) continue;
+    if ((activation?.[skill.id] ?? true) !== true) continue;
     out.push(skill.id);
   }
   return out;

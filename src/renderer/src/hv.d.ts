@@ -87,6 +87,13 @@ interface HvSkillsList {
   workspace: { skills: HvSkillView[]; checklist: HvSkillChecklistItem[] } | null;
 }
 
+/** §14 — a scan result from a local-folder or git-URL import (pick which to import). */
+interface HvSkillImportScan {
+  token: string | null;
+  skills: Array<{ id: string; name: string; description: string; scriptCount: number }>;
+  error?: string;
+}
+
 /** §14 — the inspector payload (hv:skills-read): current content + approved snapshot for the diff. */
 interface HvSkillDetail {
   name: string;
@@ -314,6 +321,10 @@ interface HvApi {
   skillsSetActive(workspaceId: string, id: string, on: boolean | null): Promise<void>;
   skillsGetLinked(): Promise<string[]>;
   skillsSetLinked(dirs: string[]): Promise<void>;
+  skillsAddLinked(): Promise<string[]>;
+  skillsImportLocal(): Promise<HvSkillImportScan | null>;
+  skillsImportGit(url: string): Promise<HvSkillImportScan>;
+  skillsImportSelect(token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null): Promise<string[]>;
   onSkillsChanged(cb: () => void): () => void;
 
   // MCP server config (additive). Changes apply to new sessions.

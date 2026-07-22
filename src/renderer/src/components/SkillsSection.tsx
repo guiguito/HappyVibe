@@ -30,6 +30,172 @@ export const SOURCE_TONE: Record<HvSkillView["source"], string> = {
   workspace: "bg-paper-deep text-ink-soft border-line",
 };
 
+/** Curated shortlist — one-click prefill of the git importer (not a marketplace). */
+const CURATED = [
+  { label: "anthropics/skills", url: "https://github.com/anthropics/skills" },
+  { label: "badlogic/pi-skills", url: "https://github.com/badlogic/pi-skills" },
+];
+
+const importBtn =
+  "text-xs font-bold rounded-lg border-2 border-line px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer disabled:opacity-40";
+
+/**
+ * §14 import controls — local folder, git-URL tarball, linked dir, curated
+ * shortlist. Scope-parameterized: the global Skills section imports to the
+ * managed dir; workspace settings import to <ws>/.agents/skills. onImported is
+ * fired after a successful import (lists refresh via onSkillsChanged anyway).
+ */
+export function ImportControls({
+  scope,
+  workspaceId,
+}: {
+  scope: "global" | "workspace";
+  workspaceId: string | null;
+}): React.JSX.Element {
+  const [scan, setScan] = useState<HvSkillImportScan | null>(null);
+  const [gitOpen, setGitOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const runScan = async (fn: () => Promise<HvSkillImportScan | null>): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fn();
+      if (!r) return; // dialog cancelled
+      if (r.error || !r.token) setError(r.error ?? "No skills found.");
+      else if (r.skills.length === 0) setError("No skills found in that source.");
+      else setScan(r);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mb-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" disabled={busy} className={importBtn} onClick={() => void runScan(() => window.hv.skillsImportLocal())}>
+          Import folder
+        </button>
+        <button type="button" disabled={busy} className={importBtn} onClick={() => setGitOpen(true)}>
+          Import from Git URL
+        </button>
+        {scope === "global" && (
+          <button type="button" disabled={busy} className={importBtn} onClick={() => void window.hv.skillsAddLinked()}>
+            Link a directory
+          </button>
+        )}
+        {busy && <span className="text-xs text-ink-soft">Working…</span>}
+      </div>
+      {error && <p className="mt-1.5 text-xs font-semibold text-berry">{error}</p>}
+
+      {gitOpen && (
+        <GitUrlModal
+          onClose={() => setGitOpen(false)}
+          onScan={async (url) => {
+            setGitOpen(false);
+            await runScan(() => window.hv.skillsImportGit(url));
+          }}
+        />
+      )}
+      {scan?.token && (
+        <ImportPicker
+          scan={scan}
+          scope={scope}
+          workspaceId={workspaceId}
+          onClose={() => setScan(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function GitUrlModal({ onClose, onScan }: { onClose: () => void; onScan: (url: string) => void }): React.JSX.Element {
+  const [url, setUrl] = useState("");
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-5" onMouseDown={(e) => e.stopPropagation()}>
+        <h3 className="font-black text-lg mb-1">Import from Git URL</h3>
+        <p className="text-xs text-ink-soft mb-3">Public GitHub, GitLab, Bitbucket or Codeberg repo. Downloaded over HTTPS (no git needed); you choose which skills to import.</p>
+        <input
+          autoFocus
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && url.trim()) onScan(url.trim()); }}
+          placeholder="https://github.com/owner/repo"
+          className="w-full rounded-lg border-2 border-line bg-card px-3 py-2 text-sm font-mono focus:outline-none focus:border-tangerine"
+        />
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {CURATED.map((c) => (
+            <button key={c.url} type="button" onClick={() => setUrl(c.url)} className="text-[11px] rounded-full border border-line px-2 py-0.5 hover:bg-paper-deep/40 cursor-pointer">
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-xl border-2 border-line font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 cursor-pointer">Cancel</button>
+          <button type="button" disabled={!url.trim()} onClick={() => onScan(url.trim())} className="rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40">Fetch</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportPicker({
+  scan,
+  scope,
+  workspaceId,
+  onClose,
+}: {
+  scan: HvSkillImportScan;
+  scope: "global" | "workspace";
+  workspaceId: string | null;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(scan.skills.map((s) => s.id)));
+  const [busy, setBusy] = useState(false);
+  const toggle = (id: string): void => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const doImport = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await window.hv.skillsImportSelect(scan.token!, [...selected], scope, workspaceId);
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+      <div className="w-full max-w-lg rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-5 flex flex-col max-h-[80vh]" onMouseDown={(e) => e.stopPropagation()}>
+        <h3 className="font-black text-lg mb-1">Import skills</h3>
+        <p className="text-xs text-ink-soft mb-3">Choose which skills to import. They're approved on import ({scope === "workspace" ? "into this workspace" : "as global skills"}).</p>
+        <div className="flex-1 overflow-y-auto rounded-xl border-2 border-line">
+          {scan.skills.map((s) => (
+            <label key={s.id} className="flex items-start gap-2 px-3 py-2 border-b border-line last:border-b-0 cursor-pointer hover:bg-paper-deep/30">
+              <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggle(s.id)} className="mt-1 size-4 accent-tangerine cursor-pointer" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm">{s.name}</span>
+                  {s.scriptCount > 0 && <span className="text-[10px] text-berry font-bold">{s.scriptCount} script{s.scriptCount > 1 ? "s" : ""}</span>}
+                </div>
+                <p className="text-xs text-ink-soft line-clamp-2">{s.description}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-xl border-2 border-line font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 cursor-pointer">Cancel</button>
+          <button type="button" disabled={busy || selected.size === 0} onClick={() => void doImport()} className="rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40">
+            Import {selected.size > 0 ? selected.size : ""}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SkillsSection({ workspaceId }: { workspaceId: string | null }): React.JSX.Element {
   const [skills, setSkills] = useState<HvSkillView[] | null>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);
@@ -47,6 +213,7 @@ export function SkillsSection({ workspaceId }: { workspaceId: string | null }): 
 
   return (
     <>
+      <ImportControls scope="global" workspaceId={workspaceId} />
       {needsReview > 0 && (
         <div className="mb-3 rounded-xl border-2 border-honey/60 bg-honey-soft px-3 py-2 text-sm font-semibold text-tangerine-deep">
           {needsReview} skill{needsReview > 1 ? "s" : ""} need{needsReview > 1 ? "" : "s"} review before they can run.

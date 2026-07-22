@@ -75,17 +75,17 @@ test("resolveActiveSkills: approved+enabled+active default on for normal skills"
   expect(resolveActiveSkills([s], reg, { [s.id]: true })).toEqual([]);
 });
 
-test("resolveActiveSkills: bundled skills are off by default (opt-in)", () => {
+test("resolveActiveSkills: bundled skills off by default via enabled=false, load once enabled", () => {
   const reg = new SkillRegistry(store);
   const abs = path.join(root, "bundled-one");
   fs.mkdirSync(abs, { recursive: true });
   fs.writeFileSync(path.join(abs, "SKILL.md"), `---\nname: bundled-one\ndescription: Bundled.\n---\nbody`);
   const b = readSkillDir(abs, "bundled");
-  reg.approve(b, NOW, { enabled: true }); // trusted + globally enabled
-  // bundled default activation is OFF
+  reg.approve(b, NOW, { enabled: false }); // trusted but globally OFF (bundled default)
   expect(resolveActiveSkills([b], reg, undefined)).toEqual([]);
-  // explicit workspace opt-in loads it
-  expect(resolveActiveSkills([b], reg, { [b.id]: true })).toEqual([b.id]);
+  // one "Enable" turns it on → active in workspaces by default
+  reg.setEnabled(b.id, true, NOW);
+  expect(resolveActiveSkills([b], reg, undefined)).toEqual([b.id]);
 });
 
 test("resolveActiveSkills: non-loadable skills never load", () => {

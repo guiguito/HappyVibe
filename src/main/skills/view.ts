@@ -50,8 +50,7 @@ export function toSkillView(
     if (!enabledGlobally) {
       status = "disabled";
     } else if (activation) {
-      const activeDefault = skill.source !== "bundled";
-      status = (activation[skill.id] ?? activeDefault) ? "active" : "disabled";
+      status = (activation[skill.id] ?? true) ? "active" : "disabled";
     } else {
       status = "active";
     }
