@@ -65,12 +65,16 @@ SKILL.md via the file tree.
 
 ## 6. UI
 
-- **Skills page**: two lists (Global / This workspace); each row shows name, description,
-  source badge (managed / linked / project / git), status (active / disabled /
+- **SkillsSection** (scope-aware, same shape as `McpServersSection`): rendered in the
+  "MCP, Tools & Agents" view with Global and This-workspace lists. Each row shows name,
+  description, source badge (managed / linked / project / git), status (active / disabled /
   needs review / error). Row click → inspector: rendered SKILL.md, file list, provenance,
-  approve/disable actions.
+  approve/disable actions. Import/create entry points live here.
+- **Workspace settings**: `WorkspaceSettingsModal` embeds the workspace-scoped
+  SkillsSection (project `.agents/skills` + workspace imports), alongside the existing
+  PermissionRulesSection — review/enable available in both places.
 - **Tools list**: loaded skills appear under a "skill" category (PRD §13 future-categories
-  slot) as a read-only pointer to the Skills page.
+  slot) as a read-only pointer to the SkillsSection.
 - **Composer**: `/skill:name` autocomplete from the active session's approved skill set
   (Pi's `enableSkillCommands` provides the RPC command; HappyVibe surfaces it).
 - **Review prompt**: opening a workspace with unreviewed project skills shows a
