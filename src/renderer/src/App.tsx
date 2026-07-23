@@ -816,14 +816,28 @@ export default function App(): React.JSX.Element {
             : { kind: m.kind, text: m.text, id: idCounter.current++ },
         );
         setTranscripts((p) => {
-          if (p[id]?.length) return p;
+          const existing = p[id] ?? [];
+          // Adopt the file-rebuilt transcript only when we don't already hold a
+          // LIVE conversation. A PlanCard/notice that raced in from the
+          // session_start hv.plan notify does NOT count as conversation — else
+          // reopening a plan session would keep only the plan card and drop the
+          // restored messages (the plan card is preserved by merging, below).
+          const hasConversation = existing.some(
+            (it) => it.kind === "user" || it.kind === "assistant" || it.kind === "tool",
+          );
+          if (hasConversation) return p;
+          // Keep any plan cards that arrived before this restore; append them
+          // after the rebuilt history (their live mid-transcript position isn't
+          // recoverable from get_messages — plan tools are filtered out there).
+          const planCards = existing.filter((it) => it.kind === "plan");
+          const merged = [...items, ...planCards];
           // Rebuild the tool index so any late tool_execution_end still matches.
           const map = new Map<string, number>();
-          items.forEach((it, i) => {
+          merged.forEach((it, i) => {
             if (it.kind === "tool") map.set(it.card.toolCallId, i);
           });
           toolIndex.current[id] = map;
-          return { ...p, [id]: items };
+          return { ...p, [id]: merged };
         });
       }
       setError(null);
