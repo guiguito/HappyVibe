@@ -746,6 +746,14 @@ export function registerIpc(win: BrowserWindow): void {
           const raw =
             (res.data as { messages?: Parameters<typeof restoreItems>[0] })?.messages ?? [];
           messages = restoreItems(raw);
+          // §23: fill each restored plan card with the plan file's real status +
+          // checklist progress, so a reopened card shows "implementing" (etc.)
+          // and the right CTA — not a stale "draft".
+          for (const it of messages) {
+            if (it.kind !== "plan") continue;
+            const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
+            if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }
+          }
         } catch {
           messages = []; // resumed but history unreadable — start visually fresh
         }

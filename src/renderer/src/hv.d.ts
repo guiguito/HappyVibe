@@ -19,7 +19,8 @@ interface SessionMeta {
     the session file), not just user/assistant text. */
 type RestoreItem =
   | { kind: "user" | "assistant"; text: string }
-  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean };
+  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
+  | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
 interface HvByokProvider {
   id: string;

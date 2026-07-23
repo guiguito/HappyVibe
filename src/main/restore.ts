@@ -11,7 +11,12 @@
 
 export type RestoreItem =
   | { kind: "user" | "assistant"; text: string }
-  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean };
+  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
+  // §23: the plan card, emitted at its plan_complete position (not the bottom).
+  // planPath comes from the plan_complete tool RESULT; status/done/total are
+  // filled by main (readPlan) so a reopened card shows its real state (e.g.
+  // "implementing"), not a stale "draft".
+  | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
 export interface RawMessage {
   role?: string;
@@ -38,12 +43,24 @@ export function messageText(content: unknown): string {
     .join("\n");
 }
 
+/** plan_complete's result text is `Plan saved to <relPath>. It is ready…`. */
+function planPathFromResult(text: string): string | null {
+  return /Plan saved to (\S+?\.md)/.exec(text)?.[1] ?? null;
+}
+
 export function restoreItems(raw: RawMessage[]): RestoreItem[] {
   const items: RestoreItem[] = [];
   const byCallId = new Map<string, Extract<RestoreItem, { kind: "tool" }>>();
+  // §23: plan_complete calls tracked by callId so the RESULT can fill planPath.
+  const planByCallId = new Map<string, Extract<RestoreItem, { kind: "plan" }>>();
   for (const m of raw) {
     if (m.role === "toolResult") {
-      if (m.toolName && PLAN_TOOLS.has(m.toolName)) continue; // §23: not a card
+      if (m.toolName === "plan_complete") {
+        const plan = m.toolCallId ? planByCallId.get(m.toolCallId) : undefined;
+        if (plan) plan.planPath = planPathFromResult(messageText(m.content)) ?? plan.planPath;
+        continue;
+      }
+      if (m.toolName && PLAN_TOOLS.has(m.toolName)) continue; // plan_start/status_update: not a card
       const tool = m.toolCallId ? byCallId.get(m.toolCallId) : undefined;
       if (tool) {
         tool.result = messageText(m.content);
@@ -63,6 +80,11 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
       const block = b as { type?: string; text?: string; id?: string; name?: string; arguments?: unknown };
       if (block.type === "text" && block.text?.trim()) {
         items.push({ kind: "assistant", text: block.text });
+      } else if (block.type === "toolCall" && block.id && block.name === "plan_complete") {
+        // The plan card at the position the plan was submitted (path filled by the result).
+        const plan: Extract<RestoreItem, { kind: "plan" }> = { kind: "plan", planPath: "" };
+        items.push(plan);
+        planByCallId.set(block.id, plan);
       } else if (block.type === "toolCall" && block.id && block.name && !PLAN_TOOLS.has(block.name)) {
         const tool: Extract<RestoreItem, { kind: "tool" }> = {
           kind: "tool",
@@ -75,5 +97,9 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
       }
     }
   }
-  return items;
+  // Revisions overwrite the same plan file → collapse to the LAST plan card per
+  // path (its final position); drop cards whose path never resolved.
+  const lastPlanIdx = new Map<string, number>();
+  items.forEach((it, i) => { if (it.kind === "plan" && it.planPath) lastPlanIdx.set(it.planPath, i); });
+  return items.filter((it, i) => it.kind !== "plan" || (it.planPath !== "" && lastPlanIdx.get(it.planPath) === i));
 }

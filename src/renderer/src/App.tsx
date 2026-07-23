@@ -793,7 +793,7 @@ export default function App(): React.JSX.Element {
     // a fresh open showed a static empty state with no loader).
     setStatuses((p) => ({ ...p, [id]: "waking" }));
     try {
-      const { messages } = await window.hv.openSession(id);
+      const { meta, messages } = await window.hv.openSession(id);
       setStatuses((p) => ({ ...p, [id]: "running" }));
       if (messages) {
         // Rebuilt from Pi's session file — only adopt when we hold nothing newer.
@@ -803,34 +803,42 @@ export default function App(): React.JSX.Element {
         const items: TranscriptItem[] = messages.map((m) =>
           m.kind === "tool"
             ? {
-                kind: "tool",
+                kind: "tool" as const,
                 id: idCounter.current++,
                 card: {
                   toolCallId: m.toolCallId,
                   toolName: m.toolName,
                   args: m.args,
-                  status: m.error ? "error" : "done",
+                  status: m.error ? ("error" as const) : ("done" as const),
                   result: m.result,
                 },
               }
-            : { kind: m.kind, text: m.text, id: idCounter.current++ },
+            : m.kind === "plan"
+              ? {
+                  // §23: the PlanCard at its original position, with the plan
+                  // file's real status/progress (so the CTA is right on reopen).
+                  kind: "plan" as const,
+                  id: idCounter.current++,
+                  card: { sessionId: id, workspaceId: meta.workspaceId, path: m.planPath, status: m.status ?? "draft", done: m.done ?? 0, total: m.total ?? 0 },
+                }
+              : { kind: m.kind, text: m.text, id: idCounter.current++ },
         );
+        const restoredPlanPaths = new Set(messages.flatMap((m) => (m.kind === "plan" ? [m.planPath] : [])));
         setTranscripts((p) => {
           const existing = p[id] ?? [];
           // Adopt the file-rebuilt transcript only when we don't already hold a
           // LIVE conversation. A PlanCard/notice that raced in from the
           // session_start hv.plan notify does NOT count as conversation — else
           // reopening a plan session would keep only the plan card and drop the
-          // restored messages (the plan card is preserved by merging, below).
+          // restored messages.
           const hasConversation = existing.some(
             (it) => it.kind === "user" || it.kind === "assistant" || it.kind === "tool",
           );
           if (hasConversation) return p;
-          // Keep any plan cards that arrived before this restore; append them
-          // after the rebuilt history (their live mid-transcript position isn't
-          // recoverable from get_messages — plan tools are filtered out there).
-          const planCards = existing.filter((it) => it.kind === "plan");
-          const merged = [...items, ...planCards];
+          // Keep any plan cards that raced in but AREN'T already positioned in the
+          // rebuilt history (dedupe by path) — avoids a duplicate bottom card.
+          const extraPlans = existing.filter((it) => it.kind === "plan" && !restoredPlanPaths.has(it.card.path));
+          const merged = [...items, ...extraPlans];
           // Rebuild the tool index so any late tool_execution_end still matches.
           const map = new Map<string, number>();
           merged.forEach((it, i) => {
