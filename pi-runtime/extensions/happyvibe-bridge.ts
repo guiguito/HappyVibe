@@ -12,7 +12,7 @@ import {
 import { parseAgentFile, renderSubagentSection, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
-  buildPlanPrompt, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, type PlanState, type PlanSessionEntry,
+  buildPlanPrompt, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, shouldForcePlanOff, type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
 import { parseBuiltins } from "./hv-builtins";
 import {
@@ -290,6 +290,10 @@ export default function (pi: ExtensionAPI) {
     // §23: plan state SURVIVES respawn (unlike dangerous mode). Restore + re-emit
     // so the renderer resyncs its banner/toggle after a hibernation/MCP respawn.
     plan = restorePlanState(entries as unknown as PlanSessionEntry[]);
+    // §13 round 6: Plan Mode disabled globally ⇒ a session that was mid-plan comes
+    // back with plan mode OFF (see shouldForcePlanOff — without it the clamp would
+    // keep running with every exit path unregistered).
+    if (shouldForcePlanOff(builtins.plan, plan)) plan = { enabled: false };
     // Only re-emit when there's real state to resync after a respawn — a spurious
     // "disabled" notify on every fresh session would be the first ui-request other
     // bridge tests wait on, and it's redundant (the renderer defaults to off).
@@ -461,7 +465,7 @@ export default function (pi: ExtensionAPI) {
     // plan mode wins over bypass (read-only must mean read-only). Applies to NEW
     // calls only; an in-flight async delegation is untouched.
     let planFloorAsk = false;
-    if (plan.enabled) {
+    if (builtins.plan && plan.enabled) {
       const g = gatePlanCall(tool, input);
       if (g.kind === "block") {
         audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "plan" });

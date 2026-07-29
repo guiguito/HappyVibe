@@ -10,6 +10,7 @@ import {
   PLAN_SAFE_SUBCOMMANDS,
   restorePlanState,
   shouldReconcilePlanOff,
+  shouldForcePlanOff,
   withPlanStatus,
   type PlanSessionEntry,
 } from "../pi-runtime/extensions/hv-plan";
@@ -200,5 +201,26 @@ describe("shouldReconcilePlanOff — self-heal a wedged respawn (§23 mid-turn-t
   });
   test("never reconciles when plan mode is already off", () => {
     expect(shouldReconcilePlanOff(true, false, "implementing")).toBe(false);
+  });
+});
+
+describe("shouldForcePlanOff — Plan Mode disabled globally must not strand a clamped session (§13 round 6)", () => {
+  test("forces off a session that was mid-plan when the feature is disabled", () => {
+    expect(shouldForcePlanOff(false, { enabled: true })).toBe(true);
+    expect(shouldForcePlanOff(false, { enabled: true, planPath: "/ws/.agents/plans/001-x.md" })).toBe(true);
+  });
+
+  test("forces off a session carrying only a planPath (exited plan, path still recorded)", () => {
+    expect(shouldForcePlanOff(false, { enabled: false, planPath: "/ws/.agents/plans/001-x.md" })).toBe(true);
+  });
+
+  test("leaves plan state alone while the feature is enabled", () => {
+    expect(shouldForcePlanOff(true, { enabled: true })).toBe(false);
+    expect(shouldForcePlanOff(true, { enabled: true, planPath: "/p.md" })).toBe(false);
+  });
+
+  test("is a no-op for a session with no plan state either way", () => {
+    expect(shouldForcePlanOff(false, { enabled: false })).toBe(false);
+    expect(shouldForcePlanOff(true, { enabled: false })).toBe(false);
   });
 });

@@ -49,6 +49,16 @@ export function shouldReconcilePlanOff(restored: boolean, enabled: boolean, stat
   return restored && enabled && status !== "draft";
 }
 
+/**
+ * §13 round 6: Plan Mode turned off globally ⇒ force any restored plan state off.
+ * The plan tools and the human-only /hv-plan exit are unregistered when the
+ * feature is disabled, so leaving restored state enabled would keep the
+ * gatePlanCall clamp running with no way for anyone — model or user — to lift it.
+ */
+export function shouldForcePlanOff(featureEnabled: boolean, state: PlanState): boolean {
+  return !featureEnabled && (state.enabled || state.planPath !== undefined);
+}
+
 /** Newest hv-plan-state custom entry wins — it's a full snapshot. */
 export function restorePlanState(entries: PlanSessionEntry[]): PlanState {
   let state: PlanState = { enabled: false };
