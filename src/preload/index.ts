@@ -161,6 +161,12 @@ contextBridge.exposeInMainWorld("hv", {
   setWorkspaceModel: (workspaceId: string, m: { provider: string; modelId: string } | null) =>
     ipcRenderer.invoke("hv:set-workspace-model", workspaceId, m),
 
+  // ── §13 round 6: configurable built-in custom tools (additive) ────
+  builtinsGet: () => ipcRenderer.invoke("hv:builtins-get"),
+  builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string }) =>
+    ipcRenderer.invoke("hv:builtins-set", t),
+  builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
+
   // ── §14 Skills (additive) ────────────────────────────────────────
   // list returns {global, workspace}; approve/enable/activate apply live via
   // respawn-resume. Invocation cards arrive as hv.skill notifies through

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from "../agents";
+import { BuiltinToolsBlock } from "./BuiltinToolsBlock";
 import { Section } from "./Section";
 
 const PERM_TONE: Record<PermState, string> = {
@@ -52,8 +53,8 @@ function ToolRowItem({ t }: { t: ToolRow }): React.JSX.Element {
  * Lists every built-in tool with its current permission state (joined from the
  * B4 rules via hv:eval-rules — read-only here; rules are edited in Settings).
  *
- * A later task (Wave D) prepends a second, configurable-built-ins block above
- * this list — kept as its own top-level Section so that's a simple insert.
+ * §13 round 6: BuiltinToolsBlock (its own file — see BuiltinToolsBlock.tsx)
+ * is prepended above this list as a second top-level Section.
  */
 export function AllToolsView({
   tools,
@@ -97,6 +98,8 @@ export function AllToolsView({
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">All Tools</h1>
         <p className="text-sm text-ink-soft mb-8">Everything the agent can call.</p>
+
+        <BuiltinToolsBlock />
 
         <Section icon="tools" title="Tools" subtitle="Everything the agent can call. Permission state comes from your rules (Settings → Permissions).">
           {toolRows === null ? (

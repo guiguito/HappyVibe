@@ -23,7 +23,7 @@ interface ConfigFile {
   linkedSkillDirs?: string[];
   /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user).
       Global only — no per-workspace tier. Absent key = on (fail-open default). */
-  builtinTools?: { plan?: boolean; askUser?: boolean };
+  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string };
 }
 
 function load(): ConfigFile {
@@ -144,12 +144,12 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
 
 // §13 round 6: global on/off for built-in custom tools. Both default true
 // (fail-open — same convention as HV_BYPASS's persistent setting).
-export function getBuiltinTools(): { plan: boolean; askUser: boolean } {
+export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string } {
   const t = load().builtinTools;
-  return { plan: t?.plan ?? true, askUser: t?.askUser ?? true };
+  return { plan: t?.plan ?? true, askUser: t?.askUser ?? true, planAppend: t?.planAppend ?? "" };
 }
 
-export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean }): void {
+export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string }): void {
   const cfg = load();
   cfg.builtinTools = { ...cfg.builtinTools, ...t };
   save(cfg);
