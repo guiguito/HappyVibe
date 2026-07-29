@@ -104,7 +104,10 @@ export interface SystemBlock {
   /** Discoverability: the injected "Available subagents" roster, per agent. */
   agents?: Array<{ name: string; chars: number }>;
   /** §14: skill system-prompt weight (card estimate) + count, per scope. */
-  skills?: { global: { tokens: number; count: number }; workspace: { tokens: number; count: number } };
+  skills?: {
+    global: { tokens: number; count: number; items?: { name: string; tokens: number }[] };
+    workspace: { tokens: number; count: number; items?: { name: string; tokens: number }[] };
+  };
 }
 
 export interface ContextSnapshot {
@@ -199,6 +202,8 @@ export interface CategorySummary {
   /** false when the size can't be measured (e.g. tool definitions) — the UI
       shows the count and labels the size "not measured" rather than "0". */
   measured?: boolean;
+  /** §9 round 6: per-skill detail for the skills rows' drill-in. */
+  skills?: { name: string; tokens: number }[];
 }
 
 /**
@@ -250,10 +255,10 @@ export function summarizeGroups(
     const sk = system.skills;
     if (sk) {
       if (sk.global.count > 0) {
-        rows.push({ key: "skills-global", label: "Global skills", count: sk.global.count, chars: sk.global.tokens * 4, estTokens: sk.global.tokens, removedCount: 0, share: 0 });
+        rows.push({ key: "skills-global", label: "Global skills", count: sk.global.count, chars: sk.global.tokens * 4, estTokens: sk.global.tokens, removedCount: 0, share: 0, skills: sk.global.items ?? [] });
       }
       if (sk.workspace.count > 0) {
-        rows.push({ key: "skills-workspace", label: "Workspace skills", count: sk.workspace.count, chars: sk.workspace.tokens * 4, estTokens: sk.workspace.tokens, removedCount: 0, share: 0 });
+        rows.push({ key: "skills-workspace", label: "Workspace skills", count: sk.workspace.count, chars: sk.workspace.tokens * 4, estTokens: sk.workspace.tokens, removedCount: 0, share: 0, skills: sk.workspace.items ?? [] });
       }
     }
   }
@@ -283,6 +288,8 @@ export const CATEGORY_COLOR: Record<string, string> = {
   compaction: "bg-plum",
   branch: "bg-berry",
   other: "bg-line-strong",
+  "skills-global": "bg-plum/70",
+  "skills-workspace": "bg-berry/70",
   free: "bg-line/40", // v5.1: empty/free context window
 };
 

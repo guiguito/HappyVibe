@@ -64,17 +64,27 @@ export function matchReadPath(
   return undefined;
 }
 
-/** Skill system-prompt weight per scope (chars/4 card estimate + count) for the context panel. */
-export function skillTokenLines(m: SkillManifest): {
-  global: { tokens: number; count: number };
-  workspace: { tokens: number; count: number };
-} {
-  const acc = { global: { tokens: 0, count: 0 }, workspace: { tokens: 0, count: 0 } };
+export interface SkillScopeWeight {
+  tokens: number;
+  count: number;
+  /** §9 round 6: per-skill names so the context panel can drill in. */
+  items: { name: string; tokens: number }[];
+}
+
+/** Skill system-prompt weight per scope (chars/4 card estimate + count + names). */
+export function skillTokenLines(m: SkillManifest): { global: SkillScopeWeight; workspace: SkillScopeWeight } {
+  const acc = {
+    global: { tokens: 0, count: 0, items: [] as { name: string; tokens: number }[] },
+    workspace: { tokens: 0, count: 0, items: [] as { name: string; tokens: number }[] },
+  };
   for (const s of m.skills) {
     const bucket = s.scope === "workspace" ? acc.workspace : acc.global;
-    bucket.tokens += s.estTokens?.card ?? 0;
+    const tokens = s.estTokens?.card ?? 0;
+    bucket.tokens += tokens;
     bucket.count += 1;
+    bucket.items.push({ name: s.name, tokens });
   }
+  for (const b of [acc.global, acc.workspace]) b.items.sort((x, y) => y.tokens - x.tokens);
   return acc;
 }
 

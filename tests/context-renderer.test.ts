@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, it, test } from "vitest";
 import {
   compositionSegments, computeGauge, groupItems, parseContextAck, parseContextSnapshot, summarizeGroups, totalEstTokens, zoneOf,
   type ContextItem,
@@ -116,6 +116,15 @@ test("v5: tool definitions become MEASURED (estimated) when toolDefs are present
   );
   const tools = rows.find((r) => r.key === "tools")!;
   expect(tools).toMatchObject({ count: 2, measured: true, chars: 1200, estTokens: 300 });
+});
+
+it("skills rows carry per-skill items for the drill-in", () => {
+  const rows = summarizeGroups([], {
+    chars: 100, estTokens: 25, toolCount: 0, contextFiles: [], toolDefs: [], agents: [],
+    skills: { global: { tokens: 20, count: 1, items: [{ name: "pdf-tools", tokens: 20 }] }, workspace: { tokens: 0, count: 0, items: [] } },
+  } as never);
+  const g = rows.find((r) => r.key === "skills-global");
+  expect(g?.skills).toEqual([{ name: "pdf-tools", tokens: 20 }]);
 });
 
 test("v5: compositionSegments drops zero-share rows and carries colors", () => {

@@ -186,23 +186,6 @@ export function ContextPanel({
               })()}
               <ul className="flex flex-col gap-2">
                 {summary.map((row) => {
-                  // §14: skill weight lines (global / workspace) — informational,
-                  // not drillable (per-skill detail lives in the Skills view).
-                  if (row.key === "skills-global" || row.key === "skills-workspace") {
-                    return (
-                      <li key={row.key}>
-                        <div className="rounded-xl border-2 border-dashed border-line px-3 py-2">
-                          <div className="flex items-baseline gap-2">
-                            <span className="font-bold text-sm flex-1 min-w-0 truncate">{row.label}</span>
-                            <span className="font-mono text-[10px] text-ink-soft shrink-0">
-                              {row.count} {row.count === 1 ? "skill" : "skills"}
-                            </span>
-                            <span className="font-mono text-[10px] text-ink-soft shrink-0">{estTok(row.estTokens)}</span>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  }
                   // #9: unmeasured categories (tool definitions) aren't drillable —
                   // render a static row that shows the count and labels the size.
                   if (row.measured === false) {
@@ -327,6 +310,20 @@ export function ContextPanel({
                     estimated from each tool's schema (≈ chars/4)
                   </li>
                 </ul>
+              )}
+
+              {(drilled.key === "skills-global" || drilled.key === "skills-workspace") && (
+                <div className="space-y-1">
+                  {(drilled.skills ?? []).map((s) => (
+                    <div key={s.name} className="flex items-baseline justify-between text-xs">
+                      <span className="font-medium">{s.name}</span>
+                      <span className="tabular-nums text-ink-soft">≈{s.tokens} tok</span>
+                    </div>
+                  ))}
+                  <p className="pt-1 text-[11px] text-ink-soft">
+                    Name + description are paid every turn. The skill's body only enters context when it is loaded.
+                  </p>
+                </div>
               )}
 
               {drilledGroup && (
