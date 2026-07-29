@@ -862,6 +862,19 @@ export default function App(): React.JSX.Element {
                 }
               : { kind: m.kind, text: m.text, id: idCounter.current++ },
         );
+        // §14 round 6: the skills chip's "used" marks came only from live hv.skill
+        // notifies, so a REOPENED session reported "0 used" while its own restored
+        // transcript listed use_skill cards. The session file is the source of
+        // truth — seed from it (raw-read fallbacks stay unmarked; they're a
+        // heuristic and card as a plain `read`).
+        const restoredUsed = messages.flatMap((m) =>
+          m.kind === "tool" && m.toolName === "use_skill"
+            ? [(m.args as { name?: string } | undefined)?.name].filter((n): n is string => !!n)
+            : [],
+        );
+        if (restoredUsed.length > 0) {
+          setSkillsUsed((p) => ({ ...p, [id]: [...new Set([...(p[id] ?? []), ...restoredUsed])] }));
+        }
         const restoredPlanPaths = new Set(messages.flatMap((m) => (m.kind === "plan" ? [m.planPath] : [])));
         setTranscripts((p) => {
           const existing = p[id] ?? [];
