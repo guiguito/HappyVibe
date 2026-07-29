@@ -36,7 +36,7 @@ import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, wri
 import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import { readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
-import { shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
+import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
@@ -1110,6 +1110,12 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean }) => {
     setBuiltinTools(t);
     scheduleRuntimeReload("skills", "global", null);
+  });
+  // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
+  // shows this verbatim and offers only an append, never an override.
+  ipcMain.handle("hv:builtin-prompt", (_e, name: string) => {
+    if (name !== "plan") return { text: "" };
+    return { text: buildPlanPrompt() };
   });
 
   ipcMain.handle("hv:read-audit", (_e, filter?: { sessionId?: string; workspaceId?: string }) =>

@@ -198,8 +198,8 @@ export function gatePlanCall(toolName: string, input: unknown): PlanGate {
 
 const PLAN_PROMPT_MARKER = "[HAPPYVIBE PLAN MODE ACTIVE]";
 
-export function buildPlanPrompt(): string {
-  return `${PLAN_PROMPT_MARKER}
+export function buildPlanPrompt(append = ""): string {
+  const body = `${PLAN_PROMPT_MARKER}
 # Plan Mode (read-only)
 
 You are in Plan Mode. You may explore and ask, but you CANNOT modify anything —
@@ -235,6 +235,12 @@ that the user will approve; do NOT implement it.
 
 If the user later requests revisions, call plan_complete again with a complete
 replacement plan (not a delta).`;
+  // Additive only: this cannot widen what the agent is allowed to do — enforcement
+  // is gatePlanCall (BLOCKED_PLAN_TOOLS/PLAN_PASS_TOOLS/PLAN_SAFE_SUBCOMMANDS), not
+  // this prompt text. A user append lands strictly after the built-in body, never
+  // interleaved, and can't touch the marker above.
+  const extra = append.trim();
+  return extra ? `${body}\n\n${extra}` : body;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

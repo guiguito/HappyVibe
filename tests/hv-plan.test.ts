@@ -177,6 +177,14 @@ describe("buildPlanPrompt", () => {
     expect(p).toContain("plan_complete");
     expect(p.toLowerCase()).toContain("read-only");
   });
+
+  test("appends the user's addition after the built-in body, keeping the marker first", () => {
+    const base = buildPlanPrompt();
+    const withAppend = buildPlanPrompt("Prefer small diffs.");
+    expect(withAppend.startsWith(base)).toBe(true);
+    expect(withAppend.endsWith("Prefer small diffs.")).toBe(true);
+    expect(buildPlanPrompt("   ")).toBe(base); // whitespace-only adds nothing
+  });
 });
 
 describe("shouldReconcilePlanOff — self-heal a wedged respawn (§23 mid-turn-toggle fix)", () => {

@@ -314,7 +314,7 @@ export default function (pi: ExtensionAPI) {
     const agentsSection = renderSubagentSection(agents);
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
-    const planSection = builtins.plan && plan.enabled ? "\n\n" + buildPlanPrompt() : "";
+    const planSection = builtins.plan && plan.enabled ? "\n\n" + buildPlanPrompt(builtins.planAppend) : "";
     // §14: steer the model to use_skill (intent card) over a raw SKILL.md read.
     const skillSection = buildUseSkillGuidance(skillManifest);
     const injected = sp + section + agentsSection + planSection + skillSection;
