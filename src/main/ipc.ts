@@ -1690,10 +1690,7 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:skills-delete", (_e, skillId: string, workspaceId: string | null) => {
     if (!isKnownSkillDir(skillId)) return { ok: false as const, error: "That skill no longer exists." };
     const skill = readKnownSkill(skillId);
-    const plan = planSkillRemoval(
-      { id: skill.id, source: skill.source, dir: skill.id },
-      { managed: managedSkillsDir(agentDir()), bundled: bundledSkillsDir(piRuntimeDir()), workspaces: workspaces.list() },
-    );
+    const plan = planSkillRemoval({ id: skill.id, source: skill.source, dir: skill.id });
     if (plan.kind === "refused") return { ok: false as const, error: plan.reason ?? "This skill cannot be deleted." };
     try {
       if (plan.kind === "unlink") {

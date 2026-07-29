@@ -15,10 +15,12 @@ export interface DeletePlan {
   reason?: string;
 }
 
-export function planSkillRemoval(
-  view: { id: string; source: string; dir: string },
-  _roots: { managed: string; bundled: string; workspaces: string[] },
-): DeletePlan {
+/**
+ * Policy only — which KIND of removal a skill gets, from its source. Path
+ * confinement is NOT decided here; it is enforced by removeSkillDir against
+ * the caller's allowed roots.
+ */
+export function planSkillRemoval(view: { id: string; source: string; dir: string }): DeletePlan {
   if (view.source === "bundled") {
     return { kind: "refused", dir: view.dir, reason: "Bundled skills ship with HappyVibe and are reinstalled at startup — disable it instead." };
   }

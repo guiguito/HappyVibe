@@ -4,25 +4,24 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { planSkillRemoval, removeSkillDir } from "../src/main/skills/remove";
 
-const ROOTS = { managed: "/app/skills", bundled: "/runtime/skills", workspaces: ["/ws/proj"] };
 
 describe("planSkillRemoval", () => {
   it("deletes a managed (imported global) skill", () => {
-    expect(planSkillRemoval({ id: "a", source: "managed", dir: "/app/skills/pdf" }, ROOTS).kind).toBe("delete");
+    expect(planSkillRemoval({ id: "a", source: "managed", dir: "/app/skills/pdf" }).kind).toBe("delete");
   });
 
   it("deletes a workspace skill", () => {
-    expect(planSkillRemoval({ id: "b", source: "workspace", dir: "/ws/proj/.agents/skills/x" }, ROOTS).kind).toBe("delete");
+    expect(planSkillRemoval({ id: "b", source: "workspace", dir: "/ws/proj/.agents/skills/x" }).kind).toBe("delete");
   });
 
   it("refuses to delete a bundled skill — the runtime reinstalls it at startup", () => {
-    const p = planSkillRemoval({ id: "c", source: "bundled", dir: "/runtime/skills/skill-creator" }, ROOTS);
+    const p = planSkillRemoval({ id: "c", source: "bundled", dir: "/runtime/skills/skill-creator" });
     expect(p.kind).toBe("refused");
     expect(p.reason).toMatch(/bundled/i);
   });
 
   it("unlinks a linked directory rather than deleting someone else's files", () => {
-    expect(planSkillRemoval({ id: "d", source: "linked", dir: "/Users/me/.claude/skills/x" }, ROOTS).kind).toBe("unlink");
+    expect(planSkillRemoval({ id: "d", source: "linked", dir: "/Users/me/.claude/skills/x" }).kind).toBe("unlink");
   });
 });
 
