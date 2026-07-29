@@ -226,7 +226,14 @@ function messageText(content: AgentMessage["content"]): string {
 const PREVIEW = 120;
 const preview = (s: string): string => (s.length > PREVIEW ? s.slice(0, PREVIEW - 1) + "…" : s);
 
-const BOOKKEEPING_TYPES = new Set([
+/**
+ * Entry types the context panel never lists: HappyVibe's own control-channel
+ * entries (label/custom/custom_message carry context marks and plan state), and
+ * Pi's session bookkeeping (session/model_change/thinking_level_change/
+ * session_info carry only provider+modelId, thinkingLevel, or a session name —
+ * no message, no tokens). Verified against Pi's docs/session-format.md.
+ */
+const SKIPPED_ENTRY_TYPES = new Set([
   "label",
   "custom",
   "custom_message",
@@ -256,10 +263,10 @@ export function serializeEntries(entries: SessionEntry[]): ContextItem[] {
   const completed = completedMarkKeys(entries);
   const items: ContextItem[] = [];
   for (const entry of entries) {
-    // §9 round 6: Pi session bookkeeping carries no message and no tokens —
-    // it rendered as unnamed "item ≈0 tok" rows and was the last occupant of
-    // "Other". Drop it here so the panel only lists real consumers.
-    if (BOOKKEEPING_TYPES.has(entry.type)) continue;
+    // §9 round 6: the bookkeeping types above rendered as unnamed "item ≈0 tok"
+    // rows and were the last occupants of "Other". Drop them here so the panel
+    // only lists real consumers of the window.
+    if (SKIPPED_ENTRY_TYPES.has(entry.type)) continue;
     if (entry.type === "message" && !entry.message) continue;
     const m = entry.message;
     let text = "";
