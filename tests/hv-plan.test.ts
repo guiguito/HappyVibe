@@ -11,6 +11,7 @@ import {
   restorePlanState,
   shouldReconcilePlanOff,
   shouldForcePlanOff,
+  forcedPlanOffState,
   withPlanStatus,
   type PlanSessionEntry,
 } from "../pi-runtime/extensions/hv-plan";
@@ -222,14 +223,15 @@ describe("shouldForcePlanOff — Plan Mode disabled globally must not strand a c
     expect(shouldForcePlanOff(false, { enabled: false, planPath: "/ws/.agents/plans/001-x.md" })).toBe(true);
   });
 
-  test("the caller preserves planPath — the plan file is the user's artifact", () => {
-    // Contract note for happyvibe-bridge's session_start: it spreads the restored
-    // state ({...plan, enabled:false}) rather than replacing it, so re-enabling
-    // Plan mode later still finds the plan file.
-    const restored = { enabled: true, planPath: "/ws/.agents/plans/001-x.md" };
-    expect(shouldForcePlanOff(false, restored)).toBe(true);
-    const forced = { ...restored, enabled: false };
-    expect(forced).toEqual({ enabled: false, planPath: "/ws/.agents/plans/001-x.md" });
+  test("forcedPlanOffState clears the clamp but KEEPS the plan file reference", () => {
+    // Regression guard: returning a bare {enabled:false} here loses the user's
+    // plan file, and main's restore-reconcile then skips the session (it requires
+    // a planPath), so re-enabling Plan mode restored a clamped session silently.
+    expect(forcedPlanOffState({ enabled: true, planPath: "/ws/.agents/plans/001-x.md" })).toEqual({
+      enabled: false,
+      planPath: "/ws/.agents/plans/001-x.md",
+    });
+    expect(forcedPlanOffState({ enabled: true })).toEqual({ enabled: false });
   });
 
   test("leaves plan state alone while the feature is enabled", () => {

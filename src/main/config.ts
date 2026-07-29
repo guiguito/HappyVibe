@@ -146,7 +146,12 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
 // (fail-open — same convention as HV_BYPASS's persistent setting).
 export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string } {
   const t = load().builtinTools;
-  return { plan: t?.plan ?? true, askUser: t?.askUser ?? true, planAppend: t?.planAppend ?? "" };
+  const plan = t?.plan ?? true;
+  // Plan mode's prompt and its applyPlanTools required-list both depend on
+  // ask_user, so the bridge force-couples them (hv-builtins parseBuiltins). Apply
+  // the SAME clamp here or the settings row would read "off" for a tool that is
+  // in fact registered — the UI must not disagree with the runtime.
+  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "" };
 }
 
 export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string }): void {

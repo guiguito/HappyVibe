@@ -433,11 +433,15 @@ export function SkillInspector({
                   Promote to global
                 </button>
               )}
-              {detail.source !== "bundled" && (
+              {/* Deleting is STRICTLY stronger than approving, so it needs at least the
+                  same right: a workspace-settings pane (canApprove=false for global
+                  skills) must not be able to remove a skill for every workspace.
+                  Bundled skills are never deletable — the runtime reinstalls them. */}
+              {detail.source !== "bundled" && canApprove && (
                 <button
                   type="button"
                   disabled={busy}
-                  className="rounded-md border-2 border-berry/60 px-2 py-1 text-xs font-bold text-berry hover:bg-berry-soft"
+                  className="rounded-md border-2 border-berry/60 px-2 py-1 text-xs font-bold text-berry hover:bg-berry-soft disabled:opacity-40"
                   onClick={async () => {
                     const unlink = detail.source === "linked";
                     const msg = unlink
@@ -451,10 +455,15 @@ export function SkillInspector({
                         : `Delete “${detail.name}”?\n\n${id}\n\nThe folder is removed from disk.`;
                     if (!window.confirm(msg)) return;
                     setError(null);
-                    const res = await window.hv.skillsDelete(id, workspaceId ?? null);
-                    if (!res.ok) { setError(res.error); return; }
-                    onChanged();
-                    onClose();
+                    setBusy(true); // same in-flight guard as Approve/Disable — this is destructive
+                    try {
+                      const res = await window.hv.skillsDelete(id, workspaceId ?? null);
+                      if (!res.ok) { setError(res.error); return; }
+                      onChanged();
+                      onClose();
+                    } finally {
+                      setBusy(false);
+                    }
                   }}
                 >
                   {detail.source === "linked" ? "Unlink" : "Delete"}

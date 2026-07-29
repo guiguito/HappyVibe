@@ -161,31 +161,39 @@ export function ChatView({
   // §14 round 6: `/skill:<name>` autocomplete. Pi already registers a command per
   // loaded skill; get_commands is a pure query so this costs no model turn. The
   // list only changes on respawn, so it's cached per session.
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   const commandCache = useRef<string[] | null>(null);
-  const [command, setCommand] = useState<{ items: string[]; sel: number } | null>(null);
+  const [command, setCommand] = useState<{ items: string[]; sel: number; end: number } | null>(null);
   const ensureCommands = useCallback(async (): Promise<string[]> => {
     if (commandCache.current) return commandCache.current;
     if (!sessionId) return [];
+    const sid = sessionId; // capture: this fetch must not populate another session's cache
     try {
-      const all = await window.hv.listCommands(sessionId);
+      const all = await window.hv.listCommands(sid);
       // V1: skills only — other Pi commands aren't part of HappyVibe's surface yet.
       const names = all.filter((c) => c.source === "skill").map((c) => c.name);
+      // The user may have switched sessions while this was in flight. Serving A's
+      // commands in B would send a command B's Pi doesn't have.
+      if (sid !== sessionIdRef.current) return [];
       commandCache.current = names;
       return names;
     } catch {
-      return [];
+      return []; // not live yet (e.g. hibernated) — deliberately NOT cached, so it retries
     }
   }, [sessionId]);
   const refreshCommand = useCallback(async (text: string, caret: number): Promise<void> => {
     const q = activeCommandQuery(text, caret);
     if (!q) { setCommand(null); return; }
-    setCommand({ items: filterCommands(await ensureCommands(), q.query), sel: 0 });
+    const items = filterCommands(await ensureCommands(), q.query);
+    // `end` pins the span this menu was built for, so a later caret move can't
+    // make pickCommand replace the wrong slice.
+    setCommand({ items, sel: 0, end: caret });
   }, [ensureCommands]);
   const pickCommand = (name: string): void => {
     const el = taRef.current;
-    if (!el) return;
-    const caret = el.selectionStart ?? input.length;
-    const done = completeCommand(input, caret, name);
+    if (!el || !command) return;
+    const done = completeCommand(input, command.end, name);
     setInput(done.text);
     setCommand(null);
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(done.caret, done.caret); autoGrow(); });
@@ -361,6 +369,7 @@ export function ChatView({
       <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
         {/* §23: compact plan-mode indicator (left) — read-only badge with a
             wrap-up nudge and one-click exit. Replaces the full-width banner. */}
+        {((sessionSkills?.length ?? 0) > 0 || planEnabled) && (
         <div className="mr-auto flex items-center gap-1.5">
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
         {planEnabled && (
@@ -400,6 +409,7 @@ export function ChatView({
           </div>
         )}
         </div>
+        )}
         <button
           type="button"
           onClick={() => onSearchOpenChange(!searchOpen)}
@@ -1112,6 +1122,7 @@ function SkillsChip({ skills }: { skills: Array<{ name: string; scope: string; u
       >
         <span aria-hidden>🧠</span> {used}/{skills.length} skills
       </button>
+      {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
       {open && (
         <div className="absolute top-full left-0 mt-1.5 z-30 w-64 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
           {skills.map((s) => (

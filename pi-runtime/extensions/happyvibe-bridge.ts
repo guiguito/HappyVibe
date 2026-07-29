@@ -12,7 +12,8 @@ import {
 import { parseAgentFile, renderSubagentSection, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
-  buildPlanPrompt, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, shouldForcePlanOff, type PlanState, type PlanSessionEntry,
+  buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, shouldForcePlanOff,
+  type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
 import { parseBuiltins } from "./hv-builtins";
 import {
@@ -295,7 +296,7 @@ export default function (pi: ExtensionAPI) {
     // keep running with every exit path unregistered). planPath is PRESERVED: the
     // plan file is the user's artifact and re-enabling the feature should find it.
     const forcedPlanOff = shouldForcePlanOff(builtins.plan, plan);
-    if (forcedPlanOff) plan = { ...plan, enabled: false };
+    if (forcedPlanOff) plan = forcedPlanOffState(plan);
     // Only re-emit when there's real state to resync after a respawn — a spurious
     // "disabled" notify on every fresh session would be the first ui-request other
     // bridge tests wait on, and it's redundant (the renderer defaults to off).
@@ -305,6 +306,10 @@ export default function (pi: ExtensionAPI) {
       // longer clamped. Deliberately NOT applyPlanTools — the feature is off, so
       // nothing should be hidden from the model.
       emitPlan(ctx.ui, true);
+      // …and MUST persist: leaving enabled:true in the session file meant that
+      // re-enabling Plan mode later restored a clamped session with no user
+      // action (and main's reconcile skips it when planPath is null).
+      persistPlan(pi);
     } else if (plan.enabled || plan.planPath) {
       applyPlanTools(pi);
       emitPlan(ctx.ui, true);
@@ -969,6 +974,18 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const { status, note } = params as { status?: string; note?: string };
       if (!plan.planPath) return { content: [{ type: "text", text: "No plan is associated with this session." }], details: {} };
+      // §23 human-only exit: both statuses are TERMINAL facts about an
+      // already-left plan (implemented / cancelled), so recording one while still
+      // planning is meaningless — and it was an escape hatch. Writing "cancelled"
+      // to the file made main's next restore-reconcile (shouldReconcilePlanOff)
+      // fire `/hv-plan off` on the following respawn, letting the MODEL lift a
+      // clamp only a human may lift. Refuse it while plan mode is on.
+      if (plan.enabled) {
+        return {
+          content: [{ type: "text", text: "Plan status can only be recorded after leaving Plan Mode. Submit the plan with plan_complete instead." }],
+          details: {},
+        };
+      }
       if (status !== "implemented" && status !== "cancelled") {
         return { content: [{ type: "text", text: "status must be 'implemented' or 'cancelled'." }], details: {} };
       }

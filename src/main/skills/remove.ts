@@ -42,13 +42,35 @@ export function findLinkedRoot(skillDir: string, linkedRoots: string[]): string 
   });
 }
 
-/** Path-confined recursive delete (pattern: files.ts resolveInWorkspace). */
+/**
+ * Path-confined recursive delete (pattern: files.ts resolveInWorkspace).
+ *
+ * Confinement resolves SYMLINKS, not just `..`: path.resolve normalizes traversal
+ * but leaves links intact, and fs.rmSync only lstats the FINAL component — so a
+ * planted link (`<managed>/evil -> /Users/me`) would let `<managed>/evil/Docs`
+ * pass a string-prefix check while the delete followed the link. An imported
+ * skill archive is an untrusted source of such links, and this handler takes an
+ * arbitrary id from the renderer, so both sides are realpath'd before comparing.
+ */
 export function removeSkillDir(dir: string, allowedRoots: string[]): void {
-  const abs = path.resolve(dir);
+  const abs = realish(dir);
   const ok = allowedRoots.some((root) => {
-    const r = path.resolve(root);
+    const r = realish(root);
     return abs !== r && abs.startsWith(r + path.sep);
   });
-  if (!ok) throw new Error(`Refusing to delete ${abs}: outside the managed skill roots.`);
-  fs.rmSync(abs, { recursive: true, force: true });
+  if (!ok) throw new Error(`Refusing to delete ${path.resolve(dir)}: outside the managed skill roots.`);
+  fs.rmSync(abs, { recursive: true, force: true, maxRetries: 3 });
+}
+
+/**
+ * realpath where possible, falling back to resolve for a path that doesn't exist
+ * yet. Deliberately fails CLOSED: an unresolvable target simply won't match a
+ * resolved root, so the delete is refused rather than attempted.
+ */
+function realish(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
 }

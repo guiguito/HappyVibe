@@ -144,8 +144,15 @@ export function filterCommands(names: string[], query: string, limit = 20): stri
     .map((s) => s.name);
 }
 
-/** Replace the typed `/query` with the picked command, leaving the caret after it. */
-export function completeCommand(text: string, caret: number, name: string): { text: string; caret: number } {
+/**
+ * Replace the typed `/query` span with the picked command, leaving the caret after
+ * it. Takes the query's END (from activeCommandQuery at match time) rather than
+ * the live caret: the caret can move after the dropdown opened, and replacing
+ * "everything before the caret" then mangled the text (`/graph` + ArrowLeft×3 →
+ * `/graphify aph`). Mirrors completeMention's start..end span handling.
+ */
+export function completeCommand(text: string, queryEnd: number, name: string): { text: string; caret: number } {
   const insert = `/${name} `;
-  return { text: insert + text.slice(caret), caret: insert.length };
+  const rest = text.slice(queryEnd).replace(/^ /, ""); // don't double the space we just added
+  return { text: insert + rest, caret: insert.length };
 }

@@ -157,6 +157,11 @@ export function registerIpc(win: BrowserWindow): void {
     fs.mkdirSync(skillsManifestDir, { recursive: true });
     const file = path.join(skillsManifestDir, `${sessionId}.json`);
     fs.writeFileSync(file, JSON.stringify(buildManifest(entries)));
+    // The renderer's session chip + /skill: menu read THIS file. skillsChanged()
+    // fires when config changes, which is BEFORE the debounced respawn rewrites
+    // the manifest — so notify again here, once the new set is actually on disk,
+    // or the chip shows the pre-change set until the user switches sessions.
+    send("hv:skills-changed");
     return file;
   };
   const skillsChanged = (): void => send("hv:skills-changed");
@@ -1710,14 +1715,23 @@ export function registerIpc(win: BrowserWindow): void {
     sessionSkills(sessionId).some((s) => s.name === name);
 
   // §14 round 6: the chat top bar shows which skills this session loaded.
-  ipcMain.handle("hv:skills-session", (_e, sessionId: string) => sessionSkills(sessionId));
+  ipcMain.handle("hv:skills-session", (_e, sessionId: string) => {
+    if (!index.get(sessionId)) return []; // unknown id — never interpolate it into a path
+    return sessionSkills(sessionId);
+  });
 
   // §14 round 6: `/skill:<name>` autocomplete. Pi registers a slash command per
   // loaded skill (enableSkillCommands) and get_commands is a PURE query — no
   // model turn, no cost. The renderer filters to source:"skill" for V1.
   ipcMain.handle("hv:list-commands", async (_e, sessionId: string) => {
+    // Deliberately NOT anyClient(): its utility fallback is spawned with
+    // skills:[], so it can never list skill commands — and the renderer would
+    // cache that empty list for the session's whole life. No live client ⇒ throw,
+    // so the renderer retries later instead of caching a lie.
+    const client = manager.get(sessionId) as PiClient | null;
+    if (!client) throw new Error("Session is not live");
     try {
-      const res = await (await anyClient(sessionId)).send({ type: "get_commands" });
+      const res = await client.send({ type: "get_commands" });
       const cmds = (res.data as { commands?: Array<{ name?: string; source?: string }> })?.commands ?? [];
       return cmds
         .filter((c): c is { name: string; source?: string } => typeof c.name === "string")
@@ -1773,7 +1787,18 @@ export function registerIpc(win: BrowserWindow): void {
       skillRegistry.forget(skillId, new Date().toISOString());
       void log.append({ type: "skill.deleted", data: { id: skillId, name: skill.name, source: skill.source, kind: plan.kind } });
       skillsChanged();
-      scheduleSkillReload(skill.source === "workspace" ? "workspace" : "global", skill.source === "workspace" ? workspaceId : null);
+      // Derive the workspace from the skill's own path — trusting the caller's
+      // workspaceId meant a null/mismatched id produced affectedSessionIds([]) :
+      // no respawn, no error, and the deleted skill stayed loaded in live sessions.
+      const ownerWs =
+        skill.source === "workspace"
+          ? (workspaces.list().find((w) => {
+              const root = path.resolve(path.join(w, ".agents", "skills"));
+              const abs = path.resolve(skill.id);
+              return abs === root || abs.startsWith(root + path.sep);
+            }) ?? workspaceId)
+          : null;
+      scheduleSkillReload(skill.source === "workspace" ? "workspace" : "global", ownerWs);
       return { ok: true as const, kind: plan.kind };
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) };

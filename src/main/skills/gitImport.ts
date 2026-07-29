@@ -116,7 +116,21 @@ export async function downloadAndExtract(archive: ForgeArchive, workDir: string)
   const archiveHash = createHash("sha256").update(fs.readFileSync(tgz)).digest("hex");
   const root = path.join(workDir, "extracted");
   fs.mkdirSync(root, { recursive: true });
-  await tar.x({ file: tgz, cwd: root });
+  // A downloaded archive is untrusted input. Extract FILES AND DIRECTORIES ONLY:
+  // a symlink or hardlink entry can point outside the extraction root, which both
+  // leaks content into a "skill" and (before removeSkillDir realpath'd its target)
+  // could turn a later delete into a delete of whatever it pointed at.
+  // `tar`'s own `..` protection stays on; this closes the link vector.
+  await tar.x({
+    file: tgz,
+    cwd: root,
+    // `tar` types this param as Stats | ReadEntry; on extract it is a ReadEntry
+    // carrying `type`. Anything else is not our path, so allow it through rather
+    // than silently extracting nothing.
+    filter: (_p, entry) => (
+      "type" in entry ? entry.type === "File" || entry.type === "Directory" : true
+    ),
+  });
   fs.rmSync(tgz, { force: true });
   return { root, archiveHash };
 }

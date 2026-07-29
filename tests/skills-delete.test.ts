@@ -65,3 +65,36 @@ describe("findLinkedRoot", () => {
     expect(findLinkedRoot("/elsewhere/x", ROOTS)).toBeUndefined();
   });
 });
+
+describe("removeSkillDir — symlink confinement (the one escape the review found)", () => {
+  it("refuses a target reached through a symlinked path prefix", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-del-link-"));
+    const root = path.join(tmp, "managed");
+    const outside = path.join(tmp, "outside");
+    fs.mkdirSync(root, { recursive: true });
+    fs.mkdirSync(path.join(outside, "precious"), { recursive: true });
+    fs.writeFileSync(path.join(outside, "precious", "keep.txt"), "do not delete");
+    // An imported skill archive could plant exactly this.
+    fs.symlinkSync(outside, path.join(root, "evil"));
+
+    expect(() => removeSkillDir(path.join(root, "evil", "precious"), [root])).toThrow(/outside/i);
+    expect(fs.existsSync(path.join(outside, "precious", "keep.txt"))).toBe(true);
+  });
+
+  it("still deletes a real directory inside the root when a sibling symlink exists", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-del-link2-"));
+    const root = path.join(tmp, "managed");
+    const real = path.join(root, "pdf-tools");
+    fs.mkdirSync(real, { recursive: true });
+    fs.writeFileSync(path.join(real, "SKILL.md"), "x");
+    fs.symlinkSync(tmp, path.join(root, "link"));
+
+    removeSkillDir(real, [root]);
+    expect(fs.existsSync(real)).toBe(false);
+  });
+
+  it("fails closed for a path that does not exist", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-del-missing-"));
+    expect(() => removeSkillDir(path.join(tmp, "nope"), [tmp])).toThrow(/outside/i);
+  });
+});

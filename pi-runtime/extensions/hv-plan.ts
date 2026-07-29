@@ -59,6 +59,16 @@ export function shouldForcePlanOff(featureEnabled: boolean, state: PlanState): b
   return !featureEnabled && (state.enabled || state.planPath !== undefined);
 }
 
+/**
+ * The plan state a session takes when the feature is force-disabled: clamp off,
+ * but planPath KEPT — the plan file is the user's artifact and re-enabling Plan
+ * mode should still find it. The bridge persists this, so re-enabling the
+ * feature cannot silently re-clamp the session from a stale session file.
+ */
+export function forcedPlanOffState(state: PlanState): PlanState {
+  return { ...state, enabled: false };
+}
+
 /** Newest hv-plan-state custom entry wins — it's a full snapshot. */
 export function restorePlanState(entries: PlanSessionEntry[]): PlanState {
   let state: PlanState = { enabled: false };
@@ -157,7 +167,10 @@ export function planSlug(body: string): string {
 const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "subagent"]);
 /** Read-only tools that pass straight through the plan gate. */
 const PLAN_PASS_TOOLS = new Set([
-  "read", "grep", "glob", "list", "ls", "find", "ask_user", "plan_complete", "plan_start", "plan_status_update",
+  // use_skill only returns an ALREADY-APPROVED SKILL.md's text (spawn-time trust
+  // gate, §14) — strictly a read. Without it, planning raised a permission modal
+  // on every skill load.
+  "read", "grep", "glob", "list", "ls", "find", "ask_user", "use_skill", "plan_complete", "plan_start", "plan_status_update",
 ]);
 
 export type PlanGate =

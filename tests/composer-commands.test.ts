@@ -44,7 +44,13 @@ describe("completeCommand", () => {
     expect(completeCommand("/ski", 4, "skill:pdf-tools")).toEqual({ text: "/skill:pdf-tools ", caret: 17 });
   });
 
-  it("preserves text after the caret", () => {
-    expect(completeCommand("/ski rest", 4, "skill:x")).toEqual({ text: "/skill:x  rest", caret: 9 });
+  it("preserves text after the query without doubling the space", () => {
+    expect(completeCommand("/ski rest", 4, "skill:x")).toEqual({ text: "/skill:x rest", caret: 9 });
+  });
+
+  it("uses the query END, not a caret the user has since moved", () => {
+    // Regression: replacing everything before the LIVE caret turned
+    // "/graph" + ArrowLeft x3 + pick into "/graphify aph".
+    expect(completeCommand("/graph", 6, "graphify")).toEqual({ text: "/graphify ", caret: 10 });
   });
 });
