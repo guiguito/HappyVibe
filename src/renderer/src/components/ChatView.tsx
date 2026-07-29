@@ -93,7 +93,7 @@ export function ChatView({
   onCompact: () => void;
   /** W2.2: open a workspace-relative file in an editor tab (clickable card paths). */
   onOpenFile?: (relPath: string) => void;
-  /** v5: navigate to the MCP, Tools & Agents page (from the composer "+" menu). */
+  /** v5: navigate to the MCP page (from the composer "+" menu). */
   onOpenMcp?: () => void;
   /** Round 3 #11: truncate the conversation at a user message (App-side). */
   onRewind?: (it: TranscriptItem) => void;

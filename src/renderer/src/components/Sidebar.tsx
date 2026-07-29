@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { SessionStatus } from "../App";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
-export type View = "chat" | "settings" | "agents";
+// §13 round 6: the old combined "agents" page split into four peer destinations.
+export type View = "chat" | "settings" | "skills" | "mcp" | "agents" | "tools";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
@@ -25,6 +26,30 @@ function AgentsIcon(): React.JSX.Element {
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="8" r="3.2" />
       <path d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
+  );
+}
+/** §13 round 6: icons for the four split-out pages, matching Section.tsx's SECTION_ICONS. */
+function SkillsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+}
+function McpIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 12l8-8 8 8-8 8z" />
+      <path d="M8 12l4-4 4 4-4 4z" />
+    </svg>
+  );
+}
+function ToolsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.6-.6-2.5z" />
     </svg>
   );
 }
@@ -292,8 +317,17 @@ export function Sidebar({
             </button>
           ))}
         </div>
-        <button type="button" onClick={() => onNavigate("agents")} title="MCP, Tools & Agents" aria-label="MCP, Tools & Agents" className={railBtn(view === "agents")}>
+        <button type="button" onClick={() => onNavigate("skills")} title="Skills" aria-label="Skills" className={railBtn(view === "skills")}>
+          <SkillsIcon />
+        </button>
+        <button type="button" onClick={() => onNavigate("mcp")} title="MCP" aria-label="MCP" className={railBtn(view === "mcp")}>
+          <McpIcon />
+        </button>
+        <button type="button" onClick={() => onNavigate("agents")} title="Agents" aria-label="Agents" className={railBtn(view === "agents")}>
           <AgentsIcon />
+        </button>
+        <button type="button" onClick={() => onNavigate("tools")} title="All Tools" aria-label="All Tools" className={railBtn(view === "tools")}>
+          <ToolsIcon />
         </button>
         <button type="button" onClick={() => onNavigate("settings")} title="Settings" aria-label="Settings" className={railBtn(view === "settings")}>
           <GearIcon />
@@ -448,8 +482,28 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Agents + Settings (audit + dashboard live inside Settings, W1.4) */}
+      {/* Skills / MCP / Agents / All Tools + Settings (audit + dashboard live inside Settings, W1.4) */}
       <div className="p-4 border-t-2 border-line">
+        <button
+          type="button"
+          onClick={() => onNavigate("skills")}
+          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
+            view === "skills" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+          }`}
+        >
+          <SkillsIcon />
+          Skills
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("mcp")}
+          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
+            view === "mcp" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+          }`}
+        >
+          <McpIcon />
+          MCP
+        </button>
         <button
           type="button"
           onClick={() => onNavigate("agents")}
@@ -457,11 +511,18 @@ export function Sidebar({
             view === "agents" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
           }`}
         >
-          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="8" r="3.2" />
-            <path d="M5 20a7 7 0 0 1 14 0" />
-          </svg>
-          MCP, Tools &amp; Agents
+          <AgentsIcon />
+          Agents
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("tools")}
+          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
+            view === "tools" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+          }`}
+        >
+          <ToolsIcon />
+          All Tools
         </button>
         <button
           type="button"

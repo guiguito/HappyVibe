@@ -5,7 +5,7 @@ import { diffLines } from "diff";
 
 /**
  * §14 Skills — the GLOBAL skills surface (managed + linked + bundled), rendered
- * in the "Skills, MCP, Agents & Tools" view. Workspace-scoped skills live only
+ * in the Skills sidebar page. Workspace-scoped skills live only
  * in workspace settings (multiple workspaces can be live at once). Review-before-
  * active: a skill is gated until the user reviews it; a content change flips it
  * back to needs-review with a before/after diff.

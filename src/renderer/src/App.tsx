@@ -23,6 +23,9 @@ import { AskUserModal } from "./components/AskUserModal";
 import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
+import { SkillsView } from "./components/SkillsView";
+import { McpView } from "./components/McpView";
+import { AllToolsView } from "./components/AllToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
@@ -1125,13 +1128,13 @@ export default function App(): React.JSX.Element {
             workspaces={workspaces}
           />
         )}
-        {activeView === "agents" && (
-          <AgentsView
-            agents={agents}
-            tools={tools}
-            sessionId={selectedId}
-            workspaceId={selected?.workspaceId ?? null}
-          />
+        {activeView === "skills" && (
+          <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+        )}
+        {activeView === "mcp" && <McpView workspaceId={selected?.workspaceId ?? null} />}
+        {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
+        {activeView === "tools" && (
+          <AllToolsView tools={tools} sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
         {/* W2.2: the chat area stays MOUNTED (hidden) on other views so open
             editor buffers and chat state survive a Settings detour. Center is
@@ -1252,7 +1255,7 @@ export default function App(): React.JSX.Element {
             }}
                 onOpenFolder={addWorkspace}
                 onOpenFile={openFileFromCard}
-                onOpenMcp={() => setView("agents")}
+                onOpenMcp={() => setView("mcp")}
                 onRewind={rewindTo}
               />
             </div>
