@@ -196,6 +196,12 @@ function ImportPicker({
       <div className="w-full max-w-lg rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-5 flex flex-col max-h-[80vh]" onMouseDown={(e) => e.stopPropagation()}>
         <h3 className="font-black text-lg mb-1">Import skills</h3>
         <p className="text-xs text-ink-soft mb-3">Choose which skills to import. They're approved on import ({scope === "workspace" ? "into this workspace" : "as global skills"}).</p>
+        <div className="flex items-center gap-2 pb-1 text-[11px] font-bold text-ink-soft">
+          <button className="underline hover:text-ink" onClick={() => setSelected(new Set(scan.skills.map((s) => s.id)))}>Select all</button>
+          <span>·</span>
+          <button className="underline hover:text-ink" onClick={() => setSelected(new Set())}>Deselect all</button>
+          <span className="ml-auto tabular-nums">{selected.size}/{scan.skills.length}</span>
+        </div>
         <div className="flex-1 overflow-y-auto rounded-xl border-2 border-line">
           {scan.skills.map((s) => (
             <label key={s.id} className="flex items-start gap-2 px-3 py-2 border-b border-line last:border-b-0 cursor-pointer hover:bg-paper-deep/30">
