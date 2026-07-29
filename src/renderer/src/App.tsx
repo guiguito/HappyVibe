@@ -77,6 +77,10 @@ export default function App(): React.JSX.Element {
   // bails hv:plan-set/-implement/-discard when this is off (belt + suspenders,
   // main is the enforcement; this is so the chip isn't a dead click).
   const [planBuiltinOn, setPlanBuiltinOn] = useState(true);
+  // §14 round 6: per-session skills — what the session LOADED (manifest, from
+  // main) and which of them the agent actually reached for (hv.skill notifies).
+  const [skillsLoaded, setSkillsLoaded] = useState<Record<string, Array<{ name: string; scope: string }>>>({});
+  const [skillsUsed, setSkillsUsed] = useState<Record<string, string[]>>({});
   useEffect(() => { void window.hv.builtinsGet().then((b) => setPlanBuiltinOn(b.plan)); }, []);
   // §23: tool-call ids blocked by plan mode → their cards render "skipped".
   const planBlocked = useRef<Record<string, Set<string>>>({});
@@ -417,8 +421,20 @@ export default function App(): React.JSX.Element {
         if (r.method === "notify") {
           try {
             const p = JSON.parse(r.message ?? "") as { kind?: string; name?: string; detected?: boolean };
-            if (p?.kind === "hv.skill" && p.detected) {
-              appendItem(sid, { kind: "notice", text: `Loaded skill “${p.name ?? ""}” by reading it directly` });
+            if (p?.kind === "hv.skill" && p.name) {
+              // Round 6: track EVERY invocation for the top-bar chip's "used"
+              // marks — the use_skill happy path (detected:false) used to be
+              // dropped here, so nothing outside its tool card knew it happened.
+              setSkillsUsed((prev) => {
+                const cur = prev[sid];
+                if (cur?.includes(p.name!)) return prev;
+                return { ...prev, [sid]: [...(cur ?? []), p.name!] };
+              });
+              // The transcript notice stays for the raw-read heuristic ONLY: the
+              // use_skill path already renders its own tool card.
+              if (p.detected) {
+                appendItem(sid, { kind: "notice", text: `Loaded skill “${p.name}” by reading it directly` });
+              }
             }
           } catch {
             /* not JSON — ignore */
@@ -741,6 +757,20 @@ export default function App(): React.JSX.Element {
     }, 500);
     return () => { live = false; clearTimeout(t); };
   }, [selectedId, selectedId ? turns[selectedId] : 0]);
+
+  // §14 round 6: the session's LOADED skill set comes from main's per-session
+  // manifest (the exact dirs passed to Pi as --skill). Re-fetched when the
+  // skills config changes, since that respawns sessions with a new manifest.
+  useEffect(() => {
+    if (!selectedId) return;
+    let live = true;
+    const load = (): void => {
+      void window.hv.skillsSession(selectedId).then((s) => { if (live) setSkillsLoaded((p) => ({ ...p, [selectedId]: s })); });
+    };
+    load();
+    const off = window.hv.onSkillsChanged(load);
+    return () => { live = false; off(); };
+  }, [selectedId]);
 
   const closeFileTab = (wsId: string, paneIdx: number, tab: TabId): void => {
     if (tab === CHAT_TAB) return; // chat is never closable
@@ -1233,6 +1263,14 @@ export default function App(): React.JSX.Element {
             contextOpen={contextOpen}
             onContextOpenChange={setContextOpen}
             planEnabled={(selectedId && planMode[selectedId]?.enabled) || false}
+            sessionSkills={
+              selectedId
+                ? (skillsLoaded[selectedId] ?? []).map((s) => ({
+                    ...s,
+                    used: (skillsUsed[selectedId] ?? []).includes(s.name),
+                  }))
+                : []
+            }
             // Important 1 fix: the chip/exit-✕ only render when the global toggle
             // is on — otherwise clicking them would hit main's hv:plan-set bail
             // (a dead click) instead of simply not existing.

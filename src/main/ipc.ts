@@ -1695,14 +1695,37 @@ export function registerIpc(win: BrowserWindow): void {
   const SKILL_CREATOR = "skill-creator";
   const findGlobalSkillByName = (name: string): DiscoveredSkill | undefined =>
     discoverGlobalSkills().find((s) => s.name === name);
-  const sessionHasSkill = (sessionId: string, name: string): boolean => {
+  /** The skills Pi ACTUALLY loaded for this session (main resolved them at spawn). */
+  const sessionSkills = (sessionId: string): Array<{ name: string; scope: "global" | "workspace" }> => {
     try {
-      const m = JSON.parse(fs.readFileSync(path.join(skillsManifestDir, `${sessionId}.json`), "utf8")) as { skills?: Array<{ name: string }> };
-      return (m.skills ?? []).some((s) => s.name === name);
+      const m = JSON.parse(fs.readFileSync(path.join(skillsManifestDir, `${sessionId}.json`), "utf8")) as {
+        skills?: Array<{ name: string; scope: "global" | "workspace" }>;
+      };
+      return (m.skills ?? []).map((s) => ({ name: s.name, scope: s.scope }));
     } catch {
-      return false;
+      return []; // no manifest yet (session not spawned) — nothing loaded
     }
   };
+  const sessionHasSkill = (sessionId: string, name: string): boolean =>
+    sessionSkills(sessionId).some((s) => s.name === name);
+
+  // §14 round 6: the chat top bar shows which skills this session loaded.
+  ipcMain.handle("hv:skills-session", (_e, sessionId: string) => sessionSkills(sessionId));
+
+  // §14 round 6: `/skill:<name>` autocomplete. Pi registers a slash command per
+  // loaded skill (enableSkillCommands) and get_commands is a PURE query — no
+  // model turn, no cost. The renderer filters to source:"skill" for V1.
+  ipcMain.handle("hv:list-commands", async (_e, sessionId: string) => {
+    try {
+      const res = await (await anyClient(sessionId)).send({ type: "get_commands" });
+      const cmds = (res.data as { commands?: Array<{ name?: string; source?: string }> })?.commands ?? [];
+      return cmds
+        .filter((c): c is { name: string; source?: string } => typeof c.name === "string")
+        .map((c) => ({ name: c.name, source: c.source ?? "" }));
+    } catch {
+      return []; // no live client (hibernated/closed) — the composer just shows nothing
+    }
+  });
 
   // "New skill" button: ensure the bundled skill-creator is enabled + active for
   // this session's workspace (respawn-resume if it wasn't loaded), so a following

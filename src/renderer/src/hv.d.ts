@@ -342,6 +342,10 @@ interface HvApi {
     skillId: string,
     workspaceId: string | null,
   ): Promise<{ ok: true; kind: "delete" | "unlink" } | { ok: false; error: string }>;
+  /** §14 round 6: the skills Pi actually loaded for this session (from the manifest). */
+  skillsSession(sessionId: string): Promise<Array<{ name: string; scope: "global" | "workspace" }>>;
+  /** §14 round 6: Pi's slash commands (pure get_commands query) — skills are source:"skill". */
+  listCommands(sessionId: string): Promise<Array<{ name: string; source: string }>>;
   onSkillsChanged(cb: () => void): () => void;
 
   // MCP server config (additive). Changes apply to new sessions.

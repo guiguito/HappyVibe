@@ -58,6 +58,13 @@ test.skipIf(!fs.existsSync(CLI))(
 
     expect(skills).toContain("skill:pdf-tools"); // --skill is additive to --no-skills
     expect(skills).not.toContain("skill:sneaky-skill"); // --no-skills suppressed discovery
+
+    // §14 round 6: the composer's /skill: autocomplete filters get_commands on
+    // source === "skill" (ChatView ensureCommands). If a pin bump renamed that
+    // value the menu would silently come up empty, so pin the field too.
+    const entry = ((res.data as { commands?: Array<{ name: string; source?: string }> })?.commands ?? [])
+      .find((c) => c.name === "skill:pdf-tools");
+    expect(entry?.source).toBe("skill");
   },
   60_000,
 );
