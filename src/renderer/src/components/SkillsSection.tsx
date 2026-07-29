@@ -441,7 +441,11 @@ export function SkillInspector({
                   onClick={async () => {
                     const unlink = detail.source === "linked";
                     const msg = unlink
-                      ? `Unlink “${detail.name}”?\n\n${id}\n\nThe folder and its files are left untouched — HappyVibe just stops looking there.`
+                      ? `Unlink this directory?\n\n${detail.linkedRoot ?? id}\n\nHappyVibe stops looking at the whole directory${
+                          detail.linkedSiblings
+                            ? `, so “${detail.name}” and ${detail.linkedSiblings} other skill${detail.linkedSiblings === 1 ? "" : "s"} from it will disappear`
+                            : `, so “${detail.name}” will disappear`
+                        }. No files are deleted — the directory belongs to another tool.`
                       : detail.source === "workspace"
                         ? `Delete “${detail.name}”?\n\n${id}\n\nThis deletes a file from your project, which is probably tracked by git.`
                         : `Delete “${detail.name}”?\n\n${id}\n\nThe folder is removed from disk.`;

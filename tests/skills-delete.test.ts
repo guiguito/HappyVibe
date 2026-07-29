@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { planSkillRemoval, removeSkillDir } from "../src/main/skills/remove";
+import { findLinkedRoot, planSkillRemoval, removeSkillDir } from "../src/main/skills/remove";
 
 
 describe("planSkillRemoval", () => {
@@ -43,5 +43,25 @@ describe("removeSkillDir", () => {
   it("refuses an allowed root itself (never delete the whole skills dir)", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-del-"));
     expect(() => removeSkillDir(root, [root])).toThrow(/outside|root/i);
+  });
+});
+
+describe("findLinkedRoot", () => {
+  const ROOTS = ["/Users/me/.claude/skills", "/Users/me/other"];
+
+  it("finds the configured root a skill subfolder lives under", () => {
+    expect(findLinkedRoot("/Users/me/.claude/skills/pdf-tools", ROOTS)).toBe("/Users/me/.claude/skills");
+  });
+
+  it("matches the root itself", () => {
+    expect(findLinkedRoot("/Users/me/other", ROOTS)).toBe("/Users/me/other");
+  });
+
+  it("does not match a sibling sharing a string prefix", () => {
+    expect(findLinkedRoot("/Users/me/.claude/skills-evil/x", ROOTS)).toBeUndefined();
+  });
+
+  it("returns undefined when no root matches", () => {
+    expect(findLinkedRoot("/elsewhere/x", ROOTS)).toBeUndefined();
   });
 });

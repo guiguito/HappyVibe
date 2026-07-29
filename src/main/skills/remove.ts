@@ -28,6 +28,20 @@ export function planSkillRemoval(view: { id: string; source: string; dir: string
   return { kind: "delete", dir: view.dir };
 }
 
+/**
+ * The configured linked root a skill dir lives under, or undefined. A linked
+ * root (e.g. ~/.claude/skills) holds several skill subfolders and unlinking
+ * drops the WHOLE root — so the confirm dialog and the delete handler must
+ * agree on which root that is. Single source for both.
+ */
+export function findLinkedRoot(skillDir: string, linkedRoots: string[]): string | undefined {
+  const abs = path.resolve(skillDir);
+  return linkedRoots.find((d) => {
+    const r = path.resolve(d);
+    return abs === r || abs.startsWith(r + path.sep);
+  });
+}
+
 /** Path-confined recursive delete (pattern: files.ts resolveInWorkspace). */
 export function removeSkillDir(dir: string, allowedRoots: string[]): void {
   const abs = path.resolve(dir);

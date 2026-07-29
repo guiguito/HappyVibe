@@ -14,7 +14,7 @@ import {
 } from "./config";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
-  managedSkillsDir, parseForgeUrl, planSkillRemoval, readSkillDir, removeSkillDir, resolveActiveSkills, scanSkillsDir,
+  findLinkedRoot, managedSkillsDir, parseForgeUrl, planSkillRemoval, readSkillDir, removeSkillDir, resolveActiveSkills, scanSkillsDir,
   SkillRegistry, toSkillView,
   type DiscoveredSkill, type SkillProvenance,
 } from "./skills";
@@ -1514,10 +1514,19 @@ export function registerIpc(win: BrowserWindow): void {
     let current = "";
     try { current = fs.readFileSync(skill.skillMdPath, "utf8"); } catch { /* unreadable */ }
     const rec = skillRegistry.record(id);
+    // Unlinking drops the whole configured root, not just this subfolder — tell
+    // the inspector which root and how many other skills go with it, so the
+    // confirm can be honest about the blast radius.
+    const linkedRoot = skill.source === "linked" ? findLinkedRoot(skill.id, getLinkedSkillDirs()) : undefined;
+    const linkedSiblings = linkedRoot
+      ? scanSkillsDir(linkedRoot, "linked").filter((s) => path.resolve(s.id) !== path.resolve(skill.id)).length
+      : 0;
     return {
       name: skill.name,
       description: skill.description,
       source: skill.source,
+      linkedRoot,
+      linkedSiblings,
       files: skill.files,
       scriptCount: skill.scriptCount,
       estTokens: skill.estTokens,
@@ -1698,8 +1707,7 @@ export function registerIpc(win: BrowserWindow): void {
         // subfolders; skill.id is the subfolder, not the root, so find the
         // configured root this skill lives under and drop that reference.
         const linkedDirs = getLinkedSkillDirs();
-        const abs = path.resolve(plan.dir);
-        const root = linkedDirs.find((d) => { const r = path.resolve(d); return abs === r || abs.startsWith(r + path.sep); });
+        const root = findLinkedRoot(plan.dir, linkedDirs);
         if (!root) return { ok: false as const, error: "That linked directory is no longer configured." };
         setLinkedSkillDirs(linkedDirs.filter((d) => d !== root));
       } else {

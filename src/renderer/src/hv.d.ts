@@ -100,6 +100,10 @@ interface HvSkillDetail {
   name: string;
   description: string;
   source: "managed" | "workspace" | "linked" | "bundled";
+  /** linked skills only: the configured root that unlinking would drop… */
+  linkedRoot?: string;
+  /** …and how many OTHER skills come from that same root. */
+  linkedSiblings?: number;
   files: string[];
   scriptCount: number;
   estTokens: { card: number; body: number };
