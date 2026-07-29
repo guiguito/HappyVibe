@@ -43,6 +43,9 @@ export interface PiSpawnOptions {
   /** Round 3 #14: persistent "bypass all permissions" resolved for this session
       (workspace ?? global). true → HV_BYPASS=1 → bridge starts in dangerous mode. */
   bypass?: boolean;
+  /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user),
+      resolved at spawn → HV_BUILTINS (same pattern as HV_BYPASS). */
+  builtinTools?: { plan: boolean; askUser: boolean };
   /** §14 Skills: absolute skill-dir paths this session is allowed to load
       (approved ∩ enabled ∩ active-for-workspace). Enforced with `--no-skills`
       (kills Pi's own discovery — Pi never sees an unapproved skill) plus one
@@ -106,6 +109,9 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
+      ...(opts.builtinTools
+        ? { HV_BUILTINS: JSON.stringify({ plan: opts.builtinTools.plan, askUser: opts.builtinTools.askUser, planAppend: "" }) }
+        : {}),
       ...(opts.skillsFile ? { HV_SKILLS_FILE: opts.skillsFile } : {}),
       // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
       // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).

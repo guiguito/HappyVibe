@@ -1,6 +1,6 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
-  "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "pi-runtime/extensions/hv-rules.ts", "pi-runtime/extensions/hv-context.ts", "pi-runtime/extensions/hv-agents.ts", "pi-runtime/extensions/hv-ask-user.ts", "pi-runtime/extensions/hv-plan.ts"],
+  "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "pi-runtime/extensions/hv-rules.ts", "pi-runtime/extensions/hv-context.ts", "pi-runtime/extensions/hv-agents.ts", "pi-runtime/extensions/hv-ask-user.ts", "pi-runtime/extensions/hv-plan.ts", "pi-runtime/extensions/hv-builtins.ts"],
   "compilerOptions": {
     "composite": true,
     "types": ["electron-vite/node"]

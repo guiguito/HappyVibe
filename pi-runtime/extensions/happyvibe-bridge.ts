@@ -14,6 +14,7 @@ import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolF
 import {
   buildPlanPrompt, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
+import { parseBuiltins } from "./hv-builtins";
 import {
   buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
@@ -241,6 +242,9 @@ const loginAborts = new Map<string, AbortController>();
 
 export default function (pi: ExtensionAPI) {
   loadRules();
+  // §13 round 6: global on/off for plan mode + ask_user, resolved by main at
+  // spawn (same pattern as HV_BYPASS). Fail-open on a corrupt value.
+  const builtins = parseBuiltins(process.env.HV_BUILTINS);
 
   // ── B5 context visibility ──────────────────────────────────────────────
   // System-prompt block captured once per turn (NOT a session entry — read via
@@ -306,7 +310,7 @@ export default function (pi: ExtensionAPI) {
     const agentsSection = renderSubagentSection(agents);
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
-    const planSection = plan.enabled ? "\n\n" + buildPlanPrompt() : "";
+    const planSection = builtins.plan && plan.enabled ? "\n\n" + buildPlanPrompt() : "";
     // §14: steer the model to use_skill (intent card) over a raw SKILL.md read.
     const skillSection = buildUseSkillGuidance(skillManifest);
     const injected = sp + section + agentsSection + planSection + skillSection;
@@ -776,7 +780,7 @@ export default function (pi: ExtensionAPI) {
   // the renderer answers {value: JSON answers} or {cancelled: true} — NO
   // timeout, NO auto-answer (permission invariant). Input is clamped, never
   // rejected: adjustments ride back on the tool result as notes.
-  pi.registerTool({
+  if (builtins.askUser) pi.registerTool({
     name: "ask_user",
     label: "Ask the user",
     description:
@@ -867,6 +871,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ── §23 Plan Mode: registered tools ──────────────────────────────────────
+  // Gated as a whole block: plan_start is the model's own entry point into Plan
+  // Mode, and leaving is deliberately human-only (no plan_off tool — the §23
+  // invariant). If the toggle only hid the UI while plan_start still existed,
+  // the model could still put the session into read-only mode with no way for
+  // the user to exit it — so disabling must remove the tools too.
+  if (builtins.plan) {
   // plan_complete: model submits the finished plan. Blocking round-trip — main
   // writes the workspace file and answers with its path (becomes the tool result
   // AND planPath). Same blocking channel as ask_user (JSON in the input title).
@@ -979,6 +989,7 @@ export default function (pi: ExtensionAPI) {
       emitPlan(ctx.ui);
     },
   });
+  } // builtins.plan
 
   pi.registerCommand("hv-tools", {
     description: "HappyVibe: emit the tool inventory (hv.tools notify)",

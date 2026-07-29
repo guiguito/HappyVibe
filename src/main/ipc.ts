@@ -7,9 +7,9 @@ import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getApiKey, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getOnboardingSeen,
+  agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getOnboardingSeen,
   getWorkspaceBypass, installBuiltinAgents, providerEnv, providerKeyStatus, removeProviderKey, setLinkedSkillDirs, writeSubagentConfig,
-  resolveBypass, rulesFile, sessionDir, setApiKey, setDefaultModel, setGlobalBypass, setOnboardingSeen,
+  resolveBypass, rulesFile, sessionDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass,
 } from "./config";
 import {
@@ -205,6 +205,9 @@ export function registerIpc(win: BrowserWindow): void {
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
       bypass: resolveBypass(workspace ?? null),
+      // §13 round 6: global on/off for built-in custom tools, re-applied on
+      // every (re)spawn — mirrors bypass, but global-only (no workspace tier).
+      builtinTools: getBuiltinTools(),
       skills: entries.map((e) => e.skill.id),
       skillsFile: sessionId ? writeSkillsManifest(sessionId, entries) : undefined,
     };
@@ -1098,6 +1101,15 @@ export function registerIpc(win: BrowserWindow): void {
     for (const id of manager.activeIds()) {
       if ((index.get(id)?.workspaceId ?? null) === workspace) applyBypassLive(id);
     }
+  });
+
+  // §13 round 6: global on/off for built-in custom tools (plan mode, ask_user).
+  // Takes effect at next spawn only — reuse the existing debounced, idle-only,
+  // resume-preserving reload path (same mechanism as MCP/skills config changes).
+  ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
+  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean }) => {
+    setBuiltinTools(t);
+    scheduleRuntimeReload("skills", "global", null);
   });
 
   ipcMain.handle("hv:read-audit", (_e, filter?: { sessionId?: string; workspaceId?: string }) =>

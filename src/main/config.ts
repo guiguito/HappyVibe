@@ -21,6 +21,9 @@ interface ConfigFile {
   /** §14 Skills: external skill dirs linked in place (e.g. ~/.claude/skills).
       Scanned for skills that still go through review-before-active. */
   linkedSkillDirs?: string[];
+  /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user).
+      Global only — no per-workspace tier. Absent key = on (fail-open default). */
+  builtinTools?: { plan?: boolean; askUser?: boolean };
 }
 
 function load(): ConfigFile {
@@ -137,6 +140,19 @@ export function setWorkspaceBypass(workspace: string, on: boolean | null): void 
 export function resolveBypass(workspace: string | null | undefined): boolean {
   const cfg = load();
   return resolveBypassPure(cfg.bypassAll ?? false, workspace ? cfg.workspaceBypass?.[workspace] : undefined);
+}
+
+// §13 round 6: global on/off for built-in custom tools. Both default true
+// (fail-open — same convention as HV_BYPASS's persistent setting).
+export function getBuiltinTools(): { plan: boolean; askUser: boolean } {
+  const t = load().builtinTools;
+  return { plan: t?.plan ?? true, askUser: t?.askUser ?? true };
+}
+
+export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean }): void {
+  const cfg = load();
+  cfg.builtinTools = { ...cfg.builtinTools, ...t };
+  save(cfg);
 }
 
 // §14 Skills: linked external skill dirs (referenced in place, not copied).
