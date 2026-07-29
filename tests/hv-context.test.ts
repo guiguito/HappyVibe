@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { describe, it, expect, test } from "vitest";
 import {
   acceptableMarks, completedMarkKeys, entryMarkKey, filterMessages, messageMarkKeys,
   serializeEntries, type AgentMessage, type MarkKey, type SessionEntry,
@@ -134,4 +134,19 @@ test("serializeEntries includes compaction summaries as their own group", () => 
   const comp = items.find((i) => i.group === "compaction")!;
   expect(comp.preview).toContain("compacted");
   expect(comp.markKey).toBeNull(); // summaries aren't manually removable
+});
+
+// ── bookkeeping entries ────────────────────────────────────────────────────
+
+describe("serializeEntries — bookkeeping entries", () => {
+  it("drops zero-cost Pi session bookkeeping instead of rendering unnamed 'item' rows", () => {
+    const items = serializeEntries([
+      { id: "1", type: "session" },
+      { id: "2", type: "model_change" },
+      { id: "3", type: "thinking_level_change" },
+      { id: "4", type: "session_info" },
+      { id: "5", type: "message", message: { role: "user", content: "hi" } },
+    ] as never);
+    expect(items.map((i) => i.entryId)).toEqual(["5"]);
+  });
 });
