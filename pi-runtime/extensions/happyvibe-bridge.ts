@@ -6,8 +6,8 @@ import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HE
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
 import { unwrapMcpCall } from "./hv-mcp";
 import {
-  acceptableMarks, filterMessages, serializeEntries,
-  type AgentMessage, type MarkKey, type SessionEntry,
+  acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
+  type AgentMessage, type MarkKey, type SessionEntry, type ToolSpecLike,
 } from "./hv-context";
 import { parseAgentFile, renderSubagentSection, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
@@ -317,13 +317,7 @@ export default function (pi: ExtensionAPI) {
     };
     // v5: per-tool schema size (estimated from the LLM tool spec) for the
     // context-panel drill-in. Pi doesn't expose real token weight, so ≈chars/4.
-    const toolDefs = (Array.isArray(opts.selectedTools) ? opts.selectedTools : []).map((t) => {
-      const o = t as { name?: string; description?: string; parameters?: unknown };
-      return {
-        name: typeof o?.name === "string" ? o.name : "(tool)",
-        chars: JSON.stringify({ name: o?.name, description: o?.description, parameters: o?.parameters }).length,
-      };
-    });
+    const toolDefs = buildToolDefs(opts.selectedTools, pi.getAllTools() as ToolSpecLike[]);
     systemBlock = {
       chars: injected.length,
       estTokens: Math.ceil(injected.length / 4),

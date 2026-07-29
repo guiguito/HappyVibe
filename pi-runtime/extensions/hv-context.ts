@@ -275,3 +275,31 @@ export function serializeEntries(entries: SessionEntry[]): ContextItem[] {
   }
   return items;
 }
+
+export interface ToolSpecLike {
+  name?: string;
+  description?: string;
+  parameters?: unknown;
+}
+
+/**
+ * Pi passes `systemPromptOptions.selectedTools` as a string[] of tool NAMES
+ * (core/agent-session.js builds it from validToolNames) — not as tool specs.
+ * Join those names against pi.getAllTools() to recover each tool's real schema
+ * so the context panel can name it and size it. Unknown name → chars 0, which
+ * the renderer labels rather than showing a fabricated estimate.
+ */
+export function buildToolDefs(selectedTools: unknown, allTools: ToolSpecLike[]): { name: string; chars: number }[] {
+  if (!Array.isArray(selectedTools)) return [];
+  const byName = new Map<string, ToolSpecLike>();
+  for (const t of allTools) if (typeof t?.name === "string") byName.set(t.name, t);
+  const out: { name: string; chars: number }[] = [];
+  for (const entry of selectedTools) {
+    const name = typeof entry === "string" ? entry : typeof (entry as ToolSpecLike)?.name === "string" ? (entry as ToolSpecLike).name! : "";
+    if (!name) continue;
+    const spec = byName.get(name) ?? (typeof entry === "string" ? undefined : (entry as ToolSpecLike));
+    const chars = spec ? JSON.stringify({ name, description: spec.description, parameters: spec.parameters }).length : 0;
+    out.push({ name, chars });
+  }
+  return out;
+}
