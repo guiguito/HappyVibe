@@ -283,21 +283,22 @@ export function summarizeGroups(
  * rather than the anonymous "2 items" the shared renderer used for everything.
  * Singular form; the caller pluralizes. Unlisted keys fall back to "item".
  */
-const CATEGORY_NOUN: Record<string, string> = {
-  files: "file",
-  tools: "tool",
-  conversation: "message",
-  tool: "call",
-  compaction: "summary",
-  branch: "summary",
-  "skills-global": "skill",
-  "skills-workspace": "skill",
+const CATEGORY_NOUN: Record<string, { one: string; many: string }> = {
+  files: { one: "file", many: "files" },
+  tools: { one: "tool", many: "tools" },
+  conversation: { one: "message", many: "messages" },
+  tool: { one: "call", many: "calls" },
+  compaction: { one: "summary", many: "summaries" },
+  branch: { one: "summary", many: "summaries" },
+  "skills-global": { one: "skill", many: "skills" },
+  "skills-workspace": { one: "skill", many: "skills" },
 };
+const DEFAULT_NOUN = { one: "item", many: "items" };
 
 /** Count label for a category row, e.g. (2, "skills-global") → "2 skills". */
 export function categoryCount(count: number, key: string): string {
-  const noun = CATEGORY_NOUN[key] ?? "item";
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+  const noun = CATEGORY_NOUN[key] ?? DEFAULT_NOUN;
+  return `${count} ${count === 1 ? noun.one : noun.many}`;
 }
 
 /** v5: warm-workshop color per category, for the composition surface. */

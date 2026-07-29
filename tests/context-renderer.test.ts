@@ -194,6 +194,12 @@ describe("categoryCount", () => {
     expect(categoryCount(1, "tool")).toBe("1 call");
   });
 
+  it("uses irregular plurals where English needs them", () => {
+    expect(categoryCount(1, "compaction")).toBe("1 summary");
+    expect(categoryCount(2, "compaction")).toBe("2 summaries");
+    expect(categoryCount(3, "branch")).toBe("3 summaries");
+  });
+
   it("falls back to 'item' for an unlisted category", () => {
     expect(categoryCount(3, "other")).toBe("3 items");
   });
