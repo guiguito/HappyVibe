@@ -18,6 +18,7 @@ export * from "./discovery";
 export * from "./registry";
 export * from "./view";
 export * from "./gitImport";
+export * from "./remove";
 
 /** HappyVibe-managed global skills live here (copied imports, promoted skills). */
 export function managedSkillsDir(agentDir: string): string {

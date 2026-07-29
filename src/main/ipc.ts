@@ -14,7 +14,8 @@ import {
 } from "./config";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
-  managedSkillsDir, parseForgeUrl, readSkillDir, resolveActiveSkills, scanSkillsDir, SkillRegistry, toSkillView,
+  managedSkillsDir, parseForgeUrl, planSkillRemoval, readSkillDir, removeSkillDir, resolveActiveSkills, scanSkillsDir,
+  SkillRegistry, toSkillView,
   type DiscoveredSkill, type SkillProvenance,
 } from "./skills";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
@@ -1680,6 +1681,45 @@ export function registerIpc(win: BrowserWindow): void {
       await reloadSession(sessionId); // respawn-resume so /skill:skill-creator is loaded
     }
     return { ok: true };
+  });
+
+  // Remove a skill (§14 round 6): managed/workspace → real delete, bundled →
+  // refused (installBundledSkills reinstalls it), linked → unlink the dir
+  // reference only (files belong to another tool). Confined delete via
+  // removeSkillDir; only known skill roots ever get touched.
+  ipcMain.handle("hv:skills-delete", (_e, skillId: string, workspaceId: string | null) => {
+    if (!isKnownSkillDir(skillId)) return { ok: false as const, error: "That skill no longer exists." };
+    const skill = readKnownSkill(skillId);
+    const plan = planSkillRemoval(
+      { id: skill.id, source: skill.source, dir: skill.id },
+      { managed: managedSkillsDir(agentDir()), bundled: bundledSkillsDir(piRuntimeDir()), workspaces: workspaces.list() },
+    );
+    if (plan.kind === "refused") return { ok: false as const, error: plan.reason ?? "This skill cannot be deleted." };
+    try {
+      if (plan.kind === "unlink") {
+        // A linked root (e.g. ~/.claude/skills) can contain several skill
+        // subfolders; skill.id is the subfolder, not the root, so find the
+        // configured root this skill lives under and drop that reference.
+        const linkedDirs = getLinkedSkillDirs();
+        const abs = path.resolve(plan.dir);
+        const root = linkedDirs.find((d) => { const r = path.resolve(d); return abs === r || abs.startsWith(r + path.sep); });
+        if (!root) return { ok: false as const, error: "That linked directory is no longer configured." };
+        setLinkedSkillDirs(linkedDirs.filter((d) => d !== root));
+      } else {
+        const allowedRoots = [
+          managedSkillsDir(agentDir()),
+          ...workspaces.list().map((w) => path.join(w, ".agents", "skills")),
+        ];
+        removeSkillDir(plan.dir, allowedRoots);
+      }
+      skillRegistry.forget(skillId, new Date().toISOString());
+      void log.append({ type: "skill.deleted", data: { id: skillId, name: skill.name, source: skill.source, kind: plan.kind } });
+      skillsChanged();
+      scheduleSkillReload(skill.source === "workspace" ? "workspace" : "global", skill.source === "workspace" ? workspaceId : null);
+      return { ok: true as const, kind: plan.kind };
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   // Promote a workspace skill to global: copy it into the managed dir, approved
