@@ -1,6 +1,6 @@
-import { expect, it, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
-  compositionSegments, computeGauge, groupItems, parseContextAck, parseContextSnapshot, summarizeGroups, totalEstTokens, zoneOf,
+  categoryCount, compositionSegments, computeGauge, groupItems, parseContextAck, parseContextSnapshot, summarizeGroups, totalEstTokens, zoneOf,
   type ContextItem,
 } from "../src/renderer/src/context";
 
@@ -183,4 +183,18 @@ test("totalEstTokens sums system prompt + context files + items", () => {
     marks: [],
   });
   expect(total).toBe(170);
+});
+
+describe("categoryCount", () => {
+  it("names what each category counts instead of anonymous 'items'", () => {
+    expect(categoryCount(2, "skills-global")).toBe("2 skills");
+    expect(categoryCount(1, "skills-workspace")).toBe("1 skill");
+    expect(categoryCount(40, "tools")).toBe("40 tools");
+    expect(categoryCount(12, "conversation")).toBe("12 messages");
+    expect(categoryCount(1, "tool")).toBe("1 call");
+  });
+
+  it("falls back to 'item' for an unlisted category", () => {
+    expect(categoryCount(3, "other")).toBe("3 items");
+  });
 });
