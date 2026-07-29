@@ -219,13 +219,20 @@ function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.E
   const toggle = (id: string, on: boolean): void => {
     void window.hv.skillsSetActive(workspace, id, on);
   };
+  // The checklist mixes global + this workspace's own approved skills (ipc.ts
+  // hv:skills-list); only the global half belongs in "Global skills in this
+  // workspace" — the workspace's own skills already have their own section above.
+  const globalChecklist = data.checklist.filter((c) => c.scope === "global");
 
   return (
     <>
       <ImportControls scope="workspace" workspaceId={workspace} />
-      {data.skills.length > 0 && (
-        <div className="mb-4">
-          <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Project skills (.agents/skills)</div>
+
+      <div className="mb-4">
+        <div className="text-[11px] font-semibold text-ink-soft mb-1.5">This project's skills (.agents/skills)</div>
+        {data.skills.length === 0 ? (
+          <p className="text-xs text-ink-soft">No project skills yet. Import one above, or use the guided skill creator from a session.</p>
+        ) : (
           <div className="rounded-xl border-2 border-line overflow-hidden">
             {data.skills.map((s) => (
               <button
@@ -243,25 +250,27 @@ function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.E
               </button>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Active in this workspace</div>
-      {data.checklist.length === 0 ? (
-        <p className="text-xs text-ink-soft">No approved skills yet. Approve skills in the Global skills view or review project skills above.</p>
+      <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Global skills in this workspace</div>
+      {globalChecklist.length === 0 ? (
+        <p className="text-xs text-ink-soft">No approved global skills yet. Approve skills in the Global skills view.</p>
       ) : (
         <div className="rounded-xl border-2 border-line overflow-hidden">
-          {data.checklist.map((c) => (
-            <label key={c.id} className="flex items-center gap-2 px-3 py-2 border-b border-line last:border-b-0 cursor-pointer hover:bg-paper-deep/30">
+          {globalChecklist.map((c) => (
+            <div key={c.id} className="flex items-center gap-2 px-3 py-2 border-b border-line last:border-b-0 hover:bg-paper-deep/30">
               <input
                 type="checkbox"
                 checked={c.active}
                 onChange={(e) => toggle(c.id, e.target.checked)}
                 className="size-4 accent-tangerine cursor-pointer"
               />
-              <span className="font-bold text-sm">{c.name}</span>
+              <button type="button" onClick={() => setInspecting(c.id)} className="font-bold text-sm text-left hover:underline cursor-pointer">
+                {c.name}
+              </button>
               <span className="text-[10px] font-bold uppercase tracking-wider text-ink-soft">{c.scope}</span>
-            </label>
+            </div>
           ))}
         </div>
       )}
@@ -269,7 +278,15 @@ function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.E
         Toggling a skill respawns this workspace's sessions to apply the change (the conversation is preserved).
       </p>
 
-      {inspecting && <SkillInspector id={inspecting} workspaceId={workspace} onClose={() => setInspecting(null)} onChanged={refresh} />}
+      {inspecting && (
+        <SkillInspector
+          id={inspecting}
+          workspaceId={workspace}
+          canApprove={!globalChecklist.some((c) => c.id === inspecting)}
+          onClose={() => setInspecting(null)}
+          onChanged={refresh}
+        />
+      )}
     </>
   );
 }

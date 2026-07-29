@@ -304,12 +304,15 @@ export function SkillsSection({ workspaceId, sessionId }: { workspaceId: string 
 export function SkillInspector({
   id,
   workspaceId,
+  canApprove = true,
   onClose,
   onChanged,
 }: {
   id: string;
   /** Set when opened from workspace settings, so delete/unlink scopes the reload to this workspace. */
   workspaceId?: string | null;
+  /** false in workspace settings for a global skill: inspectable, but approval only happens from the Skills page. */
+  canApprove?: boolean;
   onClose: () => void;
   onChanged: () => void;
 }): React.JSX.Element {
@@ -456,14 +459,20 @@ export function SkillInspector({
               {detail.status === "error" ? (
                 <span className="text-sm text-berry font-semibold self-center">This skill cannot be loaded.</span>
               ) : detail.status === "needs-review" ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void act(() => window.hv.skillsApprove(id))}
-                  className="rounded-xl bg-tangerine text-paper font-bold text-sm px-5 py-2 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40"
-                >
-                  {changed ? "Re-approve" : "Approve"}
-                </button>
+                canApprove ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void act(() => window.hv.skillsApprove(id))}
+                    className="rounded-xl bg-tangerine text-paper font-bold text-sm px-5 py-2 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40"
+                  >
+                    {changed ? "Re-approve" : "Approve"}
+                  </button>
+                ) : (
+                  <p className="text-[11px] text-ink-soft self-center">
+                    Approve this skill from the Skills page — a workspace can only turn a global skill off for itself.
+                  </p>
+                )
               ) : detail.status === "active" ? (
                 <button
                   type="button"
