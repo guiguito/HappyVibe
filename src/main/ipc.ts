@@ -912,7 +912,17 @@ export function registerIpc(win: BrowserWindow): void {
   // behind (or race) a live turn. Enabling mid-turn used to skip the abort, so
   // clicking Plan while implementing left the on/off commands queued behind the
   // turn — they interleaved with the abort and wedged the session busy.
+  // Root-cause gate: /hv-plan is registered in the bridge only when the global
+  // Plan-mode toggle is on (happyvibe-bridge.ts). Sending it while the toggle
+  // is off falls through Pi's unregistered-command path as a literal user
+  // message to the model — so every caller here (set/implement/discard) must
+  // bail before calling planCmd, not just the renderer chip that happens to be
+  // the one the reviewer clicked.
+  const requirePlanEnabled = (): void => {
+    if (!getBuiltinTools().plan) throw new Error("Plan mode is disabled");
+  };
   ipcMain.handle("hv:plan-set", async (_e, sessionId: string, enabled: boolean) => {
+    requirePlanEnabled();
     if (!index.get(sessionId)) throw new Error("Unknown session");
     await abortIfBusy(sessionId);
     planCmd(sessionId, `/hv-plan ${enabled ? "on" : "off"}`);
@@ -923,6 +933,7 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle(
     "hv:plan-implement",
     async (_e, sessionId: string, relPath: string, model?: { provider: string; modelId: string } | null) => {
+      requirePlanEnabled();
       const meta = index.get(sessionId);
       if (!meta?.workspaceId) throw new Error("Unknown session");
       const wsId = meta.workspaceId;
@@ -954,6 +965,7 @@ export function registerIpc(win: BrowserWindow): void {
 
   // Discard: leave plan mode; the plan file stays on disk (the user's artifact).
   ipcMain.handle("hv:plan-discard", async (_e, sessionId: string) => {
+    requirePlanEnabled();
     const meta = index.get(sessionId);
     if (!meta) throw new Error("Unknown session");
     await abortIfBusy(sessionId);

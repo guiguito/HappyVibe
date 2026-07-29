@@ -72,6 +72,12 @@ export default function App(): React.JSX.Element {
   // §23: per-session plan mode + current plan-file path (bridge-notified; SURVIVES
   // respawn — the bridge re-emits hv.plan on session_start).
   const [planMode, setPlanMode] = useState<Record<string, { enabled: boolean; planPath?: string }>>({});
+  // §13 round 6: global Plan-mode built-in toggle (Settings → All Tools). Drives
+  // whether the composer chip/top-bar affordance render at all — main also
+  // bails hv:plan-set/-implement/-discard when this is off (belt + suspenders,
+  // main is the enforcement; this is so the chip isn't a dead click).
+  const [planBuiltinOn, setPlanBuiltinOn] = useState(true);
+  useEffect(() => { void window.hv.builtinsGet().then((b) => setPlanBuiltinOn(b.plan)); }, []);
   // §23: tool-call ids blocked by plan mode → their cards render "skipped".
   const planBlocked = useRef<Record<string, Set<string>>>({});
   // B5: latest context breakdown snapshot per session (from hv.context notify).
@@ -1134,7 +1140,12 @@ export default function App(): React.JSX.Element {
         {activeView === "mcp" && <McpView workspaceId={selected?.workspaceId ?? null} />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
-          <AllToolsView tools={tools} sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+          <AllToolsView
+            tools={tools}
+            sessionId={selectedId}
+            workspaceId={selected?.workspaceId ?? null}
+            onPlanBuiltinChange={setPlanBuiltinOn}
+          />
         )}
         {/* W2.2: the chat area stays MOUNTED (hidden) on other views so open
             editor buffers and chat state survive a Settings detour. Center is
@@ -1222,15 +1233,18 @@ export default function App(): React.JSX.Element {
             contextOpen={contextOpen}
             onContextOpenChange={setContextOpen}
             planEnabled={(selectedId && planMode[selectedId]?.enabled) || false}
-            onTogglePlan={(on) => {
+            // Important 1 fix: the chip/exit-✕ only render when the global toggle
+            // is on — otherwise clicking them would hit main's hv:plan-set bail
+            // (a dead click) instead of simply not existing.
+            onTogglePlan={planBuiltinOn ? (on) => {
               if (!selectedId) return;
               // main aborts any live turn before flipping plan mode (hv:plan-set);
               // mirror the Stop path and clear busy now so the composer unlocks
               // even if the aborted turn's agent_end never arrives.
-              void window.hv.planSet(selectedId, on);
+              void window.hv.planSet(selectedId, on).catch(() => {});
               commitStream(selectedId);
               setBusy((p) => ({ ...p, [selectedId]: false }));
-            }}
+            } : undefined}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={send}
             onRetry={retryCrash}

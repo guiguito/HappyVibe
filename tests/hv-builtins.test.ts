@@ -15,3 +15,17 @@ describe("parseBuiltins", () => {
     expect(parseBuiltins("{not json")).toEqual({ plan: true, askUser: true, planAppend: "" });
   });
 });
+
+describe("parseBuiltins — plan requires ask_user (Important 3 defence in depth)", () => {
+  it("forces askUser on when plan is on, even if the config says otherwise", () => {
+    expect(parseBuiltins(JSON.stringify({ plan: true, askUser: false }))).toEqual({ plan: true, askUser: true, planAppend: "" });
+  });
+
+  it("honours askUser:false once plan is off", () => {
+    expect(parseBuiltins(JSON.stringify({ plan: false, askUser: false }))).toEqual({ plan: false, askUser: false, planAppend: "" });
+  });
+
+  it("defaults (plan on) also force askUser on", () => {
+    expect(parseBuiltins(JSON.stringify({ askUser: false }))).toEqual({ plan: true, askUser: true, planAppend: "" });
+  });
+});

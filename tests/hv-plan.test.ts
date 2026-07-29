@@ -222,6 +222,16 @@ describe("shouldForcePlanOff — Plan Mode disabled globally must not strand a c
     expect(shouldForcePlanOff(false, { enabled: false, planPath: "/ws/.agents/plans/001-x.md" })).toBe(true);
   });
 
+  test("the caller preserves planPath — the plan file is the user's artifact", () => {
+    // Contract note for happyvibe-bridge's session_start: it spreads the restored
+    // state ({...plan, enabled:false}) rather than replacing it, so re-enabling
+    // Plan mode later still finds the plan file.
+    const restored = { enabled: true, planPath: "/ws/.agents/plans/001-x.md" };
+    expect(shouldForcePlanOff(false, restored)).toBe(true);
+    const forced = { ...restored, enabled: false };
+    expect(forced).toEqual({ enabled: false, planPath: "/ws/.agents/plans/001-x.md" });
+  });
+
   test("leaves plan state alone while the feature is enabled", () => {
     expect(shouldForcePlanOff(true, { enabled: true })).toBe(false);
     expect(shouldForcePlanOff(true, { enabled: true, planPath: "/p.md" })).toBe(false);

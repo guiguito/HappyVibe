@@ -18,6 +18,14 @@ export function parseBuiltins(raw: string | undefined): BuiltinToggles {
     if (p.plan === false) out.plan = false;
     if (p.askUser === false) out.askUser = false;
     if (typeof p.planAppend === "string") out.planAppend = p.planAppend;
+    // Defence in depth (Important 3): Plan mode's prompt and applyPlanTools'
+    // `required` array both hard-require ask_user — a hand-edited config with
+    // plan:true, askUser:false would leave the model told to use a tool that
+    // doesn't exist. The Settings UI already disables the Ask-user toggle while
+    // Plan is on, but that only prevents NEW broken configs from the UI; this
+    // repairs one that reached HV_BUILTINS some other way (hand-edited config,
+    // future write path). Plan wins: force askUser back on.
+    if (out.plan) out.askUser = true;
   } catch {
     /* fail open */
   }

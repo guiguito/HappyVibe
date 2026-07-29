@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { Section } from "./Section";
 
+/** Minor 3: same phrase used in the Plan-off confirm modal and in the live
+    hv:session-reloading notice (App.tsx) — reused verbatim so every control
+    that triggers the respawn discloses it the same way, not a bespoke one-off. */
+const RESPAWN_NOTE = "Live sessions respawn to apply this — permission grants and dangerous mode reset to safe defaults for those sessions.";
+
 /** §13 round 6: the App Tools page's top block — global on/off for the two
     built-in custom tools (plan mode, ask_user). Kept in its own file/component
     (per the task's org note) since Plan mode's expanded prompt+append panel
@@ -15,13 +20,24 @@ const HINT =
   "The built-in prompt above can't be edited — it's shown so you can see exactly what the agent is told. Your " +
   'additions are appended after it. Add preferences (e.g. \'always list affected files\'), not contradictions.';
 
-function TogglePill({ on, onClick }: { on: boolean; onClick: () => void }): React.JSX.Element {
+function TogglePill({
+  on,
+  onClick,
+  disabled,
+}: {
+  on: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}): React.JSX.Element {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
-      className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm cursor-pointer ${
-        on ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"
+      className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm ${
+        disabled
+          ? "cursor-not-allowed opacity-50 bg-card text-ink-soft border-line"
+          : `cursor-pointer ${on ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"}`
       }`}
     >
       {on ? "On" : "Off"}
@@ -41,29 +57,49 @@ function PlanModeRow({
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [prompt, setPrompt] = useState<string | null>(null);
+  const [promptError, setPromptError] = useState(false);
   const [append, setAppend] = useState(builtins.planAppend);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open && prompt === null) void window.hv.builtinPrompt("plan").then((r) => setPrompt(r.text));
-  }, [open, prompt]);
+    if (open && prompt === null && !promptError) {
+      void window.hv.builtinPrompt("plan")
+        .then((r) => setPrompt(r.text))
+        .catch(() => setPromptError(true));
+    }
+  }, [open, prompt, promptError]);
 
+  // Minor 2: don't leave the optimistic patch standing if the write failed —
+  // revert it and surface why, instead of a pill that shows a state that was
+  // never actually saved to disk.
   const save = async (): Promise<void> => {
-    await window.hv.builtinsSet({ planAppend: append });
-    onChange({ planAppend: append });
-    setDirty(false);
-    setSaved(true);
+    setError(null);
+    try {
+      await window.hv.builtinsSet({ planAppend: append });
+      onChange({ planAppend: append });
+      setDirty(false);
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save.");
+    }
   };
 
   const turnOn = (): void => {
-    void window.hv.builtinsSet({ plan: true });
-    onChange({ plan: true });
+    setError(null);
+    void window.hv.builtinsSet({ plan: true }).then(
+      () => onChange({ plan: true }),
+      (e) => setError(e instanceof Error ? e.message : "Could not turn on Plan mode."),
+    );
   };
   const turnOff = (): void => {
     setConfirming(false);
-    void window.hv.builtinsSet({ plan: false });
-    onChange({ plan: false });
+    setError(null);
+    void window.hv.builtinsSet({ plan: false }).then(
+      () => onChange({ plan: false }),
+      (e) => setError(e instanceof Error ? e.message : "Could not turn off Plan mode."),
+    );
   };
 
   return (
@@ -85,6 +121,7 @@ function PlanModeRow({
         </button>
         <TogglePill on={builtins.plan} onClick={() => (builtins.plan ? setConfirming(true) : turnOn())} />
       </div>
+      {error && <p className="px-4 pb-2 -mt-1 text-xs font-semibold text-berry">{error}</p>}
 
       {open && (
         <div className="px-4 pb-4 pt-0 flex flex-col gap-3">
@@ -92,7 +129,9 @@ function PlanModeRow({
             <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-2">
               built-in prompt (read-only)
             </div>
-            {prompt === null ? (
+            {promptError ? (
+              <p className="text-sm text-berry">Could not load the built-in prompt.</p>
+            ) : prompt === null ? (
               <p className="text-sm text-ink-soft">Loading…</p>
             ) : (
               <pre className="font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-72 select-text">
@@ -143,8 +182,7 @@ function PlanModeRow({
             <div className="font-bold text-berry mb-1">Turn off Plan mode?</div>
             <p className="text-sm text-ink-soft mb-4">
               This removes the plan controls from chat (the top-bar indicator and composer chip) and unregisters the
-              plan_start / plan_complete / plan_status_update tools. Live sessions respawn to apply it — permission
-              grants and dangerous mode reset to safe defaults for those sessions.
+              plan_start / plan_complete / plan_status_update tools. {RESPAWN_NOTE}
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -170,25 +208,56 @@ function PlanModeRow({
 }
 
 /** Ask user has no injected prompt to show (per brief: no prompt editing for
-    it) — just a toggle, no expand, no confirm (not consequential like plan). */
-function AskUserRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }): React.JSX.Element {
+    it) — just a toggle, no expand, no confirm (not consequential like plan).
+    Important 3: while Plan mode is on, this toggle is disabled — Plan mode's
+    prompt and its required-tools list both hard-depend on ask_user, so letting
+    the user turn it off here would silently leave the model told to use a tool
+    that no longer exists (parseBuiltins repairs the pair defensively, but the
+    UI shouldn't invite the broken state in the first place). */
+function AskUserRow({
+  on,
+  planOn,
+  onChange,
+}: {
+  on: boolean;
+  planOn: boolean;
+  onChange: (on: boolean) => void;
+}): React.JSX.Element {
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
         <span className="font-bold block">Ask user</span>
         <span className="text-xs text-ink-soft">Lets the agent pause mid-turn to ask you a clarifying question.</span>
+        {planOn && (
+          <span className="text-xs text-ink-soft block mt-0.5">
+            Locked on — Plan mode depends on it. Turn off Plan mode first if you want to disable this.
+          </span>
+        )}
+        {!planOn && <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>}
       </div>
-      <TogglePill on={on} onClick={() => onChange(!on)} />
+      <TogglePill on={on} disabled={planOn} onClick={() => !planOn && onChange(!on)} />
     </div>
   );
 }
 
-export function BuiltinToolsBlock(): React.JSX.Element | null {
+export function BuiltinToolsBlock({
+  onPlanChange,
+}: {
+  /** Important 1: lets App keep the composer chip's visibility in sync as soon
+      as Plan mode is toggled here, without waiting for a page nav/refetch. */
+  onPlanChange?: (on: boolean) => void;
+} = {}): React.JSX.Element | null {
   const [builtins, setBuiltins] = useState<Builtins | null>(null);
+  const [askUserError, setAskUserError] = useState<string | null>(null);
 
   useEffect(() => {
     void window.hv.builtinsGet().then(setBuiltins);
   }, []);
+
+  useEffect(() => {
+    if (builtins) onPlanChange?.(builtins.plan);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [builtins?.plan]);
 
   if (!builtins) return null;
 
@@ -202,10 +271,18 @@ export function BuiltinToolsBlock(): React.JSX.Element | null {
     >
       <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
         <PlanModeRow builtins={builtins} onChange={patch} />
-        <AskUserRow on={builtins.askUser} onChange={(on) => {
-          void window.hv.builtinsSet({ askUser: on });
-          patch({ askUser: on });
-        }} />
+        <AskUserRow
+          on={builtins.askUser}
+          planOn={builtins.plan}
+          onChange={(on) => {
+            setAskUserError(null);
+            void window.hv.builtinsSet({ askUser: on }).then(
+              () => patch({ askUser: on }),
+              (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
+            );
+          }}
+        />
+        {askUserError && <p className="px-4 pb-2 -mt-1 text-xs font-semibold text-berry">{askUserError}</p>}
       </div>
     </Section>
   );

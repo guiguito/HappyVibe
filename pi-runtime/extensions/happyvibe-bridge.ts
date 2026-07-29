@@ -292,12 +292,23 @@ export default function (pi: ExtensionAPI) {
     plan = restorePlanState(entries as unknown as PlanSessionEntry[]);
     // §13 round 6: Plan Mode disabled globally ⇒ a session that was mid-plan comes
     // back with plan mode OFF (see shouldForcePlanOff — without it the clamp would
-    // keep running with every exit path unregistered).
-    if (shouldForcePlanOff(builtins.plan, plan)) plan = { enabled: false };
+    // keep running with every exit path unregistered). planPath is PRESERVED: the
+    // plan file is the user's artifact and re-enabling the feature should find it.
+    const forcedPlanOff = shouldForcePlanOff(builtins.plan, plan);
+    if (forcedPlanOff) plan = { ...plan, enabled: false };
     // Only re-emit when there's real state to resync after a respawn — a spurious
     // "disabled" notify on every fresh session would be the first ui-request other
     // bridge tests wait on, and it's redundant (the renderer defaults to off).
-    if (plan.enabled || plan.planPath) { applyPlanTools(pi); emitPlan(ctx.ui, true); }
+    if (forcedPlanOff) {
+      // MUST still notify: without it the renderer keeps its pre-respawn
+      // enabled:true and shows a read-only banner over a session that is no
+      // longer clamped. Deliberately NOT applyPlanTools — the feature is off, so
+      // nothing should be hidden from the model.
+      emitPlan(ctx.ui, true);
+    } else if (plan.enabled || plan.planPath) {
+      applyPlanTools(pi);
+      emitPlan(ctx.ui, true);
+    }
     busUi = ctx.ui;
   });
 

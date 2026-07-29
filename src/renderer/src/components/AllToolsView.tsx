@@ -60,10 +60,14 @@ export function AllToolsView({
   tools,
   sessionId,
   workspaceId,
+  onPlanBuiltinChange,
 }: {
   tools: ToolInfo[] | null;
   sessionId: string | null;
   workspaceId: string | null;
+  /** Important 1: lets App keep the composer chip's visibility in sync when
+      Plan mode is toggled here, without a page navigation round-trip. */
+  onPlanBuiltinChange?: (on: boolean) => void;
 }): React.JSX.Element {
   const [toolRows, setToolRows] = useState<ToolRow[] | null>(null);
   const [showAllTools, setShowAllTools] = useState(false); // v5: tools list shows 10, then "Show more"
@@ -99,7 +103,7 @@ export function AllToolsView({
         <h1 className="font-black text-3xl tracking-tight mb-2">All Tools</h1>
         <p className="text-sm text-ink-soft mb-8">Everything the agent can call.</p>
 
-        <BuiltinToolsBlock />
+        <BuiltinToolsBlock onPlanChange={onPlanBuiltinChange} />
 
         <Section icon="tools" title="Tools" subtitle="Everything the agent can call. Permission state comes from your rules (Settings → Permissions).">
           {toolRows === null ? (
