@@ -269,7 +269,7 @@ function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.E
         Toggling a skill respawns this workspace's sessions to apply the change (the conversation is preserved).
       </p>
 
-      {inspecting && <SkillInspector id={inspecting} onClose={() => setInspecting(null)} onChanged={refresh} />}
+      {inspecting && <SkillInspector id={inspecting} workspaceId={workspace} onClose={() => setInspecting(null)} onChanged={refresh} />}
     </>
   );
 }

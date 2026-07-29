@@ -297,16 +297,20 @@ export function SkillsSection({ workspaceId, sessionId }: { workspaceId: string 
  *  Exported so workspace settings can reuse it for project-skill review. */
 export function SkillInspector({
   id,
+  workspaceId,
   onClose,
   onChanged,
 }: {
   id: string;
+  /** Set when opened from workspace settings, so delete/unlink scopes the reload to this workspace. */
+  workspaceId?: string | null;
   onClose: () => void;
   onChanged: () => void;
 }): React.JSX.Element {
   const [detail, setDetail] = useState<HvSkillDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void window.hv.skillsRead(id).then(setDetail).catch(() => setDetail(null));
@@ -360,6 +364,8 @@ export function SkillInspector({
                 Close
               </button>
             </div>
+
+            {error && <p className="mb-3 text-xs font-semibold text-berry">{error}</p>}
 
             {detail.scriptCount > 0 && (
               <div className="mb-3 rounded-xl border-2 border-berry/40 bg-berry-soft/50 px-3 py-2 text-sm text-berry font-semibold">
@@ -416,6 +422,29 @@ export function SkillInspector({
                   title="Copy this workspace skill into the global managed dir"
                 >
                   Promote to global
+                </button>
+              )}
+              {detail.source !== "bundled" && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="rounded-md border-2 border-berry/60 px-2 py-1 text-xs font-bold text-berry hover:bg-berry-soft"
+                  onClick={async () => {
+                    const unlink = detail.source === "linked";
+                    const msg = unlink
+                      ? `Unlink “${detail.name}”?\n\n${id}\n\nThe folder and its files are left untouched — HappyVibe just stops looking there.`
+                      : detail.source === "workspace"
+                        ? `Delete “${detail.name}”?\n\n${id}\n\nThis deletes a file from your project, which is probably tracked by git.`
+                        : `Delete “${detail.name}”?\n\n${id}\n\nThe folder is removed from disk.`;
+                    if (!window.confirm(msg)) return;
+                    setError(null);
+                    const res = await window.hv.skillsDelete(id, workspaceId ?? null);
+                    if (!res.ok) { setError(res.error); return; }
+                    onChanged();
+                    onClose();
+                  }}
+                >
+                  {detail.source === "linked" ? "Unlink" : "Delete"}
                 </button>
               )}
               {detail.status === "error" ? (
