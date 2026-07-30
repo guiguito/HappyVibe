@@ -360,6 +360,13 @@ interface HvApi {
   contextRemove(sessionId: string, keys: string[]): Promise<void>;
   contextRestore(sessionId: string, keys: string[]): Promise<void>;
   compactSession(sessionId: string): Promise<void>;
+  // §9 rewind file rollback
+  rewindPreview(sessionId: string, toolCallIds: string[]): Promise<{
+    willRestore: string[]; willDelete: string[]; stale: string[];
+  } | null>;
+  rewindRestore(sessionId: string, toolCallIds: string[]): Promise<{
+    restored: string[]; deleted: string[]; stale: string[]; notCaptured: string[];
+  } | null>;
   // B6: agents & tools
   listAgents(sessionId?: string): Promise<void>;
   listTools(sessionId?: string): Promise<void>;

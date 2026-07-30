@@ -137,6 +137,12 @@ contextBridge.exposeInMainWorld("hv", {
   contextRestore: (sessionId: string, keys: string[]) => ipcRenderer.invoke("hv:context-restore", sessionId, keys),
   compactSession: (sessionId: string) => ipcRenderer.invoke("hv:compact-session", sessionId),
 
+  // §9 rewind file rollback (human-only; no model-reachable path).
+  rewindPreview: (sessionId: string, toolCallIds: string[]) =>
+    ipcRenderer.invoke("hv:rewind-preview", sessionId, toolCallIds),
+  rewindRestore: (sessionId: string, toolCallIds: string[]) =>
+    ipcRenderer.invoke("hv:rewind-restore", sessionId, toolCallIds),
+
   // ── B6: agents & tools (additive) ────────────────────────────────
   // list* fire /hv-agents / /hv-tools; results arrive as hv.agents / hv.tools
   // notifies through onUiRequest (parsed by the renderer).

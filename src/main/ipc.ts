@@ -39,7 +39,10 @@ import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, wri
 import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import { readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
-import { captureSnapshot, deleteSessionSnapshots, stampSnapshot } from "./snapshots";
+import {
+  captureSnapshot, deleteSessionSnapshots, findRestoreTarget,
+  previewRestore, restoreSnapshot, stampSnapshot,
+} from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
@@ -956,6 +959,47 @@ export function registerIpc(win: BrowserWindow): void {
     const plans = planProvidersFor(providerKeyStatus());
     const calls = meta ? parseCalls(readSessionFile(sessionDir(), meta.piSessionFile), plans) : [];
     return { calls, total: ledgerTotal(calls) };
+  });
+
+  // §9 rewind file rollback. HUMAN-ONLY by construction: these are IPC handlers
+  // with no tool, no bridge command and no model-reachable path — the same
+  // invariant as the plan-mode power transitions.
+  const rewindTarget = (sessionId: string, toolCallIds: string[]) => {
+    const meta = index.get(sessionId);
+    if (!meta?.workspaceId) return null;
+    const target = findRestoreTarget(snapshotDir(), sessionId, toolCallIds);
+    return target ? { workspaceId: meta.workspaceId, target } : null;
+  };
+
+  ipcMain.handle("hv:rewind-preview", (_e, sessionId: string, toolCallIds: string[]) => {
+    const hit = rewindTarget(sessionId, toolCallIds);
+    if (!hit) return null;
+    return previewRestore(
+      snapshotDir(), sessionId, workspaces.list(), hit.workspaceId, hit.target,
+    );
+  });
+
+  ipcMain.handle("hv:rewind-restore", (_e, sessionId: string, toolCallIds: string[]) => {
+    const hit = rewindTarget(sessionId, toolCallIds);
+    if (!hit) return null;
+    const result = restoreSnapshot(
+      snapshotDir(), sessionId, workspaces.list(), hit.workspaceId,
+      hit.target, new Date().toISOString(),
+    );
+    void log.append({
+      type: "rewind.restore",
+      sessionId,
+      workspaceId: hit.workspaceId,
+      data: {
+        who: "human",
+        seq: hit.target.seq,
+        restored: result.restored.length,
+        deleted: result.deleted.length,
+        stale: result.stale,
+        notCaptured: result.notCaptured,
+      },
+    });
+    return result;
   });
 
   // getStats(sessionId?) — the optional sessionId is the additive B1 extension.
