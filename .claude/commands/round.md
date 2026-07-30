@@ -7,10 +7,24 @@ Run a feedback round on: $ARGUMENTS
 
 Five phases, strictly in order. **Do not skip ahead and do not touch code in any of them.**
 
-### 1. Read
+### 1. Read — enough to interview me well
 Read the doc ($ARGUMENTS — Notion URL via the Notion MCP, or a repo path). Then read
-`docs/prd.md` and the current state of implementation (`git log --oneline -12`, the relevant
-`docs/validation/*.md`) so you know what already exists before proposing anything.
+`docs/prd.md`, the code the feedback actually touches, and the current state of implementation
+(`git log --oneline -12`, the relevant `docs/validation/*.md`).
+
+This reading has two purposes, and the second one matters more:
+
+**(a) What already exists.** Classify every item: already **BUILT** (show `file:line`) ·
+**PARTIAL** · **decided otherwise** (quote the `Decision (…)`) · **recorded deferral** in
+`docs/validation/*.md`. Already-built and already-deferred items do not become plan tasks —
+surface them in §2 rather than re-proposing them. If the doc is broad, run `/prd-audit` first
+and interview me off its table.
+
+**(b) Enough knowledge to ask good questions.** For every item that IS open, arrive at §2 with
+the *constraint that makes it a real question* and 2–3 options grounded in what the code already
+does: the pattern that could be reused, the adjacent decision it should mirror, the invariant
+that rules an option out. A question I could have answered without the repo is a wasted turn;
+the valuable ones are the ones only someone who read the code could think to ask.
 
 ### 2. Interview me — do not act yet
 Invoke `superpowers:brainstorming`. List every feedback item you found, flag the ones that are

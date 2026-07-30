@@ -10,9 +10,21 @@ command owns the sequencing and the gates only; the details live where they alre
 (`CLAUDE.md`, `.claude/commands/uicheck.md`, `.claude/commands/devdoctor.md`). Read them rather
 than trusting a copy — a duplicated test list already drifted across four worktrees once.
 
-### 0. Scope check FIRST, then branch
-Read before you create anything — no branch, no files, until the scope check passes. Read the
-code the feature would touch, plus `docs/prd.md` and the existing tests for that area.
+### 0. Read, scope-check, THEN branch
+Read before you create anything — no branch, no files, until this passes. Read the code the
+feature would touch, plus `docs/prd.md` and the existing tests for that area.
+
+Two things come out of that reading:
+
+**(a) Is there anything to do at all?** With `file:line` evidence: **already built** → say so,
+show the code, stop. **Already decided the other way** → escape hatch below. **A recorded
+deferral in `docs/validation/*.md`** → not a gap; say who deferred it and why before touching
+it. Wider than the immediate area? Run `/prd-audit` instead of eyeballing it.
+
+**(b) Enough knowledge to ask good questions in Phase 1.** The existing patterns, the adjacent
+decisions, the invariants — these are what turn a vague question into a sharp one. Come out of
+this phase knowing which options are actually available in this codebase, not just that a
+choice exists.
 
 **Scope escape hatch — stop and say "this wants `/round`, not `/feature`" if any of these hold:**
 - a `Decision (…)` in `docs/prd.md` already covers this area and the feature would **reverse**
@@ -30,10 +42,11 @@ Only once it passes:
 - Both installs present? (`node_modules/`, `pi-runtime/node_modules/` — see `devdoctor.md` for
   why either being absent produces unrelated-looking failures.) Run only what's missing.
 
-### 1. Clarify — briefly
-List only what is genuinely ambiguous, as a numbered list; I answer by number. Ask nothing you
-could answer by reading the repo. If nothing is ambiguous, say so in one line and continue —
-no interview for a one-file change.
+### 1. Clarify — briefly, from what Phase 0 taught you
+List only what is genuinely ambiguous, as a numbered list; I answer by number. Each question
+carries the constraint that makes it a real question and the 2–3 options you found in the code —
+not an open-ended "how should this work?". Ask nothing you could answer by reading the repo.
+If nothing is ambiguous, say so in one line and continue — no interview for a one-file change.
 
 ### 2. Task list
 An inline task list (todos), each task naming the files it touches and its verification step
