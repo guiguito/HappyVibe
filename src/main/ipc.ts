@@ -24,7 +24,7 @@ import {
   authJsonProviders, BYOK_PROVIDERS, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, syncModelsJson,
   type ByokProvider,
 } from "./providers";
-import type { CustomEndpoint } from "./modelsJson";
+import { isValidEndpointId, type CustomEndpoint } from "./modelsJson";
 import { deleteSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
@@ -1076,7 +1076,9 @@ export function registerIpc(win: BrowserWindow): void {
   }));
 
   ipcMain.handle("hv:save-custom-endpoint", async (_e, endpoint: CustomEndpoint, key?: string) => {
-    if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(endpoint.id)) throw new Error(`Bad endpoint id: ${endpoint.id}`);
+    // isValidEndpointId keeps id → env var injective (see modelsJson.ts) — a
+    // collision would hand one endpoint another endpoint's API key.
+    if (!isValidEndpointId(endpoint.id)) throw new Error(`Bad endpoint id: ${endpoint.id}`);
     if (!/^https?:\/\//.test(endpoint.baseUrl)) throw new Error(`Bad base URL: ${endpoint.baseUrl}`);
     // A custom endpoint that shadowed a curated id would silently reroute it.
     if (isByokProvider(endpoint.id) || endpoint.id === "ollama") throw new Error(`Reserved id: ${endpoint.id}`);

@@ -304,6 +304,8 @@ export function SettingsView({
   );
   const [draft, setDraft] = useState<{ label: string; baseUrl: string; preset: HvCustomEndpoint["preset"]; key: string } | null>(null);
   const [probe, setProbe] = useState<{ ok: boolean; models: string[]; error?: string } | null>(null);
+  /** Main rejects bad ids / reserved ids / bad URLs — show it instead of failing silently. */
+  const [saveError, setSaveError] = useState<string | null>(null);
   /** Selected model id → context window (Pi defaults to 128000; §9's gauge reads it). */
   const [picked, setPicked] = useState<Record<string, number>>({});
 
@@ -715,13 +717,18 @@ export function SettingsView({
                               auth: { kind: "env" },
                               models: Object.entries(picked).map(([id, contextWindow]) => ({ id, contextWindow })),
                             };
+                            setSaveError(null);
                             void window.hv.saveCustomEndpoint(endpoint, draft.key || undefined)
                               .then(() => window.hv.getCustomEndpoints())
-                              .then((c) => { setCustom(c); setDraft(null); setProbe(null); setPicked({}); });
+                              .then((c) => { setCustom(c); setDraft(null); setProbe(null); setPicked({}); })
+                              .catch((err: unknown) =>
+                                setSaveError(err instanceof Error ? err.message : String(err)),
+                              );
                           }}
                         >
                           Save endpoint
                         </button>
+                        {saveError && <p className="text-sm text-berry">Could not save: {saveError}</p>}
                       </div>
                     )}
                   </div>

@@ -45,6 +45,17 @@ export function envVarFor(id: string): string {
 }
 
 /**
+ * Endpoint ids are lowercase alphanumeric groups joined by SINGLE hyphens, ≤32
+ * chars. Consecutive hyphens are refused on purpose: `envVarFor` collapses runs
+ * of non-alphanumerics, so "a-b" and "a--b" would map to the same env var and
+ * one endpoint would be handed the other endpoint's API key. This regex makes
+ * id → env var injective.
+ */
+export function isValidEndpointId(id: string): boolean {
+  return id.length <= 32 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(id);
+}
+
+/**
  * Neutralise Pi's value-resolution syntax for a literal string: "!cmd" at the
  * start EXECUTES a shell command at request time and "$VAR" interpolates env
  * (docs/models.md §Value Resolution). Escapes are "$!" and "$$".

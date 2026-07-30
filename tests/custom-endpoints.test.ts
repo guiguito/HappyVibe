@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { syncModelsJson } from "../src/main/providers";
 import {
-  customEndpointEnv, envVarFor, escapePiValue, endpointEntry, mergeModelsJson,
+  customEndpointEnv, envVarFor, escapePiValue, endpointEntry, isValidEndpointId, mergeModelsJson,
   parseOpenAiModelList, PRESET_COMPAT,
   type CustomEndpoint,
 } from "../src/main/modelsJson";
@@ -34,6 +34,33 @@ describe("envVarFor", () => {
   test("slug becomes an upper-snake env var stem", () => {
     expect(envVarFor("my-vllm")).toBe("HV_CUSTOM_MY_VLLM_KEY");
     expect(envVarFor("lm.studio 1")).toBe("HV_CUSTOM_LM_STUDIO_1_KEY");
+  });
+});
+
+describe("isValidEndpointId — the id→env-var mapping must be injective", () => {
+  test("accepts single-hyphen slugs", () => {
+    expect(isValidEndpointId("my-vllm")).toBe(true);
+    expect(isValidEndpointId("vllm2")).toBe(true);
+    expect(isValidEndpointId("a")).toBe(true);
+  });
+
+  test("rejects consecutive hyphens — they would COLLIDE on one env var", () => {
+    // envVarFor collapses runs of non-alphanumerics, so both of these become
+    // HV_CUSTOM_A_B_KEY. Two endpoints sharing an env var means one gets sent
+    // the other's API key.
+    expect(envVarFor("a-b")).toBe(envVarFor("a--b")); // the hazard, pinned
+    expect(isValidEndpointId("a-b")).toBe(true);
+    expect(isValidEndpointId("a--b")).toBe(false); // ...so this must be refused
+  });
+
+  test("rejects leading/trailing hyphens, empties, uppercase, and over-long ids", () => {
+    expect(isValidEndpointId("-a")).toBe(false);
+    expect(isValidEndpointId("a-")).toBe(false);
+    expect(isValidEndpointId("")).toBe(false);
+    expect(isValidEndpointId("My-VLLM")).toBe(false);
+    expect(isValidEndpointId("a".repeat(33))).toBe(false);
+    expect(isValidEndpointId("a b")).toBe(false);
+    expect(isValidEndpointId("a_b")).toBe(false);
   });
 });
 
