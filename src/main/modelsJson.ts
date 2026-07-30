@@ -84,3 +84,17 @@ export function mergeModelsJson(existingRaw: string | null, endpoints: CustomEnd
   for (const e of endpoints) providers[e.id] = endpointEntry(e);
   return JSON.stringify({ ...parsed, providers, hvManaged: endpoints.map((e) => e.id) }, null, 2);
 }
+
+/** Env vars for every env-auth endpoint that has a stored key. */
+export function customEndpointEnv(
+  endpoints: CustomEndpoint[],
+  keys: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const e of endpoints) {
+    if (e.auth.kind !== "env") continue;
+    const key = keys[e.id];
+    if (key) out[envVarFor(e.id)] = key;
+  }
+  return out;
+}

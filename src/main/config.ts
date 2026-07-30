@@ -2,6 +2,7 @@ import { app, safeStorage } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { BYOK_PROVIDERS, buildProviderEnv, keySource, type ByokProvider, type KeySource } from "./providers";
+import { customEndpointEnv, type CustomEndpoint } from "./modelsJson";
 import { resolveBypass as resolveBypassPure } from "./bypass";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
@@ -21,6 +22,10 @@ interface ConfigFile {
   /** §14 Skills: external skill dirs linked in place (e.g. ~/.claude/skills).
       Scanned for skills that still go through review-before-active. */
   linkedSkillDirs?: string[];
+  /** §16 (2026-07-30): user-defined OpenAI-compatible endpoints. */
+  customEndpoints?: CustomEndpoint[];
+  /** safeStorage-encrypted keys for those endpoints, base64, by endpoint id. */
+  customKeys?: Record<string, string>;
   /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user).
       Global only — no per-workspace tier. Absent key = on (fail-open default). */
   builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string };
@@ -83,9 +88,49 @@ export function providerKeyStatus(): Record<ByokProvider, KeySource> {
   return out;
 }
 
-/** Env vars injected on Pi spawn for every configured BYOK provider. */
+export function listCustomEndpoints(): CustomEndpoint[] {
+  return load().customEndpoints ?? [];
+}
+
+function storedCustomKeys(): Record<string, string> {
+  const out: Record<string, string> = {};
+  const keys = load().customKeys ?? {};
+  for (const id of Object.keys(keys)) {
+    const k = decrypt(keys[id]);
+    if (k) out[id] = k;
+  }
+  return out;
+}
+
+/** Upsert by id. `key` omitted leaves any existing key untouched. */
+export function saveCustomEndpoint(e: CustomEndpoint, key?: string): void {
+  const cfg = load();
+  const rest = (cfg.customEndpoints ?? []).filter((x) => x.id !== e.id);
+  cfg.customEndpoints = [...rest, e];
+  if (key) cfg.customKeys = { ...cfg.customKeys, [e.id]: safeStorage.encryptString(key).toString("base64") };
+  save(cfg);
+}
+
+export function removeCustomEndpoint(id: string): void {
+  const cfg = load();
+  cfg.customEndpoints = (cfg.customEndpoints ?? []).filter((x) => x.id !== id);
+  if (cfg.customKeys) delete cfg.customKeys[id];
+  save(cfg);
+}
+
+/** True once a key is stored — the UI shows "key saved" without reading it. */
+export function customKeyStatus(): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const id of Object.keys(storedCustomKeys())) out[id] = true;
+  return out;
+}
+
+/** Env vars injected on Pi spawn: curated BYOK keys + custom endpoint keys. */
 export function providerEnv(): Record<string, string> {
-  return buildProviderEnv(storedKeys());
+  return {
+    ...buildProviderEnv(storedKeys()),
+    ...customEndpointEnv(listCustomEndpoints(), storedCustomKeys()),
+  };
 }
 
 export function getDefaultModel(): { provider: string; modelId: string } | null {

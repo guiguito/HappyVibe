@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  envVarFor, escapePiValue, endpointEntry, mergeModelsJson, PRESET_COMPAT,
+  customEndpointEnv, envVarFor, escapePiValue, endpointEntry, mergeModelsJson, PRESET_COMPAT,
   type CustomEndpoint,
 } from "../src/main/modelsJson";
 
@@ -83,5 +83,25 @@ describe("mergeModelsJson", () => {
   test("a corrupt file is rebuilt, not thrown on", () => {
     const out = JSON.parse(mergeModelsJson("{not json", [vllm]));
     expect(out.providers["my-vllm"]).toBeDefined();
+  });
+});
+
+describe("customEndpointEnv", () => {
+  test("maps stored keys onto the env vars models.json references", () => {
+    expect(customEndpointEnv([vllm], { "my-vllm": "sk-secret" })).toEqual({
+      HV_CUSTOM_MY_VLLM_KEY: "sk-secret",
+    });
+  });
+
+  test("an endpoint with no stored key contributes no empty env var", () => {
+    expect(customEndpointEnv([vllm], {})).toEqual({});
+  });
+
+  test("placeholder-auth endpoints never take an env var", () => {
+    const ollama: CustomEndpoint = {
+      id: "ollama", label: "Ollama", baseUrl: "http://localhost:11434/v1",
+      preset: "ollama", auth: { kind: "placeholder", value: "ollama" }, models: [{ id: "m" }],
+    };
+    expect(customEndpointEnv([ollama], { ollama: "ignored" })).toEqual({});
   });
 });
