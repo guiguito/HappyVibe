@@ -8,7 +8,8 @@ import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getOnboardingSeen,
-  getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeProviderKey, setLinkedSkillDirs, writeSubagentConfig,
+  customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
+  saveCustomEndpoint, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass,
 } from "./config";
@@ -20,9 +21,10 @@ import {
 } from "./skills";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDERS, BYOK_PROVIDER_IDS, detectOllama, isByokProvider, syncModelsJson,
+  authJsonProviders, BYOK_PROVIDERS, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, syncModelsJson,
   type ByokProvider,
 } from "./providers";
+import type { CustomEndpoint } from "./modelsJson";
 import { deleteSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
@@ -1064,6 +1066,39 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   ipcMain.handle("hv:detect-ollama", () => detectOllama());
+
+  // §16 (2026-07-30): user-defined OpenAI-compatible endpoints. Secrets never
+  // reach models.json — the file references $HV_CUSTOM_<ID>_KEY and the value
+  // rides the spawn env (config.ts providerEnv).
+  ipcMain.handle("hv:get-custom-endpoints", () => ({
+    endpoints: listCustomEndpoints(),
+    keyStatus: customKeyStatus(),
+  }));
+
+  ipcMain.handle("hv:save-custom-endpoint", async (_e, endpoint: CustomEndpoint, key?: string) => {
+    if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(endpoint.id)) throw new Error(`Bad endpoint id: ${endpoint.id}`);
+    if (!/^https?:\/\//.test(endpoint.baseUrl)) throw new Error(`Bad base URL: ${endpoint.baseUrl}`);
+    // A custom endpoint that shadowed a curated id would silently reroute it.
+    if (isByokProvider(endpoint.id) || endpoint.id === "ollama") throw new Error(`Reserved id: ${endpoint.id}`);
+    saveCustomEndpoint(endpoint, key);
+    await syncModelsJson(agentDir(), listCustomEndpoints()).catch(() => {});
+    await restartUtility();
+    providersChanged();
+  });
+
+  ipcMain.handle("hv:remove-custom-endpoint", async (_e, id: string) => {
+    removeCustomEndpoint(id);
+    await syncModelsJson(agentDir(), listCustomEndpoints()).catch(() => {});
+    // Sessions pinned to its models are NOT respawned (that would be a lie —
+    // hv:session-reloading means grants reset). providersChanged refetches the
+    // model list; dropUnknownProvider then shows the tier it fell back to.
+    await restartUtility();
+    providersChanged();
+  });
+
+  ipcMain.handle("hv:fetch-endpoint-models", (_e, baseUrl: string, key?: string) =>
+    fetchEndpointModels(baseUrl, key),
+  );
 
   // ── B4: permission rules, audit, badge ─────────────────────────────
   const readRules = (): RulesFile => {

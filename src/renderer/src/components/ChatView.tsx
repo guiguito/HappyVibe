@@ -8,7 +8,7 @@ import { computeGauge, type ContextSnapshot, type SessionStats } from "../contex
 import { delegationHint, formatElapsed, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import {
-  attachmentUrl, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
+  attachmentUrl, dropUnknownProvider, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
 import {
   activeCommandQuery, activeMentionQuery, completeCommand, completeMention, extractMentions, filterCommands,
@@ -254,7 +254,16 @@ export function ChatView({
     setModelMenuOpen(false);
     setAttachMenuOpen(false);
   }, [sessionId]);
-  const resolution = resolveModelTier(sessionModel, workspaceModel, defaultModel);
+  // §16 (2026-07-30): a tier pinned to a provider that no longer loads (deleted
+  // custom endpoint) must not win resolution — drop it so the chip shows the
+  // tier actually in effect. `models === null` (not fetched yet) → known is
+  // empty → every ref is kept, so nothing resets during startup.
+  const knownProviders = models ? [...new Set(models.map((m) => m.provider))] : [];
+  const resolution = resolveModelTier(
+    dropUnknownProvider(sessionModel, knownProviders),
+    dropUnknownProvider(workspaceModel, knownProviders),
+    dropUnknownProvider(defaultModel, knownProviders),
+  );
   const resolved = resolution?.ref ?? null;
   const vision = supportsVision(models, resolved);
   const modelName = resolved

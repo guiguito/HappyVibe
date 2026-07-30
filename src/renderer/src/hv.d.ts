@@ -28,6 +28,17 @@ interface HvByokProvider {
   source: "env" | "stored" | null;
 }
 
+/** §16 (2026-07-30): a user-defined OpenAI-compatible endpoint. Mirrors
+ *  CustomEndpoint in src/main/modelsJson.ts. */
+interface HvCustomEndpoint {
+  id: string;
+  label: string;
+  baseUrl: string;
+  preset: "ollama" | "vllm" | "lmstudio" | "llamacpp" | "other";
+  auth: { kind: "env" } | { kind: "placeholder"; value: string };
+  models: { id: string; contextWindow?: number }[];
+}
+
 interface HvModel {
   provider: string;
   id: string;
@@ -275,6 +286,11 @@ interface HvApi {
   authLogout(provider: string): Promise<void>;
   authStatus(): Promise<void>;
   detectOllama(): Promise<{ running: boolean; models: string[] }>;
+  /** §16 (2026-07-30): user-defined OpenAI-compatible endpoints. */
+  getCustomEndpoints(): Promise<{ endpoints: HvCustomEndpoint[]; keyStatus: Record<string, boolean> }>;
+  saveCustomEndpoint(endpoint: HvCustomEndpoint, key?: string): Promise<void>;
+  removeCustomEndpoint(id: string): Promise<void>;
+  fetchEndpointModels(baseUrl: string, key?: string): Promise<{ ok: boolean; models: string[]; error?: string }>;
   listModels(): Promise<HvModel[]>;
   setDefaultModel(provider: string, modelId: string): Promise<void>;
   hasAnyProvider(): Promise<boolean>;
