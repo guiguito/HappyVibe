@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildManifest, diffManifests, SNAPSHOT_EXCLUDE } from "../src/main/snapshots";
+import {
+  buildManifest, captureSnapshot, diffManifests, listSnapshots, SNAPSHOT_EXCLUDE, stampSnapshot,
+} from "../src/main/snapshots";
 import type { Manifest } from "../src/main/snapshots";
 
 let ws: string;
@@ -81,5 +83,112 @@ describe("diffManifests", () => {
   test("an identical manifest diffs to nothing", () => {
     const m: Manifest = { files: { a: "h" }, tooLarge: [] };
     expect(diffManifests(m, m)).toEqual({ changed: [], added: [], removed: [] });
+  });
+});
+
+// ── Task 2: the per-session store ────────────────────────────────────────────
+
+const NOW = "2026-07-30T12:00:00.000Z";
+
+describe("captureSnapshot", () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-snaproot-"));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test("writes a record and one blob per file", () => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "hello");
+
+    const rec = captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+
+    expect(rec).not.toBeNull();
+    expect(rec!.seq).toBe(1);
+    expect(rec!.kind).toBe("pre");
+    expect(rec!.toolCallId).toBeNull();
+    const blob = path.join(root, "s1", "blobs", rec!.manifest.files["a.txt"]);
+    expect(fs.readFileSync(blob, "utf8")).toBe("hello");
+  });
+
+  test("returns null when nothing changed since the newest record", () => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "hello");
+    captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+
+    expect(captureSnapshot(root, "s1", [ws], ws, "post", NOW)).toBeNull();
+    expect(listSnapshots(root, "s1")).toHaveLength(1);
+  });
+
+  test("increments seq and dedupes blobs across snapshots", () => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "hello");
+    const first = captureSnapshot(root, "s1", [ws], ws, "pre", NOW)!;
+    fs.writeFileSync(path.join(ws, "b.txt"), "hello"); // same content, same blob
+    const second = captureSnapshot(root, "s1", [ws], ws, "post", NOW)!;
+
+    expect(second.seq).toBe(2);
+    expect(second.manifest.files["b.txt"]).toBe(first.manifest.files["a.txt"]);
+    expect(fs.readdirSync(path.join(root, "s1", "blobs"))).toHaveLength(1);
+  });
+
+  test("sessions are isolated from one another", () => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "hello");
+    captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+    captureSnapshot(root, "s2", [ws], ws, "pre", NOW);
+
+    expect(listSnapshots(root, "s1")).toHaveLength(1);
+    expect(listSnapshots(root, "s2")).toHaveLength(1);
+  });
+});
+
+describe("stampSnapshot", () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-snaproot-"));
+    fs.writeFileSync(path.join(ws, "a.txt"), "hello");
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test("stamps the newest unstamped pre-snapshot", () => {
+    captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+
+    stampSnapshot(root, "s1", "call-1");
+
+    expect(listSnapshots(root, "s1")[0].toolCallId).toBe("call-1");
+  });
+
+  test("is a no-op once that snapshot is already stamped", () => {
+    captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+    stampSnapshot(root, "s1", "call-1");
+
+    stampSnapshot(root, "s1", "call-2"); // second tool call of the same turn
+
+    expect(listSnapshots(root, "s1")[0].toolCallId).toBe("call-1");
+  });
+
+  test("never stamps a post snapshot", () => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "one");
+    captureSnapshot(root, "s1", [ws], ws, "post", NOW);
+
+    stampSnapshot(root, "s1", "call-1");
+
+    expect(listSnapshots(root, "s1")[0].toolCallId).toBeNull();
+  });
+});
+
+describe("listSnapshots", () => {
+  test("returns [] for an unknown session and skips a torn last line", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-snaproot-"));
+    expect(listSnapshots(root, "nope")).toEqual([]);
+
+    fs.mkdirSync(path.join(root, "s1"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "s1", "snapshots.jsonl"),
+      `{"seq":1,"kind":"pre","toolCallId":null,"createdAt":"${NOW}","manifest":{"files":{},"tooLarge":[]}}\n{"seq":2,"kind`,
+    );
+    expect(listSnapshots(root, "s1")).toHaveLength(1);
+    fs.rmSync(root, { recursive: true, force: true });
   });
 });

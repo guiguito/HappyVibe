@@ -102,3 +102,111 @@ export function diffManifests(from: Manifest, to: Manifest): ManifestDiff {
   for (const p of Object.keys(from.files)) if (to.files[p] === undefined) removed.push(p);
   return { changed: changed.sort(), added: added.sort(), removed: removed.sort() };
 }
+
+function sameManifest(a: Manifest, b: Manifest): boolean {
+  const d = diffManifests(a, b);
+  return d.changed.length === 0 && d.added.length === 0 && d.removed.length === 0;
+}
+
+export type SnapshotKind = "pre" | "post";
+
+export interface SnapshotRecord {
+  /** 1-based, monotonic within a session. */
+  seq: number;
+  /** "pre" snapshots are restore targets; "post" is the freshness reference. */
+  kind: SnapshotKind;
+  /** First toolCallId of the turn that followed a "pre" snapshot. */
+  toolCallId: string | null;
+  createdAt: string;
+  /** Set for Plan Mode Implement baselines ("implement") and restore guards ("safety"). */
+  label?: string;
+  manifest: Manifest;
+}
+
+const sessionDirFor = (root: string, sessionId: string): string => path.join(root, sessionId);
+const recordsFile = (root: string, sessionId: string): string =>
+  path.join(sessionDirFor(root, sessionId), "snapshots.jsonl");
+const blobPath = (root: string, sessionId: string, hash: string): string =>
+  path.join(sessionDirFor(root, sessionId), "blobs", hash);
+
+/** Torn last line is skipped, never thrown — same contract as log.ts / calls.ts. */
+export function listSnapshots(root: string, sessionId: string): SnapshotRecord[] {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(recordsFile(root, sessionId), "utf8");
+  } catch {
+    return [];
+  }
+  const out: SnapshotRecord[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      out.push(JSON.parse(line) as SnapshotRecord);
+    } catch {
+      /* torn write — skip */
+    }
+  }
+  return out;
+}
+
+function writeRecords(root: string, sessionId: string, records: SnapshotRecord[]): void {
+  fs.mkdirSync(sessionDirFor(root, sessionId), { recursive: true });
+  fs.writeFileSync(
+    recordsFile(root, sessionId),
+    records.map((r) => JSON.stringify(r)).join("\n") + "\n",
+  );
+}
+
+export function captureSnapshot(
+  root: string,
+  sessionId: string,
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  kind: SnapshotKind,
+  now: string,
+  label?: string,
+): SnapshotRecord | null {
+  const manifest = buildManifest(registeredWorkspaces, workspaceId);
+  const records = listSnapshots(root, sessionId);
+  const newest = records[records.length - 1];
+
+  // Nothing changed since the last record — a read-only turn costs no storage.
+  // A labelled record is always kept: it has to stay addressable.
+  if (label === undefined && newest && sameManifest(newest.manifest, manifest)) return null;
+
+  const wsRoot = resolveInWorkspace(registeredWorkspaces, workspaceId, "");
+  fs.mkdirSync(path.join(sessionDirFor(root, sessionId), "blobs"), { recursive: true });
+  for (const [rel, hash] of Object.entries(manifest.files)) {
+    const dest = blobPath(root, sessionId, hash);
+    if (fs.existsSync(dest)) continue; // content-addressed: identical content, one blob
+    try {
+      fs.copyFileSync(path.join(wsRoot, rel), dest);
+    } catch {
+      delete manifest.files[rel]; // vanished mid-capture — never record what we cannot restore
+    }
+  }
+
+  const rec: SnapshotRecord = {
+    seq: (newest?.seq ?? 0) + 1,
+    kind,
+    toolCallId: null,
+    createdAt: now,
+    ...(label === undefined ? {} : { label }),
+    manifest,
+  };
+  fs.appendFileSync(recordsFile(root, sessionId), JSON.stringify(rec) + "\n");
+  return rec;
+}
+
+/**
+ * Stamp the newest unstamped "pre" snapshot with the turn's FIRST toolCallId.
+ * Later calls in the same turn are no-ops, which is what makes the stamp mean
+ * "the state before the turn containing this call".
+ */
+export function stampSnapshot(root: string, sessionId: string, toolCallId: string): void {
+  const records = listSnapshots(root, sessionId);
+  const newest = records[records.length - 1];
+  if (!newest || newest.kind !== "pre" || newest.toolCallId !== null) return;
+  newest.toolCallId = toolCallId;
+  writeRecords(root, sessionId, records);
+}
