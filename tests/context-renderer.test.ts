@@ -1,6 +1,6 @@
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
-  compositionSegments, computeGauge, groupItems, parseContextAck, parseContextSnapshot, summarizeGroups, totalEstTokens, zoneOf,
+  categoryCount, compositionSegments, computeGauge, groupItems, parseContextAck, parseContextSnapshot, summarizeGroups, totalEstTokens, zoneOf,
   type ContextItem,
 } from "../src/renderer/src/context";
 
@@ -118,6 +118,15 @@ test("v5: tool definitions become MEASURED (estimated) when toolDefs are present
   expect(tools).toMatchObject({ count: 2, measured: true, chars: 1200, estTokens: 300 });
 });
 
+it("skills rows carry per-skill items for the drill-in", () => {
+  const rows = summarizeGroups([], {
+    chars: 100, estTokens: 25, toolCount: 0, contextFiles: [], toolDefs: [], agents: [],
+    skills: { global: { tokens: 20, count: 1, items: [{ name: "pdf-tools", tokens: 20 }] }, workspace: { tokens: 0, count: 0, items: [] } },
+  } as never);
+  const g = rows.find((r) => r.key === "skills-global");
+  expect(g?.skills).toEqual([{ name: "pdf-tools", tokens: 20 }]);
+});
+
 test("v5: compositionSegments drops zero-share rows and carries colors", () => {
   const rows = summarizeGroups(
     [item({ group: "conversation", estTokens: 75, chars: 300 })],
@@ -174,4 +183,24 @@ test("totalEstTokens sums system prompt + context files + items", () => {
     marks: [],
   });
   expect(total).toBe(170);
+});
+
+describe("categoryCount", () => {
+  it("names what each category counts instead of anonymous 'items'", () => {
+    expect(categoryCount(2, "skills-global")).toBe("2 skills");
+    expect(categoryCount(1, "skills-workspace")).toBe("1 skill");
+    expect(categoryCount(40, "tools")).toBe("40 tools");
+    expect(categoryCount(12, "conversation")).toBe("12 messages");
+    expect(categoryCount(1, "tool")).toBe("1 call");
+  });
+
+  it("uses irregular plurals where English needs them", () => {
+    expect(categoryCount(1, "compaction")).toBe("1 summary");
+    expect(categoryCount(2, "compaction")).toBe("2 summaries");
+    expect(categoryCount(3, "branch")).toBe("3 summaries");
+  });
+
+  it("falls back to 'item' for an unlisted category", () => {
+    expect(categoryCount(3, "other")).toBe("3 items");
+  });
 });

@@ -49,6 +49,26 @@ export function shouldReconcilePlanOff(restored: boolean, enabled: boolean, stat
   return restored && enabled && status !== "draft";
 }
 
+/**
+ * §13 round 6: Plan Mode turned off globally ⇒ force any restored plan state off.
+ * The plan tools and the human-only /hv-plan exit are unregistered when the
+ * feature is disabled, so leaving restored state enabled would keep the
+ * gatePlanCall clamp running with no way for anyone — model or user — to lift it.
+ */
+export function shouldForcePlanOff(featureEnabled: boolean, state: PlanState): boolean {
+  return !featureEnabled && (state.enabled || state.planPath !== undefined);
+}
+
+/**
+ * The plan state a session takes when the feature is force-disabled: clamp off,
+ * but planPath KEPT — the plan file is the user's artifact and re-enabling Plan
+ * mode should still find it. The bridge persists this, so re-enabling the
+ * feature cannot silently re-clamp the session from a stale session file.
+ */
+export function forcedPlanOffState(state: PlanState): PlanState {
+  return { ...state, enabled: false };
+}
+
 /** Newest hv-plan-state custom entry wins — it's a full snapshot. */
 export function restorePlanState(entries: PlanSessionEntry[]): PlanState {
   let state: PlanState = { enabled: false };
@@ -147,7 +167,10 @@ export function planSlug(body: string): string {
 const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "subagent"]);
 /** Read-only tools that pass straight through the plan gate. */
 const PLAN_PASS_TOOLS = new Set([
-  "read", "grep", "glob", "list", "ls", "find", "ask_user", "plan_complete", "plan_start", "plan_status_update",
+  // use_skill only returns an ALREADY-APPROVED SKILL.md's text (spawn-time trust
+  // gate, §14) — strictly a read. Without it, planning raised a permission modal
+  // on every skill load.
+  "read", "grep", "glob", "list", "ls", "find", "ask_user", "use_skill", "plan_complete", "plan_start", "plan_status_update",
 ]);
 
 export type PlanGate =
@@ -188,8 +211,8 @@ export function gatePlanCall(toolName: string, input: unknown): PlanGate {
 
 const PLAN_PROMPT_MARKER = "[HAPPYVIBE PLAN MODE ACTIVE]";
 
-export function buildPlanPrompt(): string {
-  return `${PLAN_PROMPT_MARKER}
+export function buildPlanPrompt(append = ""): string {
+  const body = `${PLAN_PROMPT_MARKER}
 # Plan Mode (read-only)
 
 You are in Plan Mode. You may explore and ask, but you CANNOT modify anything —
@@ -225,6 +248,12 @@ that the user will approve; do NOT implement it.
 
 If the user later requests revisions, call plan_complete again with a complete
 replacement plan (not a delta).`;
+  // Additive only: this cannot widen what the agent is allowed to do — enforcement
+  // is gatePlanCall (BLOCKED_PLAN_TOOLS/PLAN_PASS_TOOLS/PLAN_SAFE_SUBCOMMANDS), not
+  // this prompt text. A user append lands strictly after the built-in body, never
+  // interleaved, and can't touch the marker above.
+  const extra = append.trim();
+  return extra ? `${body}\n\n${extra}` : body;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

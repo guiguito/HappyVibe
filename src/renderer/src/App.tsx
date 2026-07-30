@@ -23,6 +23,9 @@ import { AskUserModal } from "./components/AskUserModal";
 import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
+import { SkillsView } from "./components/SkillsView";
+import { McpView } from "./components/McpView";
+import { AllToolsView } from "./components/AllToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
@@ -69,6 +72,16 @@ export default function App(): React.JSX.Element {
   // §23: per-session plan mode + current plan-file path (bridge-notified; SURVIVES
   // respawn — the bridge re-emits hv.plan on session_start).
   const [planMode, setPlanMode] = useState<Record<string, { enabled: boolean; planPath?: string }>>({});
+  // §13 round 6: global Plan-mode built-in toggle (Settings → All Tools). Drives
+  // whether the composer chip/top-bar affordance render at all — main also
+  // bails hv:plan-set/-implement/-discard when this is off (belt + suspenders,
+  // main is the enforcement; this is so the chip isn't a dead click).
+  const [planBuiltinOn, setPlanBuiltinOn] = useState(true);
+  // §14 round 6: per-session skills — what the session LOADED (manifest, from
+  // main) and which of them the agent actually reached for (hv.skill notifies).
+  const [skillsLoaded, setSkillsLoaded] = useState<Record<string, Array<{ name: string; scope: string }>>>({});
+  const [skillsUsed, setSkillsUsed] = useState<Record<string, string[]>>({});
+  useEffect(() => { void window.hv.builtinsGet().then((b) => setPlanBuiltinOn(b.plan)); }, []);
   // §23: tool-call ids blocked by plan mode → their cards render "skipped".
   const planBlocked = useRef<Record<string, Set<string>>>({});
   // B5: latest context breakdown snapshot per session (from hv.context notify).
@@ -144,6 +157,13 @@ export default function App(): React.JSX.Element {
   // compaction_end resolves it in place ("Compaction complete") instead of
   // leaving a stale ongoing line + appending a second item.
   const compactionNotice = useRef<Record<string, number>>({});
+  // Auto-retry (§ upstream errors): Pi emits message_end(error) on EVERY failed
+  // attempt, then auto_retry_start/end around the backoff. We DEFER the hard
+  // error card (pendingError) so a retried-and-recovered error shows only a
+  // transient "Retrying…" notice; a real error card lands only on the final,
+  // non-retried failure. retryNotice tracks the in-place notice id per session.
+  const pendingError = useRef<Record<string, string>>({});
+  const retryNotice = useRef<Record<string, number>>({});
 
   const appendItem = (sid: string, item: TranscriptItem): void =>
     setTranscripts((p) => {
@@ -154,6 +174,43 @@ export default function App(): React.JSX.Element {
       }
       return { ...p, [sid]: [...items, withId] };
     });
+
+  // Upsert the per-session "Retrying…" notice in place (one notice spans all
+  // attempts; text updates each attempt). Mirrors the compaction-notice pattern.
+  const upsertRetryNotice = (sid: string, text: string): void => {
+    const existing = retryNotice.current[sid];
+    if (existing === undefined) {
+      retryNotice.current[sid] = idCounter.current; // id appendItem assigns next
+      appendItem(sid, { kind: "notice", text, pending: true });
+      return;
+    }
+    setTranscripts((p) => {
+      const items = p[sid];
+      if (!items) return p;
+      const i = items.findIndex((it) => it.id === existing && it.kind === "notice");
+      if (i < 0) return p;
+      const next = items.slice();
+      next[i] = { ...items[i], kind: "notice", text, pending: true };
+      return { ...p, [sid]: next };
+    });
+  };
+  // Resolve the retry notice: text=null removes it; a string leaves a settled
+  // (non-pending) notice. Clears the tracked id either way.
+  const resolveRetryNotice = (sid: string, text: string | null): void => {
+    const id = retryNotice.current[sid];
+    delete retryNotice.current[sid];
+    if (id === undefined) return;
+    setTranscripts((p) => {
+      const items = p[sid];
+      if (!items) return p;
+      if (text === null) return { ...p, [sid]: items.filter((it) => it.id !== id) };
+      const i = items.findIndex((it) => it.id === id && it.kind === "notice");
+      if (i < 0) return p;
+      const next = items.slice();
+      next[i] = { ...items[i], kind: "notice", text, pending: false };
+      return { ...p, [sid]: next };
+    });
+  };
 
   // §23: append a PlanCard for a plan path once (progress fills in via
   // onPlanChanged); no-op if a card for that path already exists in the session.
@@ -358,6 +415,31 @@ export default function App(): React.JSX.Element {
         // triggered assistant turn — this just manages the card + a flow notice.
         const sub = parseSubagentEvent(r);
         if (sub) handleSubagentEvent(sid, sub);
+        // §14: raw-read fallback — the model loaded a skill by reading SKILL.md
+        // instead of use_skill. Surface a lightweight notice (the use_skill happy
+        // path already renders as its own tool card, so only detected reads here).
+        if (r.method === "notify") {
+          try {
+            const p = JSON.parse(r.message ?? "") as { kind?: string; name?: string; detected?: boolean };
+            if (p?.kind === "hv.skill" && p.name) {
+              // Round 6: track EVERY invocation for the top-bar chip's "used"
+              // marks — the use_skill happy path (detected:false) used to be
+              // dropped here, so nothing outside its tool card knew it happened.
+              setSkillsUsed((prev) => {
+                const cur = prev[sid];
+                if (cur?.includes(p.name!)) return prev;
+                return { ...prev, [sid]: [...(cur ?? []), p.name!] };
+              });
+              // The transcript notice stays for the raw-read heuristic ONLY: the
+              // use_skill path already renders its own tool card.
+              if (p.detected) {
+                appendItem(sid, { kind: "notice", text: `Loaded skill “${p.name}” by reading it directly` });
+              }
+            }
+          } catch {
+            /* not JSON — ignore */
+          }
+        }
       }
     });
 
@@ -524,8 +606,31 @@ export default function App(): React.JSX.Element {
       }
       if (e.type === "agent_end") {
         commitStream(sid); // finalize the live bubble into the transcript
+        // Flush a deferred provider error that was NOT retried (or exhausted its
+        // retries) as the single hard error card for the turn.
+        const err = pendingError.current[sid];
+        if (err) {
+          delete pendingError.current[sid];
+          appendItem(sid, { kind: "error", text: err });
+        }
         setBusy((p) => ({ ...p, [sid]: false }));
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
+      }
+      // Auto-retry around a transient provider error (Pi retries with backoff).
+      // Show it as a live notice instead of a frozen-looking gap; the deferred
+      // hard error card only lands if all retries are exhausted (agent_end).
+      if (e.type === "auto_retry_start") {
+        const r = e as unknown as { attempt?: number; maxAttempts?: number; delayMs?: number; errorMessage?: string };
+        delete pendingError.current[sid]; // this failure is being retried, not final
+        commitStream(sid);
+        const secs = Math.round((r.delayMs ?? 0) / 1000);
+        const why = r.errorMessage ? ` — ${r.errorMessage}` : "";
+        upsertRetryNotice(sid, `Retrying (attempt ${r.attempt ?? 1}/${r.maxAttempts ?? 3}${secs ? `, next in ${secs}s` : ""})${why}`);
+      }
+      if (e.type === "auto_retry_end") {
+        const r = e as unknown as { success?: boolean; attempt?: number };
+        if (r.success) resolveRetryNotice(sid, `Recovered after ${r.attempt ?? 1} ${((r.attempt ?? 1) === 1) ? "retry" : "retries"}`);
+        else resolveRetryNotice(sid, null); // exhausted — the error card (agent_end) tells the story
       }
       // B5: compaction is slow (Pi's model summarization, not our bug), so show
       // an ONGOING notice that resolves in place — never a scary error box.
@@ -566,12 +671,15 @@ export default function App(): React.JSX.Element {
         }
       }
       // B2: provider errors (model call failed) as distinct transcript items.
-      // "aborted" is the user's own Stop — no error item for that.
+      // "aborted" is the user's own Stop — no error item for that. We DEFER the
+      // card: Pi fires message_end(error) on every failed attempt, so committing
+      // it now would stack a red card per retry. Hold it; agent_end flushes it if
+      // the turn ultimately failed, while auto_retry_start clears it on a retry.
       if (e.type === "message_end") {
         const m = (e as { message?: { role?: string; stopReason?: string; errorMessage?: string } }).message;
         if (m?.role === "assistant" && m.stopReason === "error") {
-          commitStream(sid); // flush any partial bubble before the error item
-          appendItem(sid, { kind: "error", text: m.errorMessage || "The model call failed." });
+          commitStream(sid); // flush any partial bubble before the (deferred) error
+          pendingError.current[sid] = m.errorMessage || "The model call failed.";
         }
       }
     });
@@ -650,6 +758,20 @@ export default function App(): React.JSX.Element {
     return () => { live = false; clearTimeout(t); };
   }, [selectedId, selectedId ? turns[selectedId] : 0]);
 
+  // §14 round 6: the session's LOADED skill set comes from main's per-session
+  // manifest (the exact dirs passed to Pi as --skill). Re-fetched when the
+  // skills config changes, since that respawns sessions with a new manifest.
+  useEffect(() => {
+    if (!selectedId) return;
+    let live = true;
+    const load = (): void => {
+      void window.hv.skillsSession(selectedId).then((s) => { if (live) setSkillsLoaded((p) => ({ ...p, [selectedId]: s })); });
+    };
+    load();
+    const off = window.hv.onSkillsChanged(load);
+    return () => { live = false; off(); };
+  }, [selectedId]);
+
   const closeFileTab = (wsId: string, paneIdx: number, tab: TabId): void => {
     if (tab === CHAT_TAB) return; // chat is never closable
     const key = bufferKey(wsId, tab);
@@ -710,7 +832,7 @@ export default function App(): React.JSX.Element {
     // a fresh open showed a static empty state with no loader).
     setStatuses((p) => ({ ...p, [id]: "waking" }));
     try {
-      const { messages } = await window.hv.openSession(id);
+      const { meta, messages } = await window.hv.openSession(id);
       setStatuses((p) => ({ ...p, [id]: "running" }));
       if (messages) {
         // Rebuilt from Pi's session file — only adopt when we hold nothing newer.
@@ -720,27 +842,62 @@ export default function App(): React.JSX.Element {
         const items: TranscriptItem[] = messages.map((m) =>
           m.kind === "tool"
             ? {
-                kind: "tool",
+                kind: "tool" as const,
                 id: idCounter.current++,
                 card: {
                   toolCallId: m.toolCallId,
                   toolName: m.toolName,
                   args: m.args,
-                  status: m.error ? "error" : "done",
+                  status: m.error ? ("error" as const) : ("done" as const),
                   result: m.result,
                 },
               }
-            : { kind: m.kind, text: m.text, id: idCounter.current++ },
+            : m.kind === "plan"
+              ? {
+                  // §23: the PlanCard at its original position, with the plan
+                  // file's real status/progress (so the CTA is right on reopen).
+                  kind: "plan" as const,
+                  id: idCounter.current++,
+                  card: { sessionId: id, workspaceId: meta.workspaceId, path: m.planPath, status: m.status ?? "draft", done: m.done ?? 0, total: m.total ?? 0 },
+                }
+              : { kind: m.kind, text: m.text, id: idCounter.current++ },
         );
+        // §14 round 6: the skills chip's "used" marks came only from live hv.skill
+        // notifies, so a REOPENED session reported "0 used" while its own restored
+        // transcript listed use_skill cards. The session file is the source of
+        // truth — seed from it (raw-read fallbacks stay unmarked; they're a
+        // heuristic and card as a plain `read`).
+        const restoredUsed = messages.flatMap((m) =>
+          m.kind === "tool" && m.toolName === "use_skill"
+            ? [(m.args as { name?: string } | undefined)?.name].filter((n): n is string => !!n)
+            : [],
+        );
+        if (restoredUsed.length > 0) {
+          setSkillsUsed((p) => ({ ...p, [id]: [...new Set([...(p[id] ?? []), ...restoredUsed])] }));
+        }
+        const restoredPlanPaths = new Set(messages.flatMap((m) => (m.kind === "plan" ? [m.planPath] : [])));
         setTranscripts((p) => {
-          if (p[id]?.length) return p;
+          const existing = p[id] ?? [];
+          // Adopt the file-rebuilt transcript only when we don't already hold a
+          // LIVE conversation. A PlanCard/notice that raced in from the
+          // session_start hv.plan notify does NOT count as conversation — else
+          // reopening a plan session would keep only the plan card and drop the
+          // restored messages.
+          const hasConversation = existing.some(
+            (it) => it.kind === "user" || it.kind === "assistant" || it.kind === "tool",
+          );
+          if (hasConversation) return p;
+          // Keep any plan cards that raced in but AREN'T already positioned in the
+          // rebuilt history (dedupe by path) — avoids a duplicate bottom card.
+          const extraPlans = existing.filter((it) => it.kind === "plan" && !restoredPlanPaths.has(it.card.path));
+          const merged = [...items, ...extraPlans];
           // Rebuild the tool index so any late tool_execution_end still matches.
           const map = new Map<string, number>();
-          items.forEach((it, i) => {
+          merged.forEach((it, i) => {
             if (it.kind === "tool") map.set(it.card.toolCallId, i);
           });
           toolIndex.current[id] = map;
-          return { ...p, [id]: items };
+          return { ...p, [id]: merged };
         });
       }
       setError(null);
@@ -1020,12 +1177,17 @@ export default function App(): React.JSX.Element {
             workspaces={workspaces}
           />
         )}
-        {activeView === "agents" && (
-          <AgentsView
-            agents={agents}
+        {activeView === "skills" && (
+          <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+        )}
+        {activeView === "mcp" && <McpView workspaceId={selected?.workspaceId ?? null} />}
+        {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
+        {activeView === "tools" && (
+          <AllToolsView
             tools={tools}
             sessionId={selectedId}
             workspaceId={selected?.workspaceId ?? null}
+            onPlanBuiltinChange={setPlanBuiltinOn}
           />
         )}
         {/* W2.2: the chat area stays MOUNTED (hidden) on other views so open
@@ -1114,15 +1276,26 @@ export default function App(): React.JSX.Element {
             contextOpen={contextOpen}
             onContextOpenChange={setContextOpen}
             planEnabled={(selectedId && planMode[selectedId]?.enabled) || false}
-            onTogglePlan={(on) => {
+            sessionSkills={
+              selectedId
+                ? (skillsLoaded[selectedId] ?? []).map((s) => ({
+                    ...s,
+                    used: (skillsUsed[selectedId] ?? []).includes(s.name),
+                  }))
+                : []
+            }
+            // Important 1 fix: the chip/exit-✕ only render when the global toggle
+            // is on — otherwise clicking them would hit main's hv:plan-set bail
+            // (a dead click) instead of simply not existing.
+            onTogglePlan={planBuiltinOn ? (on) => {
               if (!selectedId) return;
               // main aborts any live turn before flipping plan mode (hv:plan-set);
               // mirror the Stop path and clear busy now so the composer unlocks
               // even if the aborted turn's agent_end never arrives.
-              void window.hv.planSet(selectedId, on);
+              void window.hv.planSet(selectedId, on).catch(() => {});
               commitStream(selectedId);
               setBusy((p) => ({ ...p, [selectedId]: false }));
-            }}
+            } : undefined}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={send}
             onRetry={retryCrash}
@@ -1147,7 +1320,7 @@ export default function App(): React.JSX.Element {
             }}
                 onOpenFolder={addWorkspace}
                 onOpenFile={openFileFromCard}
-                onOpenMcp={() => setView("agents")}
+                onOpenMcp={() => setView("mcp")}
                 onRewind={rewindTo}
               />
             </div>

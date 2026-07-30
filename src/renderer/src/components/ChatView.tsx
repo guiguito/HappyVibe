@@ -11,7 +11,8 @@ import {
   attachmentUrl, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
 import {
-  activeMentionQuery, completeMention, extractMentions, filterEntries, mentionLabel, type MentionEntry,
+  activeCommandQuery, activeMentionQuery, completeCommand, completeMention, extractMentions, filterCommands,
+  filterEntries, mentionLabel, type MentionEntry,
 } from "../mentions";
 
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
@@ -45,6 +46,7 @@ export function ChatView({
   contextOpen,
   onContextOpenChange,
   planEnabled = false,
+  sessionSkills,
   onTogglePlan,
   onOpenAgentsMd,
   onSend,
@@ -83,6 +85,8 @@ export function ChatView({
   onContextOpenChange: (open: boolean) => void;
   /** §23: plan-mode toggle state + setter (composer chip). */
   planEnabled?: boolean;
+  /** §14 round 6: skills this session loaded, each flagged if the agent used it. */
+  sessionSkills?: Array<{ name: string; scope: string; used: boolean }>;
   onTogglePlan?: (on: boolean) => void;
   onOpenAgentsMd: () => void;
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[]) => void;
@@ -93,7 +97,7 @@ export function ChatView({
   onCompact: () => void;
   /** W2.2: open a workspace-relative file in an editor tab (clickable card paths). */
   onOpenFile?: (relPath: string) => void;
-  /** v5: navigate to the MCP, Tools & Agents page (from the composer "+" menu). */
+  /** v5: navigate to the MCP page (from the composer "+" menu). */
   onOpenMcp?: () => void;
   /** Round 3 #11: truncate the conversation at a user message (App-side). */
   onRewind?: (it: TranscriptItem) => void;
@@ -153,6 +157,49 @@ export function ChatView({
     setMention(null);
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(done.caret, done.caret); autoGrow(); });
   };
+
+  // §14 round 6: `/skill:<name>` autocomplete. Pi already registers a command per
+  // loaded skill; get_commands is a pure query so this costs no model turn. The
+  // list only changes on respawn, so it's cached per session.
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  const commandCache = useRef<string[] | null>(null);
+  const [command, setCommand] = useState<{ items: string[]; sel: number; end: number } | null>(null);
+  const ensureCommands = useCallback(async (): Promise<string[]> => {
+    if (commandCache.current) return commandCache.current;
+    if (!sessionId) return [];
+    const sid = sessionId; // capture: this fetch must not populate another session's cache
+    try {
+      const all = await window.hv.listCommands(sid);
+      // V1: skills only — other Pi commands aren't part of HappyVibe's surface yet.
+      const names = all.filter((c) => c.source === "skill").map((c) => c.name);
+      // The user may have switched sessions while this was in flight. Serving A's
+      // commands in B would send a command B's Pi doesn't have.
+      if (sid !== sessionIdRef.current) return [];
+      commandCache.current = names;
+      return names;
+    } catch {
+      return []; // not live yet (e.g. hibernated) — deliberately NOT cached, so it retries
+    }
+  }, [sessionId]);
+  const refreshCommand = useCallback(async (text: string, caret: number): Promise<void> => {
+    const q = activeCommandQuery(text, caret);
+    if (!q) { setCommand(null); return; }
+    const items = filterCommands(await ensureCommands(), q.query);
+    // `end` pins the span this menu was built for, so a later caret move can't
+    // make pickCommand replace the wrong slice.
+    setCommand({ items, sel: 0, end: caret });
+  }, [ensureCommands]);
+  const pickCommand = (name: string): void => {
+    const el = taRef.current;
+    if (!el || !command) return;
+    const done = completeCommand(input, command.end, name);
+    setInput(done.text);
+    setCommand(null);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(done.caret, done.caret); autoGrow(); });
+  };
+  // A respawn re-registers commands (main refires /hv-tools) — drop the cache.
+  useEffect(() => { commandCache.current = null; }, [sessionId]);
   const [pendingRewind, setPendingRewind] = useState<TranscriptItem | null>(null); // #11 confirm
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
   const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
@@ -322,8 +369,11 @@ export function ChatView({
       <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
         {/* §23: compact plan-mode indicator (left) — read-only badge with a
             wrap-up nudge and one-click exit. Replaces the full-width banner. */}
+        {((sessionSkills?.length ?? 0) > 0 || planEnabled) && (
+        <div className="mr-auto flex items-center gap-1.5">
+        {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
         {planEnabled && (
-          <div className="mr-auto flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             <span
               className="flex items-center gap-1 rounded-full bg-sky-soft text-sky text-[11px] font-bold px-2 py-0.5"
               title="Plan mode — read-only. I can explore and draft a plan but can't change anything. Tip: planning loves your smartest model."
@@ -357,6 +407,8 @@ export function ChatView({
               </button>
             )}
           </div>
+        )}
+        </div>
         )}
         <button
           type="button"
@@ -784,16 +836,45 @@ export function ChatView({
                 })}
               </div>
             )}
+            {/* §14 round 6: /skill: command menu — same placement/styling as @file. */}
+            {command && command.items.length > 0 && (
+              <div className="absolute bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+                {command.items.map((name, i) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickCommand(name)}
+                    className={`w-full text-left px-3 py-1.5 cursor-pointer ${i === command.sel ? "bg-honey-soft" : "hover:bg-paper-deep/40"}`}
+                  >
+                    <span className="font-semibold">/{name}</span>
+                    <span className="block truncate text-[11px] font-medium text-ink-soft">Load this skill</span>
+                  </button>
+                ))}
+                <p className="px-3 pt-1 text-[10px] text-ink-soft">Tab to complete · Enter to send</p>
+              </div>
+            )}
             <textarea
               ref={taRef}
               rows={1}
               value={input}
               onChange={(e) => {
                 setInput(e.target.value);
-                void refreshMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                const c = e.target.selectionStart ?? e.target.value.length;
+                void refreshMention(e.target.value, c);
+                void refreshCommand(e.target.value, c);
               }}
-              onBlur={() => { window.setTimeout(() => setMention(null), 120); }}
+              onBlur={() => { window.setTimeout(() => { setMention(null); setCommand(null); }, 120); }}
               onKeyDown={(e) => {
+                // §14 round 6: while the /command dropdown is open it owns the nav keys.
+                if (command && command.items.length > 0) {
+                  const n = command.items.length;
+                  if (e.key === "ArrowDown") { e.preventDefault(); setCommand((c) => c && { ...c, sel: (c.sel + 1) % n }); return; }
+                  if (e.key === "ArrowUp") { e.preventDefault(); setCommand((c) => c && { ...c, sel: (c.sel - 1 + n) % n }); return; }
+                  if (e.key === "Tab") { e.preventDefault(); pickCommand(command.items[command.sel]); return; }
+                  if (e.key === "Escape") { e.preventDefault(); setCommand(null); return; }
+                  // Enter SENDS (the typed command already works verbatim) — Tab completes.
+                }
                 // F3: while the @-dropdown is open it owns the nav keys.
                 if (mention) {
                   const n = mention.items.length;
@@ -1020,6 +1101,42 @@ function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trac
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * §14 round 6: which skills this session loaded, and which the agent actually
+ * reached for. One chip answers both — what was available, and what got used.
+ */
+function SkillsChip({ skills }: { skills: Array<{ name: string; scope: string; used: boolean }> }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const used = skills.filter((s) => s.used).length;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={`${skills.length} skill${skills.length === 1 ? "" : "s"} loaded for this session, ${used} used so far`}
+        className="flex items-center gap-1 rounded-full bg-plum-soft text-plum text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:brightness-105"
+      >
+        <span aria-hidden>🧠</span> {used}/{skills.length} skills
+      </button>
+      {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
+      {open && (
+        <div className="absolute top-full left-0 mt-1.5 z-30 w-64 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
+          {skills.map((s) => (
+            <div key={`${s.scope}:${s.name}`} className="flex items-baseline gap-2 px-3 py-1">
+              <span className={`flex-1 min-w-0 truncate ${s.used ? "font-bold" : "font-medium text-ink-soft"}`}>{s.name}</span>
+              {s.used && <span className="text-[10px] font-bold text-leaf shrink-0">used</span>}
+              <span className="text-[10px] text-ink-soft shrink-0">{s.scope}</span>
+            </div>
+          ))}
+          <p className="px-3 pt-1 text-[10px] text-ink-soft">
+            Loaded for this session. Type <span className="font-mono">/skill:</span> to load one now.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

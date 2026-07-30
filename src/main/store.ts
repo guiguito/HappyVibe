@@ -131,6 +131,10 @@ export function deleteSessionFile(sessionDirPath: string, file: string | undefin
 export interface WorkspaceEntry {
   path: string;
   model?: { provider: string; modelId: string };
+  /** §14: per-workspace skill activation checklist, keyed by skill id (absolute
+   *  dir path). Absent id = default (normal skills on, bundled off — resolved in
+   *  resolveActiveSkills). Only stores explicit user overrides. */
+  skillsActive?: Record<string, boolean>;
 }
 
 /** V2.A: workspace paths are dialog-provided strings — compare them
@@ -184,6 +188,22 @@ export class WorkspaceRegistry {
     if (!entry) return; // unknown workspace — nothing to set
     if (model) entry.model = model;
     else delete entry.model;
+    this.save();
+  }
+
+  /** §14: the explicit skill-activation overrides for a workspace (empty if none). */
+  getSkillsActive(p: string): Record<string, boolean> {
+    return this.find(p)?.skillsActive ?? {};
+  }
+
+  /** Set (on=true|false) or clear (on=null → back to default) one skill's activation for a workspace. */
+  setSkillActive(p: string, skillId: string, on: boolean | null): void {
+    const entry = this.find(p);
+    if (!entry) return;
+    entry.skillsActive ??= {};
+    if (on === null) delete entry.skillsActive[skillId];
+    else entry.skillsActive[skillId] = on;
+    if (Object.keys(entry.skillsActive).length === 0) delete entry.skillsActive;
     this.save();
   }
 }

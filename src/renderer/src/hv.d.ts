@@ -19,7 +19,8 @@ interface SessionMeta {
     the session file), not just user/assistant text. */
 type RestoreItem =
   | { kind: "user" | "assistant"; text: string }
-  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean };
+  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
+  | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
 interface HvByokProvider {
   id: string;
@@ -57,6 +58,59 @@ interface HvTool {
   name: string;
   description: string;
   source: string;
+}
+
+/** §14 — mirrors SkillView in src/main/skills/view.ts (from hv:skills-list). */
+interface HvSkillView {
+  id: string;
+  name: string;
+  description: string;
+  source: "managed" | "workspace" | "linked" | "bundled";
+  status: "active" | "disabled" | "needs-review" | "error";
+  scriptCount: number;
+  disableModelInvocation: boolean;
+  estTokens: { card: number; body: number };
+  changed: boolean;
+  provenance?: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string };
+}
+
+/** §14 — per-workspace activation checklist entry. */
+interface HvSkillChecklistItem {
+  id: string;
+  name: string;
+  source: "managed" | "workspace" | "linked" | "bundled";
+  scope: "global" | "workspace";
+  active: boolean;
+}
+
+interface HvSkillsList {
+  global: HvSkillView[];
+  workspace: { skills: HvSkillView[]; checklist: HvSkillChecklistItem[] } | null;
+}
+
+/** §14 — a scan result from a local-folder or git-URL import (pick which to import). */
+interface HvSkillImportScan {
+  token: string | null;
+  skills: Array<{ id: string; name: string; description: string; scriptCount: number }>;
+  error?: string;
+}
+
+/** §14 — the inspector payload (hv:skills-read): current content + approved snapshot for the diff. */
+interface HvSkillDetail {
+  name: string;
+  description: string;
+  source: "managed" | "workspace" | "linked" | "bundled";
+  /** linked skills only: the configured root that unlinking would drop… */
+  linkedRoot?: string;
+  /** …and how many OTHER skills come from that same root. */
+  linkedSiblings?: number;
+  files: string[];
+  scriptCount: number;
+  estTokens: { card: number; body: number };
+  status: "active" | "disabled" | "needs-review" | "error";
+  provenance: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string } | null;
+  current: string;
+  approved: string | null;
 }
 
 /** Mirrors Rule/RulesFile/Verdict in pi-runtime/extensions/hv-rules.ts (separate tsconfig roots). */
@@ -263,6 +317,36 @@ interface HvApi {
   setWorkspaceAppend(workspaceId: string, content: string): Promise<void>;
   getWorkspaceModel(workspaceId: string): Promise<{ provider: string; modelId: string } | null>;
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
+
+  // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string }): Promise<void>;
+  /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
+  builtinPrompt(name: string): Promise<{ text: string }>;
+
+  // §14 Skills (additive)
+  skillsList(workspaceId?: string): Promise<HvSkillsList>;
+  skillsRead(id: string): Promise<HvSkillDetail>;
+  skillsApprove(id: string): Promise<void>;
+  skillsSetEnabled(id: string, enabled: boolean): Promise<void>;
+  skillsSetActive(workspaceId: string, id: string, on: boolean | null): Promise<void>;
+  skillsGetLinked(): Promise<string[]>;
+  skillsSetLinked(dirs: string[]): Promise<void>;
+  skillsAddLinked(): Promise<string[]>;
+  skillsImportLocal(): Promise<HvSkillImportScan | null>;
+  skillsImportGit(url: string): Promise<HvSkillImportScan>;
+  skillsImportSelect(token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null): Promise<string[]>;
+  skillsNewSkill(sessionId: string): Promise<{ ok: boolean; error?: string }>;
+  skillsPromote(id: string): Promise<string>;
+  skillsDelete(
+    skillId: string,
+    workspaceId: string | null,
+  ): Promise<{ ok: true; kind: "delete" | "unlink" } | { ok: false; error: string }>;
+  /** §14 round 6: the skills Pi actually loaded for this session (from the manifest). */
+  skillsSession(sessionId: string): Promise<Array<{ name: string; scope: "global" | "workspace" }>>;
+  /** §14 round 6: Pi's slash commands (pure get_commands query) — skills are source:"skill". */
+  listCommands(sessionId: string): Promise<Array<{ name: string; source: string }>>;
+  onSkillsChanged(cb: () => void): () => void;
 
   // MCP server config (additive). Changes apply to new sessions.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;

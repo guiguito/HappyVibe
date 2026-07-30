@@ -18,6 +18,12 @@ interface ConfigFile {
       workspace override (tri-state: absent = inherit global). */
   bypassAll?: boolean;
   workspaceBypass?: Record<string, boolean>;
+  /** §14 Skills: external skill dirs linked in place (e.g. ~/.claude/skills).
+      Scanned for skills that still go through review-before-active. */
+  linkedSkillDirs?: string[];
+  /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user).
+      Global only — no per-workspace tier. Absent key = on (fail-open default). */
+  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string };
 }
 
 function load(): ConfigFile {
@@ -134,6 +140,37 @@ export function setWorkspaceBypass(workspace: string, on: boolean | null): void 
 export function resolveBypass(workspace: string | null | undefined): boolean {
   const cfg = load();
   return resolveBypassPure(cfg.bypassAll ?? false, workspace ? cfg.workspaceBypass?.[workspace] : undefined);
+}
+
+// §13 round 6: global on/off for built-in custom tools. Both default true
+// (fail-open — same convention as HV_BYPASS's persistent setting).
+export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string } {
+  const t = load().builtinTools;
+  const plan = t?.plan ?? true;
+  // Plan mode's prompt and its applyPlanTools required-list both depend on
+  // ask_user, so the bridge force-couples them (hv-builtins parseBuiltins). Apply
+  // the SAME clamp here or the settings row would read "off" for a tool that is
+  // in fact registered — the UI must not disagree with the runtime.
+  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "" };
+}
+
+export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string }): void {
+  const cfg = load();
+  cfg.builtinTools = { ...cfg.builtinTools, ...t };
+  save(cfg);
+}
+
+// §14 Skills: linked external skill dirs (referenced in place, not copied).
+export function getLinkedSkillDirs(): string[] {
+  return load().linkedSkillDirs ?? [];
+}
+
+export function setLinkedSkillDirs(dirs: string[]): void {
+  const cfg = load();
+  const clean = [...new Set(dirs.filter((d) => typeof d === "string" && d.trim()))];
+  if (clean.length) cfg.linkedSkillDirs = clean;
+  else delete cfg.linkedSkillDirs;
+  save(cfg);
 }
 
 // Legacy shims — existing window.hv.getApiKey/setApiKey surface (DeepSeek).

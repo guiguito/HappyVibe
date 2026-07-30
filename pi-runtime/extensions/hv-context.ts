@@ -226,6 +226,23 @@ function messageText(content: AgentMessage["content"]): string {
 const PREVIEW = 120;
 const preview = (s: string): string => (s.length > PREVIEW ? s.slice(0, PREVIEW - 1) + "…" : s);
 
+/**
+ * Entry types the context panel never lists: HappyVibe's own control-channel
+ * entries (label/custom/custom_message carry context marks and plan state), and
+ * Pi's session bookkeeping (session/model_change/thinking_level_change/
+ * session_info carry only provider+modelId, thinkingLevel, or a session name —
+ * no message, no tokens). Verified against Pi's docs/session-format.md.
+ */
+const SKIPPED_ENTRY_TYPES = new Set([
+  "label",
+  "custom",
+  "custom_message",
+  "session",
+  "model_change",
+  "thinking_level_change",
+  "session_info",
+]);
+
 function groupOf(entry: SessionEntry): ContextItem["group"] {
   if (entry.type === "compaction") return "compaction";
   if (entry.type === "branch_summary") return "branch";
@@ -246,7 +263,10 @@ export function serializeEntries(entries: SessionEntry[]): ContextItem[] {
   const completed = completedMarkKeys(entries);
   const items: ContextItem[] = [];
   for (const entry of entries) {
-    if (entry.type === "label" || entry.type === "custom" || entry.type === "custom_message") continue;
+    // §9 round 6: the bookkeeping types above rendered as unnamed "item ≈0 tok"
+    // rows and were the last occupants of "Other". Drop them here so the panel
+    // only lists real consumers of the window.
+    if (SKIPPED_ENTRY_TYPES.has(entry.type)) continue;
     if (entry.type === "message" && !entry.message) continue;
     const m = entry.message;
     let text = "";
@@ -274,4 +294,32 @@ export function serializeEntries(entries: SessionEntry[]): ContextItem[] {
     });
   }
   return items;
+}
+
+export interface ToolSpecLike {
+  name?: string;
+  description?: string;
+  parameters?: unknown;
+}
+
+/**
+ * Pi passes `systemPromptOptions.selectedTools` as a string[] of tool NAMES
+ * (core/agent-session.js builds it from validToolNames) — not as tool specs.
+ * Join those names against pi.getAllTools() to recover each tool's real schema
+ * so the context panel can name it and size it. Unknown name → chars 0, which
+ * the renderer labels rather than showing a fabricated estimate.
+ */
+export function buildToolDefs(selectedTools: unknown, allTools: ToolSpecLike[]): { name: string; chars: number }[] {
+  if (!Array.isArray(selectedTools)) return [];
+  const byName = new Map<string, ToolSpecLike>();
+  for (const t of allTools) if (typeof t?.name === "string") byName.set(t.name, t);
+  const out: { name: string; chars: number }[] = [];
+  for (const entry of selectedTools) {
+    const name = typeof entry === "string" ? entry : typeof (entry as ToolSpecLike)?.name === "string" ? (entry as ToolSpecLike).name! : "";
+    if (!name) continue;
+    const spec = byName.get(name) ?? (typeof entry === "string" ? undefined : (entry as ToolSpecLike));
+    const chars = spec ? JSON.stringify({ name, description: spec.description, parameters: spec.parameters }).length : 0;
+    out.push({ name, chars });
+  }
+  return out;
 }

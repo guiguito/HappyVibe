@@ -66,6 +66,49 @@ describe("restoreItems", () => {
     expect(tool).toMatchObject({ kind: "tool", toolCallId: "c2", error: true, result: "boom" });
   });
 
+  test("emits a plan card at its plan_complete position (path from the result), not at the bottom", () => {
+    const raw = [
+      { role: "user", content: [{ type: "text", text: "plan the feature" }] },
+      { role: "assistant", content: [
+        { type: "text", text: "Here's the plan." },
+        { type: "toolCall", id: "p1", name: "plan_complete", arguments: { intent: "…", plan: "# Plan" } },
+      ] },
+      { role: "toolResult", toolCallId: "p1", toolName: "plan_complete", content: [{ type: "text", text: "Plan saved to .agents/plans/001-feature.md. It is ready for the user to review…" }] },
+      { role: "assistant", content: [{ type: "text", text: "Implementing now." }] },
+      { role: "assistant", content: [{ type: "toolCall", id: "e1", name: "edit", arguments: { path: "src/x.ts" } }] },
+      { role: "toolResult", toolCallId: "e1", content: [{ type: "text", text: "ok" }] },
+    ];
+    const items = restoreItems(raw);
+    // Plan card sits between the "Here's the plan." bubble and the implementation
+    // messages — NOT appended last.
+    expect(items.map((i) => i.kind)).toEqual(["user", "assistant", "plan", "assistant", "tool"]);
+    expect(items[2]).toEqual({ kind: "plan", planPath: ".agents/plans/001-feature.md" });
+  });
+
+  test("plan_start / plan_status_update never become cards", () => {
+    const raw = [
+      { role: "assistant", content: [{ type: "toolCall", id: "s1", name: "plan_start", arguments: {} }] },
+      { role: "toolResult", toolCallId: "s1", toolName: "plan_start", content: [{ type: "text", text: "Plan Mode is on." }] },
+      { role: "assistant", content: [{ type: "toolCall", id: "u1", name: "plan_status_update", arguments: { status: "implemented" } }] },
+      { role: "toolResult", toolCallId: "u1", toolName: "plan_status_update", content: [{ type: "text", text: "Plan marked implemented." }] },
+    ];
+    expect(restoreItems(raw)).toEqual([]);
+  });
+
+  test("revised plans collapse to the last plan_complete for that path", () => {
+    const raw = [
+      { role: "assistant", content: [{ type: "toolCall", id: "p1", name: "plan_complete", arguments: {} }] },
+      { role: "toolResult", toolCallId: "p1", toolName: "plan_complete", content: [{ type: "text", text: "Plan saved to .agents/plans/001-x.md. It is ready…" }] },
+      { role: "user", content: [{ type: "text", text: "revise it" }] },
+      { role: "assistant", content: [{ type: "toolCall", id: "p2", name: "plan_complete", arguments: {} }] },
+      { role: "toolResult", toolCallId: "p2", toolName: "plan_complete", content: [{ type: "text", text: "Plan saved to .agents/plans/001-x.md. It is ready…" }] },
+    ];
+    const items = restoreItems(raw);
+    const plans = items.filter((i) => i.kind === "plan");
+    expect(plans).toHaveLength(1); // one card, at the LAST revision's position
+    expect(items[items.length - 1]).toEqual({ kind: "plan", planPath: ".agents/plans/001-x.md" });
+  });
+
   test("drops empty text messages and unmatched results", () => {
     const raw = [
       { role: "user", content: [{ type: "text", text: "   " }] },

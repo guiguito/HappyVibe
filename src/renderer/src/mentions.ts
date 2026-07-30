@@ -115,3 +115,44 @@ export function splitMentionSegments(text: string): MentionSegment[] {
   if (last < text.length) segs.push({ kind: "text", value: text.slice(last) });
   return segs;
 }
+
+// ── §14 round 6: slash-command autocomplete ─────────────────────────────────
+// Pi registers a `/skill:<name>` command per loaded skill and lists them via
+// get_commands, so the composer only needs discovery — typing already worked.
+// Same shape as the @-mention helpers above so ChatView reuses one dropdown.
+
+/**
+ * The `/command` being typed, or null. A slash command is only meaningful as the
+ * WHOLE message, so this matches only at offset 0 and bails once the token ends
+ * (a space means the user moved on to arguments).
+ */
+export function activeCommandQuery(text: string, caret: number): { start: number; query: string } | null {
+  if (!text.startsWith("/")) return null;
+  const head = text.slice(0, caret);
+  if (/\s/.test(head)) return null;
+  return { start: 0, query: head.slice(1) };
+}
+
+/** Case-insensitive substring filter over command names; prefix matches first, then shorter. */
+export function filterCommands(names: string[], query: string, limit = 20): string[] {
+  const q = query.toLowerCase();
+  return names
+    .map((name) => ({ name, idx: q === "" ? 0 : name.toLowerCase().indexOf(q) }))
+    .filter((s) => s.idx >= 0)
+    .sort((a, b) => (a.idx !== b.idx ? a.idx - b.idx : a.name.length !== b.name.length ? a.name.length - b.name.length : a.name.localeCompare(b.name)))
+    .slice(0, limit)
+    .map((s) => s.name);
+}
+
+/**
+ * Replace the typed `/query` span with the picked command, leaving the caret after
+ * it. Takes the query's END (from activeCommandQuery at match time) rather than
+ * the live caret: the caret can move after the dropdown opened, and replacing
+ * "everything before the caret" then mangled the text (`/graph` + ArrowLeft×3 →
+ * `/graphify aph`). Mirrors completeMention's start..end span handling.
+ */
+export function completeCommand(text: string, queryEnd: number, name: string): { text: string; caret: number } {
+  const insert = `/${name} `;
+  const rest = text.slice(queryEnd).replace(/^ /, ""); // don't double the space we just added
+  return { text: insert + rest, caret: insert.length };
+}

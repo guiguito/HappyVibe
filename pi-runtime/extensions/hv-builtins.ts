@@ -1,0 +1,33 @@
+/**
+ * §13 round 6 — which built-in custom tools this session may register, plus the
+ * user's append to Plan Mode's prompt. Resolved by main at spawn and passed in
+ * HV_BUILTINS (same pattern as HV_BYPASS). Fail-open: a corrupt value must
+ * never silently disable a tool the user believes is on.
+ */
+export interface BuiltinToggles {
+  plan: boolean;
+  askUser: boolean;
+  planAppend: string;
+}
+
+export function parseBuiltins(raw: string | undefined): BuiltinToggles {
+  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "" };
+  if (!raw) return out;
+  try {
+    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string }>;
+    if (p.plan === false) out.plan = false;
+    if (p.askUser === false) out.askUser = false;
+    if (typeof p.planAppend === "string") out.planAppend = p.planAppend;
+    // Defence in depth (Important 3): Plan mode's prompt and applyPlanTools'
+    // `required` array both hard-require ask_user — a hand-edited config with
+    // plan:true, askUser:false would leave the model told to use a tool that
+    // doesn't exist. The Settings UI already disables the Ask-user toggle while
+    // Plan is on, but that only prevents NEW broken configs from the UI; this
+    // repairs one that reached HV_BUILTINS some other way (hand-edited config,
+    // future write path). Plan wins: force askUser back on.
+    if (out.plan) out.askUser = true;
+  } catch {
+    /* fail open */
+  }
+  return out;
+}

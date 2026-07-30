@@ -24,7 +24,8 @@ export type IconKind =
   | "wrench"
   | "copy"
   | "rewind"
-  | "check";
+  | "check"
+  | "book";
 
 export interface ToolLabel {
   icon: IconKind;
@@ -172,6 +173,12 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     }
     case "subagent":
       return { icon: "robot", label: intent ?? `Delegating to ${str("agent") ?? "a subagent"}` };
+    case "use_skill": {
+      // §14: loading a skill. Model-authored intent wins (requireIntent); the
+      // skill name is the honest fallback headline.
+      const name = str("name");
+      return { icon: "book", label: intent ?? (name ? `Using skill: ${name}` : "Using a skill") };
+    }
     default:
       // Unknown/registered tool: the intent it carries, else a prettified name.
       // #4: direct-mode MCP tools land here (not the `mcp` proxy) with names like

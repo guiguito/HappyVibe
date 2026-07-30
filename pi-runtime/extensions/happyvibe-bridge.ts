@@ -6,14 +6,19 @@ import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HE
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
 import { unwrapMcpCall } from "./hv-mcp";
 import {
-  acceptableMarks, filterMessages, serializeEntries,
-  type AgentMessage, type MarkKey, type SessionEntry,
+  acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
+  type AgentMessage, type MarkKey, type SessionEntry, type ToolSpecLike,
 } from "./hv-context";
 import { parseAgentFile, renderSubagentSection, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
-  buildPlanPrompt, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, type PlanState, type PlanSessionEntry,
+  buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, shouldForcePlanOff,
+  type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
+import { parseBuiltins } from "./hv-builtins";
+import {
+  buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
+} from "./hv-skills";
 // Async subagents (PRD §12): pi-subagents is co-resident on the SAME pi.events
 // bus, so the bridge subscribes to its in-process lifecycle events and relays
 // them as hv.subagent notifies (they never reach RPC stdout on their own). The
@@ -49,7 +54,11 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
 // "mcp" is the pi-mcp-adapter proxy tool: injecting intent gives every MCP call
 // a customer-facing headline. The adapter's execute ignores the top-level intent
 // (it forwards only the `args` JSON to the server), so this is safe in proxy mode.
-const INTENT_TOOLS = ["ask_user", "mcp"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+// "use_skill" (§14): loading a skill goes through requireIntent like MCP, so a
+// skill load surfaces as a transcript card with a model-authored "why". Built-in
+// `read` can't carry intent (params stripped), which is exactly why a raw read of
+// a SKILL.md only gets the derived-label fallback card.
+const INTENT_TOOLS = ["ask_user", "mcp", "use_skill"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
 // `subagent` advertises intent but does NOT require it: the delegation `task` is
 // already a fine customer-facing headline (the UI uses intent ?? task), and a
 // hard requirement made looser models (e.g. Kimi) fail their first delegation
@@ -132,6 +141,12 @@ let toolsBeforePlan: string[] | undefined;
 // the `context` handler (proven non-destructive in s0.3).
 const CONTEXT_MARKS_TYPE = "hv-context-marks";
 let contextMarks = new Set<MarkKey>();
+
+// ── §14 Skills ───────────────────────────────────────────────────────────────
+// The session's loaded-skills manifest (HV_SKILLS_FILE), written by main to the
+// exact set of skills this session spawned with (approved ∩ enabled ∩ active).
+// Re-read on session_start so a respawn (hibernation/reload) reflects new config.
+let skillManifest: SkillManifest = { skills: [] };
 
 /** JSON envelope for the fire-and-forget bridge→main channel (B4 hv.audit precedent). */
 const ctxPayload = (o: Record<string, unknown>): string => JSON.stringify({ kind: "hv.context", ...o });
@@ -228,6 +243,9 @@ const loginAborts = new Map<string, AbortController>();
 
 export default function (pi: ExtensionAPI) {
   loadRules();
+  // §13 round 6: global on/off for plan mode + ask_user, resolved by main at
+  // spawn (same pattern as HV_BYPASS). Fail-open on a corrupt value.
+  const builtins = parseBuiltins(process.env.HV_BUILTINS);
 
   // ── B5 context visibility ──────────────────────────────────────────────
   // System-prompt block captured once per turn (NOT a session entry — read via
@@ -267,15 +285,35 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi); // all extensions have registered by now (idempotent across reloads)
+    skillManifest = loadManifest(); // §14: reflect this session's loaded skills
     const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
     restoreMarks(entries);
     // §23: plan state SURVIVES respawn (unlike dangerous mode). Restore + re-emit
     // so the renderer resyncs its banner/toggle after a hibernation/MCP respawn.
     plan = restorePlanState(entries as unknown as PlanSessionEntry[]);
+    // §13 round 6: Plan Mode disabled globally ⇒ a session that was mid-plan comes
+    // back with plan mode OFF (see shouldForcePlanOff — without it the clamp would
+    // keep running with every exit path unregistered). planPath is PRESERVED: the
+    // plan file is the user's artifact and re-enabling the feature should find it.
+    const forcedPlanOff = shouldForcePlanOff(builtins.plan, plan);
+    if (forcedPlanOff) plan = forcedPlanOffState(plan);
     // Only re-emit when there's real state to resync after a respawn — a spurious
     // "disabled" notify on every fresh session would be the first ui-request other
     // bridge tests wait on, and it's redundant (the renderer defaults to off).
-    if (plan.enabled || plan.planPath) { applyPlanTools(pi); emitPlan(ctx.ui, true); }
+    if (forcedPlanOff) {
+      // MUST still notify: without it the renderer keeps its pre-respawn
+      // enabled:true and shows a read-only banner over a session that is no
+      // longer clamped. Deliberately NOT applyPlanTools — the feature is off, so
+      // nothing should be hidden from the model.
+      emitPlan(ctx.ui, true);
+      // …and MUST persist: leaving enabled:true in the session file meant that
+      // re-enabling Plan mode later restored a clamped session with no user
+      // action (and main's reconcile skips it when planPath is null).
+      persistPlan(pi);
+    } else if (plan.enabled || plan.planPath) {
+      applyPlanTools(pi);
+      emitPlan(ctx.ui, true);
+    }
     busUi = ctx.ui;
   });
 
@@ -292,8 +330,10 @@ export default function (pi: ExtensionAPI) {
     const agentsSection = renderSubagentSection(agents);
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
-    const planSection = plan.enabled ? "\n\n" + buildPlanPrompt() : "";
-    const injected = sp + section + agentsSection + planSection;
+    const planSection = builtins.plan && plan.enabled ? "\n\n" + buildPlanPrompt(builtins.planAppend) : "";
+    // §14: steer the model to use_skill (intent card) over a raw SKILL.md read.
+    const skillSection = buildUseSkillGuidance(skillManifest);
+    const injected = sp + section + agentsSection + planSection + skillSection;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -301,13 +341,7 @@ export default function (pi: ExtensionAPI) {
     };
     // v5: per-tool schema size (estimated from the LLM tool spec) for the
     // context-panel drill-in. Pi doesn't expose real token weight, so ≈chars/4.
-    const toolDefs = (Array.isArray(opts.selectedTools) ? opts.selectedTools : []).map((t) => {
-      const o = t as { name?: string; description?: string; parameters?: unknown };
-      return {
-        name: typeof o?.name === "string" ? o.name : "(tool)",
-        chars: JSON.stringify({ name: o?.name, description: o?.description, parameters: o?.parameters }).length,
-      };
-    });
+    const toolDefs = buildToolDefs(opts.selectedTools, pi.getAllTools() as ToolSpecLike[]);
     systemBlock = {
       chars: injected.length,
       estTokens: Math.ceil(injected.length / 4),
@@ -320,7 +354,7 @@ export default function (pi: ExtensionAPI) {
       // Per-agent weight of the injected roster (name line ≈ chars/4 tokens).
       agents: agents.map((a) => ({ name: a.name, chars: `- **${a.name}** — ${a.description.slice(0, 200)}`.length })),
     };
-    if (section || agentsSection || planSection) return { systemPrompt: injected };
+    if (section || agentsSection || planSection || skillSection) return { systemPrompt: injected };
   });
 
   // The only place removal takes effect. Non-destructive: session file untouched.
@@ -344,7 +378,8 @@ export default function (pi: ExtensionAPI) {
         ctxPayload({
           stage: "snapshot",
           // W2.3: nested list computed fresh — the set can grow mid-turn.
-          system: systemBlock ? { ...systemBlock, nested: nestedList() } : null,
+          // §14: skills carries the two system-prompt weight lines (global/workspace).
+          system: systemBlock ? { ...systemBlock, nested: nestedList(), skills: skillTokenLines(skillManifest) } : null,
           items: serializeEntries(entries),
           marks: [...contextMarks],
         }),
@@ -430,11 +465,23 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
+    // §14: raw-read fallback — the model loaded a skill by reading its SKILL.md
+    // instead of calling use_skill (built-ins can't carry intent). Surface it as
+    // a skill card with a derived label (no intent) + flag it heuristic for audit.
+    // The read still proceeds through the normal gate below (SKILL.md is inside
+    // the workspace or an approved dir); this is a transparency signal, not a gate.
+    if (tool === "read") {
+      const hit = matchReadPath(skillManifest, input, process.cwd());
+      if (hit) {
+        ctx.ui.notify(JSON.stringify({ kind: "hv.skill", stage: "invoked", name: hit.name, scope: hit.scope, detected: true }), "info");
+      }
+    }
+
     // §23 Plan Mode clamp — runs BEFORE dangerous/bypass and the rule engine, so
     // plan mode wins over bypass (read-only must mean read-only). Applies to NEW
     // calls only; an in-flight async delegation is untouched.
     let planFloorAsk = false;
-    if (plan.enabled) {
+    if (builtins.plan && plan.enabled) {
       const g = gatePlanCall(tool, input);
       if (g.kind === "block") {
         audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "plan" });
@@ -753,7 +800,7 @@ export default function (pi: ExtensionAPI) {
   // the renderer answers {value: JSON answers} or {cancelled: true} — NO
   // timeout, NO auto-answer (permission invariant). Input is clamped, never
   // rejected: adjustments ride back on the tool result as notes.
-  pi.registerTool({
+  if (builtins.askUser) pi.registerTool({
     name: "ask_user",
     label: "Ask the user",
     description:
@@ -804,7 +851,52 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  // ── §14 Skills: use_skill tool (docs/validation/sk1.md §hv.skill) ─────────
+  // Loading a skill = calling use_skill(name), which returns the SKILL.md body.
+  // It's in INTENT_TOOLS (requireIntent injects a required `intent`), so a skill
+  // load surfaces as a transcript card with a model-authored "why", and each
+  // invocation is auditable (hv.skill notify). Prompting is steered here via the
+  // <happyvibe-skills> system block; a raw read is caught by the fallback above.
+  pi.registerTool({
+    name: "use_skill",
+    label: "Use skill",
+    description:
+      "Load a HappyVibe skill's full instructions when a task matches it. Pass the skill `name` " +
+      "(as shown in the available skills) and a short `intent`. Returns the skill's SKILL.md so " +
+      "you can follow its workflow. Prefer this over reading a SKILL.md file directly.",
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are loading this skill." }),
+      name: Type.String({ description: "The skill name to load (from the available skills list)." }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const { name } = params as { name?: string };
+      const entry = name ? findByName(skillManifest, name) : undefined;
+      if (!entry) {
+        const available = skillManifest.skills.map((s) => s.name).join(", ") || "(none loaded)";
+        return { content: [{ type: "text", text: `No loaded skill named "${name ?? ""}". Available skills: ${available}.` }], details: {} };
+      }
+      let body: string;
+      try {
+        body = fs.readFileSync(entry.skillMdPath, "utf8");
+      } catch (e) {
+        return { content: [{ type: "text", text: `Could not read skill "${entry.name}": ${e instanceof Error ? e.message : String(e)}` }], details: {} };
+      }
+      // Audit + (renderer) invocation card. Not a raw-read (detected:false).
+      ctx.ui.notify(JSON.stringify({ kind: "hv.skill", stage: "invoked", name: entry.name, scope: entry.scope, detected: false }), "info");
+      return {
+        content: [{ type: "text", text: `<skill name="${entry.name}" location="${entry.skillMdPath}">\nReferences are relative to ${entry.dir}.\n\n${body}\n</skill>` }],
+        details: { skill: entry.name },
+      };
+    },
+  });
+
   // ── §23 Plan Mode: registered tools ──────────────────────────────────────
+  // Gated as a whole block: plan_start is the model's own entry point into Plan
+  // Mode, and leaving is deliberately human-only (no plan_off tool — the §23
+  // invariant). If the toggle only hid the UI while plan_start still existed,
+  // the model could still put the session into read-only mode with no way for
+  // the user to exit it — so disabling must remove the tools too.
+  if (builtins.plan) {
   // plan_complete: model submits the finished plan. Blocking round-trip — main
   // writes the workspace file and answers with its path (becomes the tool result
   // AND planPath). Same blocking channel as ask_user (JSON in the input title).
@@ -882,6 +974,18 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const { status, note } = params as { status?: string; note?: string };
       if (!plan.planPath) return { content: [{ type: "text", text: "No plan is associated with this session." }], details: {} };
+      // §23 human-only exit: both statuses are TERMINAL facts about an
+      // already-left plan (implemented / cancelled), so recording one while still
+      // planning is meaningless — and it was an escape hatch. Writing "cancelled"
+      // to the file made main's next restore-reconcile (shouldReconcilePlanOff)
+      // fire `/hv-plan off` on the following respawn, letting the MODEL lift a
+      // clamp only a human may lift. Refuse it while plan mode is on.
+      if (plan.enabled) {
+        return {
+          content: [{ type: "text", text: "Plan status can only be recorded after leaving Plan Mode. Submit the plan with plan_complete instead." }],
+          details: {},
+        };
+      }
       if (status !== "implemented" && status !== "cancelled") {
         return { content: [{ type: "text", text: "status must be 'implemented' or 'cancelled'." }], details: {} };
       }
@@ -917,6 +1021,7 @@ export default function (pi: ExtensionAPI) {
       emitPlan(ctx.ui);
     },
   });
+  } // builtins.plan
 
   pi.registerCommand("hv-tools", {
     description: "HappyVibe: emit the tool inventory (hv.tools notify)",

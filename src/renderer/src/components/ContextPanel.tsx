@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  compositionSegments, computeGauge, groupItems, summarizeGroups, totalEstTokens,
+  categoryCount, compositionSegments, computeGauge, groupItems, summarizeGroups, totalEstTokens,
   type CategorySummary, type ContextItem, type ContextSnapshot, type Gauge, type SessionStats,
 } from "../context";
 
@@ -213,7 +213,7 @@ export function ContextPanel({
                       <div className="flex items-baseline gap-2">
                         <span className="font-bold text-sm flex-1 min-w-0 truncate">{row.label}</span>
                         <span className="font-mono text-[10px] text-ink-soft shrink-0">
-                          {row.count} {row.count === 1 ? "item" : "items"}
+                          {categoryCount(row.count, row.key)}
                         </span>
                         <span className="font-mono text-[10px] text-ink-soft shrink-0">{estTok(row.estTokens)}</span>
                         <span className="font-mono text-[10px] font-bold shrink-0 w-9 text-right">{row.share}%</span>
@@ -310,6 +310,20 @@ export function ContextPanel({
                     estimated from each tool's schema (≈ chars/4)
                   </li>
                 </ul>
+              )}
+
+              {(drilled.key === "skills-global" || drilled.key === "skills-workspace") && (
+                <div className="space-y-1">
+                  {(drilled.skills ?? []).map((s) => (
+                    <div key={s.name} className="flex items-baseline justify-between text-xs">
+                      <span className="font-medium">{s.name}</span>
+                      <span className="tabular-nums text-ink-soft">≈{s.tokens} tok</span>
+                    </div>
+                  ))}
+                  <p className="pt-1 text-[11px] text-ink-soft">
+                    Name + description are paid every turn. The skill's body only enters context when it is loaded.
+                  </p>
+                </div>
               )}
 
               {drilledGroup && (

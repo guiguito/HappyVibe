@@ -161,6 +161,40 @@ contextBridge.exposeInMainWorld("hv", {
   setWorkspaceModel: (workspaceId: string, m: { provider: string; modelId: string } | null) =>
     ipcRenderer.invoke("hv:set-workspace-model", workspaceId, m),
 
+  // ── §13 round 6: configurable built-in custom tools (additive) ────
+  builtinsGet: () => ipcRenderer.invoke("hv:builtins-get"),
+  builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string }) =>
+    ipcRenderer.invoke("hv:builtins-set", t),
+  builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
+
+  // ── §14 Skills (additive) ────────────────────────────────────────
+  // list returns {global, workspace}; approve/enable/activate apply live via
+  // respawn-resume. Invocation cards arrive as hv.skill notifies through
+  // onUiRequest; on-disk / config changes push hv:skills-changed.
+  skillsList: (workspaceId?: string) => ipcRenderer.invoke("hv:skills-list", workspaceId),
+  skillsRead: (id: string) => ipcRenderer.invoke("hv:skills-read", id),
+  skillsApprove: (id: string) => ipcRenderer.invoke("hv:skills-approve", id),
+  skillsSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke("hv:skills-set-enabled", id, enabled),
+  skillsSetActive: (workspaceId: string, id: string, on: boolean | null) =>
+    ipcRenderer.invoke("hv:skills-set-active", workspaceId, id, on),
+  skillsGetLinked: () => ipcRenderer.invoke("hv:skills-get-linked"),
+  skillsSetLinked: (dirs: string[]) => ipcRenderer.invoke("hv:skills-set-linked", dirs),
+  skillsAddLinked: () => ipcRenderer.invoke("hv:skills-add-linked"),
+  skillsImportLocal: () => ipcRenderer.invoke("hv:skills-import-local"),
+  skillsImportGit: (url: string) => ipcRenderer.invoke("hv:skills-import-git", url),
+  skillsImportSelect: (token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null) =>
+    ipcRenderer.invoke("hv:skills-import-select", token, ids, scope, workspaceId),
+  skillsNewSkill: (sessionId: string) => ipcRenderer.invoke("hv:skills-new-skill", sessionId),
+  skillsPromote: (id: string) => ipcRenderer.invoke("hv:skills-promote", id),
+  skillsDelete: (skillId: string, workspaceId: string | null) => ipcRenderer.invoke("hv:skills-delete", skillId, workspaceId),
+  skillsSession: (sessionId: string) => ipcRenderer.invoke("hv:skills-session", sessionId),
+  listCommands: (sessionId: string) => ipcRenderer.invoke("hv:list-commands", sessionId),
+  onSkillsChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on("hv:skills-changed", listener);
+    return () => ipcRenderer.removeListener("hv:skills-changed", listener);
+  },
+
   // ── MCP server config (additive). Changes apply to new sessions. ──
   mcpGet: (workspaceId?: string) => ipcRenderer.invoke("hv:mcp-get", workspaceId),
   mcpSetServer: (scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: unknown) =>
