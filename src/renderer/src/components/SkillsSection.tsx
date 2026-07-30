@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { diffLines } from "diff";
+import { stripSkillFrontMatter } from "../skillMd";
 
 /**
  * §14 Skills — the GLOBAL skills surface (managed + linked + bundled), rendered
@@ -407,7 +408,7 @@ export function SkillInspector({
 
             {!showDiff && (
               <div className="md flex-1 overflow-y-auto rounded-xl border-2 border-line bg-card px-4 py-3 text-sm">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{detail.current || "*(empty SKILL.md)*"}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripSkillFrontMatter(detail.current) || "*(empty SKILL.md)*"}</ReactMarkdown>
                 {detail.files.length > 1 && (
                   <div className="mt-4 pt-3 border-t border-line">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-1">Files</p>
