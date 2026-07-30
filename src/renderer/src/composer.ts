@@ -48,6 +48,25 @@ export function resolveModel(
 }
 
 /**
+ * Drop a model ref whose provider no longer exists (a deleted custom endpoint,
+ * PRD §16 2026-07-30) so tier resolution falls through to the default instead
+ * of pinning a session to a provider Pi cannot load.
+ *
+ * An EMPTY `known` list means "model list not loaded yet", not "everything is
+ * gone" — returning null there would silently reset every session at startup.
+ *
+ * Mirrored in main: ipc.ts spawnOpts. Change both or neither.
+ */
+export function dropUnknownProvider(
+  ref: ModelRef | null | undefined,
+  known: string[]
+): ModelRef | null {
+  if (!ref) return null;
+  if (known.length === 0) return ref;
+  return known.includes(ref.provider) ? ref : null;
+}
+
+/**
  * True iff the resolved model accepts image input (Model.input includes
  * "image"). Unknown model / no list yet → false: the honest default is a
  * disabled attach button, never a send that the provider will reject.

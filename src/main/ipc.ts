@@ -20,7 +20,7 @@ import {
 } from "./skills";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDERS, detectOllama, isByokProvider, syncModelsJson,
+  authJsonProviders, BYOK_PROVIDERS, BYOK_PROVIDER_IDS, detectOllama, isByokProvider, syncModelsJson,
   type ByokProvider,
 } from "./providers";
 import { deleteSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
@@ -199,10 +199,24 @@ export function registerIpc(win: BrowserWindow): void {
     // real chat sessions — the utility client ($HOME, no workspace/id) loads none.
     const entries = workspace && sessionId ? activeSkillEntries(workspace) : [];
     return {
-      model:
-        (sessionId ? index.get(sessionId)?.model : null) ??
-        (workspace ? workspaces.getModel(workspace) : null) ??
-        getDefaultModel(),
+      // §16 (2026-07-30): a ref whose provider is gone (deleted custom endpoint)
+      // must fall through to the next tier, never pin a session to a provider Pi
+      // cannot load. Mirrors dropUnknownProvider in renderer composer.ts —
+      // change both or neither.
+      model: (() => {
+        const known: string[] = [
+          ...BYOK_PROVIDER_IDS,
+          "ollama",
+          ...listCustomEndpoints().map((e) => e.id),
+        ];
+        const live = (m: { provider: string; modelId: string } | null | undefined) =>
+          m && known.includes(m.provider) ? m : null;
+        return (
+          live(sessionId ? index.get(sessionId)?.model : null) ??
+          live(workspace ? workspaces.getModel(workspace) : null) ??
+          live(getDefaultModel())
+        );
+      })(),
       agentDir: agentDir(),
       providerEnv: providerEnv(),
       resumeFile,
