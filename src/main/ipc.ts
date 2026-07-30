@@ -8,7 +8,8 @@ import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getOnboardingSeen,
-  getWorkspaceBypass, installBuiltinAgents, providerEnv, providerKeyStatus, removeProviderKey, setLinkedSkillDirs, writeSubagentConfig,
+  customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
+  saveCustomEndpoint, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass,
 } from "./config";
@@ -20,9 +21,10 @@ import {
 } from "./skills";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDERS, detectOllama, isByokProvider, syncOllamaModels,
+  authJsonProviders, BYOK_PROVIDERS, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, OAUTH_PROVIDERS, syncModelsJson,
   type ByokProvider,
 } from "./providers";
+import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { deleteSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
@@ -190,6 +192,40 @@ export function registerIpc(win: BrowserWindow): void {
   // hibernation must never touch a genuinely active session.
   const activity = new SessionActivity();
 
+  /**
+   * §16 (2026-07-30): every provider a spawn could legitimately use. Sent to the
+   * renderer via hv:get-providers so BOTH sides filter with the SAME set — an
+   * auth-filtered list on one side and this one on the other made the chip claim
+   * a model that the spawn did not use.
+   */
+  const knownProviders = (): string[] => [
+    ...BYOK_PROVIDER_IDS,
+    ...OAUTH_PROVIDERS.map((p) => p.id),
+    "ollama",
+    ...listCustomEndpoints().map((e) => e.providerKey),
+  ];
+
+  /**
+   * The model a spawn should use: session → workspace → global, skipping any
+   * tier whose provider no longer exists (a deleted custom endpoint). Mirrors
+   * dropUnknownProvider in renderer composer.ts — change both or neither.
+   * Used by EVERY spawn path (chat sessions, title generation, AGENTS.md
+   * proposal) so the resolution lives in exactly one place on this side.
+   */
+  const resolveSpawnModel = (
+    workspace?: string,
+    sessionId?: string,
+  ): { provider: string; modelId: string } | null => {
+    const known = knownProviders();
+    const live = (m: { provider: string; modelId: string } | null | undefined) =>
+      m && known.includes(m.provider) ? m : null;
+    return (
+      live(sessionId ? index.get(sessionId)?.model : null) ??
+      live(workspace ? workspaces.getModel(workspace) : null) ??
+      live(getDefaultModel())
+    );
+  };
+
   /** Everything a Pi spawn needs from provider config (B3) + rules delivery (B4).
    *  Model resolution (W2.1, full PRD hierarchy): session override → workspace
    *  override → global default. Mirrors resolveModel in renderer composer.ts. */
@@ -199,10 +235,7 @@ export function registerIpc(win: BrowserWindow): void {
     // real chat sessions — the utility client ($HOME, no workspace/id) loads none.
     const entries = workspace && sessionId ? activeSkillEntries(workspace) : [];
     return {
-      model:
-        (sessionId ? index.get(sessionId)?.model : null) ??
-        (workspace ? workspaces.getModel(workspace) : null) ??
-        getDefaultModel(),
+      model: resolveSpawnModel(workspace, sessionId),
       agentDir: agentDir(),
       providerEnv: providerEnv(),
       resumeFile,
@@ -268,7 +301,7 @@ export function registerIpc(win: BrowserWindow): void {
     utility = null;
     // Sync Ollama models into the app-owned agent dir so local models are
     // selectable with zero config.
-    await syncOllamaModels(agentDir()).catch(() => {});
+    await syncModelsJson(agentDir(), listCustomEndpoints()).catch(() => {});
     const c = new PiClient(resolvePiSpawn(os.homedir(), sessionDir(), piRuntimeDir(), spawnOpts()));
     c.on("ui-request", (r: { id: string; message?: string }) => {
       uiOwners.set(r.id, UTILITY);
@@ -390,7 +423,9 @@ export function registerIpc(win: BrowserWindow): void {
     firstPrompt.delete(sessionId);
     // Fire-and-forget — never blocks the chat; fallback title stays on failure.
     void generateTitle(piRuntimeDir(), meta.workspaceId, msg, {
-      model: getDefaultModel(),
+      // §16: same guarded resolution as a chat spawn — a removed endpoint's
+      // ref must not be handed to a one-shot Pi call either.
+      model: resolveSpawnModel(),
       // BYOK keys via env; OAuth creds live in auth.json under the agent dir.
       env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
     }).then((title) => {
@@ -588,7 +623,7 @@ export function registerIpc(win: BrowserWindow): void {
           : `Workspace folder no longer exists: ${meta.workspaceId}`,
       );
     }
-    await syncOllamaModels(agentDir()).catch(() => {});
+    await syncModelsJson(agentDir(), listCustomEndpoints()).catch(() => {});
     const client = (await manager.start(
       meta.id,
       meta.workspaceId,
@@ -1013,6 +1048,8 @@ export function registerIpc(win: BrowserWindow): void {
         id, label: BYOK_PROVIDERS[id].label, source: status[id],
       })),
       defaultModel: getDefaultModel(),
+      // §16: the set BOTH sides filter model refs with (see resolveSpawnModel).
+      knownProviders: knownProviders(),
     };
   });
   ipcMain.handle("hv:set-provider-key", async (_e, provider: string, key: string) => {
@@ -1050,6 +1087,70 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   ipcMain.handle("hv:detect-ollama", () => detectOllama());
+
+  // §16 (2026-07-30): user-defined OpenAI-compatible endpoints. Secrets never
+  // reach models.json — the file references $HV_CUSTOM_<ID>_KEY and the value
+  // rides the spawn env (config.ts providerEnv).
+  ipcMain.handle("hv:get-custom-endpoints", () => ({
+    endpoints: listCustomEndpoints(),
+    keyStatus: customKeyStatus(),
+  }));
+
+  // The renderer sends a DRAFT; main owns providerKey and auth so a renderer bug
+  // cannot produce a hijacking key or an unusable env reference.
+  ipcMain.handle(
+    "hv:save-custom-endpoint",
+    async (_e, draft: { id: string; label: string; baseUrl: string; preset: CustomEndpoint["preset"]; models: CustomEndpoint["models"] }, key?: string) => {
+      const endpoint: CustomEndpoint = {
+        id: draft.id,
+        providerKey: providerKeyFor(draft.id),
+        label: draft.label,
+        // Trailing slash would make Pi request …/v1//chat/completions even
+        // though the /models probe (which strips it) verified fine.
+        baseUrl: draft.baseUrl.trim().replace(/\/+$/, ""),
+        preset: draft.preset,
+        // No key → a placeholder, NOT an env reference. Pi hides every model of
+        // a provider whose apiKey env var is unresolvable, so "leave blank if
+        // the server needs none" (vLLM/LM Studio/llama.cpp) would otherwise
+        // save successfully and then expose nothing.
+        auth: key ? { kind: "env" } : { kind: "placeholder", value: "none" },
+        models: draft.models,
+      };
+      const problem = validateEndpoint(endpoint, listCustomEndpoints().map((x) => x.id));
+      if (problem) throw new Error(problem);
+      saveCustomEndpoint(endpoint, key);
+      // NOT swallowed, and rolled back: config.json is already written, so a
+      // models.json failure (EACCES/ENOSPC) would otherwise leave Settings
+      // showing an endpoint — with its key injected on every spawn — that Pi
+      // has no provider entry for.
+      try {
+        await syncModelsJson(agentDir(), listCustomEndpoints());
+      } catch (err) {
+        removeCustomEndpoint(endpoint.id);
+        throw err;
+      }
+      await restartUtility();
+      providersChanged();
+    },
+  );
+
+  ipcMain.handle("hv:remove-custom-endpoint", async (_e, id: string) => {
+    removeCustomEndpoint(id);
+    await syncModelsJson(agentDir(), listCustomEndpoints());
+    // Sessions pinned to its models are NOT respawned (that would be a lie —
+    // hv:session-reloading means grants reset). providersChanged refetches the
+    // model list; dropUnknownProvider then shows the tier it fell back to.
+    await restartUtility();
+    providersChanged();
+  });
+
+  ipcMain.handle("hv:fetch-endpoint-models", (_e, baseUrl: string, key?: string) => {
+    // Same scheme check as the save path — the asymmetry was free to fix.
+    if (!/^https?:\/\//.test(baseUrl)) {
+      return { ok: false, models: [], error: "Base URL must start with http:// or https://" };
+    }
+    return fetchEndpointModels(baseUrl, key);
+  });
 
   // ── B4: permission rules, audit, badge ─────────────────────────────
   const readRules = (): RulesFile => {
@@ -1202,7 +1303,9 @@ export function registerIpc(win: BrowserWindow): void {
   });
   ipcMain.handle("hv:propose-agents-md", (_e, workspaceId: string) =>
     proposeAgentsMd(piRuntimeDir(), workspaces.list(), workspaceId, {
-      model: getDefaultModel(),
+      // §16: same guarded resolution as a chat spawn — a removed endpoint's
+      // ref must not be handed to a one-shot Pi call either.
+      model: resolveSpawnModel(),
       env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
     }));
   // W2.3 missing-file flow: CLAUDE.md → AGENTS.md copy (same confinement).

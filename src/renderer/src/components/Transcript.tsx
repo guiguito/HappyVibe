@@ -87,7 +87,7 @@ export type TranscriptItem = { id?: number } & (
   // §23: the plan-ready card (read from the workspace plan file).
   | { kind: "plan"; card: PlanCardData }
   // B2: provider errors / session crashes as first-class transcript items.
-  | { kind: "error"; text: string; retriable?: boolean }
+  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string }
   // A neutral, warm status line (not an error). `pending` shows an ongoing
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
   | { kind: "notice"; text: string; pending?: boolean }
@@ -114,16 +114,21 @@ const MessageItem = memo(function MessageItem({
   if (it.kind === "plan") return <PlanCard card={it.card} onOpenFile={onOpenFile} />;
   if (it.kind === "error") {
     return (
-      <div className="flex items-center gap-3 rounded-xl border-2 border-berry/50 bg-berry-soft px-3.5 py-2.5 shadow-sticker">
-        <span className="size-2.5 rounded-full bg-berry shrink-0" />
-        <span className="flex-1 min-w-0 text-sm font-semibold text-berry break-words">{it.text}</span>
+      <div className="flex items-start gap-3 rounded-xl border-2 border-berry/50 bg-berry-soft px-3.5 py-2.5 shadow-sticker">
+        <span className="size-2.5 rounded-full bg-berry shrink-0 mt-1.5" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-berry break-words">{it.text}</div>
+          {/* The hint says what to DO; the raw provider text stays visible above
+              it so a bug report is still actionable. */}
+          {it.hint && <div className="text-xs text-berry/80 mt-0.5 break-words">{it.hint}</div>}
+        </div>
         {it.retriable && onRetry && (
           <button
             type="button"
             onClick={onRetry}
             className="shrink-0 rounded-lg bg-berry text-paper font-bold text-xs px-3 py-1.5 border-2 border-berry hover:brightness-110 cursor-pointer"
           >
-            Restart &amp; resend
+            {it.retryLabel ?? "Restart & resend"}
           </button>
         )}
       </div>

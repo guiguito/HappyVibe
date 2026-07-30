@@ -14,6 +14,9 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated):
   tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge,plan-bridge}.test.ts
   Source of truth = `grep -rl "skipIf(!KEY" tests/` — re-derive, don't trust the list above.
+  Canonical invocation: `grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run`
+  (use `xargs` — zsh does NOT word-split `$(…)`, so `npx vitest run $files` passes all 14
+  paths as ONE argument and vitest reports "No test files found" while echoing the filter list.)
   (`skills-contract`/`builtins-contract` also spawn Pi but with a dummy key — key-free, they stay in the non-live run.)
 - Non-live suite = everything else, excluding exactly those files:
   `npx vitest run --exclude '**/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge,plan-bridge}.test.ts'`

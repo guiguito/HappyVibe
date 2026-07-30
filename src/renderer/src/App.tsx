@@ -4,6 +4,7 @@ import { ChatView } from "./components/ChatView";
 import { SettingsView } from "./components/SettingsView";
 import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
+import { describeProviderError } from "./providerError";
 import { WorkspaceSettingsModal } from "./components/WorkspaceSettingsModal";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
 import { ShortcutsDialog } from "./components/ShortcutsDialog";
@@ -611,7 +612,18 @@ export default function App(): React.JSX.Element {
         const err = pendingError.current[sid];
         if (err) {
           delete pendingError.current[sid];
-          appendItem(sid, { kind: "error", text: err });
+          // Raw provider text ("529 status code (no body)") tells the user
+          // nothing about whether to wait, fix a key, or fix a setting. Map it,
+          // and offer a plain resend for the transient classes — Pi's own retry
+          // list omits 529, so this button is the only way out of one.
+          const info = describeProviderError(err);
+          appendItem(sid, {
+            kind: "error",
+            text: info.headline,
+            hint: info.hint,
+            retriable: info.retriable,
+            retryLabel: info.retriable ? "Retry" : undefined,
+          });
         }
         setBusy((p) => ({ ...p, [sid]: false }));
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
@@ -946,16 +958,24 @@ export default function App(): React.JSX.Element {
 
   // B2: "restart & resend" for a crashed session — restart the agent, then
   // resend the last user message (if any).
+  //
+  // §16 follow-up: the same button also serves a TRANSIENT PROVIDER ERROR (429,
+  // 5xx, 529, network), where the session is perfectly alive. Restarting there
+  // would be wrong, not just wasteful: a respawn resets that session's
+  // in-memory permission grants and dangerous mode to safe defaults. So the
+  // restart is conditional on the session actually being crashed.
   const retryCrash = async (): Promise<void> => {
     if (!selectedId) return;
     const sid = selectedId;
     const lastUser = [...(transcripts[sid] ?? [])].reverse().find((it) => it.kind === "user");
-    setStatuses((p) => {
-      const next = { ...p };
-      delete next[sid];
-      return next;
-    });
-    await selectSession(sid);
+    if (statuses[sid] === "crashed") {
+      setStatuses((p) => {
+        const next = { ...p };
+        delete next[sid];
+        return next;
+      });
+      await selectSession(sid);
+    }
     if (lastUser && lastUser.kind === "user") await send(lastUser.text);
   };
 

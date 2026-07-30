@@ -298,12 +298,23 @@ export function SettingsView({
   const [login, setLogin] = useState<{ provider: string; label: string; event: AuthEvent | null } | null>(null);
   // "Add provider" area — expanded during first-run (it IS the onboarding).
   const [adding, setAdding] = useState(firstRun);
+  // §16 (2026-07-30): custom OpenAI-compatible endpoints + the add-form draft.
+  const [custom, setCustom] = useState<{ endpoints: HvCustomEndpoint[]; keyStatus: Record<string, boolean> }>(
+    { endpoints: [], keyStatus: {} },
+  );
+  const [draft, setDraft] = useState<{ label: string; baseUrl: string; preset: HvCustomEndpoint["preset"]; key: string } | null>(null);
+  const [probe, setProbe] = useState<{ ok: boolean; models: string[]; error?: string } | null>(null);
+  /** Main rejects bad ids / reserved ids / bad URLs — show it instead of failing silently. */
+  const [saveError, setSaveError] = useState<string | null>(null);
+  /** Selected model id → context window (Pi defaults to 128000; §9's gauge reads it). */
+  const [picked, setPicked] = useState<Record<string, number>>({});
 
   const refresh = async (): Promise<void> => {
     const p = await window.hv.getProviders();
     setByok(p.byok);
     setDefaultModel(p.defaultModel);
     setOllama(await window.hv.detectOllama());
+    setCustom(await window.hv.getCustomEndpoints());
     await window.hv.authStatus(); // status arrives as an hv.auth ui-request
     setModels(await window.hv.listModels());
   };
@@ -385,6 +396,11 @@ export function SettingsView({
     ...(ollama?.running
       ? [{ key: "ollama", label: `Ollama (${ollama.models.length} local model${ollama.models.length === 1 ? "" : "s"})`, chip: "running" }]
       : []),
+    ...custom.endpoints.map((e) => ({
+      key: e.id,
+      label: `${e.label} (${e.models.length} model${e.models.length === 1 ? "" : "s"})`,
+      chip: custom.keyStatus[e.id] ? "key saved" : "no key",
+    })),
     ...byok
       .filter((p) => p.source)
       .map((p) => ({
@@ -569,6 +585,161 @@ export function SettingsView({
                     <p className="text-xs text-ink-soft mt-1.5">Keys are encrypted with your OS keychain.</p>
                   </div>
                 ))}
+              </div>
+
+              <GroupLabel>Custom endpoint</GroupLabel>
+              <div className="flex flex-col gap-3">
+                {custom.endpoints.map((e) => (
+                  <div key={e.id} className="rounded-xl border-2 border-line bg-paper px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="font-bold text-sm">{e.label}</div>
+                      <Chip tone={custom.keyStatus[e.id] ? "leaf" : "muted"}>
+                        {custom.keyStatus[e.id] ? "key saved" : "no key"}
+                      </Chip>
+                      <span className="text-xs text-ink-soft font-mono flex-1 min-w-0 truncate">{e.baseUrl}</span>
+                      <button
+                        type="button"
+                        className={`${smallBtn} bg-card text-berry border-berry hover:bg-berry-soft`}
+                        onClick={() => {
+                          void window.hv.removeCustomEndpoint(e.id)
+                            .then(() => window.hv.getCustomEndpoints())
+                            .then(setCustom);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {draft === null ? (
+                  <button
+                    type="button"
+                    className={`${smallBtn} bg-card text-ink border-line hover:bg-paper-deep self-start`}
+                    onClick={() => { setDraft({ label: "", baseUrl: "", preset: "other", key: "" }); setProbe(null); setPicked({}); }}
+                  >
+                    + OpenAI-compatible endpoint
+                  </button>
+                ) : (
+                  <div className="rounded-xl border-2 border-line bg-paper px-4 py-3 flex flex-col gap-2">
+                    <input
+                      placeholder="Name (e.g. My vLLM)"
+                      value={draft.label}
+                      onChange={(ev) => setDraft({ ...draft, label: ev.target.value })}
+                      className="rounded-lg border-2 border-line bg-card px-3 py-2 text-sm focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+                    />
+                    <input
+                      placeholder="Base URL (e.g. http://localhost:8000/v1)"
+                      value={draft.baseUrl}
+                      onChange={(ev) => setDraft({ ...draft, baseUrl: ev.target.value })}
+                      className="rounded-lg border-2 border-line bg-card px-3 py-2 font-mono text-xs focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+                    />
+                    <select
+                      value={draft.preset}
+                      onChange={(ev) => setDraft({ ...draft, preset: ev.target.value as HvCustomEndpoint["preset"] })}
+                      className="rounded-lg border-2 border-line bg-card px-3 py-2 text-sm"
+                    >
+                      <option value="vllm">vLLM</option>
+                      <option value="lmstudio">LM Studio</option>
+                      <option value="llamacpp">llama.cpp</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <input
+                      type="password"
+                      placeholder="API key (leave blank if the server needs none)"
+                      value={draft.key}
+                      onChange={(ev) => setDraft({ ...draft, key: ev.target.value })}
+                      className="rounded-lg border-2 border-line bg-card px-3 py-2 font-mono text-xs focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className={`${smallBtn} bg-card text-ink border-line hover:bg-paper-deep`}
+                        onClick={() => {
+                          void window.hv.fetchEndpointModels(draft.baseUrl, draft.key || undefined).then(setProbe);
+                        }}
+                      >
+                        Fetch models
+                      </button>
+                      <button
+                        type="button"
+                        className={`${smallBtn} bg-card text-ink border-line hover:bg-paper-deep`}
+                        onClick={() => setDraft(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    {probe?.error && <p className="text-sm text-berry">Could not reach it: {probe.error}</p>}
+                    {probe?.ok && probe.models.length === 0 && (
+                      <p className="text-sm text-ink-soft">Reached it, but it listed no models.</p>
+                    )}
+                    {probe?.ok && probe.models.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <p className="text-xs text-ink-soft">
+                          Pick the models to expose, and set each context window — the token gauge reads it.
+                        </p>
+                        {probe.models.map((id) => (
+                          <label key={id} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={id in picked}
+                              onChange={(ev) =>
+                                setPicked((p) => {
+                                  const next = { ...p };
+                                  if (ev.target.checked) next[id] = 128000;
+                                  else delete next[id];
+                                  return next;
+                                })
+                              }
+                            />
+                            <span className="font-mono text-xs flex-1 min-w-0 truncate">{id}</span>
+                            {id in picked && (
+                              <input
+                                type="number"
+                                min={1}
+                                value={picked[id]}
+                                // Number("") is 0, and Pi DELETES a provider whose
+                                // model has contextWindow <= 0 — so an emptied
+                                // field falls back to Pi's own default instead.
+                                onChange={(ev) =>
+                                  setPicked((p) => ({ ...p, [id]: Number(ev.target.value) || 128000 }))
+                                }
+                                className="w-24 rounded-lg border-2 border-line bg-card px-2 py-1 text-xs"
+                              />
+                            )}
+                          </label>
+                        ))}
+                        <button
+                          type="button"
+                          disabled={Object.keys(picked).length === 0 || draft.label.trim() === ""}
+                          className={`${smallBtn} bg-tangerine text-paper border-tangerine-deep enabled:hover:brightness-105 disabled:opacity-40 self-start mt-1`}
+                          onClick={() => {
+                            // Main derives providerKey (hv-<id>) and auth, and
+                            // validates — see hv:save-custom-endpoint.
+                            const endpoint = {
+                              id: draft.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+                              label: draft.label.trim(),
+                              baseUrl: draft.baseUrl.trim(),
+                              preset: draft.preset,
+                              models: Object.entries(picked).map(([id, contextWindow]) => ({ id, contextWindow })),
+                            };
+                            setSaveError(null);
+                            void window.hv.saveCustomEndpoint(endpoint, draft.key || undefined)
+                              .then(() => window.hv.getCustomEndpoints())
+                              .then((c) => { setCustom(c); setDraft(null); setProbe(null); setPicked({}); })
+                              .catch((err: unknown) =>
+                                setSaveError(err instanceof Error ? err.message : String(err)),
+                              );
+                          }}
+                        >
+                          Save endpoint
+                        </button>
+                        {saveError && <p className="text-sm text-berry">Could not save: {saveError}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}

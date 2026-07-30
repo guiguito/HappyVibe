@@ -70,9 +70,11 @@ In order: `npm run typecheck` · the non-live suite · `npm run build`
 
 The 14 live-Pi files run **only if** the diff touches `pi-runtime/extensions/`, `src/main/pi/`,
 or one of those test files. They cost real DeepSeek calls, so they are conditional, not
-automatic. Derive the list with `grep -rl "skipIf(!KEY" tests/`, run them batched in ONE vitest
-invocation, and if `DEEPSEEK_API_KEY` is absent say so and name the files that therefore
-skipped. **A skip is not a pass.** One live failure ⇒ rerun that file in isolation before
+automatic. Run them batched in ONE vitest invocation, deriving the list at the shell:
+`grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run`
+(use `xargs` — zsh does not word-split `$(…)`, so `npx vitest run $files` silently becomes one
+argument and vitest says "No test files found" while printing the filter list back at you.)
+If `DEEPSEEK_API_KEY` is absent say so and name the files that therefore skipped. **A skip is not a pass.** One live failure ⇒ rerun that file in isolation before
 calling it a regression.
 
 ### 5. UI pass — only if `src/renderer/` was touched

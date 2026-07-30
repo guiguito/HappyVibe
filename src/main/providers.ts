@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { mergeModelsJson, parseOpenAiModelList, type CustomEndpoint } from "./modelsJson";
 
 /**
  * Curated provider list (PRD B3 — locked). Env var names verified against
@@ -76,43 +77,89 @@ export async function detectOllama(baseUrl = OLLAMA_BASE_URL): Promise<{ running
  * Merge an "ollama" provider entry into a models.json payload (Pi 0.80.3
  * docs/models.md schema). Empty model list removes the entry. Other providers
  * in the file are preserved.
+ *
+ * Ollama is now just one preset on the shared custom-endpoint path (PRD §16,
+ * 2026-07-30) — the emitted JSON is unchanged.
  */
 export function mergeOllamaModelsJson(existingRaw: string | null, models: string[]): string {
-  let parsed: { providers?: Record<string, unknown> } = {};
-  try {
-    parsed = JSON.parse(existingRaw ?? "{}");
-  } catch {
-    /* corrupt file in our app-owned dir — rebuild it */
-  }
-  const providers = { ...(parsed.providers ?? {}) };
-  if (models.length === 0) {
-    delete providers.ollama;
-  } else {
-    providers.ollama = {
-      name: "Ollama",
-      baseUrl: `${OLLAMA_BASE_URL}/v1`,
-      api: "openai-completions",
-      // Placeholder — Ollama ignores it, but Pi requires auth before models
-      // appear in get_available_models (docs/models.md).
-      apiKey: "ollama",
-      compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
-      models: models.map((id) => ({ id })),
-    };
-  }
-  return JSON.stringify({ ...parsed, providers }, null, 2);
+  return mergeModelsJson(existingRaw, models.length === 0 ? [] : [ollamaEndpoint(models)]);
 }
 
-/** Detect Ollama and sync agentDir/models.json before a Pi spawn. */
-export async function syncOllamaModels(agentDir: string): Promise<{ running: boolean; models: string[] }> {
+/** The Ollama entry as a CustomEndpoint. */
+function ollamaEndpoint(models: string[]): CustomEndpoint {
+  return {
+    id: "ollama",
+    // Historical key — Ollama predates the hv- namespace and users' sessions
+    // are already pinned to provider "ollama".
+    providerKey: "ollama",
+    label: "Ollama",
+    baseUrl: `${OLLAMA_BASE_URL}/v1`,
+    preset: "ollama",
+    // Placeholder — Ollama ignores it, but Pi requires auth before models
+    // appear in get_available_models (docs/models.md).
+    auth: { kind: "placeholder", value: "ollama" },
+    models: models.map((id) => ({ id })), // contextWindow unknown for local models
+  };
+}
+
+/**
+ * Detect Ollama, then write the whole HappyVibe-managed slice of models.json
+ * (Ollama + every custom endpoint) before a Pi spawn. Pi reads models.json at
+ * startup only, so this must run before each spawn.
+ */
+export async function syncModelsJson(
+  agentDir: string,
+  custom: CustomEndpoint[],
+): Promise<{ running: boolean; models: string[] }> {
   const detected = await detectOllama();
+  const endpoints: CustomEndpoint[] = [
+    ...(detected.models.length ? [ollamaEndpoint(detected.models)] : []),
+    ...custom,
+  ];
   const file = path.join(agentDir, "models.json");
   const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
-  const next = mergeOllamaModelsJson(existing, detected.models);
+  const next = mergeModelsJson(existing, endpoints);
   if (next !== existing) {
     fs.mkdirSync(agentDir, { recursive: true });
-    fs.writeFileSync(file, next);
+    // Atomic: write a sibling then rename. A crash during a plain writeFileSync
+    // leaves a TRUNCATED models.json, and mergeModelsJson rebuilds an unparseable
+    // file from {} — which would silently discard the user's hand-written
+    // providers on the next spawn. rename(2) is atomic within a filesystem, so a
+    // reader sees either the old file or the new one, never a partial one.
+    //
+    // No lock is needed around the read-modify-write above: every writer is in
+    // the main process and there is no await between the read and the write, so
+    // two concurrent spawns cannot interleave inside it.
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, next);
+    fs.renameSync(tmp, file);
   }
   return detected;
+}
+
+/** Back-compat wrapper: Ollama only, no custom endpoints. */
+export async function syncOllamaModels(agentDir: string): Promise<{ running: boolean; models: string[] }> {
+  return syncModelsJson(agentDir, []);
+}
+
+/**
+ * Probe an OpenAI-compatible endpoint for its model list. Never throws — the
+ * UI shows the error string instead, so a typo'd URL is a message, not a crash.
+ */
+export async function fetchEndpointModels(
+  baseUrl: string,
+  key?: string,
+): Promise<{ ok: boolean; models: string[]; error?: string }> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, {
+      headers: key ? { Authorization: `Bearer ${key}` } : {},
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return { ok: false, models: [], error: `HTTP ${res.status}` };
+    return { ok: true, models: parseOpenAiModelList(await res.json()) };
+  } catch (e) {
+    return { ok: false, models: [], error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /** Providers present in Pi's auth.json (app-owned agent dir). Names only. */

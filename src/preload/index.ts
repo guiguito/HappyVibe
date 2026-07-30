@@ -96,6 +96,12 @@ contextBridge.exposeInMainWorld("hv", {
   authLogout: (provider: string) => ipcRenderer.invoke("hv:auth-logout", provider),
   authStatus: () => ipcRenderer.invoke("hv:auth-status"),
   detectOllama: () => ipcRenderer.invoke("hv:detect-ollama"),
+  getCustomEndpoints: () => ipcRenderer.invoke("hv:get-custom-endpoints"),
+  saveCustomEndpoint: (endpoint: unknown, key?: string) =>
+    ipcRenderer.invoke("hv:save-custom-endpoint", endpoint, key),
+  removeCustomEndpoint: (id: string) => ipcRenderer.invoke("hv:remove-custom-endpoint", id),
+  fetchEndpointModels: (baseUrl: string, key?: string) =>
+    ipcRenderer.invoke("hv:fetch-endpoint-models", baseUrl, key),
   listModels: () => ipcRenderer.invoke("hv:list-models"),
   setDefaultModel: (provider: string, modelId: string) => ipcRenderer.invoke("hv:set-default-model", provider, modelId),
   hasAnyProvider: () => ipcRenderer.invoke("hv:has-any-provider"),

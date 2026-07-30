@@ -65,6 +65,14 @@ export interface PiSpawnOptions {
  *   and remains importable by Vitest.
  */
 export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir: string, opts: PiSpawnOptions = {}) {
+  // §16 finding 7 is OPEN: when no tier resolves (e.g. the user's only provider
+  // was a custom endpoint they removed) this pins the session to a model they
+  // may never have configured. Pi's CLI does accept the flags as optional
+  // (`if (parsed.model)`, dist/main.js buildSessionOptions), but an A/B of
+  // omitting them was INCONCLUSIVE — agents-bridge's 5s-timeout tests failed
+  // 2-of-3 in BOTH arms on a loaded machine, so there is no signal either way
+  // (2026-07-30). The default stays until someone can measure it on a quiet
+  // box; the better fix is a UI signal when nothing resolves.
   const model = opts.model ?? { provider: "deepseek", modelId: "deepseek-v4-flash" };
   return {
     execPath: nodeExecPath(),
