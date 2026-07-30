@@ -126,6 +126,10 @@ export default function App(): React.JSX.Element {
   const [searchOpen, setSearchOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [selStats, setSelStats] = useState<SessionStats | null>(null);
+  // Cost ledger for the selected session — fetched on the same agent_end beat as
+  // stats (see the effect below). Total comes from main, never re-summed here.
+  const [costOpen, setCostOpen] = useState(false);
+  const [selCalls, setSelCalls] = useState<{ calls: HvApiCall[]; total: HvLedgerTotal } | null>(null);
   // AGENTS.md editor — opened from the "+" menu (root) or the file tree (any path).
   const [agentsMd, setAgentsMd] = useState<string | null>(null); // relPath, or null = closed
   // bufferKey(ws, rel) → unsaved edits (feeds the tab-strip dirty dot; the
@@ -757,15 +761,20 @@ export default function App(): React.JSX.Element {
     watchedWsRef.current = want;
   }, [tabsByWs]);
 
-  // WS7: session context stats for the tab-strip bubble + panel. Fetched once
-  // per agent_end (turns bump), debounced; reset search/context on session switch.
+  // WS7: session context stats for the tab-strip bubble + panel, plus the cost
+  // ledger for the spend pill. Both fetched once per agent_end (turns bump),
+  // debounced; reset search/context/cost on session switch. Settling on
+  // agent_end is deliberate: Pi only writes a call's usage once the message
+  // lands, so there is no honest intra-turn number to show.
   useEffect(() => {
     setSearchOpen(false);
     setContextOpen(false);
-    if (!selectedId) { setSelStats(null); return; }
+    setCostOpen(false);
+    if (!selectedId) { setSelStats(null); setSelCalls(null); return; }
     let live = true;
     const t = setTimeout(() => {
       window.hv.getStats(selectedId).then((s) => live && setSelStats(s as SessionStats | null));
+      window.hv.getSessionCalls(selectedId).then((c) => live && setSelCalls(c)).catch(() => {});
     }, 500);
     return () => { live = false; clearTimeout(t); };
   }, [selectedId, selectedId ? turns[selectedId] : 0]);
@@ -1295,6 +1304,10 @@ export default function App(): React.JSX.Element {
             onSearchOpenChange={setSearchOpen}
             contextOpen={contextOpen}
             onContextOpenChange={setContextOpen}
+            costCalls={selCalls?.calls}
+            costTotal={selCalls?.total}
+            costOpen={costOpen}
+            onCostOpenChange={setCostOpen}
             planEnabled={(selectedId && planMode[selectedId]?.enabled) || false}
             sessionSkills={
               selectedId

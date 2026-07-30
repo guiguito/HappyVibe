@@ -38,7 +38,34 @@ interface HvCustomEndpoint {
   baseUrl: string;
   preset: "ollama" | "vllm" | "lmstudio" | "llamacpp" | "other";
   auth: { kind: "env" } | { kind: "placeholder"; value: string };
-  models: { id: string; contextWindow?: number }[];
+  /** priceIn/priceOut are USD per MILLION tokens; unset = unpriced (cost unknown). */
+  models: { id: string; contextWindow?: number; priceIn?: number; priceOut?: number; priceCacheRead?: number }[];
+}
+
+/** Mirrors ApiCall in src/main/calls.ts (from hv:get-session-calls). */
+interface HvApiCall {
+  ts: string;
+  provider: string;
+  model: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+  /** false = the price was UNKNOWN (unpriced provider), not zero. */
+  priced: boolean;
+}
+
+/** Mirrors LedgerTotal in src/main/calls.ts. */
+interface HvLedgerTotal {
+  calls: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+  /** Calls whose price is unknown — surfaced, never silently summed as $0. */
+  unpriced: number;
 }
 
 interface HvModel {
@@ -206,6 +233,9 @@ interface HvApi {
   setApiKey(key: string): Promise<void>;
   pickFolder(): Promise<string | null>;
   getStats(sessionId?: string): Promise<unknown>;
+  /** Billed API calls (oldest first) + their total. Main sums it so the renderer
+   *  never re-implements ledgerTotal. Mirrors src/main/calls.ts. */
+  getSessionCalls(sessionId: string): Promise<{ calls: HvApiCall[]; total: HvLedgerTotal }>;
   respondPermission(id: string, choice: string): void;
 
   listWorkspaces(): Promise<string[]>;

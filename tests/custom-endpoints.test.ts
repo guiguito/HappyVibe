@@ -161,6 +161,66 @@ describe("endpointEntry", () => {
     const e = endpointEntry({ ...vllm, models: [{ id: "m" }] });
     expect(e.models).toEqual([{ id: "m" }]);
   });
+
+  /**
+   * Cost defect (2026-07-30): a custom endpoint reported $0.00 for every call,
+   * always. endpointEntry wrote only {id, contextWindow}, so Pi's
+   * provider-composer.js:68 defaulted `cost` to all-zero rates. Observed live:
+   * hv-nvidia-cloud burned 60,023 input tokens for a reported $0.0000.
+   */
+  describe("per-Mtok prices", () => {
+    const priced = (over: Record<string, unknown>): Record<string, unknown> =>
+      endpointEntry({ ...vllm, models: [{ id: "m", contextWindow: 1000, ...over }] });
+
+    test("emits all four rates Pi requires, deriving cacheRead from the input rate", () => {
+      // ModelCostSchema (model-config.js:111) requires input/output/cacheRead/
+      // cacheWrite — a partial object fails validation and Pi drops the whole
+      // provider. cacheRead defaults to the input rate because a server that
+      // reports cached_tokens bills for them; pricing them 0 IS the defect.
+      expect(priced({ priceIn: 0.6, priceOut: 2.2 }).models).toEqual([
+        { id: "m", contextWindow: 1000, cost: { input: 0.6, output: 2.2, cacheRead: 0.6, cacheWrite: 0 } },
+      ]);
+    });
+
+    test("an explicit cacheRead rate wins over the derived default", () => {
+      expect(priced({ priceIn: 0.6, priceOut: 2.2, priceCacheRead: 0.11 }).models).toEqual([
+        { id: "m", contextWindow: 1000, cost: { input: 0.6, output: 2.2, cacheRead: 0.11, cacheWrite: 0 } },
+      ]);
+    });
+
+    test("a free model prices at zero — that is a real rate, not a missing one", () => {
+      expect(priced({ priceIn: 0, priceOut: 0 }).models).toEqual([
+        { id: "m", contextWindow: 1000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+      ]);
+    });
+
+    test("cost is OMITTED when either rate is unset — never a partial object", () => {
+      expect(priced({}).models).toEqual([{ id: "m", contextWindow: 1000 }]);
+      expect(priced({ priceIn: 0.6 }).models).toEqual([{ id: "m", contextWindow: 1000 }]);
+      expect(priced({ priceOut: 2.2 }).models).toEqual([{ id: "m", contextWindow: 1000 }]);
+    });
+  });
+});
+
+describe("validateEndpoint — prices", () => {
+  const withModel = (m: Record<string, unknown>): CustomEndpoint =>
+    ({ ...vllm, models: [{ id: "m", contextWindow: 1000, ...m }] }) as CustomEndpoint;
+
+  test("accepts a fully priced model and an unpriced one", () => {
+    expect(validateEndpoint(withModel({ priceIn: 0.6, priceOut: 2.2 }), [])).toBeNull();
+    expect(validateEndpoint(withModel({}), [])).toBeNull();
+  });
+
+  test("refuses a negative or non-finite rate", () => {
+    expect(validateEndpoint(withModel({ priceIn: -1, priceOut: 2 }), [])).toMatch(/Price/);
+    expect(validateEndpoint(withModel({ priceIn: 1, priceOut: Number.NaN }), [])).toMatch(/Price/);
+    expect(validateEndpoint(withModel({ priceIn: 1, priceOut: 2, priceCacheRead: -0.5 }), [])).toMatch(/Price/);
+  });
+
+  test("refuses one rate without the other — a half-priced model would read as free", () => {
+    expect(validateEndpoint(withModel({ priceIn: 0.6 }), [])).toMatch(/both/);
+    expect(validateEndpoint(withModel({ priceOut: 2.2 }), [])).toMatch(/both/);
+  });
 });
 
 describe("mergeModelsJson", () => {

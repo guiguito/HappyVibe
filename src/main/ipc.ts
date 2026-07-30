@@ -25,7 +25,8 @@ import {
   type ByokProvider,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
-import { deleteSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
+import { ledgerTotal, parseCalls } from "./calls";
+import { deleteSessionFile, readSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
@@ -901,6 +902,19 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle("hv:abort-session", async (_e, sessionId: string) => {
     await (manager.get(sessionId) as PiClient | null)?.send({ type: "abort" });
+  });
+
+  // Per-call cost ledger. Read from Pi's own session file rather than
+  // get_messages: that RPC returns the LIVE context, so a compaction would drop
+  // calls the user was already billed for. The file is what get_session_stats
+  // sums, so the pill and the drill-in can never disagree. See calls.ts.
+  // Returns the total alongside the calls so the sum is computed ONCE, by the
+  // unit-tested ledgerTotal — a renderer-side re-sum would be mirrored logic
+  // free to drift from the list it labels.
+  ipcMain.handle("hv:get-session-calls", (_e, sessionId: string) => {
+    const meta = index.get(sessionId);
+    const calls = meta ? parseCalls(readSessionFile(sessionDir(), meta.piSessionFile)) : [];
+    return { calls, total: ledgerTotal(calls) };
   });
 
   // getStats(sessionId?) — the optional sessionId is the additive B1 extension.

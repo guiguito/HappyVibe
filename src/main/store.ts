@@ -116,13 +116,40 @@ export class SessionIndex {
  * Pi-reported — treat as untrusted); a missing file is fine.
  */
 export function deleteSessionFile(sessionDirPath: string, file: string | undefined): void {
-  if (!file) return;
-  const resolved = path.resolve(file);
-  if (!resolved.startsWith(path.resolve(sessionDirPath) + path.sep)) return; // confinement
+  const resolved = confinedSessionPath(sessionDirPath, file);
+  if (!resolved) return;
   try {
     fs.rmSync(resolved, { force: true }); // force: missing file is fine
   } catch {
     /* unreadable/locked — the index entry is gone either way */
+  }
+}
+
+/**
+ * Resolve a Pi-reported session-file path, or null if it lands outside the
+ * app-owned session dir. Trailing path.sep matters twice: it rejects the dir
+ * itself, and it stops a sibling that merely shares the name prefix
+ * ("…/sessions-evil") from passing a plain startsWith.
+ */
+function confinedSessionPath(sessionDirPath: string, file: string | undefined): string | null {
+  if (!file) return null;
+  const resolved = path.resolve(file);
+  return resolved.startsWith(path.resolve(sessionDirPath) + path.sep) ? resolved : null;
+}
+
+/**
+ * Read a session's Pi JSONL for the cost ledger (calls.ts). Same confinement as
+ * deleteSessionFile — piSessionFile is Pi-reported, so it is untrusted input and
+ * a read must never escape the session dir. Missing/unreadable file → null (a
+ * session that has not had its first turn yet has no file).
+ */
+export function readSessionFile(sessionDirPath: string, file: string | undefined): string | null {
+  const resolved = confinedSessionPath(sessionDirPath, file);
+  if (!resolved) return null;
+  try {
+    return fs.readFileSync(resolved, "utf8");
+  } catch {
+    return null;
   }
 }
 

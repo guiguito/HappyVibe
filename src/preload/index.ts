@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("hv", {
   setApiKey: (k: string) => ipcRenderer.invoke("hv:set-api-key", k),
   pickFolder: () => ipcRenderer.invoke("hv:pick-folder"),
   getStats: (sessionId?: string) => ipcRenderer.invoke("hv:get-stats", sessionId),
+  getSessionCalls: (sessionId: string) => ipcRenderer.invoke("hv:get-session-calls", sessionId),
   respondPermission: (id: string, choice: string) => ipcRenderer.send("hv:respond-permission", id, choice),
 
   // ── B1: workspaces & multi-session ─────────────────────────────
