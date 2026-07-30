@@ -5,6 +5,7 @@ import { SettingsView } from "./components/SettingsView";
 import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError } from "./providerError";
+import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsModal } from "./components/WorkspaceSettingsModal";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
 import { ShortcutsDialog } from "./components/ShortcutsDialog";
@@ -1045,7 +1046,7 @@ export default function App(): React.JSX.Element {
   // #11 rewind: truncate the transcript at (and after) a user message and best-
   // effort drop the matching tail from Pi's context. The composer repopulation is
   // done in ChatView (which owns the input). Chat-only — files are NOT reverted.
-  const rewindTo = (it: TranscriptItem): void => {
+  const rewindTo = (it: TranscriptItem, scope: RewindScope): void => {
     if (it.id == null) return;
     // ids are globally unique (one monotonic counter), so locate the owning
     // session by the item's id rather than trusting selectedId — robust even if
@@ -1059,9 +1060,24 @@ export default function App(): React.JSX.Element {
     if (idx < 0) return;
     const tail = items.slice(idx);
     const msgCount = tail.filter((x) => x.kind === "user" || x.kind === "assistant").length;
-    const toolIds = new Set(
-      tail.flatMap((x) => (x.kind === "tool" ? [x.card.toolCallId] : [])),
-    );
+    const toolIds = new Set(tailToolCallIds(items, idx));
+    const { truncateChat, restoreFiles } = rewindActions(scope);
+
+    // Files first: the restore reads the CURRENT transcript's tool ids, and it
+    // must not depend on whether the chat half ran.
+    if (restoreFiles) {
+      void window.hv.rewindRestore(sid, [...toolIds]).then((res) => {
+        if (!res) {
+          appendItem(sid, { kind: "notice", text: "No snapshot for that message — no files were changed." });
+          return;
+        }
+        const parts = [`${res.restored.length} restored`, `${res.deleted.length} removed`];
+        if (res.stale.length) parts.push(`${res.stale.length} left alone (changed since)`);
+        appendItem(sid, { kind: "notice", text: `Files rewound — ${parts.join(", ")}.` });
+      });
+    }
+    if (!truncateChat) return;
+
     setTranscripts((p) => ({ ...p, [sid]: (p[sid] ?? []).slice(0, idx) }));
     pendingRewind.current[sid] = { msgCount, toolIds };
     void window.hv.contextSnapshot(sid);
