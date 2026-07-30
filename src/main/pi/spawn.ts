@@ -55,6 +55,12 @@ export interface PiSpawnOptions {
   /** §14: per-session skills manifest JSON → HV_SKILLS_FILE (the bridge serves
       use_skill and detects raw SKILL.md reads from it). */
   skillsFile?: string;
+  /** Extended prompt-cache retention → PI_CACHE_RETENTION=long, pi-ai's only
+      knob for it (pi docs/usage.md; anthropic.js resolveCacheRetention). Buys a
+      1h cache TTL on Anthropic/Bedrock and `prompt_cache_retention:"24h"` on
+      OpenAI, instead of the 5min/in-memory default. Global setting, resolved at
+      spawn — same pattern as HV_BYPASS. */
+  longCache?: boolean;
 }
 
 /**
@@ -125,6 +131,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
           }) }
         : {}),
       ...(opts.skillsFile ? { HV_SKILLS_FILE: opts.skillsFile } : {}),
+      ...(opts.longCache ? { PI_CACHE_RETENTION: "long" } : {}),
       // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
       // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).
       PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, PI_SUBAGENT_BIN_RELPATH),

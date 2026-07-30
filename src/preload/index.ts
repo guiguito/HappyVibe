@@ -181,6 +181,10 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:builtins-set", t),
   builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
 
+  // Extended prompt-cache retention (PI_CACHE_RETENTION=long) — next spawn.
+  getLongCache: () => ipcRenderer.invoke("hv:get-long-cache"),
+  setLongCache: (on: boolean) => ipcRenderer.invoke("hv:set-long-cache", on),
+
   // ── §14 Skills (additive) ────────────────────────────────────────
   // list returns {global, workspace}; approve/enable/activate apply live via
   // respawn-resume. Invocation cards arrive as hv.skill notifies through

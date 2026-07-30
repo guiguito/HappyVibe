@@ -397,6 +397,11 @@ interface HvApi {
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
 
+  /** Extended prompt-cache retention (PI_CACHE_RETENTION=long). Global, applied
+      at the next spawn — live sessions keep the retention they started with. */
+  getLongCache(): Promise<boolean>;
+  setLongCache(on: boolean): Promise<void>;
+
   // §14 Skills (additive)
   skillsList(workspaceId?: string): Promise<HvSkillsList>;
   skillsRead(id: string): Promise<HvSkillDetail>;
