@@ -30,6 +30,52 @@
  * (ToolCard.tsx r.usage.cost), not here.
  */
 
+/**
+ * How a call was paid for. Three states, not a boolean — a boolean forced
+ * subscription calls into "priced: true" and rendered API-rate dollars the user
+ * does not owe (see PLAN_PROVIDERS).
+ *
+ *  metered — billed per token; `cost` is the (estimated) amount owed.
+ *  plan    — covered by a flat subscription; tokens are real, `cost` is NOT owed
+ *            and is excluded from the total.
+ *  unknown — burned tokens at a $0 rate because no price exists; $0.00 here
+ *            means UNKNOWN, not free.
+ */
+export type Billing = "metered" | "plan" | "unknown";
+
+/**
+ * Providers that are ALWAYS a flat subscription, so per-token dollars are
+ * meaningless. These are the OAuth-ONLY ids in providers.ts OAUTH_PROVIDERS —
+ * they never appear in BYOK_PROVIDERS, so the provider id alone classifies them
+ * with certainty.
+ *
+ * `anthropic` is deliberately ABSENT: it is in BOTH lists (API key → metered,
+ * "Claude" Pro/Max sign-in → plan) and the session file records only
+ * provider:"anthropic". It is resolved by the caller — see planProvidersFor.
+ *
+ * Pi prices openai-codex models at full API rates ($1.25/$10 per Mtok for
+ * gpt-5.1), which is why this list has to exist at all: without it a ChatGPT
+ * subscription session reports several dollars of spend that was never charged.
+ */
+export const PLAN_PROVIDERS: ReadonlySet<string> = new Set(["openai-codex", "github-copilot"]);
+
+/**
+ * The plan-provider set for a given key configuration. `anthropic` counts as
+ * plan-billed exactly when no API key is configured for it — with no key Pi
+ * falls back to the Claude subscription OAuth in auth.json, so those calls cost
+ * nothing per token.
+ *
+ * ponytail: this reads key presence at QUERY time, not at call time, because the
+ * session file does not record which auth resolved. Ceiling: a session billed
+ * against an API key, viewed after that key is removed, is relabelled "plan".
+ * Upgrade path = have the bridge stamp the resolved auth mode per call.
+ */
+export function planProvidersFor(keyStatus: Record<string, string | null>): ReadonlySet<string> {
+  const s = new Set(PLAN_PROVIDERS);
+  if (!keyStatus?.anthropic) s.add("anthropic");
+  return s;
+}
+
 export interface ApiCall {
   /** ISO 8601, from Pi's epoch-ms `timestamp`. */
   ts: string;
@@ -39,16 +85,9 @@ export interface ApiCall {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  /** USD estimate — Pi's `usage.cost.total`. */
+  /** Pi's `usage.cost.total`. Owed only when `billing` is "metered". */
   cost: number;
-  /**
-   * false when the call burned tokens but cost $0 — the provider had no price
-   * table entry, so $0.00 means UNKNOWN, not free. The real case: a custom
-   * OpenAI-compatible endpoint saved without prices gets every rate defaulted
-   * to 0 (provider-composer.js:68), and 60k tokens report as free. Presenting
-   * that as $0.00 unlabelled is the lie this flag exists to prevent.
-   */
-  priced: boolean;
+  billing: Billing;
 }
 
 export interface LedgerTotal {
@@ -57,9 +96,13 @@ export interface LedgerTotal {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  /** USD estimate for METERED calls only — plan dollars are not owed. */
   cost: number;
-  /** How many calls carry an unknown price — shown, never silently summed as 0. */
-  unpriced: number;
+  metered: number;
+  /** Calls covered by a subscription — named, not silently priced. */
+  plan: number;
+  /** Calls whose price is unknown — surfaced, never silently summed as $0. */
+  unknown: number;
 }
 
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -69,7 +112,10 @@ const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v)
  * file is appended live, so the last line can be torn mid-write — a bad line is
  * skipped, never thrown (same contract as EventLog.read).
  */
-export function parseCalls(jsonl: string | null | undefined): ApiCall[] {
+export function parseCalls(
+  jsonl: string | null | undefined,
+  planProviders: ReadonlySet<string> = PLAN_PROVIDERS,
+): ApiCall[] {
   if (!jsonl) return [];
   const calls: ApiCall[] = [];
   for (const raw of jsonl.split("\n")) {
@@ -90,32 +136,41 @@ export function parseCalls(jsonl: string | null | undefined): ApiCall[] {
     const cacheWrite = num(usage.cacheWrite);
     const cost = num((usage.cost as { total?: unknown } | undefined)?.total);
     const tokens = input + output + cacheRead + cacheWrite;
+    const provider = typeof m.provider === "string" ? m.provider : "?";
     calls.push({
       ts: new Date(num(m.timestamp)).toISOString(),
-      provider: typeof m.provider === "string" ? m.provider : "?",
+      provider,
       model: typeof m.model === "string" ? m.model : "?",
       input,
       output,
       cacheRead,
       cacheWrite,
       cost,
-      // A call with no tokens really did cost nothing (an aborted or empty
-      // turn) — only tokens-without-cost means the price was unknown.
-      priced: cost > 0 || tokens === 0,
+      // Plan wins over everything: a subscription call's dollars are wrong
+      // whether Pi computed them (openai-codex, API rates) or zeroed them
+      // (github-copilot). Otherwise tokens-at-$0 means the price is unknown; no
+      // tokens at all really was free (an aborted or empty turn).
+      billing: planProviders.has(provider) ? "plan" : cost === 0 && tokens > 0 ? "unknown" : "metered",
     });
   }
   return calls;
 }
 
 export function ledgerTotal(calls: ApiCall[]): LedgerTotal {
-  const t: LedgerTotal = { calls: calls.length, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, unpriced: 0 };
+  const t: LedgerTotal = {
+    calls: calls.length, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0,
+    metered: 0, plan: 0, unknown: 0,
+  };
   for (const c of calls) {
+    // Tokens are real whoever pays for them.
     t.input += c.input;
     t.output += c.output;
     t.cacheRead += c.cacheRead;
     t.cacheWrite += c.cacheWrite;
-    t.cost += c.cost;
-    if (!c.priced) t.unpriced += 1;
+    t[c.billing] += 1;
+    // Only metered dollars are owed. A plan call's cost is Pi's API-rate
+    // arithmetic on a flat subscription — adding it would invent spend.
+    if (c.billing === "metered") t.cost += c.cost;
   }
   return t;
 }

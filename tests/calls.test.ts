@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
-import { ledgerTotal, parseCalls } from "../src/main/calls";
+import { ledgerTotal, parseCalls, PLAN_PROVIDERS, planProvidersFor } from "../src/main/calls";
 import { readSessionFile } from "../src/main/store";
 
 // Line shapes are copied from a real Pi session file (verified 2026-07-30 against
@@ -53,14 +53,14 @@ describe("parseCalls", () => {
       cacheRead: 9000,
       cacheWrite: 0,
       cost: 0.00295,
-      priced: true,
+      billing: "metered",
     });
     expect(calls[1].ts).toBe("2026-07-30T07:19:59.999Z");
     expect(calls[1].cacheWrite).toBe(3);
     expect(calls[1].cost).toBe(7);
   });
 
-  test("a call with tokens but zero cost is UNPRICED, not free", () => {
+  test("a call with tokens but zero cost is UNKNOWN, not free", () => {
     // The real hv-nvidia-cloud case: modelsJson wrote no `cost`, so Pi's
     // provider-composer defaulted every rate to 0 and billed 60k tokens at $0.
     const jsonl = assistant({
@@ -71,15 +71,121 @@ describe("parseCalls", () => {
       },
     });
     const [call] = parseCalls(jsonl);
-    expect(call.priced).toBe(false);
+    expect(call.billing).toBe("unknown");
     expect(call.cost).toBe(0);
   });
 
-  test("a genuinely free call (no tokens at all) is not flagged unpriced", () => {
+  test("a genuinely free call (no tokens at all) is metered, not unknown", () => {
     const jsonl = assistant({
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
     });
-    expect(parseCalls(jsonl)[0].priced).toBe(true);
+    expect(parseCalls(jsonl)[0].billing).toBe("metered");
+  });
+
+  /**
+   * The defect this three-state model exists to kill. `openai-codex` is a flat
+   * ChatGPT subscription (OAuth-only — providers.ts OAUTH_PROVIDERS, absent from
+   * BYOK_PROVIDERS), but Pi prices its models at full API rates ($1.25/$10 per
+   * Mtok for gpt-5.1). A boolean `priced` flag called that "priced: true" and
+   * rendered dollars the user does not owe.
+   */
+  describe("plan-billed providers", () => {
+    test("a subscription provider is 'plan' even though Pi computed a cost", () => {
+      const jsonl = assistant({
+        provider: "openai-codex",
+        model: "gpt-5.1",
+        usage: { input: 346000, output: 12000, cacheRead: 25300000, cacheWrite: 0, cost: { total: 4.22 } },
+      });
+      const [call] = parseCalls(jsonl);
+      expect(call.billing).toBe("plan");
+      // Tokens are still real and still shown; the dollars are not owed.
+      expect(call.input).toBe(346000);
+      expect(call.cost).toBe(4.22);
+    });
+
+    test("github-copilot is 'plan', not 'unknown' — zero rates there are a fact", () => {
+      const jsonl = assistant({
+        provider: "github-copilot",
+        model: "claude-sonnet-4.5",
+        usage: { input: 5000, output: 200, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } },
+      });
+      expect(parseCalls(jsonl)[0].billing).toBe("plan");
+    });
+
+    test("PLAN_PROVIDERS holds only the OAuth-ONLY ids — never ambiguous anthropic", () => {
+      expect([...PLAN_PROVIDERS].sort()).toEqual(["github-copilot", "openai-codex"]);
+      expect(PLAN_PROVIDERS.has("anthropic")).toBe(false);
+    });
+
+    test("caller-supplied plan providers extend the set (anthropic via OAuth)", () => {
+      const jsonl = assistant({ provider: "anthropic", model: "claude-opus-4.6", usage: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0, cost: { total: 2.5 } } });
+      expect(parseCalls(jsonl)[0].billing).toBe("metered");
+      expect(parseCalls(jsonl, new Set(["anthropic"]))[0].billing).toBe("plan");
+    });
+  });
+});
+
+/**
+ * anthropic is in BOTH BYOK_PROVIDERS (API key -> metered) and OAUTH_PROVIDERS
+ * ("Claude" subscription -> plan), and the session file records only
+ * provider:"anthropic". Absence of a key is the only signal main has.
+ */
+describe("planProvidersFor", () => {
+  test("no anthropic key -> anthropic billed via the Claude subscription", () => {
+    const s = planProvidersFor({ anthropic: null, openai: "stored", deepseek: null, google: null, openrouter: null });
+    expect(s.has("anthropic")).toBe(true);
+    expect(s.has("openai-codex")).toBe(true);
+  });
+
+  test("an anthropic key present -> metered, keep dollars", () => {
+    for (const src of ["env", "stored"] as const) {
+      const s = planProvidersFor({ anthropic: src, openai: null, deepseek: null, google: null, openrouter: null });
+      expect(s.has("anthropic")).toBe(false);
+      // The OAuth-only ids are unconditional.
+      expect(s.has("github-copilot")).toBe(true);
+    }
+  });
+
+  test("always includes the unconditional plan providers", () => {
+    const s = planProvidersFor({} as never);
+    expect(s.has("openai-codex")).toBe(true);
+    expect(s.has("github-copilot")).toBe(true);
+  });
+});
+
+describe("ledgerTotal billing split", () => {
+  test("plan calls are counted and their tokens summed, but never their dollars", () => {
+    const calls = parseCalls([
+      assistant({ usage: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0, cost: { total: 0.5 } } }),
+      assistant({ provider: "openai-codex", usage: { input: 200, output: 20, cacheRead: 5, cacheWrite: 0, cost: { total: 9.99 } } }),
+      assistant({ provider: "hv-x", usage: { input: 300, output: 30, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } } }),
+    ].join("\n"));
+
+    const t = ledgerTotal(calls);
+    // Dollars: ONLY the metered call. 9.99 is not owed; 0 is not known.
+    expect(t.cost).toBe(0.5);
+    expect(t.calls).toBe(3);
+    expect(t.metered).toBe(1);
+    expect(t.plan).toBe(1);
+    expect(t.unknown).toBe(1);
+    // Tokens are real regardless of who pays.
+    expect(t.input).toBe(600);
+    expect(t.output).toBe(60);
+    expect(t.cacheRead).toBe(5);
+  });
+
+  test("an all-plan session totals to $0 owed with zero unknowns", () => {
+    const calls = parseCalls(assistant({ provider: "github-copilot", usage: { input: 9, output: 9, cacheRead: 0, cacheWrite: 0, cost: { total: 3 } } }));
+    const t = ledgerTotal(calls);
+    expect(t.cost).toBe(0);
+    expect(t.plan).toBe(1);
+    expect(t.unknown).toBe(0);
+  });
+
+  test("an empty ledger splits to zeroes", () => {
+    expect(ledgerTotal([])).toEqual({
+      calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, metered: 0, plan: 0, unknown: 0,
+    });
   });
 
   test("survives torn lines, blank lines, and missing usage without throwing", () => {
@@ -113,7 +219,7 @@ describe("parseCalls", () => {
 });
 
 describe("ledgerTotal", () => {
-  test("sums every column and counts unpriced calls", () => {
+  test("sums every column across mixed billing", () => {
     const calls = parseCalls([
       assistant(),
       assistant({ provider: "hv-nvidia-cloud", usage: { input: 500, output: 5, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } } }),
@@ -126,12 +232,10 @@ describe("ledgerTotal", () => {
       cacheRead: 9000,
       cacheWrite: 0,
       cost: 0.00295,
-      unpriced: 1,
+      metered: 1,
+      plan: 0,
+      unknown: 1,
     });
-  });
-
-  test("an empty ledger totals to zero, not NaN", () => {
-    expect(ledgerTotal([])).toEqual({ calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, unpriced: 0 });
   });
 });
 

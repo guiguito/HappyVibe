@@ -51,9 +51,10 @@ interface HvApiCall {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  /** Pi's cost estimate. Owed only when `billing` is "metered". */
   cost: number;
-  /** false = the price was UNKNOWN (unpriced provider), not zero. */
-  priced: boolean;
+  /** metered = per-token; plan = flat subscription (cost NOT owed); unknown = no rate. */
+  billing: "metered" | "plan" | "unknown";
 }
 
 /** Mirrors LedgerTotal in src/main/calls.ts. */
@@ -63,9 +64,13 @@ interface HvLedgerTotal {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  /** USD estimate for METERED calls only. */
   cost: number;
+  metered: number;
+  /** Calls covered by a subscription — named, not silently priced. */
+  plan: number;
   /** Calls whose price is unknown — surfaced, never silently summed as $0. */
-  unpriced: number;
+  unknown: number;
 }
 
 interface HvModel {

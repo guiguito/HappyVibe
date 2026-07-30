@@ -25,7 +25,7 @@ import {
   type ByokProvider,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
-import { ledgerTotal, parseCalls } from "./calls";
+import { ledgerTotal, parseCalls, planProvidersFor } from "./calls";
 import { deleteSessionFile, readSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
@@ -913,7 +913,11 @@ export function registerIpc(win: BrowserWindow): void {
   // free to drift from the list it labels.
   ipcMain.handle("hv:get-session-calls", (_e, sessionId: string) => {
     const meta = index.get(sessionId);
-    const calls = meta ? parseCalls(readSessionFile(sessionDir(), meta.piSessionFile)) : [];
+    // Which providers are flat-subscription rather than per-token. Resolved here
+    // because it depends on key configuration (no anthropic key ⇒ the Claude
+    // subscription is what paid), which calls.ts stays pure of.
+    const plans = planProvidersFor(providerKeyStatus());
+    const calls = meta ? parseCalls(readSessionFile(sessionDir(), meta.piSessionFile), plans) : [];
     return { calls, total: ledgerTotal(calls) };
   });
 

@@ -47,6 +47,10 @@ export function CostPanel({
   const rows = [...calls].reverse();
   // A day header only helps once a session spans more than one date.
   const multiDay = new Set(calls.map((c) => day(c.ts))).size > 1;
+  const allPlan = total.calls > 0 && total.metered === 0 && total.unknown === 0;
+  // Custom endpoints are the only unknown-price case the user can fix, and they
+  // are exactly the `hv-<id>` provider keys modelsJson writes.
+  const hasCustomUnknown = calls.some((c) => c.billing === "unknown" && c.provider.startsWith("hv-"));
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-ink/20" onMouseDown={onClose}>
@@ -70,11 +74,13 @@ export function CostPanel({
         <div className="px-5 py-3 border-b-2 border-line flex flex-col gap-2">
           <div className="flex items-baseline gap-2">
             <span className="font-black text-2xl">
-              {total.unpriced === total.calls && total.calls > 0 ? "$?" : fmtCost(total.cost)}
+              {allPlan ? "plan" : total.metered === 0 && total.calls > 0 ? "$?" : fmtCost(total.cost)}
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 bg-paper-deep text-ink-soft">
-              estimated
-            </span>
+            {!allPlan && (
+              <span className="text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 bg-paper-deep text-ink-soft">
+                estimated
+              </span>
+            )}
             <span className="font-mono text-xs text-ink-soft">
               {total.calls} call{total.calls === 1 ? "" : "s"}
             </span>
@@ -87,12 +93,26 @@ export function CostPanel({
           </div>
         </div>
 
-        {/* Unpriced warning — the "$0.00 always" case, named so it's fixable. */}
-        {total.unpriced > 0 && (
+        {/* Plan note — a fact, not a warning, so it stays calm. Naming it is what
+            stops the user reading "plan" rows as spend we failed to measure. */}
+        {total.plan > 0 && (
+          <div className="px-5 py-2.5 border-b-2 border-line bg-card text-xs text-ink-soft">
+            <strong className="text-ink">{total.plan}</strong> of {total.calls} call
+            {total.calls === 1 ? "" : "s"} ran on a flat subscription, so there is no per-token charge
+            for {total.plan === 1 ? "it" : "them"} — those rows show <span className="font-mono">plan</span>{" "}
+            and are left out of the total.
+          </div>
+        )}
+
+        {/* Unknown-price warning — the "$0.00 always" case, named so it's fixable.
+            The Settings hint appears only when a HappyVibe-managed endpoint is
+            actually involved (providerKey is `hv-<id>`); pointing a Copilot or
+            zai user at "Custom endpoint" would be wrong advice. */}
+        {total.unknown > 0 && (
           <div className="px-5 py-2.5 border-b-2 border-honey/40 bg-honey-soft text-xs text-tangerine-deep">
-            <strong>{total.unpriced}</strong> of {total.calls} call{total.calls === 1 ? "" : "s"} has no
-            price for its model, so its cost is unknown — not zero. For a custom endpoint, set $/Mtok in
-            Settings → Custom endpoint.
+            <strong>{total.unknown}</strong> of {total.calls} call{total.calls === 1 ? "" : "s"} has no
+            price for its model, so its cost is unknown — not zero.
+            {hasCustomUnknown && " Set $/Mtok in Settings → Custom endpoint."}
           </div>
         )}
 
@@ -136,11 +156,22 @@ export function CostPanel({
                     >
                       {fmtNum(c.cacheRead + c.cacheWrite)}
                     </td>
+                    {/* "plan" is muted (a fact), "?" is amber (a gap). Pi's
+                        API-rate arithmetic for a plan call is never shown — it
+                        would read as money owed. */}
                     <td
-                      className={`px-3 py-1.5 font-mono text-right ${c.priced ? "" : "text-tangerine-deep font-bold"}`}
-                      title={c.priced ? undefined : "No price for this model — cost unknown"}
+                      className={`px-3 py-1.5 font-mono text-right ${
+                        c.billing === "unknown" ? "text-tangerine-deep font-bold" : c.billing === "plan" ? "text-ink-soft" : ""
+                      }`}
+                      title={
+                        c.billing === "unknown"
+                          ? "No price for this model — cost unknown"
+                          : c.billing === "plan"
+                            ? `Covered by your ${c.provider} subscription — no per-token charge`
+                            : undefined
+                      }
                     >
-                      {c.priced ? fmtCost(c.cost) : "?"}
+                      {c.billing === "metered" ? fmtCost(c.cost) : c.billing === "plan" ? "plan" : "?"}
                     </td>
                   </tr>
                 ))}
