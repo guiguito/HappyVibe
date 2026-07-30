@@ -1060,7 +1060,9 @@ git commit -m "feat(settings): add OpenAI-compatible custom endpoints to LLM Set
 
 1. `npm run typecheck`
 2. The non-live suite (command in Task 1 Step 7)
-3. **One live-Pi batch.** `src/main/pi/spawn.ts` should be untouched by this plan, so the live files are not strictly required — but `models.json` is read by Pi at startup and this plan changes what's in it, so run the batch once and paste the output. Derive the files with `grep -rl "skipIf(!KEY" tests/` and run them in ONE vitest invocation. A skip is not a pass; one failure ⇒ rerun that file in isolation before calling it a regression (`intent-bridge` has a known model-nondeterminism flake).
+3. **One live-Pi batch.** `src/main/pi/spawn.ts` should be untouched by this plan, so the live files are not strictly required — but `models.json` is read by Pi at startup and this plan changes what's in it, so run the batch once and paste the output:
+   `grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run`
+   Use `xargs`: zsh does not word-split `$(…)`, so `npx vitest run $files` passes all 14 paths as ONE argument and vitest reports "No test files found" while echoing the filter list — a false green if you only skim the tail. A skip is not a pass; one failure ⇒ rerun that file in isolation before calling it a regression (`intent-bridge` and `plan-bridge` both have known model-nondeterminism flakes).
 4. `npm run build`
 5. The UI pass in Task 7 Step 6, with screenshots.
 
