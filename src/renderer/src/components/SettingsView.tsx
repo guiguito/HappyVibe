@@ -306,8 +306,13 @@ export function SettingsView({
   const [probe, setProbe] = useState<{ ok: boolean; models: string[]; error?: string } | null>(null);
   /** Main rejects bad ids / reserved ids / bad URLs — show it instead of failing silently. */
   const [saveError, setSaveError] = useState<string | null>(null);
-  /** Selected model id → context window (Pi defaults to 128000; §9's gauge reads it). */
-  const [picked, setPicked] = useState<Record<string, number>>({});
+  /**
+   * Selected model id → its per-model settings. `ctx` is the context window (Pi
+   * defaults to 128000; §9's gauge reads it). `priceIn`/`priceOut` are USD per
+   * MILLION tokens and are OPTIONAL: without them Pi prices every call at $0 and
+   * the session cost pill reports the spend as unknown rather than free.
+   */
+  const [picked, setPicked] = useState<Record<string, { ctx: number; priceIn?: number; priceOut?: number }>>({});
 
   const refresh = async (): Promise<void> => {
     const p = await window.hv.getProviders();
@@ -677,38 +682,78 @@ export function SettingsView({
                     {probe?.ok && probe.models.length > 0 && (
                       <div className="flex flex-col gap-1">
                         <p className="text-xs text-ink-soft">
-                          Pick the models to expose, and set each context window — the token gauge reads it.
+                          Pick the models to expose and set each context window — the token gauge reads it.
+                          Prices are optional ($ per million tokens, from the provider's pricing page);
+                          without them this endpoint's calls show as <span className="font-mono">unpriced</span>{" "}
+                          in the session cost panel instead of a misleading $0.00.
                         </p>
                         {probe.models.map((id) => (
-                          <label key={id} className="flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={id in picked}
-                              onChange={(ev) =>
-                                setPicked((p) => {
-                                  const next = { ...p };
-                                  if (ev.target.checked) next[id] = 128000;
-                                  else delete next[id];
-                                  return next;
-                                })
-                              }
-                            />
-                            <span className="font-mono text-xs flex-1 min-w-0 truncate">{id}</span>
-                            {id in picked && (
+                          <div key={id} className="flex flex-col gap-1">
+                            <label className="flex items-center gap-2 text-sm">
                               <input
-                                type="number"
-                                min={1}
-                                value={picked[id]}
-                                // Number("") is 0, and Pi DELETES a provider whose
-                                // model has contextWindow <= 0 — so an emptied
-                                // field falls back to Pi's own default instead.
+                                type="checkbox"
+                                checked={id in picked}
                                 onChange={(ev) =>
-                                  setPicked((p) => ({ ...p, [id]: Number(ev.target.value) || 128000 }))
+                                  setPicked((p) => {
+                                    const next = { ...p };
+                                    if (ev.target.checked) next[id] = { ctx: 128000 };
+                                    else delete next[id];
+                                    return next;
+                                  })
                                 }
-                                className="w-24 rounded-lg border-2 border-line bg-card px-2 py-1 text-xs"
                               />
+                              <span className="font-mono text-xs flex-1 min-w-0 truncate">{id}</span>
+                              {id in picked && (
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={picked[id].ctx}
+                                  aria-label={`Context window for ${id}`}
+                                  title="Context window (tokens)"
+                                  // Number("") is 0, and Pi DELETES a provider whose
+                                  // model has contextWindow <= 0 — so an emptied
+                                  // field falls back to Pi's own default instead.
+                                  onChange={(ev) =>
+                                    setPicked((p) => ({ ...p, [id]: { ...p[id], ctx: Number(ev.target.value) || 128000 } }))
+                                  }
+                                  className="w-24 rounded-lg border-2 border-line bg-card px-2 py-1 text-xs"
+                                />
+                              )}
+                            </label>
+                            {id in picked && (
+                              <div className="flex items-center gap-2 pl-6 text-xs text-ink-soft">
+                                {/* Both or neither: main refuses a half-priced model,
+                                    because one rate alone yields a total that is
+                                    quietly half right. "" → undefined = unpriced. */}
+                                {([
+                                  ["priceIn", "in"],
+                                  ["priceOut", "out"],
+                                ] as const).map(([field, label]) => (
+                                  <label key={field} className="flex items-center gap-1">
+                                    <span>$/Mtok {label}</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step="0.01"
+                                      placeholder="—"
+                                      value={picked[id][field] ?? ""}
+                                      aria-label={`Price per million ${label === "in" ? "input" : "output"} tokens for ${id}`}
+                                      onChange={(ev) =>
+                                        setPicked((p) => ({
+                                          ...p,
+                                          [id]: {
+                                            ...p[id],
+                                            [field]: ev.target.value === "" ? undefined : Number(ev.target.value),
+                                          },
+                                        }))
+                                      }
+                                      className="w-20 rounded-lg border-2 border-line bg-card px-2 py-1 text-xs"
+                                    />
+                                  </label>
+                                ))}
+                              </div>
                             )}
-                          </label>
+                          </div>
                         ))}
                         <button
                           type="button"
@@ -722,7 +767,12 @@ export function SettingsView({
                               label: draft.label.trim(),
                               baseUrl: draft.baseUrl.trim(),
                               preset: draft.preset,
-                              models: Object.entries(picked).map(([id, contextWindow]) => ({ id, contextWindow })),
+                              models: Object.entries(picked).map(([id, m]) => ({
+                                id,
+                                contextWindow: m.ctx,
+                                ...(m.priceIn === undefined ? {} : { priceIn: m.priceIn }),
+                                ...(m.priceOut === undefined ? {} : { priceOut: m.priceOut }),
+                              })),
                             };
                             setSaveError(null);
                             void window.hv.saveCustomEndpoint(endpoint, draft.key || undefined)

@@ -13,6 +13,32 @@ export interface CustomModel {
   /** Pi defaults to 128000 and §9's context gauge reads it, so the UI always
    *  sets this for custom endpoints. Omitted for Ollama (shape must not change). */
   contextWindow?: number;
+  /**
+   * USD per MILLION tokens — the unit every provider's price page uses, and the
+   * unit Pi's models.json wants, so no conversion anywhere.
+   *
+   * Without these, a custom endpoint reports $0.00 for every call forever: Pi's
+   * provider-composer.js:68 defaults an unpriced model to all-zero rates, so a
+   * real session burned 60k tokens and showed as free. Optional because a user
+   * genuinely may not know the rates — unpriced is then LABELLED as unknown in
+   * the cost ledger (calls.ts `priced`) rather than silently summed as zero.
+   *
+   * priceIn and priceOut come as a pair (validateEndpoint enforces it): one
+   * alone would produce a plausible-looking total that is quietly half right.
+   */
+  priceIn?: number;
+  priceOut?: number;
+  /**
+   * Cache-hit rate. Defaults to priceIn when unset, because a server that
+   * reports `cached_tokens` bills for them and Pi subtracts cache reads out of
+   * `input` — so a 0 here re-creates the very under-reporting this fixes (cache
+   * reads are ~90% of a coding agent's prompt tokens). Set it explicitly for a
+   * server that genuinely discounts cache hits.
+   * ponytail: no cacheWrite knob — openai-completions servers rarely bill one
+   * separately, and absent `cache_write_tokens` means 0 tokens anyway. Add a
+   * field if a real endpoint turns out to charge for it.
+   */
+  priceCacheRead?: number;
 }
 
 export interface CustomEndpoint {
@@ -101,6 +127,22 @@ export function escapePiValue(v: string): string {
   return dollars.startsWith("!") ? `$!${dollars.slice(1)}` : dollars;
 }
 
+/**
+ * Pi's `cost` block, or undefined when the model is unpriced. ModelCostSchema
+ * (model-config.js:111) requires ALL FOUR rates — a partial object fails
+ * validation and Pi discards the entire provider, not just the model — so this
+ * is all-or-nothing on purpose.
+ */
+function modelCost(m: CustomModel): Record<string, number> | undefined {
+  if (m.priceIn === undefined || m.priceOut === undefined) return undefined;
+  return {
+    input: m.priceIn,
+    output: m.priceOut,
+    cacheRead: m.priceCacheRead ?? m.priceIn,
+    cacheWrite: 0,
+  };
+}
+
 export function endpointEntry(e: CustomEndpoint): Record<string, unknown> {
   return {
     name: e.label,
@@ -108,9 +150,14 @@ export function endpointEntry(e: CustomEndpoint): Record<string, unknown> {
     api: "openai-completions",
     apiKey: e.auth.kind === "env" ? `$${envVarFor(e.id)}` : escapePiValue(e.auth.value),
     compat: PRESET_COMPAT[e.preset],
-    models: e.models.map((m) =>
-      m.contextWindow === undefined ? { id: m.id } : { id: m.id, contextWindow: m.contextWindow },
-    ),
+    models: e.models.map((m) => {
+      const cost = modelCost(m);
+      return {
+        id: m.id,
+        ...(m.contextWindow === undefined ? {} : { contextWindow: m.contextWindow }),
+        ...(cost === undefined ? {} : { cost }),
+      };
+    }),
   };
 }
 
@@ -147,6 +194,10 @@ export function mergeModelsJson(existingRaw: string | null, endpoints: CustomEnd
  *  - contextWindow≥1 → Pi throws on compose for <= 0 and DELETES the whole
  *                      provider, not just the offending model
  *  - at least 1 model → an endpoint with none is inert
+ *  - prices        → a negative/non-finite rate makes every total nonsense, and
+ *                    ONE rate without the other yields a plausible-looking cost
+ *                    that is quietly half right. Unpriced is honest (the ledger
+ *                    labels it unknown); half-priced is a lie.
  */
 export function validateEndpoint(e: CustomEndpoint, existingIds: string[]): string | null {
   if (!isValidEndpointId(e.id)) {
@@ -160,6 +211,14 @@ export function validateEndpoint(e: CustomEndpoint, existingIds: string[]): stri
   for (const m of e.models) {
     if (m.contextWindow !== undefined && (!Number.isFinite(m.contextWindow) || m.contextWindow < 1)) {
       return `Context window for "${m.id}" must be at least 1`;
+    }
+    for (const [label, v] of [["input", m.priceIn], ["output", m.priceOut], ["cache-read", m.priceCacheRead]] as const) {
+      if (v !== undefined && (!Number.isFinite(v) || v < 0)) {
+        return `Price (${label}) for "${m.id}" must be 0 or more`;
+      }
+    }
+    if ((m.priceIn === undefined) !== (m.priceOut === undefined)) {
+      return `Set both input and output prices for "${m.id}", or neither`;
     }
   }
   return null;

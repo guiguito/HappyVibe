@@ -3,6 +3,8 @@ import { Transcript, type TranscriptItem } from "./Transcript";
 import { ModelSelect } from "./ModelSelect";
 import { ContextBubble } from "./ContextBubble";
 import { ContextPanel } from "./ContextPanel";
+import { CostBubble } from "./CostBubble";
+import { CostPanel } from "./CostPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
 import { delegationHint, formatElapsed, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
@@ -17,6 +19,11 @@ import {
 
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
 const PASTE_CONFIRM_CHARS = 100_000;
+
+/** Stable empty ledger so the pill renders before the first fetch lands. */
+const emptyLedger: HvLedgerTotal = {
+  calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, metered: 0, plan: 0, unknown: 0,
+};
 
 /** V2.A: chip subtext — which tier of session → workspace → global won. */
 const TIER_LABEL: Record<ModelTier, string> = {
@@ -45,6 +52,10 @@ export function ChatView({
   onSearchOpenChange,
   contextOpen,
   onContextOpenChange,
+  costCalls = [],
+  costTotal = emptyLedger,
+  costOpen,
+  onCostOpenChange,
   planEnabled = false,
   sessionSkills,
   onTogglePlan,
@@ -83,6 +94,11 @@ export function ChatView({
   onSearchOpenChange: (open: boolean) => void;
   contextOpen: boolean;
   onContextOpenChange: (open: boolean) => void;
+  /** Cost ledger for the spend pill + its drill-in. Totalled in main (calls.ts). */
+  costCalls?: HvApiCall[];
+  costTotal?: HvLedgerTotal;
+  costOpen: boolean;
+  onCostOpenChange: (open: boolean) => void;
   /** §23: plan-mode toggle state + setter (composer chip). */
   planEnabled?: boolean;
   /** §14 round 6: skills this session loaded, each flagged if the agent used it. */
@@ -438,6 +454,7 @@ export function ChatView({
         >
           ⌕
         </button>
+        <CostBubble total={costTotal} onOpen={() => onCostOpenChange(true)} />
         <ContextBubble stats={stats} fallbackWindow={fallbackWindow} onOpen={() => onContextOpenChange(true)} />
       </div>
       {/* Crash banner */}
@@ -952,6 +969,9 @@ export function ChatView({
           onClose={() => onContextOpenChange(false)}
           onCompact={onCompact}
         />
+      )}
+      {costOpen && sessionId && (
+        <CostPanel calls={costCalls} total={costTotal} onClose={() => onCostOpenChange(false)} />
       )}
     </div>
   );

@@ -1,7 +1,8 @@
 /**
- * B7 renderer-side pure formatters for the dashboard. No React, no DOM — unit
- * tested in tests/analytics-format.test.ts. Money is always presented as an
- * ESTIMATE by the calling UI (the number itself is formatted here).
+ * B7 renderer-side pure formatters for the dashboard and the cost panel. No
+ * React, no DOM — unit tested in tests/analytics-format.test.ts. Money is always
+ * presented as an ESTIMATE by the calling UI (the number itself is formatted
+ * here).
  */
 
 /** Compact token/count: 1234 → "1.2k", 2_500_000 → "2.5M". */
@@ -30,4 +31,29 @@ export function fmtDuration(ms: number | null): string {
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
   return `${h}h ${m % 60}m`;
+}
+
+/** Pill tone: quiet = nothing measured, calm = a number we stand behind, amber = a gap. */
+export type CostTone = "quiet" | "calm" | "amber";
+
+/**
+ * What the session-cost pill says, and how loudly. Pure so the branch table can
+ * be asserted directly (CostBubble only maps the tone to classes).
+ *
+ * Two rules the branches encode:
+ *  - a PLAN call never contributes money and never raises amber. Pi prices a
+ *    ChatGPT/Copilot subscription at full API rates, so showing those dollars
+ *    invents spend; but "your subscription covers it" is a fact, not a gap.
+ *  - an UNKNOWN call is the only thing worth alarming about: tokens burned at a
+ *    rate we do not have, where $0.00 would read as free.
+ */
+export function costPill(total: HvLedgerTotal): { label: string; tone: CostTone } {
+  if (total.calls === 0) return { label: "—", tone: "quiet" };
+  // Nothing metered, nothing unknown ⇒ the whole session rode a subscription.
+  if (total.metered === 0 && total.unknown === 0) return { label: "plan", tone: "calm" };
+  if (total.metered === 0) return { label: "$?", tone: "amber" };
+  // "+?" when part of the bill is unknown — "$1.50" alone would claim that is
+  // the whole of it. Plan calls add no suffix: nothing is missing, it is paid for.
+  const partial = total.unknown > 0;
+  return { label: fmtCost(total.cost) + (partial ? "+?" : ""), tone: partial ? "amber" : "calm" };
 }
