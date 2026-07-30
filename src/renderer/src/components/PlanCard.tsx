@@ -59,6 +59,32 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
   const isImplementing = card.status === "implementing";
   const isCancelled = card.status === "cancelled";
 
+  // §23 round 7: roll the workspace back to the Implement baseline. Gated behind
+  // a confirm because it writes files; the outcome stays on the card.
+  const [confirmRevert, setConfirmRevert] = useState(false);
+  const [revertNote, setRevertNote] = useState<string | null>(null);
+  const doRevert = (): void => {
+    setConfirmRevert(false);
+    void window.hv.planRevert(card.sessionId).then((res) => {
+      if (!res) {
+        setRevertNote("No baseline was captured for this implementation.");
+        return;
+      }
+      const parts = [`${res.restored.length} restored`, `${res.deleted.length} removed`];
+      if (res.stale.length) parts.push(`${res.stale.length} left alone (changed since)`);
+      setRevertNote(`Reverted — ${parts.join(", ")}.`);
+    });
+  };
+  const revertButton = (
+    <button
+      type="button"
+      onClick={() => setConfirmRevert(true)}
+      className="rounded-lg border-2 border-line bg-card text-xs font-bold px-2.5 py-1 text-ink-soft hover:text-berry hover:border-berry/50 cursor-pointer"
+    >
+      Revert implementation
+    </button>
+  );
+
   return (
     <div className={`rounded-xl border-2 bg-card shadow-sticker overflow-hidden ${isCancelled ? "border-line opacity-70" : "border-sky/50"}`}>
       <div className="w-full flex items-center gap-2.5 px-3.5 py-2.5">
@@ -139,6 +165,7 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
           >
             Stop
           </button>
+          {revertButton}
         </div>
       )}
       {(card.status === "implemented" || isCancelled) && (
@@ -153,6 +180,37 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
           >
             Reopen
           </button>
+          {card.status === "implemented" && revertButton}
+        </div>
+      )}
+      {confirmRevert && (
+        <div className="px-3.5 py-2 border-t-2 border-line/60 bg-paper/40">
+          <div className="text-[11px] font-bold text-ink mb-1">Revert this implementation?</div>
+          <p className="text-[11px] text-ink-soft mb-2">
+            The workspace goes back to how it was when you pressed Implement. Files that changed since the
+            agent touched them are left alone. <strong>The conversation is not affected.</strong>
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmRevert(false)}
+              className="rounded-lg border-2 border-line bg-card text-xs font-bold px-2.5 py-1 hover:bg-paper cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={doRevert}
+              className="rounded-lg border-2 border-berry/50 bg-card text-xs font-bold px-2.5 py-1 text-berry hover:bg-berry/10 cursor-pointer"
+            >
+              Revert
+            </button>
+          </div>
+        </div>
+      )}
+      {revertNote !== null && (
+        <div className="px-3.5 py-2 border-t-2 border-line/60 bg-paper/40 text-[11px] font-semibold text-ink-soft">
+          {revertNote}
         </div>
       )}
     </div>

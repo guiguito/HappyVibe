@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld("hv", {
   planDiscard: (sessionId: string) => ipcRenderer.invoke("hv:plan-discard", sessionId),
   planStatus: (sessionId: string, relPath: string, status: string) =>
     ipcRenderer.invoke("hv:plan-status", sessionId, relPath, status),
+  planRevert: (sessionId: string) => ipcRenderer.invoke("hv:plan-revert", sessionId),
   onPlanChanged: (
     cb: (p: { workspaceId: string; path: string; status: string; done: number; total: number }) => void,
   ): (() => void) => {

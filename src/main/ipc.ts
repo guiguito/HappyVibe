@@ -40,7 +40,7 @@ import { buildMentionBlocks, createDir, createFile, importEntries, listDir, list
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import { readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
-  captureSnapshot, deleteSessionSnapshots, findRestoreTarget,
+  captureSnapshot, deleteSessionSnapshots, findRestoreTarget, listSnapshots,
   previewRestore, restoreSnapshot, stampSnapshot,
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
@@ -1076,6 +1076,15 @@ export function registerIpc(win: BrowserWindow): void {
       const meta = index.get(sessionId);
       if (!meta?.workspaceId) throw new Error("Unknown session");
       const wsId = meta.workspaceId;
+      // §23 round 7: the baseline "Revert implementation" restores to. Labelled,
+      // so the per-session cap never evicts it. Best-effort — a snapshot failure
+      // must never block Implement.
+      try {
+        captureSnapshot(
+          snapshotDir(), sessionId, workspaces.list(), wsId,
+          "pre", new Date().toISOString(), "implement",
+        );
+      } catch { /* never block the handoff */ }
       const client = manager.get(sessionId) as PiClient | null;
       if (model && typeof model.provider === "string" && typeof model.modelId === "string") {
         index.update(sessionId, { model });
@@ -1119,6 +1128,30 @@ export function registerIpc(win: BrowserWindow): void {
     const parsed = await setPlanStatus(workspaces.list(), meta.workspaceId, relPath, status, new Date().toISOString());
     void log.append({ type: "plan.status", sessionId, workspaceId: meta.workspaceId, data: { path: relPath, status, who: "human" } });
     send("hv:plan-changed", { workspaceId: meta.workspaceId, path: relPath, status: parsed.status, done: parsed.done, total: parsed.total });
+  });
+
+  // §23 round 7: roll the workspace back to the Implement baseline. Human-only,
+  // like every other power transition in this block. Files changed since the
+  // agent touched them are left alone by the same stale-check rewind uses.
+  ipcMain.handle("hv:plan-revert", (_e, sessionId: string) => {
+    const meta = index.get(sessionId);
+    if (!meta?.workspaceId) return null;
+    const target = listSnapshots(snapshotDir(), sessionId)
+      .filter((r) => r.label === "implement")
+      .pop();
+    if (!target) return null;
+    const result = restoreSnapshot(
+      snapshotDir(), sessionId, workspaces.list(), meta.workspaceId,
+      target, new Date().toISOString(),
+    );
+    void log.append({
+      type: "plan.revert", sessionId, workspaceId: meta.workspaceId,
+      data: {
+        who: "human", restored: result.restored.length,
+        deleted: result.deleted.length, stale: result.stale,
+      },
+    });
+    return result;
   });
 
   // Payload field must match docs/validation/d1.md — select permission response uses { value: <choice string> }

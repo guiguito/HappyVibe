@@ -291,6 +291,10 @@ interface HvApi {
   planImplement(sessionId: string, relPath: string, model?: { provider: string; modelId: string } | null): Promise<void>;
   planDiscard(sessionId: string): Promise<void>;
   planStatus(sessionId: string, relPath: string, status: string): Promise<void>;
+  /** §23 round 7: roll the workspace back to the Implement baseline. */
+  planRevert(sessionId: string): Promise<{
+    restored: string[]; deleted: string[]; stale: string[]; notCaptured: string[];
+  } | null>;
   onPlanChanged(cb: (p: { workspaceId: string; path: string; status: string; done: number; total: number }) => void): () => void;
   getPathForFile(file: File): string;
 
