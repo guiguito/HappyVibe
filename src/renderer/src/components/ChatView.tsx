@@ -579,7 +579,9 @@ export function ChatView({
                 {rewindPreview === undefined ? (
                   "Checking which files would change…"
                 ) : rewindPreview === null ? (
-                  "No snapshot for this message — no files will change."
+                  rewindScope === "files"
+                    ? "No snapshot for this message, and the conversation is being kept — this would do nothing."
+                    : "No snapshot for this message — no files will change."
                 ) : (
                   <>
                     <div>
@@ -607,6 +609,13 @@ export function ChatView({
               </button>
               <button
                 type="button"
+                // Gated on "would this do nothing", not on "is this a steer":
+                // files-only with no anchor is the one combination whose entire
+                // outcome is a notice saying nothing happened. The other scopes
+                // still truncate the conversation, so they stay live. This also
+                // covers turns whose capture failed, not just steers (a steer
+                // has no snapshot of its own — see hv:prompt-session).
+                disabled={rewindScope === "files" && rewindPreview === null}
                 onClick={() => {
                   const it = pendingRewind;
                   onRewind?.(it, rewindScope);
@@ -617,7 +626,7 @@ export function ChatView({
                   }
                   setPendingRewind(null);
                 }}
-                className="rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker cursor-pointer hover:brightness-105"
+                className="rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker enabled:cursor-pointer enabled:hover:brightness-105 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Rewind
               </button>
