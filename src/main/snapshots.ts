@@ -210,3 +210,123 @@ export function stampSnapshot(root: string, sessionId: string, toolCallId: strin
   newest.toolCallId = toolCallId;
   writeRecords(root, sessionId, records);
 }
+
+export interface RestorePreview { willRestore: string[]; willDelete: string[]; stale: string[] }
+
+export interface RestoreResult {
+  restored: string[];
+  deleted: string[];
+  /** Changed since the agent last touched them — skipped, never overwritten. */
+  stale: string[];
+  /** Over MAX_FILE_BYTES at capture time, so outside the snapshot. */
+  notCaptured: string[];
+}
+
+/**
+ * The earliest snapshot stamped by any of the rewound tool calls. Correct by
+ * construction: a file can only change via a tool call, so a turn with no tool
+ * calls has nothing to restore and the next stamped snapshot still describes
+ * the state at the anchor.
+ */
+export function findRestoreTarget(
+  root: string,
+  sessionId: string,
+  toolCallIds: string[],
+): SnapshotRecord | null {
+  const wanted = new Set(toolCallIds);
+  const hits = listSnapshots(root, sessionId).filter(
+    (r) => r.kind === "pre" && r.toolCallId !== null && wanted.has(r.toolCallId),
+  );
+  return hits.length ? hits.reduce((a, b) => (a.seq <= b.seq ? a : b)) : null;
+}
+
+/** What the agent last left behind — the reference the stale-check compares to. */
+function freshnessManifest(root: string, sessionId: string): Manifest {
+  const records = listSnapshots(root, sessionId);
+  return records.length ? records[records.length - 1].manifest : { files: {}, tooLarge: [] };
+}
+
+function plan(
+  root: string,
+  sessionId: string,
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  target: SnapshotRecord,
+): { restore: string[]; remove: string[]; stale: string[] } {
+  const current = buildManifest(registeredWorkspaces, workspaceId);
+  const expected = freshnessManifest(root, sessionId);
+  const restore: string[] = [];
+  const remove: string[] = [];
+  const stale: string[] = [];
+
+  // Stale = on disk now, known to the freshness reference, and different from
+  // it: something other than the rewound turns changed it.
+  const isStale = (p: string): boolean =>
+    expected.files[p] !== undefined && current.files[p] !== undefined
+      ? expected.files[p] !== current.files[p]
+      : false;
+
+  for (const [p, hash] of Object.entries(target.manifest.files)) {
+    if (current.files[p] === hash) continue; // already at the target state
+    if (isStale(p)) { stale.push(p); continue; }
+    restore.push(p);
+  }
+  for (const p of Object.keys(current.files)) {
+    if (target.manifest.files[p] !== undefined) continue; // still expected to exist
+    if (isStale(p)) { stale.push(p); continue; }
+    remove.push(p);
+  }
+  return { restore: restore.sort(), remove: remove.sort(), stale: stale.sort() };
+}
+
+export function previewRestore(
+  root: string,
+  sessionId: string,
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  target: SnapshotRecord,
+): RestorePreview {
+  const p = plan(root, sessionId, registeredWorkspaces, workspaceId, target);
+  return { willRestore: p.restore, willDelete: p.remove, stale: p.stale };
+}
+
+export function restoreSnapshot(
+  root: string,
+  sessionId: string,
+  registeredWorkspaces: string[],
+  workspaceId: string,
+  target: SnapshotRecord,
+  now: string,
+): RestoreResult {
+  // Internal guard: a botched restore must itself be recoverable. Planned
+  // BEFORE this capture, so the safety record can't become its own reference.
+  const { restore, remove, stale } = plan(root, sessionId, registeredWorkspaces, workspaceId, target);
+  captureSnapshot(root, sessionId, registeredWorkspaces, workspaceId, "post", now, "safety");
+
+  const restored: string[] = [];
+  const deleted: string[] = [];
+
+  for (const rel of restore) {
+    // resolveInWorkspace on every write — the confinement invariant, not a
+    // formality: rel comes from a manifest read off disk.
+    const abs = resolveInWorkspace(registeredWorkspaces, workspaceId, rel);
+    const blob = blobPath(root, sessionId, target.manifest.files[rel]);
+    try {
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.copyFileSync(blob, abs);
+      restored.push(rel);
+    } catch {
+      stale.push(rel); // blob missing or unwritable — report, never pretend
+    }
+  }
+  for (const rel of remove) {
+    const abs = resolveInWorkspace(registeredWorkspaces, workspaceId, rel);
+    try {
+      fs.rmSync(abs);
+      deleted.push(rel);
+    } catch {
+      stale.push(rel);
+    }
+  }
+  return { restored, deleted, stale: stale.sort(), notCaptured: target.manifest.tooLarge };
+}

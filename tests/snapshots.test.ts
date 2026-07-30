@@ -3,9 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  buildManifest, captureSnapshot, diffManifests, listSnapshots, SNAPSHOT_EXCLUDE, stampSnapshot,
+  buildManifest, captureSnapshot, diffManifests, findRestoreTarget, listSnapshots,
+  previewRestore, restoreSnapshot, SNAPSHOT_EXCLUDE, stampSnapshot,
 } from "../src/main/snapshots";
-import type { Manifest } from "../src/main/snapshots";
+import type { Manifest, SnapshotRecord } from "../src/main/snapshots";
 
 let ws: string;
 
@@ -190,5 +191,104 @@ describe("listSnapshots", () => {
     );
     expect(listSnapshots(root, "s1")).toHaveLength(1);
     fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+// ── Task 3: restore ──────────────────────────────────────────────────────────
+
+describe("restore", () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-snaproot-"));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  /** Turn 1 edits a.txt and creates new.txt; snapshots bracket the turn. */
+  const stageOneTurn = (): SnapshotRecord => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "before");
+    const pre = captureSnapshot(root, "s1", [ws], ws, "pre", NOW)!;
+    stampSnapshot(root, "s1", "call-1");
+    fs.writeFileSync(path.join(ws, "a.txt"), "after");
+    fs.writeFileSync(path.join(ws, "new.txt"), "created");
+    captureSnapshot(root, "s1", [ws], ws, "post", NOW);
+    return pre;
+  };
+
+  test("findRestoreTarget picks the earliest snapshot stamped by a rewound call", () => {
+    stageOneTurn();
+    fs.writeFileSync(path.join(ws, "a.txt"), "turn2");
+    captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+    stampSnapshot(root, "s1", "call-2");
+
+    expect(findRestoreTarget(root, "s1", ["call-2", "call-1"])!.seq).toBe(1);
+    expect(findRestoreTarget(root, "s1", ["call-2"])!.seq).toBe(3);
+    expect(findRestoreTarget(root, "s1", ["unknown"])).toBeNull();
+  });
+
+  test("restores a modified file and deletes one the turn created", () => {
+    const target = stageOneTurn();
+
+    const res = restoreSnapshot(root, "s1", [ws], ws, target, NOW);
+
+    expect(fs.readFileSync(path.join(ws, "a.txt"), "utf8")).toBe("before");
+    expect(fs.existsSync(path.join(ws, "new.txt"))).toBe(false);
+    expect(res.restored).toEqual(["a.txt"]);
+    expect(res.deleted).toEqual(["new.txt"]);
+    expect(res.stale).toEqual([]);
+  });
+
+  test("skips and names a file changed since the agent touched it", () => {
+    const target = stageOneTurn();
+    fs.writeFileSync(path.join(ws, "a.txt"), "hand edit"); // user or parallel session
+
+    const res = restoreSnapshot(root, "s1", [ws], ws, target, NOW);
+
+    expect(fs.readFileSync(path.join(ws, "a.txt"), "utf8")).toBe("hand edit");
+    expect(res.restored).toEqual([]);
+    expect(res.stale).toEqual(["a.txt"]);
+  });
+
+  test("never deletes an excluded path", () => {
+    const target = stageOneTurn();
+    fs.mkdirSync(path.join(ws, "dist"));
+    fs.writeFileSync(path.join(ws, "dist", "bundle.js"), "built");
+
+    restoreSnapshot(root, "s1", [ws], ws, target, NOW);
+
+    expect(fs.existsSync(path.join(ws, "dist", "bundle.js"))).toBe(true);
+  });
+
+  test("takes a safety snapshot before restoring, so the restore itself is recoverable", () => {
+    const target = stageOneTurn();
+    const before = listSnapshots(root, "s1").length;
+
+    restoreSnapshot(root, "s1", [ws], ws, target, NOW);
+
+    const after = listSnapshots(root, "s1");
+    expect(after.length).toBe(before + 1);
+    expect(after[after.length - 1].label).toBe("safety");
+  });
+
+  test("previewRestore reports the same sets without touching disk", () => {
+    const target = stageOneTurn();
+
+    const p = previewRestore(root, "s1", [ws], ws, target);
+
+    expect(p.willRestore).toEqual(["a.txt"]);
+    expect(p.willDelete).toEqual(["new.txt"]);
+    expect(fs.readFileSync(path.join(ws, "a.txt"), "utf8")).toBe("after");
+  });
+
+  test("reports oversized files as not captured", () => {
+    fs.writeFileSync(path.join(ws, "big.bin"), Buffer.alloc(1_000_001, 1));
+    fs.writeFileSync(path.join(ws, "a.txt"), "before");
+    const pre = captureSnapshot(root, "s1", [ws], ws, "pre", NOW)!;
+    stampSnapshot(root, "s1", "call-1");
+    fs.writeFileSync(path.join(ws, "a.txt"), "after");
+    captureSnapshot(root, "s1", [ws], ws, "post", NOW);
+
+    expect(restoreSnapshot(root, "s1", [ws], ws, pre, NOW).notCaptured).toEqual(["big.bin"]);
   });
 });
