@@ -1119,9 +1119,16 @@ export function registerIpc(win: BrowserWindow): void {
       const problem = validateEndpoint(endpoint, listCustomEndpoints().map((x) => x.id));
       if (problem) throw new Error(problem);
       saveCustomEndpoint(endpoint, key);
-      // NOT swallowed: config.json is already written, so a failure here would
-      // leave Settings showing an endpoint that Pi has no provider entry for.
-      await syncModelsJson(agentDir(), listCustomEndpoints());
+      // NOT swallowed, and rolled back: config.json is already written, so a
+      // models.json failure (EACCES/ENOSPC) would otherwise leave Settings
+      // showing an endpoint — with its key injected on every spawn — that Pi
+      // has no provider entry for.
+      try {
+        await syncModelsJson(agentDir(), listCustomEndpoints());
+      } catch (err) {
+        removeCustomEndpoint(endpoint.id);
+        throw err;
+      }
       await restartUtility();
       providersChanged();
     },

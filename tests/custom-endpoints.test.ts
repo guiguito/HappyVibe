@@ -15,6 +15,35 @@ const vllm: CustomEndpoint = {
   models: [{ id: "qwen2.5-coder-32b", contextWindow: 32768 }],
 };
 
+describe("PRESET_COMPAT.other — an UNKNOWN endpoint must not be treated as real OpenAI", () => {
+  /**
+   * Live failure (2026-07-30): an NVIDIA Cloud endpoint
+   * (https://integrate.api.nvidia.com/v1) saved with preset "other" returned
+   * "400 status code (no body)" on every turn.
+   *
+   * Pi's detectCompat (pi-ai/dist/providers/openai-completions.js:861) matches an
+   * ALLOWLIST of known hosts; anything unrecognised is assumed to be genuine
+   * OpenAI, so it sends `store`, the `developer` role, `reasoning_effort` and
+   * `max_completion_tokens`. An empty compat opts into all of it.
+   */
+  test("disables the OpenAI-only request fields", () => {
+    expect(PRESET_COMPAT.other).toEqual({
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+      maxTokensField: "max_tokens",
+    });
+  });
+
+  test("every preset pins the two flags Pi's own non-OpenAI providers override", () => {
+    // models.generated.js sets supportsDeveloperRole:false on every non-OpenAI
+    // provider it ships — a preset that leaves it unset inherits `true`.
+    for (const [name, compat] of Object.entries(PRESET_COMPAT)) {
+      expect(compat.supportsDeveloperRole, `${name} must pin supportsDeveloperRole`).toBe(false);
+    }
+  });
+});
+
 describe("providerKeyFor — custom keys are namespaced away from Pi's built-ins", () => {
   test("prefixes with hv-", () => {
     expect(providerKeyFor("my-vllm")).toBe("hv-my-vllm");
@@ -186,6 +215,25 @@ describe("syncModelsJson", () => {
     const out = JSON.parse(fs.readFileSync(path.join(dir, "models.json"), "utf8"));
     expect(out.providers["hv-my-vllm"].baseUrl).toBe("http://gpu.lan:8000/v1");
     expect(out.hvManaged).toContain("hv-my-vllm");
+  });
+
+  test("writes atomically and leaves no temp file behind", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-models-atomic-"));
+    await syncModelsJson(dir, [vllm]);
+    // A crash mid-write must not be able to leave a truncated models.json that
+    // mergeModelsJson would then rebuild from {}, discarding hand-written entries.
+    expect(fs.readdirSync(dir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+    expect(fs.readdirSync(dir)).toEqual(["models.json"]);
+  });
+
+  test("concurrent syncs keep the file valid and preserve foreign providers", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-models-conc-"));
+    const file = path.join(dir, "models.json");
+    fs.writeFileSync(file, JSON.stringify({ providers: { handwritten: { baseUrl: "http://mine/v1" } } }));
+    const other: CustomEndpoint = { ...vllm, id: "second", providerKey: providerKeyFor("second") };
+    await Promise.all([syncModelsJson(dir, [vllm]), syncModelsJson(dir, [vllm, other])]);
+    const out = JSON.parse(fs.readFileSync(file, "utf8")); // must parse
+    expect(out.providers.handwritten).toEqual({ baseUrl: "http://mine/v1" });
   });
 });
 

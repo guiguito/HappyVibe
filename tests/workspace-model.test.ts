@@ -26,16 +26,28 @@ beforeEach(() => {
 
 const GLOBAL = { provider: "deepseek", modelId: "deepseek-v4-flash" };
 
-/** Mirror of ipc.ts spawnOpts' model expression (session → workspace → global). */
+/**
+ * Mirror of ipc.ts `resolveSpawnModel` (session → workspace → global), including
+ * the §16 known-provider filter: a tier pinned to a provider that no longer
+ * exists (a deleted custom endpoint) is SKIPPED rather than spawned with.
+ * `known` empty means "unknown, keep everything" — same guard as the renderer's
+ * dropUnknownProvider.
+ */
 const resolveSpawnModel = (
   index: SessionIndex,
   workspaces: WorkspaceRegistry,
   workspace?: string,
-  sessionId?: string
-): { provider: string; modelId: string } | null =>
-  (sessionId ? index.get(sessionId)?.model : null) ??
-  (workspace ? workspaces.getModel(workspace) : null) ??
-  GLOBAL;
+  sessionId?: string,
+  known: string[] = []
+): { provider: string; modelId: string } | null => {
+  const live = (m: { provider: string; modelId: string } | null | undefined) =>
+    m && (known.length === 0 || known.includes(m.provider)) ? m : null;
+  return (
+    live(sessionId ? index.get(sessionId)?.model : null) ??
+    live(workspace ? workspaces.getModel(workspace) : null) ??
+    live(GLOBAL)
+  );
+};
 
 /** Mirror of WorkspaceSettingsModal pickModel's "<provider>/<modelId>" split. */
 const modalPick = (value: string): { provider: string; modelId: string } => ({
@@ -82,6 +94,26 @@ test("session override beats the workspace override; clearing falls back", () =>
   index.update(meta.id, { model: undefined });
   workspaces.setModel(ws, null);
   expect(resolveSpawnModel(index, workspaces, ws, meta.id)).toEqual(GLOBAL);
+});
+
+test("a tier pinned to a removed custom endpoint is skipped, not spawned with", () => {
+  const workspaces = new WorkspaceRegistry(path.join(dir, "workspaces.json"));
+  const index = new SessionIndex(path.join(dir, "session-index.json"));
+  const ws = "/tmp/ws-removed";
+  workspaces.add(ws);
+  const meta = index.create(ws);
+  // Session was pinned to a custom endpoint that has since been deleted.
+  index.update(meta.id, { model: { provider: "hv-my-vllm", modelId: "qwen" } });
+  const known = ["deepseek", "ollama"]; // hv-my-vllm is gone
+
+  expect(resolveSpawnModel(index, workspaces, ws, meta.id, known)).toEqual(GLOBAL);
+
+  // And when EVERY tier is dead the resolution is null; resolvePiSpawn then
+  // applies its load-bearing default (see tests/model-flags.test.ts — omitting
+  // the flags hangs the spawn, so finding 7 needs a UI signal, not this).
+  workspaces.setModel(ws, { provider: "hv-gone", modelId: "x" });
+  expect(resolveSpawnModel(index, workspaces, ws, meta.id, ["hv-other"])).toBeNull();
+  expect(resolvePiSpawn(ws, "/sess", "/rt", { model: null }).args).toContain("--provider");
 });
 
 test("trailing-slash path variants can no longer make setModel/getModel miss", () => {

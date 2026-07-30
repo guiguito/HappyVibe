@@ -45,14 +45,32 @@ export function providerKeyFor(id: string): string {
   return `hv-${id}`;
 }
 
-/** Per-preset compat flags (models.md §OpenAI Compatibility). A wrong flag
- *  fails at request time, not at save time — hence presets, not free text. */
+/**
+ * Per-preset compat flags (models.md §OpenAI Compatibility). A wrong flag fails
+ * at REQUEST time, not at save time — hence presets, not free text.
+ *
+ * Every preset must pin `supportsDeveloperRole: false`. Pi's `detectCompat`
+ * (pi-ai/dist/providers/openai-completions.js:861) matches an ALLOWLIST of hosts
+ * it knows are non-standard; anything unrecognised is assumed to be genuine
+ * OpenAI and gets `store`, the `developer` role, `reasoning_effort` and
+ * `max_completion_tokens`. Pi's own bundled non-OpenAI providers all override
+ * these (models.generated.js), and so must we — an empty compat is not a
+ * neutral default, it is "pretend this is api.openai.com".
+ */
 export const PRESET_COMPAT: Record<EndpointPreset, Record<string, unknown>> = {
   ollama: { supportsDeveloperRole: false, supportsReasoningEffort: false },
   vllm: { supportsDeveloperRole: false, maxTokensField: "max_tokens" },
   lmstudio: { supportsDeveloperRole: false, supportsUsageInStreaming: false },
   llamacpp: { supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: "max_tokens" },
-  other: {},
+  // "I don't know what this server is" → the most widely accepted request shape.
+  // An NVIDIA Cloud endpoint saved as "other" returned 400 on every turn until
+  // these were pinned (2026-07-30).
+  other: {
+    supportsStore: false,
+    supportsDeveloperRole: false,
+    supportsReasoningEffort: false,
+    maxTokensField: "max_tokens",
+  },
 };
 
 /** Providers HappyVibe wrote before `hvManaged` existed. */

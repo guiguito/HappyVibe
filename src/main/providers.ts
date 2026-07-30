@@ -121,7 +121,18 @@ export async function syncModelsJson(
   const next = mergeModelsJson(existing, endpoints);
   if (next !== existing) {
     fs.mkdirSync(agentDir, { recursive: true });
-    fs.writeFileSync(file, next);
+    // Atomic: write a sibling then rename. A crash during a plain writeFileSync
+    // leaves a TRUNCATED models.json, and mergeModelsJson rebuilds an unparseable
+    // file from {} — which would silently discard the user's hand-written
+    // providers on the next spawn. rename(2) is atomic within a filesystem, so a
+    // reader sees either the old file or the new one, never a partial one.
+    //
+    // No lock is needed around the read-modify-write above: every writer is in
+    // the main process and there is no await between the read and the write, so
+    // two concurrent spawns cannot interleave inside it.
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, next);
+    fs.renameSync(tmp, file);
   }
   return detected;
 }
