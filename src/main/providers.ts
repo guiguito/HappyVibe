@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { mergeModelsJson, type CustomEndpoint } from "./modelsJson";
 
 /**
  * Curated provider list (PRD B3 — locked). Env var names verified against
@@ -76,30 +77,26 @@ export async function detectOllama(baseUrl = OLLAMA_BASE_URL): Promise<{ running
  * Merge an "ollama" provider entry into a models.json payload (Pi 0.80.3
  * docs/models.md schema). Empty model list removes the entry. Other providers
  * in the file are preserved.
+ *
+ * Ollama is now just one preset on the shared custom-endpoint path (PRD §16,
+ * 2026-07-30) — the emitted JSON is unchanged.
  */
 export function mergeOllamaModelsJson(existingRaw: string | null, models: string[]): string {
-  let parsed: { providers?: Record<string, unknown> } = {};
-  try {
-    parsed = JSON.parse(existingRaw ?? "{}");
-  } catch {
-    /* corrupt file in our app-owned dir — rebuild it */
-  }
-  const providers = { ...(parsed.providers ?? {}) };
-  if (models.length === 0) {
-    delete providers.ollama;
-  } else {
-    providers.ollama = {
-      name: "Ollama",
-      baseUrl: `${OLLAMA_BASE_URL}/v1`,
-      api: "openai-completions",
-      // Placeholder — Ollama ignores it, but Pi requires auth before models
-      // appear in get_available_models (docs/models.md).
-      apiKey: "ollama",
-      compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
-      models: models.map((id) => ({ id })),
-    };
-  }
-  return JSON.stringify({ ...parsed, providers }, null, 2);
+  return mergeModelsJson(existingRaw, models.length === 0 ? [] : [ollamaEndpoint(models)]);
+}
+
+/** The Ollama entry as a CustomEndpoint. */
+function ollamaEndpoint(models: string[]): CustomEndpoint {
+  return {
+    id: "ollama",
+    label: "Ollama",
+    baseUrl: `${OLLAMA_BASE_URL}/v1`,
+    preset: "ollama",
+    // Placeholder — Ollama ignores it, but Pi requires auth before models
+    // appear in get_available_models (docs/models.md).
+    auth: { kind: "placeholder", value: "ollama" },
+    models: models.map((id) => ({ id })), // contextWindow unknown for local models
+  };
 }
 
 /** Detect Ollama and sync agentDir/models.json before a Pi spawn. */
