@@ -7,12 +7,17 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 ## Commands
 - `npm install && (cd pi-runtime && npm ci)` — BOTH installs required (pi-runtime is a separate vendored tree; fresh worktrees fail live tests without it)
 - `npm run dev` · `npm test` · `npm run build`
-- Typecheck: `npx tsc --noEmit -p tsconfig.node.json` and `-p tsconfig.web.json`
+- `npm run typecheck` (node + web; passes `--composite false` — don't hand-roll the raw `tsc` calls)
 - Full gate = both typechecks + non-live suite + live files batched + build
 
 ## Tests
 - Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated):
-  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-md-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge,plan-bridge}.test.ts
+  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge,plan-bridge}.test.ts
+  Source of truth = `grep -rl "skipIf(!KEY" tests/` — re-derive, don't trust the list above.
+  (`skills-contract`/`builtins-contract` also spawn Pi but with a dummy key — key-free, they stay in the non-live run.)
+- Non-live suite = everything else, excluding exactly those files:
+  `npx vitest run --exclude '**/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge,plan-bridge}.test.ts'`
+  (plain `npm test` is NOT this — with a real key in `.env` it runs the live files inside the parallel suite, which is the flaky combination.)
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
 - Contract tests are the Pi upgrade gate: any pi/pi-subagents pin bump must pass them.
@@ -82,6 +87,15 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   session_start — SURVIVES respawn, unlike dangerous mode. `.agents` is in files.ts DOTFILE_ALLOW so
   plans show in the tree + the watcher pushes hv:plan-changed for live n/m checklist progress. Implement/
   exit/reopen are human-only IPC (no plan_off tool) — the security invariant.
+- Skills (§14, `src/main/skills/` + `hv-skills.ts` + bridge): trust gate = spawn with `--no-skills`
+  (kills Pi's own discovery) + `--skill <dir>` per approved skill (additive — the ONE Pi behavior the
+  whole model rests on; pinned by `tests/skills-contract.test.ts`, part of the pin-bump gate, see
+  docs/validation/sk1.md). Main resolves approved ∩ enabled ∩ active-for-workspace and writes the
+  per-session manifest to `HV_SKILLS_FILE`; the bridge only REFLECTS it (never re-derives trust) to
+  serve `use_skill`, detect raw SKILL.md reads (fallback path), and report context weight. Bundled
+  starter skills are pre-approved but `enabled:false`; a bundle hash bump re-approves while KEEPING
+  the user's on/off. Scopes: `<agentDir>/skills` (managed) + `<runtimeDir>/skills` (bundled) + linked
+  dirs (global), `<workspace>/.agents/skills` (workspace).
 
 ## Docs workflow
 Locked product decisions go to BOTH the Notion PRD and docs/prd.md in the same session,
