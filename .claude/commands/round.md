@@ -22,10 +22,10 @@ Rewrite the source doc cleanly with my answers folded in — same doc, edited in
 read as a coherent spec, not a transcript of our exchange.
 
 ### 4. Fold into the PRD — BOTH sides, same session
-`docs/prd.md` **and** the Notion PRD (parent:
-`https://app.notion.com/p/Happyibe-391d33dfffca803aaa94e460d3836321`). Use the existing
-"Decision (…)" convention and fold each decision **in place, where the topic already lives**,
-so it reads as if it was always there.
+`docs/prd.md` is the in-repo source of truth — always update it. Then mirror the same decisions
+to the maintainer's Notion PRD if you have access (ask me for the page, or take it from memory;
+the id is deliberately not committed here). Use the existing "Decision (…)" convention and fold
+each decision **in place, where the topic already lives**, so it reads as if it was always there.
 
 NEVER rewrite a user-authored document wholesale. Edit the sections that change and leave the
 rest byte-identical. (This rule exists because a past session swept the PRD and it had to be

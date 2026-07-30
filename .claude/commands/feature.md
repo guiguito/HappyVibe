@@ -69,8 +69,9 @@ when the screenshot shows it.
 - One commit on the branch, existing convention (`type(scope): imperative summary`, see
   `git log`). **Do not push.**
 - Does this change user-visible behaviour? Then fold a `Decision (…)` line into `docs/prd.md`
-  **and** the Notion PRD in this same session, in place, where the topic already lives — never
-  rewrite either document wholesale. Internal-only change? Say so and skip it.
+  in this same session — in place, where the topic already lives, never a wholesale rewrite.
+  Mirror it to the maintainer's Notion PRD if you have access (page id not committed here).
+  Internal-only change? Say so and skip it.
 - Final report: what changed, what was verified **with what output**, and what was **not**
   verified (skipped live tests, no UI pass, untested edge case). Then end with:
   "Run `/land` when you're happy."
