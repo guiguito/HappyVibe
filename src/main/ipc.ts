@@ -10,7 +10,7 @@ import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getOnboardingSeen,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setLinkedSkillDirs, writeSubagentConfig,
-  resolveBypass, rulesFile, sessionDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setOnboardingSeen,
+  resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass,
 } from "./config";
 import {
@@ -39,6 +39,7 @@ import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, wri
 import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import { readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
+import { captureSnapshot, deleteSessionSnapshots, stampSnapshot } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
@@ -451,6 +452,25 @@ export function registerIpc(win: BrowserWindow): void {
     const meta = index.get(sessionId);
     client.on("event", (e: Record<string, unknown>) => {
       activity.event(sessionId, e); // W1.3: busy/subagent state + last-activity
+      // §9 rewind: stamp the pending "pre" snapshot with the turn's FIRST
+      // toolCallId (the only id durable across a reload), and record what the
+      // agent left behind at agent_end — that record is the stale-check's
+      // reference. Best-effort: snapshotting must never disturb the stream.
+      const snapWsId = index.get(sessionId)?.workspaceId;
+      if (snapWsId) {
+        try {
+          if (e.type === "tool_execution_start" && typeof e.toolCallId === "string") {
+            stampSnapshot(snapshotDir(), sessionId, e.toolCallId);
+          } else if (e.type === "agent_end") {
+            captureSnapshot(
+              snapshotDir(), sessionId, workspaces.list(), snapWsId,
+              "post", new Date().toISOString(),
+            );
+          }
+        } catch {
+          /* never disturb the event stream */
+        }
+      }
       send("hv:pi-event", { ...e, sessionId });
       if (e.type === "agent_end") {
         maybeTitle(sessionId);
@@ -841,6 +861,7 @@ export function registerIpc(win: BrowserWindow): void {
     if (manager.get(sessionId)) await endSession(sessionId);
     index.remove(sessionId);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
+    deleteSessionSnapshots(snapshotDir(), sessionId); // §9: snapshots die with the session
     void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId });
     sessionsChanged();
   });
@@ -895,6 +916,22 @@ export function registerIpc(win: BrowserWindow): void {
       const { blocks, warnings: w } = buildMentionBlocks(workspaces.list(), meta.workspaceId, mentions);
       if (blocks) outgoing = `${msg}\n\n${blocks}`;
       warnings = w;
+    }
+    // §9 rewind: the snapshot a rewind to THIS message restores to. Steers join
+    // an in-flight turn, so they reuse that turn's snapshot (restores more,
+    // never less). A capture failure must never block the prompt.
+    if (behavior !== "steer" && meta?.workspaceId) {
+      try {
+        captureSnapshot(
+          snapshotDir(), sessionId, workspaces.list(), meta.workspaceId,
+          "pre", new Date().toISOString(),
+        );
+      } catch (e) {
+        void log.append({
+          type: "rewind.capture_failed", sessionId, workspaceId: meta.workspaceId,
+          data: { error: e instanceof Error ? e.message : String(e) },
+        });
+      }
     }
     await client.send(promptCommand(outgoing, behavior, images));
     return { warnings };
