@@ -352,3 +352,43 @@ describe("retention", () => {
     expect(() => deleteSessionSnapshots(root, "../escape")).toThrow("Invalid session id");
   });
 });
+
+// ── Regression: found by the GUI pass, 2026-07-30 ────────────────────────────
+// Dedup used to swallow the "pre" capture when the workspace was unchanged at
+// prompt time. That left the turn with no record to stamp, so findRestoreTarget
+// reported "no snapshot" for a turn that went on to change files — the exact
+// dishonesty this feature exists to prevent.
+
+describe("every prompted turn gets a restore anchor", () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-snaproot-"));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test("a pre capture is recorded even when nothing changed since the last record", () => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "hello");
+    captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+    stampSnapshot(root, "s1", "call-1");
+    captureSnapshot(root, "s1", [ws], ws, "post", NOW); // read-only turn: deduped
+
+    // Next turn starts with the workspace untouched — it still needs an anchor.
+    expect(captureSnapshot(root, "s1", [ws], ws, "pre", NOW)).not.toBeNull();
+    stampSnapshot(root, "s1", "call-2");
+
+    const target = findRestoreTarget(root, "s1", ["call-2"]);
+    expect(target).not.toBeNull();
+    expect(target!.manifest.files["a.txt"]).toBeDefined();
+  });
+
+  test("post captures still dedupe, so read-only turns stay free", () => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "hello");
+    captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+    const before = listSnapshots(root, "s1").length;
+
+    expect(captureSnapshot(root, "s1", [ws], ws, "post", NOW)).toBeNull();
+    expect(listSnapshots(root, "s1")).toHaveLength(before);
+  });
+});

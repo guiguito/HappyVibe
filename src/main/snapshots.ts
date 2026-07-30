@@ -172,9 +172,16 @@ export function captureSnapshot(
   const records = listSnapshots(root, sessionId);
   const newest = records[records.length - 1];
 
-  // Nothing changed since the last record — a read-only turn costs no storage.
+  // A "post" capture that changed nothing costs no storage — read-only turns
+  // stay free. A "pre" capture is NEVER deduped, even when the manifest is
+  // identical: it is the turn's restore anchor, and without a record to stamp
+  // the turn becomes unrewindable. Dedup here made findRestoreTarget report
+  // "no snapshot" for turns that went on to change files (found in the GUI
+  // pass, 2026-07-30). Blobs still dedupe, so the cost is one manifest.
   // A labelled record is always kept: it has to stay addressable.
-  if (label === undefined && newest && sameManifest(newest.manifest, manifest)) return null;
+  if (kind === "post" && label === undefined && newest && sameManifest(newest.manifest, manifest)) {
+    return null;
+  }
 
   const wsRoot = resolveInWorkspace(registeredWorkspaces, workspaceId, "");
   fs.mkdirSync(path.join(sessionDirFor(root, sessionId), "blobs"), { recursive: true });
