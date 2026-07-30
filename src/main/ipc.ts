@@ -8,7 +8,7 @@ import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getOnboardingSeen,
-  getWorkspaceBypass, installBuiltinAgents, providerEnv, providerKeyStatus, removeProviderKey, setLinkedSkillDirs, writeSubagentConfig,
+  getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeProviderKey, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass,
 } from "./config";
@@ -20,7 +20,7 @@ import {
 } from "./skills";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDERS, detectOllama, isByokProvider, syncOllamaModels,
+  authJsonProviders, BYOK_PROVIDERS, detectOllama, isByokProvider, syncModelsJson,
   type ByokProvider,
 } from "./providers";
 import { deleteSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
@@ -268,7 +268,7 @@ export function registerIpc(win: BrowserWindow): void {
     utility = null;
     // Sync Ollama models into the app-owned agent dir so local models are
     // selectable with zero config.
-    await syncOllamaModels(agentDir()).catch(() => {});
+    await syncModelsJson(agentDir(), listCustomEndpoints()).catch(() => {});
     const c = new PiClient(resolvePiSpawn(os.homedir(), sessionDir(), piRuntimeDir(), spawnOpts()));
     c.on("ui-request", (r: { id: string; message?: string }) => {
       uiOwners.set(r.id, UTILITY);
@@ -588,7 +588,7 @@ export function registerIpc(win: BrowserWindow): void {
           : `Workspace folder no longer exists: ${meta.workspaceId}`,
       );
     }
-    await syncOllamaModels(agentDir()).catch(() => {});
+    await syncModelsJson(agentDir(), listCustomEndpoints()).catch(() => {});
     const client = (await manager.start(
       meta.id,
       meta.workspaceId,

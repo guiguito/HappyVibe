@@ -1,4 +1,8 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, test } from "vitest";
+import { syncModelsJson } from "../src/main/providers";
 import {
   customEndpointEnv, envVarFor, escapePiValue, endpointEntry, mergeModelsJson, PRESET_COMPAT,
   type CustomEndpoint,
@@ -83,6 +87,16 @@ describe("mergeModelsJson", () => {
   test("a corrupt file is rebuilt, not thrown on", () => {
     const out = JSON.parse(mergeModelsJson("{not json", [vllm]));
     expect(out.providers["my-vllm"]).toBeDefined();
+  });
+});
+
+describe("syncModelsJson", () => {
+  test("writes custom endpoints alongside whatever Ollama reports", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-models-"));
+    await syncModelsJson(dir, [vllm]); // Ollama absent here → detect returns no models
+    const out = JSON.parse(fs.readFileSync(path.join(dir, "models.json"), "utf8"));
+    expect(out.providers["my-vllm"].baseUrl).toBe("http://gpu.lan:8000/v1");
+    expect(out.hvManaged).toContain("my-vllm");
   });
 });
 

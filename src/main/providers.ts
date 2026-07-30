@@ -99,17 +99,33 @@ function ollamaEndpoint(models: string[]): CustomEndpoint {
   };
 }
 
-/** Detect Ollama and sync agentDir/models.json before a Pi spawn. */
-export async function syncOllamaModels(agentDir: string): Promise<{ running: boolean; models: string[] }> {
+/**
+ * Detect Ollama, then write the whole HappyVibe-managed slice of models.json
+ * (Ollama + every custom endpoint) before a Pi spawn. Pi reads models.json at
+ * startup only, so this must run before each spawn.
+ */
+export async function syncModelsJson(
+  agentDir: string,
+  custom: CustomEndpoint[],
+): Promise<{ running: boolean; models: string[] }> {
   const detected = await detectOllama();
+  const endpoints: CustomEndpoint[] = [
+    ...(detected.models.length ? [ollamaEndpoint(detected.models)] : []),
+    ...custom,
+  ];
   const file = path.join(agentDir, "models.json");
   const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
-  const next = mergeOllamaModelsJson(existing, detected.models);
+  const next = mergeModelsJson(existing, endpoints);
   if (next !== existing) {
     fs.mkdirSync(agentDir, { recursive: true });
     fs.writeFileSync(file, next);
   }
   return detected;
+}
+
+/** Back-compat wrapper: Ollama only, no custom endpoints. */
+export async function syncOllamaModels(agentDir: string): Promise<{ running: boolean; models: string[] }> {
+  return syncModelsJson(agentDir, []);
 }
 
 /** Providers present in Pi's auth.json (app-owned agent dir). Names only. */
