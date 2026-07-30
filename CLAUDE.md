@@ -46,6 +46,12 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 
 ## Gotchas
 - One-shot pi CLI calls hang unless stdin is closed (`stdio: ["ignore", …]`). RPC mode unaffected.
+- `src/main` changes need a dev-server RESTART. A renderer reload (⌘R, `electron-debug reload`)
+  re-runs the renderer only — it does NOT rebuild main, and preload is bundled at window creation
+  so it doesn't reload either. Before claiming a main-side fix is live, check the BUILT artifact
+  (`grep '<your change>' out/main/index.js`), not the source. Verifying the source is not
+  verifying the app — this cost hours during §9 rewind: a committed, unit-tested fix looked
+  broken in the GUI because main was still running a four-hour-old bundle.
 - macOS Dock icons: Electron-as-node children spawned from the main Electron binary each get a
   generic "exec" Dock icon (LaunchServices registers any .app-bundled binary as Foreground, even
   with ELECTRON_RUN_AS_NODE). All Pi child spawns must use `nodeExecPath()` (spawn.ts) — routes

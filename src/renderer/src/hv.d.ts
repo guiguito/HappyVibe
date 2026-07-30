@@ -291,6 +291,10 @@ interface HvApi {
   planImplement(sessionId: string, relPath: string, model?: { provider: string; modelId: string } | null): Promise<void>;
   planDiscard(sessionId: string): Promise<void>;
   planStatus(sessionId: string, relPath: string, status: string): Promise<void>;
+  /** §23 round 7: roll the workspace back to the Implement baseline. */
+  planRevert(sessionId: string): Promise<{
+    restored: string[]; deleted: string[]; stale: string[]; notCaptured: string[];
+  } | null>;
   onPlanChanged(cb: (p: { workspaceId: string; path: string; status: string; done: number; total: number }) => void): () => void;
   getPathForFile(file: File): string;
 
@@ -360,6 +364,13 @@ interface HvApi {
   contextRemove(sessionId: string, keys: string[]): Promise<void>;
   contextRestore(sessionId: string, keys: string[]): Promise<void>;
   compactSession(sessionId: string): Promise<void>;
+  // §9 rewind file rollback
+  rewindPreview(sessionId: string, toolCallIds: string[]): Promise<{
+    willRestore: string[]; willDelete: string[]; stale: string[];
+  } | null>;
+  rewindRestore(sessionId: string, toolCallIds: string[]): Promise<{
+    restored: string[]; deleted: string[]; stale: string[]; notCaptured: string[];
+  } | null>;
   // B6: agents & tools
   listAgents(sessionId?: string): Promise<void>;
   listTools(sessionId?: string): Promise<void>;

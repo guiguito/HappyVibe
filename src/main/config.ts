@@ -233,6 +233,13 @@ export function sessionDir(): string {
   return d;
 }
 
+/** §9 rewind file rollback — content-addressed snapshot store, one dir per session. */
+export function snapshotDir(): string {
+  const d = path.join(app.getPath("userData"), "snapshots");
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
+
 /**
  * App-owned Pi agent dir (PI_CODING_AGENT_DIR on spawn). HappyVibe is a
  * curated distribution: its auth.json / models.json live here, never in the

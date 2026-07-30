@@ -10,7 +10,7 @@ import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getOnboardingSeen,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setLinkedSkillDirs, writeSubagentConfig,
-  resolveBypass, rulesFile, sessionDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setOnboardingSeen,
+  resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass,
 } from "./config";
 import {
@@ -39,6 +39,10 @@ import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, wri
 import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import { readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
+import {
+  captureSnapshot, deleteSessionSnapshots, findRestoreTarget, listSnapshots,
+  previewRestore, restoreSnapshot, stampSnapshot,
+} from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { restoreItems, type RestoreItem } from "./restore";
 import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
@@ -451,6 +455,25 @@ export function registerIpc(win: BrowserWindow): void {
     const meta = index.get(sessionId);
     client.on("event", (e: Record<string, unknown>) => {
       activity.event(sessionId, e); // W1.3: busy/subagent state + last-activity
+      // §9 rewind: stamp the pending "pre" snapshot with the turn's FIRST
+      // toolCallId (the only id durable across a reload), and record what the
+      // agent left behind at agent_end — that record is the stale-check's
+      // reference. Best-effort: snapshotting must never disturb the stream.
+      const snapWsId = index.get(sessionId)?.workspaceId;
+      if (snapWsId) {
+        try {
+          if (e.type === "tool_execution_start" && typeof e.toolCallId === "string") {
+            stampSnapshot(snapshotDir(), sessionId, e.toolCallId);
+          } else if (e.type === "agent_end") {
+            captureSnapshot(
+              snapshotDir(), sessionId, workspaces.list(), snapWsId,
+              "post", new Date().toISOString(),
+            );
+          }
+        } catch {
+          /* never disturb the event stream */
+        }
+      }
       send("hv:pi-event", { ...e, sessionId });
       if (e.type === "agent_end") {
         maybeTitle(sessionId);
@@ -841,6 +864,7 @@ export function registerIpc(win: BrowserWindow): void {
     if (manager.get(sessionId)) await endSession(sessionId);
     index.remove(sessionId);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
+    deleteSessionSnapshots(snapshotDir(), sessionId); // §9: snapshots die with the session
     void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId });
     sessionsChanged();
   });
@@ -896,6 +920,22 @@ export function registerIpc(win: BrowserWindow): void {
       if (blocks) outgoing = `${msg}\n\n${blocks}`;
       warnings = w;
     }
+    // §9 rewind: the snapshot a rewind to THIS message restores to. Steers join
+    // an in-flight turn, so they reuse that turn's snapshot (restores more,
+    // never less). A capture failure must never block the prompt.
+    if (behavior !== "steer" && meta?.workspaceId) {
+      try {
+        captureSnapshot(
+          snapshotDir(), sessionId, workspaces.list(), meta.workspaceId,
+          "pre", new Date().toISOString(),
+        );
+      } catch (e) {
+        void log.append({
+          type: "rewind.capture_failed", sessionId, workspaceId: meta.workspaceId,
+          data: { error: e instanceof Error ? e.message : String(e) },
+        });
+      }
+    }
     await client.send(promptCommand(outgoing, behavior, images));
     return { warnings };
   });
@@ -919,6 +959,47 @@ export function registerIpc(win: BrowserWindow): void {
     const plans = planProvidersFor(providerKeyStatus());
     const calls = meta ? parseCalls(readSessionFile(sessionDir(), meta.piSessionFile), plans) : [];
     return { calls, total: ledgerTotal(calls) };
+  });
+
+  // §9 rewind file rollback. HUMAN-ONLY by construction: these are IPC handlers
+  // with no tool, no bridge command and no model-reachable path — the same
+  // invariant as the plan-mode power transitions.
+  const rewindTarget = (sessionId: string, toolCallIds: string[]) => {
+    const meta = index.get(sessionId);
+    if (!meta?.workspaceId) return null;
+    const target = findRestoreTarget(snapshotDir(), sessionId, toolCallIds);
+    return target ? { workspaceId: meta.workspaceId, target } : null;
+  };
+
+  ipcMain.handle("hv:rewind-preview", (_e, sessionId: string, toolCallIds: string[]) => {
+    const hit = rewindTarget(sessionId, toolCallIds);
+    if (!hit) return null;
+    return previewRestore(
+      snapshotDir(), sessionId, workspaces.list(), hit.workspaceId, hit.target,
+    );
+  });
+
+  ipcMain.handle("hv:rewind-restore", (_e, sessionId: string, toolCallIds: string[]) => {
+    const hit = rewindTarget(sessionId, toolCallIds);
+    if (!hit) return null;
+    const result = restoreSnapshot(
+      snapshotDir(), sessionId, workspaces.list(), hit.workspaceId,
+      hit.target, new Date().toISOString(),
+    );
+    void log.append({
+      type: "rewind.restore",
+      sessionId,
+      workspaceId: hit.workspaceId,
+      data: {
+        who: "human",
+        seq: hit.target.seq,
+        restored: result.restored.length,
+        deleted: result.deleted.length,
+        stale: result.stale,
+        notCaptured: result.notCaptured,
+      },
+    });
+    return result;
   });
 
   // getStats(sessionId?) — the optional sessionId is the additive B1 extension.
@@ -995,6 +1076,15 @@ export function registerIpc(win: BrowserWindow): void {
       const meta = index.get(sessionId);
       if (!meta?.workspaceId) throw new Error("Unknown session");
       const wsId = meta.workspaceId;
+      // §23 round 7: the baseline "Revert implementation" restores to. Labelled,
+      // so the per-session cap never evicts it. Best-effort — a snapshot failure
+      // must never block Implement.
+      try {
+        captureSnapshot(
+          snapshotDir(), sessionId, workspaces.list(), wsId,
+          "pre", new Date().toISOString(), "implement",
+        );
+      } catch { /* never block the handoff */ }
       const client = manager.get(sessionId) as PiClient | null;
       if (model && typeof model.provider === "string" && typeof model.modelId === "string") {
         index.update(sessionId, { model });
@@ -1038,6 +1128,30 @@ export function registerIpc(win: BrowserWindow): void {
     const parsed = await setPlanStatus(workspaces.list(), meta.workspaceId, relPath, status, new Date().toISOString());
     void log.append({ type: "plan.status", sessionId, workspaceId: meta.workspaceId, data: { path: relPath, status, who: "human" } });
     send("hv:plan-changed", { workspaceId: meta.workspaceId, path: relPath, status: parsed.status, done: parsed.done, total: parsed.total });
+  });
+
+  // §23 round 7: roll the workspace back to the Implement baseline. Human-only,
+  // like every other power transition in this block. Files changed since the
+  // agent touched them are left alone by the same stale-check rewind uses.
+  ipcMain.handle("hv:plan-revert", (_e, sessionId: string) => {
+    const meta = index.get(sessionId);
+    if (!meta?.workspaceId) return null;
+    const target = listSnapshots(snapshotDir(), sessionId)
+      .filter((r) => r.label === "implement")
+      .pop();
+    if (!target) return null;
+    const result = restoreSnapshot(
+      snapshotDir(), sessionId, workspaces.list(), meta.workspaceId,
+      target, new Date().toISOString(),
+    );
+    void log.append({
+      type: "plan.revert", sessionId, workspaceId: meta.workspaceId,
+      data: {
+        who: "human", restored: result.restored.length,
+        deleted: result.deleted.length, stale: result.stale,
+      },
+    });
+    return result;
   });
 
   // Payload field must match docs/validation/d1.md — select permission response uses { value: <choice string> }

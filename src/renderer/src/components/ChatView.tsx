@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
+import { tailToolCallIds, type RewindScope } from "../rewind";
 import { ModelSelect } from "./ModelSelect";
 import { ContextBubble } from "./ContextBubble";
 import { ContextPanel } from "./ContextPanel";
@@ -116,7 +117,7 @@ export function ChatView({
   /** v5: navigate to the MCP page (from the composer "+" menu). */
   onOpenMcp?: () => void;
   /** Round 3 #11: truncate the conversation at a user message (App-side). */
-  onRewind?: (it: TranscriptItem) => void;
+  onRewind?: (it: TranscriptItem, scope: RewindScope) => void;
 }): React.JSX.Element {
   const [input, setInput] = useState("");
   // Composer row aligns centered on one line; when the textarea wraps to multiple
@@ -219,6 +220,25 @@ export function ChatView({
   const [pendingRewind, setPendingRewind] = useState<TranscriptItem | null>(null); // #11 confirm
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
   const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
+  // §9 round 7: rewind scope + the affected-file preview behind it. `undefined`
+  // = still loading, `null` = no snapshot for this message.
+  const [rewindScope, setRewindScope] = useState<RewindScope>("conversation");
+  const [rewindPreview, setRewindPreview] = useState<
+    { willRestore: string[]; willDelete: string[]; stale: string[] } | null | undefined
+  >(undefined);
+  useEffect(() => {
+    if (pendingRewind === null || sessionId === null) {
+      setRewindPreview(undefined);
+      setRewindScope("conversation"); // every open starts at the safe default
+      return;
+    }
+    const idx = items.findIndex((x) => x.id === pendingRewind.id);
+    if (idx < 0) {
+      setRewindPreview(null);
+      return;
+    }
+    void window.hv.rewindPreview(sessionId, tailToolCallIds(items, idx)).then(setRewindPreview);
+  }, [pendingRewind, sessionId, items]);
   // ── W2.1: model chip + attach menu state ─────────────────────────
   const [models, setModels] = useState<HvModel[] | null>(null);
   const [workspaceModel, setWorkspaceModel] = useState<ModelRef | null>(null);
@@ -526,11 +546,57 @@ export function ChatView({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
           <div className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">Rewind to this message?</div>
-            <p className="text-sm text-ink-soft mb-4">
-              Every message after this point will be removed from the conversation and the agent's context, and this
-              message will move back into the composer so you can edit and resend it. <strong>Files on disk are not
-              rolled back.</strong>
+            <p className="text-sm text-ink-soft mb-3">
+              Everything after this point is removed from the conversation and the agent's context, and this
+              message moves back into the composer so you can edit and resend it.
             </p>
+            <div className="flex flex-col gap-1.5 mb-3">
+              {([
+                ["conversation", "Conversation only", "Files on disk are left exactly as they are."],
+                ["both", "Conversation and files", "Also roll the workspace back to before this message."],
+                ["files", "Files only", "Roll the workspace back, keep the conversation."],
+              ] as const).map(([value, label, hint]) => (
+                <label
+                  key={value}
+                  className="flex gap-2 items-start cursor-pointer rounded-xl border-2 border-line p-2 hover:bg-paper-deep"
+                >
+                  <input
+                    type="radio"
+                    name="rewind-scope"
+                    className="mt-1"
+                    checked={rewindScope === value}
+                    onChange={() => setRewindScope(value)}
+                  />
+                  <span>
+                    <span className="block text-sm font-bold text-ink">{label}</span>
+                    <span className="block text-xs text-ink-soft">{hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {rewindScope !== "conversation" && (
+              <div className="text-xs text-ink-soft mb-4 rounded-xl bg-paper-deep p-2">
+                {rewindPreview === undefined ? (
+                  "Checking which files would change…"
+                ) : rewindPreview === null ? (
+                  "No snapshot for this message — no files will change."
+                ) : (
+                  <>
+                    <div>
+                      <strong>{rewindPreview.willRestore.length}</strong> restored,{" "}
+                      <strong>{rewindPreview.willDelete.length}</strong> removed.
+                    </div>
+                    {rewindPreview.stale.length > 0 && (
+                      <div className="mt-1">
+                        {rewindPreview.stale.length} changed since and will be left alone:{" "}
+                        {rewindPreview.stale.slice(0, 3).join(", ")}
+                        {rewindPreview.stale.length > 3 ? "…" : ""}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -543,8 +609,12 @@ export function ChatView({
                 type="button"
                 onClick={() => {
                   const it = pendingRewind;
-                  onRewind?.(it);
-                  setInput("text" in it && typeof it.text === "string" ? it.text : "");
+                  onRewind?.(it, rewindScope);
+                  // "Files only" leaves the conversation alone, so the composer
+                  // must not be repopulated with a message that is still there.
+                  if (rewindScope !== "files") {
+                    setInput("text" in it && typeof it.text === "string" ? it.text : "");
+                  }
                   setPendingRewind(null);
                 }}
                 className="rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker cursor-pointer hover:brightness-105"
