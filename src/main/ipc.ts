@@ -7,10 +7,10 @@ import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getOnboardingSeen,
+  agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedSkillDirs, getLongCache, getOnboardingSeen,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setLinkedSkillDirs, writeSubagentConfig,
-  resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setOnboardingSeen,
+  resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass,
 } from "./config";
 import {
@@ -251,6 +251,8 @@ export function registerIpc(win: BrowserWindow): void {
       // §13 round 6: global on/off for built-in custom tools, re-applied on
       // every (re)spawn — mirrors bypass, but global-only (no workspace tier).
       builtinTools: getBuiltinTools(),
+      // Prompt-cache retention: global, spawn-time (PI_CACHE_RETENTION).
+      longCache: getLongCache(),
       skills: entries.map((e) => e.skill.id),
       skillsFile: sessionId ? writeSkillsManifest(sessionId, entries) : undefined,
     };
@@ -1361,6 +1363,12 @@ export function registerIpc(win: BrowserWindow): void {
     setBuiltinTools(t);
     scheduleRuntimeReload("skills", "global", null);
   });
+  // Extended prompt-cache retention. Deliberately NO live reload: the only gain
+  // is a longer cache TTL on later turns, which is not worth respawning live
+  // sessions for (a respawn resets their grants + dangerous mode). Next spawn.
+  ipcMain.handle("hv:get-long-cache", () => getLongCache());
+  ipcMain.handle("hv:set-long-cache", (_e, on: boolean) => setLongCache(!!on));
+
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.
   ipcMain.handle("hv:builtin-prompt", (_e, name: string) => {

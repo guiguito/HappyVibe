@@ -215,6 +215,37 @@ type SettingsPage = "main" | "audit" | "dashboard";
 
 /** Round 3 #14: global "Bypass ALL permissions" toggle. Enabling requires a
     scary confirm; while active every session shows a red banner. */
+/** Prompt-cache retention. Off by default and worded as a trade-off, not a win:
+    on Anthropic a 1h cache write costs 2× input (vs 1.25×), so it only pays off
+    when turns are minutes apart. Applied at the next spawn — no respawn, since
+    that would reset live sessions' grants for a TTL change. */
+function LongCacheToggle(): React.JSX.Element {
+  const [on, setOn] = useState(false);
+  useEffect(() => { void window.hv.getLongCache().then(setOn); }, []);
+  return (
+    <div className="mt-4 rounded-xl border-2 border-line bg-card p-4 flex items-start justify-between gap-4">
+      <div>
+        <div className="font-bold">Extended prompt cache</div>
+        <p className="text-sm text-ink-soft mt-0.5">
+          Keeps the cached conversation prefix alive for 1 hour on Anthropic (24h on OpenAI) instead of the 5-minute
+          default, so a session you come back to later still gets cache-priced prompt tokens. Anthropic bills a
+          long-lived cache write at 2× the input rate, so this wins when your turns are minutes apart and loses when
+          you type continuously. Other providers ignore it. Takes effect for new sessions.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => { const next = !on; setOn(next); void window.hv.setLongCache(next); }}
+        className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm cursor-pointer ${
+          on ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"
+        }`}
+      >
+        {on ? "On" : "Off"}
+      </button>
+    </div>
+  );
+}
+
 function GlobalBypassToggle(): React.JSX.Element {
   const [on, setOn] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -815,6 +846,7 @@ export function SettingsView({
                 Used for new sessions unless a workspace or session overrides it. Only models from configured
                 providers show up.
               </p>
+              <LongCacheToggle />
             </>
           )}
         </Section>

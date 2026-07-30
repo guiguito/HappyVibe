@@ -29,6 +29,10 @@ interface ConfigFile {
   /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user).
       Global only — no per-workspace tier. Absent key = on (fail-open default). */
   builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string };
+  /** Extended prompt-cache retention (PI_CACHE_RETENTION=long). Global only,
+      absent = off — the default is cheaper for short-gap sessions, see
+      getLongCache. */
+  longCache?: boolean;
 }
 
 function load(): ConfigFile {
@@ -202,6 +206,25 @@ export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend
 export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string }): void {
   const cfg = load();
   cfg.builtinTools = { ...cfg.builtinTools, ...t };
+  save(cfg);
+}
+
+/**
+ * Extended prompt-cache retention. OFF by default because it is not a free win
+ * on Anthropic: a 1h cache write is billed at 2× the input rate instead of
+ * 1.25×, so it only pays off when the gap between turns regularly exceeds the
+ * 5min default TTL. On OpenAI the same flag sets `prompt_cache_retention:"24h"`,
+ * which carries no write premium. Applied at spawn (PI_CACHE_RETENTION), so it
+ * reaches live sessions only when they next respawn.
+ */
+export function getLongCache(): boolean {
+  return load().longCache ?? false;
+}
+
+export function setLongCache(on: boolean): void {
+  const cfg = load();
+  if (on) cfg.longCache = true;
+  else delete cfg.longCache;
   save(cfg);
 }
 
