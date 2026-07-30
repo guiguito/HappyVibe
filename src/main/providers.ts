@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { mergeModelsJson, type CustomEndpoint } from "./modelsJson";
+import { mergeModelsJson, parseOpenAiModelList, type CustomEndpoint } from "./modelsJson";
 
 /**
  * Curated provider list (PRD B3 — locked). Env var names verified against
@@ -126,6 +126,26 @@ export async function syncModelsJson(
 /** Back-compat wrapper: Ollama only, no custom endpoints. */
 export async function syncOllamaModels(agentDir: string): Promise<{ running: boolean; models: string[] }> {
   return syncModelsJson(agentDir, []);
+}
+
+/**
+ * Probe an OpenAI-compatible endpoint for its model list. Never throws — the
+ * UI shows the error string instead, so a typo'd URL is a message, not a crash.
+ */
+export async function fetchEndpointModels(
+  baseUrl: string,
+  key?: string,
+): Promise<{ ok: boolean; models: string[]; error?: string }> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, {
+      headers: key ? { Authorization: `Bearer ${key}` } : {},
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return { ok: false, models: [], error: `HTTP ${res.status}` };
+    return { ok: true, models: parseOpenAiModelList(await res.json()) };
+  } catch (e) {
+    return { ok: false, models: [], error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /** Providers present in Pi's auth.json (app-owned agent dir). Names only. */

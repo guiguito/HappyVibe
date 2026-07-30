@@ -85,6 +85,15 @@ export function mergeModelsJson(existingRaw: string | null, endpoints: CustomEnd
   return JSON.stringify({ ...parsed, providers, hvManaged: endpoints.map((e) => e.id) }, null, 2);
 }
 
+/** Model ids from an OpenAI-compatible `GET /v1/models` body. */
+export function parseOpenAiModelList(json: unknown): string[] {
+  const data = (json as { data?: unknown })?.data;
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((m) => (m as { id?: unknown })?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
 /** Env vars for every env-auth endpoint that has a stored key. */
 export function customEndpointEnv(
   endpoints: CustomEndpoint[],

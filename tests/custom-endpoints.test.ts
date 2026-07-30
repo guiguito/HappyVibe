@@ -4,7 +4,8 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { syncModelsJson } from "../src/main/providers";
 import {
-  customEndpointEnv, envVarFor, escapePiValue, endpointEntry, mergeModelsJson, PRESET_COMPAT,
+  customEndpointEnv, envVarFor, escapePiValue, endpointEntry, mergeModelsJson,
+  parseOpenAiModelList, PRESET_COMPAT,
   type CustomEndpoint,
 } from "../src/main/modelsJson";
 
@@ -87,6 +88,18 @@ describe("mergeModelsJson", () => {
   test("a corrupt file is rebuilt, not thrown on", () => {
     const out = JSON.parse(mergeModelsJson("{not json", [vllm]));
     expect(out.providers["my-vllm"]).toBeDefined();
+  });
+});
+
+describe("parseOpenAiModelList", () => {
+  test("reads the OpenAI /v1/models shape", () => {
+    expect(parseOpenAiModelList({ data: [{ id: "gpt-4o" }, { id: "llama-3.1-70b" }] }))
+      .toEqual(["gpt-4o", "llama-3.1-70b"]);
+  });
+  test("ignores entries without a string id and tolerates junk", () => {
+    expect(parseOpenAiModelList({ data: [{ id: 1 }, {}, { id: "ok" }] })).toEqual(["ok"]);
+    expect(parseOpenAiModelList(null)).toEqual([]);
+    expect(parseOpenAiModelList({ data: "nope" })).toEqual([]);
   });
 });
 
