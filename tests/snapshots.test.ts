@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  buildManifest, captureSnapshot, diffManifests, findRestoreTarget, listSnapshots,
+  buildManifest, captureSnapshot, deleteSessionSnapshots, diffManifests, findRestoreTarget,
+  listSnapshots, MAX_SNAPSHOTS_PER_SESSION,
   previewRestore, restoreSnapshot, SNAPSHOT_EXCLUDE, stampSnapshot,
 } from "../src/main/snapshots";
 import type { Manifest, SnapshotRecord } from "../src/main/snapshots";
@@ -290,5 +291,64 @@ describe("restore", () => {
     captureSnapshot(root, "s1", [ws], ws, "post", NOW);
 
     expect(restoreSnapshot(root, "s1", [ws], ws, pre, NOW).notCaptured).toEqual(["big.bin"]);
+  });
+});
+
+// ── Task 4: retention ────────────────────────────────────────────────────────
+
+describe("retention", () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-snaproot-"));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test("caps a session and garbage-collects unreferenced blobs", () => {
+    for (let i = 0; i < MAX_SNAPSHOTS_PER_SESSION + 5; i++) {
+      fs.writeFileSync(path.join(ws, "a.txt"), `v${i}`);
+      captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+    }
+    const records = listSnapshots(root, "s1");
+    expect(records).toHaveLength(MAX_SNAPSHOTS_PER_SESSION);
+    expect(records[records.length - 1].seq).toBe(MAX_SNAPSHOTS_PER_SESSION + 5);
+    const live = new Set(records.flatMap((r) => Object.values(r.manifest.files)));
+    for (const blob of fs.readdirSync(path.join(root, "s1", "blobs"))) {
+      expect(live.has(blob)).toBe(true);
+    }
+  });
+
+  test("keeps an implement baseline past the cap", () => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "baseline");
+    captureSnapshot(root, "s1", [ws], ws, "pre", NOW, "implement");
+    for (let i = 0; i < MAX_SNAPSHOTS_PER_SESSION + 5; i++) {
+      fs.writeFileSync(path.join(ws, "a.txt"), `v${i}`);
+      captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+    }
+    expect(listSnapshots(root, "s1").some((r) => r.label === "implement")).toBe(true);
+  });
+
+  test("prunes safety records like any other — they must not defeat the cap", () => {
+    for (let i = 0; i < MAX_SNAPSHOTS_PER_SESSION + 5; i++) {
+      fs.writeFileSync(path.join(ws, "a.txt"), `v${i}`);
+      captureSnapshot(root, "s1", [ws], ws, "post", NOW, "safety");
+    }
+    expect(listSnapshots(root, "s1")).toHaveLength(MAX_SNAPSHOTS_PER_SESSION);
+  });
+
+  test("deleteSessionSnapshots removes the whole session directory", () => {
+    fs.writeFileSync(path.join(ws, "a.txt"), "hello");
+    captureSnapshot(root, "s1", [ws], ws, "pre", NOW);
+
+    deleteSessionSnapshots(root, "s1");
+
+    expect(fs.existsSync(path.join(root, "s1"))).toBe(false);
+    expect(listSnapshots(root, "s1")).toEqual([]);
+  });
+
+  test("deleteSessionSnapshots is safe for an unknown session and rejects traversal", () => {
+    expect(() => deleteSessionSnapshots(root, "nope")).not.toThrow();
+    expect(() => deleteSessionSnapshots(root, "../escape")).toThrow("Invalid session id");
   });
 });

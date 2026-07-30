@@ -131,6 +131,7 @@ const blobPath = (root: string, sessionId: string, hash: string): string =>
 
 /** Torn last line is skipped, never thrown — same contract as log.ts / calls.ts. */
 export function listSnapshots(root: string, sessionId: string): SnapshotRecord[] {
+  assertSessionId(sessionId);
   let raw: string;
   try {
     raw = fs.readFileSync(recordsFile(root, sessionId), "utf8");
@@ -166,6 +167,7 @@ export function captureSnapshot(
   now: string,
   label?: string,
 ): SnapshotRecord | null {
+  assertSessionId(sessionId);
   const manifest = buildManifest(registeredWorkspaces, workspaceId);
   const records = listSnapshots(root, sessionId);
   const newest = records[records.length - 1];
@@ -195,6 +197,7 @@ export function captureSnapshot(
     manifest,
   };
   fs.appendFileSync(recordsFile(root, sessionId), JSON.stringify(rec) + "\n");
+  pruneSnapshots(root, sessionId);
   return rec;
 }
 
@@ -204,6 +207,7 @@ export function captureSnapshot(
  * "the state before the turn containing this call".
  */
 export function stampSnapshot(root: string, sessionId: string, toolCallId: string): void {
+  assertSessionId(sessionId);
   const records = listSnapshots(root, sessionId);
   const newest = records[records.length - 1];
   if (!newest || newest.kind !== "pre" || newest.toolCallId !== null) return;
@@ -329,4 +333,52 @@ export function restoreSnapshot(
     }
   }
   return { restored, deleted, stale: stale.sort(), notCaptured: target.manifest.tooLarge };
+}
+
+/**
+ * ponytail: a flat per-session cap, not a global size budget. Snapshots are
+ * deleted with their session, so the ceiling is cap × sessions; a global LRU is
+ * the upgrade path if that ever bites.
+ */
+export const MAX_SNAPSHOTS_PER_SESSION = 50;
+
+/** Session ids come from the renderer — never let one address a parent dir. */
+function assertSessionId(sessionId: string): void {
+  if (!/^[A-Za-z0-9._-]+$/.test(sessionId) || sessionId === "." || sessionId === "..") {
+    throw new Error("Invalid session id");
+  }
+}
+
+export function pruneSnapshots(root: string, sessionId: string): void {
+  assertSessionId(sessionId);
+  const records = listSnapshots(root, sessionId);
+  // Only an "implement" baseline is exempt — it must stay addressable for the
+  // life of the session. "safety" records are ordinary: exempting them would
+  // let every restore add a permanent record and defeat the cap entirely.
+  const prunable = records.filter((r) => r.label !== "implement");
+  const excess = prunable.length - MAX_SNAPSHOTS_PER_SESSION;
+  if (excess <= 0) return;
+
+  const drop = new Set(prunable.slice(0, excess).map((r) => r.seq));
+  const kept = records.filter((r) => !drop.has(r.seq));
+  writeRecords(root, sessionId, kept);
+
+  const live = new Set(kept.flatMap((r) => Object.values(r.manifest.files)));
+  const blobsDir = path.join(sessionDirFor(root, sessionId), "blobs");
+  let blobs: string[];
+  try {
+    blobs = fs.readdirSync(blobsDir);
+  } catch {
+    return;
+  }
+  for (const b of blobs) {
+    if (!live.has(b)) {
+      try { fs.rmSync(path.join(blobsDir, b)); } catch { /* already gone */ }
+    }
+  }
+}
+
+export function deleteSessionSnapshots(root: string, sessionId: string): void {
+  assertSessionId(sessionId);
+  fs.rmSync(sessionDirFor(root, sessionId), { recursive: true, force: true });
 }
