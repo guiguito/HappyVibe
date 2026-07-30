@@ -1,0 +1,87 @@
+import { describe, expect, test } from "vitest";
+import {
+  envVarFor, escapePiValue, endpointEntry, mergeModelsJson, PRESET_COMPAT,
+  type CustomEndpoint,
+} from "../src/main/modelsJson";
+
+const vllm: CustomEndpoint = {
+  id: "my-vllm", label: "My vLLM", baseUrl: "http://gpu.lan:8000/v1",
+  preset: "vllm", auth: { kind: "env" },
+  models: [{ id: "qwen2.5-coder-32b", contextWindow: 32768 }],
+};
+
+describe("escapePiValue — Pi executes '!' values and interpolates '$'", () => {
+  test("a leading ! is neutralised with the $! escape", () => {
+    expect(escapePiValue("!rm -rf ~")).toBe("$!rm -rf ~");
+  });
+  test("every $ is doubled so no env interpolation happens", () => {
+    expect(escapePiValue("sk-a$B")).toBe("sk-a$$B");
+  });
+  test("both at once", () => {
+    expect(escapePiValue("!a$b")).toBe("$!a$$b");
+  });
+  test("an ordinary key is untouched", () => {
+    expect(escapePiValue("sk-abc123")).toBe("sk-abc123");
+  });
+});
+
+describe("envVarFor", () => {
+  test("slug becomes an upper-snake env var stem", () => {
+    expect(envVarFor("my-vllm")).toBe("HV_CUSTOM_MY_VLLM_KEY");
+    expect(envVarFor("lm.studio 1")).toBe("HV_CUSTOM_LM_STUDIO_1_KEY");
+  });
+});
+
+describe("endpointEntry", () => {
+  test("env-auth endpoints reference the env var, never the secret", () => {
+    const e = endpointEntry(vllm);
+    expect(e.apiKey).toBe("$HV_CUSTOM_MY_VLLM_KEY");
+    expect(e.api).toBe("openai-completions");
+    expect(e.baseUrl).toBe("http://gpu.lan:8000/v1");
+    expect(e.compat).toEqual(PRESET_COMPAT.vllm);
+    expect(e.models).toEqual([{ id: "qwen2.5-coder-32b", contextWindow: 32768 }]);
+  });
+
+  test("placeholder auth is escaped, not interpolated", () => {
+    const e = endpointEntry({ ...vllm, auth: { kind: "placeholder", value: "!oops" } });
+    expect(e.apiKey).toBe("$!oops");
+  });
+
+  test("contextWindow is omitted when unset (Ollama's shape must not change)", () => {
+    const e = endpointEntry({ ...vllm, models: [{ id: "m" }] });
+    expect(e.models).toEqual([{ id: "m" }]);
+  });
+});
+
+describe("mergeModelsJson", () => {
+  test("writes one provider entry per endpoint and records what it manages", () => {
+    const out = JSON.parse(mergeModelsJson(null, [vllm]));
+    expect(Object.keys(out.providers)).toEqual(["my-vllm"]);
+    expect(out.hvManaged).toEqual(["my-vllm"]);
+  });
+
+  test("preserves foreign providers it did not write", () => {
+    const existing = JSON.stringify({ providers: { handwritten: { baseUrl: "http://x/v1" } } });
+    const out = JSON.parse(mergeModelsJson(existing, [vllm]));
+    expect(out.providers.handwritten).toEqual({ baseUrl: "http://x/v1" });
+    expect(out.providers["my-vllm"]).toBeDefined();
+  });
+
+  test("removes endpoints it previously managed but no longer has", () => {
+    const first = mergeModelsJson(null, [vllm]);
+    const out = JSON.parse(mergeModelsJson(first, []));
+    expect(out.providers["my-vllm"]).toBeUndefined();
+    expect(out.hvManaged).toEqual([]);
+  });
+
+  test("migrates a legacy pre-hvManaged ollama entry instead of orphaning it", () => {
+    const legacy = JSON.stringify({ providers: { ollama: { baseUrl: "http://localhost:11434/v1" } } });
+    const out = JSON.parse(mergeModelsJson(legacy, []));
+    expect(out.providers.ollama).toBeUndefined();
+  });
+
+  test("a corrupt file is rebuilt, not thrown on", () => {
+    const out = JSON.parse(mergeModelsJson("{not json", [vllm]));
+    expect(out.providers["my-vllm"]).toBeDefined();
+  });
+});

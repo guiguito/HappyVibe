@@ -12,10 +12,12 @@ describe("curated provider env map (verified against pi-ai env-api-keys.js)", ()
     expect(BYOK_PROVIDERS.openrouter.envVar).toBe("OPENROUTER_API_KEY");
   });
 
-  test("curated list only — no custom endpoints in V1", () => {
+  test("curated BYOK list stays curated — custom endpoints are a separate axis", () => {
     expect(Object.keys(BYOK_PROVIDERS).sort()).toEqual(
       ["anthropic", "deepseek", "google", "openai", "openrouter"],
     );
+    // A custom endpoint id is NOT a BYOK provider (PRD §16, 2026-07-30).
+    expect(isByokProvider("my-vllm")).toBe(false);
     expect(isByokProvider("mistral")).toBe(false);
   });
 });
