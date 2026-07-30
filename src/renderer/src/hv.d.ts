@@ -32,6 +32,8 @@ interface HvByokProvider {
  *  CustomEndpoint in src/main/modelsJson.ts. */
 interface HvCustomEndpoint {
   id: string;
+  /** models.json provider key — `hv-<id>`, namespaced away from Pi's built-ins. */
+  providerKey: string;
   label: string;
   baseUrl: string;
   preset: "ollama" | "vllm" | "lmstudio" | "llamacpp" | "other";
@@ -278,7 +280,12 @@ interface HvApi {
   onSessionReloading(cb: (info: { sessionId: string; reason: string }) => void): () => void;
   // B3: providers & onboarding
   respondInput(id: string, value: string | null): void;
-  getProviders(): Promise<{ byok: HvByokProvider[]; defaultModel: { provider: string; modelId: string } | null }>;
+  getProviders(): Promise<{
+    byok: HvByokProvider[];
+    defaultModel: { provider: string; modelId: string } | null;
+    /** §16: the provider set BOTH main and the renderer filter model refs with. */
+    knownProviders: string[];
+  }>;
   setProviderKey(provider: string, key: string): Promise<void>;
   removeProviderKey(provider: string): Promise<void>;
   authLogin(provider: string): Promise<void>;
@@ -288,7 +295,11 @@ interface HvApi {
   detectOllama(): Promise<{ running: boolean; models: string[] }>;
   /** §16 (2026-07-30): user-defined OpenAI-compatible endpoints. */
   getCustomEndpoints(): Promise<{ endpoints: HvCustomEndpoint[]; keyStatus: Record<string, boolean> }>;
-  saveCustomEndpoint(endpoint: HvCustomEndpoint, key?: string): Promise<void>;
+  /** Main derives providerKey and auth — the renderer only sends the draft. */
+  saveCustomEndpoint(
+    draft: Pick<HvCustomEndpoint, "id" | "label" | "baseUrl" | "preset" | "models">,
+    key?: string,
+  ): Promise<void>;
   removeCustomEndpoint(id: string): Promise<void>;
   fetchEndpointModels(baseUrl: string, key?: string): Promise<{ ok: boolean; models: string[]; error?: string }>;
   listModels(): Promise<HvModel[]>;

@@ -697,8 +697,14 @@ export function SettingsView({
                             {id in picked && (
                               <input
                                 type="number"
+                                min={1}
                                 value={picked[id]}
-                                onChange={(ev) => setPicked((p) => ({ ...p, [id]: Number(ev.target.value) }))}
+                                // Number("") is 0, and Pi DELETES a provider whose
+                                // model has contextWindow <= 0 — so an emptied
+                                // field falls back to Pi's own default instead.
+                                onChange={(ev) =>
+                                  setPicked((p) => ({ ...p, [id]: Number(ev.target.value) || 128000 }))
+                                }
                                 className="w-24 rounded-lg border-2 border-line bg-card px-2 py-1 text-xs"
                               />
                             )}
@@ -709,12 +715,13 @@ export function SettingsView({
                           disabled={Object.keys(picked).length === 0 || draft.label.trim() === ""}
                           className={`${smallBtn} bg-tangerine text-paper border-tangerine-deep enabled:hover:brightness-105 disabled:opacity-40 self-start mt-1`}
                           onClick={() => {
-                            const endpoint: HvCustomEndpoint = {
+                            // Main derives providerKey (hv-<id>) and auth, and
+                            // validates — see hv:save-custom-endpoint.
+                            const endpoint = {
                               id: draft.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
                               label: draft.label.trim(),
                               baseUrl: draft.baseUrl.trim(),
                               preset: draft.preset,
-                              auth: { kind: "env" },
                               models: Object.entries(picked).map(([id, contextWindow]) => ({ id, contextWindow })),
                             };
                             setSaveError(null);

@@ -89,6 +89,9 @@ export function mergeOllamaModelsJson(existingRaw: string | null, models: string
 function ollamaEndpoint(models: string[]): CustomEndpoint {
   return {
     id: "ollama",
+    // Historical key — Ollama predates the hv- namespace and users' sessions
+    // are already pinned to provider "ollama".
+    providerKey: "ollama",
     label: "Ollama",
     baseUrl: `${OLLAMA_BASE_URL}/v1`,
     preset: "ollama",

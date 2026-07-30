@@ -5,15 +5,64 @@ import { describe, expect, test } from "vitest";
 import { syncModelsJson } from "../src/main/providers";
 import {
   customEndpointEnv, envVarFor, escapePiValue, endpointEntry, isValidEndpointId, mergeModelsJson,
-  parseOpenAiModelList, PRESET_COMPAT,
+  parseOpenAiModelList, PRESET_COMPAT, providerKeyFor, validateEndpoint,
   type CustomEndpoint,
 } from "../src/main/modelsJson";
 
 const vllm: CustomEndpoint = {
-  id: "my-vllm", label: "My vLLM", baseUrl: "http://gpu.lan:8000/v1",
+  id: "my-vllm", providerKey: "hv-my-vllm", label: "My vLLM", baseUrl: "http://gpu.lan:8000/v1",
   preset: "vllm", auth: { kind: "env" },
   models: [{ id: "qwen2.5-coder-32b", contextWindow: 32768 }],
 };
+
+describe("providerKeyFor — custom keys are namespaced away from Pi's built-ins", () => {
+  test("prefixes with hv-", () => {
+    expect(providerKeyFor("my-vllm")).toBe("hv-my-vllm");
+  });
+
+  test("an endpoint labelled after a Pi built-in cannot hijack it", () => {
+    // Unprefixed, id "groq" would rewrite every built-in Groq model's baseUrl
+    // and apiKey via models.json provider overrides.
+    for (const builtin of ["groq", "together", "mistral", "github-copilot", "openai", "ollama"]) {
+      expect(providerKeyFor(builtin)).not.toBe(builtin);
+    }
+  });
+
+  test("a hand-written provider of the same name is left alone on write AND on remove", () => {
+    const existing = JSON.stringify({ providers: { together: { baseUrl: "http://mine/v1" } } });
+    const hijacker: CustomEndpoint = { ...vllm, id: "together", providerKey: providerKeyFor("together") };
+    const saved = mergeModelsJson(existing, [hijacker]);
+    expect(JSON.parse(saved).providers.together).toEqual({ baseUrl: "http://mine/v1" });
+    // ...and removing ours must not take theirs with it
+    const removed = JSON.parse(mergeModelsJson(saved, []));
+    expect(removed.providers.together).toEqual({ baseUrl: "http://mine/v1" });
+    expect(removed.providers["hv-together"]).toBeUndefined();
+  });
+});
+
+describe("validateEndpoint", () => {
+  test("accepts a well-formed endpoint", () => {
+    expect(validateEndpoint(vllm, [])).toBeNull();
+  });
+
+  test("rejects a duplicate id — it would inherit the existing endpoint's key", () => {
+    expect(validateEndpoint(vllm, ["my-vllm"])).toMatch(/already exists/);
+  });
+
+  test("rejects contextWindow 0 — Pi deletes the whole provider, not just the model", () => {
+    // Reachable from the UI: clear the number field, then Save. Number("") === 0.
+    const zero: CustomEndpoint = { ...vllm, models: [{ id: "m", contextWindow: 0 }] };
+    expect(validateEndpoint(zero, [])).toMatch(/at least 1/);
+    const nan: CustomEndpoint = { ...vllm, models: [{ id: "m", contextWindow: Number.NaN }] };
+    expect(validateEndpoint(nan, [])).toMatch(/at least 1/);
+  });
+
+  test("rejects a non-http base URL, a bad id, and an empty model list", () => {
+    expect(validateEndpoint({ ...vllm, baseUrl: "file:///etc/passwd" }, [])).toMatch(/http/);
+    expect(validateEndpoint({ ...vllm, id: "a--b" }, [])).toMatch(/Invalid name/);
+    expect(validateEndpoint({ ...vllm, models: [] }, [])).toMatch(/at least one model/);
+  });
+});
 
 describe("escapePiValue — Pi executes '!' values and interpolates '$'", () => {
   test("a leading ! is neutralised with the $! escape", () => {
@@ -88,21 +137,21 @@ describe("endpointEntry", () => {
 describe("mergeModelsJson", () => {
   test("writes one provider entry per endpoint and records what it manages", () => {
     const out = JSON.parse(mergeModelsJson(null, [vllm]));
-    expect(Object.keys(out.providers)).toEqual(["my-vllm"]);
-    expect(out.hvManaged).toEqual(["my-vllm"]);
+    expect(Object.keys(out.providers)).toEqual(["hv-my-vllm"]);
+    expect(out.hvManaged).toEqual(["hv-my-vllm"]);
   });
 
   test("preserves foreign providers it did not write", () => {
     const existing = JSON.stringify({ providers: { handwritten: { baseUrl: "http://x/v1" } } });
     const out = JSON.parse(mergeModelsJson(existing, [vllm]));
     expect(out.providers.handwritten).toEqual({ baseUrl: "http://x/v1" });
-    expect(out.providers["my-vllm"]).toBeDefined();
+    expect(out.providers["hv-my-vllm"]).toBeDefined();
   });
 
   test("removes endpoints it previously managed but no longer has", () => {
     const first = mergeModelsJson(null, [vllm]);
     const out = JSON.parse(mergeModelsJson(first, []));
-    expect(out.providers["my-vllm"]).toBeUndefined();
+    expect(out.providers["hv-my-vllm"]).toBeUndefined();
     expect(out.hvManaged).toEqual([]);
   });
 
@@ -114,7 +163,7 @@ describe("mergeModelsJson", () => {
 
   test("a corrupt file is rebuilt, not thrown on", () => {
     const out = JSON.parse(mergeModelsJson("{not json", [vllm]));
-    expect(out.providers["my-vllm"]).toBeDefined();
+    expect(out.providers["hv-my-vllm"]).toBeDefined();
   });
 });
 
@@ -135,8 +184,8 @@ describe("syncModelsJson", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-models-"));
     await syncModelsJson(dir, [vllm]); // Ollama absent here → detect returns no models
     const out = JSON.parse(fs.readFileSync(path.join(dir, "models.json"), "utf8"));
-    expect(out.providers["my-vllm"].baseUrl).toBe("http://gpu.lan:8000/v1");
-    expect(out.hvManaged).toContain("my-vllm");
+    expect(out.providers["hv-my-vllm"].baseUrl).toBe("http://gpu.lan:8000/v1");
+    expect(out.hvManaged).toContain("hv-my-vllm");
   });
 });
 
@@ -153,7 +202,7 @@ describe("customEndpointEnv", () => {
 
   test("placeholder-auth endpoints never take an env var", () => {
     const ollama: CustomEndpoint = {
-      id: "ollama", label: "Ollama", baseUrl: "http://localhost:11434/v1",
+      id: "ollama", providerKey: "ollama", label: "Ollama", baseUrl: "http://localhost:11434/v1",
       preset: "ollama", auth: { kind: "placeholder", value: "ollama" }, models: [{ id: "m" }],
     };
     expect(customEndpointEnv([ollama], { ollama: "ignored" })).toEqual({});

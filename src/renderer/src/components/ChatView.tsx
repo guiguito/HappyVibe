@@ -234,6 +234,8 @@ export function ChatView({
   }, [mcpSubOpen]);
   // Honest fallback: live set_model failed → override persisted, applies on next spawn.
   const [restartHint, setRestartHint] = useState(false);
+  /** §16: provider set main filters spawn refs with — see resolveSpawnModel. */
+  const [knownProviders, setKnownProviders] = useState<string[]>([]);
   // V2.A: fetch every resolution tier, and REFETCH whenever provider/model
   // config changes (key added/removed, OAuth login/logout, default/workspace
   // model edits) — the mount-only fetch left the list and chip stale.
@@ -241,7 +243,9 @@ export function ChatView({
     setWorkspaceModel(null);
     const refetch = (): void => {
       window.hv.listModels().then(setModels).catch(() => setModels([]));
-      window.hv.getProviders().then((p) => setDefaultModel(p.defaultModel)).catch(() => {});
+      window.hv.getProviders()
+        .then((p) => { setDefaultModel(p.defaultModel); setKnownProviders(p.knownProviders); })
+        .catch(() => {});
       if (workspace) window.hv.getWorkspaceModel(workspace).then(setWorkspaceModel).catch(() => {});
     };
     refetch();
@@ -254,11 +258,14 @@ export function ChatView({
     setModelMenuOpen(false);
     setAttachMenuOpen(false);
   }, [sessionId]);
-  // §16 (2026-07-30): a tier pinned to a provider that no longer loads (deleted
+  // §16 (2026-07-30): a tier pinned to a provider that no longer exists (deleted
   // custom endpoint) must not win resolution — drop it so the chip shows the
-  // tier actually in effect. `models === null` (not fetched yet) → known is
-  // empty → every ref is kept, so nothing resets during startup.
-  const knownProviders = models ? [...new Set(models.map((m) => m.provider))] : [];
+  // tier actually in effect. The list comes from MAIN (hv:get-providers) because
+  // main filters spawns with the same set; deriving it from `models` instead was
+  // wrong — that list is auth-filtered, so an unauthenticated-but-existing
+  // provider was dropped here while main still spawned with it, and the chip
+  // named a model the agent was not running. Empty (not fetched yet) → keep
+  // every ref, so nothing resets during startup.
   const resolution = resolveModelTier(
     dropUnknownProvider(sessionModel, knownProviders),
     dropUnknownProvider(workspaceModel, knownProviders),

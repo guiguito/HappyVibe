@@ -16,15 +16,33 @@ export interface CustomModel {
 }
 
 export interface CustomEndpoint {
-  /** Slug: the models.json provider key AND the env-var stem. */
+  /** Slug: the env-var stem, and the key the stored secret is filed under. */
   id: string;
+  /**
+   * The models.json provider key. NEVER equal to `id` for user-created
+   * endpoints — it is `hv-<id>` (see providerKeyFor). Pi ships ~30 built-in
+   * provider ids (groq, together, mistral, github-copilot, …) and a user may
+   * hand-write their own entries; an unprefixed key would silently rewrite a
+   * built-in provider's baseUrl and apiKey, or clobber a hand-written entry
+   * and then delete it on removal. Ollama keeps the historical key "ollama".
+   */
+  providerKey: string;
   label: string;
   baseUrl: string;
   preset: EndpointPreset;
-  /** env = secret injected at spawn; placeholder = fixed literal (Ollama
-   *  ignores its key, but Pi needs auth present before models are listed). */
+  /** env = secret injected at spawn; placeholder = fixed literal. Pi needs SOME
+   *  auth present before a provider's models are listed at all, so a keyless
+   *  server (vLLM/LM Studio/llama.cpp with no auth) MUST use a placeholder —
+   *  an env reference to a var that does not exist makes Pi treat the whole
+   *  provider as unconfigured and hide every one of its models. */
   auth: { kind: "env" } | { kind: "placeholder"; value: string };
   models: CustomModel[];
+}
+
+/** Namespace for user-created endpoints, so they can never collide with a Pi
+ *  built-in provider id or a user's hand-written models.json entry. */
+export function providerKeyFor(id: string): string {
+  return `hv-${id}`;
 }
 
 /** Per-preset compat flags (models.md §OpenAI Compatibility). A wrong flag
@@ -91,9 +109,42 @@ export function mergeModelsJson(existingRaw: string | null, endpoints: CustomEnd
     /* corrupt file in our app-owned dir — rebuild it */
   }
   const providers = { ...(parsed.providers ?? {}) };
-  for (const id of [...(parsed.hvManaged ?? []), ...LEGACY_MANAGED]) delete providers[id];
-  for (const e of endpoints) providers[e.id] = endpointEntry(e);
-  return JSON.stringify({ ...parsed, providers, hvManaged: endpoints.map((e) => e.id) }, null, 2);
+  for (const key of [...(parsed.hvManaged ?? []), ...LEGACY_MANAGED]) delete providers[key];
+  for (const e of endpoints) providers[e.providerKey] = endpointEntry(e);
+  return JSON.stringify(
+    { ...parsed, providers, hvManaged: endpoints.map((e) => e.providerKey) },
+    null,
+    2,
+  );
+}
+
+/**
+ * Save-time validation, pure so it can be tested. Returns an error message or
+ * null. Every rule here exists because of a concrete failure mode:
+ *  - id shape        → keeps id → env var injective (see isValidEndpointId)
+ *  - duplicate id    → `saveCustomEndpoint` upserts and KEEPS the previous key,
+ *                      so a second endpoint reusing an id would be handed the
+ *                      first one's secret and send it to a different host
+ *  - http(s) only    → the probe and Pi both only speak HTTP
+ *  - contextWindow≥1 → Pi throws on compose for <= 0 and DELETES the whole
+ *                      provider, not just the offending model
+ *  - at least 1 model → an endpoint with none is inert
+ */
+export function validateEndpoint(e: CustomEndpoint, existingIds: string[]): string | null {
+  if (!isValidEndpointId(e.id)) {
+    return `Invalid name — use letters, digits and single hyphens (got id "${e.id}")`;
+  }
+  if (existingIds.includes(e.id)) {
+    return `An endpoint named "${e.label}" already exists — remove it first`;
+  }
+  if (!/^https?:\/\//.test(e.baseUrl)) return `Base URL must start with http:// or https:// (got "${e.baseUrl}")`;
+  if (e.models.length === 0) return "Pick at least one model";
+  for (const m of e.models) {
+    if (m.contextWindow !== undefined && (!Number.isFinite(m.contextWindow) || m.contextWindow < 1)) {
+      return `Context window for "${m.id}" must be at least 1`;
+    }
+  }
+  return null;
 }
 
 /** Model ids from an OpenAI-compatible `GET /v1/models` body. */
