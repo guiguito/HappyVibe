@@ -10,15 +10,25 @@ command owns the sequencing and the gates only; the details live where they alre
 (`CLAUDE.md`, `.claude/commands/uicheck.md`, `.claude/commands/devdoctor.md`). Read them rather
 than trusting a copy — a duplicated test list already drifted across four worktrees once.
 
-### 0. Guard and branch
+### 0. Scope check FIRST, then branch
+Read before you create anything — no branch, no files, until the scope check passes. Read the
+code the feature would touch, plus `docs/prd.md` and the existing tests for that area.
+
+**Scope escape hatch — stop and say "this wants `/round`, not `/feature`" if any of these hold:**
+- a `Decision (…)` in `docs/prd.md` already covers this area and the feature would **reverse**
+  it (grep the PRD for the feature's nouns before anything else);
+- a test exists whose purpose is to hold that decision in place (e.g. a `"…only — no X in V1"`
+  assertion). Such a test can only be deleted by a product decision, and Phase 3 forbids
+  bending tests to fit new code — so this is a `/round`, not a TDD loop;
+- it needs a new subsystem, a new persisted-secret shape, or touches more than ~4 files.
+
+Report the evidence (file:line) when you stop. Do not quietly grow into a worse `/round`.
+
+Only once it passes:
 - On `main`? Create `feat/<slug-from-description>` and switch to it. Never commit to `main`.
   If the branch already exists, stop and ask.
 - Both installs present? (`node_modules/`, `pi-runtime/node_modules/` — see `devdoctor.md` for
   why either being absent produces unrelated-looking failures.) Run only what's missing.
-
-**Scope escape hatch:** if this turns out not to be small — a new subsystem, decisions that
-belong in the PRD, more than ~4 files — **stop** and say "this wants `/round`, not `/feature`."
-Do not quietly grow into a worse `/round`.
 
 ### 1. Clarify — briefly
 List only what is genuinely ambiguous, as a numbered list; I answer by number. Ask nothing you
