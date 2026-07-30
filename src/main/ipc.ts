@@ -922,9 +922,22 @@ export function registerIpc(win: BrowserWindow): void {
       if (blocks) outgoing = `${msg}\n\n${blocks}`;
       warnings = w;
     }
-    // §9 rewind: the snapshot a rewind to THIS message restores to. Steers join
-    // an in-flight turn, so they reuse that turn's snapshot (restores more,
-    // never less). A capture failure must never block the prompt.
+    // §9 rewind: the snapshot a rewind to THIS message restores to. A capture
+    // failure must never block the prompt.
+    //
+    // Steers get NO snapshot, and NOT as an oversight to fix later: a steer
+    // means the agent is mid-turn BY DEFINITION, so captureSnapshot would copy
+    // files while a write tool is running, record torn content, and a later
+    // restore would write that torn content back. Non-steer prompts are safe
+    // precisely because the agent is idle. Do not lift this guard without
+    // coordinating the capture against in-flight tool calls.
+    //
+    // Consequence for a rewind anchored at a steer: stamps are the turn's FIRST
+    // toolCallId, so if that call ran BEFORE the steer arrived, its `pre` is not
+    // in the rewind tail and findRestoreTarget lands on a LATER turn's snapshot
+    // (restores LESS than asked) or on nothing at all. The confirm dialog
+    // reports the "nothing" case and disables Rewind when that is the whole
+    // outcome (ChatView rewind confirm).
     if (behavior !== "steer" && meta?.workspaceId) {
       try {
         captureSnapshot(
