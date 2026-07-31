@@ -52,10 +52,24 @@ export function serverNameInFiles(name: string, files: string[]): boolean {
   return files.some((f) => name in readMcpFile(f).mcpServers);
 }
 
-/** Upsert (or remove, when cfg is null) one server. Returns the new file content. */
-export function writeMcpServer(file: string, name: string, cfg: McpServerConfig | null): McpFile {
+/**
+ * Upsert (or remove, when cfg is null) one server. Returns the new file content.
+ *
+ * `failIfExists` is for the curated catalog (§13 round 8): a one-click install
+ * must never silently replace a server the user configured by hand. The manual
+ * editor deliberately does NOT pass it — Edit overwrites by design.
+ */
+export function writeMcpServer(
+  file: string,
+  name: string,
+  cfg: McpServerConfig | null,
+  opts?: { failIfExists?: boolean },
+): McpFile {
   if (!isValidServerName(name)) throw new Error(`invalid MCP server name: ${JSON.stringify(name)}`);
   const cur = readMcpFile(file);
+  if (cfg && opts?.failIfExists && name in cur.mcpServers) {
+    throw new Error(`A server named "${name}" already exists`);
+  }
   if (cfg) cur.mcpServers[name] = cfg;
   else delete cur.mcpServers[name];
   fs.mkdirSync(path.dirname(file), { recursive: true });

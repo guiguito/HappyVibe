@@ -48,3 +48,28 @@ test("server name validation", () => {
   expect(isValidServerName("../evil")).toBe(false);
   expect(isValidServerName("a b")).toBe(false);
 });
+
+test("failIfExists refuses to overwrite and leaves the existing server untouched", () => {
+  const f = tmpFile();
+  writeMcpServer(f, "github", { url: "https://mine.example/mcp" });
+
+  expect(() =>
+    writeMcpServer(f, "github", { url: "https://catalog.example/mcp" }, { failIfExists: true }),
+  ).toThrow(/already exists/);
+
+  // The user's hand-rolled config survives verbatim — that is the point.
+  expect(readMcpFile(f).mcpServers.github).toEqual({ url: "https://mine.example/mcp" });
+});
+
+test("failIfExists writes normally when the name is free", () => {
+  const f = tmpFile();
+  writeMcpServer(f, "notion", { url: "https://notion.example/mcp" }, { failIfExists: true });
+  expect(readMcpFile(f).mcpServers.notion).toEqual({ url: "https://notion.example/mcp" });
+});
+
+test("write still overwrites by default — the editor's Edit flow depends on it", () => {
+  const f = tmpFile();
+  writeMcpServer(f, "notion", { url: "https://one.example/mcp" });
+  writeMcpServer(f, "notion", { url: "https://two.example/mcp" });
+  expect(readMcpFile(f).mcpServers.notion).toEqual({ url: "https://two.example/mcp" });
+});
