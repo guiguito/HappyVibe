@@ -223,6 +223,19 @@ contextBridge.exposeInMainWorld("hv", {
   mcpAuthenticate: (scope: "global" | "workspace", workspaceId: string | null, name: string) =>
     ipcRenderer.invoke("hv:mcp-authenticate", scope, workspaceId, name),
   mcpLogout: (name: string) => ipcRenderer.invoke("hv:mcp-logout", name),
+  // §13 round 8: curated catalog — install by KEY (main owns the catalog and the
+  // secrets, so a renderer bug cannot write an arbitrary server), plus the
+  // node/npx preflight that badges stdio entries before the click.
+  mcpInstallCatalog: (
+    catalogKey: string,
+    scope: "global" | "workspace",
+    workspaceId: string | null,
+    values: Record<string, string>,
+  ) =>
+    ipcRenderer.invoke("hv:mcp-install-catalog", catalogKey, scope, workspaceId, values) as Promise<
+      { ok: true } | { ok: false; error: string }
+    >,
+  nodeAvailable: () => ipcRenderer.invoke("hv:node-available") as Promise<boolean>,
   onMcpStatusChanged: (cb: (s: unknown[]) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, s: unknown): void => cb(s as unknown[]);
     ipcRenderer.on("hv:mcp-status-changed", h);

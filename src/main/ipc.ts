@@ -52,6 +52,7 @@ import { probe } from "./mcpClient";
 import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
+import { hasNodeRuntime } from "./nodePreflight";
 
 
 function truncateTitle(msg: string): string {
@@ -1680,6 +1681,11 @@ export function registerIpc(win: BrowserWindow): void {
   );
 
   ipcMain.handle("hv:mcp-status", () => Array.from(mcpStatusMap.values()));
+
+  // §13 round 8: the catalog's stdio entries run through `npx`, which needs the
+  // user's own Node — the packaged app does not ship one. Surfaced so those
+  // cards can say "needs Node" BEFORE the click.
+  ipcMain.handle("hv:node-available", () => hasNodeRuntime());
 
   ipcMain.handle(
     "hv:mcp-check",
