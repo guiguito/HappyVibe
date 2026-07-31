@@ -84,6 +84,15 @@ const BRAND_ICONS: Record<string, string> = {
   sqlite: "si-sqlite",
   playwright: "si-playwright",
   puppeteer: "si-puppeteer",
+  // Round 8 (curated catalog). Only classes that ship in simple-icons v16 —
+  // firecrawl and composio have none, so they keep the generic MCP glyph.
+  n8n: "si-n8n",
+  neon: "si-neon",
+  shadcn: "si-shadcnui",
+  chrome: "si-googlechrome",
+  // Context7 is an Upstash product; simple-icons has si-upstash, not si-context7.
+  context7: "si-upstash",
+  upstash: "si-upstash",
 };
 
 // Brand keys long enough to prefix-match a server-key variant without risking
