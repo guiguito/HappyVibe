@@ -249,7 +249,8 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     key: "playwright",
     name: "Playwright",
     category: "Browser",
-    brand: "si-playwright",
+    // simple-icons v16 no longer ships si-playwright — generic MCP glyph.
+    // Pinned by the brand-icon existence test in tests/tool-label.test.ts.
     tagline: "Drive a real browser — run and repair end-to-end tests",
     blurb:
       "Playwright gives the agent a real browser it can navigate, click through and read, using the page's accessibility tree rather than screenshots — structured and cheap on tokens. Runs on your machine, so it needs Node installed.",

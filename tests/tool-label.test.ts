@@ -1,5 +1,7 @@
 import { expect, test } from "vitest";
-import { toolLabel, brandIconFor } from "../src/renderer/src/toolLabel";
+import { readFileSync } from "node:fs";
+import { toolLabel, brandIconFor, BRAND_ICONS } from "../src/renderer/src/toolLabel";
+import { MCP_CATALOG } from "../src/main/mcpCatalog";
 
 // W1.1 — human headlines for tool cards (PRD "Chat experience").
 
@@ -147,4 +149,27 @@ test("catalog servers added in round 8 resolve their brand icon", () => {
 test("catalog brands simple-icons does not ship fall back to the generic glyph", () => {
   expect(brandIconFor("firecrawl_scrape")).toBeUndefined();
   expect(brandIconFor("composio_execute")).toBeUndefined();
+});
+
+// Round 8: a mapped class that simple-icons does not ship renders as an
+// INVISIBLE icon — strictly worse than the generic glyph fallback. Four dead
+// entries (aws, openai, slack, playwright) shipped unnoticed from round 4 until
+// a GUI pass caught Playwright's blank card. This pins the whole map to the
+// installed font so the next simple-icons bump fails here instead of in the UI.
+test("every BRAND_ICONS class exists in the installed simple-icons font", () => {
+  const css = readFileSync(
+    new URL("../node_modules/simple-icons-font/font/simple-icons.css", import.meta.url),
+    "utf8",
+  );
+  const dead = Object.entries(BRAND_ICONS).filter(([, cls]) => !css.includes(`.${cls}:`));
+  expect(dead, `dead icon classes: ${dead.map(([k, v]) => `${k}→${v}`).join(", ")}`).toEqual([]);
+});
+
+test("every catalog entry's brand icon exists too", () => {
+  const css = readFileSync(
+    new URL("../node_modules/simple-icons-font/font/simple-icons.css", import.meta.url),
+    "utf8",
+  );
+  const dead = MCP_CATALOG.filter((e) => e.brand && !css.includes(`.${e.brand}:`));
+  expect(dead.map((e) => `${e.key}→${e.brand}`)).toEqual([]);
 });

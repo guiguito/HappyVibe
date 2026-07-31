@@ -67,8 +67,14 @@ export function writeMcpServer(
 ): McpFile {
   if (!isValidServerName(name)) throw new Error(`invalid MCP server name: ${JSON.stringify(name)}`);
   const cur = readMcpFile(file);
-  if (cfg && opts?.failIfExists && name in cur.mcpServers) {
-    throw new Error(`A server named "${name}" already exists`);
+  if (cfg && opts?.failIfExists) {
+    // Case-INSENSITIVE: mcpServers keys are case-sensitive, so a catalog install
+    // of "notion" next to a hand-added "Notion" would silently create a SECOND
+    // server — duplicate tools, duplicate context cost — instead of colliding.
+    const clash = Object.keys(cur.mcpServers).find(
+      (k) => k.toLowerCase() === name.toLowerCase(),
+    );
+    if (clash) throw new Error(`A server named "${clash}" already exists`);
   }
   if (cfg) cur.mcpServers[name] = cfg;
   else delete cur.mcpServers[name];

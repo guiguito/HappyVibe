@@ -19,11 +19,17 @@ export function McpCatalogSection({
 
   const refreshInstalled = async (): Promise<void> => {
     const r = await window.hv.mcpGet(workspaceId ?? undefined);
+    // Lowercased: mcpServers keys are case-sensitive, but writeMcpServer's
+    // collision guard is case-insensitive, so a hand-added "Notion" must mark
+    // the "notion" card installed — otherwise the card invites a click that the
+    // guard then refuses.
     setInstalledNames(
-      new Set([
-        ...Object.keys(r.global?.mcpServers ?? {}),
-        ...Object.keys(r.workspace?.mcpServers ?? {}),
-      ]),
+      new Set(
+        [
+          ...Object.keys(r.global?.mcpServers ?? {}),
+          ...Object.keys(r.workspace?.mcpServers ?? {}),
+        ].map((n) => n.toLowerCase()),
+      ),
     );
   };
 
@@ -35,12 +41,14 @@ export function McpCatalogSection({
 
   return (
     <div>
+      {/* The Section heading already says "recognised … ready to install" — this
+          line adds only what that does not cover. */}
       <p className="text-xs text-ink-soft mb-3">
-        Recognised servers, ready to install. Every one still goes through your permission rules.
+        Every one still goes through your permission rules.
       </p>
       <div className="grid grid-cols-2 gap-2">
         {MCP_CATALOG.map((e) => {
-          const installed = installedNames.has(e.key);
+          const installed = installedNames.has(e.key.toLowerCase());
           const blocked = e.transport === "stdio" && !hasNode;
           return (
             <button

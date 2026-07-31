@@ -41,11 +41,10 @@ export interface ToolLabel {
 
 /** Round 4 #4: MCP server key → simple-icons class (curated). Unknown → generic
     MCP glyph. Keys are normalized (lowercased, non-alphanumerics stripped). */
-const BRAND_ICONS: Record<string, string> = {
+export const BRAND_ICONS: Record<string, string> = {
   github: "si-github",
   gitlab: "si-gitlab",
   notion: "si-notion",
-  slack: "si-slack",
   linear: "si-linear",
   jira: "si-jira",
   atlassian: "si-atlassian",
@@ -64,14 +63,12 @@ const BRAND_ICONS: Record<string, string> = {
   redis: "si-redis",
   docker: "si-docker",
   kubernetes: "si-kubernetes",
-  aws: "si-amazonwebservices",
   gcp: "si-googlecloud",
   googlecloud: "si-googlecloud",
   google: "si-google",
   googledrive: "si-googledrive",
   gmail: "si-gmail",
   googlecalendar: "si-googlecalendar",
-  openai: "si-openai",
   anthropic: "si-anthropic",
   huggingface: "si-huggingface",
   discord: "si-discord",
@@ -82,7 +79,6 @@ const BRAND_ICONS: Record<string, string> = {
   intercom: "si-intercom",
   posthog: "si-posthog",
   sqlite: "si-sqlite",
-  playwright: "si-playwright",
   puppeteer: "si-puppeteer",
   // Round 8 (curated catalog). Only classes that ship in simple-icons v16 —
   // firecrawl and composio have none, so they keep the generic MCP glyph.
