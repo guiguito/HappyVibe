@@ -11,7 +11,7 @@ import {
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
-  setProviderKey, setWorkspaceBypass,
+  setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets,
 } from "./config";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
@@ -53,6 +53,7 @@ import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 import { hasNodeRuntime } from "./nodePreflight";
+import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 
 
 function truncateTitle(msg: string): string {
@@ -1671,12 +1672,58 @@ export function registerIpc(win: BrowserWindow): void {
         ];
         if (!serverNameInFiles(name, files)) {
           deleteAuthEntry(agentDir(), name);
+          // §13 round 8: catalog-installed API keys are keyed by server name
+          // too — drop them on the same condition, or a re-add would silently
+          // reuse a key the user thought they had removed.
+          removeMcpSecrets(name);
           void log.append({ type: "mcp.auth", workspaceId: workspaceId ?? undefined,
             data: { name, action: "credentials-deleted", reason: "server-removed" } });
         }
       }
       scheduleMcpReload(scope, workspaceId); // apply to running sessions
       return readMcpFile(file);
+    },
+  );
+
+  // §13 round 8: one-click catalog install. The renderer sends a catalog KEY and
+  // form values — never a config object — so a renderer bug cannot write an
+  // arbitrary server. Secrets are encrypted here and referenced from mcp.json by
+  // ${HV_MCP_…} placeholder only.
+  ipcMain.handle(
+    "hv:mcp-install-catalog",
+    (
+      _e,
+      catalogKey: string,
+      scope: "global" | "workspace",
+      workspaceId: string | null,
+      values: Record<string, string>,
+    ) => {
+      const entry = catalogEntry(catalogKey);
+      if (!entry) return { ok: false as const, error: "Unknown catalog entry" };
+
+      const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
+      try {
+        const { cfg, secrets } = buildCatalogInstall(entry, values);
+        // Encrypt first: if the write then fails on a name collision we drop
+        // them again, rather than leaving secrets for a server we never wrote.
+        for (const s of secrets) setMcpSecret(entry.key, s.inputId, s.value);
+        try {
+          writeMcpServer(file, entry.key, cfg, { failIfExists: true });
+        } catch (err) {
+          removeMcpSecrets(entry.key);
+          throw err;
+        }
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+      }
+
+      void log.append({
+        type: "mcp.config",
+        workspaceId: workspaceId ?? undefined,
+        data: { scope, name: entry.key, removed: false, source: "catalog" },
+      });
+      scheduleMcpReload(scope, workspaceId); // apply to running sessions
+      return { ok: true as const };
     },
   );
 
