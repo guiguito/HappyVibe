@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { brandIconFor } from "../toolLabel";
 
 interface McpServer {
   scope: "global" | "workspace";
@@ -136,10 +137,15 @@ function McpConnectResult({
 export function McpServersSection({
   workspaceId,
   embedded = false,
+  onServersChanged,
 }: {
   workspaceId: string | null;
   /** v5: rendered inside the "MCP" section card — drop the own heading + top margin. */
   embedded?: boolean;
+  /** §13 round 8: fired after this list adds or removes a server, so the curated
+      catalog above can re-derive its "installed" badges. Without it, removing a
+      server here leaves its catalog card stuck as installed and un-clickable. */
+  onServersChanged?: () => void;
 }): React.JSX.Element {
   const [servers, setServers] = useState<McpServer[] | null>(null);
   const [editing, setEditing] = useState<McpServer | "new" | null>(null);
@@ -167,6 +173,7 @@ export function McpServersSection({
   const remove = async (s: McpServer): Promise<void> => {
     await window.hv.mcpSetServer(s.scope, s.scope === "workspace" ? workspaceId : null, s.name, null);
     await refresh();
+    onServersChanged?.();
   };
 
   const reconnect = (s: McpServer): void => {
@@ -206,6 +213,7 @@ export function McpServersSection({
   const handleSaved = (savedScope: "global" | "workspace", savedName: string, isHttp: boolean): void => {
     setEditing(null);
     void refresh();
+    onServersChanged?.(); // a manual add/rename changes the catalog's installed set too
     if (isHttp) {
       authenticate(savedScope, savedName);
     }
@@ -239,26 +247,43 @@ export function McpServersSection({
             const sKey = statusKey(s.scope, s.scope === "workspace" ? workspaceId : null, s.name);
             const status = statuses.get(sKey);
             const isHttp = typeof s.cfg.url === "string";
+            const brand = brandIconFor(s.name);
             return (
               <div
                 key={`${s.scope}:${s.name}`}
-                className="px-4 py-2.5 border-b border-line last:border-b-0 flex items-center gap-2"
+                className="px-4 py-3 border-b border-line last:border-b-0 flex items-center gap-3"
               >
-                <span className="font-bold shrink-0">{s.name}</span>
-                <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
-                  {s.scope}
-                </span>
-                <McpStatusBadge status={status} />
-                <span className="font-mono text-xs text-ink-soft flex-1 min-w-0 truncate">
-                  {isHttp
-                    ? s.cfg.url as string
-                    : [s.cfg.command, ...((s.cfg.args as string[]) ?? [])].filter(Boolean).join(" ")}
-                </span>
-                {s.cfg.directTools ? (
-                  <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 bg-honey-soft text-tangerine-deep border-honey/60 shrink-0">
-                    direct
+                {/* Round 8: brand icon, same resolver the tool cards use. */}
+                {brand ? (
+                  <i className={`si ${brand} text-lg text-ink-soft shrink-0`} aria-hidden />
+                ) : (
+                  <span
+                    className="size-4 rounded bg-paper-deep border border-line shrink-0"
+                    aria-hidden
+                  />
+                )}
+                {/* Identity above, the literal endpoint below — two deliberate
+                    lines. One line forced the mono endpoint to compete with the
+                    action buttons, which pushed Remove off the card. */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-sm">{s.name}</span>
+                    <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
+                      {s.scope}
+                    </span>
+                    <McpStatusBadge status={status} />
+                    {s.cfg.directTools ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 bg-honey-soft text-tangerine-deep border-honey/60 shrink-0">
+                        direct
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="block font-mono text-xs text-ink-soft truncate mt-0.5">
+                    {isHttp
+                      ? s.cfg.url as string
+                      : [s.cfg.command, ...((s.cfg.args as string[]) ?? [])].filter(Boolean).join(" ")}
                   </span>
-                ) : null}
+                </div>
                 {/* Authenticate — shown when needs-auth */}
                 {status?.state === "needs-auth" && (
                   <button

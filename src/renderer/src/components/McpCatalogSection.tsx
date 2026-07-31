@@ -9,9 +9,14 @@ import { MCP_CATALOG, type McpCatalogEntry } from "../../../main/mcpCatalog";
 export function McpCatalogSection({
   workspaceId,
   onInstalled,
+  refreshKey = 0,
 }: {
   workspaceId: string | null;
   onInstalled: () => void;
+  /** Bumped by the parent when the servers list below changes, so removing a
+      server there frees its card here. Without it the card stays "installed"
+      and un-clickable until the page is remounted. */
+  refreshKey?: number;
 }): React.JSX.Element {
   const [installedNames, setInstalledNames] = useState<Set<string>>(new Set());
   const [hasNode, setHasNode] = useState(true);
@@ -37,7 +42,7 @@ export function McpCatalogSection({
     void refreshInstalled().catch(() => { /* non-fatal — cards just show uninstalled */ });
     // Optimistic default: only badge "needs Node" once we know it's missing.
     void window.hv.nodeAvailable().then(setHasNode).catch(() => setHasNode(true));
-  }, [workspaceId]);
+  }, [workspaceId, refreshKey]);
 
   return (
     <div>
