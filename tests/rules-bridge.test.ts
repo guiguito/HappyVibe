@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
+import { askUntil } from "./reask";
 
 /**
  * B4 contract test — the bridge, handed a rules file via HV_RULES_FILE,
@@ -144,15 +145,28 @@ test.skipIf(!KEY)(
         if (isKind(r, "hv.permission")) c.respondUi(r.id, { value: "Deny" });
       });
       const done = new Promise<void>((resolve) => c.on("event", (e) => { if (e.type === "agent_end") resolve(); }));
-      await c.send({
-        type: "prompt",
-        message:
-          "You MUST immediately run exactly this shell command using the bash tool: touch forbidden.txt. Do not explain, do not ask questions — just call the bash tool with that command right now.",
-      });
 
-      const auditReq = await nextRequest((r) => isKind(r, "hv.audit"), 90_000);
-      const audit = payloadOf(auditReq);
-      expect(auditReq.method).toBe("notify");
+      // Two sources of noise, both observed on main and both handled here
+      // rather than by widening the timeout:
+      //  1. Match the BASH audit, not merely the first one — the model
+      //     routinely calls something else first (an `ask_user` clarification,
+      //     a `read`), each emitting its own safe-default audit, so taking
+      //     whichever arrived first asserted on an unrelated tool at random.
+      //  2. Re-ask when the turn ends with no bash call at all (see reask.ts).
+      const isBashAudit = (r: UiReq): boolean =>
+        isKind(r, "hv.audit") && payloadOf(r).tool === "bash";
+      const called = await askUntil(
+        () => c.send({
+          type: "prompt",
+          message:
+            "You MUST immediately run exactly this shell command using the bash tool: touch forbidden.txt. Do not explain, do not ask questions — just call the bash tool with that command right now.",
+        }),
+        () => requests.slice(seen).some(isBashAudit),
+      );
+      expect(called, "model never called bash across 3 attempts").toBe(true);
+      const auditReq = requests.slice(seen).find(isBashAudit);
+      const audit = payloadOf(auditReq!);
+      expect(auditReq!.method).toBe("notify");
       expect(audit).toMatchObject({
         kind: "hv.audit",
         tool: "bash",
@@ -177,5 +191,5 @@ test.skipIf(!KEY)(
       c.stop();
     }
   },
-  180_000,
+  240_000, // up to 3 × 45 s of re-asking, plus spawn
 );

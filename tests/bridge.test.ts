@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
+import { askUntil } from "./reask";
 
 // Tiny .env loader — keeps tests dependency-free
 for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
@@ -29,23 +30,34 @@ test.skipIf(!KEY)("bridge intercepts bash; deny blocks and agent continues", asy
   });
   await client.start();
 
-  const gotPrompt = new Promise<Record<string, unknown>>((resolve) =>
-    client.on("ui-request", (m) => {
-      // Log the full raw extension_ui_request for empirical shape verification (Task 6 requirement)
-      console.log("[bridge.test] RAW ui-request:", JSON.stringify(m, null, 2));
-      resolve(m as Record<string, unknown>);
-    }));
+  // Collect every ui-request and answer the permission prompt as it arrives —
+  // the request must be denied for the turn to continue, so it cannot wait for
+  // the assertions below.
+  const reqs: Record<string, unknown>[] = [];
+  client.on("ui-request", (m) => {
+    // Log the full raw extension_ui_request for empirical shape verification (Task 6 requirement)
+    console.log("[bridge.test] RAW ui-request:", JSON.stringify(m, null, 2));
+    const r = m as { id: string; method?: string };
+    reqs.push(m as Record<string, unknown>);
+    if (r.method === "select") {
+      // Per rpc-types.d.ts: RpcExtensionUIResponse for select uses { value: string }
+      client.respondUi(r.id, { value: "Deny" });
+    }
+  });
   const done = new Promise<void>((resolve) =>
     client.on("event", (e) => { if (e.type === "agent_end") resolve(); }));
 
-  await client.send({
-    type: "prompt",
-    // Strongly-worded prompt to force a bash tool call. DeepSeek may reason first,
-    // but the explicit instruction should compel the bash tool.
-    message: "You MUST immediately run exactly this shell command using the bash tool: touch forbidden.txt. Do not explain, do not ask questions — just call the bash tool with that command right now.",
-  });
-
-  const req = await gotPrompt;
+  // The prompt is strongly worded, and a small model still sometimes answers in
+  // prose instead of calling bash — so re-ask rather than fail on the model.
+  const asked = await askUntil(
+    () => client.send({
+      type: "prompt",
+      message: "You MUST immediately run exactly this shell command using the bash tool: touch forbidden.txt. Do not explain, do not ask questions — just call the bash tool with that command right now.",
+    }),
+    () => reqs.some((r) => r.method === "select"),
+  );
+  expect(asked, "model never triggered a permission prompt across 3 attempts").toBe(true);
+  const req = reqs.find((r) => r.method === "select")!;
 
   // Empirically verify the ui-request shape (method should be "select")
   expect(req.method).toBe("select");
@@ -57,12 +69,6 @@ test.skipIf(!KEY)("bridge intercepts bash; deny blocks and agent continues", asy
   expect(titleObj.kind).toBe("hv.permission");
   console.log("[bridge.test] Parsed title:", titleObj);
 
-  // Per rpc-types.d.ts: RpcExtensionUIResponse for select uses { value: string }
-  // This is the proven shape from type inspection — empirically confirmed by this test run.
-  const responsePayload = { value: "Deny" };
-  console.log("[bridge.test] Sending response:", JSON.stringify(responsePayload));
-  client.respondUi(req.id as string, responsePayload);
-
   // Wait for agent_end — proves agent continued gracefully after denial
   await done;
   console.log("[bridge.test] agent_end received — agent continued gracefully");
@@ -71,4 +77,4 @@ test.skipIf(!KEY)("bridge intercepts bash; deny blocks and agent continues", asy
   const forbidden = path.join(tmp, "forbidden.txt");
   expect(fs.existsSync(forbidden)).toBe(false);
   console.log("[bridge.test] PASS: forbidden.txt does NOT exist — deny successfully blocked tool call");
-}, 120_000);
+}, 240_000); // up to 3 × 45 s of re-asking, plus spawn

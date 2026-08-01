@@ -60,9 +60,15 @@ test.skipIf(!KEY)(
       });
       await client.send({
         type: "prompt",
+        // The `intent` parameter is named explicitly. Pi does not hard-validate
+        // registered-tool args, so a small model that is never told to fill a
+        // required field sometimes just doesn't — which made this test measure
+        // the model's guessing rather than the wire path it exists to prove
+        // (intent authored → echoed into tool_execution_start unstripped).
         message:
           "Use the subagent tool right now (mode: single) to delegate to the agent named 'code-explorer' " +
-          "with the task 'reply with exactly the word HELLO and nothing else'. Do not do anything else.",
+          "with the task 'reply with exactly the word HELLO and nothing else'. You MUST also pass the " +
+          "required `intent` parameter: one short sentence saying what you are doing. Do not do anything else.",
       });
       await done;
 
