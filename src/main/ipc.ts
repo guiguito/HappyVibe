@@ -484,6 +484,26 @@ export function registerIpc(win: BrowserWindow): void {
         }
       }
       send("hv:pi-event", { ...e, sessionId });
+      // The compaction session-file entry carries no reason — only this event
+      // does. Log it so a restored boundary bubble can say WHY the history is
+      // gone: Pi's auto-compaction is ON by default (settings default
+      // `compaction.enabled ?? true`, and we never call set_auto_compaction), so
+      // "you didn't ask for this one" is the honest label. `firstKeptEntryId` is
+      // the join key back to the file entry (history.ts compactionReason). Also
+      // closes the §11 promise that the audit log records context compactions.
+      if (e.type === "compaction_end") {
+        const c = e as { reason?: string; result?: { firstKeptEntryId?: string; tokensBefore?: number } };
+        void log.append({
+          type: "context.compact",
+          sessionId,
+          workspaceId: meta?.workspaceId,
+          data: {
+            reason: c.reason ?? "unknown",
+            firstKeptEntryId: c.result?.firstKeptEntryId ?? null,
+            tokensBefore: c.result?.tokensBefore ?? null,
+          },
+        });
+      }
       if (e.type === "agent_end") {
         maybeTitle(sessionId);
         if (meta && !index.get(sessionId)?.piSessionFile) void captureSessionFile(sessionId, client);
