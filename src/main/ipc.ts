@@ -38,7 +38,7 @@ import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/comma
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
-import { readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
+import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
   captureSnapshot, deleteSessionSnapshots, findRestoreTarget, listSnapshots,
   previewRestore, restoreSnapshot, stampSnapshot,
@@ -1712,13 +1712,8 @@ export function registerIpc(win: BrowserWindow): void {
     importEntries(workspaces.list(), workspaceId, destDirRel, srcAbsPaths));
   // §23: re-parse every plan file in a workspace and push its n/m + status.
   const pushPlanProgress = (workspaceId: string): void => {
-    let names: { name: string; kind: string }[] = [];
-    try { names = listDir(workspaces.list(), workspaceId, PLAN_DIR); } catch { return; /* no plans yet */ }
-    for (const f of names) {
-      if (f.kind !== "file" || !f.name.endsWith(".md")) continue;
-      const rel = `${PLAN_DIR}/${f.name}`;
-      const parsed = readPlan(workspaces.list(), workspaceId, rel);
-      if (parsed) send("hv:plan-changed", { workspaceId, path: rel, status: parsed.status, done: parsed.done, total: parsed.total });
+    for (const p of listPlanProgress(workspaces.list(), workspaceId)) {
+      send("hv:plan-changed", { workspaceId, ...p });
     }
   };
   // WS8: native fs watching — auto-refresh the tree (replaces the refresh button).
