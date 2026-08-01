@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SessionStatus } from "../App";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
@@ -322,7 +322,18 @@ export function Sidebar({
   const [filter, setFilter] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<SessionMeta | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Round 8: which workspaces are collapsed, remembered across restarts —
+  // several workspaces of many sessions each is exactly when it matters.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("hv:ws-collapsed") ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem("hv:ws-collapsed", JSON.stringify([...collapsed]));
+  }, [collapsed]);
 
   const q = filter.trim().toLowerCase();
   const visible = (s: SessionMeta): boolean =>
@@ -439,17 +450,17 @@ export function Sidebar({
           return (
             <div key={ws} className="mb-1.5">
               <div className="group flex items-center gap-1.5 px-1.5 py-1">
+                {/* Round 8: the name itself toggles the session list, and the
+                    arrow moved right with the other icons — but stays VISIBLE,
+                    since it reports state rather than offering an action. */}
                 <button
                   type="button"
                   onClick={() => toggle(ws)}
-                  className="text-ink-soft cursor-pointer text-[10px] w-3 shrink-0"
-                  title={isCollapsed ? "Expand" : "Collapse"}
+                  className="flex-1 min-w-0 truncate font-bold text-sm text-left cursor-pointer"
+                  title={ws}
                 >
-                  {isCollapsed ? "▸" : "▾"}
-                </button>
-                <span className="flex-1 min-w-0 truncate font-bold text-sm" title={ws}>
                   {basename(ws)}
-                </span>
+                </button>
                 {/* V2.C2: hover icons live in reserved slots (invisible, not
                     removed) LEFT of an always-visible, always-LAST "+" — zero
                     layout shift, "+" position stable. */}
@@ -471,6 +482,15 @@ export function Sidebar({
                   className="invisible group-hover:visible text-ink-soft hover:text-berry cursor-pointer font-bold text-xs w-3 shrink-0"
                 >
                   ×
+                </button>
+                <button
+                  type="button"
+                  title={isCollapsed ? "Show sessions" : "Hide sessions"}
+                  aria-expanded={!isCollapsed}
+                  onClick={() => toggle(ws)}
+                  className="text-ink-soft hover:text-ink cursor-pointer text-[10px] w-3 shrink-0"
+                >
+                  {isCollapsed ? "▸" : "▾"}
                 </button>
                 <button
                   type="button"
