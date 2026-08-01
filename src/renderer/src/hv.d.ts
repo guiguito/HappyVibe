@@ -386,8 +386,6 @@ interface HvApi {
   sysPromptSnapshot(sessionId?: string): Promise<void>;
   getGlobalAppend(): Promise<string | null>;
   setGlobalAppend(content: string): Promise<void>;
-  getWorkspaceAppend(workspaceId: string): Promise<string | null>;
-  setWorkspaceAppend(workspaceId: string, content: string): Promise<void>;
   getWorkspaceModel(workspaceId: string): Promise<{ provider: string; modelId: string } | null>;
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
@@ -401,6 +399,10 @@ interface HvApi {
       at the next spawn — live sessions keep the retention they started with. */
   getLongCache(): Promise<boolean>;
   setLongCache(on: boolean): Promise<void>;
+
+  /** Round 8: keyboard-shortcut overrides (action id → canonical binding). */
+  getShortcuts(): Promise<Record<string, string>>;
+  setShortcuts(map: Record<string, string>): Promise<void>;
 
   // §14 Skills (additive)
   skillsList(workspaceId?: string): Promise<HvSkillsList>;

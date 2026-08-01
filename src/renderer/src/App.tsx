@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
-import { SettingsView } from "./components/SettingsView";
+import { ModelsView } from "./components/ModelsView";
+import { PermissionsView } from "./components/PermissionsView";
+import { SystemPromptView } from "./components/SystemPromptView";
+import { DashboardView } from "./components/DashboardView";
+import { AuditView } from "./components/AuditView";
 import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError } from "./providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
-import { WorkspaceSettingsModal } from "./components/WorkspaceSettingsModal";
+import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
-import { ShortcutsDialog } from "./components/ShortcutsDialog";
+import { ShortcutsView } from "./components/ShortcutsView";
+import { eventToBinding, resolveBindings, type ShortcutId } from "./shortcuts";
 import {
   dropSession,
   headFor,
@@ -113,7 +118,13 @@ export default function App(): React.JSX.Element {
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
   useEffect(() => { localStorage.setItem("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false); // F6: ⌘/ help dialog
+  // Round 8: the sidebar's Settings group, open or not — persisted like the rail.
+  const [settingsOpen, setSettingsOpen] = useState(() => localStorage.getItem("hv:settings-open") === "1");
+  useEffect(() => { localStorage.setItem("hv:settings-open", settingsOpen ? "1" : "0"); }, [settingsOpen]);
+  // Round 8: shortcut bindings — defaults until config answers, then whatever
+  // the user remapped on the shortcuts page.
+  const [bindings, setBindings] = useState<Record<ShortcutId, string>>(() => resolveBindings(null));
+  useEffect(() => { void window.hv.getShortcuts().then((m) => setBindings(resolveBindings(m))); }, []);
   // F6: global shortcuts. The handler closure is refreshed each render (reads
   // live wsId/tabs/newSession); a single listener reads it through the ref so we
   // don't re-subscribe every render. ⌘F/⌘S stay owned by chat/editor.
@@ -1094,7 +1105,7 @@ export default function App(): React.JSX.Element {
   }
 
   const needsSetup = keyState === "missing";
-  const activeView: View = needsSetup ? "settings" : view;
+  const activeView: View = needsSetup ? "models" : view;
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
@@ -1102,20 +1113,27 @@ export default function App(): React.JSX.Element {
   const wsTabs = (wsId ? tabsByWs[wsId] : undefined) ?? emptyTabs;
   // F6: refresh the global-shortcut closure with the current render's state.
   shortcutRef.current = (e: KeyboardEvent): void => {
-    if (!(e.metaKey || e.ctrlKey)) return;
-    switch (e.key.toLowerCase()) {
-      case "b": e.preventDefault(); setSidebarCollapsed((c) => !c); break;
-      case "e": if (e.shiftKey) { e.preventDefault(); setTreeOpen((o) => !o); } break;
-      case "n": { e.preventDefault(); const ws = wsId ?? workspaces[0]; if (ws) void newSession(ws); break; }
-      case ",": e.preventDefault(); if (!needsSetup) setView("settings"); break;
-      case "/": e.preventDefault(); setShortcutsOpen(true); break;
-      case "w": {
-        // Close the first closable (non-chat) active tab; window close is ⌘⇧W.
-        if (!wsId) break;
-        const i = wsTabs.panes.findIndex((p) => p.active && p.active !== CHAT_TAB);
-        if (i >= 0) { e.preventDefault(); closeFileTab(wsId, i, wsTabs.panes[i].active!); }
-        break;
-      }
+    // Round 8: dispatch off the registry, so a rebind on the shortcuts page is
+    // the only place a key is decided. ⌘S / ⌘F are absent on purpose — the
+    // editor and the chat own those, each reading the same binding.
+    const b = eventToBinding(e);
+    if (!b) return;
+    const is = (id: ShortcutId): boolean => bindings[id] === b;
+    if (is("toggleSidebar")) { e.preventDefault(); setSidebarCollapsed((c) => !c); return; }
+    if (is("toggleFileDrawer")) { e.preventDefault(); setTreeOpen((o) => !o); return; }
+    if (is("newSession")) {
+      e.preventDefault();
+      const ws = wsId ?? workspaces[0];
+      if (ws) void newSession(ws);
+      return;
+    }
+    if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
+    if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
+    if (is("closeTab")) {
+      // Close the first closable (non-chat) active tab; window close is ⌘⇧W.
+      if (!wsId) return;
+      const i = wsTabs.panes.findIndex((p) => p.active && p.active !== CHAT_TAB);
+      if (i >= 0) { e.preventDefault(); closeFileTab(wsId, i, wsTabs.panes[i].active!); }
     }
   };
   const dirtyForWs: Record<string, boolean> = {};
@@ -1173,7 +1191,7 @@ export default function App(): React.JSX.Element {
           await window.hv.removeWorkspace(ws);
           setWorkspaces(await window.hv.listWorkspaces());
         }}
-        onWorkspaceSettings={setWsSettings}
+        onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
         onNewSession={newSession}
         onSelectSession={selectSession}
         onRenameSession={(id, title) => window.hv.renameSession(id, title)}
@@ -1183,8 +1201,8 @@ export default function App(): React.JSX.Element {
           if (selectedId === id) setSelectedId(null);
           await window.hv.deleteSession(id); // sessions-changed broadcast refreshes the list
         }}
-        onOpenHelp={() => setOnboarding(true)}
-        onOpenShortcuts={() => setShortcutsOpen(true)}
+        settingsOpen={settingsOpen}
+        onToggleSettingsOpen={() => setSettingsOpen((o) => !o)}
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
@@ -1216,22 +1234,25 @@ export default function App(): React.JSX.Element {
             </button>
           </div>
         )}
-        {activeView === "settings" && (
-          <SettingsView
+        {activeView === "models" && (
+          <ModelsView
             firstRun={needsSetup}
             onSaved={() => {
               setKeyState("present");
               setView("chat");
             }}
-            sessionId={selectedId}
-            sessions={sessions}
-            workspaces={workspaces}
           />
         )}
+        {activeView === "permissions" && <PermissionsView />}
+        {activeView === "workspace" && wsSettings && <WorkspaceSettingsView workspace={wsSettings} />}
+        {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
+        {activeView === "stats" && <DashboardView workspaces={workspaces} />}
+        {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
         {activeView === "skills" && (
           <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
         {activeView === "mcp" && <McpView />}
+        {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
           <AllToolsView
@@ -1324,6 +1345,7 @@ export default function App(): React.JSX.Element {
             stats={selStats}
             searchOpen={searchOpen}
             onSearchOpenChange={setSearchOpen}
+            searchKey={bindings.search}
             contextOpen={contextOpen}
             onContextOpenChange={setContextOpen}
             costCalls={selCalls?.calls}
@@ -1390,6 +1412,8 @@ export default function App(): React.JSX.Element {
                   gridArea={area ?? undefined}
                   className={paneDivider(area)}
                   onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
+                  saveKey={bindings.save}
+                  searchKey={bindings.search}
                 />
               );
             })}
@@ -1408,9 +1432,7 @@ export default function App(): React.JSX.Element {
       {uiReq?.kind === "askUser" && (
         <AskUserModal key={uiReq.req.id} ask={uiReq.ask} onSubmit={respondAskUser} onDismiss={() => respondAskUser(null)} />
       )}
-      {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
-      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
       {/* WS7: AGENTS.md editor — root from the "+" menu, any AGENTS.md from the tree. */}
       {agentsMd && wsId && (
         <AgentsMdPanel

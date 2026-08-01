@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SessionStatus } from "../App";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
 // §13 round 6: the old combined "agents" page split into four peer destinations.
-export type View = "chat" | "settings" | "skills" | "mcp" | "agents" | "tools";
+export type View =
+  | "chat" | "skills" | "mcp" | "agents" | "tools"
+  // Round 8: the settings scroll exploded into pages, each its own destination.
+  | "models" | "permissions" | "sysprompt" | "stats" | "audit" | "shortcuts"
+  | "workspace";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
@@ -61,19 +65,87 @@ function GearIcon(): React.JSX.Element {
     </svg>
   );
 }
-function HelpIcon(): React.JSX.Element {
+/** Round 8: icons for the pages exploded out of the old Settings scroll.
+    Same paths as the shared Section component's SECTION_ICONS. */
+function ModelsIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3M12 17h.01" />
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+      <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
     </svg>
   );
 }
+function PermissionsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />
+    </svg>
+  );
+}
+function SysPromptIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 9 3 3-3 3M13 15h4" />
+    </svg>
+  );
+}
+function StatsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+    </svg>
+  );
+}
+function AuditIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 12h6M9 16h6M9 8h2" />
+      <path d="M5 4a1 1 0 0 1 1-1h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z" />
+    </svg>
+  );
+}
+
 function KeyboardIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="2" y="6" width="20" height="12" rx="2" />
       <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+    </svg>
+  );
+}
+
+/** Round 8: every configuration destination lives under ONE collapsible group —
+    the flat footer had grown to seven entries. The four round-6 pages keep
+    their order at the top; the exploded settings pages sit below a divider. */
+const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
+  { view: "skills", label: "Skills", Icon: SkillsIcon },
+  { view: "mcp", label: "MCP", Icon: McpIcon },
+  { view: "agents", label: "Agents", Icon: AgentsIcon },
+  { view: "tools", label: "All Tools", Icon: ToolsIcon },
+  { view: "models", label: "Models", Icon: ModelsIcon },
+  { view: "permissions", label: "Permissions", Icon: PermissionsIcon },
+  { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon },
+  { view: "stats", label: "Stats", Icon: StatsIcon },
+  { view: "audit", label: "Audit log", Icon: AuditIcon },
+  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
+];
+
+/** Round 8: the collapse affordance — an actual chevron rather than a 10px
+    glyph, sitting immediately right of the name it collapses. */
+function Chevron({ open }: { open: boolean }): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`size-3.5 shrink-0 text-ink-soft transition-transform ${open ? "rotate-90" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m9 6 6 6-6 6" />
     </svg>
   );
 }
@@ -234,8 +306,8 @@ export function Sidebar({
   onRenameSession,
   onArchiveSession,
   onDeleteSession,
-  onOpenHelp,
-  onOpenShortcuts,
+  settingsOpen,
+  onToggleSettingsOpen,
   railCollapsed,
   onToggleCollapsed,
 }: {
@@ -249,8 +321,9 @@ export function Sidebar({
   selectedId: string | null;
   view: View;
   onNavigate: (v: View) => void;
-  /** F6: open the keyboard-shortcuts cheat sheet (⌘/). */
-  onOpenShortcuts: () => void;
+  /** Round 8: the Settings group's open/closed state (persisted in App). */
+  settingsOpen: boolean;
+  onToggleSettingsOpen: () => void;
   /** F6: slim icon-rail mode + its toggle (⌘B); state persisted in App. */
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
@@ -264,13 +337,22 @@ export function Sidebar({
   onArchiveSession: (id: string, archived: boolean) => void;
   /** V2.C2: permanent delete (confirmed in-sidebar before this fires). */
   onDeleteSession: (id: string) => void;
-  /** B7: re-open the onboarding wow-flow. */
-  onOpenHelp: () => void;
 }): React.JSX.Element {
   const [filter, setFilter] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<SessionMeta | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Round 8: which workspaces are collapsed, remembered across restarts —
+  // several workspaces of many sessions each is exactly when it matters.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("hv:ws-collapsed") ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem("hv:ws-collapsed", JSON.stringify([...collapsed]));
+  }, [collapsed]);
 
   const q = filter.trim().toLowerCase();
   const visible = (s: SessionMeta): boolean =>
@@ -317,26 +399,10 @@ export function Sidebar({
             </button>
           ))}
         </div>
-        <button type="button" onClick={() => onNavigate("skills")} title="Skills" aria-label="Skills" className={railBtn(view === "skills")}>
-          <SkillsIcon />
-        </button>
-        <button type="button" onClick={() => onNavigate("mcp")} title="MCP" aria-label="MCP" className={railBtn(view === "mcp")}>
-          <McpIcon />
-        </button>
-        <button type="button" onClick={() => onNavigate("agents")} title="Agents" aria-label="Agents" className={railBtn(view === "agents")}>
-          <AgentsIcon />
-        </button>
-        <button type="button" onClick={() => onNavigate("tools")} title="All Tools" aria-label="All Tools" className={railBtn(view === "tools")}>
-          <ToolsIcon />
-        </button>
-        <button type="button" onClick={() => onNavigate("settings")} title="Settings" aria-label="Settings" className={railBtn(view === "settings")}>
+        {/* Round 8: ten destinations would be a wall in a 48px rail — one gear
+            expands the sidebar, exactly as the workspace initials above do. */}
+        <button type="button" onClick={onToggleCollapsed} title="Settings" aria-label="Settings" className={railBtn(false)}>
           <GearIcon />
-        </button>
-        <button type="button" onClick={onOpenHelp} title="Help" aria-label="Help" className={railBtn(false)}>
-          <HelpIcon />
-        </button>
-        <button type="button" onClick={onOpenShortcuts} title="Keyboard shortcuts (⌘/)" aria-label="Keyboard shortcuts" className={railBtn(false)}>
-          <KeyboardIcon />
         </button>
       </aside>
     );
@@ -380,7 +446,7 @@ export function Sidebar({
       </div>
 
       {/* Workspace tree */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-2">
+      <div className="flex-1 min-h-32 overflow-y-auto px-4 pb-2">
         <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
           <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">workspaces</span>
           <button
@@ -403,17 +469,19 @@ export function Sidebar({
           return (
             <div key={ws} className="mb-1.5">
               <div className="group flex items-center gap-1.5 px-1.5 py-1">
+                {/* Round 8: the name itself toggles the session list, and the
+                    arrow moved right with the other icons — but stays VISIBLE,
+                    since it reports state rather than offering an action. */}
                 <button
                   type="button"
                   onClick={() => toggle(ws)}
-                  className="text-ink-soft cursor-pointer text-[10px] w-3 shrink-0"
-                  title={isCollapsed ? "Expand" : "Collapse"}
+                  aria-expanded={!isCollapsed}
+                  className="flex-1 min-w-0 flex items-center gap-1 font-bold text-sm text-left cursor-pointer"
+                  title={ws}
                 >
-                  {isCollapsed ? "▸" : "▾"}
+                  <span className="truncate">{basename(ws)}</span>
+                  <Chevron open={!isCollapsed} />
                 </button>
-                <span className="flex-1 min-w-0 truncate font-bold text-sm" title={ws}>
-                  {basename(ws)}
-                </span>
                 {/* V2.C2: hover icons live in reserved slots (invisible, not
                     removed) LEFT of an always-visible, always-LAST "+" — zero
                     layout shift, "+" position stable. */}
@@ -482,81 +550,36 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Skills / MCP / Agents / All Tools + Settings (audit + dashboard live inside Settings, W1.4) */}
-      <div className="p-4 border-t-2 border-line">
+      <div className="px-4 pt-4 pb-1 border-t-2 border-line min-h-0 flex flex-col">
         <button
           type="button"
-          onClick={() => onNavigate("skills")}
-          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
-            view === "skills" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
-          }`}
-        >
-          <SkillsIcon />
-          Skills
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("mcp")}
-          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
-            view === "mcp" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
-          }`}
-        >
-          <McpIcon />
-          MCP
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("agents")}
-          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
-            view === "agents" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
-          }`}
-        >
-          <AgentsIcon />
-          Agents
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("tools")}
-          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
-            view === "tools" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
-          }`}
-        >
-          <ToolsIcon />
-          All Tools
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("settings")}
-          className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
-            view === "settings"
-              ? "bg-card border-line shadow-sticker"
-              : "border-transparent hover:bg-card/70"
-          }`}
-        >
-          <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
-          </svg>
-          Settings
-        </button>
-        <button
-          type="button"
-          onClick={onOpenHelp}
-          title="Show the getting-started guide"
+          onClick={onToggleSettingsOpen}
+          aria-expanded={settingsOpen}
           className="w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
         >
-          <HelpIcon />
-          Help
+          <GearIcon />
+          <span className="text-left">Settings</span>
+          <Chevron open={settingsOpen} />
+          <span className="flex-1" />
         </button>
-        <button
-          type="button"
-          onClick={onOpenShortcuts}
-          title="Keyboard shortcuts (⌘/)"
-          className="w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
-        >
-          <KeyboardIcon />
-          Keyboard shortcuts
-        </button>
+        {settingsOpen && (
+          <div className="mt-1 flex flex-col min-h-0 overflow-y-auto">
+            {NAV.map((n) => (
+              <div key={n.view}>
+                <button
+                  type="button"
+                  onClick={() => onNavigate(n.view)}
+                  className={`w-full flex items-center gap-2.5 rounded-xl pl-6 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
+                    view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+                  }`}
+                >
+                  <n.Icon />
+                  {n.label}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* V2.C2: delete confirm — same warm dialog pattern as CompactDialog. */}

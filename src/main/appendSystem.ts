@@ -5,30 +5,19 @@ import path from "node:path";
  * APPEND_SYSTEM.md editing (W1.4, PRD "Settings → System Prompt").
  *
  * Pi reads APPEND_SYSTEM.md at session load only — edits apply to NEW or
- * RESTARTED sessions (same note as the AGENTS.md editor). The project file
- * `<workspace>/.pi/APPEND_SYSTEM.md` (trusted project) OVERRIDES the global
- * `<agentDir>/APPEND_SYSTEM.md` — it REPLACES the global additions, they are
- * NOT concatenated. UI copy must say so honestly.
+ * RESTARTED sessions (same note as the AGENTS.md editor).
  *
- * File access is confined exactly like agentsMd.ts: the renderer-supplied
- * workspaceId is a trust boundary.
+ * Round 8 removed the per-workspace tier from the UI: it was the same idea as
+ * AGENTS.md told twice, and the two could disagree. Pi still DISCOVERS
+ * `<workspace>/.pi/APPEND_SYSTEM.md` by itself, and such a file still REPLACES
+ * the global additions rather than adding to them — so a workspace that already
+ * had one keeps being affected by it with no UI showing it. Accepted in beta
+ * (PRD §16 round 8) rather than writing migration code for a feature nobody
+ * used. What remains here is the global file only.
  */
 
 export function globalAppendFile(agentDir: string): string {
   return path.join(agentDir, "APPEND_SYSTEM.md");
-}
-
-export function resolveWorkspaceAppend(registeredWorkspaces: string[], workspaceId: string): string {
-  const ws = path.resolve(workspaceId);
-  if (!registeredWorkspaces.some((w) => path.resolve(w) === ws)) {
-    throw new Error("Unknown workspace");
-  }
-  const file = path.resolve(ws, ".pi", "APPEND_SYSTEM.md");
-  // Belt-and-braces: the result must be exactly <workspace>/.pi/APPEND_SYSTEM.md.
-  if (file !== path.join(ws, ".pi", "APPEND_SYSTEM.md") || path.dirname(path.dirname(file)) !== ws) {
-    throw new Error("Path escapes workspace");
-  }
-  return file;
 }
 
 export function readAppend(file: string): string | null {
