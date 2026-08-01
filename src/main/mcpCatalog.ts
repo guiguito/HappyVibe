@@ -244,9 +244,14 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     name: "n8n",
     category: "Automation",
     brand: "si-n8n",
-    tagline: "Describe an automation instead of dragging boxes",
+    tagline: "Run and edit your own n8n workflows from the agent",
+    // NB: this is n8n's OFFICIAL built-in server (/mcp-server/http), which
+    // surfaces YOUR workflows. It is not the community czlonkowski/n8n-mcp,
+    // which teaches the agent n8n's node catalogue so it can author workflows —
+    // a different product, stdio, and a candidate for its own entry later. The
+    // blurb described that one by mistake while shipping this endpoint.
     blurb:
-      "Connects to your own n8n instance and teaches the agent every node it has, so you can describe a workflow in a sentence and have it built. Works against self-hosted and cloud n8n — you supply the instance URL and a token.",
+      "n8n's built-in server exposes the workflows you have marked as available in MCP, so the agent can search them, trigger and test runs, and create or edit workflows and data tables. It always points at your own instance — n8n Cloud included, since every workspace has its own URL.",
     docsUrl: "https://docs.n8n.io/connect/connect-to-n8n-mcp-server",
     transport: "remote",
     auth: "key",
@@ -254,10 +259,15 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
       {
         id: "instanceUrl",
         label: "Your n8n URL",
-        hint: "e.g. https://n8n.example.com — no trailing slash",
+        hint: "Your n8n base URL, shown on the Instance-level MCP page — cloud workspaces look like https://<name>.app.n8n.cloud",
         secret: false,
       },
-      { id: "token", label: "MCP token", hint: "n8n → Settings → MCP Server", secret: true },
+      {
+        id: "token",
+        label: "MCP access token",
+        hint: "n8n → Settings → Instance-level MCP → Connection details → Access Token",
+        secret: true,
+      },
     ],
     // The instance URL is the user's own non-secret value, so it is inlined
     // literally — the adapter would not interpolate a placeholder in `url`.
