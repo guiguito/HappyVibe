@@ -102,12 +102,21 @@ export function parseDangerous(r: UiRequest & { message?: string }): boolean | n
 }
 
 /** §23: an hv.plan mode notify → {enabled, planPath}, null otherwise. */
-export function parsePlan(r: UiRequest & { message?: string }): { enabled: boolean; planPath?: string } | null {
+export function parsePlan(
+  r: UiRequest & { message?: string },
+): { enabled: boolean; planPath?: string; restored: boolean } | null {
   if (r.method !== "notify") return null;
   try {
     const p = JSON.parse(r.message ?? "");
     if (p?.kind === "hv.plan" && typeof p.enabled === "boolean") {
-      return { enabled: p.enabled, planPath: typeof p.planPath === "string" ? p.planPath : undefined };
+      return {
+        enabled: p.enabled,
+        planPath: typeof p.planPath === "string" ? p.planPath : undefined,
+        // The bridge sets this on the session_start replay only. The caller must
+        // not append a bottom plan card for a replay — the card belongs at its
+        // position in restored history, or nowhere if compaction dropped it.
+        restored: p.restored === true,
+      };
     }
   } catch {
     /* not ours */

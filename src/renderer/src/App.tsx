@@ -370,7 +370,13 @@ export default function App(): React.JSX.Element {
         const sid = r.sessionId;
         setPlanMode((p) => ({ ...p, [sid]: pl }));
         const wsId = sessionsRef.current.find((s) => s.id === sid)?.workspaceId;
-        if (pl.planPath && wsId) ensurePlanCard(sid, wsId, pl.planPath);
+        // Only a LIVE plan_complete appends a card — the bottom is the right
+        // place for it then. The session_start replay (`restored`) must not:
+        // that card belongs at its position in rebuilt history, and if
+        // compaction dropped the plan_complete from context it should not
+        // reappear at all. Appending it anyway produced a misplaced card frozen
+        // at "draft" that claimed an implemented plan was still pending.
+        if (pl.planPath && wsId && !pl.restored) ensurePlanCard(sid, wsId, pl.planPath);
       }
       const pb = parsePlanBlocked(r);
       if (pb && r.sessionId) {
