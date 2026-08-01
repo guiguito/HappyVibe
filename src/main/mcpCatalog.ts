@@ -125,9 +125,14 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     name: "Jira / Atlassian",
     category: "Productivity",
     brand: "si-atlassian",
-    tagline: "Read and update Jira tickets and Confluence pages",
+    tagline: "Read and update Jira, Confluence, Bitbucket and Compass",
+    // Single shared endpoint for every customer — no site or cloud-id in the
+    // URL, because OAuth already scopes access to what the signed-in account
+    // can see, multiple sites included. Cloud only: there is no Data Center or
+    // Server variant to offer. (The legacy /v1/sse endpoint sunsets
+    // 2026-06-30; authv2 above is the current one.)
     blurb:
-      "Atlassian's Rovo server gives the agent your Jira and Confluence workspace: it can pull a ticket's context before making a change, move a status, or cross-reference a page. You sign in through your browser.",
+      "Atlassian's Rovo server gives the agent your Jira, Confluence, Jira Service Management, Bitbucket and Compass content: it can pull a ticket's context before making a change, move a status, or cross-reference a page. You sign in through your browser, and it only ever sees what your account already can. Atlassian Cloud only — Data Center and Server are not supported.",
     docsUrl: "https://www.atlassian.com/platform/remote-mcp-server",
     transport: "remote",
     auth: "oauth",
