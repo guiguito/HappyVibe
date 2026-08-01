@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MCP_CATALOG, catalogEntry, buildCatalogInstall } from "../src/main/mcpCatalog";
+import { MCP_CATALOG, catalogEntry, catalogCategories, buildCatalogInstall } from "../src/main/mcpCatalog";
 import { isValidServerName } from "../src/main/mcp";
 
 const CATEGORIES = ["Code", "Design", "Data", "Browser", "Productivity", "Automation"];
@@ -166,5 +166,23 @@ describe("buildCatalogInstall", () => {
       e.inputs.map((i) => [i.id, i.id === plain.id ? "https://my.instance" : "s"]),
     );
     expect(JSON.stringify(buildCatalogInstall(e, values).cfg)).toContain("https://my.instance");
+  });
+});
+
+describe("catalogCategories", () => {
+  it("lists each present category once, in first-appearance order", () => {
+    const cats = catalogCategories();
+    expect(new Set(cats).size).toBe(cats.length);
+    expect(cats).toEqual(MCP_CATALOG.map((e) => e.category).filter((c, i, a) => a.indexOf(c) === i));
+  });
+
+  it("never offers a category with no entries behind it", () => {
+    for (const c of catalogCategories()) {
+      expect(MCP_CATALOG.some((e) => e.category === c), c).toBe(true);
+    }
+  });
+
+  it("is empty for an empty catalog", () => {
+    expect(catalogCategories([])).toEqual([]);
   });
 });

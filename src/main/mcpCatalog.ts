@@ -326,6 +326,17 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
   },
 ];
 
+/**
+ * Categories actually present, in the order they first appear in the catalog —
+ * curation order, not alphabetical, so the filter reads the same way the grid
+ * does. Never returns a category with no entries behind it.
+ */
+export function catalogCategories(entries: McpCatalogEntry[] = MCP_CATALOG): McpCatalogCategory[] {
+  const seen: McpCatalogCategory[] = [];
+  for (const e of entries) if (!seen.includes(e.category)) seen.push(e.category);
+  return seen;
+}
+
 export function catalogEntry(key: string): McpCatalogEntry | undefined {
   return MCP_CATALOG.find((e) => e.key === key);
 }

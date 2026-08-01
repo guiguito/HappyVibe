@@ -114,7 +114,7 @@ export function WorkspaceSettingsModal({
           <WorkspaceSkillsBlock workspace={workspace} />
         </Block>
 
-        <Block title="mcp servers">
+        <Block title="workspace mcp">
           <WorkspaceMcpBlock workspace={workspace} />
         </Block>
 
@@ -229,6 +229,7 @@ function WorkspaceMcpBlock({ workspace }: { workspace: string }): React.JSX.Elem
       <McpCatalogSection
         workspaceId={workspace}
         scope="workspace"
+        collapsible
         refreshKey={serversTick}
         onInstalled={() => setInstalledTick((n) => n + 1)}
       />

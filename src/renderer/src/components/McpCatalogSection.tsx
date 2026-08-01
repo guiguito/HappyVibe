@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { MCP_CATALOG, type McpCatalogEntry } from "../../../main/mcpCatalog";
+import {
+  MCP_CATALOG,
+  catalogCategories,
+  type McpCatalogCategory,
+  type McpCatalogEntry,
+} from "../../../main/mcpCatalog";
 import { McpConnectResult, type ConnectResultState } from "./McpServersSection";
 import { BrandMark } from "./BrandMark";
 
@@ -13,11 +18,15 @@ export function McpCatalogSection({
   scope = "global",
   onInstalled,
   refreshKey = 0,
+  collapsible = false,
 }: {
   workspaceId: string | null;
   /** Fixed by the surface — see the note on McpServersSection's `scope`. */
   scope?: "global" | "workspace";
   onInstalled: () => void;
+  /** Render behind a disclosure, closed by default — for the workspace settings
+      dialog, where the full grid would bury the rest of the form. */
+  collapsible?: boolean;
   /** Bumped by the parent when the servers list below changes, so removing a
       server there frees its card here. Without it the card stays "installed"
       and un-clickable until the page is remounted. */
@@ -27,6 +36,9 @@ export function McpCatalogSection({
   const [hasNode, setHasNode] = useState(true);
   const [chosen, setChosen] = useState<McpCatalogEntry | null>(null);
   const [connect, setConnect] = useState<ConnectResultState | null>(null);
+  const [category, setCategory] = useState<McpCatalogCategory | null>(null); // null = All
+  const categories = catalogCategories();
+  const shown = category ? MCP_CATALOG.filter((e) => e.category === category) : MCP_CATALOG;
   // Bumped per attempt and on dismiss — a result landing after the user closed
   // the modal must not reopen it. See the Cancel affordance in McpConnectResult.
   const connectGen = useRef(0);
@@ -72,15 +84,35 @@ export function McpCatalogSection({
     void window.hv.nodeAvailable().then(setHasNode).catch(() => setHasNode(true));
   }, [workspaceId, refreshKey]);
 
-  return (
-    <div>
+  const browse = (
+    <>
       {/* The Section heading already says "recognised … ready to install" — this
           line adds only what that does not cover. */}
       <p className="text-xs text-ink-soft mb-3">
         Every one still goes through your permission rules.
       </p>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {[null, ...categories].map((c) => {
+          const active = category === c;
+          return (
+            <button
+              key={c ?? "all"}
+              type="button"
+              onClick={() => setCategory(c)}
+              aria-pressed={active}
+              className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2.5 py-1 cursor-pointer ${
+                active
+                  ? "bg-tangerine text-paper border-tangerine-deep"
+                  : "bg-paper-deep text-ink-soft border-line hover:border-tangerine"
+              }`}
+            >
+              {c ?? "All"}
+            </button>
+          );
+        })}
+      </div>
       <div className="grid grid-cols-2 gap-2">
-        {MCP_CATALOG.map((e) => {
+        {shown.map((e) => {
           const installed = installedNames.has(e.key.toLowerCase());
           const blocked = e.transport === "stdio" && !hasNode;
           return (
@@ -114,6 +146,26 @@ export function McpCatalogSection({
           );
         })}
       </div>
+    </>
+  );
+
+  return (
+    <div>
+      {/* ponytail: native <details> — no disclosure state to manage. */}
+      {collapsible ? (
+        <details className="group">
+          <summary className="cursor-pointer list-none text-sm font-bold flex items-center gap-1.5 mb-2 select-none">
+            <span className="text-ink-soft transition-transform group-open:rotate-90" aria-hidden>
+              ▸
+            </span>
+            Install from the curated list
+            <span className="text-xs font-normal text-ink-soft">({MCP_CATALOG.length})</span>
+          </summary>
+          {browse}
+        </details>
+      ) : (
+        browse
+      )}
       {chosen && (
         <McpCatalogConfirm
           entry={chosen}
