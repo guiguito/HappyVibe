@@ -233,7 +233,9 @@ function WorkspaceMcpBlock({ workspace }: { workspace: string }): React.JSX.Elem
         refreshKey={serversTick}
         onInstalled={() => setInstalledTick((n) => n + 1)}
       />
-      <div className="mt-4">
+      {/* Tight: the collapsed summary already carries its own bottom margin,
+          and the list brings its own header row. */}
+      <div className="mt-1">
         <McpServersSection
           key={installedTick}
           workspaceId={workspace}

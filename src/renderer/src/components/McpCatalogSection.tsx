@@ -153,8 +153,8 @@ export function McpCatalogSection({
     <div>
       {/* ponytail: native <details> — no disclosure state to manage. */}
       {collapsible ? (
-        <details className="group">
-          <summary className="cursor-pointer list-none text-sm font-bold flex items-center gap-1.5 mb-2 select-none">
+        <details className="group [&[open]>summary]:mb-2">
+          <summary className="cursor-pointer list-none text-sm font-bold flex items-center gap-1.5 select-none">
             <span className="text-ink-soft transition-transform group-open:rotate-90" aria-hidden>
               ▸
             </span>
