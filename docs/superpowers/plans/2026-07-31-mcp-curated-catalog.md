@@ -1,5 +1,21 @@
 # Curated one-click MCP catalog — Implementation Plan
 
+> **SUPERSEDED IN PART — read this first (2026-08-01).** This is the plan as written
+> before implementation. Reality diverged on three points, and the code is the source of
+> truth now:
+> - **13 entries, not 15.** Figma and Slack were dropped — both allowlist pre-registered
+>   OAuth clients and reject the Dynamic Client Registration our flow depends on (Figma
+>   verified with a live 403). GitHub hit the same wall and was kept by switching to a
+>   personal access token.
+> - **Two behaviours were added that this plan does not mention**: `mcpResolve.ts`
+>   (main resolves `${HV_MCP_…}` before probing, or key-based servers report a false
+>   "needs auth") and `hv:mcp-connect-flow` (install chains into connect → auth-if-needed
+>   → tools).
+> - **Scope is no longer chosen per install.** The MCP page is global-only; workspace-tier
+>   MCP moved to `WorkspaceSettingsModal`.
+>
+> See `docs/prd.md` §13 and the Notion "Curated MCP List" build spec for the current state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a bundled, browsable catalog of ~15 recognised MCP servers to the MCP page, each installable in one click through a confirm dialog that presents the server before anything is written.
