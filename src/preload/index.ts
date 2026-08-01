@@ -168,9 +168,6 @@ contextBridge.exposeInMainWorld("hv", {
   sysPromptSnapshot: (sessionId?: string) => ipcRenderer.invoke("hv:sysprompt-snapshot", sessionId),
   getGlobalAppend: () => ipcRenderer.invoke("hv:get-global-append"),
   setGlobalAppend: (content: string) => ipcRenderer.invoke("hv:set-global-append", content),
-  getWorkspaceAppend: (workspaceId: string) => ipcRenderer.invoke("hv:get-workspace-append", workspaceId),
-  setWorkspaceAppend: (workspaceId: string, content: string) =>
-    ipcRenderer.invoke("hv:set-workspace-append", workspaceId, content),
   getWorkspaceModel: (workspaceId: string) => ipcRenderer.invoke("hv:get-workspace-model", workspaceId),
   setWorkspaceModel: (workspaceId: string, m: { provider: string; modelId: string } | null) =>
     ipcRenderer.invoke("hv:set-workspace-model", workspaceId, m),

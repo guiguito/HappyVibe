@@ -45,7 +45,7 @@ import {
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { restoreItems, type RestoreItem } from "./restore";
-import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } from "./appendSystem";
+import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { deleteAuthEntry } from "./mcpAuthStore";
 import { probe } from "./mcpClient";
@@ -1541,10 +1541,6 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:get-global-append", () => readAppend(globalAppendFile(agentDir())));
   ipcMain.handle("hv:set-global-append", (_e, content: string) =>
     writeAppend(globalAppendFile(agentDir()), String(content)));
-  ipcMain.handle("hv:get-workspace-append", (_e, workspaceId: string) =>
-    readAppend(resolveWorkspaceAppend(workspaces.list(), workspaceId)));
-  ipcMain.handle("hv:set-workspace-append", (_e, workspaceId: string, content: string) =>
-    writeAppend(resolveWorkspaceAppend(workspaces.list(), workspaceId), String(content)));
 
   // ── W2.1: per-session model override + image attach ─────────────────────
   // Persists on SessionMeta (survives hibernation/resume — spawn resolution
@@ -1664,7 +1660,7 @@ export function registerIpc(win: BrowserWindow): void {
   const globalMcpFile = () => path.join(agentDir(), "mcp.json");
   // Workspace tier: fixed filename at the workspace root. Guard: only paths
   // registered in the WorkspaceRegistry are writable — uses path.resolve
-  // matching, same trust boundary as resolveWorkspaceAppend.
+  // matching (the same trust boundary every fs writer here uses).
   const workspaceMcpFile = (workspaceId: string): string => {
     const ws = path.resolve(workspaceId);
     if (!workspaces.list().some((w) => path.resolve(w) === ws)) {

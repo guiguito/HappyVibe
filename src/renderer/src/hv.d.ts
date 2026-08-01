@@ -386,8 +386,6 @@ interface HvApi {
   sysPromptSnapshot(sessionId?: string): Promise<void>;
   getGlobalAppend(): Promise<string | null>;
   setGlobalAppend(content: string): Promise<void>;
-  getWorkspaceAppend(workspaceId: string): Promise<string | null>;
-  setWorkspaceAppend(workspaceId: string, content: string): Promise<void>;
   getWorkspaceModel(workspaceId: string): Promise<{ provider: string; modelId: string } | null>;
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 

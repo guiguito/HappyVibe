@@ -10,7 +10,7 @@ import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError } from "./providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
-import { WorkspaceSettingsModal } from "./components/WorkspaceSettingsModal";
+import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
 import { ShortcutsView } from "./components/ShortcutsView";
 import { eventToBinding, resolveBindings, type ShortcutId } from "./shortcuts";
@@ -1191,7 +1191,7 @@ export default function App(): React.JSX.Element {
           await window.hv.removeWorkspace(ws);
           setWorkspaces(await window.hv.listWorkspaces());
         }}
-        onWorkspaceSettings={setWsSettings}
+        onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
         onNewSession={newSession}
         onSelectSession={selectSession}
         onRenameSession={(id, title) => window.hv.renameSession(id, title)}
@@ -1244,6 +1244,7 @@ export default function App(): React.JSX.Element {
           />
         )}
         {activeView === "permissions" && <PermissionsView />}
+        {activeView === "workspace" && wsSettings && <WorkspaceSettingsView workspace={wsSettings} />}
         {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
         {activeView === "stats" && <StatsView workspaces={workspaces} />}
         {activeView === "audit" && <AuditLogView sessions={sessions} workspaces={workspaces} />}
@@ -1431,7 +1432,6 @@ export default function App(): React.JSX.Element {
       {uiReq?.kind === "askUser" && (
         <AskUserModal key={uiReq.req.id} ask={uiReq.ask} onSubmit={respondAskUser} onDismiss={() => respondAskUser(null)} />
       )}
-      {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
       {/* WS7: AGENTS.md editor — root from the "+" menu, any AGENTS.md from the tree. */}
       {agentsMd && wsId && (

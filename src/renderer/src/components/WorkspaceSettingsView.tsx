@@ -1,52 +1,37 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
+import { Section } from "./Section";
 import { ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
 import { McpServersSection } from "./McpServersSection";
 import { McpCatalogSection } from "./McpCatalogSection";
 
 /**
- * W1.4 workspace settings (PRD "Settings"): model override, workspace
- * permission rules, workspace system-prompt additions. Opened from the gear
- * on a workspace row in the sidebar.
+ * Workspace settings (PRD §16 round 8): model override, permission rules +
+ * bypass, workspace skills, workspace MCP. Opened from the gear on a workspace
+ * row in the sidebar.
+ *
+ * Round 8 turned this from a Radix dialog into a full page — it was the
+ * genuinely packed surface — and removed the per-workspace system-prompt
+ * additions (the same idea as AGENTS.md, told twice, where the two can
+ * disagree). Rules and the bypass toggle now share one section: they are one
+ * topic, and the bypass sitting three sections below the rules read as
+ * unrelated.
  */
-
-const smallBtn =
-  "rounded-lg border-2 px-3 py-1.5 text-xs font-bold shadow-sticker cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
 }
 
-function Block({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="mb-6">
-      <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-2">{title}</div>
-      {children}
-    </div>
-  );
-}
-
-export function WorkspaceSettingsModal({
-  workspace,
-  onClose,
-}: {
-  workspace: string;
-  onClose: () => void;
-}): React.JSX.Element {
+export function WorkspaceSettingsView({ workspace }: { workspace: string }): React.JSX.Element {
   const [models, setModels] = useState<HvModel[]>([]);
   const [model, setModel] = useState<{ provider: string; modelId: string } | null>(null);
-  const [additions, setAdditions] = useState("");
-  const [dirty, setDirty] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [bypass, setBypass] = useState<boolean | null>(null); // #14: tri-state override
   const [confirmBypass, setConfirmBypass] = useState(false);
 
   useEffect(() => {
     void window.hv.listModels().then(setModels);
     void window.hv.getWorkspaceModel(workspace).then(setModel);
-    void window.hv.getWorkspaceAppend(workspace).then((c) => setAdditions(c ?? ""));
     void window.hv.getWorkspaceBypass(workspace).then(setBypass);
   }, [workspace]);
 
@@ -62,35 +47,17 @@ export function WorkspaceSettingsModal({
     void window.hv.setWorkspaceModel(workspace, next);
   };
 
-  const saveAdditions = async (): Promise<void> => {
-    await window.hv.setWorkspaceAppend(workspace, additions);
-    setDirty(false);
-    setSaved(true);
-  };
-
   return (
-    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]" />
-        <Dialog.Content className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(38rem,calc(100vw-3rem))] max-h-[85vh] overflow-y-auto rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6 focus:outline-none">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="size-9 rounded-xl bg-honey border-2 border-ink/80 flex items-center justify-center -rotate-3 shrink-0">
-            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
-            </svg>
-          </div>
-          <Dialog.Title className="font-black text-xl tracking-tight truncate">{basename(workspace)}</Dialog.Title>
-          <span className="flex-1" />
-          <Dialog.Close asChild>
-            <button type="button" title="Close" className="text-ink-soft hover:text-ink cursor-pointer font-black text-lg px-1">
-              ×
-            </button>
-          </Dialog.Close>
-        </div>
-        <Dialog.Description className="text-xs text-ink-soft font-mono truncate mb-5">{workspace}</Dialog.Description>
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-3xl mx-auto w-full px-8 py-10">
+        <h1 className="font-black text-3xl tracking-tight mb-1 truncate">{basename(workspace)}</h1>
+        <p className="text-xs text-ink-soft font-mono truncate mb-8">{workspace}</p>
 
-        <Block title="model override">
+        <Section
+          icon="models"
+          title="Model"
+          subtitle="Sessions here start with this model instead of the global default."
+        >
           <ModelSelect
             models={models}
             value={model}
@@ -100,45 +67,41 @@ export function WorkspaceSettingsModal({
             placeholder="Use global default"
             menuWidthClassName="w-full"
           />
-          <p className="text-xs text-ink-soft mt-1.5">
-            Sessions in this workspace start with this model instead of the global default. Applies to new or
-            restarted sessions.
-          </p>
-        </Block>
+          <p className="text-xs text-ink-soft mt-1.5">Applies to new or restarted sessions.</p>
+        </Section>
 
-        <Block title="permission rules">
+        <Section
+          icon="permissions"
+          title="Permissions"
+          subtitle="Rules for this workspace, layered over the global ones."
+        >
           <PermissionRulesSection workspace={workspace} />
-        </Block>
 
-        <Block title="skills">
-          <WorkspaceSkillsBlock workspace={workspace} />
-        </Block>
-
-        <Block title="workspace mcp">
-          <WorkspaceMcpBlock workspace={workspace} />
-        </Block>
-
-        <Block title="bypass all permissions">
-          <div className="flex items-center gap-2">
-            <select
-              value={bypass === null ? "inherit" : bypass ? "on" : "off"}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === "on") setConfirmBypass(true);
-                else applyBypass(v === "off" ? false : null);
-              }}
-              className="rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none focus:border-tangerine cursor-pointer"
-            >
-              <option value="inherit">Inherit global</option>
-              <option value="on">On — auto-approve everything</option>
-              <option value="off">Off — always ask</option>
-            </select>
-            {bypass === true && <span className="text-xs font-bold text-berry">⚠ prompts disabled here</span>}
+          <div className="mt-6 rounded-xl border-2 border-berry/50 bg-berry-soft/40 p-4">
+            <div className="font-bold text-berry mb-2">⚠ Bypass ALL permissions</div>
+            <div className="flex items-center gap-2">
+              <select
+                value={bypass === null ? "inherit" : bypass ? "on" : "off"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "on") setConfirmBypass(true);
+                  else applyBypass(v === "off" ? false : null);
+                }}
+                aria-label="Bypass all permissions in this workspace"
+                className="rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none focus:border-tangerine cursor-pointer"
+              >
+                <option value="inherit">Inherit global</option>
+                <option value="on">On — auto-approve everything</option>
+                <option value="off">Off — always ask</option>
+              </select>
+              {bypass === true && <span className="text-xs font-bold text-berry">⚠ prompts disabled here</span>}
+            </div>
+            <p className="text-xs text-ink-soft mt-1.5">
+              Overrides the global setting for this workspace. "On" auto-approves every action with no prompts (a red
+              banner shows in each session). Applies to new or restarted sessions.
+            </p>
           </div>
-          <p className="text-xs text-ink-soft mt-1.5">
-            Overrides the global setting for this workspace. "On" auto-approves every action with no prompts (a red
-            banner shows in each session). Applies to new or restarted sessions.
-          </p>
+
           {confirmBypass && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirmBypass(false)}>
               <div className="w-full max-w-md rounded-2xl border-2 border-berry bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
@@ -166,39 +129,17 @@ export function WorkspaceSettingsModal({
               </div>
             </div>
           )}
-        </Block>
+        </Section>
 
-        <Block title="system prompt additions">
-          <textarea
-            value={additions}
-            onChange={(e) => {
-              setAdditions(e.target.value);
-              setDirty(true);
-              setSaved(false);
-            }}
-            rows={5}
-            placeholder="Extra instructions for sessions in this workspace…"
-            className="w-full font-mono text-xs rounded-xl border-2 border-line bg-paper px-3 py-2.5 focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60 resize-y"
-          />
-          <div className="flex items-center gap-2 mt-2">
-            <p className="text-xs text-ink-soft flex-1">
-              Heads up: these REPLACE the global additions for this workspace — they don't combine. Applies to new or
-              restarted sessions.
-            </p>
-            {saved && <span className="text-xs font-bold text-leaf shrink-0">Saved.</span>}
-            <button
-              type="button"
-              disabled={!dirty}
-              onClick={() => void saveAdditions()}
-              className={`${smallBtn} bg-tangerine text-paper border-tangerine-deep enabled:hover:brightness-105 disabled:opacity-40 shrink-0`}
-            >
-              Save
-            </button>
-          </div>
-        </Block>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <Section icon="skills" title="Skills" subtitle="This project's skills, and which global ones are on here.">
+          <WorkspaceSkillsBlock workspace={workspace} />
+        </Section>
+
+        <Section icon="mcp" title="Workspace MCP" subtitle="Servers for this project only.">
+          <WorkspaceMcpBlock workspace={workspace} />
+        </Section>
+      </div>
+    </div>
   );
 }
 
