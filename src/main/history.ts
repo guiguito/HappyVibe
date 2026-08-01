@@ -14,8 +14,13 @@
  * heuristic — and only the last compaction matters, because Pi ignores the
  * others.
  *
- * The in-context half is NOT rebuilt here: ipc.ts keeps taking it from
- * `get_messages`, which is already post-filter for §9 removals.
+ * Both halves are rebuilt here. The in-context half used to come from
+ * `get_messages`, but that RPC is the FIRST message a freshly spawned Pi has to
+ * answer, so it absorbs the whole child boot (session load + extensions + MCP)
+ * — measured at 1.35–2.86 s, 90%+ of every session restore. The file needs no
+ * child at all. It also fixes a quiet bug: §9 removals are applied by the bridge
+ * at the `context` event only, so `agent.state.messages` (what `get_messages`
+ * returns) still holds removed messages; `filterMessages` below drops them.
  */
 
 import { restoreItems, type RawMessage, type RestoreItem } from "./restore";
@@ -107,6 +112,27 @@ function marksOn(path: FileEntry[]): Set<MarkKey> {
   return marks;
 }
 
+/** Entries → the transcript items, §9 marks applied. */
+function itemsOf(entries: FileEntry[], path: FileEntry[]): RestoreItem[] {
+  const messages = entries
+    .filter((e) => e.type === "message" && e.message)
+    .map((e) => e.message as unknown as AgentMessage);
+  return restoreItems(filterMessages(messages, marksOn(path)) as unknown as RawMessage[]);
+}
+
+/**
+ * Where Pi's live context starts on the leaf path: index of `firstKeptEntryId`
+ * of the LAST compaction, or 0 for a never-compacted session. Everything before
+ * it is the "earlier" region, everything from it on is in the agent's context.
+ *
+ * -1 means the boundary is unusable (firstKeptEntryId not on the path).
+ */
+function contextStart(path: FileEntry[]): number {
+  const compaction = latestCompaction(path);
+  if (!compaction) return 0;
+  return path.findIndex((e) => e.id === compaction.firstKeptEntryId);
+}
+
 /**
  * The pre-compaction transcript, for DISPLAY only. Empty when the session was
  * never compacted (nothing is missing, so there is nothing to load).
@@ -117,16 +143,27 @@ function marksOn(path: FileEntry[]): Set<MarkKey> {
  */
 export function earlierItems(jsonl: string | null | undefined): RestoreItem[] {
   const path = leafPath(parseEntries(jsonl));
-  const compaction = latestCompaction(path);
-  if (!compaction) return [];
-  const cut = path.findIndex((e) => e.id === compaction.firstKeptEntryId);
-  if (cut < 0) return []; // firstKeptEntryId off-path — show nothing rather than guess
-  const messages = path
-    .slice(0, cut)
-    .filter((e) => e.type === "message" && e.message)
-    .map((e) => e.message as unknown as AgentMessage);
-  const kept = filterMessages(messages, marksOn(path)) as unknown as RawMessage[];
-  return restoreItems(kept).filter((it) => it.kind !== "plan");
+  const cut = contextStart(path);
+  if (cut <= 0) return []; // never compacted, or firstKeptEntryId off-path — don't guess
+  return itemsOf(path.slice(0, cut), path).filter((it) => it.kind !== "plan");
+}
+
+/**
+ * The in-context transcript — what `get_messages` would return, read off the
+ * file instead so a reopen never waits on the child.
+ *
+ * Pi's rule (session-manager.js buildContextEntries) is `[latest compaction] +
+ * entries from firstKeptEntryId onward`; the compaction entry only yields a
+ * `role:"compactionSummary"` message, which restoreItems drops anyway, so the
+ * slice from firstKeptEntryId reproduces it exactly.
+ */
+export function contextItems(jsonl: string | null | undefined): RestoreItem[] {
+  const path = leafPath(parseEntries(jsonl));
+  const cut = contextStart(path);
+  // cut < 0: compacted but the boundary is off-path. Pi keeps only what follows
+  // the compaction entry, so do the same rather than replaying dropped history.
+  const from = cut >= 0 ? cut : path.findLastIndex((e) => e.type === "compaction") + 1;
+  return itemsOf(path.slice(from), path);
 }
 
 /**

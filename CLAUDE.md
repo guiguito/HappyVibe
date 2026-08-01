@@ -14,7 +14,10 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated):
   tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge,plan-bridge}.test.ts
   Source of truth = `grep -rl "skipIf(!KEY" tests/` — re-derive, don't trust the list above.
-  Canonical invocation: `grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run`
+  Canonical invocation: `grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism`
+  (`--no-file-parallelism` is load-bearing: concurrent files mean concurrent DeepSeek sessions,
+  and the provider degrades under that — the residual "flakes" were turns that came back with no
+  tool call at all. Serial costs ~6 min and is green.)
   (use `xargs` — zsh does NOT word-split `$(…)`, so `npx vitest run $files` passes all 14
   paths as ONE argument and vitest reports "No test files found" while echoing the filter list.)
   (`skills-contract`/`builtins-contract` also spawn Pi but with a dummy key — key-free, they stay in the non-live run.)
@@ -23,6 +26,11 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   (plain `npm test` is NOT this — with a real key in `.env` it runs the live files inside the parallel suite, which is the flaky combination.)
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
+- `vitest.config.ts` exists for these: `testTimeout: 30_000` (vitest's 5 s default is shorter than a
+  Pi boot — a test without an explicit timeout was a coin flip). Don't "fix" a live failure by
+  raising a per-test timeout: a longer wait does not make a model that already finished its turn
+  produce a tool call. Check whether the model simply didn't call it (re-ask via `tests/reask.ts`
+  `askUntil`) and match the notify you actually mean (`tool === "bash"`, not "the first hv.audit").
 - Contract tests are the Pi upgrade gate: any pi/pi-subagents pin bump must pass them.
   Wire shapes are documented in docs/validation/d1.md — new bridge shapes go there too.
 

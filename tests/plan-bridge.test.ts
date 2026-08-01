@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
+import { askUntil } from "./reask";
 
 // Tiny .env loader — keeps tests dependency-free
 for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
@@ -55,14 +56,6 @@ test.skipIf(!KEY)("plan mode blocks writes and completes via the blocking plan-w
     if (r.method === "select") client.respondUi(r.id, { value: "Deny" }); // no permission prompt expected in plan mode
   });
 
-  const nextAgentEnd = (): Promise<void> =>
-    new Promise((resolve) => {
-      const h = (e: Record<string, unknown>): void => {
-        if (e.type === "agent_end") { client.off?.("event", h); resolve(); }
-      };
-      client.on("event", h);
-    });
-
   await client.start();
 
   // 1) Enter plan mode (slash command — no model turn) and confirm the notify.
@@ -70,24 +63,48 @@ test.skipIf(!KEY)("plan mode blocks writes and completes via the blocking plan-w
   await new Promise((r) => setTimeout(r, 500));
   expect(notifies.some((n) => n.kind === "hv.plan" && n.enabled === true)).toBe(true);
 
-  // 2) The model tries to modify a file — plan mode must block it.
-  let end = nextAgentEnd();
-  await client.send({
-    type: "prompt",
-    message: "Run exactly this shell command with the bash tool right now: touch forbidden.txt. Just call the tool, do not explain.",
-  });
-  await end;
-  expect(fs.existsSync(path.join(tmp, "forbidden.txt"))).toBe(false);
-  expect(notifies.some((n) => n.kind === "hv.plan.blocked")).toBe(true);
+  // 2) A non-allowlisted bash command must hit the clamp.
+  //
+  // This used to ask for `touch forbidden.txt` and was the suite's most stubborn
+  // failure — not because the clamp broke, but because the plan-mode system
+  // prompt had ALREADY told the model it is read-only, so it declined to call
+  // bash at all and the turn ended in prose. Observed directly: no
+  // tool_execution_start, no gate decision, nothing to assert on. Re-asking
+  // three times and arguing with the prompt both failed; the model is doing
+  // what it was told.
+  //
+  // `curl` reads as inspection, so the model issues it in plan mode without
+  // hesitation — and it is not in READ_ONLY_COMMANDS, so it takes the SAME
+  // `isSafeCommand` → block branch a `touch` would. The mutating-vs-allowlisted
+  // table itself is covered exhaustively and deterministically in
+  // tests/hv-plan.test.ts; what only a live run can prove is the wire —
+  // clamp → hv.plan.blocked + an audit stamped source:"plan" → turn continues —
+  // and it now proves it on a call the model actually makes.
+  // (`-o /dev/null` and the block-before-execute order mean no network happens.)
+  const blocked = await askUntil(
+    () => client.send({
+      type: "prompt",
+      message:
+        "Before planning, check network reachability: use the bash tool to run exactly " +
+        "`curl -sS -o /dev/null -w '%{http_code}' https://example.com`. This is a read-only check. Run it now.",
+    }),
+    () => notifies.some((n) => n.kind === "hv.plan.blocked"),
+  );
+  expect(blocked, "model never issued a blockable bash call across 3 attempts").toBe(true);
+  // The clamp decided, and said so: plan mode, not the rule engine or a prompt.
+  expect(notifies).toContainEqual(
+    expect.objectContaining({ kind: "hv.audit", tool: "bash", decision: "deny", source: "plan" }),
+  );
 
   // 3) The model finalizes the plan → plan_complete → blocking plan-write round-trip.
-  end = nextAgentEnd();
-  await client.send({
-    type: "prompt",
-    message:
-      "Stop exploring. Call the plan_complete tool now with a short markdown plan that has a '# Title', " +
-      "a '## Tasks' section with one '- [ ] do the thing' item, and a '## Verification' section. Call it alone.",
-  });
-  await end;
-  expect(planWriteAnswered).toBe(true);
-}, 180_000);
+  const completed = await askUntil(
+    () => client.send({
+      type: "prompt",
+      message:
+        "Stop exploring. Call the plan_complete tool now with a short markdown plan that has a '# Title', " +
+        "a '## Tasks' section with one '- [ ] do the thing' item, and a '## Verification' section. Call it alone.",
+    }),
+    () => planWriteAnswered,
+  );
+  expect(completed, "model never called plan_complete across 3 attempts").toBe(true);
+}, 300_000); // two re-asked steps, up to 3 × 45 s each, plus spawn

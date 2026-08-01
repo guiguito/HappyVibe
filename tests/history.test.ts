@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  compactionInfo, compactionReason, earlierItems, latestCompaction, leafPath, parseEntries,
+  compactionInfo, compactionReason, contextItems, earlierItems, latestCompaction, leafPath,
+  parseEntries,
 } from "../src/main/history";
 
 /** Build a JSONL session file from a linear entry list (parentId chained). */
@@ -125,6 +126,51 @@ describe("earlierItems", () => {
       { type: "compaction", id: "k1", summary: "s", firstKeptEntryId: "c" },
     ]);
     expect(earlierItems(raw)).toEqual([]);
+  });
+});
+
+describe("contextItems", () => {
+  it("is the whole transcript when the session was never compacted", () => {
+    expect(contextItems(jsonl([userMsg("a", "one", 1), asstMsg("b", "two", 2)]))).toEqual([
+      { kind: "user", text: "one" },
+      { kind: "assistant", text: "two" },
+    ]);
+  });
+
+  it("starts at firstKeptEntryId — the complement of earlierItems", () => {
+    const raw = jsonl([
+      userMsg("a", "one", 1), asstMsg("b", "two", 2), userMsg("c", "three", 3),
+      { type: "compaction", id: "k1", summary: "s", firstKeptEntryId: "c" },
+      asstMsg("d", "four", 4),
+    ]);
+    expect(contextItems(raw)).toEqual([
+      { kind: "user", text: "three" },
+      { kind: "assistant", text: "four" },
+    ]);
+    // The two halves partition the transcript exactly once.
+    expect([...earlierItems(raw), ...contextItems(raw)]).toHaveLength(4);
+  });
+
+  it("applies §9 removal marks — get_messages does NOT (the bridge filters at the context event)", () => {
+    const raw = jsonl([
+      userMsg("a", "one", 1), asstMsg("b", "two", 2),
+      { type: "custom", id: "m1", customType: "hv-context-marks", data: { marks: ["msg:1"] } },
+    ]);
+    expect(contextItems(raw)).toEqual([{ kind: "assistant", text: "two" }]);
+  });
+
+  it("falls back to the post-compaction tail when firstKeptEntryId is off-path", () => {
+    const raw = jsonl([
+      userMsg("a", "one", 1),
+      { type: "compaction", id: "k1", summary: "s", firstKeptEntryId: "gone" },
+      asstMsg("b", "two", 2),
+    ]);
+    expect(contextItems(raw)).toEqual([{ kind: "assistant", text: "two" }]);
+    expect(earlierItems(raw)).toEqual([]); // boundary unusable — never guess
+  });
+
+  it("is empty for a session with no file yet", () => {
+    expect(contextItems(null)).toEqual([]);
   });
 });
 
