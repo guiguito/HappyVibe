@@ -1,5 +1,10 @@
 import { useEffect } from "react";
-import { SHORTCUTS } from "../shortcuts";
+import { FIXED_SHORTCUTS, SHORTCUT_ACTIONS, formatBinding } from "../shortcuts";
+
+const SHORTCUTS = [
+  ...SHORTCUT_ACTIONS.map((a) => ({ keys: formatBinding(a.defaultKey), label: a.label })),
+  ...FIXED_SHORTCUTS,
+];
 
 /** F6: keyboard-shortcuts cheat sheet. Opened by ⌘/ or the Help footer. */
 export function ShortcutsDialog({ onClose }: { onClose: () => void }): React.JSX.Element {
