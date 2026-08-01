@@ -4,7 +4,7 @@ import type { SessionStatus } from "../App";
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
 // §13 round 6: the old combined "agents" page split into four peer destinations.
 export type View =
-  | "chat" | "settings" | "skills" | "mcp" | "agents" | "tools"
+  | "chat" | "skills" | "mcp" | "agents" | "tools"
   // Round 8: the settings scroll exploded into pages, each its own destination.
   | "models" | "permissions" | "sysprompt" | "stats" | "audit" | "shortcuts"
   | "workspace";
@@ -333,7 +333,7 @@ export function Sidebar({
         <button type="button" onClick={() => onNavigate("tools")} title="All Tools" aria-label="All Tools" className={railBtn(view === "tools")}>
           <ToolsIcon />
         </button>
-        <button type="button" onClick={() => onNavigate("settings")} title="Settings" aria-label="Settings" className={railBtn(view === "settings")}>
+        <button type="button" onClick={() => onNavigate("models")} title="Settings" aria-label="Settings" className={railBtn(view === "models")}>
           <GearIcon />
         </button>
         <button type="button" onClick={onOpenHelp} title="Help" aria-label="Help" className={railBtn(false)}>
@@ -530,9 +530,9 @@ export function Sidebar({
         </button>
         <button
           type="button"
-          onClick={() => onNavigate("settings")}
+          onClick={() => onNavigate("models")}
           className={`w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 cursor-pointer transition-colors ${
-            view === "settings"
+            view === "models"
               ? "bg-card border-line shadow-sticker"
               : "border-transparent hover:bg-card/70"
           }`}

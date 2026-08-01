@@ -21,6 +21,26 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
       <path d="M12 4v4M9 13h.01M15 13h.01M2 12h3M19 12h3" />
     </>
   ),
+  models: (
+    <>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+      <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
+    </>
+  ),
+  sysprompt: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 9 3 3-3 3M13 15h4" />
+    </>
+  ),
+  permissions: <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />,
+  audit: (
+    <>
+      <path d="M9 12h6M9 16h6M9 8h2" />
+      <path d="M5 4a1 1 0 0 1 1-1h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z" />
+    </>
+  ),
+  stats: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
   keyboard: (
     <>
       <rect x="2" y="6" width="20" height="12" rx="2" />

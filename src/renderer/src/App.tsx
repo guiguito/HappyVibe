@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
-import { SettingsView } from "./components/SettingsView";
+import { ModelsView } from "./components/ModelsView";
+import { PermissionsView } from "./components/PermissionsView";
+import { SystemPromptView } from "./components/SystemPromptView";
+import { StatsView } from "./components/StatsView";
+import { AuditLogView } from "./components/AuditLogView";
 import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError } from "./providerError";
@@ -1098,7 +1102,7 @@ export default function App(): React.JSX.Element {
   }
 
   const needsSetup = keyState === "missing";
-  const activeView: View = needsSetup ? "settings" : view;
+  const activeView: View = needsSetup ? "models" : view;
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
@@ -1120,7 +1124,7 @@ export default function App(): React.JSX.Element {
       if (ws) void newSession(ws);
       return;
     }
-    if (is("openSettings")) { e.preventDefault(); if (!needsSetup) setView("settings"); return; }
+    if (is("openSettings")) { e.preventDefault(); if (!needsSetup) setView("models"); return; }
     if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) setView("shortcuts"); return; }
     if (is("closeTab")) {
       // Close the first closable (non-chat) active tab; window close is ⌘⇧W.
@@ -1227,18 +1231,19 @@ export default function App(): React.JSX.Element {
             </button>
           </div>
         )}
-        {activeView === "settings" && (
-          <SettingsView
+        {activeView === "models" && (
+          <ModelsView
             firstRun={needsSetup}
             onSaved={() => {
               setKeyState("present");
               setView("chat");
             }}
-            sessionId={selectedId}
-            sessions={sessions}
-            workspaces={workspaces}
           />
         )}
+        {activeView === "permissions" && <PermissionsView />}
+        {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
+        {activeView === "stats" && <StatsView workspaces={workspaces} />}
+        {activeView === "audit" && <AuditLogView sessions={sessions} workspaces={workspaces} />}
         {activeView === "skills" && (
           <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
