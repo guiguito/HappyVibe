@@ -210,7 +210,15 @@ function McpCatalogConfirm({
         <p className="text-xs text-ink-soft mt-1 font-mono break-all">
           {entry.transport === "remote"
             ? (entry.build(
-                Object.fromEntries(entry.inputs.map((i) => [i.id, values[i.id] ?? `<${i.label}>`])),
+                // An untouched OPTIONAL field must stay empty so build() falls
+                // back to its default (the vendor cloud) — showing "<Instance
+                // URL>" there would claim we're about to write a placeholder.
+                Object.fromEntries(
+                  entry.inputs.map((i) => [
+                    i.id,
+                    values[i.id] ?? (i.optional ? "" : `<${i.label}>`),
+                  ]),
+                ),
                 () => "•••",
               ).url as string)
             : (() => {
@@ -246,7 +254,10 @@ function McpCatalogConfirm({
 
         {entry.inputs.map((input) => (
           <div key={input.id}>
-            <label className={labelCls}>{input.label}</label>
+            <label className={labelCls}>
+              {input.label}
+              {input.optional && <span className="text-ink-soft/70 normal-case"> — optional</span>}
+            </label>
             <input
               type={input.secret ? "password" : "text"}
               value={values[input.id] ?? ""}

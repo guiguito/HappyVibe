@@ -129,6 +129,29 @@ describe("buildCatalogInstall", () => {
     expect(JSON.stringify(cfg)).toContain("${HV_MCP_");
   });
 
+  it("allows an optional input to be blank and falls back to the default", () => {
+    // Supabase's instance URL: blank means Supabase Cloud, so leaving it empty
+    // must not block the install the way a missing API key does.
+    const e = MCP_CATALOG.find((x) => x.inputs.some((i) => i.optional));
+    if (!e) return;
+    const required = Object.fromEntries(
+      e.inputs.filter((i) => !i.optional).map((i) => [i.id, "v"]),
+    );
+    const { cfg } = buildCatalogInstall(e, required);
+    expect(cfg.url).toMatch(/^https:\/\//);
+    expect(JSON.stringify(cfg)).not.toContain("undefined");
+  });
+
+  it("still honours an optional input when it IS filled", () => {
+    const e = MCP_CATALOG.find((x) => x.inputs.some((i) => i.optional));
+    if (!e) return;
+    const opt = e.inputs.find((i) => i.optional)!;
+    const values = Object.fromEntries(
+      e.inputs.map((i) => [i.id, i.id === opt.id ? "http://localhost:54321/mcp" : "v"]),
+    );
+    expect(buildCatalogInstall(e, values).cfg.url).toBe("http://localhost:54321/mcp");
+  });
+
   it("rejects a missing required value rather than writing an empty placeholder", () => {
     // A missing var interpolates to "" silently, so the server would fail auth
     // with nothing to explain it. Catch it at the boundary instead.

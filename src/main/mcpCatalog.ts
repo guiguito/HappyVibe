@@ -38,6 +38,9 @@ export interface McpCatalogInput {
   hint: string;
   /** true → safeStorage-encrypted, referenced by placeholder. Never written to disk in the clear. */
   secret: boolean;
+  /** Blank is allowed — `build` supplies a default (e.g. the vendor's cloud
+      endpoint when the user isn't pointing at a self-hosted instance). */
+  optional?: boolean;
 }
 
 export interface McpCatalogEntry {
@@ -170,8 +173,19 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     docsUrl: "https://supabase.com/docs/guides/ai-tools/mcp",
     transport: "remote",
     auth: "oauth",
-    inputs: [],
-    build: () => ({ url: "https://mcp.supabase.com/mcp" }),
+    inputs: [
+      {
+        id: "instanceUrl",
+        label: "Instance URL",
+        hint: "Leave blank for Supabase Cloud. Developing against the local CLI? Use http://localhost:54321/mcp",
+        secret: false,
+        optional: true,
+      },
+    ],
+    // The docs give a real second endpoint for the local CLI, so this is a
+    // plain URL swap — no transport change, and the cloud default still makes
+    // it a one-click install for everyone who ignores the field.
+    build: (v) => ({ url: v.instanceUrl?.trim() || "https://mcp.supabase.com/mcp" }),
   },
   {
     key: "neon",
@@ -194,7 +208,7 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     // simple-icons ships no si-firecrawl — generic MCP glyph.
     tagline: "Scrape JavaScript-heavy pages the agent otherwise can't read",
     blurb:
-      "Firecrawl fetches and cleans modern web pages, including ones that only render through JavaScript, and hands the agent readable text instead of raw markup. Useful when you want it to research a site rather than guess at it. Needs a free API key.",
+      "Firecrawl fetches and cleans modern web pages, including ones that only render through JavaScript, and hands the agent readable text instead of raw markup. Useful when you want it to research a site rather than guess at it. Needs a free API key. This connects to Firecrawl Cloud — self-hosting runs a local server instead, so add it with \u201cAdd server\u201d below.",
     docsUrl: "https://docs.firecrawl.dev/mcp-server/connect",
     transport: "remote",
     auth: "key",
@@ -311,6 +325,7 @@ export function buildCatalogInstall(
   values: Record<string, string>,
 ): { cfg: McpServerConfig; secrets: { inputId: string; value: string }[] } {
   for (const input of entry.inputs) {
+    if (input.optional) continue;
     if (!values[input.id]?.trim()) throw new Error(`${input.label} is required`);
   }
   const cfg = entry.build(values, (id) => mcpSecretPlaceholder(entry.key, id));
