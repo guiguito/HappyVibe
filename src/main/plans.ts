@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { resolveInWorkspace } from "./files";
+import { listDir, resolveInWorkspace } from "./files";
 import {
   buildPlanFile, parsePlanFile, planSlug, withPlanStatus, type ParsedPlan, type PlanStatus,
 } from "../../pi-runtime/extensions/hv-plan";
@@ -110,6 +110,36 @@ export function readPlan(
   } catch {
     return null;
   }
+}
+
+/**
+ * Every plan file in a workspace with its parsed status + checkbox progress —
+ * i.e. the `hv:plan-changed` payloads (minus workspaceId). Used both when a plan
+ * dir change arrives from the watcher and once when a workspace starts being
+ * watched: progress only moves on a watcher event, so boxes ticked while nobody
+ * was watching would otherwise stay invisible until the next write.
+ */
+export function listPlanProgress(
+  registeredWorkspaces: string[],
+  workspaceId: string,
+): { path: string; status: PlanStatus; done: number; total: number }[] {
+  // Confinement first: a bare try/catch around listDir would also swallow an
+  // unregistered/escaping workspace and report it as "no plans", hiding misuse.
+  resolveInWorkspace(registeredWorkspaces, workspaceId, PLAN_DIR);
+  let names: { name: string; kind: string }[];
+  try {
+    names = listDir(registeredWorkspaces, workspaceId, PLAN_DIR);
+  } catch {
+    return []; // no plans dir yet
+  }
+  const out: { path: string; status: PlanStatus; done: number; total: number }[] = [];
+  for (const f of names) {
+    if (f.kind !== "file" || !f.name.endsWith(".md")) continue;
+    const rel = `${PLAN_DIR}/${f.name}`;
+    const parsed = readPlan(registeredWorkspaces, workspaceId, rel);
+    if (parsed) out.push({ path: rel, status: parsed.status, done: parsed.done, total: parsed.total });
+  }
+  return out;
 }
 
 /** Is a workspace-relative path a plan file under `.agents/plans/`? */

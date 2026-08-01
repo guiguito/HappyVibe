@@ -38,7 +38,7 @@ import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/comma
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
-import { readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
+import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
   captureSnapshot, deleteSessionSnapshots, findRestoreTarget, listSnapshots,
   previewRestore, restoreSnapshot, stampSnapshot,
@@ -1710,9 +1710,18 @@ export function registerIpc(win: BrowserWindow): void {
     moveEntry(workspaces.list(), workspaceId, srcRel, destDirRel));
   ipcMain.handle("hv:fs-import", (_e, workspaceId: string, destDirRel: string, srcAbsPaths: string[]) =>
     importEntries(workspaces.list(), workspaceId, destDirRel, srcAbsPaths));
+  // §23: re-parse every plan file in a workspace and push its n/m + status.
+  const pushPlanProgress = (workspaceId: string): void => {
+    for (const p of listPlanProgress(workspaces.list(), workspaceId)) {
+      send("hv:plan-changed", { workspaceId, ...p });
+    }
+  };
   // WS8: native fs watching — auto-refresh the tree (replaces the refresh button).
   ipcMain.handle("hv:watch-workspace", (_e, workspaceId: string) => {
     resolveInWorkspace(workspaces.list(), workspaceId, ""); // confinement gate
+    // §23: plan progress only moves on a watcher event, so anything ticked while
+    // nobody was watching is invisible until the NEXT write. Sync once up front.
+    pushPlanProgress(workspaceId);
     watchWorkspace(workspaceId, (relDirs) => {
       send("hv:fs-changed", { workspaceId, relDirs });
       // §14: a change under .agents/skills may flip an approved workspace skill
@@ -1724,14 +1733,7 @@ export function registerIpc(win: BrowserWindow): void {
       }
       // §23: when a plan dir changed, re-parse plan files and push live progress.
       if (relDirs.some((d) => d === PLAN_DIR || d === ".agents" || d === "")) {
-        let names: { name: string; kind: string }[] = [];
-        try { names = listDir(workspaces.list(), workspaceId, PLAN_DIR); } catch { /* no plans yet */ }
-        for (const f of names) {
-          if (f.kind !== "file" || !f.name.endsWith(".md")) continue;
-          const rel = `${PLAN_DIR}/${f.name}`;
-          const parsed = readPlan(workspaces.list(), workspaceId, rel);
-          if (parsed) send("hv:plan-changed", { workspaceId, path: rel, status: parsed.status, done: parsed.done, total: parsed.total });
-        }
+        pushPlanProgress(workspaceId);
       }
     });
   });

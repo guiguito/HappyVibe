@@ -844,11 +844,19 @@ export default function App(): React.JSX.Element {
     const want = new Set(
       Object.entries(tabsByWs).filter(([, t]) => allFiles(t).length > 0).map(([w]) => w),
     );
+    // §23: a live plan's n/m progress rides this same watcher (main re-parses the
+    // plan file and pushes hv:plan-changed). Keep the plan's workspace watched, or
+    // the "Implementing n/m" badge freezes at its implement-time count whenever
+    // the file drawer and every editor tab are closed.
+    // ponytail: activePlan is never pruned on session close, so a workspace stays
+    // watched until app exit — bounded at one watch per workspace, so not worth a
+    // teardown path. Prune here if watcher count ever matters.
+    for (const p of Object.values(activePlan)) if (p.workspaceId) want.add(p.workspaceId);
     const have = watchedWsRef.current;
     for (const w of want) if (!have.has(w)) void window.hv.watchWorkspace(w).catch(() => {});
     for (const w of have) if (!want.has(w)) void window.hv.unwatchWorkspace(w).catch(() => {});
     watchedWsRef.current = want;
-  }, [tabsByWs]);
+  }, [tabsByWs, activePlan]);
 
   // WS7: session context stats for the tab-strip bubble + panel, plus the cost
   // ledger for the spend pill. Both fetched once per agent_end (turns bump),
