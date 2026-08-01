@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("hv", {
   listSessions: () => ipcRenderer.invoke("hv:list-sessions"),
   createSession: (workspaceId: string) => ipcRenderer.invoke("hv:create-session", workspaceId),
   openSession: (sessionId: string) => ipcRenderer.invoke("hv:open-session", sessionId),
+  loadEarlier: (sessionId: string) => ipcRenderer.invoke("hv:load-earlier", sessionId),
   closeSession: (sessionId: string) => ipcRenderer.invoke("hv:close-session", sessionId),
   deleteSession: (sessionId: string) => ipcRenderer.invoke("hv:delete-session", sessionId),
   renameSession: (sessionId: string, title: string) => ipcRenderer.invoke("hv:rename-session", sessionId, title),

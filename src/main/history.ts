@@ -147,6 +147,9 @@ export function compactionInfo(jsonl: string | null | undefined): CompactionInfo
  * `compaction_end` event does, so main logs it (`context.compact`) and we join
  * back on `firstKeptEntryId`.
  *
+ * `events` are the session's `context.compact` rows, already filtered by
+ * EventLog.read({ type, sessionId }).
+ *
  * ponytail: last match wins. Two compactions CAN share a firstKeptEntryId (seen
  * in a real session: entries 491 and 492 both pointed at 418), which makes the
  * join ambiguous; the newer reason is the better answer and the case is
@@ -157,26 +160,13 @@ export function compactionInfo(jsonl: string | null | undefined): CompactionInfo
  * omits the reason rather than inventing one.
  */
 export function compactionReason(
-  logJsonl: string | null | undefined,
-  sessionId: string,
+  events: { data?: Record<string, unknown> }[],
   firstKeptEntryId: string,
 ): string | null {
-  if (!logJsonl) return null;
   let reason: string | null = null;
-  for (const raw of logJsonl.split("\n")) {
-    if (!raw.trim() || !raw.includes('"context.compact"')) continue;
-    try {
-      const e = JSON.parse(raw) as {
-        type?: string;
-        sessionId?: string;
-        data?: { reason?: string; firstKeptEntryId?: string };
-      };
-      if (e.type !== "context.compact" || e.sessionId !== sessionId) continue;
-      if (e.data?.firstKeptEntryId !== firstKeptEntryId) continue;
-      if (typeof e.data?.reason === "string") reason = e.data.reason;
-    } catch {
-      continue;
-    }
+  for (const e of events) {
+    if (e.data?.firstKeptEntryId !== firstKeptEntryId) continue;
+    if (typeof e.data?.reason === "string") reason = e.data.reason;
   }
   return reason;
 }

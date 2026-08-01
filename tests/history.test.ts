@@ -140,23 +140,20 @@ describe("compactionInfo", () => {
 });
 
 describe("compactionReason", () => {
-  const log = [
-    JSON.stringify({ ts: "2026-08-01T10:00:00Z", type: "session.start", sessionId: "s1" }),
-    JSON.stringify({ ts: "2026-08-01T10:01:00Z", type: "context.compact", sessionId: "s1", data: { reason: "threshold", firstKeptEntryId: "b" } }),
-    JSON.stringify({ ts: "2026-08-01T10:02:00Z", type: "context.compact", sessionId: "other", data: { reason: "manual", firstKeptEntryId: "b" } }),
-  ].join("\n");
+  // As EventLog.read({ type: "context.compact", sessionId }) returns them.
+  const events = [{ data: { reason: "threshold", firstKeptEntryId: "b" } }];
 
-  it("joins on sessionId + firstKeptEntryId", () => {
-    expect(compactionReason(log, "s1", "b")).toBe("threshold");
+  it("joins on firstKeptEntryId", () => {
+    expect(compactionReason(events, "b")).toBe("threshold");
   });
 
   it("is null for an unlogged (pre-feature) compaction", () => {
-    expect(compactionReason(log, "s1", "zzz")).toBeNull();
-    expect(compactionReason(null, "s1", "b")).toBeNull();
+    expect(compactionReason(events, "zzz")).toBeNull();
+    expect(compactionReason([], "b")).toBeNull();
   });
 
   it("takes the LAST match when two compactions share a firstKeptEntryId", () => {
-    const dup = `${log}\n${JSON.stringify({ ts: "2026-08-01T10:03:00Z", type: "context.compact", sessionId: "s1", data: { reason: "overflow", firstKeptEntryId: "b" } })}`;
-    expect(compactionReason(dup, "s1", "b")).toBe("overflow");
+    const dup = [...events, { data: { reason: "overflow", firstKeptEntryId: "b" } }];
+    expect(compactionReason(dup, "b")).toBe("overflow");
   });
 });
