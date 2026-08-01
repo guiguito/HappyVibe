@@ -184,6 +184,8 @@ contextBridge.exposeInMainWorld("hv", {
   // Extended prompt-cache retention (PI_CACHE_RETENTION=long) — next spawn.
   getLongCache: () => ipcRenderer.invoke("hv:get-long-cache"),
   setLongCache: (on: boolean) => ipcRenderer.invoke("hv:set-long-cache", on),
+  getShortcuts: () => ipcRenderer.invoke("hv:get-shortcuts"),
+  setShortcuts: (map: Record<string, string>) => ipcRenderer.invoke("hv:set-shortcuts", map),
 
   // ── §14 Skills (additive) ────────────────────────────────────────
   // list returns {global, workspace}; approve/enable/activate apply live via

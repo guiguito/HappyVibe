@@ -11,7 +11,7 @@ import {
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
-  setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets,
+  setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
 } from "./config";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
@@ -1404,6 +1404,11 @@ export function registerIpc(win: BrowserWindow): void {
   // sessions for (a respawn resets their grants + dangerous mode). Next spawn.
   ipcMain.handle("hv:get-long-cache", () => getLongCache());
   ipcMain.handle("hv:set-long-cache", (_e, on: boolean) => setLongCache(!!on));
+
+  // Round 8: keyboard-shortcut overrides. Stored whole; the renderer merges
+  // them with the defaults (shortcuts.ts), so main stays ignorant of the action list.
+  ipcMain.handle("hv:get-shortcuts", () => getShortcuts());
+  ipcMain.handle("hv:set-shortcuts", (_e, map: Record<string, string>) => setShortcuts(map ?? {}));
 
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.

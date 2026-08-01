@@ -39,6 +39,9 @@ interface ConfigFile {
       ${HV_MCP_…} placeholder — the workspace tier writes .mcp.json at the repo
       root, so a plaintext key there would land in git history. */
   mcpSecrets?: Record<string, string>;
+  /** Round 8: user-remapped keyboard shortcuts, action id → canonical binding
+      ("Mod-Shift-e"). An absent id means that action keeps its default. */
+  shortcuts?: Record<string, string>;
 }
 
 function load(): ConfigFile {
@@ -270,6 +273,19 @@ export function setLongCache(on: boolean): void {
   const cfg = load();
   if (on) cfg.longCache = true;
   else delete cfg.longCache;
+  save(cfg);
+}
+
+/** Round 8: shortcut overrides. Stored whole — the renderer owns the merge with
+    the defaults (shortcuts.ts resolveBindings), so main never has to know the
+    action list, and a renamed action can't strand a binding here. */
+export function getShortcuts(): Record<string, string> {
+  return load().shortcuts ?? {};
+}
+
+export function setShortcuts(map: Record<string, string>): void {
+  const cfg = load();
+  cfg.shortcuts = map;
   save(cfg);
 }
 

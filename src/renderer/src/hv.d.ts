@@ -402,6 +402,10 @@ interface HvApi {
   getLongCache(): Promise<boolean>;
   setLongCache(on: boolean): Promise<void>;
 
+  /** Round 8: keyboard-shortcut overrides (action id → canonical binding). */
+  getShortcuts(): Promise<Record<string, string>>;
+  setShortcuts(map: Record<string, string>): Promise<void>;
+
   // §14 Skills (additive)
   skillsList(workspaceId?: string): Promise<HvSkillsList>;
   skillsRead(id: string): Promise<HvSkillDetail>;
