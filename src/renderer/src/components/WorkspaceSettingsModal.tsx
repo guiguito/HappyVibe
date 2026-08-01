@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
 import { ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
+import { McpServersSection } from "./McpServersSection";
+import { McpCatalogSection } from "./McpCatalogSection";
 
 /**
  * W1.4 workspace settings (PRD "Settings"): model override, workspace
@@ -112,6 +114,10 @@ export function WorkspaceSettingsModal({
           <WorkspaceSkillsBlock workspace={workspace} />
         </Block>
 
+        <Block title="mcp servers">
+          <WorkspaceMcpBlock workspace={workspace} />
+        </Block>
+
         <Block title="bypass all permissions">
           <div className="flex items-center gap-2">
             <select
@@ -202,6 +208,43 @@ export function WorkspaceSettingsModal({
  * approved skill (global + workspace). A session in this workspace spawns with
  * the skills toggled on here (bundled off by default, others on).
  */
+/**
+ * Workspace-tier MCP. Writes .mcp.json at the repo root — the standard format
+ * other MCP hosts read, so it can be committed and shared with the team.
+ *
+ * This lives here rather than on the global MCP page for the reason §14 already
+ * settled for skills: several workspaces can be live at once, so a global page
+ * cannot answer "which workspace?" without guessing. Here the workspace is
+ * named in the dialog header.
+ */
+function WorkspaceMcpBlock({ workspace }: { workspace: string }): React.JSX.Element {
+  const [installedTick, setInstalledTick] = useState(0);
+  const [serversTick, setServersTick] = useState(0);
+  return (
+    <>
+      <p className="text-xs text-ink-soft mb-3">
+        Written to <span className="font-mono">.mcp.json</span> in this workspace, so it can be
+        committed and shared. Servers added on the MCP page apply everywhere instead.
+      </p>
+      <McpCatalogSection
+        workspaceId={workspace}
+        scope="workspace"
+        refreshKey={serversTick}
+        onInstalled={() => setInstalledTick((n) => n + 1)}
+      />
+      <div className="mt-4">
+        <McpServersSection
+          key={installedTick}
+          workspaceId={workspace}
+          scope="workspace"
+          embedded
+          onServersChanged={() => setServersTick((n) => n + 1)}
+        />
+      </div>
+    </>
+  );
+}
+
 function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.Element {
   const [data, setData] = useState<HvSkillsList["workspace"]>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);

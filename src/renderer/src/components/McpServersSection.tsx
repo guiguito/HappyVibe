@@ -154,10 +154,19 @@ export function McpConnectResult({
  */
 export function McpServersSection({
   workspaceId,
+  scope = "global",
   embedded = false,
   onServersChanged,
 }: {
   workspaceId: string | null;
+  /**
+   * Which tier this instance manages. Explicit, never inferred: the scope used
+   * to come from whichever session happened to be selected, so the global MCP
+   * page either disabled the workspace option or silently wrote to an unnamed
+   * workspace. Global page passes "global"; WorkspaceSettingsModal passes
+   * "workspace" with its own path, where the workspace identity is unambiguous.
+   */
+  scope?: "global" | "workspace";
   /** v5: rendered inside the "MCP" section card — drop the own heading + top margin. */
   embedded?: boolean;
   /** §13 round 8: fired after this list adds or removes a server, so the curated
@@ -177,7 +186,7 @@ export function McpServersSection({
 
   const refresh = async (): Promise<void> => {
     const r = await window.hv.mcpGet(workspaceId ?? undefined);
-    setServers([...flatten(r.global, "global"), ...flatten(r.workspace, "workspace")]);
+    setServers(scope === "global" ? flatten(r.global, "global") : flatten(r.workspace, "workspace"));
   };
 
   useEffect(() => {
@@ -189,7 +198,7 @@ export function McpServersSection({
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
     });
     return () => { unsubRef.current?.(); };
-  }, [workspaceId]);
+  }, [workspaceId, scope]);
 
   const remove = async (s: McpServer): Promise<void> => {
     await window.hv.mcpSetServer(s.scope, s.scope === "workspace" ? workspaceId : null, s.name, null);
@@ -353,6 +362,7 @@ export function McpServersSection({
       {editing && (
         <McpServerEditor
           server={editing === "new" ? null : editing}
+          scope={scope}
           workspaceId={workspaceId}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
@@ -417,16 +427,17 @@ function McpStatusBadge({ status }: { status: McpServerStatusLike | undefined })
 }
 
 function McpServerEditor({
-  server, workspaceId, onClose, onSaved,
+  server, scope, workspaceId, onClose, onSaved,
 }: {
   server: McpServer | null;
+  /** Fixed by the surface — this dialog no longer asks. */
+  scope: "global" | "workspace";
   workspaceId: string | null;
   onClose: () => void;
   onSaved: (scope: "global" | "workspace", name: string, isHttp: boolean) => void;
 }): React.JSX.Element {
   const cfg = server?.cfg ?? {};
   const [name, setName] = useState(server?.name ?? "");
-  const [scope, setScope] = useState<"global" | "workspace">(server?.scope ?? "global");
   const [kind, setKind] = useState<"stdio" | "http">(typeof cfg.url === "string" ? "http" : "stdio");
   const [command, setCommand] = useState(
     [cfg.command, ...((cfg.args as string[]) ?? [])].filter(Boolean).join(" "),
@@ -484,16 +495,6 @@ function McpServerEditor({
 
         <label className={labelCls}>Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="github" spellCheck={false} />
-
-        <label className={labelCls}>Scope</label>
-        <select
-          value={scope}
-          onChange={(e) => setScope(e.target.value as "global" | "workspace")}
-          className={inputCls + " cursor-pointer"}
-        >
-          <option value="global">Global (all workspaces)</option>
-          <option value="workspace" disabled={!workspaceId}>Workspace (.mcp.json shareable)</option>
-        </select>
 
         <label className={labelCls}>Type</label>
         <select

@@ -1231,7 +1231,7 @@ export default function App(): React.JSX.Element {
         {activeView === "skills" && (
           <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
-        {activeView === "mcp" && <McpView workspaceId={selected?.workspaceId ?? null} />}
+        {activeView === "mcp" && <McpView />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
           <AllToolsView

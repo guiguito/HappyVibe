@@ -10,10 +10,13 @@ import { BrandMark } from "./BrandMark";
  */
 export function McpCatalogSection({
   workspaceId,
+  scope = "global",
   onInstalled,
   refreshKey = 0,
 }: {
   workspaceId: string | null;
+  /** Fixed by the surface — see the note on McpServersSection's `scope`. */
+  scope?: "global" | "workspace";
   onInstalled: () => void;
   /** Bumped by the parent when the servers list below changes, so removing a
       server there frees its card here. Without it the card stays "installed"
@@ -31,12 +34,12 @@ export function McpCatalogSection({
   // Installing is only step one. Adding a server should end at "N tools
   // discovered", so chain straight into connect → authenticate-if-needed →
   // tools (main does the whole chain in hv:mcp-connect-flow).
-  const runConnect = (entry: McpCatalogEntry, scope: "global" | "workspace"): void => {
+  const runConnect = (entry: McpCatalogEntry): void => {
     const gen = ++connectGen.current;
     const stale = (): boolean => connectGen.current !== gen;
     setConnect({ phase: "connecting", serverName: entry.name });
     const fail = (error: string): void =>
-      setConnect({ phase: "error", serverName: entry.name, error, retry: () => runConnect(entry, scope) });
+      setConnect({ phase: "error", serverName: entry.name, error, retry: () => runConnect(entry) });
     void window.hv
       .mcpConnectFlow(scope, scope === "workspace" ? workspaceId : null, entry.key)
       .then((res) => {
@@ -115,14 +118,15 @@ export function McpCatalogSection({
         <McpCatalogConfirm
           entry={chosen}
           workspaceId={workspaceId}
+          scope={scope}
           nodeMissing={chosen.transport === "stdio" && !hasNode}
           onClose={() => setChosen(null)}
-          onInstalled={(scope) => {
+          onInstalled={() => {
             const entry = chosen;
             setChosen(null);
             void refreshInstalled();
             onInstalled();
-            runConnect(entry, scope);
+            runConnect(entry);
           }}
         />
       )}
@@ -144,18 +148,20 @@ export function McpCatalogSection({
 
 function McpCatalogConfirm({
   entry,
+  scope,
   workspaceId,
   nodeMissing,
   onClose,
   onInstalled,
 }: {
   entry: McpCatalogEntry;
+  /** Fixed by the surface — this dialog no longer asks. */
+  scope: "global" | "workspace";
   workspaceId: string | null;
   nodeMissing: boolean;
   onClose: () => void;
-  onInstalled: (scope: "global" | "workspace") => void;
+  onInstalled: () => void;
 }): React.JSX.Element {
-  const [scope, setScope] = useState<"global" | "workspace">("global");
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -167,7 +173,7 @@ function McpCatalogConfirm({
       .mcpInstallCatalog(entry.key, scope, scope === "workspace" ? workspaceId : null, values)
       .catch((e: unknown) => ({ ok: false as const, error: String(e) }));
     setBusy(false);
-    if (res.ok) onInstalled(scope);
+    if (res.ok) onInstalled();
     else setError(res.error);
   };
 
@@ -239,18 +245,6 @@ function McpCatalogConfirm({
             Install Node first, or it will fail to start.
           </div>
         )}
-
-        <label className={labelCls}>Scope</label>
-        <select
-          value={scope}
-          onChange={(e) => setScope(e.target.value as "global" | "workspace")}
-          className={inputCls + " cursor-pointer"}
-        >
-          <option value="global">Global (all workspaces)</option>
-          <option value="workspace" disabled={!workspaceId}>
-            Workspace (.mcp.json shareable)
-          </option>
-        </select>
 
         {entry.inputs.map((input) => (
           <div key={input.id}>
