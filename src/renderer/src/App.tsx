@@ -4,8 +4,8 @@ import { ChatView } from "./components/ChatView";
 import { ModelsView } from "./components/ModelsView";
 import { PermissionsView } from "./components/PermissionsView";
 import { SystemPromptView } from "./components/SystemPromptView";
-import { StatsView } from "./components/StatsView";
-import { AuditLogView } from "./components/AuditLogView";
+import { DashboardView } from "./components/DashboardView";
+import { AuditView } from "./components/AuditView";
 import { type TranscriptItem } from "./components/Transcript";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError } from "./providerError";
@@ -1246,8 +1246,8 @@ export default function App(): React.JSX.Element {
         {activeView === "permissions" && <PermissionsView />}
         {activeView === "workspace" && wsSettings && <WorkspaceSettingsView workspace={wsSettings} />}
         {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
-        {activeView === "stats" && <StatsView workspaces={workspaces} />}
-        {activeView === "audit" && <AuditLogView sessions={sessions} workspaces={workspaces} />}
+        {activeView === "stats" && <DashboardView workspaces={workspaces} />}
+        {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
         {activeView === "skills" && (
           <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}

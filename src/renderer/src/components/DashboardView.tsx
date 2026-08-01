@@ -124,7 +124,7 @@ export function DashboardView({ workspaces }: { workspaces: string[] }): React.J
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
-        <h1 className="font-black text-3xl tracking-tight mb-2">Dashboard</h1>
+        <h1 className="font-black text-3xl tracking-tight mb-2">Stats</h1>
         <p className="text-sm text-ink-soft mb-6">
           Your usage, computed entirely on this machine — nothing is ever sent anywhere.
         </p>

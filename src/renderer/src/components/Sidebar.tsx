@@ -118,18 +118,37 @@ function KeyboardIcon(): React.JSX.Element {
 /** Round 8: every configuration destination lives under ONE collapsible group —
     the flat footer had grown to seven entries. The four round-6 pages keep
     their order at the top; the exploded settings pages sit below a divider. */
-const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element; dividerBefore?: boolean }> = [
+const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
   { view: "skills", label: "Skills", Icon: SkillsIcon },
   { view: "mcp", label: "MCP", Icon: McpIcon },
   { view: "agents", label: "Agents", Icon: AgentsIcon },
   { view: "tools", label: "All Tools", Icon: ToolsIcon },
-  { view: "models", label: "Models", Icon: ModelsIcon, dividerBefore: true },
+  { view: "models", label: "Models", Icon: ModelsIcon },
   { view: "permissions", label: "Permissions", Icon: PermissionsIcon },
   { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon },
   { view: "stats", label: "Stats", Icon: StatsIcon },
   { view: "audit", label: "Audit log", Icon: AuditIcon },
   { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
 ];
+
+/** Round 8: the collapse affordance — an actual chevron rather than a 10px
+    glyph, sitting immediately right of the name it collapses. */
+function Chevron({ open }: { open: boolean }): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`size-3.5 shrink-0 text-ink-soft transition-transform ${open ? "rotate-90" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
+}
 
 function TrashIcon(): React.JSX.Element {
   return (
@@ -427,7 +446,7 @@ export function Sidebar({
       </div>
 
       {/* Workspace tree */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-2">
+      <div className="flex-1 min-h-32 overflow-y-auto px-4 pb-2">
         <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
           <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">workspaces</span>
           <button
@@ -456,10 +475,12 @@ export function Sidebar({
                 <button
                   type="button"
                   onClick={() => toggle(ws)}
-                  className="flex-1 min-w-0 truncate font-bold text-sm text-left cursor-pointer"
+                  aria-expanded={!isCollapsed}
+                  className="flex-1 min-w-0 flex items-center gap-1 font-bold text-sm text-left cursor-pointer"
                   title={ws}
                 >
-                  {basename(ws)}
+                  <span className="truncate">{basename(ws)}</span>
+                  <Chevron open={!isCollapsed} />
                 </button>
                 {/* V2.C2: hover icons live in reserved slots (invisible, not
                     removed) LEFT of an always-visible, always-LAST "+" — zero
@@ -482,15 +503,6 @@ export function Sidebar({
                   className="invisible group-hover:visible text-ink-soft hover:text-berry cursor-pointer font-bold text-xs w-3 shrink-0"
                 >
                   ×
-                </button>
-                <button
-                  type="button"
-                  title={isCollapsed ? "Show sessions" : "Hide sessions"}
-                  aria-expanded={!isCollapsed}
-                  onClick={() => toggle(ws)}
-                  className="text-ink-soft hover:text-ink cursor-pointer text-[10px] w-3 shrink-0"
-                >
-                  {isCollapsed ? "▸" : "▾"}
                 </button>
                 <button
                   type="button"
@@ -538,7 +550,7 @@ export function Sidebar({
         )}
       </div>
 
-      <div className="p-4 border-t-2 border-line">
+      <div className="px-4 pt-4 pb-1 border-t-2 border-line min-h-0 flex flex-col">
         <button
           type="button"
           onClick={onToggleSettingsOpen}
@@ -546,14 +558,14 @@ export function Sidebar({
           className="w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
         >
           <GearIcon />
-          <span className="flex-1 text-left">Settings</span>
-          <span className="text-ink-soft text-[10px]">{settingsOpen ? "▾" : "▸"}</span>
+          <span className="text-left">Settings</span>
+          <Chevron open={settingsOpen} />
+          <span className="flex-1" />
         </button>
         {settingsOpen && (
-          <div className="mt-1 flex flex-col">
+          <div className="mt-1 flex flex-col min-h-0 overflow-y-auto">
             {NAV.map((n) => (
               <div key={n.view}>
-                {n.dividerBefore && <div className="border-t border-line my-1.5 mx-3" />}
                 <button
                   type="button"
                   onClick={() => onNavigate(n.view)}
