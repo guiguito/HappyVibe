@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MCP_CATALOG, type McpCatalogEntry } from "../../../main/mcpCatalog";
 import { McpConnectResult, type ConnectResultState } from "./McpServersSection";
 import { BrandMark } from "./BrandMark";
@@ -24,21 +24,27 @@ export function McpCatalogSection({
   const [hasNode, setHasNode] = useState(true);
   const [chosen, setChosen] = useState<McpCatalogEntry | null>(null);
   const [connect, setConnect] = useState<ConnectResultState | null>(null);
+  // Bumped per attempt and on dismiss — a result landing after the user closed
+  // the modal must not reopen it. See the Cancel affordance in McpConnectResult.
+  const connectGen = useRef(0);
 
   // Installing is only step one. Adding a server should end at "N tools
   // discovered", so chain straight into connect → authenticate-if-needed →
   // tools (main does the whole chain in hv:mcp-connect-flow).
   const runConnect = (entry: McpCatalogEntry, scope: "global" | "workspace"): void => {
+    const gen = ++connectGen.current;
+    const stale = (): boolean => connectGen.current !== gen;
     setConnect({ phase: "connecting", serverName: entry.name });
     const fail = (error: string): void =>
       setConnect({ phase: "error", serverName: entry.name, error, retry: () => runConnect(entry, scope) });
     void window.hv
       .mcpConnectFlow(scope, scope === "workspace" ? workspaceId : null, entry.key)
       .then((res) => {
+        if (stale()) return;
         if (res.ok) setConnect({ phase: "ok", serverName: entry.name, tools: res.tools });
         else fail(res.error);
       })
-      .catch((e: unknown) => fail(String(e)));
+      .catch((e: unknown) => { if (!stale()) fail(String(e)); });
   };
 
   const refreshInstalled = async (): Promise<void> => {
@@ -124,9 +130,11 @@ export function McpCatalogSection({
         <McpConnectResult
           state={connect}
           onClose={() => {
-            // Mid-connect the OAuth window may still be open — don't let a
-            // stray click strand the flow behind a dismissed modal.
-            if (connect.phase !== "connecting") setConnect(null);
+            // Always dismissable, including mid-connect. Abandoning a browser
+            // sign-in previously left the user stuck behind a spinner with no
+            // way out until the auth timeout fired.
+            connectGen.current++;
+            setConnect(null);
           }}
         />
       )}

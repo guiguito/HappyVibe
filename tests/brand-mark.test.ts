@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { monogram, tintFor } from "../src/renderer/src/components/BrandMark";
+import { monogram } from "../src/renderer/src/components/BrandMark";
+import { INLINE_GLYPHS, glyphKey } from "../src/renderer/src/components/BrandGlyphs";
 import { MCP_CATALOG } from "../src/main/mcpCatalog";
 
 /**
@@ -22,17 +23,25 @@ describe("monogram", () => {
   });
 });
 
-describe("tintFor", () => {
-  test("is deterministic — a server keeps the same colour across renders", () => {
-    expect(tintFor("firecrawl")).toBe(tintFor("firecrawl"));
+describe("inline glyphs", () => {
+  test("cover the brands simple-icons does not ship", () => {
+    // Vendor-published logos, reduced to currentColor. Playwright is absent on
+    // purpose — simple-icons pulled it for lack of permission and Microsoft
+    // publishes no official SVG, so it takes the monogram.
+    expect(INLINE_GLYPHS.firecrawl).toBeDefined();
+    expect(INLINE_GLYPHS.composio).toBeDefined();
+    expect(INLINE_GLYPHS.playwright).toBeUndefined();
   });
 
-  test("returns a real class string for every catalog entry", () => {
-    for (const e of MCP_CATALOG) expect(tintFor(e.name).length, e.key).toBeGreaterThan(0);
+  test("glyphKey normalises a display name or a server key to the map key", () => {
+    expect(glyphKey("Firecrawl")).toBe("firecrawl");
+    expect(glyphKey("Composio")).toBe("composio");
+    expect(glyphKey("chrome_devtools")).toBe("chromedevtools");
   });
 
-  test("spreads names across more than one tint", () => {
-    const seen = new Set(MCP_CATALOG.map((e) => tintFor(e.name)));
-    expect(seen.size).toBeGreaterThan(1);
+  test("every glyph declares a viewBox", () => {
+    for (const [k, g] of Object.entries(INLINE_GLYPHS)) {
+      expect(g.viewBox, k).toMatch(/^0 0 \d+ \d+$/);
+    }
   });
 });

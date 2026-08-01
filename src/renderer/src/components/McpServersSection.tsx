@@ -62,6 +62,19 @@ export function McpConnectResult({
                 aria-hidden
               />
               Waiting for authorisation…
+              <span className="flex-1" />
+              {/* Abandoning the browser sign-in must not trap the user behind a
+                  spinner that only clears on the auth timeout. Dismissing is
+                  cosmetic — main's attempt runs to completion and its result is
+                  ignored — so the server is simply left unauthenticated, which
+                  the status badge already reports. */}
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs font-bold text-ink-soft underline hover:text-ink cursor-pointer shrink-0"
+              >
+                Cancel
+              </button>
             </div>
           </>
         )}
@@ -158,6 +171,9 @@ export function McpServersSection({
   const [statuses, setStatuses] = useState<Map<string, McpServerStatusLike>>(new Map());
   const [connectResult, setConnectResult] = useState<ConnectResultState | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
+  // Bumped on every connect attempt AND on dismiss, so a result that lands
+  // after the user walked away can't reopen the modal behind them.
+  const connectGen = useRef(0);
 
   const refresh = async (): Promise<void> => {
     const r = await window.hv.mcpGet(workspaceId ?? undefined);
@@ -190,8 +206,11 @@ export function McpServersSection({
   // ponytail: single function covers add-time + per-row Authenticate flows.
   const authenticate = (scope: "global" | "workspace", name: string): void => {
     const wsId = scope === "workspace" ? workspaceId : null;
+    const gen = ++connectGen.current;
+    const stale = (): boolean => connectGen.current !== gen;
     setConnectResult({ phase: "connecting", serverName: name });
     void window.hv.mcpAuthenticate(scope, wsId, name).then((res) => {
+      if (stale()) return;
       if (res.ok) {
         setConnectResult({ phase: "ok", serverName: name, tools: res.tools });
       } else {
@@ -203,6 +222,7 @@ export function McpServersSection({
         });
       }
     }).catch((e: unknown) => {
+      if (stale()) return;
       setConnectResult({
         phase: "error",
         serverName: name,
@@ -342,8 +362,12 @@ export function McpServersSection({
         <McpConnectResult
           state={connectResult}
           onClose={() => {
-            // Allow close only when not mid-connect (connecting phase blocks dismiss — user must wait or navigate away)
-            if (connectResult.phase !== "connecting") setConnectResult(null);
+            // Always dismissable, including mid-connect: abandoning a browser
+            // sign-in used to leave the user stuck behind a spinner until the
+            // auth timeout. Bumping the generation makes any late result a
+            // no-op instead of reopening the modal.
+            connectGen.current++;
+            setConnectResult(null);
           }}
         />
       )}

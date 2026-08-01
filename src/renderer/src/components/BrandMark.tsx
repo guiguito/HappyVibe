@@ -1,32 +1,20 @@
 /**
- * Brand mark for an MCP server: the real simple-icons glyph when we have one,
- * a tinted monogram when we don't.
+ * Brand mark for an MCP server, in order of preference:
+ *   1. a simple-icons glyph, when the pack ships one
+ *   2. an inline vendor glyph, for services it doesn't (BrandGlyphs.tsx)
+ *   3. a monogram, so nothing ever renders as a blank square
  *
- * Round 8 follow-up. simple-icons ships no icon for Firecrawl or Composio
- * (below their notability bar) and REMOVED Playwright, Slack, OpenAI and AWS in
- * v13.0.0's "request permission, or remove" batch — Microsoft still publishes
- * no official Playwright SVG (microsoft/playwright#32888). Re-adding those
- * marks ourselves is precisely what a project that curates brand icons for a
- * living declined to do without permission, so we don't.
+ * Everything renders in `currentColor` / ink so a row of marks reads as one
+ * set. The monogram used to carry a per-name colour tint, which made unknown
+ * servers louder than the real logos beside them — the point of the fallback is
+ * to be unobtrusive, not to stand out.
  *
- * A monogram costs no assets, needs no network, carries no trademark exposure,
- * and covers every future entry automatically — which a per-brand SVG pile
- * never would. It replaces the blank grey square these rows used to show.
+ * Round 8 follow-up: simple-icons removed Playwright, Slack, OpenAI and AWS in
+ * v13.0.0's "request permission, or remove" batch, and Microsoft still
+ * publishes no official Playwright SVG (microsoft/playwright#32888). Those get
+ * the monogram rather than a mark shipped without permission.
  */
-
-/** Deterministic tint so a given server always looks the same. */
-const TINTS = [
-  "bg-honey-soft text-tangerine-deep border-honey/60",
-  "bg-leaf-soft text-leaf border-leaf/50",
-  "bg-berry-soft text-berry border-berry/50",
-  "bg-paper-deep text-ink-soft border-line",
-] as const;
-
-export function tintFor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return TINTS[h % TINTS.length];
-}
+import { INLINE_GLYPHS, glyphKey } from "./BrandGlyphs";
 
 /** First alphanumeric character, uppercased — "chrome_devtools" → "C". */
 export function monogram(name: string): string {
@@ -38,20 +26,37 @@ export function BrandMark({
   brand,
   size = "sm",
 }: {
-  /** Display name or server key — drives the monogram and its tint. */
+  /** Display name or server key — resolves an inline glyph, else the monogram. */
   name: string;
   /** simple-icons class, when one exists. */
   brand?: string;
   size?: "sm" | "lg";
 }): React.JSX.Element {
-  const box = size === "lg" ? "size-6 text-sm" : "size-4 text-[10px]";
+  const lg = size === "lg";
+
   if (brand) {
-    return <i className={`si ${brand} ${size === "lg" ? "text-xl" : "text-base"} shrink-0`} aria-hidden />;
+    return <i className={`si ${brand} ${lg ? "text-xl" : "text-base"} shrink-0`} aria-hidden />;
   }
+
+  const glyph = INLINE_GLYPHS[glyphKey(name)];
+  if (glyph) {
+    return (
+      <svg
+        viewBox={glyph.viewBox}
+        className={`${lg ? "size-5" : "size-4"} shrink-0`}
+        fill="none"
+        aria-hidden
+        preserveAspectRatio="xMidYMid meet"
+      >
+        {glyph.node}
+      </svg>
+    );
+  }
+
   return (
     <span
       aria-hidden
-      className={`${box} ${tintFor(name)} shrink-0 rounded border font-black flex items-center justify-center leading-none`}
+      className={`${lg ? "size-5 text-[11px]" : "size-4 text-[10px]"} shrink-0 rounded border border-line bg-paper-deep text-ink font-black flex items-center justify-center leading-none`}
     >
       {monogram(name)}
     </span>
