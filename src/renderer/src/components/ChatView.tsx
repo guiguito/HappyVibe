@@ -4,6 +4,7 @@ import { tailToolCallIds, type RewindScope } from "../rewind";
 import { matchesBinding } from "../shortcuts";
 import { ModelSelect } from "./ModelSelect";
 import { ContextBubble } from "./ContextBubble";
+import { PlanCard, type PlanCardData } from "./PlanCard";
 import { ContextPanel } from "./ContextPanel";
 import { CostBubble } from "./CostBubble";
 import { CostPanel } from "./CostPanel";
@@ -33,6 +34,25 @@ const TIER_LABEL: Record<ModelTier, string> = {
   workspace: "workspace default",
   global: "global default",
 };
+
+/**
+ * §23 round 9 — the active-plan pill.
+ *
+ * Any plan the session has is reachable here EXCEPT a cancelled one (nothing to
+ * read, nothing to do). An implemented plan still gets a pill: the transcript
+ * route to it may have been compacted away, and reporting its REAL status is
+ * the whole point — the bug this replaced claimed "draft" for exactly that case.
+ */
+export function showsPlanPill(status: string): boolean {
+  return status !== "cancelled";
+}
+
+/** The pill's text. Never says "ready" for a plan that is not a draft. */
+export function planPillLabel(status: string, done: number, total: number): string {
+  if (status === "implemented") return "Plan implemented";
+  if (status === "implementing") return `Implementing ${done}/${total}`;
+  return "Plan ready";
+}
 
 export function ChatView({
   workspace,
@@ -72,6 +92,8 @@ export function ChatView({
   onOpenFile,
   onOpenMcp,
   onRewind,
+  onLoadEarlier,
+  activePlan,
 }: {
   workspace: string | null;
   sessionId: string | null;
@@ -122,6 +144,10 @@ export function ChatView({
   onOpenMcp?: () => void;
   /** Round 3 #11: truncate the conversation at a user message (App-side). */
   onRewind?: (it: TranscriptItem, scope: RewindScope) => void;
+  /** §9 round 9: pull in the pre-compaction history (display only). */
+  onLoadEarlier?: () => void;
+  /** §23 round 9: the session's active plan — the pill's data, null when none. */
+  activePlan?: PlanCardData | null;
 }): React.JSX.Element {
   const [input, setInput] = useState("");
   // Composer row aligns centered on one line; when the textarea wraps to multiple
@@ -222,6 +248,11 @@ export function ChatView({
   // A respawn re-registers commands (main refires /hv-tools) — drop the cache.
   useEffect(() => { commandCache.current = null; }, [sessionId]);
   const [pendingRewind, setPendingRewind] = useState<TranscriptItem | null>(null); // #11 confirm
+  // §23 round 9: the active-plan panel behind the pill. Only draft/implementing
+  // plans get a pill — an implemented or cancelled plan needs no CTA, and the
+  // file stays in the tree either way.
+  const [planOpen, setPlanOpen] = useState(false);
+  const showPlanPill = !!activePlan && showsPlanPill(activePlan.status);
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
   const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
   // §9 round 7: rewind scope + the affected-file preview behind it. `undefined`
@@ -425,9 +456,25 @@ export function ChatView({
       <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
         {/* §23: compact plan-mode indicator (left) — read-only badge with a
             wrap-up nudge and one-click exit. Replaces the full-width banner. */}
-        {((sessionSkills?.length ?? 0) > 0 || planEnabled) && (
+        {((sessionSkills?.length ?? 0) > 0 || planEnabled || showPlanPill) && (
         <div className="mr-auto flex items-center gap-1.5">
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
+        {/* §23 round 9: the active-plan pill. A plan card lives at its
+            plan_complete position in history, so a compaction that ate that
+            position would otherwise leave an implementable plan with no way to
+            implement it. This is that route, independent of the transcript. */}
+        {showPlanPill && activePlan && (
+          <button
+            type="button"
+            onClick={() => setPlanOpen((o) => !o)}
+            aria-expanded={planOpen}
+            title="The plan for this session — open it to implement, discard, or check progress"
+            className="flex items-center gap-1 rounded-full bg-sky-soft text-sky text-[11px] font-bold px-2 py-0.5 hover:brightness-95 cursor-pointer"
+          >
+            <span aria-hidden>📋</span>
+            {planPillLabel(activePlan.status, activePlan.done, activePlan.total)}
+          </button>
+        )}
         {planEnabled && (
           <div className="flex items-center gap-1.5">
             <span
@@ -481,6 +528,14 @@ export function ChatView({
         <CostBubble total={costTotal} onOpen={() => onCostOpenChange(true)} />
         <ContextBubble stats={stats} fallbackWindow={fallbackWindow} onOpen={() => onContextOpenChange(true)} />
       </div>
+      {/* §23 round 9: the plan behind the pill. PlanCard is self-contained — it
+          reads the file and drives Implement / Discard / Reopen through
+          window.hv — so it needs nothing here but a place to render. */}
+      {planOpen && showPlanPill && activePlan && (
+        <div className="border-b-2 border-line bg-paper px-6 py-3 max-h-[50vh] overflow-y-auto">
+          <PlanCard card={activePlan} onOpenFile={onOpenFile} />
+        </div>
+      )}
       {/* Crash banner */}
       {crashed !== null && (
         <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/40 text-sm font-semibold text-berry">
@@ -729,6 +784,7 @@ export function ChatView({
           workspace={workspace}
           onOpenFile={onOpenFile}
           onRewind={onRewind && !busy ? openRewind : undefined}
+          onLoadEarlier={onLoadEarlier}
           searchQuery={searchOpen ? searchQuery : ""}
           searchActiveIndex={searchActive}
           onSearchTotal={onSearchTotal}

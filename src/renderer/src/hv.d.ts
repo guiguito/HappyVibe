@@ -248,7 +248,16 @@ interface HvApi {
   removeWorkspace(ws: string): Promise<void>;
   listSessions(): Promise<SessionMeta[]>;
   createSession(workspaceId: string): Promise<SessionMeta>;
-  openSession(sessionId: string): Promise<{ meta: SessionMeta; messages: RestoreItem[] | null }>;
+  openSession(sessionId: string): Promise<{
+    meta: SessionMeta;
+    messages: RestoreItem[] | null;
+    /** §9: non-null when the session was compacted — the transcript stops at a boundary bubble. */
+    compaction: { count: number; reason: string | null } | null;
+    /** §23: the session's active plan, so the pill survives a renderer reload. */
+    plan: { path: string; status: string; done: number; total: number } | null;
+  }>;
+  /** §9: the pre-compaction history, display only — never re-entered into context. */
+  loadEarlier(sessionId: string): Promise<RestoreItem[]>;
   closeSession(sessionId: string): Promise<void>;
   deleteSession(sessionId: string): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
@@ -295,7 +304,8 @@ interface HvApi {
   planRevert(sessionId: string): Promise<{
     restored: string[]; deleted: string[]; stale: string[]; notCaptured: string[];
   } | null>;
-  onPlanChanged(cb: (p: { workspaceId: string; path: string; status: string; done: number; total: number }) => void): () => void;
+  /** `sessionId` is set only on the respawn push, where it attaches the plan to a session. */
+  onPlanChanged(cb: (p: { sessionId?: string; workspaceId: string; path: string; status: string; done: number; total: number }) => void): () => void;
   getPathForFile(file: File): string;
 
   // B2: AGENTS.md

@@ -45,6 +45,7 @@ import {
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { restoreItems, type RestoreItem } from "./restore";
+import { compactionInfo, compactionReason, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { deleteAuthEntry } from "./mcpAuthStore";
@@ -484,6 +485,26 @@ export function registerIpc(win: BrowserWindow): void {
         }
       }
       send("hv:pi-event", { ...e, sessionId });
+      // The compaction session-file entry carries no reason — only this event
+      // does. Log it so a restored boundary bubble can say WHY the history is
+      // gone: Pi's auto-compaction is ON by default (settings default
+      // `compaction.enabled ?? true`, and we never call set_auto_compaction), so
+      // "you didn't ask for this one" is the honest label. `firstKeptEntryId` is
+      // the join key back to the file entry (history.ts compactionReason). Also
+      // closes the §11 promise that the audit log records context compactions.
+      if (e.type === "compaction_end") {
+        const c = e as { reason?: string; result?: { firstKeptEntryId?: string; tokensBefore?: number } };
+        void log.append({
+          type: "context.compact",
+          sessionId,
+          workspaceId: meta?.workspaceId,
+          data: {
+            reason: c.reason ?? "unknown",
+            firstKeptEntryId: c.result?.firstKeptEntryId ?? null,
+            tokensBefore: c.result?.tokensBefore ?? null,
+          },
+        });
+      }
       if (e.type === "agent_end") {
         maybeTitle(sessionId);
         if (meta && !index.get(sessionId)?.piSessionFile) void captureSessionFile(sessionId, client);
@@ -576,6 +597,22 @@ export function registerIpc(win: BrowserWindow): void {
           planState.set(sessionId, { enabled: planN.enabled, planPath: (typeof planN.planPath === "string" ? planN.planPath : undefined) ?? prev?.planPath });
           if (prev?.enabled !== planN.enabled) {
             void log.append({ type: planN.enabled ? "plan.enter" : "plan.exit", sessionId, workspaceId: wsId, data: {} });
+          }
+          // Round 9: the notify carries only the PATH, so the active-plan pill
+          // would have to guess the status — and guessing "draft" is exactly the
+          // bug 833a966 removed (an implemented plan reported as still pending).
+          // Push the file's real status instead. `sessionId` is set here (and
+          // only here) so the renderer can attach the plan to a session it does
+          // not otherwise know about on a respawn.
+          const restoredPath = planState.get(sessionId)?.planPath;
+          if (restoredPath && wsId) {
+            const parsed = readPlan(workspaces.list(), wsId, restoredPath);
+            if (parsed) {
+              send("hv:plan-changed", {
+                sessionId, workspaceId: wsId, path: restoredPath,
+                status: parsed.status, done: parsed.done, total: parsed.total,
+              });
+            }
           }
         } else if (planN.kind === "hv.plan-status" && wsId) {
           const relPath = planState.get(sessionId)?.planPath;
@@ -811,9 +848,36 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle(
     "hv:open-session",
-    async (_e, sessionId: string): Promise<{ meta: SessionMeta; messages: RestoreItem[] | null }> => {
+    async (_e, sessionId: string): Promise<{
+      meta: SessionMeta;
+      messages: RestoreItem[] | null;
+      compaction: { count: number; reason: string | null } | null;
+      plan: { path: string; status: string; done: number; total: number } | null;
+    }> => {
       const meta = index.get(sessionId);
       if (!meta) throw new Error("Unknown session");
+
+      // §9 round 9: the boundary the rebuilt transcript must stop at. DERIVED,
+      // never persisted — Pi's `compaction` entry IS the record, and its own
+      // rule is [latest compaction] + entries from firstKeptEntryId onward. A
+      // line scan, not a full parse: this runs on every open, while the earlier
+      // region is parsed only when the user asks for it.
+      const compactionFor = async (): Promise<{ count: number; reason: string | null } | null> => {
+        const info = compactionInfo(readSessionFile(sessionDir(), meta.piSessionFile));
+        if (!info) return null;
+        const rows = await log.read({ type: "context.compact", sessionId });
+        return { count: info.count, reason: compactionReason(rows, info.firstKeptEntryId) };
+      };
+
+      // §23: the session's active plan. Returned here because a renderer reload
+      // gets no session_start replay — main's planState outlives the renderer,
+      // so the active-plan pill survives ⌘R.
+      const planFor = (): { path: string; status: string; done: number; total: number } | null => {
+        const p = planState.get(sessionId)?.planPath;
+        if (!p) return null;
+        const parsed = readPlan(workspaces.list(), meta.workspaceId, p);
+        return parsed ? { path: p, status: parsed.status, done: parsed.done, total: parsed.total } : null;
+      };
 
       // Rebuild the transcript from Pi's own history.
       const loadMessages = async (c: PiClient): Promise<RestoreItem[]> => {
@@ -847,14 +911,27 @@ export function registerIpc(win: BrowserWindow): void {
       // (cast: the manager stores PiClients behind the narrower ManagedClient
       // handle — same pattern as every other send site in this file.)
       const active = manager.get(sessionId) as PiClient | null;
-      if (active) return { meta, messages: await loadMessages(active) };
+      if (active) {
+        return { meta, messages: await loadMessages(active), compaction: await compactionFor(), plan: planFor() };
+      }
 
       const client = await startClient(meta, !!meta.piSessionFile);
       const messages = meta.piSessionFile ? await loadMessages(client) : null;
       sessionsChanged();
-      return { meta, messages };
+      return { meta, messages, compaction: await compactionFor(), plan: planFor() };
     }
   );
+
+  // §9 round 9: the pre-compaction transcript, DISPLAY ONLY. Reads the session
+  // file (which keeps everything) rather than any RPC (which returns live
+  // context only). No client call at all, so no respawn, no session-grant reset
+  // — this works on a hibernated session too. Loading these does NOT put them
+  // back in the model's context; the renderer marks them as outside it.
+  ipcMain.handle("hv:load-earlier", (_e, sessionId: string): RestoreItem[] => {
+    const meta = index.get(sessionId);
+    if (!meta) throw new Error("Unknown session");
+    return earlierItems(readSessionFile(sessionDir(), meta.piSessionFile));
+  });
 
   // Shared by close and delete: capture stats best-effort, log session.end,
   // stop the process.

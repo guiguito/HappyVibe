@@ -7,6 +7,7 @@ import { SystemPromptView } from "./components/SystemPromptView";
 import { DashboardView } from "./components/DashboardView";
 import { AuditView } from "./components/AuditView";
 import { type TranscriptItem } from "./components/Transcript";
+import { type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError } from "./providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
@@ -79,6 +80,11 @@ export default function App(): React.JSX.Element {
   // §23: per-session plan mode + current plan-file path (bridge-notified; SURVIVES
   // respawn — the bridge re-emits hv.plan on session_start).
   const [planMode, setPlanMode] = useState<Record<string, { enabled: boolean; planPath?: string }>>({});
+  // §23 round 9: the session's active plan, so a plan whose card was compacted
+  // out of the transcript stays reachable. Seeded by openSession (survives a
+  // renderer reload) and by the session_start hv.plan replay (survives a
+  // respawn); kept live by hv:plan-changed.
+  const [activePlan, setActivePlan] = useState<Record<string, PlanCardData>>({});
   // §13 round 6: global Plan-mode built-in toggle (Settings → All Tools). Drives
   // whether the composer chip/top-bar affordance render at all — main also
   // bails hv:plan-set/-implement/-discard when this is off (belt + suspenders,
@@ -239,6 +245,44 @@ export default function App(): React.JSX.Element {
       return { ...p, [sid]: [...items, withId] };
     });
 
+  // §9 round 9: pull the pre-compaction history in for DISPLAY. It never
+  // re-enters Pi's context — main reads the session file, sends nothing to the
+  // client, and the items render dimmed under the out-of-context divider.
+  const loadEarlier = async (sid: string): Promise<void> => {
+    const earlier = await window.hv.loadEarlier(sid);
+    setTranscripts((p) => {
+      const items = p[sid] ?? [];
+      if (items[0]?.kind !== "boundary" || items[0].loaded) return p;
+      const restored: TranscriptItem[] = earlier.map((m) =>
+        m.kind === "tool"
+          ? {
+              kind: "tool" as const,
+              id: idCounter.current++,
+              outOfContext: true,
+              card: {
+                toolCallId: m.toolCallId,
+                toolName: m.toolName,
+                args: m.args,
+                status: m.error ? ("error" as const) : ("done" as const),
+                result: m.result,
+              },
+            }
+          // earlierItems never returns a plan card (the pill is that route), so
+          // everything else here is a user/assistant text item.
+          : { kind: m.kind as "user" | "assistant", text: (m as { text: string }).text, id: idCounter.current++, outOfContext: true },
+      );
+      const next = [...restored, { ...items[0], loaded: true }, ...items.slice(1)];
+      // Prepending shifts EVERY position, so the whole index is rebuilt — a
+      // stale one would make a late tool_execution_end patch the wrong card.
+      const map = new Map<string, number>();
+      next.forEach((it, i) => {
+        if (it.kind === "tool") map.set(it.card.toolCallId, i);
+      });
+      toolIndex.current[sid] = map;
+      return { ...p, [sid]: next };
+    });
+  };
+
   // §23: patch a PlanCard (status/progress) by path across sessions.
   const updatePlanCardByPath = (planPath: string, patch: Partial<{ status: string; done: number; total: number }>): void =>
     setTranscripts((p) => {
@@ -388,6 +432,16 @@ export default function App(): React.JSX.Element {
         // reappear at all. Appending it anyway produced a misplaced card frozen
         // at "draft" that claimed an implemented plan was still pending.
         if (pl.planPath && wsId && !pl.restored) ensurePlanCard(sid, wsId, pl.planPath);
+        // A LIVE plan_complete is genuinely a fresh draft, so seeding "draft"
+        // here is a fact, not a guess. A RESTORED plan's status is unknown from
+        // the notify alone — main pushes it via hv:plan-changed (with sessionId)
+        // rather than letting the pill invent one.
+        if (pl.planPath && wsId && !pl.restored) {
+          const path = pl.planPath;
+          setActivePlan((p) =>
+            p[sid]?.path === path ? p : { ...p, [sid]: { sessionId: sid, workspaceId: wsId, path, status: "draft", done: 0, total: 0 } },
+          );
+        }
       }
       const pb = parsePlanBlocked(r);
       if (pb && r.sessionId) {
@@ -481,8 +535,25 @@ export default function App(): React.JSX.Element {
     });
 
     // §23: live plan-file progress (checklist n/m + status) from the fs watcher.
-    const offPlanChanged = window.hv.onPlanChanged(({ path, status, done, total }) => {
+    const offPlanChanged = window.hv.onPlanChanged(({ sessionId, workspaceId, path, status, done, total }) => {
       updatePlanCardByPath(path, { status, done, total });
+      // Keep the active-plan pill live. When main tags the push with a
+      // sessionId (the respawn path) this also CREATES the entry — that is how
+      // a restored plan reaches the pill with its real status instead of a
+      // guessed "draft".
+      setActivePlan((p) => {
+        let changed = false;
+        const next: Record<string, PlanCardData> = {};
+        for (const [sid, card] of Object.entries(p)) {
+          if (card.path === path) { changed = true; next[sid] = { ...card, status, done, total }; }
+          else next[sid] = card;
+        }
+        if (sessionId && !next[sessionId]) {
+          changed = true;
+          next[sessionId] = { sessionId, workspaceId, path, status, done, total };
+        }
+        return changed ? next : p;
+      });
     });
 
     const offPiExit = window.hv.onPiExit(({ sessionId, code, intentional }) => {
@@ -871,8 +942,17 @@ export default function App(): React.JSX.Element {
     // a fresh open showed a static empty state with no loader).
     setStatuses((p) => ({ ...p, [id]: "waking" }));
     try {
-      const { meta, messages } = await window.hv.openSession(id);
+      const { meta, messages, compaction, plan } = await window.hv.openSession(id);
       setStatuses((p) => ({ ...p, [id]: "running" }));
+      // §23: seed the active-plan pill. This is the path that survives a
+      // renderer reload — there is no session_start replay then, and main's
+      // planState outlives the renderer.
+      if (plan) {
+        setActivePlan((p) => ({
+          ...p,
+          [id]: { sessionId: id, workspaceId: meta.workspaceId, path: plan.path, status: plan.status, done: plan.done, total: plan.total },
+        }));
+      }
       if (messages) {
         // Rebuilt from Pi's session file — only adopt when we hold nothing newer.
         // Reconstructs tool cards too (intent + result persist in the session
@@ -929,7 +1009,14 @@ export default function App(): React.JSX.Element {
           // Keep any plan cards that raced in but AREN'T already positioned in the
           // rebuilt history (dedupe by path) — avoids a duplicate bottom card.
           const extraPlans = existing.filter((it) => it.kind === "plan" && !restoredPlanPaths.has(it.card.path));
-          const merged = [...items, ...extraPlans];
+          // §9 round 9: a compacted session's rebuilt history is only the slice
+          // Pi still holds — cap it with the boundary bubble so the gap is
+          // visible instead of silent. `get_messages` gave us the in-context
+          // half; the rest is loadable from the file on demand.
+          const head: TranscriptItem[] = compaction
+            ? [{ kind: "boundary", compactions: compaction.count, reason: compaction.reason, loaded: false, id: idCounter.current++ }]
+            : [];
+          const merged = [...head, ...items, ...extraPlans];
           // Rebuild the tool index so any late tool_execution_end still matches.
           const map = new Map<string, number>();
           merged.forEach((it, i) => {
@@ -1399,6 +1486,8 @@ export default function App(): React.JSX.Element {
                 onOpenFile={openFileFromCard}
                 onOpenMcp={() => setView("mcp")}
                 onRewind={rewindTo}
+                onLoadEarlier={selectedId ? () => void loadEarlier(selectedId) : undefined}
+                activePlan={selectedId ? activePlan[selectedId] ?? null : null}
               />
             </div>
             {openFileEntries.map(([w, f]) => {
