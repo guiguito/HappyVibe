@@ -598,6 +598,22 @@ export function registerIpc(win: BrowserWindow): void {
           if (prev?.enabled !== planN.enabled) {
             void log.append({ type: planN.enabled ? "plan.enter" : "plan.exit", sessionId, workspaceId: wsId, data: {} });
           }
+          // Round 9: the notify carries only the PATH, so the active-plan pill
+          // would have to guess the status — and guessing "draft" is exactly the
+          // bug 833a966 removed (an implemented plan reported as still pending).
+          // Push the file's real status instead. `sessionId` is set here (and
+          // only here) so the renderer can attach the plan to a session it does
+          // not otherwise know about on a respawn.
+          const restoredPath = planState.get(sessionId)?.planPath;
+          if (restoredPath && wsId) {
+            const parsed = readPlan(workspaces.list(), wsId, restoredPath);
+            if (parsed) {
+              send("hv:plan-changed", {
+                sessionId, workspaceId: wsId, path: restoredPath,
+                status: parsed.status, done: parsed.done, total: parsed.total,
+              });
+            }
+          }
         } else if (planN.kind === "hv.plan-status" && wsId) {
           const relPath = planState.get(sessionId)?.planPath;
           const status = planN.status;

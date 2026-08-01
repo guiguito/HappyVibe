@@ -304,7 +304,8 @@ interface HvApi {
   planRevert(sessionId: string): Promise<{
     restored: string[]; deleted: string[]; stale: string[]; notCaptured: string[];
   } | null>;
-  onPlanChanged(cb: (p: { workspaceId: string; path: string; status: string; done: number; total: number }) => void): () => void;
+  /** `sessionId` is set only on the respawn push, where it attaches the plan to a session. */
+  onPlanChanged(cb: (p: { sessionId?: string; workspaceId: string; path: string; status: string; done: number; total: number }) => void): () => void;
   getPathForFile(file: File): string;
 
   // B2: AGENTS.md

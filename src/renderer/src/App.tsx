@@ -432,9 +432,11 @@ export default function App(): React.JSX.Element {
         // reappear at all. Appending it anyway produced a misplaced card frozen
         // at "draft" that claimed an implemented plan was still pending.
         if (pl.planPath && wsId && !pl.restored) ensurePlanCard(sid, wsId, pl.planPath);
-        // The pill takes BOTH paths: a restored plan has no card in the
-        // transcript (by design, 833a966) but must still be reachable.
-        if (pl.planPath && wsId) {
+        // A LIVE plan_complete is genuinely a fresh draft, so seeding "draft"
+        // here is a fact, not a guess. A RESTORED plan's status is unknown from
+        // the notify alone — main pushes it via hv:plan-changed (with sessionId)
+        // rather than letting the pill invent one.
+        if (pl.planPath && wsId && !pl.restored) {
           const path = pl.planPath;
           setActivePlan((p) =>
             p[sid]?.path === path ? p : { ...p, [sid]: { sessionId: sid, workspaceId: wsId, path, status: "draft", done: 0, total: 0 } },
@@ -533,15 +535,22 @@ export default function App(): React.JSX.Element {
     });
 
     // §23: live plan-file progress (checklist n/m + status) from the fs watcher.
-    const offPlanChanged = window.hv.onPlanChanged(({ path, status, done, total }) => {
+    const offPlanChanged = window.hv.onPlanChanged(({ sessionId, workspaceId, path, status, done, total }) => {
       updatePlanCardByPath(path, { status, done, total });
-      // Keep the active-plan pill's status/progress live too.
+      // Keep the active-plan pill live. When main tags the push with a
+      // sessionId (the respawn path) this also CREATES the entry — that is how
+      // a restored plan reaches the pill with its real status instead of a
+      // guessed "draft".
       setActivePlan((p) => {
         let changed = false;
         const next: Record<string, PlanCardData> = {};
         for (const [sid, card] of Object.entries(p)) {
           if (card.path === path) { changed = true; next[sid] = { ...card, status, done, total }; }
           else next[sid] = card;
+        }
+        if (sessionId && !next[sessionId]) {
+          changed = true;
+          next[sessionId] = { sessionId, workspaceId, path, status, done, total };
         }
         return changed ? next : p;
       });

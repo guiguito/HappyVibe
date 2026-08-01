@@ -35,6 +35,25 @@ const TIER_LABEL: Record<ModelTier, string> = {
   global: "global default",
 };
 
+/**
+ * §23 round 9 — the active-plan pill.
+ *
+ * Any plan the session has is reachable here EXCEPT a cancelled one (nothing to
+ * read, nothing to do). An implemented plan still gets a pill: the transcript
+ * route to it may have been compacted away, and reporting its REAL status is
+ * the whole point — the bug this replaced claimed "draft" for exactly that case.
+ */
+export function showsPlanPill(status: string): boolean {
+  return status !== "cancelled";
+}
+
+/** The pill's text. Never says "ready" for a plan that is not a draft. */
+export function planPillLabel(status: string, done: number, total: number): string {
+  if (status === "implemented") return "Plan implemented";
+  if (status === "implementing") return `Implementing ${done}/${total}`;
+  return "Plan ready";
+}
+
 export function ChatView({
   workspace,
   sessionId,
@@ -233,7 +252,7 @@ export function ChatView({
   // plans get a pill — an implemented or cancelled plan needs no CTA, and the
   // file stays in the tree either way.
   const [planOpen, setPlanOpen] = useState(false);
-  const showPlanPill = !!activePlan && (activePlan.status === "draft" || activePlan.status === "implementing");
+  const showPlanPill = !!activePlan && showsPlanPill(activePlan.status);
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
   const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
   // §9 round 7: rewind scope + the affected-file preview behind it. `undefined`
@@ -453,7 +472,7 @@ export function ChatView({
             className="flex items-center gap-1 rounded-full bg-sky-soft text-sky text-[11px] font-bold px-2 py-0.5 hover:brightness-95 cursor-pointer"
           >
             <span aria-hidden>📋</span>
-            {activePlan.status === "draft" ? "Plan ready" : `Implementing ${activePlan.done}/${activePlan.total}`}
+            {planPillLabel(activePlan.status, activePlan.done, activePlan.total)}
           </button>
         )}
         {planEnabled && (
