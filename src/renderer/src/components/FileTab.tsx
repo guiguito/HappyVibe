@@ -33,6 +33,8 @@ export function FileTab({
   gridArea,
   className = "",
   onDirtyChange,
+  saveKey,
+  searchKey,
 }: {
   workspace: string;
   relPath: string;
@@ -42,6 +44,9 @@ export function FileTab({
   /** WS6: extra classes (e.g. the split-pane divider border). */
   className?: string;
   onDirtyChange: (dirty: boolean) => void;
+  /** Round 8: resolved shortcut bindings, forwarded to the CodeMirror keymap. */
+  saveKey: string;
+  searchKey: string;
 }): React.JSX.Element {
   const [buf, setBuf] = useState<BufferState>({ kind: "loading" });
   const [content, setContent] = useState("");
@@ -187,7 +192,7 @@ export function FileTab({
               <Suspense
                 fallback={<div className="h-full flex items-center justify-center text-sm text-ink-soft">Opening editor…</div>}
               >
-                <CodeEditor path={relPath} doc={content} docVersion={docVersion} onChange={setContent} onSave={() => void save()} />
+                <CodeEditor path={relPath} doc={content} docVersion={docVersion} onChange={setContent} onSave={() => void save()} saveKey={saveKey} searchKey={searchKey} />
               </Suspense>
             )}
           </div>

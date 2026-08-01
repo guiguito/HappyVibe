@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { tailToolCallIds, type RewindScope } from "../rewind";
+import { matchesBinding } from "../shortcuts";
 import { ModelSelect } from "./ModelSelect";
 import { ContextBubble } from "./ContextBubble";
 import { ContextPanel } from "./ContextPanel";
@@ -51,6 +52,7 @@ export function ChatView({
   stats = null,
   searchOpen,
   onSearchOpenChange,
+  searchKey,
   contextOpen,
   onContextOpenChange,
   costCalls = [],
@@ -93,6 +95,8 @@ export function ChatView({
   stats?: SessionStats | null;
   searchOpen: boolean;
   onSearchOpenChange: (open: boolean) => void;
+  /** Round 8: the resolved binding for the shared "search" action. */
+  searchKey: string;
   contextOpen: boolean;
   onContextOpenChange: (open: boolean) => void;
   /** Cost ledger for the spend pill + its drill-in. Totalled in main (calls.ts). */
@@ -337,7 +341,7 @@ export function ChatView({
   // is lifted to App (WS7 — the toggle lives in the tab strip).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+      if (matchesBinding(e, searchKey)) {
         // v5.1: when the code editor is focused, ⌘F is its search, not the chat's.
         if (document.activeElement?.closest(".cm-editor")) return;
         e.preventDefault();
@@ -349,7 +353,7 @@ export function ChatView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen, onSearchOpenChange]);
+  }, [searchOpen, onSearchOpenChange, searchKey]);
 
   // #7: on opening a workspace with no AGENTS.md, offer to create one — once per
   // workspace (dismissal remembered in localStorage so it never nags).

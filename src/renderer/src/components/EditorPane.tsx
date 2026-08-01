@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { openSearchPanel, search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting, HighlightStyle, type LanguageSupport } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { tags } from "@lezer/highlight";
@@ -129,6 +129,8 @@ export default function CodeEditor({
   docVersion,
   onChange,
   onSave,
+  saveKey,
+  searchKey,
 }: {
   path: string;
   /** Buffer content at `docVersion` — NOT pushed per keystroke (uncontrolled between versions). */
@@ -137,12 +139,29 @@ export default function CodeEditor({
   docVersion: number;
   onChange: (text: string) => void;
   onSave: () => void;
+  /** Round 8: resolved bindings from the shortcut registry (canonical CM form). */
+  saveKey: string;
+  searchKey: string;
 }): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const langCompartment = useRef(new Compartment());
+  // Round 8: the keymap is compartmented so a rebind applies to tabs that are
+  // ALREADY open — an editor tab stays mounted for the life of the app, so
+  // waiting for a remount would mean waiting for a restart.
+  const keysCompartment = useRef(new Compartment());
   // Fresh callbacks without rebuilding the view.
   const cbs = useRef({ onChange, onSave });
+  const keymapFor = (save: string, find: string) =>
+    keymap.of([
+      { key: save, preventDefault: true, run: () => (cbs.current.onSave(), true) },
+      { key: find, preventDefault: true, run: openSearchPanel },
+      indentWithTab,
+      // Drop CM's own Mod-f so a rebound search key is the only one that opens it.
+      ...searchKeymap.filter((b) => b.key !== "Mod-f"),
+      ...defaultKeymap,
+      ...historyKeymap,
+    ]);
   useEffect(() => {
     cbs.current = { onChange, onSave };
   });
@@ -167,13 +186,7 @@ export default function CodeEditor({
           syntaxHighlighting(hvHighlight),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           langCompartment.current.of([]),
-          keymap.of([
-            { key: "Mod-s", preventDefault: true, run: () => (cbs.current.onSave(), true) },
-            indentWithTab,
-            ...searchKeymap,
-            ...defaultKeymap,
-            ...historyKeymap,
-          ]),
+          keysCompartment.current.of(keymapFor(saveKey, searchKey)),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) cbs.current.onChange(u.state.doc.toString());
           }),
@@ -199,6 +212,12 @@ export default function CodeEditor({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
+
+  // Round 8: a rebind applies live to this already-mounted view.
+  useEffect(() => {
+    view.current?.dispatch({ effects: keysCompartment.current.reconfigure(keymapFor(saveKey, searchKey)) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveKey, searchKey]);
 
   // External reload — replace the whole document, keep the view.
   const lastVersion = useRef(docVersion);
