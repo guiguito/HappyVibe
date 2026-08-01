@@ -118,6 +118,9 @@ export default function App(): React.JSX.Element {
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
   useEffect(() => { localStorage.setItem("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
+  // Round 8: the sidebar's Settings group, open or not — persisted like the rail.
+  const [settingsOpen, setSettingsOpen] = useState(() => localStorage.getItem("hv:settings-open") === "1");
+  useEffect(() => { localStorage.setItem("hv:settings-open", settingsOpen ? "1" : "0"); }, [settingsOpen]);
   // Round 8: shortcut bindings — defaults until config answers, then whatever
   // the user remapped on the shortcuts page.
   const [bindings, setBindings] = useState<Record<ShortcutId, string>>(() => resolveBindings(null));
@@ -1124,8 +1127,8 @@ export default function App(): React.JSX.Element {
       if (ws) void newSession(ws);
       return;
     }
-    if (is("openSettings")) { e.preventDefault(); if (!needsSetup) setView("models"); return; }
-    if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) setView("shortcuts"); return; }
+    if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
+    if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
     if (is("closeTab")) {
       // Close the first closable (non-chat) active tab; window close is ⌘⇧W.
       if (!wsId) return;
@@ -1198,8 +1201,8 @@ export default function App(): React.JSX.Element {
           if (selectedId === id) setSelectedId(null);
           await window.hv.deleteSession(id); // sessions-changed broadcast refreshes the list
         }}
-        onOpenHelp={() => setOnboarding(true)}
-        onOpenShortcuts={() => setView("shortcuts")}
+        settingsOpen={settingsOpen}
+        onToggleSettingsOpen={() => setSettingsOpen((o) => !o)}
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
