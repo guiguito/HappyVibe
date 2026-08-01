@@ -1,5 +1,7 @@
 import { expect, test } from "vitest";
-import { toolLabel } from "../src/renderer/src/toolLabel";
+import { readFileSync } from "node:fs";
+import { toolLabel, brandIconFor, BRAND_ICONS } from "../src/renderer/src/toolLabel";
+import { MCP_CATALOG } from "../src/main/mcpCatalog";
 
 // W1.1 — human headlines for tool cards (PRD "Chat experience").
 
@@ -130,4 +132,44 @@ test("direct-mode MCP tool (not the proxy) still resolves its brand", () => {
 test("non-brand tools carry no brand icon", () => {
   expect(toolLabel("ask_user", {}).brand).toBeUndefined();
   expect(toolLabel("mcp", { tool: "customserver_dostuff", args: "{}" }).brand).toBeUndefined();
+});
+
+// §13 round 8 — brand icons for the curated catalog's new entries. Only classes
+// that actually ship in simple-icons v16 are mapped; the rest keep the generic
+// MCP glyph, which is the documented fallback.
+test("catalog servers added in round 8 resolve their brand icon", () => {
+  expect(brandIconFor("n8n_list_nodes")).toBe("si-n8n");
+  expect(brandIconFor("chrome_devtools_performance_trace")).toBe("si-googlechrome");
+  expect(brandIconFor("shadcn_get_component")).toBe("si-shadcnui");
+  expect(brandIconFor("neon_run_sql")).toBe("si-neon");
+  // Context7 is an Upstash product and simple-icons ships si-upstash, not si-context7.
+  expect(brandIconFor("context7_get_docs")).toBe("si-upstash");
+});
+
+test("catalog brands simple-icons does not ship fall back to the generic glyph", () => {
+  expect(brandIconFor("firecrawl_scrape")).toBeUndefined();
+  expect(brandIconFor("composio_execute")).toBeUndefined();
+});
+
+// Round 8: a mapped class that simple-icons does not ship renders as an
+// INVISIBLE icon — strictly worse than the generic glyph fallback. Four dead
+// entries (aws, openai, slack, playwright) shipped unnoticed from round 4 until
+// a GUI pass caught Playwright's blank card. This pins the whole map to the
+// installed font so the next simple-icons bump fails here instead of in the UI.
+test("every BRAND_ICONS class exists in the installed simple-icons font", () => {
+  const css = readFileSync(
+    new URL("../node_modules/simple-icons-font/font/simple-icons.css", import.meta.url),
+    "utf8",
+  );
+  const dead = Object.entries(BRAND_ICONS).filter(([, cls]) => !css.includes(`.${cls}:`));
+  expect(dead, `dead icon classes: ${dead.map(([k, v]) => `${k}→${v}`).join(", ")}`).toEqual([]);
+});
+
+test("every catalog entry's brand icon exists too", () => {
+  const css = readFileSync(
+    new URL("../node_modules/simple-icons-font/font/simple-icons.css", import.meta.url),
+    "utf8",
+  );
+  const dead = MCP_CATALOG.filter((e) => e.brand && !css.includes(`.${e.brand}:`));
+  expect(dead.map((e) => `${e.key}→${e.brand}`)).toEqual([]);
 });

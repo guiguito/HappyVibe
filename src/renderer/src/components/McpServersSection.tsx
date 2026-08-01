@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { brandIconFor } from "../toolLabel";
+import { BrandMark } from "./BrandMark";
 
 interface McpServer {
   scope: "global" | "workspace";
@@ -22,12 +24,12 @@ function statusKey(scope: string, workspaceId: string | null, name: string): str
 // McpConnectResult — shown after authenticate/check resolves
 // ---------------------------------------------------------------------------
 
-type ConnectResultState =
+export type ConnectResultState =
   | { phase: "connecting"; serverName: string }
   | { phase: "ok"; serverName: string; tools: { name: string; description?: string }[] }
   | { phase: "error"; serverName: string; error: string; retry: () => void };
 
-function McpConnectResult({
+export function McpConnectResult({
   state,
   onClose,
 }: {
@@ -46,8 +48,12 @@ function McpConnectResult({
         {state.phase === "connecting" && (
           <>
             <h2 className="font-black text-xl leading-tight mb-2">Connecting to {state.serverName}</h2>
+            {/* Generic on purpose: this modal now also fronts the catalog's
+                connect flow, where a stdio or key-based server never opens a
+                browser. Promising one that never appears reads as a hang. */}
             <p className="text-sm text-ink-soft mb-4">
-              Opening your browser — approve access, then return to HappyVibe.
+              If this server needs you to sign in, your browser will open — approve access, then
+              return to HappyVibe.
             </p>
             <div className="flex items-center gap-2 text-sm text-ink-soft">
               {/* ponytail: CSS spinner, no lib */}
@@ -56,6 +62,19 @@ function McpConnectResult({
                 aria-hidden
               />
               Waiting for authorisation…
+              <span className="flex-1" />
+              {/* Abandoning the browser sign-in must not trap the user behind a
+                  spinner that only clears on the auth timeout. Dismissing is
+                  cosmetic — main's attempt runs to completion and its result is
+                  ignored — so the server is simply left unauthenticated, which
+                  the status badge already reports. */}
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs font-bold text-ink-soft underline hover:text-ink cursor-pointer shrink-0"
+              >
+                Cancel
+              </button>
             </div>
           </>
         )}
@@ -135,11 +154,25 @@ function McpConnectResult({
  */
 export function McpServersSection({
   workspaceId,
+  scope = "global",
   embedded = false,
+  onServersChanged,
 }: {
   workspaceId: string | null;
+  /**
+   * Which tier this instance manages. Explicit, never inferred: the scope used
+   * to come from whichever session happened to be selected, so the global MCP
+   * page either disabled the workspace option or silently wrote to an unnamed
+   * workspace. Global page passes "global"; WorkspaceSettingsModal passes
+   * "workspace" with its own path, where the workspace identity is unambiguous.
+   */
+  scope?: "global" | "workspace";
   /** v5: rendered inside the "MCP" section card — drop the own heading + top margin. */
   embedded?: boolean;
+  /** §13 round 8: fired after this list adds or removes a server, so the curated
+      catalog above can re-derive its "installed" badges. Without it, removing a
+      server here leaves its catalog card stuck as installed and un-clickable. */
+  onServersChanged?: () => void;
 }): React.JSX.Element {
   const [servers, setServers] = useState<McpServer[] | null>(null);
   const [editing, setEditing] = useState<McpServer | "new" | null>(null);
@@ -147,10 +180,13 @@ export function McpServersSection({
   const [statuses, setStatuses] = useState<Map<string, McpServerStatusLike>>(new Map());
   const [connectResult, setConnectResult] = useState<ConnectResultState | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
+  // Bumped on every connect attempt AND on dismiss, so a result that lands
+  // after the user walked away can't reopen the modal behind them.
+  const connectGen = useRef(0);
 
   const refresh = async (): Promise<void> => {
     const r = await window.hv.mcpGet(workspaceId ?? undefined);
-    setServers([...flatten(r.global, "global"), ...flatten(r.workspace, "workspace")]);
+    setServers(scope === "global" ? flatten(r.global, "global") : flatten(r.workspace, "workspace"));
   };
 
   useEffect(() => {
@@ -162,11 +198,12 @@ export function McpServersSection({
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
     });
     return () => { unsubRef.current?.(); };
-  }, [workspaceId]);
+  }, [workspaceId, scope]);
 
   const remove = async (s: McpServer): Promise<void> => {
     await window.hv.mcpSetServer(s.scope, s.scope === "workspace" ? workspaceId : null, s.name, null);
     await refresh();
+    onServersChanged?.();
   };
 
   const reconnect = (s: McpServer): void => {
@@ -178,8 +215,11 @@ export function McpServersSection({
   // ponytail: single function covers add-time + per-row Authenticate flows.
   const authenticate = (scope: "global" | "workspace", name: string): void => {
     const wsId = scope === "workspace" ? workspaceId : null;
+    const gen = ++connectGen.current;
+    const stale = (): boolean => connectGen.current !== gen;
     setConnectResult({ phase: "connecting", serverName: name });
     void window.hv.mcpAuthenticate(scope, wsId, name).then((res) => {
+      if (stale()) return;
       if (res.ok) {
         setConnectResult({ phase: "ok", serverName: name, tools: res.tools });
       } else {
@@ -191,6 +231,7 @@ export function McpServersSection({
         });
       }
     }).catch((e: unknown) => {
+      if (stale()) return;
       setConnectResult({
         phase: "error",
         serverName: name,
@@ -206,6 +247,7 @@ export function McpServersSection({
   const handleSaved = (savedScope: "global" | "workspace", savedName: string, isHttp: boolean): void => {
     setEditing(null);
     void refresh();
+    onServersChanged?.(); // a manual add/rename changes the catalog's installed set too
     if (isHttp) {
       authenticate(savedScope, savedName);
     }
@@ -239,26 +281,38 @@ export function McpServersSection({
             const sKey = statusKey(s.scope, s.scope === "workspace" ? workspaceId : null, s.name);
             const status = statuses.get(sKey);
             const isHttp = typeof s.cfg.url === "string";
+            const brand = brandIconFor(s.name);
             return (
               <div
                 key={`${s.scope}:${s.name}`}
-                className="px-4 py-2.5 border-b border-line last:border-b-0 flex items-center gap-2"
+                className="px-4 py-3 border-b border-line last:border-b-0 flex items-center gap-3"
               >
-                <span className="font-bold shrink-0">{s.name}</span>
-                <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
-                  {s.scope}
-                </span>
-                <McpStatusBadge status={status} />
-                <span className="font-mono text-xs text-ink-soft flex-1 min-w-0 truncate">
-                  {isHttp
-                    ? s.cfg.url as string
-                    : [s.cfg.command, ...((s.cfg.args as string[]) ?? [])].filter(Boolean).join(" ")}
-                </span>
-                {s.cfg.directTools ? (
-                  <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 bg-honey-soft text-tangerine-deep border-honey/60 shrink-0">
-                    direct
+                {/* Round 8: real glyph when simple-icons has one, else a tinted
+                    monogram — a hand-added server should never render as a blank
+                    square just because we don't ship its logo. */}
+                <BrandMark name={s.name} brand={brand} size="lg" />
+                {/* Identity above, the literal endpoint below — two deliberate
+                    lines. One line forced the mono endpoint to compete with the
+                    action buttons, which pushed Remove off the card. */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-sm">{s.name}</span>
+                    <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
+                      {s.scope}
+                    </span>
+                    <McpStatusBadge status={status} />
+                    {s.cfg.directTools ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 bg-honey-soft text-tangerine-deep border-honey/60 shrink-0">
+                        direct
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="block font-mono text-xs text-ink-soft truncate mt-0.5">
+                    {isHttp
+                      ? s.cfg.url as string
+                      : [s.cfg.command, ...((s.cfg.args as string[]) ?? [])].filter(Boolean).join(" ")}
                   </span>
-                ) : null}
+                </div>
                 {/* Authenticate — shown when needs-auth */}
                 {status?.state === "needs-auth" && (
                   <button
@@ -308,6 +362,7 @@ export function McpServersSection({
       {editing && (
         <McpServerEditor
           server={editing === "new" ? null : editing}
+          scope={scope}
           workspaceId={workspaceId}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
@@ -317,8 +372,12 @@ export function McpServersSection({
         <McpConnectResult
           state={connectResult}
           onClose={() => {
-            // Allow close only when not mid-connect (connecting phase blocks dismiss — user must wait or navigate away)
-            if (connectResult.phase !== "connecting") setConnectResult(null);
+            // Always dismissable, including mid-connect: abandoning a browser
+            // sign-in used to leave the user stuck behind a spinner until the
+            // auth timeout. Bumping the generation makes any late result a
+            // no-op instead of reopening the modal.
+            connectGen.current++;
+            setConnectResult(null);
           }}
         />
       )}
@@ -368,16 +427,17 @@ function McpStatusBadge({ status }: { status: McpServerStatusLike | undefined })
 }
 
 function McpServerEditor({
-  server, workspaceId, onClose, onSaved,
+  server, scope, workspaceId, onClose, onSaved,
 }: {
   server: McpServer | null;
+  /** Fixed by the surface — this dialog no longer asks. */
+  scope: "global" | "workspace";
   workspaceId: string | null;
   onClose: () => void;
   onSaved: (scope: "global" | "workspace", name: string, isHttp: boolean) => void;
 }): React.JSX.Element {
   const cfg = server?.cfg ?? {};
   const [name, setName] = useState(server?.name ?? "");
-  const [scope, setScope] = useState<"global" | "workspace">(server?.scope ?? "global");
   const [kind, setKind] = useState<"stdio" | "http">(typeof cfg.url === "string" ? "http" : "stdio");
   const [command, setCommand] = useState(
     [cfg.command, ...((cfg.args as string[]) ?? [])].filter(Boolean).join(" "),
@@ -435,16 +495,6 @@ function McpServerEditor({
 
         <label className={labelCls}>Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="github" spellCheck={false} />
-
-        <label className={labelCls}>Scope</label>
-        <select
-          value={scope}
-          onChange={(e) => setScope(e.target.value as "global" | "workspace")}
-          className={inputCls + " cursor-pointer"}
-        >
-          <option value="global">Global (all workspaces)</option>
-          <option value="workspace" disabled={!workspaceId}>Workspace (.mcp.json shareable)</option>
-        </select>
 
         <label className={labelCls}>Type</label>
         <select

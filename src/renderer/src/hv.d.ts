@@ -443,6 +443,22 @@ interface HvApi {
   ): Promise<{ ok: true; tools: { name: string; description?: string }[] } | { ok: false; error: string }>;
   mcpLogout(name: string): Promise<void>;
   onMcpStatusChanged(cb: (s: McpServerStatusLike[]) => void): () => void;
+  // §13 round 8: curated catalog. Install by KEY — main owns the catalog and the
+  // secrets, so the renderer never sends a config object.
+  mcpInstallCatalog(
+    catalogKey: string,
+    scope: "global" | "workspace",
+    workspaceId: string | null,
+    values: Record<string, string>,
+  ): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Is a node/npx runtime on PATH? Badges the catalog's stdio entries. */
+  nodeAvailable(): Promise<boolean>;
+  /** Connect → authenticate-if-needed → tools, in one call. */
+  mcpConnectFlow(
+    scope: "global" | "workspace",
+    workspaceId: string | null,
+    name: string,
+  ): Promise<{ ok: true; tools: { name: string; description?: string }[] } | { ok: false; error: string }>;
 
   // B7: local analytics + onboarding
   getAnalytics(filter?: { workspaceId?: string; sinceTs?: string }): Promise<HvAnalytics>;

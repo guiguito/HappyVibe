@@ -5,7 +5,8 @@
     "src/renderer/src/**/*",
     "src/renderer/src/**/*.tsx",
     "src/preload/*.d.ts",
-    "pi-runtime/extensions/hv-mcp.ts"
+    "pi-runtime/extensions/hv-mcp.ts",
+    "src/main/mcpCatalog.ts"
   ],
   "compilerOptions": {
     "composite": true,

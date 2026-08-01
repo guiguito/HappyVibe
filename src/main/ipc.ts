@@ -11,7 +11,7 @@ import {
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
-  setProviderKey, setWorkspaceBypass,
+  setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets,
 } from "./config";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
@@ -49,9 +49,12 @@ import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } fro
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { deleteAuthEntry } from "./mcpAuthStore";
 import { probe } from "./mcpClient";
+import { resolveMcpConfig } from "./mcpResolve";
 import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
+import { hasNodeRuntime } from "./nodePreflight";
+import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 
 
 function truncateTitle(msg: string): string {
@@ -392,7 +395,11 @@ export function registerIpc(win: BrowserWindow): void {
       name, scope, workspaceId, state: "checking", toolCount: 0, lastChecked: Date.now(),
     });
     mcpStatusChanged();
-    const result = await probe(name, cfg, agentDir());
+    // §13 round 8: a catalog server's key lives encrypted in config and the file
+    // holds only a ${HV_MCP_…} placeholder. The Pi runtime interpolates it at
+    // spawn; this process does not, so resolve before probing or every
+    // key-based server reports needs-auth with a literal placeholder as its key.
+    const result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir());
     mcpStatusMap.set(statusKey(scope, workspaceId, name), {
       name, scope, workspaceId,
       state: result.state,
@@ -807,27 +814,43 @@ export function registerIpc(win: BrowserWindow): void {
     async (_e, sessionId: string): Promise<{ meta: SessionMeta; messages: RestoreItem[] | null }> => {
       const meta = index.get(sessionId);
       if (!meta) throw new Error("Unknown session");
-      if (manager.get(sessionId)) return { meta, messages: null }; // already active — renderer keeps its transcript
-      const client = await startClient(meta, !!meta.piSessionFile);
-      let messages: RestoreItem[] | null = null;
-      if (meta.piSessionFile) {
+
+      // Rebuild the transcript from Pi's own history.
+      const loadMessages = async (c: PiClient): Promise<RestoreItem[]> => {
         try {
-          const res = await client.send({ type: "get_messages" });
+          const res = await c.send({ type: "get_messages" });
           const raw =
             (res.data as { messages?: Parameters<typeof restoreItems>[0] })?.messages ?? [];
-          messages = restoreItems(raw);
+          const items = restoreItems(raw);
           // §23: fill each restored plan card with the plan file's real status +
           // checklist progress, so a reopened card shows "implementing" (etc.)
           // and the right CTA — not a stale "draft".
-          for (const it of messages) {
+          for (const it of items) {
             if (it.kind !== "plan") continue;
             const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
             if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }
           }
+          return items;
         } catch {
-          messages = []; // resumed but history unreadable — start visually fresh
+          return []; // history unreadable — start visually fresh
         }
-      }
+      };
+
+      // Already active: serve history from the LIVE client instead of assuming
+      // the renderer still holds it. That assumption breaks on a renderer reload
+      // (⌘R / Vite full-reload), which wipes renderer state while this process
+      // keeps running — the session then rendered as an empty "Ready when you
+      // are." even though nothing was lost. Safe for a normal tab switch too:
+      // the renderer adopts a rebuilt transcript ONLY when it holds no
+      // conversation of its own (App.tsx `hasConversation`). No respawn here, so
+      // session grants and dangerous mode are untouched.
+      // (cast: the manager stores PiClients behind the narrower ManagedClient
+      // handle — same pattern as every other send site in this file.)
+      const active = manager.get(sessionId) as PiClient | null;
+      if (active) return { meta, messages: await loadMessages(active) };
+
+      const client = await startClient(meta, !!meta.piSessionFile);
+      const messages = meta.piSessionFile ? await loadMessages(client) : null;
       sessionsChanged();
       return { meta, messages };
     }
@@ -1670,6 +1693,10 @@ export function registerIpc(win: BrowserWindow): void {
         ];
         if (!serverNameInFiles(name, files)) {
           deleteAuthEntry(agentDir(), name);
+          // §13 round 8: catalog-installed API keys are keyed by server name
+          // too — drop them on the same condition, or a re-add would silently
+          // reuse a key the user thought they had removed.
+          removeMcpSecrets(name);
           void log.append({ type: "mcp.auth", workspaceId: workspaceId ?? undefined,
             data: { name, action: "credentials-deleted", reason: "server-removed" } });
         }
@@ -1679,7 +1706,99 @@ export function registerIpc(win: BrowserWindow): void {
     },
   );
 
+  // §13 round 8: one-click catalog install. The renderer sends a catalog KEY and
+  // form values — never a config object — so a renderer bug cannot write an
+  // arbitrary server. Secrets are encrypted here and referenced from mcp.json by
+  // ${HV_MCP_…} placeholder only.
+  ipcMain.handle(
+    "hv:mcp-install-catalog",
+    (
+      _e,
+      catalogKey: string,
+      scope: "global" | "workspace",
+      workspaceId: string | null,
+      values: Record<string, string>,
+    ) => {
+      const entry = catalogEntry(catalogKey);
+      if (!entry) return { ok: false as const, error: "Unknown catalog entry" };
+
+      const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
+      try {
+        const { cfg, secrets } = buildCatalogInstall(entry, values);
+        // Encrypt first: if the write then fails on a name collision we drop
+        // them again, rather than leaving secrets for a server we never wrote.
+        for (const s of secrets) setMcpSecret(entry.key, s.inputId, s.value);
+        try {
+          writeMcpServer(file, entry.key, cfg, { failIfExists: true });
+        } catch (err) {
+          removeMcpSecrets(entry.key);
+          throw err;
+        }
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+      }
+
+      void log.append({
+        type: "mcp.config",
+        workspaceId: workspaceId ?? undefined,
+        data: { scope, name: entry.key, removed: false, source: "catalog" },
+      });
+      scheduleMcpReload(scope, workspaceId); // apply to running sessions
+      return { ok: true as const };
+    },
+  );
+
+  // §13 round 8: the whole post-install chain in ONE call — connect, and only
+  // if the server actually rejects us, run interactive OAuth, then report the
+  // tools. Adding a server should land you at "N tools discovered" without a
+  // second manual step.
+  //
+  // probe-first (rather than auth-first) is what makes this work for every
+  // entry shape: stdio servers have no url to authenticate against, and
+  // key-based servers authenticate via a header, so both simply connect. Only a
+  // genuine 401 escalates to the browser flow.
+  ipcMain.handle(
+    "hv:mcp-connect-flow",
+    async (_e, scope: "global" | "workspace", workspaceId: string | null, name: string) => {
+      const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
+      const cfg = readMcpFile(file).mcpServers[name];
+      if (!cfg) return { ok: false as const, error: "server not found" };
+
+      const setStatus = (state: McpServerStatus["state"], tools?: { name: string; description?: string }[], error?: string): void => {
+        mcpStatusMap.set(statusKey(scope, workspaceId, name), {
+          name, scope, workspaceId, state,
+          toolCount: tools?.length ?? 0, tools, error, lastChecked: Date.now(),
+        });
+        mcpStatusChanged();
+      };
+
+      setStatus("checking");
+      let result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir());
+
+      if (result.state === "needs-auth" && cfg.url) {
+        const auth = await authenticate(name, cfg, agentDir(), {
+          openExternal: (url) => shell.openExternal(url),
+        });
+        void log.append({ type: "mcp.auth", workspaceId: workspaceId ?? undefined,
+          data: { name, action: auth.ok ? "authenticated" : "auth-failed", via: "connect-flow" } });
+        result = auth.ok
+          ? { state: "connected", tools: auth.tools }
+          : { state: "needs-auth", error: auth.error };
+      }
+
+      setStatus(result.state, result.tools, result.error);
+      return result.state === "connected"
+        ? { ok: true as const, tools: result.tools ?? [] }
+        : { ok: false as const, error: result.error ?? "Could not connect" };
+    },
+  );
+
   ipcMain.handle("hv:mcp-status", () => Array.from(mcpStatusMap.values()));
+
+  // §13 round 8: the catalog's stdio entries run through `npx`, which needs the
+  // user's own Node — the packaged app does not ship one. Surfaced so those
+  // cards can say "needs Node" BEFORE the click.
+  ipcMain.handle("hv:node-available", () => hasNodeRuntime());
 
   ipcMain.handle(
     "hv:mcp-check",

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { BYOK_PROVIDERS, buildProviderEnv, keySource, type ByokProvider, type KeySource } from "./providers";
 import { customEndpointEnv, type CustomEndpoint } from "./modelsJson";
+import { mcpSecretEnvVar } from "./mcpSecretName";
 import { resolveBypass as resolveBypassPure } from "./bypass";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
@@ -33,6 +34,11 @@ interface ConfigFile {
       absent = off — the default is cheaper for short-gap sessions, see
       getLongCache. */
   longCache?: boolean;
+  /** §13 round 8: safeStorage-encrypted secrets for catalog-installed MCP
+      servers, base64, keyed "<serverKey>:<inputId>". mcp.json holds only a
+      ${HV_MCP_…} placeholder — the workspace tier writes .mcp.json at the repo
+      root, so a plaintext key there would land in git history. */
+  mcpSecrets?: Record<string, string>;
 }
 
 function load(): ConfigFile {
@@ -129,11 +135,50 @@ export function customKeyStatus(): Record<string, boolean> {
   return out;
 }
 
-/** Env vars injected on Pi spawn: curated BYOK keys + custom endpoint keys. */
+// §13 round 8: secrets for catalog-installed MCP servers. mcp.json references
+// them as ${HV_MCP_…}; the real values ride the spawn env, same as BYOK keys.
+export function setMcpSecret(serverKey: string, inputId: string, value: string): void {
+  const cfg = load();
+  cfg.mcpSecrets = {
+    ...cfg.mcpSecrets,
+    [`${serverKey}:${inputId}`]: safeStorage.encryptString(value).toString("base64"),
+  };
+  save(cfg);
+}
+
+/** Drop every secret belonging to a server (called when it is removed). */
+export function removeMcpSecrets(serverKey: string): void {
+  const cfg = load();
+  if (!cfg.mcpSecrets) return;
+  for (const k of Object.keys(cfg.mcpSecrets)) {
+    if (k.startsWith(`${serverKey}:`)) delete cfg.mcpSecrets[k];
+  }
+  save(cfg);
+}
+
+function mcpSecretEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [composite, enc] of Object.entries(load().mcpSecrets ?? {})) {
+    const [serverKey, inputId] = composite.split(":");
+    const value = decrypt(enc);
+    if (value) out[mcpSecretEnvVar(serverKey, inputId)] = value;
+  }
+  return out;
+}
+
+/** True per "<serverKey>:<inputId>" once stored — the UI shows "key saved". */
+export function mcpSecretStatus(): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const k of Object.keys(load().mcpSecrets ?? {})) out[k] = true;
+  return out;
+}
+
+/** Env vars injected on Pi spawn: curated BYOK keys + custom endpoint keys + MCP secrets. */
 export function providerEnv(): Record<string, string> {
   return {
     ...buildProviderEnv(storedKeys()),
     ...customEndpointEnv(listCustomEndpoints(), storedCustomKeys()),
+    ...mcpSecretEnv(),
   };
 }
 

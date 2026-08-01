@@ -5,11 +5,14 @@ const notify = (payload: unknown) => ({ id: "1", method: "notify", message: JSON
 
 describe("parsePlan", () => {
   test("parses an hv.plan mode notify", () => {
+    // `restored` distinguishes the session_start replay from a live
+    // plan_complete — absent means live. See tests/parse-plan-restored.test.ts.
     expect(parsePlan(notify({ kind: "hv.plan", enabled: true, planPath: ".agents/plans/001-x.md" }))).toEqual({
       enabled: true,
       planPath: ".agents/plans/001-x.md",
+      restored: false,
     });
-    expect(parsePlan(notify({ kind: "hv.plan", enabled: false, planPath: null }))).toEqual({ enabled: false, planPath: undefined });
+    expect(parsePlan(notify({ kind: "hv.plan", enabled: false, planPath: null }))).toEqual({ enabled: false, planPath: undefined, restored: false });
   });
   test("ignores non-plan notifies and non-notify requests", () => {
     expect(parsePlan(notify({ kind: "hv.dangerous", on: true }))).toBeNull();

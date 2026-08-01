@@ -52,10 +52,30 @@ export function serverNameInFiles(name: string, files: string[]): boolean {
   return files.some((f) => name in readMcpFile(f).mcpServers);
 }
 
-/** Upsert (or remove, when cfg is null) one server. Returns the new file content. */
-export function writeMcpServer(file: string, name: string, cfg: McpServerConfig | null): McpFile {
+/**
+ * Upsert (or remove, when cfg is null) one server. Returns the new file content.
+ *
+ * `failIfExists` is for the curated catalog (§13 round 8): a one-click install
+ * must never silently replace a server the user configured by hand. The manual
+ * editor deliberately does NOT pass it — Edit overwrites by design.
+ */
+export function writeMcpServer(
+  file: string,
+  name: string,
+  cfg: McpServerConfig | null,
+  opts?: { failIfExists?: boolean },
+): McpFile {
   if (!isValidServerName(name)) throw new Error(`invalid MCP server name: ${JSON.stringify(name)}`);
   const cur = readMcpFile(file);
+  if (cfg && opts?.failIfExists) {
+    // Case-INSENSITIVE: mcpServers keys are case-sensitive, so a catalog install
+    // of "notion" next to a hand-added "Notion" would silently create a SECOND
+    // server — duplicate tools, duplicate context cost — instead of colliding.
+    const clash = Object.keys(cur.mcpServers).find(
+      (k) => k.toLowerCase() === name.toLowerCase(),
+    );
+    if (clash) throw new Error(`A server named "${clash}" already exists`);
+  }
   if (cfg) cur.mcpServers[name] = cfg;
   else delete cur.mcpServers[name];
   fs.mkdirSync(path.dirname(file), { recursive: true });
