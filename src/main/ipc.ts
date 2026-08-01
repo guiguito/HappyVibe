@@ -45,7 +45,7 @@ import {
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { restoreItems, type RestoreItem } from "./restore";
-import { compactionInfo, compactionReason, earlierItems } from "./history";
+import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { deleteAuthEntry } from "./mcpAuthStore";
@@ -879,22 +879,31 @@ export function registerIpc(win: BrowserWindow): void {
         return parsed ? { path: p, status: parsed.status, done: parsed.done, total: parsed.total } : null;
       };
 
-      // Rebuild the transcript from Pi's own history.
-      const loadMessages = async (c: PiClient): Promise<RestoreItem[]> => {
+      // Rebuild the transcript from Pi's session FILE, not `get_messages`.
+      // That RPC is the first thing a freshly spawned child has to answer, so it
+      // absorbs the whole boot — 1.35–2.86 s, 90%+ of every restore — while the
+      // file is already on disk and needs no child at all. Same source as the
+      // cost ledger (§19) and the earlier region (§9). See history.ts.
+      const loadMessages = (): RestoreItem[] => {
+        const items = contextItems(readSessionFile(sessionDir(), meta.piSessionFile));
+        // §23: fill each restored plan card with the plan file's real status +
+        // checklist progress, so a reopened card shows "implementing" (etc.)
+        // and the right CTA — not a stale "draft".
+        for (const it of items) {
+          if (it.kind !== "plan") continue;
+          const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
+          if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }
+        }
+        return items;
+      };
+
+      /** Fallback for a live session with no session file yet (see below). */
+      const loadFromClient = async (c: PiClient): Promise<RestoreItem[]> => {
         try {
           const res = await c.send({ type: "get_messages" });
-          const raw =
-            (res.data as { messages?: Parameters<typeof restoreItems>[0] })?.messages ?? [];
-          const items = restoreItems(raw);
-          // §23: fill each restored plan card with the plan file's real status +
-          // checklist progress, so a reopened card shows "implementing" (etc.)
-          // and the right CTA — not a stale "draft".
-          for (const it of items) {
-            if (it.kind !== "plan") continue;
-            const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
-            if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }
-          }
-          return items;
+          return restoreItems(
+            (res.data as { messages?: Parameters<typeof restoreItems>[0] })?.messages ?? [],
+          );
         } catch {
           return []; // history unreadable — start visually fresh
         }
@@ -908,15 +917,21 @@ export function registerIpc(win: BrowserWindow): void {
       // the renderer adopts a rebuilt transcript ONLY when it holds no
       // conversation of its own (App.tsx `hasConversation`). No respawn here, so
       // session grants and dangerous mode are untouched.
+      // A young session whose file we have not captured yet has nothing to read,
+      // so it keeps the RPC — the client is already warm there, so the boot cost
+      // this change removes does not apply.
       // (cast: the manager stores PiClients behind the narrower ManagedClient
       // handle — same pattern as every other send site in this file.)
       const active = manager.get(sessionId) as PiClient | null;
       if (active) {
-        return { meta, messages: await loadMessages(active), compaction: await compactionFor(), plan: planFor() };
+        const messages = meta.piSessionFile ? loadMessages() : await loadFromClient(active);
+        return { meta, messages, compaction: await compactionFor(), plan: planFor() };
       }
 
-      const client = await startClient(meta, !!meta.piSessionFile);
-      const messages = meta.piSessionFile ? await loadMessages(client) : null;
+      // Read BEFORE the spawn: the transcript no longer depends on the child, so
+      // nothing here waits on it.
+      const messages = meta.piSessionFile ? loadMessages() : null;
+      await startClient(meta, !!meta.piSessionFile);
       sessionsChanged();
       return { meta, messages, compaction: await compactionFor(), plan: planFor() };
     }
