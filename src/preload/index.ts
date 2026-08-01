@@ -236,6 +236,11 @@ contextBridge.exposeInMainWorld("hv", {
       { ok: true } | { ok: false; error: string }
     >,
   nodeAvailable: () => ipcRenderer.invoke("hv:node-available") as Promise<boolean>,
+  // Connect → authenticate-if-needed → tools, in one call.
+  mcpConnectFlow: (scope: "global" | "workspace", workspaceId: string | null, name: string) =>
+    ipcRenderer.invoke("hv:mcp-connect-flow", scope, workspaceId, name) as Promise<
+      { ok: true; tools: { name: string; description?: string }[] } | { ok: false; error: string }
+    >,
   onMcpStatusChanged: (cb: (s: unknown[]) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, s: unknown): void => cb(s as unknown[]);
     ipcRenderer.on("hv:mcp-status-changed", h);

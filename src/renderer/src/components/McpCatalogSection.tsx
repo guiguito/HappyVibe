@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { MCP_CATALOG, type McpCatalogEntry } from "../../../main/mcpCatalog";
+import { McpConnectResult, type ConnectResultState } from "./McpServersSection";
 
 /**
  * §13 round 8: the curated one-click catalog. Browsing is local (the list is
@@ -21,6 +22,23 @@ export function McpCatalogSection({
   const [installedNames, setInstalledNames] = useState<Set<string>>(new Set());
   const [hasNode, setHasNode] = useState(true);
   const [chosen, setChosen] = useState<McpCatalogEntry | null>(null);
+  const [connect, setConnect] = useState<ConnectResultState | null>(null);
+
+  // Installing is only step one. Adding a server should end at "N tools
+  // discovered", so chain straight into connect → authenticate-if-needed →
+  // tools (main does the whole chain in hv:mcp-connect-flow).
+  const runConnect = (entry: McpCatalogEntry, scope: "global" | "workspace"): void => {
+    setConnect({ phase: "connecting", serverName: entry.name });
+    const fail = (error: string): void =>
+      setConnect({ phase: "error", serverName: entry.name, error, retry: () => runConnect(entry, scope) });
+    void window.hv
+      .mcpConnectFlow(scope, scope === "workspace" ? workspaceId : null, entry.key)
+      .then((res) => {
+        if (res.ok) setConnect({ phase: "ok", serverName: entry.name, tools: res.tools });
+        else fail(res.error);
+      })
+      .catch((e: unknown) => fail(String(e)));
+  };
 
   const refreshInstalled = async (): Promise<void> => {
     const r = await window.hv.mcpGet(workspaceId ?? undefined);
@@ -96,10 +114,22 @@ export function McpCatalogSection({
           workspaceId={workspaceId}
           nodeMissing={chosen.transport === "stdio" && !hasNode}
           onClose={() => setChosen(null)}
-          onInstalled={() => {
+          onInstalled={(scope) => {
+            const entry = chosen;
             setChosen(null);
             void refreshInstalled();
             onInstalled();
+            runConnect(entry, scope);
+          }}
+        />
+      )}
+      {connect && (
+        <McpConnectResult
+          state={connect}
+          onClose={() => {
+            // Mid-connect the OAuth window may still be open — don't let a
+            // stray click strand the flow behind a dismissed modal.
+            if (connect.phase !== "connecting") setConnect(null);
           }}
         />
       )}
@@ -118,7 +148,7 @@ function McpCatalogConfirm({
   workspaceId: string | null;
   nodeMissing: boolean;
   onClose: () => void;
-  onInstalled: () => void;
+  onInstalled: (scope: "global" | "workspace") => void;
 }): React.JSX.Element {
   const [scope, setScope] = useState<"global" | "workspace">("global");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -132,7 +162,7 @@ function McpCatalogConfirm({
       .mcpInstallCatalog(entry.key, scope, scope === "workspace" ? workspaceId : null, values)
       .catch((e: unknown) => ({ ok: false as const, error: String(e) }));
     setBusy(false);
-    if (res.ok) onInstalled();
+    if (res.ok) onInstalled(scope);
     else setError(res.error);
   };
 

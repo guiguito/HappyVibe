@@ -453,6 +453,12 @@ interface HvApi {
   ): Promise<{ ok: true } | { ok: false; error: string }>;
   /** Is a node/npx runtime on PATH? Badges the catalog's stdio entries. */
   nodeAvailable(): Promise<boolean>;
+  /** Connect → authenticate-if-needed → tools, in one call. */
+  mcpConnectFlow(
+    scope: "global" | "workspace",
+    workspaceId: string | null,
+    name: string,
+  ): Promise<{ ok: true; tools: { name: string; description?: string }[] } | { ok: false; error: string }>;
 
   // B7: local analytics + onboarding
   getAnalytics(filter?: { workspaceId?: string; sinceTs?: string }): Promise<HvAnalytics>;

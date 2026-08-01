@@ -23,12 +23,12 @@ function statusKey(scope: string, workspaceId: string | null, name: string): str
 // McpConnectResult — shown after authenticate/check resolves
 // ---------------------------------------------------------------------------
 
-type ConnectResultState =
+export type ConnectResultState =
   | { phase: "connecting"; serverName: string }
   | { phase: "ok"; serverName: string; tools: { name: string; description?: string }[] }
   | { phase: "error"; serverName: string; error: string; retry: () => void };
 
-function McpConnectResult({
+export function McpConnectResult({
   state,
   onClose,
 }: {
@@ -47,8 +47,12 @@ function McpConnectResult({
         {state.phase === "connecting" && (
           <>
             <h2 className="font-black text-xl leading-tight mb-2">Connecting to {state.serverName}</h2>
+            {/* Generic on purpose: this modal now also fronts the catalog's
+                connect flow, where a stdio or key-based server never opens a
+                browser. Promising one that never appears reads as a hang. */}
             <p className="text-sm text-ink-soft mb-4">
-              Opening your browser — approve access, then return to HappyVibe.
+              If this server needs you to sign in, your browser will open — approve access, then
+              return to HappyVibe.
             </p>
             <div className="flex items-center gap-2 text-sm text-ink-soft">
               {/* ponytail: CSS spinner, no lib */}

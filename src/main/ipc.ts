@@ -49,6 +49,7 @@ import { globalAppendFile, readAppend, resolveWorkspaceAppend, writeAppend } fro
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { deleteAuthEntry } from "./mcpAuthStore";
 import { probe } from "./mcpClient";
+import { resolveMcpConfig } from "./mcpResolve";
 import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
@@ -394,7 +395,11 @@ export function registerIpc(win: BrowserWindow): void {
       name, scope, workspaceId, state: "checking", toolCount: 0, lastChecked: Date.now(),
     });
     mcpStatusChanged();
-    const result = await probe(name, cfg, agentDir());
+    // §13 round 8: a catalog server's key lives encrypted in config and the file
+    // holds only a ${HV_MCP_…} placeholder. The Pi runtime interpolates it at
+    // spawn; this process does not, so resolve before probing or every
+    // key-based server reports needs-auth with a literal placeholder as its key.
+    const result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir());
     mcpStatusMap.set(statusKey(scope, workspaceId, name), {
       name, scope, workspaceId,
       state: result.state,
@@ -1740,6 +1745,51 @@ export function registerIpc(win: BrowserWindow): void {
       });
       scheduleMcpReload(scope, workspaceId); // apply to running sessions
       return { ok: true as const };
+    },
+  );
+
+  // §13 round 8: the whole post-install chain in ONE call — connect, and only
+  // if the server actually rejects us, run interactive OAuth, then report the
+  // tools. Adding a server should land you at "N tools discovered" without a
+  // second manual step.
+  //
+  // probe-first (rather than auth-first) is what makes this work for every
+  // entry shape: stdio servers have no url to authenticate against, and
+  // key-based servers authenticate via a header, so both simply connect. Only a
+  // genuine 401 escalates to the browser flow.
+  ipcMain.handle(
+    "hv:mcp-connect-flow",
+    async (_e, scope: "global" | "workspace", workspaceId: string | null, name: string) => {
+      const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
+      const cfg = readMcpFile(file).mcpServers[name];
+      if (!cfg) return { ok: false as const, error: "server not found" };
+
+      const setStatus = (state: McpServerStatus["state"], tools?: { name: string; description?: string }[], error?: string): void => {
+        mcpStatusMap.set(statusKey(scope, workspaceId, name), {
+          name, scope, workspaceId, state,
+          toolCount: tools?.length ?? 0, tools, error, lastChecked: Date.now(),
+        });
+        mcpStatusChanged();
+      };
+
+      setStatus("checking");
+      let result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir());
+
+      if (result.state === "needs-auth" && cfg.url) {
+        const auth = await authenticate(name, cfg, agentDir(), {
+          openExternal: (url) => shell.openExternal(url),
+        });
+        void log.append({ type: "mcp.auth", workspaceId: workspaceId ?? undefined,
+          data: { name, action: auth.ok ? "authenticated" : "auth-failed", via: "connect-flow" } });
+        result = auth.ok
+          ? { state: "connected", tools: auth.tools }
+          : { state: "needs-auth", error: auth.error };
+      }
+
+      setStatus(result.state, result.tools, result.error);
+      return result.state === "connected"
+        ? { ok: true as const, tools: result.tools ?? [] }
+        : { ok: false as const, error: result.error ?? "Could not connect" };
     },
   );
 

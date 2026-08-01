@@ -15,9 +15,15 @@
  *   Registration is explicitly unsupported. mcpOAuth.ts only implements DCR, so
  *   a Slack tile would be a button that cannot succeed. Revisit if HappyVibe
  *   ever registers its own Slack app.
- * - Figma's local Dev Mode server (http://127.0.0.1:3845/mcp). Real, but needs
- *   the desktop app running with Dev Mode enabled; the vendor prefers the hosted
- *   one, which is what we ship.
+ * - Figma. Its hosted server (https://mcp.figma.com/mcp) 401s correctly and
+ *   advertises a registration_endpoint, but that endpoint returns a plain
+ *   "Forbidden" 403 to every well-formed DCR request (verified 2026-08-01 with
+ *   and without scope=mcp:connect, with client_secret_post, and with a browser
+ *   UA; the x-figma-rest-api-request-id header proves it reached Figma, not a
+ *   CDN edge). Figma allowlists pre-registered clients, so our DCR flow cannot
+ *   complete. Same class as Slack. Its local Dev Mode server
+ *   (http://127.0.0.1:3845/mcp) is unauthenticated but needs the desktop app
+ *   running with Dev Mode enabled — a third transport shape we do not model.
  */
 import type { McpServerConfig } from "./mcp";
 import { mcpSecretPlaceholder } from "./mcpSecretName";
@@ -89,12 +95,27 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     brand: "si-github",
     tagline: "Read repos, issues, PRs and Actions runs",
     blurb:
-      "GitHub's official server lets the agent summarise commits, compare branches, read issues and pull requests, and explain why an Actions workflow failed. You sign in through your browser — no token to paste.",
+      "GitHub's official server lets the agent summarise commits, compare branches, read issues and pull requests, and explain why an Actions workflow failed. Authenticate with a personal access token — GitHub does not offer browser sign-in to unregistered apps.",
     docsUrl: "https://github.com/github/github-mcp-server",
     transport: "remote",
-    auth: "oauth",
-    inputs: [],
-    build: () => ({ url: "https://api.githubcopilot.com/mcp/" }),
+    // Token, NOT OAuth: GitHub's authorization-server metadata advertises no
+    // registration_endpoint (verified 2026-08-01 at the RFC 8414 path form
+    // https://github.com/.well-known/oauth-authorization-server/login/oauth),
+    // so our DCR-only flow cannot obtain a client_id — the same dead end that
+    // dropped Slack and Figma. The PAT path is real: the server evaluates a
+    // bearer token (401 invalid_token "Token is not authorized" for a bad one)
+    // rather than rejecting the method. Revisit if HappyVibe registers a
+    // GitHub App and can ship a real client_id.
+    auth: "key",
+    inputs: [
+      {
+        id: "token",
+        label: "Personal access token",
+        hint: "github.com → Settings → Developer settings → Personal access tokens. Needs repo + read:org.",
+        secret: true,
+      },
+    ],
+    build: (_v, ref) => ({ url: "https://api.githubcopilot.com/mcp/", headers: bearer(ref("token")) }),
   },
   {
     key: "atlassian",
@@ -137,20 +158,6 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     auth: "oauth",
     inputs: [],
     build: () => ({ url: "https://mcp.linear.app/mcp" }),
-  },
-  {
-    key: "figma",
-    name: "Figma",
-    category: "Design",
-    brand: "si-figma",
-    tagline: "Turn a Figma frame into working code",
-    blurb:
-      "Point the agent at a Figma URL and it reads the real design — layout, spacing, colours, component names — instead of guessing from a screenshot. This is the hosted server; the desktop Dev Mode one is a separate, more manual setup.",
-    docsUrl: "https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/",
-    transport: "remote",
-    auth: "oauth",
-    inputs: [],
-    build: () => ({ url: "https://mcp.figma.com/mcp" }),
   },
   {
     key: "supabase",

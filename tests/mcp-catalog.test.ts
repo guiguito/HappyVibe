@@ -9,7 +9,7 @@ const fill = (e: (typeof MCP_CATALOG)[number], v = "sample") =>
 
 describe("MCP catalog data", () => {
   it("has entries and unique keys", () => {
-    expect(MCP_CATALOG.length).toBeGreaterThanOrEqual(14);
+    expect(MCP_CATALOG.length).toBeGreaterThanOrEqual(13);
     const keys = MCP_CATALOG.map((e) => e.key);
     expect(new Set(keys).size).toBe(keys.length);
   });
@@ -80,11 +80,30 @@ describe("MCP catalog data", () => {
     }
   });
 
-  it("does not ship Slack — confidential OAuth, no dynamic client registration", () => {
-    // Slack's MCP server requires a pre-registered client_id/client_secret and
-    // explicitly rejects DCR, which is the only flow mcpOAuth.ts implements.
-    // A Slack tile would be a button that cannot succeed.
+  it("does not ship servers that reject dynamic client registration", () => {
+    // mcpOAuth.ts implements DCR only. A server that allowlists pre-registered
+    // clients gives a tile that cannot succeed, so it must not ship:
+    //   slack  — documents confidential OAuth, DCR explicitly unsupported.
+    //   figma  — advertises a registration_endpoint but returns a bare 403
+    //            "Forbidden" to every well-formed DCR request (2026-08-01).
+    // Revisit either only once HappyVibe registers a real client with them.
     expect(MCP_CATALOG.find((e) => e.key === "slack")).toBeUndefined();
+    expect(MCP_CATALOG.find((e) => e.key === "figma")).toBeUndefined();
+  });
+
+  it("every oauth entry was audited and accepts dynamic client registration", () => {
+    // Audited live 2026-08-01 by POSTing a well-formed DCR request to each
+    // server's advertised registration_endpoint. These five returned 200/201
+    // with a real client_id. Slack, Figma and GitHub did not and are either
+    // dropped or shipped as key-based — see the header comment in mcpCatalog.ts.
+    //
+    // Adding an oauth entry that is not on this list means nobody checked that
+    // our DCR-only flow can actually register with it. Audit it, then add it.
+    const DCR_VERIFIED = new Set(["atlassian", "notion", "linear", "supabase", "neon"]);
+    for (const e of MCP_CATALOG) {
+      if (e.auth !== "oauth") continue;
+      expect(DCR_VERIFIED.has(e.key), `${e.key}: oauth entry not in the DCR-audited set`).toBe(true);
+    }
   });
 
   it("catalogEntry looks up by key", () => {
