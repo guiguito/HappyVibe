@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { brandIconFor } from "../toolLabel";
+import { BrandMark } from "./BrandMark";
 
 interface McpServer {
   scope: "global" | "workspace";
@@ -257,15 +258,10 @@ export function McpServersSection({
                 key={`${s.scope}:${s.name}`}
                 className="px-4 py-3 border-b border-line last:border-b-0 flex items-center gap-3"
               >
-                {/* Round 8: brand icon, same resolver the tool cards use. */}
-                {brand ? (
-                  <i className={`si ${brand} text-lg text-ink-soft shrink-0`} aria-hidden />
-                ) : (
-                  <span
-                    className="size-4 rounded bg-paper-deep border border-line shrink-0"
-                    aria-hidden
-                  />
-                )}
+                {/* Round 8: real glyph when simple-icons has one, else a tinted
+                    monogram — a hand-added server should never render as a blank
+                    square just because we don't ship its logo. */}
+                <BrandMark name={s.name} brand={brand} size="lg" />
                 {/* Identity above, the literal endpoint below — two deliberate
                     lines. One line forced the mono endpoint to compete with the
                     action buttons, which pushed Remove off the card. */}

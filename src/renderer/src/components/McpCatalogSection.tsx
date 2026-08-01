@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MCP_CATALOG, type McpCatalogEntry } from "../../../main/mcpCatalog";
 import { McpConnectResult, type ConnectResultState } from "./McpServersSection";
+import { BrandMark } from "./BrandMark";
 
 /**
  * §13 round 8: the curated one-click catalog. Browsing is local (the list is
@@ -82,11 +83,7 @@ export function McpCatalogSection({
               className="text-left rounded-xl bg-card border-2 border-line px-3 py-2.5 hover:border-tangerine disabled:opacity-60 disabled:hover:border-line disabled:cursor-default cursor-pointer"
             >
               <div className="flex items-center gap-2">
-                {e.brand ? (
-                  <i className={`si ${e.brand} text-base shrink-0`} aria-hidden />
-                ) : (
-                  <span className="size-4 rounded bg-paper-deep border border-line shrink-0" aria-hidden />
-                )}
+                <BrandMark name={e.name} brand={e.brand} />
                 <span className="font-bold text-sm truncate">{e.name}</span>
                 <span className="flex-1" />
                 {installed && (
@@ -181,7 +178,7 @@ function McpCatalogConfirm({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-1">
-          {entry.brand && <i className={`si ${entry.brand} text-xl shrink-0`} aria-hidden />}
+          <BrandMark name={entry.name} brand={entry.brand} size="lg" />
           <h2 className="font-black text-xl leading-tight">Add {entry.name}?</h2>
         </div>
         <p className="text-sm text-ink-soft mb-2">{entry.blurb}</p>
