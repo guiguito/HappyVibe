@@ -809,27 +809,43 @@ export function registerIpc(win: BrowserWindow): void {
     async (_e, sessionId: string): Promise<{ meta: SessionMeta; messages: RestoreItem[] | null }> => {
       const meta = index.get(sessionId);
       if (!meta) throw new Error("Unknown session");
-      if (manager.get(sessionId)) return { meta, messages: null }; // already active — renderer keeps its transcript
-      const client = await startClient(meta, !!meta.piSessionFile);
-      let messages: RestoreItem[] | null = null;
-      if (meta.piSessionFile) {
+
+      // Rebuild the transcript from Pi's own history.
+      const loadMessages = async (c: PiClient): Promise<RestoreItem[]> => {
         try {
-          const res = await client.send({ type: "get_messages" });
+          const res = await c.send({ type: "get_messages" });
           const raw =
             (res.data as { messages?: Parameters<typeof restoreItems>[0] })?.messages ?? [];
-          messages = restoreItems(raw);
+          const items = restoreItems(raw);
           // §23: fill each restored plan card with the plan file's real status +
           // checklist progress, so a reopened card shows "implementing" (etc.)
           // and the right CTA — not a stale "draft".
-          for (const it of messages) {
+          for (const it of items) {
             if (it.kind !== "plan") continue;
             const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
             if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }
           }
+          return items;
         } catch {
-          messages = []; // resumed but history unreadable — start visually fresh
+          return []; // history unreadable — start visually fresh
         }
-      }
+      };
+
+      // Already active: serve history from the LIVE client instead of assuming
+      // the renderer still holds it. That assumption breaks on a renderer reload
+      // (⌘R / Vite full-reload), which wipes renderer state while this process
+      // keeps running — the session then rendered as an empty "Ready when you
+      // are." even though nothing was lost. Safe for a normal tab switch too:
+      // the renderer adopts a rebuilt transcript ONLY when it holds no
+      // conversation of its own (App.tsx `hasConversation`). No respawn here, so
+      // session grants and dangerous mode are untouched.
+      // (cast: the manager stores PiClients behind the narrower ManagedClient
+      // handle — same pattern as every other send site in this file.)
+      const active = manager.get(sessionId) as PiClient | null;
+      if (active) return { meta, messages: await loadMessages(active) };
+
+      const client = await startClient(meta, !!meta.piSessionFile);
+      const messages = meta.piSessionFile ? await loadMessages(client) : null;
       sessionsChanged();
       return { meta, messages };
     }
