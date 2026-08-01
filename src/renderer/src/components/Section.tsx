@@ -21,6 +21,12 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
       <path d="M12 4v4M9 13h.01M15 13h.01M2 12h3M19 12h3" />
     </>
   ),
+  keyboard: (
+    <>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+    </>
+  ),
 };
 
 export function Section({

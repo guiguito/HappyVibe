@@ -8,7 +8,7 @@ import { describeProviderError } from "./providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsModal } from "./components/WorkspaceSettingsModal";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
-import { ShortcutsDialog } from "./components/ShortcutsDialog";
+import { ShortcutsView } from "./components/ShortcutsView";
 import { eventToBinding, resolveBindings, type ShortcutId } from "./shortcuts";
 import {
   dropSession,
@@ -114,7 +114,6 @@ export default function App(): React.JSX.Element {
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
   useEffect(() => { localStorage.setItem("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false); // F6: ⌘/ help dialog
   // Round 8: shortcut bindings — defaults until config answers, then whatever
   // the user remapped on the shortcuts page.
   const [bindings, setBindings] = useState<Record<ShortcutId, string>>(() => resolveBindings(null));
@@ -1122,7 +1121,7 @@ export default function App(): React.JSX.Element {
       return;
     }
     if (is("openSettings")) { e.preventDefault(); if (!needsSetup) setView("settings"); return; }
-    if (is("openShortcuts")) { e.preventDefault(); setShortcutsOpen(true); return; }
+    if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) setView("shortcuts"); return; }
     if (is("closeTab")) {
       // Close the first closable (non-chat) active tab; window close is ⌘⇧W.
       if (!wsId) return;
@@ -1196,7 +1195,7 @@ export default function App(): React.JSX.Element {
           await window.hv.deleteSession(id); // sessions-changed broadcast refreshes the list
         }}
         onOpenHelp={() => setOnboarding(true)}
-        onOpenShortcuts={() => setShortcutsOpen(true)}
+        onOpenShortcuts={() => setView("shortcuts")}
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
@@ -1244,6 +1243,7 @@ export default function App(): React.JSX.Element {
           <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
         {activeView === "mcp" && <McpView />}
+        {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
           <AllToolsView
@@ -1425,7 +1425,6 @@ export default function App(): React.JSX.Element {
       )}
       {wsSettings && <WorkspaceSettingsModal workspace={wsSettings} onClose={() => setWsSettings(null)} />}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
-      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
       {/* WS7: AGENTS.md editor — root from the "+" menu, any AGENTS.md from the tree. */}
       {agentsMd && wsId && (
         <AgentsMdPanel

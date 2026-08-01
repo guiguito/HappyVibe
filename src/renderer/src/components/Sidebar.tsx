@@ -3,7 +3,11 @@ import type { SessionStatus } from "../App";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
 // §13 round 6: the old combined "agents" page split into four peer destinations.
-export type View = "chat" | "settings" | "skills" | "mcp" | "agents" | "tools";
+export type View =
+  | "chat" | "settings" | "skills" | "mcp" | "agents" | "tools"
+  // Round 8: the settings scroll exploded into pages, each its own destination.
+  | "models" | "permissions" | "sysprompt" | "stats" | "audit" | "shortcuts"
+  | "workspace";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
