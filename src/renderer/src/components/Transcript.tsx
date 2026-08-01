@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
@@ -82,8 +82,10 @@ function ZoomableImage({ src }: { src: string }): React.JSX.Element {
 // markdown when new items arrive or the live streaming bubble updates.
 export type TranscriptItem = { id?: number } & (
   // W2.1: `images` = data URLs of attached images (user bubbles only).
-  | { kind: "user" | "assistant"; text: string; images?: string[] }
-  | { kind: "tool"; card: ToolCardData }
+  // §9 round 9: `outOfContext` marks an item loaded from BELOW the compaction
+  // boundary — visible, but not something the agent can still see.
+  | { kind: "user" | "assistant"; text: string; images?: string[]; outOfContext?: boolean }
+  | { kind: "tool"; card: ToolCardData; outOfContext?: boolean }
   // §23: the plan-ready card (read from the workspace plan file).
   | { kind: "plan"; card: PlanCardData }
   // B2: provider errors / session crashes as first-class transcript items.
@@ -91,7 +93,26 @@ export type TranscriptItem = { id?: number } & (
   // A neutral, warm status line (not an error). `pending` shows an ongoing
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
   | { kind: "notice"; text: string; pending?: boolean }
+  // §9 round 9: the compaction boundary. Everything ABOVE it is out of the
+  // agent's context; `loaded` flips once the user pulls that history in.
+  | { kind: "boundary"; compactions: number; reason: string | null; loaded: boolean }
 );
+
+/**
+ * What the boundary bubble says. The reason matters because Pi's
+ * auto-compaction is ON by default: a compaction the user never asked for has
+ * to read as not-their-doing. An unknown reason (any session compacted before we
+ * started logging it) states the plain fact instead of inventing one.
+ */
+export function boundaryLabel(compactions: number, reason: string | null): string {
+  const base = "Earlier messages were compacted into a summary";
+  const why =
+    reason === "manual" ? `${base} — you asked for this one.`
+    : reason === "threshold" ? `${base} — automatically, when the context filled up.`
+    : reason === "overflow" ? `${base} — automatically, when the context overflowed.`
+    : `${base}.`;
+  return compactions > 1 ? `${why} ${compactions} compactions in this session.` : why;
+}
 
 // Perf: memoized so a committed assistant message only re-parses markdown when
 // its own props change — not on every delta of the live streaming bubble.
@@ -101,6 +122,7 @@ const MessageItem = memo(function MessageItem({
   workspace,
   onOpenFile,
   onRewind,
+  onLoadEarlier,
 }: {
   it: TranscriptItem;
   onRetry?: () => void;
@@ -109,7 +131,31 @@ const MessageItem = memo(function MessageItem({
   onOpenFile?: (relPath: string) => void;
   /** Round 3 #11: rewind to a user message (only wired for user items). */
   onRewind?: (it: TranscriptItem) => void;
+  /** §9 round 9: pull in the pre-compaction history (display only). */
+  onLoadEarlier?: () => void;
 }): React.JSX.Element {
+  if (it.kind === "boundary") {
+    return (
+      <div className="flex flex-col items-center gap-2 self-center">
+        <div className="flex items-center gap-2.5 rounded-full border-2 border-plum/50 bg-plum-soft px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker">
+          <span className="size-2 rounded-full bg-plum shrink-0" />
+          <span className="text-center">{boundaryLabel(it.compactions, it.reason)}</span>
+        </div>
+        {/* Display only: this never re-enters the model's context, so it needs
+            no warning and nothing about it is irreversible. */}
+        {!it.loaded && onLoadEarlier && (
+          <button
+            type="button"
+            onClick={onLoadEarlier}
+            title="Show the messages from before this compaction. They stay out of the agent's context."
+            className="rounded-lg border-2 border-line bg-card px-2.5 py-1 text-[11px] font-bold text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
+          >
+            Load earlier messages
+          </button>
+        )}
+      </div>
+    );
+  }
   if (it.kind === "tool") return <ToolCard card={it.card} workspace={workspace} onOpenFile={onOpenFile} />;
   if (it.kind === "plan") return <PlanCard card={it.card} onOpenFile={onOpenFile} />;
   if (it.kind === "error") {
@@ -156,7 +202,9 @@ const MessageItem = memo(function MessageItem({
       </div>
     );
   }
-  return <UserBubble it={it} onRewind={onRewind} />;
+  // Out-of-context items get no rewind: rewind truncates Pi's LIVE context, and
+  // these are already outside it — the button would promise something it cannot do.
+  return <UserBubble it={it} onRewind={it.outOfContext ? undefined : onRewind} />;
 });
 
 /** User message bubble: zoomable images, long-message collapse (#4),
@@ -269,6 +317,7 @@ export function Transcript({
   searchQuery,
   searchActiveIndex,
   onSearchTotal,
+  onLoadEarlier,
 }: {
   items: TranscriptItem[];
   busy: boolean;
@@ -287,6 +336,8 @@ export function Transcript({
   searchQuery?: string;
   searchActiveIndex?: number;
   onSearchTotal?: (n: number) => void;
+  /** §9 round 9: pull in the pre-compaction history (display only). */
+  onLoadEarlier?: () => void;
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -354,9 +405,34 @@ export function Transcript({
     <div ref={scrollRef} className="flex-1 overflow-y-auto">
       {header}
       <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
-        {items.map((it, i) => (
-          <MessageItem key={it.id ?? i} it={it} onRetry={onRetry} workspace={workspace} onOpenFile={onOpenFile} onRewind={onRewind} />
-        ))}
+        {/* §9 round 9: the loaded pre-compaction region sits at the very top and
+            is labelled once, here, rather than per item. */}
+        {items[0] && "outOfContext" in items[0] && items[0].outOfContext && (
+          <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wide text-ink-soft/70">
+            <span className="h-px flex-1 bg-line" />
+            <span>earlier — not in the agent&apos;s context</span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+        )}
+        {items.map((it, i) => {
+          const item = (
+            <MessageItem
+              it={it}
+              onRetry={onRetry}
+              workspace={workspace}
+              onOpenFile={onOpenFile}
+              onRewind={onRewind}
+              onLoadEarlier={onLoadEarlier}
+            />
+          );
+          // Dimmed items get a wrapper; everything else stays a direct flex
+          // child, so `self-end` / `self-center` positioning is untouched.
+          return "outOfContext" in it && it.outOfContext ? (
+            <div key={it.id ?? i} className="flex flex-col opacity-60">{item}</div>
+          ) : (
+            <Fragment key={it.id ?? i}>{item}</Fragment>
+          );
+        })}
         {/* Perf: the in-progress turn renders here, outside `items`, so a delta
             re-renders only this bubble — committed messages stay memoized. */}
         {streaming && <AssistantBubble text={streaming} />}

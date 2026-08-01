@@ -28,6 +28,12 @@
   --color-berry-soft: #fbe3de;
   --color-sky: #4f83c2;
   --color-sky-soft: #e2ecf7;
+  /* Compaction. context.ts has referenced `bg-plum` since round 5, but the token
+     was never defined — so the panel's "Compaction summaries" segment rendered
+     with no fill. Defining it here fixes that segment and colours the §9
+     compaction boundary bubble with the same ink. */
+  --color-plum: #8a5fa8;
+  --color-plum-soft: #eee4f4;
 
   --shadow-sticker: 3px 3px 0 0 var(--color-line);
   --shadow-sticker-lg: 5px 5px 0 0 var(--color-line-strong);
