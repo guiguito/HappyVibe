@@ -229,6 +229,16 @@ export function registerIpc(win: BrowserWindow): void {
   };
   const commandsChanged = (): void => send("hv:commands-changed");
   /**
+   * §24: main's OUTGOING message → what the user actually typed. Only populated
+   * when the two differ, i.e. when a command's @mentions were rewritten to paths
+   * (commandMentions.ts). The bridge can only ever report the outgoing form, so
+   * without this the card would be titled `/explain src/audio/Sfx.ts` while the
+   * user typed `/explain @Sfx.ts`. Consumed once, when the pairing notify lands.
+   * ponytail: cleared wholesale past a generous cap — a stale miss costs a card
+   * title, never a message.
+   */
+  const typedByOutgoing = new Map<string, string>();
+  /**
    * §24: the typed form of every command invocation logged for a session, keyed
    * by sha256(expanded). Restore hashes each user message against this map, so a
    * reloaded transcript shows the card instead of the expansion (restore.ts).
@@ -607,13 +617,19 @@ export function registerIpc(win: BrowserWindow): void {
       // the envelope too, so the live transcript can draw the card now.
       const command = parseCommandNotify(r);
       if (command) {
+        // §24: the bridge reports MAIN's outgoing text, which is not what the
+        // user typed — @mentions have been rewritten to paths by then. Recover
+        // the original so the card is titled with the keystrokes, live and after
+        // a reload alike (they must not disagree; that is the whole point).
+        const typed = typedByOutgoing.get(command.typed) ?? command.typed;
+        typedByOutgoing.delete(command.typed);
         void log.append({
           type: "command.invoked",
           sessionId,
           workspaceId: meta?.workspaceId,
-          data: { sessionId, typed: command.typed, expandedHash: expandedHash(command.expanded) },
+          data: { sessionId, typed, expandedHash: expandedHash(command.expanded) },
         });
-        send("hv:ui-request", { ...r, sessionId });
+        send("hv:ui-request", { ...r, message: JSON.stringify({ ...command, typed }), sessionId });
         return;
       }
       // Async subagents: lifecycle relays drive activity gating (a live async run
@@ -1157,6 +1173,10 @@ export function registerIpc(win: BrowserWindow): void {
       // land correctly) — see commandMentions.ts.
       if (willExpand(msg, activeCommandEntries(meta.workspaceId))) {
         outgoing = inlineMentionPaths(msg, mentions);
+        if (outgoing !== msg) {
+          if (typedByOutgoing.size > 64) typedByOutgoing.clear();
+          typedByOutgoing.set(outgoing, msg);
+        }
       } else {
         const { blocks, warnings: w } = buildMentionBlocks(workspaces.list(), meta.workspaceId, mentions);
         if (blocks) outgoing = `${msg}\n\n${blocks}`;

@@ -82,3 +82,31 @@ describe("applyCommandPair with @file mentions injected", () => {
     expect((out[0] as { command?: { typed: string } }).command).toEqual({ typed: TYPED_CLEAN });
   });
 });
+
+/**
+ * Main rewrites a command's @mentions to workspace-relative paths before Pi
+ * sees them (commandMentions.ts), so the bubble on screen and the bridge's
+ * `typed` are different strings for the SAME invocation. Matching on exact text
+ * silently produced no card at all — observed in the app as a plain bubble with
+ * a mention chip and no disclosure.
+ */
+describe("applyCommandPair when main rewrote the message", () => {
+  const COMPOSER = "/explain @Sfx.ts";
+  const REWRITTEN = "/explain src/audio/Sfx.ts";
+  const PAIR3 = { typed: REWRITTEN, expanded: "Explain `src/audio/Sfx.ts`.\n\nFind it…" };
+
+  it("still pairs when only the command name is common to both forms", () => {
+    const out = applyCommandPair([user(COMPOSER)], PAIR3);
+    expect((out[0] as { command?: unknown }).command).toBeDefined();
+  });
+
+  it("does not pair a different command that happens to be nearby", () => {
+    const items = [user("/review something")];
+    expect(applyCommandPair(items, PAIR3)).toBe(items);
+  });
+
+  it("does not pair a prefix collision (/explainer is not /explain)", () => {
+    const items = [user("/explainer @Sfx.ts")];
+    expect(applyCommandPair(items, PAIR3)).toBe(items);
+  });
+});

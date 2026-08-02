@@ -45,16 +45,23 @@ export function applyCommandPair(
   pair: { typed: string; expanded: string },
 ): TranscriptItem[] {
   const typed = typedText(pair.typed);
+  // The command name is the reliable join. Exact text is not: main rewrites the
+  // message before Pi sees it (@mentions → paths for a command, <file> blocks
+  // appended otherwise), so the bubble on screen and the bridge's `typed` are
+  // routinely different strings for the SAME invocation. Matching on the name
+  // survives any such rewrite, present or future.
+  const name = /^\/([^\s]+)/.exec(typed)?.[1];
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i];
     if (it.kind !== "user") continue;
     // Already decorated (a duplicate notify, or a restore that got there first).
     if ("command" in it && it.command) continue;
-    // Three forms can be on screen: what the composer optimistically appended
-    // (the typed text, mentions NOT yet injected), main's outgoing message
-    // (mentions injected), and the expansion (steered path). All are the same
-    // invocation.
-    if (it.text !== typed && it.text !== pair.typed && it.text !== pair.expanded) continue;
+    const sameInvocation =
+      it.text === typed ||
+      it.text === pair.typed ||
+      it.text === pair.expanded ||
+      (!!name && (it.text === `/${name}` || it.text.startsWith(`/${name} `)));
+    if (!sameInvocation) continue;
     const next = items.slice();
     next[i] = { ...it, text: pair.expanded, command: { typed } };
     return next;
