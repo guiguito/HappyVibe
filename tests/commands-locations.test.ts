@@ -9,6 +9,7 @@ import {
   discoverGlobalCommands,
   discoverWorkspaceCommands,
   installBundledCommands,
+  isShadowed,
   managedCommandsDir,
   scanCommandsDir,
   workspaceCommandsDir,
@@ -95,6 +96,27 @@ test("idempotent: an unchanged bundle writes nothing on the second pass", () => 
   const after1 = fs.readFileSync(store, "utf8");
   installBundledCommands(bundledDir, reg, NOW);
   expect(fs.readFileSync(store, "utf8")).toBe(after1);
+});
+
+// The bundle we actually ship (Task 15). Guards the files themselves, not the
+// installer: a missing `description`/`argument-hint`, an accidental !`bash`
+// (which Pi drops silently) or a name a /hv-* command already owns would all
+// reach users as a broken starter command.
+test("the shipped starter bundle installs approved and OFF, with hints and no risk pills", () => {
+  const bundledDir = bundledCommandsDir(path.join(__dirname, "..", "pi-runtime"));
+  const found = scanCommandsDir(bundledDir, "bundled");
+  expect(found.map((c) => c.name).sort()).toEqual(["explain", "review", "test"]);
+
+  const reg = new CommandRegistry(store);
+  installBundledCommands(bundledDir, reg, NOW);
+  for (const c of found) {
+    expect(reg.approvalStatus(c), c.name).toBe("approved");
+    expect(reg.record(c.id)?.enabled, c.name).toBe(false);
+    expect(c.description.length, c.name).toBeGreaterThan(10);
+    expect(c.argumentHint, c.name).toBeTruthy();
+    expect(c.hasBashInjection, c.name).toBe(false);
+    expect(isShadowed(c.name), c.name).toBe(false);
+  }
 });
 
 test("a bundle bump re-approves but keeps the user's on/off", () => {
