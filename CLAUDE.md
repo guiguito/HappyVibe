@@ -6,31 +6,59 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 
 ## Commands
 - `npm install && (cd pi-runtime && npm ci)` — BOTH installs required (pi-runtime is a separate vendored tree; fresh worktrees fail live tests without it)
-- `npm run dev` · `npm test` · `npm run build`
+- `npm run dev` · `npm test` (= the non-live suite, see §Tests) · `npm run build`
 - `npm run typecheck` (node + web; passes `--composite false` — don't hand-roll the raw `tsc` calls)
-- Full gate = both typechecks + non-live suite + live files batched + build
+- Full gate = `npm run gate` (= `build` → non-live suite, ONE command), plus `npm run test:live`
+  when `npm run live:why` prints anything. `build` runs BOTH typechecks first and fast-fails on
+  them, so never run `npm run typecheck` before `gate` or `build` — that is the same check twice
+  and it was ~20 of the 55 typecheck runs in this repo's history.
 
 ## Tests
 - Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated):
   tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge,plan-bridge}.test.ts
   Source of truth = `grep -rl "skipIf(!KEY" tests/` — re-derive, don't trust the list above.
-  Canonical invocation: `grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism`
+  Canonical invocation: `npm run test:live`
+  (= `grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism`)
+  Run it only when `npm run live:why` prints something — that prints the changed files which
+  are Pi-facing (`pi-runtime/extensions/`, `src/main/pi/`, or a live test file). Empty output
+  means the batch is not required; SAY so, don't silently omit it.
   (`--no-file-parallelism` is load-bearing: concurrent files mean concurrent DeepSeek sessions,
   and the provider degrades under that — the residual "flakes" were turns that came back with no
   tool call at all. Serial costs ~6 min and is green.)
   (use `xargs` — zsh does NOT word-split `$(…)`, so `npx vitest run $files` passes all 14
   paths as ONE argument and vitest reports "No test files found" while echoing the filter list.)
   (`skills-contract`/`builtins-contract` also spawn Pi but with a dummy key — key-free, they stay in the non-live run.)
-- Non-live suite = everything else, excluding exactly those files:
-  `npx vitest run --exclude '**/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,permission-coexistence,mcp-bridge,plan-bridge}.test.ts'`
-  (plain `npm test` is NOT this — with a real key in `.env` it runs the live files inside the parallel suite, which is the flaky combination.)
+- Non-live suite = `npm test` (= `DEEPSEEK_API_KEY=sk-REPLACE vitest run`). No exclude list:
+  every live file computes `KEY` as undefined when the key starts `sk-REPLACE`, and their inline
+  `.env` loader only fills vars that are UNSET — so the shell value wins and all 14 skip
+  themselves. This is exactly what CI runs (CI has no key at all), and it is STRICTLY MORE than
+  the old exclude glob: 9 key-free tests live inside those 14 files (context-bridge ×2,
+  rules-bridge ×3, agents-bridge ×2, agents-md-bridge, subagent-discovery-bridge) and the glob
+  threw them on the floor. Measured: 107 files, 908 tests, 15 skipped, ~20-33 s.
+  **Never add an exclude list back — the list is the thing that drifted.**
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
+- **NEVER pipe a test run to `tail`/`grep`.** Two bugs in one habit: `| tail` returns *tail's*
+  exit code, so a red suite reads green; and the output is gone, so looking at a different slice
+  costs a whole re-run. This was the single largest time sink in this repo's history —
+  `rules-bridge.test.ts` was run 5× in one session at ~137 s each, differing only in
+  `| grep -E` vs `| sed -n` vs `--reporter=verbose | tail -40`. Redirect once, then grep for free:
+  ```
+  L=/tmp/vitest.log
+  npx vitest run <target> > $L 2>&1; echo "EXIT=$?"
+  tail -30 $L        # then grep/sed $L as many times as you like — costs nothing
+  ```
 - `vitest.config.ts` exists for these: `testTimeout: 30_000` (vitest's 5 s default is shorter than a
   Pi boot — a test without an explicit timeout was a coin flip). Don't "fix" a live failure by
   raising a per-test timeout: a longer wait does not make a model that already finished its turn
   produce a tool call. Check whether the model simply didn't call it (re-ask via `tests/reask.ts`
   `askUntil`) and match the notify you actually mean (`tool === "bash"`, not "the first hv.audit").
+  The ONE exception is a boot race, and you must prove it before invoking it: Pi emits NOTHING on
+  boot in RPC mode (no session_start, no ready event) and `PiClient.start()` only spawns, so there
+  is no handshake to await. An early stdin write is buffered, not lost — it just waits out the
+  boot, measured 671 ms warm vs 15_667 ms cold. If the thing you await demonstrably ARRIVES, only
+  late, waiting longer is the real fix (see `ui-fallback-bridge.test.ts` `waitFor`, which flaked
+  2 runs in 3 on an 8 s bound). If it never arrives, it's the prose-turn class above — re-ask.
 - Contract tests are the Pi upgrade gate: any pi/pi-subagents pin bump must pass them.
   Wire shapes are documented in docs/validation/d1.md — new bridge shapes go there too.
 

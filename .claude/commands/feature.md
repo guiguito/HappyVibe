@@ -55,9 +55,14 @@ document — that is `/round`'s job.
 
 ### 3. TDD loop, one task at a time
 Per task, in this order, no exceptions:
-1. Write the failing test. Name the file. **Run it and show it red.**
+1. Write the failing test. Name the file. **Run that file ALONE and show it red:**
+   `npm test -- tests/<name>.test.ts`. One file is seconds; the whole suite in the inner loop is
+   pure waste — §4 runs it once at the end and that is the run that counts.
 2. Write the minimum implementation that passes.
-3. Run it green.
+3. Run that same file green.
+
+Redirect to a log rather than piping to `tail` (CLAUDE.md §Tests) — otherwise wanting a
+different slice of the output costs you the whole run again.
 
 Never edit a test to make it pass. If a test looks wrong, stop and say so — a test bent to fit
 the implementation verifies nothing. Follow the layer rules in `CLAUDE.md` (pure `hv-*.ts`
@@ -65,17 +70,21 @@ modules stay electron-free and vitest-importable; mirrored logic like `resolveMo
 both sides or neither).
 
 ### 4. Automated gate — paste real output, never a summary
-In order: `npm run typecheck` · the non-live suite · `npm run build`
-(both commands are in `CLAUDE.md` §Commands/§Tests — use them verbatim).
+**`npm run gate`** — one command: typecheck (via `build`, which runs it first and fast-fails),
+then the bundle, then the non-live suite. Do NOT run `npm run typecheck` before it — `build`
+already did, and running both is the same check twice.
 
-The 14 live-Pi files run **only if** the diff touches `pi-runtime/extensions/`, `src/main/pi/`,
-or one of those test files. They cost real DeepSeek calls, so they are conditional, not
-automatic. Run them batched in ONE vitest invocation, deriving the list at the shell:
-`grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run`
-(use `xargs` — zsh does not word-split `$(…)`, so `npx vitest run $files` silently becomes one
-argument and vitest says "No test files found" while printing the filter list back at you.)
-If `DEEPSEEK_API_KEY` is absent say so and name the files that therefore skipped. **A skip is not a pass.** One live failure ⇒ rerun that file in isolation before
-calling it a regression.
+The 14 live-Pi files cost real DeepSeek calls, so they are conditional. The condition is
+mechanical, not a judgement call — run it:
+`npm run live:why`
+- prints anything ⇒ `npm run test:live` (batched, serial, list derived at the shell).
+- prints nothing ⇒ say "no Pi-facing changes, live batch not required" and move on. Say it;
+  never just omit it.
+
+Run it **once**. A green live batch stays green while the tree is unchanged — do not re-run it
+to "check", and do not re-run it in `/land`.
+If `DEEPSEEK_API_KEY` is absent say so and name the files that therefore skipped. **A skip is
+not a pass.** One live failure ⇒ rerun that file in isolation before calling it a regression.
 
 ### 5. UI pass — only if `src/renderer/` was touched
 Follow `uicheck.md` exactly: `attach {debugPort: 9222}`, **never `start_app`** (it has hung for
