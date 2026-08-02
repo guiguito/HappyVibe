@@ -51,7 +51,7 @@ import {
   previewRestore, restoreSnapshot, stampSnapshot,
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
-import { restoreItems, type RestoreItem } from "./restore";
+import { expandedHash, pairCommandItems, restoreItems, type RestoreItem } from "./restore";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
@@ -98,6 +98,19 @@ function parseSkillNotify(r: { method?: string; message?: string }): Record<stri
   try {
     const p = JSON.parse(r.message ?? "") as Record<string, unknown>;
     return p?.kind === "hv.skill" ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/** §24: an hv.command notify (a prompt template expanded), else null. */
+function parseCommandNotify(r: { method?: string; message?: string }): { typed: string; expanded: string } | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "") as { kind?: string; typed?: unknown; expanded?: unknown };
+    return p?.kind === "hv.command" && typeof p.typed === "string" && typeof p.expanded === "string"
+      ? { typed: p.typed, expanded: p.expanded }
+      : null;
   } catch {
     return null;
   }
@@ -214,6 +227,17 @@ export function registerIpc(win: BrowserWindow): void {
     ];
   };
   const commandsChanged = (): void => send("hv:commands-changed");
+  /**
+   * §24: the typed form of every command invocation logged for a session, keyed
+   * by sha256(expanded). Restore hashes each user message against this map, so a
+   * reloaded transcript shows the card instead of the expansion (restore.ts).
+   */
+  const commandPairs = async (sessionId: string): Promise<Map<string, string>> =>
+    new Map(
+      (await log.read({ type: "command.invoked", sessionId }))
+        .map((ev) => [String(ev.data?.expandedHash ?? ""), String(ev.data?.typed ?? "")] as const)
+        .filter(([hash, typed]) => hash && typed),
+    );
 
   // Kill pi processes a previous app run left behind (crash / force-quit).
   const swept = sweepOrphans(pidFile);
@@ -573,6 +597,21 @@ export function registerIpc(win: BrowserWindow): void {
       const skill = parseSkillNotify(r);
       if (skill) {
         void log.append({ type: "skill.invoked", sessionId, workspaceId: meta?.workspaceId, data: skill });
+        send("hv:ui-request", { ...r, sessionId });
+        return;
+      }
+      // §24: a prompt template expanded. Log {typed, sha256(expanded)} — the
+      // expansion itself is already in the session file, and the hash is what
+      // re-pairs the card after a reload (restore.ts pairCommandItems). Forward
+      // the envelope too, so the live transcript can draw the card now.
+      const command = parseCommandNotify(r);
+      if (command) {
+        void log.append({
+          type: "command.invoked",
+          sessionId,
+          workspaceId: meta?.workspaceId,
+          data: { sessionId, typed: command.typed, expandedHash: expandedHash(command.expanded) },
+        });
         send("hv:ui-request", { ...r, sessionId });
         return;
       }
@@ -948,6 +987,8 @@ export function registerIpc(win: BrowserWindow): void {
         return parsed ? { path: p, status: parsed.status, done: parsed.done, total: parsed.total } : null;
       };
 
+      const typedByHash = await commandPairs(sessionId); // §24: card pairing (see restore.ts)
+
       // Rebuild the transcript from Pi's session FILE, not `get_messages`.
       // That RPC is the first thing a freshly spawned child has to answer, so it
       // absorbs the whole boot — 1.35–2.86 s, 90%+ of every restore — while the
@@ -963,15 +1004,16 @@ export function registerIpc(win: BrowserWindow): void {
           const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
           if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }
         }
-        return items;
+        return pairCommandItems(items, typedByHash);
       };
 
       /** Fallback for a live session with no session file yet (see below). */
       const loadFromClient = async (c: PiClient): Promise<RestoreItem[]> => {
         try {
           const res = await c.send({ type: "get_messages" });
-          return restoreItems(
-            (res.data as { messages?: Parameters<typeof restoreItems>[0] })?.messages ?? [],
+          return pairCommandItems(
+            restoreItems((res.data as { messages?: Parameters<typeof restoreItems>[0] })?.messages ?? []),
+            typedByHash,
           );
         } catch {
           return []; // history unreadable — start visually fresh
@@ -1011,10 +1053,12 @@ export function registerIpc(win: BrowserWindow): void {
   // context only). No client call at all, so no respawn, no session-grant reset
   // — this works on a hibernated session too. Loading these does NOT put them
   // back in the model's context; the renderer marks them as outside it.
-  ipcMain.handle("hv:load-earlier", (_e, sessionId: string): RestoreItem[] => {
+  ipcMain.handle("hv:load-earlier", async (_e, sessionId: string): Promise<RestoreItem[]> => {
     const meta = index.get(sessionId);
     if (!meta) throw new Error("Unknown session");
-    return earlierItems(readSessionFile(sessionDir(), meta.piSessionFile));
+    // §24: pair command cards here too — the earlier region is still transcript,
+    // and a half-paired transcript is exactly the disagreement §24 exists to fix.
+    return pairCommandItems(earlierItems(readSessionFile(sessionDir(), meta.piSessionFile)), await commandPairs(sessionId));
   });
 
   // Shared by close and delete: capture stats best-effort, log session.end,
