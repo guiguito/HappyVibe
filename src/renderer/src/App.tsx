@@ -34,6 +34,7 @@ import { AgentsView } from "./components/AgentsView";
 import { SkillsView } from "./components/SkillsView";
 import { CommandsView } from "./components/CommandsView";
 import { applyCommandPair } from "./commandPair";
+import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
@@ -1011,28 +1012,10 @@ export default function App(): React.JSX.Element {
         // Reconstructs tool cards too (intent + result persist in the session
         // file); reconstructed cards are "done" and render collapsed by default.
         // Stable ids (like appendItem) keep rewind (#11) + React keys working.
-        const items: TranscriptItem[] = messages.map((m) =>
-          m.kind === "tool"
-            ? {
-                kind: "tool" as const,
-                id: idCounter.current++,
-                card: {
-                  toolCallId: m.toolCallId,
-                  toolName: m.toolName,
-                  args: m.args,
-                  status: m.error ? ("error" as const) : ("done" as const),
-                  result: m.result,
-                },
-              }
-            : m.kind === "plan"
-              ? {
-                  // §23: the PlanCard at its original position, with the plan
-                  // file's real status/progress (so the CTA is right on reopen).
-                  kind: "plan" as const,
-                  id: idCounter.current++,
-                  card: { sessionId: id, workspaceId: meta.workspaceId, path: m.planPath, status: m.status ?? "draft", done: m.done ?? 0, total: m.total ?? 0 },
-                }
-              : { kind: m.kind, text: m.text, id: idCounter.current++ },
+        const items: TranscriptItem[] = toTranscriptItems(
+          messages,
+          { sessionId: id, workspaceId: meta.workspaceId },
+          () => idCounter.current++,
         );
         // §14 round 6: the skills chip's "used" marks came only from live hv.skill
         // notifies, so a REOPENED session reported "0 used" while its own restored
