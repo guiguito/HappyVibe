@@ -55,7 +55,7 @@ const write = (file: string, body: string): void => {
  * NOTE: auto-discovered extensions must be `.ts` or `.js` (package-manager.js:436).
  * A `.mjs` there is correctly ignored, which yields a false "no hole here" pass.
  */
-async function loadedCommands(gates: string[]): Promise<Record<string, string[]>> {
+async function loadedCommands(gates: string[], promptScope: "dir" | "file" = "dir"): Promise<Record<string, string[]>> {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-resgate-"));
   const home = path.join(tmp, "home");
   const agentDir = path.join(home, ".pi", "agent");
@@ -68,6 +68,9 @@ async function loadedCommands(gates: string[]): Promise<Record<string, string[]>
   write(approvedExt, EXT("approved-ext"));
   write(path.join(approvedSkill, "SKILL.md"), SKILL("approved-skill"));
   write(path.join(approvedPrompts, "approved-cmd.md"), PROMPT("approved-cmd"));
+  // Sibling in the SAME directory as the approved command — never passed on the
+  // CLI. It is what the per-file arm below watches for (§24 approval is per file).
+  write(path.join(approvedPrompts, "sibling-cmd.md"), PROMPT("sibling-cmd"));
 
   write(path.join(agentDir, "extensions", "sneaky-ext.ts"), EXT("sneaky-ext"));
   write(path.join(agentDir, "skills", "sneaky-skill", "SKILL.md"), SKILL("sneaky-skill"));
@@ -80,7 +83,7 @@ async function loadedCommands(gates: string[]): Promise<Record<string, string[]>
       ...gates,
       "-e", approvedExt,
       "--skill", approvedSkill,
-      "--prompt-template", approvedPrompts,
+      "--prompt-template", promptScope === "file" ? path.join(approvedPrompts, "approved-cmd.md") : approvedPrompts,
       "--provider", "deepseek", "--model", "deepseek-v4-flash",
     ],
     env: {
@@ -94,7 +97,7 @@ async function loadedCommands(gates: string[]): Promise<Record<string, string[]>
 
   const res = await client.send({ type: "get_commands" });
   const commands = ((res.data as { commands?: Array<{ name: string; source?: string }> })?.commands ?? [])
-    .filter((c) => /approved|sneaky/.test(c.name));
+    .filter((c) => /approved|sneaky|sibling/.test(c.name));
   const bySource: Record<string, string[]> = { extension: [], skill: [], prompt: [] };
   for (const c of commands) bySource[c.source ?? "?"]?.push(c.name);
   return bySource;
@@ -134,11 +137,33 @@ test.skipIf(!fs.existsSync(CLI))(
     expect(loaded.extension).toContain("approved-ext");
     expect(loaded.skill).toContain("skill:approved-skill");
     expect(loaded.prompt).toContain("approved-cmd");
+    // A DIRECTORY arg loads every .md in it — which is exactly why §24 approves
+    // per file, and what keeps the per-file arm below from passing vacuously.
+    expect(loaded.prompt).toContain("sibling-cmd");
 
     // Suppressive — a bash-written extension never reaches a future session.
     expect(loaded.extension).not.toContain("sneaky-ext");
     expect(loaded.skill).not.toContain("skill:sneaky-skill");
     expect(loaded.prompt).not.toContain("sneaky-cmd");
+  },
+  60_000,
+);
+
+// PRD §24: command approval is per FILE, never per directory — approving a
+// directory would silently approve whatever lands in it later, which breaks
+// review-before-active. `--prompt-template` accepts both, so the whole trust
+// model rests on Pi NOT widening a file path to its parent directory. If a pin
+// bump did, approving one command would approve its neighbours; that must be a
+// red test, not a silent widening of what the user trusted.
+test.skipIf(!fs.existsSync(CLI))(
+  "PER-FILE: --prompt-template <file> loads exactly that command, not its siblings",
+  async () => {
+    const loaded = await loadedCommands(
+      ["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes"],
+      "file",
+    );
+    expect(loaded.prompt).toContain("approved-cmd");
+    expect(loaded.prompt).not.toContain("sibling-cmd");
   },
   60_000,
 );
