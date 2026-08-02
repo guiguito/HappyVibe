@@ -162,6 +162,10 @@ export interface WorkspaceEntry {
    *  dir path). Absent id = default (normal skills on, bundled off — resolved in
    *  resolveActiveSkills). Only stores explicit user overrides. */
   skillsActive?: Record<string, boolean>;
+  /** §24: per-workspace command activation checklist, keyed by command id
+   *  (absolute FILE path — approval is per file, never per directory). Absent id
+   *  = default, resolved in resolveActiveCommands. Only stores explicit overrides. */
+  commandsActive?: Record<string, boolean>;
 }
 
 /** V2.A: workspace paths are dialog-provided strings — compare them
@@ -231,6 +235,22 @@ export class WorkspaceRegistry {
     if (on === null) delete entry.skillsActive[skillId];
     else entry.skillsActive[skillId] = on;
     if (Object.keys(entry.skillsActive).length === 0) delete entry.skillsActive;
+    this.save();
+  }
+
+  /** §24: the explicit command-activation overrides for a workspace (empty if none). */
+  getCommandsActive(p: string): Record<string, boolean> {
+    return this.find(p)?.commandsActive ?? {};
+  }
+
+  /** Set (on=true|false) or clear (on=null → back to default) one command's activation for a workspace. */
+  setCommandActive(p: string, commandId: string, on: boolean | null): void {
+    const entry = this.find(p);
+    if (!entry) return;
+    entry.commandsActive ??= {};
+    if (on === null) delete entry.commandsActive[commandId];
+    else entry.commandsActive[commandId] = on;
+    if (Object.keys(entry.commandsActive).length === 0) delete entry.commandsActive;
     this.save();
   }
 }
