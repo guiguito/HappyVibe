@@ -52,6 +52,7 @@ import {
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { expandedHash, pairCommandItems, restoreItems, type RestoreItem } from "./restore";
+import { inlineMentionPaths, willExpand } from "./commandMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
@@ -1146,9 +1147,21 @@ export function registerIpc(win: BrowserWindow): void {
     let outgoing = msg;
     let warnings: string[] = [];
     if (mentions && mentions.length && meta?.workspaceId) {
-      const { blocks, warnings: w } = buildMentionBlocks(workspaces.list(), meta.workspaceId, mentions);
-      if (blocks) outgoing = `${msg}\n\n${blocks}`;
-      warnings = w;
+      // §24 × F3: a message Pi will expand as a prompt template must NOT carry
+      // the inline <file> blocks. The template's `${ARGUMENTS}` captures
+      // everything after the command name, so the blocks would be substituted
+      // into the middle of the prompt — inlined, markdown-mangled, and then read
+      // AGAIN because the template says to read the path. Rewrite each mention
+      // to its workspace-relative path instead and let the command do its job.
+      // Skills are deliberately excluded (they APPEND args, so blocks already
+      // land correctly) — see commandMentions.ts.
+      if (willExpand(msg, activeCommandEntries(meta.workspaceId))) {
+        outgoing = inlineMentionPaths(msg, mentions);
+      } else {
+        const { blocks, warnings: w } = buildMentionBlocks(workspaces.list(), meta.workspaceId, mentions);
+        if (blocks) outgoing = `${msg}\n\n${blocks}`;
+        warnings = w;
+      }
     }
     // §9 rewind: the snapshot a rewind to THIS message restores to. A capture
     // failure must never block the prompt.
