@@ -206,6 +206,40 @@ describe("bundled agent definitions declare only child tools that exist", () => 
   });
 });
 
+describe("the bridge builds tool schemas with the SAME typebox Pi consumes them with", () => {
+  // happyvibe-bridge.ts does `import { Type } from "typebox"` — a BARE specifier,
+  // so it resolves to whatever pi-runtime/node_modules hoists. typebox was not a
+  // direct dependency at all, so bumping pi-subagents 0.34→0.40 silently moved the
+  // bridge's schema library 1.1.24 → 1.1.38: every registered tool's schema built
+  // by a library nobody chose.
+  //
+  // The right pin is not "newest" but "whatever pi-coding-agent uses" — the bridge
+  // BUILDS these schemas and Pi CONSUMES them, so aligning builder with consumer is
+  // the invariant that actually means something. Asserting the relationship rather
+  // than a literal makes a future Pi bump drag typebox along instead of quietly
+  // re-opening the split. (pi-subagents keeps its own nested copy; its business.
+  // pi-mcp-adapter declares a `*` peer, so it is satisfied either way.)
+  const pkg = (...rel: string[]): Record<string, unknown> =>
+    JSON.parse(readFileSync(path.join(__dirname, "..", "pi-runtime", ...rel), "utf8")) as Record<string, unknown>;
+
+  it("pi-runtime pins typebox to exactly the version pi-coding-agent declares", () => {
+    const pin = (pkg("package.json").dependencies as Record<string, string> | undefined)?.typebox;
+    expect(pin, "typebox must be an explicit pi-runtime dependency").toBeDefined();
+    const piDep = (pkg("node_modules", "@earendil-works", "pi-coding-agent", "package.json")
+      .dependencies as Record<string, string> | undefined)?.typebox;
+    expect(pin).toBe(piDep);
+  });
+
+  it("the copy the bridge actually resolves is that version", () => {
+    const pin = (pkg("package.json").dependencies as Record<string, string>).typebox;
+    expect(pkg("node_modules", "typebox", "package.json").version).toBe(pin);
+  });
+
+  it("the bridge imports typebox bare, which is what makes the pin load-bearing", () => {
+    expect(readFileSync(BRIDGE, "utf8")).toMatch(/from "typebox"/);
+  });
+});
+
 describe("RPC mode is UI-ful, which is what disarms the headless auto-drain", () => {
   // pi-subagents >=0.40 ends every turn with, and offers NO opt-out for:
   //   pi.on("agent_end", async (_e, ctx) => { if (ctx.hasUI) return;

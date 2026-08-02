@@ -109,12 +109,16 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   true, there is no opt-out, and Pi awaits handlers serially (runner.js:585). The three links are
   pinned in `tests/pi-subagents-contract.test.ts`; if that group fails, re-measure `hasUI` with a
   probe extension before believing anything else.
-- **Bumping `pi-subagents` also moves the bridge's `typebox`.** The bridge does
-  `import { Type } from "typebox"` — bare, and `typebox` is NOT a direct dep of `pi-runtime`, so it
-  resolves to whatever the vendored tree hoists. The 0.40.0 bump moved that copy 1.1.24 → 1.1.38
-  (pi-coding-agent keeps its own nested 1.3.7, which is what actually validates the schemas). After
-  any pin bump, check `find pi-runtime/node_modules -path '*/typebox/package.json'` and re-run the
-  live batch — registered-tool schemas come from the hoisted copy.
+- **`typebox` is pinned in `pi-runtime` to exactly what `pi-coding-agent` declares — move them
+  together.** The bridge does `import { Type } from "typebox"` (bare), so it resolves to whatever
+  `pi-runtime/node_modules` hoists. It used not to be a direct dep at all, and the pi-subagents 0.40
+  bump silently moved it 1.1.24 → 1.1.38 — every registered tool's schema built by a library nobody
+  chose. The bridge BUILDS those schemas and Pi CONSUMES them, so the pin tracks Pi (1.3.7), not
+  "latest" and not pi-subagents' nested 1.1.38. `tests/pi-subagents-contract.test.ts` asserts the
+  RELATIONSHIP, so a Pi pin bump fails until typebox follows. (For the record: the emitted JSON
+  Schema was byte-identical across 1.1.38/1.3.7 for all seven constructors we use, and typebox
+  attaches no Symbol-keyed metadata, so there is no dual-package hazard — the alignment is for
+  future-proofing, not a live bug.)
 
 ## Architecture (keep layer)
 - src/main/pi/{spawn,codec,PiClient}.ts — spawns the pinned Pi CLI per session, `--mode rpc`,
@@ -164,6 +168,12 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   hibernation/MCP-reload would `manager.stop()` mid-run. Lifecycle is relayed off pi-subagents'
   in-process `pi.events` bus by the bridge as `hv.subagent` notifies (never on RPC stdout);
   `/hv-subagent-list` resyncs cards after a respawn (restoreActiveJobs does NOT re-emit started).
+- `installBuiltinAgents` (config.ts) decides "did the user edit this bundled agent?" by CONTENT
+  HASH, never mtime. mtime failed silently both ways: a restamp-without-change (a second install
+  pass racing the post-copy stat, a copy, a sync tool) read as an edit and froze that agent
+  forever, while a real edit inside the 1 ms tolerance read as unedited and got clobbered. Legacy
+  `{version, installedMtime}` stamps can't prove authorship, so they are repaired towards the
+  bundle leaving a one-time `<agent>.md.bak`. Pinned by `tests/builtin-agents-uninstall.test.ts`.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array
