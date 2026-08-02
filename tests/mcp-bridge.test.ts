@@ -29,8 +29,11 @@ test.skipIf(!KEY)("mcp proxy call surfaces an unwrapped hv.permission prompt; Al
     args: [
       path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
       "--mode", "rpc", "--no-session",
-      "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
+      // Bridge LAST, mirroring production (spawn.ts): the permission gate must
+      // be the final tool_call handler so it sees mutated input. Pinned by
+      // tests/mcp-spawn.test.ts.
       "-e", path.join(runtime, PI_MCP_ADAPTER_RELPATH),
+      "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--provider", "deepseek", "--model", "deepseek-v4-flash",
     ],
     // HOME/XDG redirected into tmp: the adapter also reads ~/.config/mcp/mcp.json

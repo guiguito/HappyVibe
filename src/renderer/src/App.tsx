@@ -822,6 +822,16 @@ export default function App(): React.JSX.Element {
       });
     });
 
+    // An extension asked for a prompt HappyVibe has no UI for. Main already
+    // denied it so the extension isn't left hanging; say so rather than letting
+    // it look like nothing happened.
+    const offUiUnhandled = window.hv.onUiUnhandled(({ sessionId }) => {
+      appendItem(sessionId, {
+        kind: "notice",
+        text: "An extension asked something HappyVibe can't display — denied.",
+      });
+    });
+
     return () => {
       offSessions();
       offUiRequest();
@@ -829,6 +839,7 @@ export default function App(): React.JSX.Element {
       offPiEvent();
       offPlanChanged();
       offReloading();
+      offUiUnhandled();
       offSubStatus();
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };

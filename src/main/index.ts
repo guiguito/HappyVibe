@@ -5,6 +5,7 @@ import { existsSync, renameSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpc } from './ipc'
+import { loginShellPath, mergePath } from './shellPath'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
 // AND userData resolves to .../HappyVibe — in dev the process runs inside
@@ -135,6 +136,21 @@ app.whenReady().then(() => {
   })
 
   const mainWindow = createWindow()
+
+  // A GUI-launched app inherits launchd's minimal PATH, so nvm node, uv and
+  // /opt/homebrew are invisible to every child we spawn (Pi, the agent's bash
+  // tool, npx stdio MCP servers) and to nodePreflight's "needs Node" probe.
+  // Ask the login shell once and merge. See shellPath.ts.
+  //
+  // Placed AFTER createWindow and BEFORE registerIpc deliberately: the shell
+  // spawn is synchronous and costs ~1.0-1.2s with a real .zshrc, so doing it at
+  // module scope would delay first paint. Every consumer runs inside
+  // registerIpc — sweepOrphans, the MCP startup sweep, and hasNodeRuntime
+  // (which reads PATH lazily, on renderer demand) — so this still beats all of
+  // them. Mutating process.env is enough: spawn.ts and every other child site
+  // spread ...process.env, so nothing needs explicit PATH plumbing.
+  process.env.PATH = mergePath(process.env.PATH, loginShellPath())
+
   registerIpc(mainWindow)
 
   app.on('activate', function () {

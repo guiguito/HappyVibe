@@ -88,21 +88,40 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // Resume = Pi's own `--session <path>`: main.js resolves a path arg via
       // resolveSessionPath → openSessionOrExit, reopening the JSONL in place.
       ...(opts.resumeFile ? ["--session", opts.resumeFile] : []),
+      // B6: pi-subagents (RPC-validated, s0.3). Loaded as an -e extension per
+      // its package.json `pi.extensions` entry; the subagent tool it registers
+      // is a normal tool_call, so the bridge's permission gate applies.
+      "-e", path.join(runtimeDir, PI_SUBAGENTS_RELPATH),
+      // MCP: pi-mcp-adapter registers the `mcp` proxy tool via registerTool,
+      // so the bridge's permission gate applies (docs/validation/m1.md).
+      // Config: PI_CODING_AGENT_DIR/mcp.json (global) + <cwd>/.mcp.json (workspace).
+      "-e", path.join(runtimeDir, PI_MCP_ADAPTER_RELPATH),
       // The HappyVibe bridge is the SOLE permission path in RPC mode.
       // @gotgenes/pi-permission-system was removed from the spawn after Gate V6
       // proved it is TUI-only (both its prompt paths gate on ctx.hasUI, which is
       // false in --mode rpc; its non-UI fallback silently denies). It stays
       // vendored in pi-runtime only for tests/permission-coexistence.test.ts,
       // which documents that finding. See docs/validation/v6.md.
+      //
+      // LOAD ORDER IS LOAD-BEARING — the bridge MUST be the LAST -e extension.
+      // Pi runs tool_call handlers in extension load order (runner.js
+      // emitToolCall) and `event.input` is mutable: "Later tool_call handlers
+      // see earlier mutations. No re-validation is performed after mutation."
+      // (pi-coding-agent dist/core/extensions/types.d.ts:678). If the gate ran
+      // before a handler that rewrites input, the user would approve the args
+      // we displayed while different args executed. Last = the gate prompts on
+      // final input. Pinned by tests/mcp-spawn.test.ts.
+      //
+      // Two consequences of being last, both accepted:
+      //  - An earlier handler returning {block:true} short-circuits, so its
+      //    refusal gets no hv.audit envelope. An unaudited refusal is strictly
+      //    safer than an unaudited execution.
+      //  - getAllRegisteredTools is first-registration-per-name-wins
+      //    (runner.js), so a tool-name collision would now resolve to the other
+      //    extension. None exists today: the bridge registers ask_user,
+      //    use_skill and plan_*; the others subagent, wait, intercom,
+      //    subagent_supervisor and mcp.
       "-e", path.join(runtimeDir, "extensions/happyvibe-bridge.ts"),
-      // B6: pi-subagents (RPC-validated, s0.3). Loaded as a second -e extension
-      // per its package.json `pi.extensions` entry; the subagent tool it
-      // registers is a normal tool_call, so the bridge's permission gate applies.
-      "-e", path.join(runtimeDir, PI_SUBAGENTS_RELPATH),
-      // MCP: pi-mcp-adapter registers the `mcp` proxy tool via registerTool,
-      // so the bridge's permission gate applies (docs/validation/m1.md).
-      // Config: PI_CODING_AGENT_DIR/mcp.json (global) + <cwd>/.mcp.json (workspace).
-      "-e", path.join(runtimeDir, PI_MCP_ADAPTER_RELPATH),
       // §14 Skills: disable Pi's own discovery (so no unapproved skill ever
       // loads) and add back exactly the approved+active ones. --skill is
       // additive even with --no-skills (verified against pinned Pi 0.80.10).
