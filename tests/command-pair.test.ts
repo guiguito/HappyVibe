@@ -1,0 +1,53 @@
+import { describe, it, expect } from "vitest";
+import { applyCommandPair } from "../src/renderer/src/commandPair";
+import type { TranscriptItem } from "../src/renderer/src/components/Transcript";
+
+/**
+ * §24: the notify has to repair two different optimistic renderings (typed when
+ * idle, expanded when steered) into one identical card. These tests are the
+ * proof that both paths converge — the divergence is the bug being fixed.
+ */
+const user = (text: string): TranscriptItem => ({ kind: "user", text });
+const PAIR = { typed: "/review src/foo.ts", expanded: "Review src/foo.ts for bugs." };
+
+describe("applyCommandPair", () => {
+  it("upgrades the idle path, where the bubble holds the TYPED text", () => {
+    const out = applyCommandPair([user("hi"), user(PAIR.typed)], PAIR);
+    expect(out[1]).toEqual({ kind: "user", text: PAIR.expanded, command: { typed: PAIR.typed } });
+  });
+
+  it("upgrades the steered path, where the bubble holds the EXPANDED text", () => {
+    const out = applyCommandPair([user("hi"), user(PAIR.expanded)], PAIR);
+    expect(out[1]).toEqual({ kind: "user", text: PAIR.expanded, command: { typed: PAIR.typed } });
+  });
+
+  it("both paths produce byte-identical items — the divergence this fixes", () => {
+    const idle = applyCommandPair([user(PAIR.typed)], PAIR);
+    const steered = applyCommandPair([user(PAIR.expanded)], PAIR);
+    expect(idle).toEqual(steered);
+  });
+
+  it("decorates the most recent invocation, not the first", () => {
+    const out = applyCommandPair([user(PAIR.typed), user("something else"), user(PAIR.typed)], PAIR);
+    const cmd = (i: TranscriptItem): unknown => (i as { command?: unknown }).command;
+    expect(cmd(out[0])).toBeUndefined();
+    expect(cmd(out[2])).toEqual({ typed: PAIR.typed });
+  });
+
+  it("never re-decorates an item that already carries a command", () => {
+    const already: TranscriptItem = { kind: "user", text: PAIR.expanded, command: { typed: PAIR.typed } };
+    const items = [already];
+    // A duplicate notify must be a no-op — same array back, nothing re-wrapped.
+    expect(applyCommandPair(items, PAIR)).toBe(items);
+  });
+
+  it("returns the ORIGINAL array when nothing matches, so the caller can skip the re-render", () => {
+    const items = [user("unrelated")];
+    expect(applyCommandPair(items, PAIR)).toBe(items);
+  });
+
+  it("ignores assistant messages that happen to hold the same text", () => {
+    const items: TranscriptItem[] = [{ kind: "assistant", text: PAIR.expanded }];
+    expect(applyCommandPair(items, PAIR)).toBe(items);
+  });
+});
