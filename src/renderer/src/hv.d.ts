@@ -158,6 +158,53 @@ interface HvSkillDetail {
   approved: string | null;
 }
 
+/** §24 — mirrors CommandView in src/main/commands/view.ts (from hv:commands-list). */
+interface HvCommandView {
+  /** Absolute path to the .md file — the approval key AND the --prompt-template arg. */
+  id: string;
+  name: string;
+  description: string;
+  argumentHint?: string;
+  source: "managed" | "workspace" | "linked" | "bundled" | "claude";
+  /** "shadowed" = the name collides with a bridge /hv-* command, so Pi can never reach it. */
+  status: "active" | "disabled" | "needs-review" | "shadowed";
+  /** Body uses CC's inline !`cmd` injection, which Pi passes through literally — a risk pill, never a block. */
+  hasBashInjection: boolean;
+  /** Paid only on invocation: a command never enters the system prompt. */
+  estTokens: { body: number };
+  changed: boolean;
+  provenance?: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string };
+}
+
+interface HvCommandsList {
+  global: HvCommandView[];
+  /** `commands` = this workspace's two roots; `checklist` = every approved+enabled command, global included. */
+  workspace: { commands: HvCommandView[]; checklist: HvCommandView[] } | null;
+}
+
+/** §24 — a scan result from a local-folder or git-URL import (pick which to import). */
+interface HvCommandImportScan {
+  token: string | null;
+  commands: Array<{ id: string; name: string; description: string; argumentHint?: string; hasBashInjection: boolean }>;
+  error?: string;
+}
+
+/** §24 — the inspector payload (hv:commands-read). `current`/`approved` are both TEMPLATE BODIES. */
+interface HvCommandDetail {
+  name: string;
+  description: string;
+  argumentHint?: string;
+  source: "managed" | "workspace" | "linked" | "bundled" | "claude";
+  linkedRoot?: string;
+  linkedSiblings?: number;
+  hasBashInjection: boolean;
+  estTokens: { body: number };
+  status: "active" | "disabled" | "needs-review" | "shadowed";
+  provenance: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string } | null;
+  current: string;
+  approved: string | null;
+}
+
 /** Mirrors Rule/RulesFile/Verdict in pi-runtime/extensions/hv-rules.ts (separate tsconfig roots). */
 interface HvRule {
   layer: "tool" | "path" | "command";
@@ -435,9 +482,39 @@ interface HvApi {
   ): Promise<{ ok: true; kind: "delete" | "unlink" } | { ok: false; error: string }>;
   /** §14 round 6: the skills Pi actually loaded for this session (from the manifest). */
   skillsSession(sessionId: string): Promise<Array<{ name: string; scope: "global" | "workspace" }>>;
-  /** §14 round 6: Pi's slash commands (pure get_commands query) — skills are source:"skill". */
-  listCommands(sessionId: string): Promise<Array<{ name: string; source: string }>>;
+  /** §14 round 6: Pi's slash commands (pure get_commands query) — skills are
+      source:"skill", prompt templates source:"prompt". §24: main joins Pi's list
+      against its own scan by NAME to add description/argumentHint, which
+      get_commands does not carry. */
+  listCommands(sessionId: string): Promise<Array<{ name: string; source: string; description?: string; argumentHint?: string }>>;
   onSkillsChanged(cb: () => void): () => void;
+
+  // §24 Commands (prompt templates) — the §14 surface, channel for channel.
+  commandsList(workspaceId?: string): Promise<HvCommandsList>;
+  commandsRead(id: string): Promise<HvCommandDetail>;
+  commandsApprove(id: string): Promise<void>;
+  commandsSetEnabled(id: string, enabled: boolean): Promise<void>;
+  commandsSetActive(workspaceId: string, id: string, on: boolean | null): Promise<void>;
+  commandsGetLinked(): Promise<string[]>;
+  commandsSetLinked(dirs: string[]): Promise<void>;
+  /** With a dir: link it straight away (the ~/.claude/commands suggestion). Without: open the picker. */
+  commandsAddLinked(dir?: string): Promise<string[]>;
+  commandsImportLocal(): Promise<HvCommandImportScan | null>;
+  commandsImportGit(url: string): Promise<HvCommandImportScan>;
+  /** `reserved` = the batch was refused because that name is a bridge command (PRD §24). */
+  commandsImportSelect(
+    token: string,
+    ids: string[],
+    scope: "global" | "workspace",
+    workspaceId: string | null,
+  ): Promise<{ imported: string[]; reserved?: string; error?: string }>;
+  commandsDelete(
+    id: string,
+    workspaceId: string | null,
+  ): Promise<{ ok: true; action: "delete" | "unlink" } | { ok: false; error: string }>;
+  commandsPromote(id: string): Promise<string>;
+  commandsClaudeDir(): Promise<{ path: string; exists: boolean }>;
+  onCommandsChanged(cb: () => void): () => void;
 
   // MCP server config (additive). Changes apply to new sessions.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;

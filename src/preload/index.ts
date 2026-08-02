@@ -213,6 +213,33 @@ contextBridge.exposeInMainWorld("hv", {
     return () => ipcRenderer.removeListener("hv:skills-changed", listener);
   },
 
+  // ── §24 Commands (prompt templates) ──────────────────────────────
+  // The skills surface, channel for channel: list/read/approve/enable/activate,
+  // linked dirs, two-phase import, delete/promote. Changes apply live via
+  // respawn-resume; on-disk / config changes push hv:commands-changed.
+  commandsList: (workspaceId?: string) => ipcRenderer.invoke("hv:commands-list", workspaceId),
+  commandsRead: (id: string) => ipcRenderer.invoke("hv:commands-read", id),
+  commandsApprove: (id: string) => ipcRenderer.invoke("hv:commands-approve", id),
+  commandsSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke("hv:commands-set-enabled", id, enabled),
+  commandsSetActive: (workspaceId: string, id: string, on: boolean | null) =>
+    ipcRenderer.invoke("hv:commands-set-active", workspaceId, id, on),
+  commandsGetLinked: () => ipcRenderer.invoke("hv:commands-get-linked"),
+  commandsSetLinked: (dirs: string[]) => ipcRenderer.invoke("hv:commands-set-linked", dirs),
+  commandsAddLinked: (dir?: string) => ipcRenderer.invoke("hv:commands-add-linked", dir),
+  commandsImportLocal: () => ipcRenderer.invoke("hv:commands-import-local"),
+  commandsImportGit: (url: string) => ipcRenderer.invoke("hv:commands-import-git", url),
+  commandsImportSelect: (token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null) =>
+    ipcRenderer.invoke("hv:commands-import-select", token, ids, scope, workspaceId),
+  commandsDelete: (id: string, workspaceId: string | null) => ipcRenderer.invoke("hv:commands-delete", id, workspaceId),
+  commandsPromote: (id: string) => ipcRenderer.invoke("hv:commands-promote", id),
+  /** Does ~/.claude/commands exist? Drives the one-click link suggestion. */
+  commandsClaudeDir: () => ipcRenderer.invoke("hv:commands-claude-dir"),
+  onCommandsChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on("hv:commands-changed", listener);
+    return () => ipcRenderer.removeListener("hv:commands-changed", listener);
+  },
+
   // ── MCP server config (additive). Changes apply to new sessions. ──
   mcpGet: (workspaceId?: string) => ipcRenderer.invoke("hv:mcp-get", workspaceId),
   mcpSetServer: (scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: unknown) =>
