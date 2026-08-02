@@ -296,7 +296,9 @@ export function CommandsSection({ workspaceId }: { workspaceId: string | null })
       <CommandImportControls scope="global" workspaceId={workspaceId} />
       {needsReview > 0 && (
         <div className="mb-3 rounded-xl border-2 border-honey/60 bg-honey-soft px-3 py-2 text-sm font-semibold text-tangerine-deep">
-          {needsReview} command{needsReview > 1 ? "s" : ""} need{needsReview > 1 ? "" : "s"} review before they can run.
+          {needsReview === 1
+            ? "1 command needs review before it can run."
+            : `${needsReview} commands need review before they can run.`}
         </div>
       )}
       {commands === null ? (
