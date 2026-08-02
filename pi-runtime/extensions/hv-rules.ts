@@ -53,6 +53,26 @@ export interface Verdict {
 // prompt for loading an already-approved skill would be pure friction.
 export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill"]);
 
+/**
+ * pi-subagents' parent-blocking wait tool, under EVERY name it has shipped under.
+ *
+ * Not a permission concept — it lives here because this is the shared, pure
+ * tool-name module both the bridge and the renderer already import, and the two
+ * must agree (the bridge BLOCKS the call, the renderer HIDES the card).
+ *
+ * PRD §12 ("never block on the result") is enforced by matching this name: async
+ * results auto-deliver as their own turn, but pi-subagents still steers the model
+ * to wait, which would re-block the turn. 0.35.0 renamed `wait` → `subagent_wait`
+ * with NO alias, silently disarming a guard that matched the literal string — so
+ * both names stay listed, and tests/pi-subagents-contract.test.ts asserts the name
+ * upstream actually registers is in this set.
+ */
+export const WAIT_TOOLS = new Set(["wait", "subagent_wait"]);
+
+export function isWaitTool(tool: unknown): boolean {
+  return typeof tool === "string" && WAIT_TOOLS.has(tool);
+}
+
 /** v5: Pi's built-in FILE tools — the ones whose path args we confine to the
  * workspace by default. bash is deliberately NOT here (it stays under
  * command-pattern rules; path-inspecting arbitrary shell is out of scope). */

@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, evaluate, isWaitTool, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
 import { unwrapMcpCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
@@ -23,10 +23,16 @@ import {
 // bus, so the bridge subscribes to its in-process lifecycle events and relays
 // them as hv.subagent notifies (they never reach RPC stdout on their own). The
 // active-run list + run dir root come straight from pi-subagents so a respawn
-// can resync cards. Deep imports (no exports map) — pin-coupled like the rest of
-// the bridge; contract tests gate pin bumps.
-import { listAsyncRuns } from "pi-subagents/src/runs/background/async-status.ts";
-import { ASYNC_DIR } from "pi-subagents/src/shared/types.ts";
+// can resync cards — no public surface returns the {runId, agent, asyncDir} triple
+// that needs (snapshotBackgroundWork() is the inverse API and comes back empty;
+// the status RPC's structured `fleet` deliberately withholds run identifiers,
+// rpc.ts:76). Imported by RELATIVE PATH, not the bare `pi-subagents/...`
+// specifier: from 0.35.0 the package ships an `exports` map listing five entries,
+// neither of these among them, and an exports map only gates BARE specifiers.
+// Both forms are equally pin-coupled and both fail loudly at extension load;
+// tests/subagent-runs-contract.test.ts is the pin-bump gate.
+import { listAsyncRuns } from "../node_modules/pi-subagents/src/runs/background/async-status.ts";
+import { ASYNC_DIR } from "../node_modules/pi-subagents/src/shared/types.ts";
 
 const sessionGrants = new Set<string>();
 
@@ -442,14 +448,14 @@ export default function (pi: ExtensionAPI) {
     // the whole "keep chatting while subagents run" promise. So we intercept
     // `wait` and hand back guidance instead of letting it block. (No audit — this
     // is a behavioral guard, not a permission decision.)
-    if (tool === "wait") {
+    if (isWaitTool(tool)) {
       return {
         block: true,
         reason:
           "Do NOT wait. This is an interactive HappyVibe session: the subagent's result " +
           "will be delivered to you automatically as a new turn the moment it finishes. End " +
           "your turn now with a brief note that the work is running in the background — do not " +
-          "call wait() or poll with subagent status. You will be prompted with the result.",
+          `call ${tool}() or poll with subagent status. You will be prompted with the result.`,
       };
     }
     // Direct MCP tools: drop the injected intent BEFORE anything reads input

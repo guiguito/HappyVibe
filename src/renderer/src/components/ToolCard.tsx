@@ -333,6 +333,15 @@ export function SubagentTraceView({ results }: { results: SubagentResult[] }): R
                 <span className="whitespace-pre-wrap break-words">{m.text}</span>
               </div>
             ))}
+            {/* pi-subagents >=0.40 projects only tool-call summaries, no prose (see
+                agents.ts) — finalOutput is where the child's actual ANSWER lives,
+                so the trace would otherwise end on a tool list. */}
+            {r.finalOutput && (
+              <div className="text-xs border-t border-line pt-1.5 mt-0.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mr-1.5">output</span>
+                <span className="whitespace-pre-wrap break-words">{r.finalOutput}</span>
+              </div>
+            )}
           </div>
         </div>
       ))}

@@ -68,15 +68,53 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   extension hook, whose return value replaces the raw request body. Full citations + the three
   constraints (hook fails OPEN, arm-per-turn or `agent_end` hangs, keep `askUntil`) in
   docs/validation/tc1.md. Read it before re-investigating.
-- **`pi-subagents` is pinned at 0.34.0 ON PURPOSE — do not bump it casually.** 0.35.0 added an
-  `exports` map (`.`, `./background-work`, `./delegation`, `./capability-ceiling`, `./preflight`)
-  and the bridge deep-imports `pi-subagents/src/runs/background/async-status.ts` (`listAsyncRuns`)
-  and `src/shared/types.ts` (`ASYNC_DIR`). Those files still EXIST in 0.40.0 but the exports map
-  makes them unreachable, so the bridge fails to load and ~18 tests go red at once. Neither symbol
-  is re-exported from any public entry — `listAsyncRuns` is gone entirely and `ASYNC_DIR` is only
-  used internally by `preflight.ts`. Bumping past 0.34.0 therefore means PORTING the async-subagent
-  surface (PRD §12) onto `snapshotBackgroundWork`/`registerBackgroundWorkProvider`. That is a
-  project, not a pin bump.
+- **The bridge reaches two `pi-subagents` internals by RELATIVE path — never "tidy" them into
+  bare specifiers.** `listAsyncRuns` (`src/runs/background/async-status.ts`) + `ASYNC_DIR`
+  (`src/shared/types.ts`) feed `/hv-subagent-list`'s card resync, and from 0.35.0 the package
+  ships an `exports` map (`.`, `./background-work`, `./delegation`, `./capability-ceiling`,
+  `./preflight`) that lists neither file. An exports map only gates BARE specifiers, so
+  `../node_modules/pi-subagents/src/...` resolves where `pi-subagents/src/...` throws
+  `Missing "./src/..." specifier` — at extension LOAD, taking ~18 tests red at once (that is the
+  symptom, not a mystery). No public surface can replace this: `snapshotBackgroundWork()` is the
+  inverse API (other extensions declare work TO pi-subagents; it never self-registers, so the
+  snapshot is empty) and the `status` RPC's structured `fleet` field withholds run identifiers by
+  design (`rpc.ts:76` "never a run or async identifier") while `/hv-subagent-list` needs
+  `{runId, agent, asyncDir}`. Gate: `tests/pi-subagents-contract.test.ts` (key-free) pins the
+  relative form, the exports map, and the three fields. Bumped 0.34.0 → 0.40.0 on 2026-08-02.
+- **Two PRD §12 invariants are enforced by matching an upstream NAME or SHAPE, and 0.40.0 broke
+  both silently — no test failed.** (1) The "never block on a delegation" guard matched the literal
+  `"wait"`; 0.35.0 renamed the tool `subagent_wait` with no alias. Both names now live in
+  `WAIT_TOOLS`/`isWaitTool` (hv-rules.ts), imported by the bridge (blocks the call) AND the renderer
+  (hides the card) — never re-inline a literal. (2) The subagent card read the child transcript from
+  `tool_execution_update…results[].messages`; 0.40.0 sets it `undefined` and substitutes compact
+  `toolCalls` (same commit as the deep-fan-out protocol-limit fix). Renderer maps `toolCalls` → the
+  same rows and renders `finalOutput`. Both pinned in `tests/pi-subagents-contract.test.ts` +
+  `agents-renderer.test.ts`; wire shapes in docs/validation/d1.md.
+- **A subagent's `tools:` list is a STRICT allowlist from pi-subagents 0.40 — an unknown name fails
+  the whole run**, with `"Agent 'x' requested unavailable child tools: …"` (its new
+  `src/runs/shared/tool-availability.ts`; no such check in 0.34, which ignored unknown names).
+  Pi 0.83's builtins are exactly **bash, edit, find, grep, ls, read, write** — there is NO `glob`
+  and NO `list`. Both bundled agents shipped asking for `glob, list` and were silently running
+  without them; at 0.40 that is fatal. Extension tools need more than a name (`subagentOnlyExtensions`
+  / a path-like entry), so never just add one to `tools:`. Pinned by
+  `tests/pi-subagents-contract.test.ts`, which derives the legal set from Pi's own registrations.
+- **`ctx.hasUI` is TRUE in `--mode rpc` — "RPC" is not "headless".** Measured, not inferred:
+  rpc-mode.js binds a real `uiContext` (`createExtensionUIContext()` — the channel the bridge's own
+  permission prompts ride) and `hasUI()` is just `uiContext !== noOpUIContext`. Pi's headless mode is
+  PRINT mode. This matters because upstream code and docs say "headless sessions do X" and gate X on
+  `ctx.hasUI`: read that as print-mode-only, and DON'T assume a `ctx.hasUI` gate excludes us.
+  The load-bearing case: pi-subagents >=0.40 ends every turn with
+  `if (ctx.hasUI) return; await drainOutstandingWork(...)` (`index.ts:462`), which would block each
+  turn on its own async delegation (the inverse of PRD §12) — it is dormant ONLY because hasUI is
+  true, there is no opt-out, and Pi awaits handlers serially (runner.js:585). The three links are
+  pinned in `tests/pi-subagents-contract.test.ts`; if that group fails, re-measure `hasUI` with a
+  probe extension before believing anything else.
+- **Bumping `pi-subagents` also moves the bridge's `typebox`.** The bridge does
+  `import { Type } from "typebox"` — bare, and `typebox` is NOT a direct dep of `pi-runtime`, so it
+  resolves to whatever the vendored tree hoists. The 0.40.0 bump moved that copy 1.1.24 → 1.1.38
+  (pi-coding-agent keeps its own nested 1.3.7, which is what actually validates the schemas). After
+  any pin bump, check `find pi-runtime/node_modules -path '*/typebox/package.json'` and re-run the
+  live batch — registered-tool schemas come from the hoisted copy.
 
 ## Architecture (keep layer)
 - src/main/pi/{spawn,codec,PiClient}.ts — spawns the pinned Pi CLI per session, `--mode rpc`,
