@@ -36,6 +36,56 @@ Pi facts confirmed by reading the vendored source (`dist/core/skills.js`,
 - A dir containing `SKILL.md` is a skill root (no deeper recursion); otherwise
   recurse to find `SKILL.md` dirs.
 
+## Sibling gate — the other resource tiers (2026-08-02)
+
+`--no-skills` gated one of Pi's four auto-discovery tiers. The other three were
+open, and `<agentDir>/extensions/*.ts` is the dangerous one: an extension
+registers `tool_call` handlers, the same surface the permission gate uses.
+`bash` is the one HappyVibe fs writer that is NOT path-confined, so an approved
+bash command can plant a bare `.ts` there (no manifest, no install step —
+`package-manager.js:436`) that loads with full privileges on every later session.
+
+Spawn now passes `--no-extensions --no-prompt-templates --no-themes` beside
+`--no-skills`. `tests/resource-gate-contract.test.ts` pins it, key-free, against
+the real vendored CLI, and is part of the pin-bump gate for the same reason this
+one is — additivity is a *Pi behaviour*, not a contract:
+
+```
+UNGATED  (no flags — proves the probe's files are really discoverable)
+  extension  ["approved-ext", "sneaky-ext"]
+  skill      ["skill:approved-skill", "skill:sneaky-skill"]
+  prompt     ["approved-cmd", "sneaky-cmd"]
+
+GATED    (--no-extensions --no-skills --no-prompt-templates --no-themes)
+  extension  ["approved-ext"]      // -e survives
+  skill      ["skill:approved-skill"]
+  prompt     ["approved-cmd"]      // --prompt-template survives
+```
+
+The UNGATED arm is not decoration: without it, "sneaky absent" could pass
+vacuously because the probe planted its files where Pi never looks. Two traps
+that cost time when this was built, both encoded in the test:
+
+- **Auto-discovered extensions must be `.ts` or `.js`.** A planted `.mjs` is
+  correctly ignored, which reads as "no hole here".
+- **Wait for the first stdout line before sending `get_commands`.** Asking too
+  early gets no reply, which reads as "the gate blocked everything". `PiClient.start()`
+  already handles this, which is why the test reuses it rather than raw spawn.
+
+Additivity confirmed in the vendored source — `resource-loader.js:267` (extensions),
+`:281` (skills), `:294` (prompts), `:311` (themes) all have the same shape:
+`noX ? cliEnabledX : merge(cliEnabledX, discoveredX)`. Flags parsed at
+`dist/cli/args.js:124/139/142`. The load-bearing half is the additive one:
+HappyVibe's three extensions all arrive via `-e`, so if a pin bump made
+`--no-extensions` absolute, the bridge would stop loading and the app would lose
+its entire permission layer at spawn.
+
+Not covered here: `--no-context-files`, deliberately excluded (AGENTS.md-style
+context loading is wanted). The project tier (`.pi/extensions` etc.) is closed
+separately by `8467c7e` — `resolveProjectTrusted` reaches a plain-string
+`ui.select` that main answers `{cancelled:true}` → untrusted. Right outcome by
+default-deny rather than intent; these flags make it moot either way.
+
 ## `use_skill` + intent (live test)
 
 `tests/skills-bridge.test.ts` (skipIf no `DEEPSEEK_API_KEY`; batched with the

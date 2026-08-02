@@ -127,6 +127,26 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // additive even with --no-skills (verified against pinned Pi 0.80.10).
       "--no-skills",
       ...(opts.skills ?? []).flatMap((s) => ["--skill", s]),
+      // The other two auto-discovery tiers, gated for the same reason. The agent's
+      // `bash` tool is NOT path-confined (every fs writer is; bash isn't), so one
+      // approved bash command can write <agentDir>/extensions/x.ts — a bare .ts is
+      // enough, no manifest — and that file then loads with FULL extension
+      // privileges on every future session, registering tool_call handlers on the
+      // same surface the permission gate uses. The user approved "run a bash
+      // command", not "install a permanent extension". Same for prompts/*.md,
+      // which become slash commands. Themes are inert JSON in RPC (we render our
+      // own UI) — gated anyway so <agentDir> is uniformly deny-by-default.
+      //
+      // All three are additive, like --no-skills: explicit -e / --prompt-template
+      // / --theme still load (resource-loader.js:267/294/311). HappyVibe's three
+      // extensions all arrive via -e, so the bridge, MCP and subagents are
+      // untouched — and /hv-* commands are registerCommand (source "extension"),
+      // not prompt templates. Pinned by tests/resource-gate-contract.test.ts: if a
+      // pin bump made --no-extensions absolute, the app would silently lose its
+      // whole permission layer at spawn.
+      "--no-extensions",
+      "--no-prompt-templates",
+      "--no-themes",
       "--session-dir", sessionDir,
       "--provider", model.provider,
       "--model", model.modelId,

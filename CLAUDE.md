@@ -113,6 +113,16 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   starter skills are pre-approved but `enabled:false`; a bundle hash bump re-approves while KEEPING
   the user's on/off. Scopes: `<agentDir>/skills` (managed) + `<runtimeDir>/skills` (bundled) + linked
   dirs (global), `<workspace>/.agents/skills` (workspace).
+- Resource gate: spawn passes `--no-extensions --no-prompt-templates --no-themes` beside
+  `--no-skills` — ALL FOUR of Pi's auto-discovery tiers are deny-by-default, because `bash` is the
+  one fs writer that is not path-confined, so an approved bash command can plant a bare `.ts` in
+  `<agentDir>/extensions/` that loads with full extension privileges (tool_call handlers — the
+  gate's own surface) on every future session. All four flags are ADDITIVE: `-e`, `--skill` and
+  `--prompt-template` still load, which is what keeps the bridge/adapter/subagents alive — if a pin
+  bump made `--no-extensions` absolute the app would silently lose its whole permission layer at
+  spawn. Pinned by `tests/resource-gate-contract.test.ts` (pin-bump gate, key-free; its UNGATED arm
+  exists so the negative assertions can't pass vacuously). `--no-context-files` is deliberately NOT
+  passed (AGENTS.md loading is wanted). See docs/validation/sk1.md.
 
 ## Docs workflow
 Locked product decisions go to BOTH the Notion PRD and docs/prd.md in the same session,
