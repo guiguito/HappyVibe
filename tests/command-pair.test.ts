@@ -51,3 +51,34 @@ describe("applyCommandPair", () => {
     expect(applyCommandPair(items, PAIR)).toBe(items);
   });
 });
+
+/**
+ * The @file composition. Main appends `<file path="…">…</file>` blocks to the
+ * OUTGOING message, so the bridge's input hook reports a `typed` that the user
+ * never wrote — while the optimistic bubble holds the clean composer text. That
+ * mismatch meant no card at all live, and after a reload a card titled with the
+ * whole file. Both were seen in the app before these tests existed.
+ */
+describe("applyCommandPair with @file mentions injected", () => {
+  const TYPED_CLEAN = "/explain @Game.ts";
+  const INJECTED = `${TYPED_CLEAN} \n\n<file path="src/Game.ts">\nimport * as THREE from "three";\n</file>`;
+  const PAIR2 = { typed: INJECTED, expanded: "Explain `@Game.ts`.\n\nFind it…" };
+
+  it("matches the optimistic bubble, which holds only what was typed", () => {
+    const out = applyCommandPair([user(TYPED_CLEAN)], PAIR2);
+    expect((out[0] as { command?: { typed: string } }).command).toEqual({ typed: TYPED_CLEAN });
+  });
+
+  it("titles the card with the typed command, never the injected file", () => {
+    const out = applyCommandPair([user(TYPED_CLEAN)], PAIR2);
+    const typed = (out[0] as { command?: { typed: string } }).command!.typed;
+    expect(typed).toBe(TYPED_CLEAN);
+    expect(typed).not.toContain("<file path=");
+    expect(typed).not.toContain("THREE");
+  });
+
+  it("still matches when the bubble holds main's injected form", () => {
+    const out = applyCommandPair([user(INJECTED)], PAIR2);
+    expect((out[0] as { command?: { typed: string } }).command).toEqual({ typed: TYPED_CLEAN });
+  });
+});

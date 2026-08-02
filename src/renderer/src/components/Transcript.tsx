@@ -257,7 +257,9 @@ function UserBubble({
             typed verbatim, and it stays visible whether or not the expansion is. */}
         {command && (
           <div className="flex items-center gap-2 font-mono text-sm font-bold">
-            <span className="rounded-md bg-paper/25 px-1.5 py-0.5">{command.typed}</span>
+            {/* Stripped again here because a RESTORED item carries main's raw
+                `typed`, which still holds the appended @file blocks. */}
+            <span className="rounded-md bg-paper/25 px-1.5 py-0.5">{stripInjectedBlocks(command.typed).trim()}</span>
           </div>
         )}
         <div

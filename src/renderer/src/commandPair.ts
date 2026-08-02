@@ -1,4 +1,20 @@
 import type { TranscriptItem } from "./components/Transcript";
+import { stripInjectedBlocks } from "./mentions";
+
+/**
+ * What the user actually typed, with the `@file` blocks main appends stripped
+ * back off (F3 `stripInjectedBlocks`).
+ *
+ * The bridge's `input` hook sees main's OUTGOING message, not the composer's —
+ * main has already appended `\n\n<file path="…">…</file>` for every `@mention`
+ * by then. So a `/explain @Game.ts` arrives at the hook as the command plus the
+ * whole file, and using that raw string would (a) title the card with a wall of
+ * source and (b) never match the optimistic bubble, which holds only what was
+ * typed. Both were observed before this existed.
+ */
+export function typedText(typed: string): string {
+  return stripInjectedBlocks(typed).trim();
+}
 
 /**
  * §24: fold an `hv.command {typed, expanded}` pairing into the transcript.
@@ -28,14 +44,19 @@ export function applyCommandPair(
   items: TranscriptItem[],
   pair: { typed: string; expanded: string },
 ): TranscriptItem[] {
+  const typed = typedText(pair.typed);
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i];
     if (it.kind !== "user") continue;
     // Already decorated (a duplicate notify, or a restore that got there first).
     if ("command" in it && it.command) continue;
-    if (it.text !== pair.typed && it.text !== pair.expanded) continue;
+    // Three forms can be on screen: what the composer optimistically appended
+    // (the typed text, mentions NOT yet injected), main's outgoing message
+    // (mentions injected), and the expansion (steered path). All are the same
+    // invocation.
+    if (it.text !== typed && it.text !== pair.typed && it.text !== pair.expanded) continue;
     const next = items.slice();
-    next[i] = { ...it, text: pair.expanded, command: { typed: pair.typed } };
+    next[i] = { ...it, text: pair.expanded, command: { typed } };
     return next;
   }
   return items;
