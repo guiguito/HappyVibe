@@ -33,7 +33,23 @@ export type CommandStatus = "active" | "disabled" | "needs-review" | "shadowed";
  * `pi-runtime/extensions/happyvibe-bridge.ts`. If that test just went red, you
  * added (or renamed) an `/hv-*` command — add it here too.
  */
-export const RESERVED_COMMAND_NAMES: ReadonlySet<string> = new Set(["hv-dangerous", "hv-plan", "hv-tools"]);
+export const RESERVED_COMMAND_NAMES: ReadonlySet<string> = new Set([
+  "hv-agents",
+  "hv-auth-status",
+  "hv-context",
+  "hv-context-remove",
+  "hv-context-restore",
+  "hv-dangerous",
+  "hv-login",
+  "hv-login-cancel",
+  "hv-logout",
+  "hv-plan",
+  "hv-rules-reload",
+  "hv-subagent-interrupt",
+  "hv-subagent-list",
+  "hv-sysprompt",
+  "hv-tools",
+]);
 
 /** A bare command name (no leading slash), as discovery derives it from the filename. */
 export function isShadowed(name: string): boolean {
