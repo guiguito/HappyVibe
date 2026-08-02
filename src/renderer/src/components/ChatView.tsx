@@ -16,8 +16,8 @@ import {
   attachmentUrl, dropUnknownProvider, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
 import {
-  activeCommandQuery, activeMentionQuery, completeCommand, completeMention, extractMentions, filterCommands,
-  filterEntries, mentionLabel, type MentionEntry,
+  activeCommandQuery, activeMentionQuery, commandSubtitle, completeCommand, completeMention, composerCommands, extractMentions, filterCommands,
+  filterEntries, mentionLabel, type MentionEntry, type SlashCommand,
 } from "../mentions";
 
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
@@ -210,21 +210,21 @@ export function ChatView({
   // list only changes on respawn, so it's cached per session.
   const sessionIdRef = useRef(sessionId);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
-  const commandCache = useRef<string[] | null>(null);
-  const [command, setCommand] = useState<{ items: string[]; sel: number; end: number } | null>(null);
-  const ensureCommands = useCallback(async (): Promise<string[]> => {
+  const commandCache = useRef<SlashCommand[] | null>(null);
+  const [command, setCommand] = useState<{ items: SlashCommand[]; sel: number; end: number } | null>(null);
+  const ensureCommands = useCallback(async (): Promise<SlashCommand[]> => {
     if (commandCache.current) return commandCache.current;
     if (!sessionId) return [];
     const sid = sessionId; // capture: this fetch must not populate another session's cache
     try {
-      const all = await window.hv.listCommands(sid);
-      // V1: skills only — other Pi commands aren't part of HappyVibe's surface yet.
-      const names = all.filter((c) => c.source === "skill").map((c) => c.name);
+      // §24: skills AND prompt templates — main joins the description/argument
+      // hint onto Pi's list, which carries neither.
+      const items = composerCommands(await window.hv.listCommands(sid));
       // The user may have switched sessions while this was in flight. Serving A's
       // commands in B would send a command B's Pi doesn't have.
       if (sid !== sessionIdRef.current) return [];
-      commandCache.current = names;
-      return names;
+      commandCache.current = items;
+      return items;
     } catch {
       return []; // not live yet (e.g. hibernated) — deliberately NOT cached, so it retries
     }
@@ -1008,19 +1008,19 @@ export function ChatView({
                 })}
               </div>
             )}
-            {/* §14 round 6: /skill: command menu — same placement/styling as @file. */}
+            {/* §14 round 6 / §24: /skill: + prompt-command menu — same placement/styling as @file. */}
             {command && command.items.length > 0 && (
               <div className="absolute bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
-                {command.items.map((name, i) => (
+                {command.items.map((c, i) => (
                   <button
-                    key={name}
+                    key={c.name}
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => pickCommand(name)}
+                    onClick={() => pickCommand(c.name)}
                     className={`w-full text-left px-3 py-1.5 cursor-pointer ${i === command.sel ? "bg-honey-soft" : "hover:bg-paper-deep/40"}`}
                   >
-                    <span className="font-semibold">/{name}</span>
-                    <span className="block truncate text-[11px] font-medium text-ink-soft">Load this skill</span>
+                    <span className="font-semibold">/{c.name}</span>
+                    <span className="block truncate text-[11px] font-medium text-ink-soft">{commandSubtitle(c)}</span>
                   </button>
                 ))}
                 <p className="px-3 pt-1 text-[10px] text-ink-soft">Tab to complete · Enter to send</p>
@@ -1043,7 +1043,7 @@ export function ChatView({
                   const n = command.items.length;
                   if (e.key === "ArrowDown") { e.preventDefault(); setCommand((c) => c && { ...c, sel: (c.sel + 1) % n }); return; }
                   if (e.key === "ArrowUp") { e.preventDefault(); setCommand((c) => c && { ...c, sel: (c.sel - 1 + n) % n }); return; }
-                  if (e.key === "Tab") { e.preventDefault(); pickCommand(command.items[command.sel]); return; }
+                  if (e.key === "Tab") { e.preventDefault(); pickCommand(command.items[command.sel].name); return; }
                   if (e.key === "Escape") { e.preventDefault(); setCommand(null); return; }
                   // Enter SENDS (the typed command already works verbatim) — Tab completes.
                 }

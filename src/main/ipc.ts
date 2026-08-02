@@ -2281,9 +2281,19 @@ export function registerIpc(win: BrowserWindow): void {
     try {
       const res = await client.send({ type: "get_commands" });
       const cmds = (res.data as { commands?: Array<{ name?: string; source?: string }> })?.commands ?? [];
+      // §24: Pi's get_commands carries name/source/description only — never an
+      // argumentHint (rpc-types.d.ts:135-144) — so join its list against our own
+      // scan BY NAME (a prompt template's command name IS its filename stem).
+      const meta = index.get(sessionId);
+      const scanned = new Map(
+        [...globalCommands(), ...(meta ? discoverWorkspaceCommands(meta.workspaceId) : [])].map((c) => [c.name, c] as const),
+      );
       return cmds
         .filter((c): c is { name: string; source?: string } => typeof c.name === "string")
-        .map((c) => ({ name: c.name, source: c.source ?? "" }));
+        .map((c) => {
+          const own = scanned.get(c.name);
+          return { name: c.name, source: c.source ?? "", description: own?.description, argumentHint: own?.argumentHint };
+        });
     } catch {
       return []; // no live client (hibernated/closed) — the composer just shows nothing
     }

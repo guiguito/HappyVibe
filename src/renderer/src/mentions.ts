@@ -133,15 +133,49 @@ export function activeCommandQuery(text: string, caret: number): { start: number
   return { start: 0, query: head.slice(1) };
 }
 
+/**
+ * One entry of Pi's `get_commands`, enriched by main. `source` is Pi's own
+ * ("skill" | "prompt" | "extension" | …); description/argumentHint exist only
+ * for prompt templates and are joined in by NAME in main, because get_commands
+ * does not carry them (rpc-types.d.ts:135-144).
+ */
+export interface SlashCommand {
+  name: string;
+  source: string;
+  description?: string;
+  argumentHint?: string;
+}
+
+/**
+ * §24: which of Pi's commands the composer offers. Skills (`/skill:<name>`) and
+ * user prompt templates are HappyVibe surfaces the user approved; `extension`
+ * commands are the bridge's own `/hv-*` control plane and stay out of the menu.
+ */
+export function composerCommands(all: SlashCommand[]): SlashCommand[] {
+  return all.filter((c) => c.source === "skill" || c.source === "prompt");
+}
+
+/** Dropdown second line. A skill row says what picking it does; a prompt shows its own hint + description. */
+export function commandSubtitle(c: SlashCommand): string {
+  if (c.source === "skill") return "Load this skill";
+  return [c.argumentHint, c.description].filter(Boolean).join(" · ") || "Prompt command";
+}
+
 /** Case-insensitive substring filter over command names; prefix matches first, then shorter. */
-export function filterCommands(names: string[], query: string, limit = 20): string[] {
+export function filterCommands<T extends { name: string }>(items: T[], query: string, limit = 20): T[] {
   const q = query.toLowerCase();
-  return names
-    .map((name) => ({ name, idx: q === "" ? 0 : name.toLowerCase().indexOf(q) }))
+  return items
+    .map((item) => ({ item, idx: q === "" ? 0 : item.name.toLowerCase().indexOf(q) }))
     .filter((s) => s.idx >= 0)
-    .sort((a, b) => (a.idx !== b.idx ? a.idx - b.idx : a.name.length !== b.name.length ? a.name.length - b.name.length : a.name.localeCompare(b.name)))
+    .sort((a, b) =>
+      a.idx !== b.idx
+        ? a.idx - b.idx
+        : a.item.name.length !== b.item.name.length
+          ? a.item.name.length - b.item.name.length
+          : a.item.name.localeCompare(b.item.name),
+    )
     .slice(0, limit)
-    .map((s) => s.name);
+    .map((s) => s.item);
 }
 
 /**
