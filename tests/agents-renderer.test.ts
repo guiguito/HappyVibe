@@ -94,6 +94,63 @@ describe("subagent trace extraction", () => {
     },
   };
 
+  // pi-subagents 0.40.0 dropped `messages` from BOTH projections: the streamed
+  // update now sends `snapshot.messages = undefined` + compact `toolCalls`
+  // (execution.ts snapshotStreamResult), and the terminal result has stripped
+  // messages the same way since 0.34 (compactForegroundResult). So `toolCalls` is
+  // the only transcript-ish thing left, and it is present on both paths.
+  const toolCallsPayload = {
+    details: {
+      results: [
+        {
+          agent: "code-explorer",
+          toolCalls: [
+            { text: "read(src/a.ts)", expandedText: "read(src/a.ts, offset: 1)" },
+            { text: "grep(TODO)" },
+          ],
+          finalOutput: "found two TODOs",
+        },
+      ],
+    },
+  };
+
+  test("derives transcript rows from toolCalls when messages is absent (0.40 shape)", () => {
+    const r = traceFromUpdate(toolCallsPayload).results[0];
+    expect(r.agent).toBe("code-explorer");
+    // expandedText preferred when present, else text.
+    expect(r.messages).toEqual([
+      { role: "tool", text: "read(src/a.ts, offset: 1)" },
+      { role: "tool", text: "grep(TODO)" },
+    ]);
+    expect(r.finalOutput).toBe("found two TODOs");
+  });
+
+  test("the end projection derives the same rows from toolCalls", () => {
+    expect(traceFromEnd(toolCallsPayload).results[0].messages).toHaveLength(2);
+  });
+
+  test("real messages still win over toolCalls when both are present", () => {
+    // Belt and braces: any pin that restores `messages` should be preferred, since
+    // it carries the child's prose and toolCalls does not.
+    const both = {
+      details: {
+        results: [{
+          agent: "a",
+          messages: [{ role: "assistant", content: [{ type: "text", text: "prose" }] }],
+          toolCalls: [{ text: "read(x)" }],
+        }],
+      },
+    };
+    expect(traceFromUpdate(both).results[0].messages).toEqual([{ role: "assistant", text: "prose" }]);
+  });
+
+  test("mergeTrace falls back to the live toolCalls rows", () => {
+    const merged = mergeTrace(traceFromUpdate(toolCallsPayload), traceFromEnd(endPayload));
+    // end has neither messages nor toolCalls → keep what the update derived.
+    expect(merged.results[0].messages).toHaveLength(2);
+    expect(merged.results[0].finalOutput).toBe("HELLO FROM SUBAGENT");
+  });
+
   test("traceFromUpdate flattens the live child transcript", () => {
     const r = traceFromUpdate(updatePayload).results[0];
     expect(r.agent).toBe("code-explorer");

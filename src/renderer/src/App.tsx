@@ -47,6 +47,8 @@ import { FileTab } from "./components/FileTab";
 import { AgentsMdPanel } from "./components/AgentsMdPanel";
 import type { SessionStats } from "./context";
 import { basename as tabBasename } from "./tabs";
+// Shared tool-name knowledge with the bridge (precedent: toolLabel.ts ← hv-mcp).
+import { isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -612,10 +614,13 @@ export default function App(): React.JSX.Element {
     const offPiEvent = window.hv.onPiEvent((e) => {
       const sid = e.sessionId as string | undefined;
       if (!sid) return;
-      // The `wait` tool is always intercepted by the bridge in HappyVibe (async
-      // results auto-deliver as a new turn), so it never does anything useful —
-      // hide its card entirely instead of showing a scary blocked-tool error.
-      if ((e as { toolName?: string }).toolName === "wait") return;
+      // pi-subagents' wait tool is always intercepted by the bridge in HappyVibe
+      // (async results auto-deliver as a new turn), so it never does anything
+      // useful — hide its card entirely instead of showing a scary blocked-tool
+      // error. Name-matched via the shared set, because upstream renamed it once
+      // already (`wait` → `subagent_wait`, no alias) and a literal here silently
+      // starts rendering the card again.
+      if (isWaitTool((e as { toolName?: string }).toolName)) return;
       // §23: plan-mode tools are internal transitions — the PlanCard/banner
       // represent them, so never render them as raw tool cards.
       if (PLAN_TOOL_NAMES.has((e as { toolName?: string }).toolName ?? "")) return;

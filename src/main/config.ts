@@ -1,6 +1,7 @@
 import { app, safeStorage } from "electron";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { BYOK_PROVIDERS, buildProviderEnv, keySource, type ByokProvider, type KeySource } from "./providers";
 import { customEndpointEnv, type CustomEndpoint } from "./modelsJson";
 import { mcpSecretEnvVar } from "./mcpSecretName";
@@ -354,17 +355,40 @@ export function builtinAgentsDir(): string {
 /**
  * Install the bundled built-in agents (pi-runtime/agents/*.md) into the
  * app-owned agent dir at startup. Idempotent and NON-clobbering:
- *  - target absent            → install
- *  - bundle version unchanged → skip (already installed)
- *  - bundle bumped + user has NOT edited (target mtime == our recorded install
- *    mtime) → reinstall; if the user edited it, keep their version.
- * Per-file bundle version + our install mtime are tracked in
- * installed-agents.json so a bundle bump ships fixes without clobbering edits.
+ *  - target absent                     → install
+ *  - target already == bundle           → skip
+ *  - target == what WE installed        → reinstall (ships the bundle fix)
+ *  - target != what we installed        → the user's; keep theirs
+ *
+ * Identity is a CONTENT HASH, not mtime. mtime failed in both directions and did
+ * so silently: anything that restamped a file without changing it (a second
+ * install pass racing the post-copy stat, a copy, a sync tool) read as an edit and
+ * froze that agent forever — observed in the wild, an installed agent stuck
+ * several bundle versions behind while byte-identical to a shipped copy — and
+ * conversely a real edit landing within the 1ms tolerance (or on a
+ * coarse-timestamp filesystem) read as unedited and got CLOBBERED. A hash answers
+ * "did the user change this?" exactly. It is also stable across clones and
+ * packaging, which an mtime "version" never was.
+ *
+ * Legacy `{version, installedMtime}` stamps can't prove authorship, so they are
+ * repaired towards the bundle with a one-time `.bak` beside the file — fixing the
+ * frozen-agent case without ever destroying content.
  */
+/** sha256 of a file's bytes; null when it can't be read (absent, unreadable). */
+function fileHash(p: string): string | null {
+  try {
+    return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
 export function installBuiltinAgents(bundleDir: string): void {
   const dest = builtinAgentsDir();
   const stampFile = path.join(agentDir(), "installed-agents.json");
-  let stamps: Record<string, { version: number; installedMtime: number }> = {};
+  /** `installedHash` is the current scheme; `installedMtime` is a legacy stamp. */
+  type Stamp = { version?: string | number; installedHash?: string; installedMtime?: number };
+  let stamps: Record<string, Stamp> = {};
   try {
     stamps = JSON.parse(fs.readFileSync(stampFile, "utf8")) as typeof stamps;
   } catch {
@@ -379,16 +403,38 @@ export function installBuiltinAgents(bundleDir: string): void {
   let changed = false;
   for (const name of files) {
     const src = path.join(bundleDir, name);
-    const version = fs.statSync(src).mtimeMs;
+    const version = fileHash(src);
+    if (!version) continue; // unreadable bundle entry — leave the install alone
     const target = path.join(dest, name);
     const stamp = stamps[name];
-    const exists = fs.existsSync(target);
-    if (exists && stamp?.version === version) continue; // up to date
-    // Bundle bumped but the user edited the file → keep theirs.
-    if (exists && stamp && Math.abs(fs.statSync(target).mtimeMs - stamp.installedMtime) > 1) continue;
-    fs.copyFileSync(src, target);
-    stamps[name] = { version, installedMtime: fs.statSync(target).mtimeMs };
-    changed = true;
+    const targetHash = fileHash(target);
+
+    const install = (): void => {
+      fs.copyFileSync(src, target);
+      // Post-copy the target IS the bundle, so its hash is `version` by construction
+      // — no second stat to race with a concurrent writer.
+      stamps[name] = { version, installedHash: version };
+      changed = true;
+    };
+
+    if (targetHash === null) { install(); continue; } // absent (or unreadable)
+    if (targetHash === version) {
+      // Already the bundle's content; make sure the stamp says so.
+      if (stamp?.installedHash !== version) { stamps[name] = { version, installedHash: version }; changed = true; }
+      continue;
+    }
+    if (stamp?.installedHash) {
+      if (targetHash !== stamp.installedHash) continue; // diverged from OUR copy → theirs, keep it
+    } else {
+      // No stamp, or a legacy mtime stamp: authorship is unknowable. Prefer the
+      // bundle (a frozen agent is the bug) but never lose what was there.
+      try {
+        fs.copyFileSync(target, `${target}.bak`);
+      } catch {
+        continue; // can't secure a backup → do not overwrite
+      }
+    }
+    install();
   }
   // v5: a builtin we USED to ship (e.g. summarizer — compaction is Pi-native)
   // is gone from the bundle. Remove the copy we installed IF the user hasn't
@@ -399,7 +445,11 @@ export function installBuiltinAgents(bundleDir: string): void {
     if (bundled.has(name)) continue;
     const target = path.join(dest, name);
     const stamp = stamps[name];
-    if (fs.existsSync(target) && Math.abs(fs.statSync(target).mtimeMs - stamp.installedMtime) <= 1) {
+    // Only remove a copy we can PROVE is ours and untouched. A legacy stamp can't
+    // prove it, so leave the file (it becomes theirs) and just stop tracking it —
+    // the conservative direction, since the alternative is deleting user content.
+    const targetHash = fileHash(target);
+    if (targetHash !== null && stamp.installedHash && targetHash === stamp.installedHash) {
       fs.rmSync(target, { force: true });
     }
     delete stamps[name];

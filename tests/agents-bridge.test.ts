@@ -149,13 +149,22 @@ test.skipIf(!KEY)(
       const ends = localEvents.filter((e) => e.type === "tool_execution_end" && (e as { toolName?: string }).toolName === "subagent");
       expect(ends.length, "expected a subagent tool_execution_end").toBeGreaterThan(0);
 
-      // LIVE child transcript rides tool_execution_update.partialResult.details.results[].messages.
+      // LIVE view rides tool_execution_update.partialResult.details.results[].
+      //
+      // pi-subagents 0.40.0 REMOVED `messages` from this projection on purpose
+      // (`snapshotStreamResult` sets it undefined and substitutes compact
+      // `toolCalls`, so one update line stays under the child-stdout protocol cap
+      // — execution.ts:259-270). Asserting its ABSENCE pins that change: if a
+      // future pin restores the transcript we want to know, because it carries the
+      // child's prose and toolCalls does not. The toolCalls→transcript-row mapping
+      // is unit-tested in tests/agents-renderer.test.ts — deliberately NOT here,
+      // since this child ("reply with exactly HELLO") may make zero tool calls and
+      // a live assertion on toolCalls would depend on the model choosing to.
       const upd = updates[updates.length - 1] as { partialResult?: { details?: { results?: Array<{ agent?: string; messages?: unknown[] }> } } };
       const updResults = upd?.partialResult?.details?.results ?? [];
       expect(updResults.length, "update carries results[]").toBeGreaterThan(0);
       expect(updResults[0].agent).toBe("code-explorer");
-      expect(Array.isArray(updResults[0].messages)).toBe(true);
-      expect(updResults[0].messages!.length, "child transcript present in update").toBeGreaterThan(0);
+      expect(updResults[0].messages, "0.40 drops the transcript from streamed updates").toBeUndefined();
 
       // FINAL outcome rides tool_execution_end.result.details.results[] (per-agent
       // model/usage/finalOutput; the end does NOT re-carry the transcript).

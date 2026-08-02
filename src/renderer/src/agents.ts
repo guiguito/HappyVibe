@@ -61,14 +61,24 @@ export function joinToolPermissions(tools: ToolInfo[], verdicts: Record<string, 
 
 // ── subagent trace extraction ────────────────────────────────────────────────
 // Subagent delegation streams through ordinary tool_execution_* events with
-// toolName "subagent" (s0.3). Observed empirically on pi-subagents 0.33.1:
-//   tool_execution_update.partialResult.details.results[]  → LIVE child transcript
-//        (results[].messages present)
+// toolName "subagent" (s0.3).
+//   tool_execution_update.partialResult.details.results[]  → LIVE view
 //   tool_execution_end.result.details.results[]            → FINAL outcome
-//        (NO messages; carries finalOutput, model via modelAttempts[], usage,
-//         exitCode, artifactPaths)
-// So the transcript lives in the UPDATE; the END finalizes model/usage/output.
-// mergeTrace keeps the update's messages while adopting the end's outcome.
+//        (finalOutput, model via modelAttempts[], usage, exitCode, artifactPaths)
+//
+// `messages` (re-verified against pi-subagents 0.40.0): GONE from both paths.
+// The terminal result has stripped it since 0.34 (`compactForegroundResult` sets
+// `messages: undefined` and substitutes `toolCalls`), and 0.40 does the same to
+// the streamed update — `snapshotStreamResult` sets `messages = undefined` +
+// `toolCalls = boundStreamedToolCalls(...)`, so one update line stays under the
+// child-stdout protocol cap that could otherwise kill the child.
+//
+// So `toolCalls` ({text, expandedText}) is the transcript source on BOTH paths,
+// and we map it into the same SubagentMessage rows the view already renders. We
+// still prefer real `messages` when a payload carries them — they include the
+// child's prose, which toolCalls does not; the child's ANSWER survives as
+// `finalOutput`, which SubagentTraceView renders. mergeTrace keeps the update's
+// rows while adopting the end's outcome.
 
 export interface SubagentMessage {
   role: string;
@@ -98,6 +108,8 @@ interface RawResult {
   finalOutput?: string;
   /** end shape: model/usage live under modelAttempts[] instead of top-level. */
   modelAttempts?: Array<{ model?: string; usage?: { input?: number; output?: number; cost?: number; turns?: number }; exitCode?: number }>;
+  /** 0.40 shape: compact tool-call summaries, standing in for `messages`. */
+  toolCalls?: Array<{ text?: string; expandedText?: string }>;
 }
 
 /** Flatten a Pi message's content (string | block[]) to plain text. */
@@ -115,6 +127,20 @@ function flattenContent(content: unknown): string {
     .join("\n");
 }
 
+/**
+ * Transcript rows for one result. Real `messages` win (they carry the child's
+ * prose); otherwise derive rows from `toolCalls`, which is all pi-subagents >=0.40
+ * projects. Empty when neither is present — the view then shows its waiting copy.
+ */
+function toMessages(r: RawResult): SubagentMessage[] {
+  if (r.messages?.length) {
+    return r.messages.map((m) => ({ role: m.role ?? "assistant", text: flattenContent(m.content) }));
+  }
+  return (r.toolCalls ?? [])
+    .map((c) => ({ role: "tool", text: c.expandedText ?? c.text ?? "" }))
+    .filter((m) => m.text !== "");
+}
+
 function toResults(raw: unknown): SubagentResult[] {
   const results = (raw as { details?: { results?: RawResult[] } })?.details?.results;
   if (!Array.isArray(results)) return [];
@@ -122,7 +148,7 @@ function toResults(raw: unknown): SubagentResult[] {
     const attempt = r.modelAttempts?.[r.modelAttempts.length - 1];
     return {
       agent: r.agent ?? "agent",
-      messages: (r.messages ?? []).map((m) => ({ role: m.role ?? "assistant", text: flattenContent(m.content) })),
+      messages: toMessages(r),
       usage: r.usage ?? attempt?.usage,
       model: r.model ?? attempt?.model,
       exitCode: r.exitCode ?? attempt?.exitCode,
