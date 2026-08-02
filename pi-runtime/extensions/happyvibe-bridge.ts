@@ -283,6 +283,17 @@ export default function (pi: ExtensionAPI) {
   // in RPC, refreshed on resume.
   let busUi: { notify(message: string, type?: "info" | "warning" | "error"): void } | null = null;
 
+  // session_start is NOT enough on its own: pi-mcp-adapter >=2.17.0 re-registers
+  // its "mcp" proxy tool whenever the proxy DESCRIPTION changes (syncProxyTool →
+  // registerProxyTool), and each registration builds a FRESH Type.Object schema.
+  // That silently discards the `intent` property requireIntent injected at
+  // session_start, so the model stops being asked for a headline and
+  // tool_execution_start arrives with intent === undefined. Re-applying per turn
+  // costs nothing — requireIntent early-continues on every already-wired tool —
+  // and re-wires whatever the adapter replaced since the last turn.
+  // Regression-tested by tests/mcp-bridge.test.ts (live).
+  pi.on("turn_start", () => requireIntent(pi));
+
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi); // all extensions have registered by now (idempotent across reloads)
     skillManifest = loadManifest(); // §14: reflect this session's loaded skills
