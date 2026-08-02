@@ -327,6 +327,7 @@ interface HvApi {
   onProvidersChanged(cb: () => void): () => void;
   onSessionsChanged(cb: (sessions: SessionMeta[]) => void): () => void;
   onSessionReloading(cb: (info: { sessionId: string; reason: string }) => void): () => void;
+  onUiUnhandled(cb: (info: { sessionId: string; method?: string }) => void): () => void;
   // B3: providers & onboarding
   respondInput(id: string, value: string | null): void;
   getProviders(): Promise<{

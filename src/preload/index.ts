@@ -286,4 +286,12 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:session-reloading", listener);
     return () => ipcRenderer.removeListener("hv:session-reloading", listener);
   },
+  // An extension asked for UI HappyVibe can't render; main auto-denied it so the
+  // extension isn't left hanging (uiFallback.ts). Surfaced as a session notice.
+  onUiUnhandled: (cb: (i: { sessionId: string; method?: string }) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: unknown): void =>
+      cb(p as { sessionId: string; method?: string });
+    ipcRenderer.on("hv:ui-unhandled", listener);
+    return () => ipcRenderer.removeListener("hv:ui-unhandled", listener);
+  },
 });

@@ -55,6 +55,7 @@ import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 import { hasNodeRuntime } from "./nodePreflight";
+import { isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 
 
@@ -314,7 +315,15 @@ export function registerIpc(win: BrowserWindow): void {
     // selectable with zero config.
     await syncModelsJson(agentDir(), listCustomEndpoints()).catch(() => {});
     const c = new PiClient(resolvePiSpawn(os.homedir(), sessionDir(), piRuntimeDir(), spawnOpts()));
-    c.on("ui-request", (r: { id: string; message?: string }) => {
+    c.on("ui-request", (r: { id: string; method?: string; title?: string; message?: string }) => {
+      // Same hang as the session path (see uiFallback.ts), and this client has
+      // no method filtering at all — a foreign blocking request would wedge the
+      // auth/model bridge. No notice: there is no session to attach one to.
+      if (isUnhandledBlockingUi(r)) {
+        c.respondUi(r.id, UI_CANCEL_RESPONSE);
+        void log.append({ type: "ui.unhandled", data: { method: r.method, title: r.title?.slice(0, 200), utility: true } });
+        return;
+      }
       uiOwners.set(r.id, UTILITY);
       send("hv:ui-request", { ...r, sessionId: UTILITY });
       // Auth landed/left → the model list changed (OAuth results only flow as
@@ -511,7 +520,7 @@ export function registerIpc(win: BrowserWindow): void {
         drainPendingReload(sessionId); // apply a deferred MCP reload now the turn is done
       }
     });
-    client.on("ui-request", (r: { id: string; method?: string; message?: string }) => {
+    client.on("ui-request", (r: { id: string; method?: string; title?: string; message?: string }) => {
       // B4 audit channel: hv.audit notifies are fire-and-forget (never respond)
       // and land in the EventLog, not the renderer.
       const audit = parseAuditNotify(r);
@@ -629,6 +638,22 @@ export function registerIpc(win: BrowserWindow): void {
           void log.append({ type: "plan.blocked", sessionId, workspaceId: wsId, data: { toolName: planN.toolName } });
         }
         send("hv:ui-request", { ...r, sessionId });
+        return;
+      }
+      // Nothing above recognised it. If it BLOCKS the extension and carries no
+      // hv.* envelope, no HappyVibe surface will ever render it — answer it
+      // here or the extension's await never settles and the turn/session
+      // freezes silently (see uiFallback.ts). Do NOT register an owner or
+      // forward: the renderer would queue a prompt nobody can answer.
+      if (isUnhandledBlockingUi(r)) {
+        client.respondUi(r.id, UI_CANCEL_RESPONSE);
+        void log.append({
+          type: "ui.unhandled",
+          sessionId,
+          workspaceId: meta?.workspaceId,
+          data: { method: r.method, title: r.title?.slice(0, 200) },
+        });
+        send("hv:ui-unhandled", { sessionId, method: r.method });
         return;
       }
       uiOwners.set(r.id, sessionId);
