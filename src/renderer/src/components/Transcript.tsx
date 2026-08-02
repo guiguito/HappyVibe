@@ -284,7 +284,11 @@ function UserBubble({
             onClick={() => setExpanded((v) => !v)}
             className="mt-1 text-[11px] font-bold text-paper/80 hover:text-paper underline cursor-pointer"
           >
-            {expanded ? "Show less" : "Show more"}
+            {/* §24: name what is hidden. "Show more" would imply the rest of
+                something the user wrote — this is a prompt they never saw. */}
+            {command
+              ? expanded ? "Hide the expanded prompt" : "Show the expanded prompt"
+              : expanded ? "Show less" : "Show more"}
           </button>
         )}
       </div>
