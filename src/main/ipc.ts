@@ -105,16 +105,38 @@ function parseSkillNotify(r: { method?: string; message?: string }): Record<stri
 }
 
 /** §24: an hv.command notify (a prompt template expanded), else null. */
-function parseCommandNotify(r: { method?: string; message?: string }): { typed: string; expanded: string } | null {
+/**
+ * §24: an hv.command pairing notify, else null.
+ *
+ * Returns the WHOLE payload, not just the two fields main reads. Main re-emits
+ * this envelope to the renderer with `typed` swapped for the user's original
+ * message, and re-serializing from a narrowed object silently dropped `kind` —
+ * the discriminator the renderer switches on — so every live card stopped
+ * rendering while the restore path (which reads the log, not the notify) kept
+ * working and hid it. Pinned by tests/command-notify.test.ts.
+ */
+export function parseCommandNotify(
+  r: { method?: string; message?: string },
+): ({ kind: string; typed: string; expanded: string } & Record<string, unknown>) | null {
   if (r.method !== "notify") return null;
   try {
-    const p = JSON.parse(r.message ?? "") as { kind?: string; typed?: unknown; expanded?: unknown };
+    const p = JSON.parse(r.message ?? "") as Record<string, unknown>;
     return p?.kind === "hv.command" && typeof p.typed === "string" && typeof p.expanded === "string"
-      ? { typed: p.typed, expanded: p.expanded }
+      ? (p as { kind: string; typed: string; expanded: string } & Record<string, unknown>)
       : null;
   } catch {
     return null;
   }
+}
+
+/** The envelope main forwards for a pairing: the payload verbatim, with `typed`
+ *  replaced by what the user actually wrote. Every other field — `kind` above
+ *  all — must survive. */
+export function commandNotifyMessage(
+  payload: Record<string, unknown>,
+  typed: string,
+): string {
+  return JSON.stringify({ ...payload, typed });
 }
 
 /** Which config source a live respawn is applying — cosmetic, shown in the renderer notice. */
@@ -629,7 +651,7 @@ export function registerIpc(win: BrowserWindow): void {
           workspaceId: meta?.workspaceId,
           data: { sessionId, typed, expandedHash: expandedHash(command.expanded) },
         });
-        send("hv:ui-request", { ...r, message: JSON.stringify({ ...command, typed }), sessionId });
+        send("hv:ui-request", { ...r, message: commandNotifyMessage(command, typed), sessionId });
         return;
       }
       // Async subagents: lifecycle relays drive activity gating (a live async run
