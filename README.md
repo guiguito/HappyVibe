@@ -50,9 +50,12 @@ Flow: setup screen is auto-skipped when `.env` has a key → pick a project fold
 Debugging (Chrome DevTools / `electron-debug` MCP): `HV_DEBUG_PORT=9222 npm run dev` — see [`docs/debugging.md`](docs/debugging.md).
 
 ```bash
-npm test           # 11 unit/integration tests; bridge + coexistence tests
-                   # make real DeepSeek calls when DEEPSEEK_API_KEY is set,
-                   # and skip cleanly otherwise
+npm test           # the non-live suite: 107 files, ~908 tests, ~30 s.
+                   # Never makes a model call — the 14 live-Pi files skip
+                   # themselves regardless of whether .env has a key.
+npm run test:live  # those 14, against real DeepSeek (needs DEEPSEEK_API_KEY);
+                   # serial, ~6 min, costs real API calls
+npm run gate       # typecheck + build + non-live suite, one command
 npm run package    # unsigned .app in release/mac-arm64/ (bundles pi-runtime
                    # via build/afterPack.mjs — electron-builder drops
                    # node_modules on its own)

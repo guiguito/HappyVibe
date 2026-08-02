@@ -22,7 +22,10 @@
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
     "package": "electron-vite build && electron-builder --dir",
-    "test": "vitest run"
+    "test": "DEEPSEEK_API_KEY=sk-REPLACE vitest run",
+    "test:live": "grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism",
+    "gate": "npm run build && npm test",
+    "live:why": "git diff --name-only main...HEAD | grep -E 'pi-runtime/extensions/|src/main/pi/'; git diff --name-only main...HEAD | grep '^tests/' | xargs grep -l 'skipIf(!KEY' 2>/dev/null"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
