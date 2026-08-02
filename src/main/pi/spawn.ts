@@ -99,9 +99,12 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // The HappyVibe bridge is the SOLE permission path in RPC mode.
       // @gotgenes/pi-permission-system was removed from the spawn after Gate V6
       // proved it is TUI-only (both its prompt paths gate on ctx.hasUI, which is
-      // false in --mode rpc; its non-UI fallback silently denies). It stays
-      // vendored in pi-runtime only for tests/permission-coexistence.test.ts,
-      // which documents that finding. See docs/validation/v6.md.
+      // false in --mode rpc; its non-UI fallback silently denies), and UNVENDORED
+      // entirely on 2026-08-02: it was 2.4 MB shipped into every .app plus a paid
+      // live test, all to keep re-proving a frozen package still behaves as
+      // docs/validation/v6.md already records. Do not add it back to satisfy a
+      // test — v6.md IS the record. Re-vendor only to re-run V6 against a NEW
+      // version, which is a deliberate decision, not a regression guard.
       //
       // LOAD ORDER IS LOAD-BEARING — the bridge MUST be the LAST -e extension.
       // Pi runs tool_call handlers in extension load order (runner.js
