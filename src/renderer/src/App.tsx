@@ -32,6 +32,8 @@ import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
 import { SkillsView } from "./components/SkillsView";
+import { CommandsView } from "./components/CommandsView";
+import { applyCommandPair } from "./commandPair";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
@@ -521,7 +523,26 @@ export default function App(): React.JSX.Element {
         // path already renders as its own tool card, so only detected reads here).
         if (r.method === "notify") {
           try {
-            const p = JSON.parse(r.message ?? "") as { kind?: string; name?: string; detected?: boolean };
+            const p = JSON.parse(r.message ?? "") as {
+              kind?: string;
+              name?: string;
+              detected?: boolean;
+              typed?: string;
+              expanded?: string;
+            };
+            // §24: Pi expanded a prompt template. The bubble on screen holds
+            // either the typed text (idle send) or the expansion (steered via
+            // queue_update) depending on a race the user never chose, so fold
+            // the pairing in and let both collapse to the same card.
+            if (p?.kind === "hv.command" && p.typed && p.expanded) {
+              const pair = { typed: p.typed, expanded: p.expanded };
+              setTranscripts((prev) => {
+                const cur = prev[sid] ?? [];
+                const next = applyCommandPair(cur, pair);
+                // Identity means nothing matched — skip the re-render.
+                return next === cur ? prev : { ...prev, [sid]: next };
+              });
+            }
             if (p?.kind === "hv.skill" && p.name) {
               // Round 6: track EVERY invocation for the top-bar chip's "used"
               // marks — the use_skill happy path (detected:false) used to be
@@ -1377,6 +1398,9 @@ export default function App(): React.JSX.Element {
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
         {activeView === "skills" && (
           <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+        )}
+        {activeView === "commands" && (
+          <CommandsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
         {activeView === "mcp" && <McpView />}
         {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}

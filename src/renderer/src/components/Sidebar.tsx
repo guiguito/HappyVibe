@@ -4,7 +4,8 @@ import type { SessionStatus } from "../App";
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
 // §13 round 6: the old combined "agents" page split into four peer destinations.
 export type View =
-  | "chat" | "skills" | "mcp" | "agents" | "tools"
+  // §24: Commands sits beside Skills — same trust model, its own page.
+  | "chat" | "skills" | "commands" | "mcp" | "agents" | "tools"
   // Round 8: the settings scroll exploded into pages, each its own destination.
   | "models" | "permissions" | "sysprompt" | "stats" | "audit" | "shortcuts"
   | "workspace";
@@ -39,6 +40,16 @@ function SkillsIcon(): React.JSX.Element {
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+}
+// §24: a terminal prompt — a command is something you type, not something the
+// model discovers, and the glyph should say so at a glance.
+function CommandsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 17l6-5-6-5" />
+      <path d="M12 19h8" />
     </svg>
   );
 }
@@ -120,6 +131,7 @@ function KeyboardIcon(): React.JSX.Element {
     their order at the top; the exploded settings pages sit below a divider. */
 const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
   { view: "skills", label: "Skills", Icon: SkillsIcon },
+  { view: "commands", label: "Commands", Icon: CommandsIcon },
   { view: "mcp", label: "MCP", Icon: McpIcon },
   { view: "agents", label: "Agents", Icon: AgentsIcon },
   { view: "tools", label: "All Tools", Icon: ToolsIcon },
