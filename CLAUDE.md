@@ -61,6 +61,13 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   2 runs in 3 on an 8 s bound). If it never arrives, it's the prose-turn class above — re-ask.
 - Contract tests are the Pi upgrade gate: any pi/pi-subagents pin bump must pass them.
   Wire shapes are documented in docs/validation/d1.md — new bridge shapes go there too.
+- **You cannot force a tool call by passing `toolChoice` — it is silently DISCARDED.** pi-coding-agent
+  only calls `streamSimple`, whose `buildBaseOptions` allowlist (19 fields) omits it; no throw, no
+  warning, and `toolChoice` IS a real typed pi-ai option elsewhere, so this looks like it works.
+  There is also no CLI flag and no RPC param for it. The only route in is a `before_provider_request`
+  extension hook, whose return value replaces the raw request body. Full citations + the three
+  constraints (hook fails OPEN, arm-per-turn or `agent_end` hangs, keep `askUntil`) in
+  docs/validation/tc1.md. Read it before re-investigating.
 - **`pi-subagents` is pinned at 0.34.0 ON PURPOSE — do not bump it casually.** 0.35.0 added an
   `exports` map (`.`, `./background-work`, `./delegation`, `./capability-ceiling`, `./preflight`)
   and the bridge deep-imports `pi-subagents/src/runs/background/async-status.ts` (`listAsyncRuns`)

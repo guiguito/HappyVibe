@@ -1,5 +1,10 @@
 # HappyVibe Spike — Validation Results (V1–V7)
 
+> **Historical.** This table records the V1–V7 spike as run on **2026-07-03**, against the Pi
+> version vendored *then* (0.80.3). The rows are deliberately not updated — they are dated
+> evidence, not current state. For what is vendored today see `pi-runtime/package.json`, and for
+> the live-Pi gate's run history see [`live-runs.md`](./live-runs.md).
+
 | Gate | Hypothesis | Result | Date | Notes |
 |------|-----------|--------|------|-------|
 | — | Pi runtime vendored (0.80.3) | PASS | 2026-07-03 | smoke-pi.mjs prints 0.80.3. **Native DeepSeek support confirmed** (provider `deepseek` + `DEEPSEEK_API_KEY` in cli/args.js & model-registry.js) → no models.json needed. Exact model id verified at V5-core (Task 6). |
