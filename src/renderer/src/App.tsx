@@ -54,6 +54,28 @@ export type SessionStatus = "running" | "crashed" | "waking";
 // §23: plan-mode transition tools — never rendered as raw tool cards.
 const PLAN_TOOL_NAMES = new Set(["plan_complete", "plan_start", "plan_status_update"]);
 
+/**
+ * Workspaces that must stay fs-watched. Two independent reasons, and a workspace
+ * qualifying for both is still ONE watch:
+ *  - F6: it has an open editor tab, so an agent edit auto-refreshes the tab
+ *    (FileTab subscribes to hv:fs-changed) even with the file drawer closed.
+ *  - §23: it has an active plan, whose n/m progress rides the same watcher (main
+ *    re-parses the plan file and pushes hv:plan-changed). Without this the
+ *    "Implementing n/m" badge freezes at its implement-time count whenever the
+ *    drawer and every editor tab are closed.
+ * Main-side watches are refcounted, so this coexists with the file tree's watch.
+ */
+export function watchTargets(
+  tabsByWs: Record<string, WorkspaceTabs>,
+  activePlan: Record<string, PlanCardData>,
+): Set<string> {
+  const want = new Set(
+    Object.entries(tabsByWs).filter(([, t]) => allFiles(t).length > 0).map(([w]) => w),
+  );
+  for (const p of Object.values(activePlan)) if (p.workspaceId) want.add(p.workspaceId);
+  return want;
+}
+
 export default function App(): React.JSX.Element {
   const [keyState, setKeyState] = useState<KeyState>("loading");
   const [view, setView] = useState<View>("chat");
@@ -835,23 +857,9 @@ export default function App(): React.JSX.Element {
     [openFileTab]
   );
 
-  // F6: keep a workspace watched whenever it has an open editor tab, so an agent
-  // edit auto-refreshes the tab (FileTab subscribes to hv:fs-changed) even when
-  // the file drawer — which owns its own watch — is closed. Refcounted main-side,
-  // so this coexists with the tree's watch.
   const watchedWsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const want = new Set(
-      Object.entries(tabsByWs).filter(([, t]) => allFiles(t).length > 0).map(([w]) => w),
-    );
-    // §23: a live plan's n/m progress rides this same watcher (main re-parses the
-    // plan file and pushes hv:plan-changed). Keep the plan's workspace watched, or
-    // the "Implementing n/m" badge freezes at its implement-time count whenever
-    // the file drawer and every editor tab are closed.
-    // ponytail: activePlan is never pruned on session close, so a workspace stays
-    // watched until app exit — bounded at one watch per workspace, so not worth a
-    // teardown path. Prune here if watcher count ever matters.
-    for (const p of Object.values(activePlan)) if (p.workspaceId) want.add(p.workspaceId);
+    const want = watchTargets(tabsByWs, activePlan);
     const have = watchedWsRef.current;
     for (const w of want) if (!have.has(w)) void window.hv.watchWorkspace(w).catch(() => {});
     for (const w of have) if (!want.has(w)) void window.hv.unwatchWorkspace(w).catch(() => {});
@@ -1294,6 +1302,14 @@ export default function App(): React.JSX.Element {
         onDeleteSession={async (id) => {
           // V2.C2: deleting the selected session falls back to no-selection.
           if (selectedId === id) setSelectedId(null);
+          // §23: drop its plan too — activePlan feeds watchTargets, so a stale
+          // entry would keep the workspace watched for a session that is gone.
+          setActivePlan((p) => {
+            if (!(id in p)) return p;
+            const next = { ...p };
+            delete next[id];
+            return next;
+          });
           await window.hv.deleteSession(id); // sessions-changed broadcast refreshes the list
         }}
         settingsOpen={settingsOpen}
