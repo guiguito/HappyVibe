@@ -106,12 +106,12 @@ test.skipIf(!KEY)(
     expect(notifies, "a plain prompt must not produce an hv.command pairing").toHaveLength(0);
 
     // (2) The command: expands, and pairs.
-    plainDone = new Promise<void>((resolve) =>
+    turnDone = new Promise<void>((resolve) =>
       client.on("event", (e) => {
         if (e.type === "agent_end") resolve();
       }));
     await client.send({ type: "prompt", message: "/greet World" });
-    await plainDone;
+    await turnDone;
 
     expect(notifies, "expected exactly one hv.command notify").toHaveLength(1);
     const pair = notifies[0] as { name?: string; typed?: string; expanded?: string };
