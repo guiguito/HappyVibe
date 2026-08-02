@@ -3,6 +3,7 @@ import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
 import { ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
+import { CommandImportControls, CommandInspector, CommandRowPills, CommandStatusPill } from "./CommandsSection";
 import { McpServersSection } from "./McpServersSection";
 import { McpCatalogSection } from "./McpCatalogSection";
 
@@ -133,6 +134,14 @@ export function WorkspaceSettingsView({ workspace }: { workspace: string }): Rea
 
         <Section icon="skills" title="Skills" subtitle="This project's skills, and which global ones are on here.">
           <WorkspaceSkillsBlock workspace={workspace} />
+        </Section>
+
+        <Section
+          icon="sysprompt"
+          title="Commands"
+          subtitle="This project's slash commands, and which global ones are on here."
+        >
+          <WorkspaceCommandsBlock workspace={workspace} />
         </Section>
 
         <Section icon="mcp" title="Workspace MCP" subtitle="Servers for this project only.">
@@ -267,6 +276,104 @@ function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.E
 
       {inspecting && (
         <SkillInspector
+          id={inspecting}
+          workspaceId={workspace}
+          canApprove={!globalChecklist.some((c) => c.id === inspecting)}
+          onClose={() => setInspecting(null)}
+          onChanged={refresh}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * §24: the ONLY surface for workspace-scoped commands — review of this
+ * project's `.agents/prompts` and `.claude/commands`, plus the per-workspace
+ * activation checklist over every approved global command. Same rights split as
+ * skills: a project command is clickable AND approvable here; a global one is
+ * clickable but can only be switched off for this workspace.
+ */
+function WorkspaceCommandsBlock({ workspace }: { workspace: string }): React.JSX.Element {
+  const [data, setData] = useState<HvCommandsList["workspace"]>(null);
+  const [inspecting, setInspecting] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    void window.hv.commandsList(workspace).then((l) => setData(l.workspace));
+  }, [workspace]);
+  useEffect(() => {
+    refresh();
+    return window.hv.onCommandsChanged(refresh);
+  }, [refresh]);
+
+  if (!data) return <p className="text-sm text-ink-soft">Loading…</p>;
+
+  const toggle = (id: string, on: boolean): void => {
+    void window.hv.commandsSetActive(workspace, id, on);
+  };
+  // The checklist mixes global + this project's approved commands; only the
+  // global half belongs under "Global commands in this workspace" — the
+  // project's own already have their section above.
+  const globalChecklist = data.checklist.filter((c) => c.source !== "workspace" && c.source !== "claude");
+
+  return (
+    <>
+      <CommandImportControls scope="workspace" workspaceId={workspace} />
+
+      <div className="mb-4">
+        <div className="text-[11px] font-semibold text-ink-soft mb-1.5">
+          This project's commands (.agents/prompts and .claude/commands)
+        </div>
+        {data.commands.length === 0 ? (
+          <p className="text-xs text-ink-soft">
+            No project commands yet. Import one above, or drop a .md file into .agents/prompts.
+          </p>
+        ) : (
+          <div className="rounded-xl border-2 border-line overflow-hidden">
+            {data.commands.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setInspecting(c.id)}
+                className="w-full text-left px-3 py-2 border-b border-line last:border-b-0 hover:bg-paper-deep/30 cursor-pointer flex items-center gap-2 flex-wrap"
+              >
+                <CommandStatusPill status={c.status} />
+                <span className="font-mono font-bold text-sm">/{c.name}</span>
+                <CommandRowPills cmd={c} />
+                <span className="ml-auto text-ink-soft">›</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Global commands in this workspace</div>
+      {globalChecklist.length === 0 ? (
+        <p className="text-xs text-ink-soft">No approved global commands yet. Approve commands in the Commands view.</p>
+      ) : (
+        <div className="rounded-xl border-2 border-line overflow-hidden">
+          {globalChecklist.map((c) => (
+            <div key={c.id} className="flex items-center gap-2 px-3 py-2 border-b border-line last:border-b-0 hover:bg-paper-deep/30">
+              <input
+                type="checkbox"
+                checked={c.status === "active"}
+                onChange={(e) => toggle(c.id, e.target.checked)}
+                className="size-4 accent-tangerine cursor-pointer"
+              />
+              <button type="button" onClick={() => setInspecting(c.id)} className="font-mono font-bold text-sm text-left hover:underline cursor-pointer">
+                /{c.name}
+              </button>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-soft">{c.source}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-ink-soft mt-1.5">
+        Toggling a command respawns this workspace's sessions to apply the change (the conversation is preserved).
+      </p>
+
+      {inspecting && (
+        <CommandInspector
           id={inspecting}
           workspaceId={workspace}
           canApprove={!globalChecklist.some((c) => c.id === inspecting)}
