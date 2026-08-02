@@ -65,7 +65,16 @@ const startWithFixture = async (): Promise<{ reqs: Req[]; probe: () => Record<st
   return { reqs, probe };
 };
 
-const waitFor = async (pred: () => boolean, ms = 8000): Promise<boolean> => {
+// Pi emits NOTHING on boot in RPC mode — no session_start, no ready event — so
+// there is no handshake to await; `PiClient.start()` only spawns. An early stdin
+// write is not lost (Pi buffers it), it just sits there until boot finishes, and
+// boot is what varies: measured 671 ms / 706 ms warm vs 15_667 ms cold on an idle
+// machine. The old 8 s default sat inside that spread, which is the whole reason
+// this file flaked ~2 runs in 3 — either test could lose the race, whichever
+// spawned cold. 25 s clears the measured ceiling and still fits the per-test
+// budget below. NOT the "model ended its turn in prose" class from CLAUDE.md: the
+// confirm always arrives, so waiting longer genuinely does fix it.
+const waitFor = async (pred: () => boolean, ms = 25_000): Promise<boolean> => {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     if (pred()) return true;
@@ -93,7 +102,9 @@ test.skipIf(!fs.existsSync(CLI))(
     // Deliberately answer NOTHING. Pre-fix behaviour: the extension stays stuck.
     expect(await waitFor(() => probe() !== undefined, 3000)).toBe(false);
   },
-  30_000,
+  // 25 s cold-boot wait + the 3 s negative wait above = 28 s, which would sit
+  // 2 s under a 30 s budget. Headroom for a cold spawn under full-suite load.
+  45_000,
 );
 
 test.skipIf(!fs.existsSync(CLI))(
@@ -118,5 +129,5 @@ test.skipIf(!fs.existsSync(CLI))(
     expect(p.answer).toBe(false);
     expect(reqs.some((r) => r.method === "confirm")).toBe(true);
   },
-  30_000,
+  45_000,
 );
