@@ -51,16 +51,39 @@ describe("pi-mcp-adapter interpolation contract", () => {
 
   it("server-manager applies it to env and headers but NOT to url", () => {
     // Source-level assertion: there is no exported seam that returns the
-    // resolved URL, so we pin the call sites. resolveEnv/resolveHeaders both
-    // route through interpolateEnvRecord; definition.url is used raw.
+    // resolved URL, so we pin the call sites. Both env and headers route
+    // through resolveCommandSecretsRecord -> resolveCommandSecret ->
+    // interpolateEnvVars; definition.url is used raw.
+    //
+    // Adapter 2.11.0 -> 2.17.0 renamed this seam: it used to be
+    // resolveEnv/resolveHeaders calling interpolateEnvRecord(...) directly.
+    // The INVARIANT is unchanged (verified: the non-"!" branch of
+    // resolveCommandSecret calls interpolateEnvVars), only the shape moved —
+    // which is exactly what a source-shape pin is for.
     const src = readFileSync(
       new URL("../pi-runtime/node_modules/pi-mcp-adapter/server-manager.ts", import.meta.url),
       "utf8",
     );
-    expect(src).toMatch(/function resolveEnv[\s\S]{0,400}interpolateEnvRecord\(env\)/);
-    expect(src).toMatch(/function resolveHeaders[\s\S]{0,200}interpolateEnvRecord\(headers\)/);
+    expect(src).toMatch(/function resolveEnv[\s\S]{0,400}resolveCommandSecretsRecord\(\s*env/);
+    expect(src).toMatch(/resolveCommandSecretsRecord\(\s*definition\.headers/);
     // If a pin bump adds URL interpolation this assertion fails and we may
     // relax the "no secret in a URL path" catalog rule.
     expect(src).not.toMatch(/interpolate\w*\(\s*definition\.url/);
+    expect(src).not.toMatch(/resolveCommandSecret\w*\(\s*definition\.url/);
+  });
+
+  it("a '!'-prefixed value is EXECUTED as a shell command — new in adapter 2.17.0", async () => {
+    // Not our feature, but it is a code-execution path reachable from an
+    // mcp.json this app reads (global <agentDir>/mcp.json AND workspace
+    // .mcp.json, which can arrive inside a cloned repo). Pinned so a future
+    // pin bump cannot widen or silently relocate it, and so the permission
+    // model has something to point at. "!!" is the escape for a literal "!".
+    const { resolveCommandSecret } = await import(ADAPTER_UTILS);
+
+    expect(resolveCommandSecret("!printf hv-exec-probe", "test")).toBe("hv-exec-probe");
+    // "!!" escapes: interpolated, NOT executed.
+    expect(resolveCommandSecret("!!printf nope", "test")).toBe("!printf nope");
+    // The ordinary path our catalog relies on stays pure interpolation.
+    expect(resolveCommandSecret("${HV_MCP_TEST_KEY}", "test")).toBe("secret-value");
   });
 });
