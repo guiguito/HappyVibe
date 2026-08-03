@@ -67,7 +67,7 @@ describe("commandSubtitle", () => {
   });
 
   it("falls back to naming the kind when a command carries neither", () => {
-    expect(commandSubtitle(cmd("review", { source: "prompt" }))).toBe("Prompt command");
+    expect(commandSubtitle(cmd("review", { source: "prompt" }))).toBe("Prompt template");
   });
 });
 

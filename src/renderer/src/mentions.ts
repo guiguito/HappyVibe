@@ -158,7 +158,7 @@ export function composerCommands(all: SlashCommand[]): SlashCommand[] {
 /** Dropdown second line. A skill row says what picking it does; a prompt shows its own hint + description. */
 export function commandSubtitle(c: SlashCommand): string {
   if (c.source === "skill") return "Load this skill";
-  return [c.argumentHint, c.description].filter(Boolean).join(" · ") || "Prompt command";
+  return [c.argumentHint, c.description].filter(Boolean).join(" · ") || "Prompt template";
 }
 
 /** Case-insensitive substring filter over command names; prefix matches first, then shorter. */

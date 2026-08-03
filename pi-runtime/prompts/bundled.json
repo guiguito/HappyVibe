@@ -1,5 +1,5 @@
 {
   "source": "github.com/guiguito/HappyVibe",
   "ref": "main",
-  "commands": ["review", "explain", "test"]
+  "promptTemplates": ["review", "explain", "test"]
 }
