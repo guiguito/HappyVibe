@@ -233,7 +233,6 @@ contextBridge.exposeInMainWorld("hv", {
   promptTemplatesDelete: (id: string, workspaceId: string | null) => ipcRenderer.invoke("hv:prompt-templates-delete", id, workspaceId),
   promptTemplatesPromote: (id: string) => ipcRenderer.invoke("hv:prompt-templates-promote", id),
   /** Does ~/.claude/commands exist? Drives the one-click link suggestion. */
-  promptTemplatesClaudeDir: () => ipcRenderer.invoke("hv:prompt-templates-claude-dir"),
   onPromptTemplatesChanged: (cb: () => void): (() => void) => {
     const listener = (): void => cb();
     ipcRenderer.on("hv:prompt-templates-changed", listener);

@@ -67,31 +67,6 @@ export function PromptTemplateImportControls({
   const [gitOpen, setGitOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Non-null only when ~/.claude/commands exists AND isn't linked yet. */
-  const [claudeDir, setClaudeDir] = useState<{ path: string; exists: boolean } | null>(null);
-
-  useEffect(() => {
-    if (scope !== "global") return; // workspace .claude/commands is a scan root, not a link
-    void Promise.all([window.hv.promptTemplatesClaudeDir(), window.hv.promptTemplatesGetLinked()])
-      .then(([d, linked]) => setClaudeDir(d.exists && !linked.includes(d.path) ? d : null))
-      .catch(() => setClaudeDir(null));
-  }, [scope]);
-
-  const linkClaude = async (): Promise<void> => {
-    if (!claudeDir) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const linked = await window.hv.promptTemplatesGetLinked();
-      if (!linked.includes(claudeDir.path)) await window.hv.promptTemplatesSetLinked([...linked, claudeDir.path]);
-      setClaudeDir(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const runScan = async (fn: () => Promise<HvPromptTemplateImportScan | null>): Promise<void> => {
     setBusy(true);
     setError(null);
@@ -111,17 +86,6 @@ export function PromptTemplateImportControls({
   return (
     <div className="mb-3">
       <div className="flex flex-wrap items-center gap-2">
-        {claudeDir && (
-          <button
-            type="button"
-            disabled={busy}
-            title={`Watch ${claudeDir.path} in place. Nothing is copied — the files stay where Claude Code put them.`}
-            className="text-xs font-bold rounded-lg bg-tangerine text-paper border-2 border-tangerine-deep px-3 py-1.5 shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40"
-            onClick={() => void linkClaude()}
-          >
-            Link ~/.claude/commands
-          </button>
-        )}
         <button type="button" disabled={busy} className={importBtn} onClick={() => void runScan(() => window.hv.promptTemplatesImportLocal())}>
           Import folder
         </button>

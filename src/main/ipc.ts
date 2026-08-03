@@ -2634,12 +2634,6 @@ export function registerIpc(win: BrowserWindow): void {
     return getLinkedPromptTemplateDirs();
   });
 
-  /** Is ~/.claude/commands there? Drives the one-click link suggestion (PRD §24). */
-  ipcMain.handle("hv:prompt-templates-claude-dir", () => {
-    const dir = path.join(os.homedir(), ".claude", "commands");
-    return { path: dir, exists: fs.existsSync(dir) };
-  });
-
   // ── §24 Import: local folder + git-URL tarball, both two-phase (scan → pick →
   //    copy), reusing §14's gitImport as-is (it is source-agnostic). ───────────
   interface PromptTemplateImportSession {

@@ -516,7 +516,6 @@ interface HvApi {
     workspaceId: string | null,
   ): Promise<{ ok: true; action: "delete" | "unlink" } | { ok: false; error: string }>;
   promptTemplatesPromote(id: string): Promise<string>;
-  promptTemplatesClaudeDir(): Promise<{ path: string; exists: boolean }>;
   onPromptTemplatesChanged(cb: () => void): () => void;
 
   // MCP server config (additive). Changes apply to new sessions.
