@@ -8,6 +8,12 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - `npm install && (cd pi-runtime && npm ci)` — BOTH installs required (pi-runtime is a separate vendored tree; fresh worktrees fail live tests without it)
 - `npm run dev` · `npm test` (= the non-live suite, see §Tests) · `npm run build`
 - `npm run typecheck` (node + web; passes `--composite false` — don't hand-roll the raw `tsc` calls)
+- `npm run lint` / `npm run format` are SCAFFOLD LEFTOVERS — don't run them casually.
+  `eslint.config.mjs` is untouched electron-vite boilerplate from the initial commit: lint reports
+  86 errors + 19,839 warnings (mostly `prettier/prettier`) and walks `release/` build output, and
+  `npm run format` rewrites 281 of 329 tracked files — an 85%-of-repo diff that buries whatever
+  you actually changed. Neither is in `gate` or CI. Leave them alone unless you are deliberately
+  doing a formatting pass, on its own branch.
 - Full gate = `npm run gate` (= `build` → non-live suite, ONE command), plus `npm run test:live`
   when `npm run live:why` prints anything. `build` runs BOTH typechecks first and fast-fails on
   them, so never run `npm run typecheck` before `gate` or `build` — that is the same check twice
