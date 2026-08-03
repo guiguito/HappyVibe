@@ -239,6 +239,7 @@ contextBridge.exposeInMainWorld("hv", {
   pluginScan: (marketplaceId: string, name: string) => ipcRenderer.invoke("hv:plugins-scan", marketplaceId, name),
   pluginInstall: (token: string, sel: { skillDirs: string[]; commandFiles: string[]; mcpKeys: string[] }) =>
     ipcRenderer.invoke("hv:plugins-install", token, sel),
+  pluginInstalled: () => ipcRenderer.invoke("hv:plugins-installed"),
   pluginRemove: (plugin: string) => ipcRenderer.invoke("hv:plugins-remove", plugin),
   promptTemplatesPromote: (id: string) => ipcRenderer.invoke("hv:prompt-templates-promote", id),
   /** Does ~/.claude/commands exist? Drives the one-click link suggestion. */

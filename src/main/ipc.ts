@@ -2958,6 +2958,33 @@ export function registerIpc(win: BrowserWindow): void {
   );
 
   /**
+   * What is installed, grouped by plugin — derived from the same provenance and
+   * origin links removal uses, so the list cannot disagree with what Remove
+   * would actually take away.
+   */
+  ipcMain.handle("hv:plugins-installed", () => {
+    const byPlugin = new Map<string, { plugin: string; marketplace?: string; skills: string[]; commands: string[]; servers: string[] }>();
+    const bucket = (name: string, marketplace?: string): { plugin: string; marketplace?: string; skills: string[]; commands: string[]; servers: string[] } => {
+      const cur = byPlugin.get(name) ?? { plugin: name, marketplace, skills: [], commands: [], servers: [] };
+      byPlugin.set(name, cur);
+      return cur;
+    };
+    for (const s of scanSkillsDir(managedSkillsDir(agentDir()), "managed")) {
+      const p = skillRegistry.record(s.id)?.provenance;
+      if (p?.plugin) bucket(p.plugin, p.marketplace).skills.push(s.name);
+    }
+    for (const c of scanPromptTemplatesDir(managedPromptTemplatesDir(agentDir()), "managed")) {
+      const p = promptTemplateRegistry.record(c.id)?.provenance;
+      if (p?.plugin) bucket(p.plugin, p.marketplace).commands.push(c.name);
+    }
+    for (const [name, cfg] of Object.entries(readMcpFile(globalMcpFile()).mcpServers)) {
+      const origin = (cfg as { origin?: { plugin?: string; marketplace?: string } }).origin;
+      if (origin?.plugin) bucket(origin.plugin, origin.marketplace).servers.push(name);
+    }
+    return [...byPlugin.values()].sort((a, b) => a.plugin.localeCompare(b.plugin));
+  });
+
+  /**
    * Remove everything a plugin installed, found by its provenance/origin link
    * rather than from a plugin registry we would have to keep in sync with disk.
    */

@@ -587,6 +587,11 @@ interface HvApi {
     | { ok: true; skills: string[]; substituted: number; commands: string[]; servers: string[] }
     | { ok: false; error: string }
   >;
+  /** Derived from the same provenance/origin links Remove uses, so the list
+   *  cannot disagree with what removing would actually take away. */
+  pluginInstalled(): Promise<
+    Array<{ plugin: string; marketplace?: string; skills: string[]; commands: string[]; servers: string[] }>
+  >;
   pluginRemove(
     plugin: string,
   ): Promise<

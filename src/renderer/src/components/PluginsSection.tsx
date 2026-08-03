@@ -36,13 +36,31 @@ export function PluginsSection(): React.JSX.Element {
   const [chosen, setChosen] = useState<Chosen>({ skills: new Set(), commands: new Set(), servers: new Set() });
   const [installing, setInstalling] = useState(false);
   const [done, setDone] = useState<{ skills: string[]; commands: string[]; servers: string[]; substituted: number } | null>(null);
+  const [installed, setInstalled] = useState<
+    Array<{ plugin: string; marketplace?: string; skills: string[]; commands: string[]; servers: string[] }>
+  >([]);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  const refreshInstalled = (): void => {
+    void window.hv.pluginInstalled().then(setInstalled);
+  };
 
   useEffect(() => {
     void window.hv.pluginMarketplaces().then((ms) => {
       setMarketplaces(ms);
       setActive((cur) => cur ?? ms[0]?.id ?? null);
     });
+    refreshInstalled();
   }, []);
+
+  const remove = (plugin: string): void => {
+    setRemoving(plugin);
+    void window.hv.pluginRemove(plugin).then((res) => {
+      setRemoving(null);
+      refreshInstalled();
+      if (!res.ok) setListError(res.error);
+    });
+  };
 
   const load = (id: string, force = false): void => {
     setLoading(true);
@@ -124,6 +142,7 @@ export function PluginsSection(): React.JSX.Element {
         }
         setDone({ skills: res.skills, commands: res.commands, servers: res.servers, substituted: res.substituted });
         setScan(null);
+        refreshInstalled();
       });
   };
 
@@ -131,6 +150,36 @@ export function PluginsSection(): React.JSX.Element {
 
   return (
     <div className="space-y-4">
+      {/* ── installed ───────────────────────────────────────────────────── */}
+      {installed.length > 0 && (
+        <div className="rounded-xl border border-line bg-paper-soft/40 p-3">
+          <h4 className="text-sm font-bold">Installed</h4>
+          <ul className="mt-1.5 space-y-1.5">
+            {installed.map((p) => (
+              <li key={p.plugin} className="flex items-center gap-2 text-xs">
+                <span className="min-w-0 flex-1">
+                  <span className="font-semibold">{p.plugin}</span>
+                  <span className="ml-1.5 text-ink-soft">
+                    {[
+                      p.skills.length ? `${p.skills.length} skill${p.skills.length > 1 ? "s" : ""}` : null,
+                      p.commands.length ? `${p.commands.length} prompt${p.commands.length > 1 ? "s" : ""}` : null,
+                      p.servers.length ? `${p.servers.length} server${p.servers.length > 1 ? "s" : ""}` : null,
+                    ].filter(Boolean).join(" · ")}
+                  </span>
+                </span>
+                <button
+                  disabled={removing === p.plugin}
+                  onClick={() => remove(p.plugin)}
+                  className="rounded-lg border border-line px-2 py-1 font-semibold hover:bg-paper disabled:opacity-50"
+                >
+                  {removing === p.plugin ? "Removing…" : "Remove"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ── marketplace picker + search ─────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         {marketplaces.length > 1 && (
@@ -184,9 +233,16 @@ export function PluginsSection(): React.JSX.Element {
       {listError && (
         <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{listError}</p>
       )}
-      {!loading && !listError && (
+      {!loading && !listError && cards.length > 0 && (
+        // Deliberately NOT "N of M supported". The marketplace listing only
+        // declares SOME components (the official one puts lspServers on the
+        // entry and nothing else), so the greyed count here is the set we can
+        // rule out without downloading anything — far fewer than the set that
+        // really rejects. Claiming a support rate from it would overstate it by
+        // about thirty points; the true check runs when a plugin is opened.
         <p className="text-xs text-ink-soft">
-          {acceptedCount} of {cards.length} plugins are supported here. The rest are shown greyed with the reason.
+          {cards.length} plugins. {cards.length - acceptedCount} are already ruled out from the listing; the
+          rest are checked against the permission gate when you open them.
         </p>
       )}
       {scanError && !scan && (
