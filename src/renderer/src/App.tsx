@@ -535,7 +535,7 @@ export default function App(): React.JSX.Element {
             // either the typed text (idle send) or the expansion (steered via
             // queue_update) depending on a race the user never chose, so fold
             // the pairing in and let both collapse to the same card.
-            if (p?.kind === "hv.command" && p.typed && p.expanded) {
+            if (p?.kind === "hv.prompt-template" && p.typed && p.expanded) {
               const pair = { typed: p.typed, expanded: p.expanded };
               setTranscripts((prev) => {
                 const cur = prev[sid] ?? [];

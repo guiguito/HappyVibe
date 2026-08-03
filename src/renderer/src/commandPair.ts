@@ -17,7 +17,7 @@ export function typedText(typed: string): string {
 }
 
 /**
- * §24: fold an `hv.command {typed, expanded}` pairing into the transcript.
+ * §24: fold an `hv.prompt-template {typed, expanded}` pairing into the transcript.
  *
  * The same notify has to fix up two different optimistic renderings, because
  * the composer takes two different paths:

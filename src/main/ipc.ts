@@ -104,9 +104,9 @@ function parseSkillNotify(r: { method?: string; message?: string }): Record<stri
   }
 }
 
-/** §24: an hv.command notify (a prompt template expanded), else null. */
+/** §24: an hv.prompt-template notify (a prompt template expanded), else null. */
 /**
- * §24: an hv.command pairing notify, else null.
+ * §24: an hv.prompt-template pairing notify, else null.
  *
  * Returns the WHOLE payload, not just the two fields main reads. Main re-emits
  * this envelope to the renderer with `typed` swapped for the user's original
@@ -121,7 +121,7 @@ export function parseCommandNotify(
   if (r.method !== "notify") return null;
   try {
     const p = JSON.parse(r.message ?? "") as Record<string, unknown>;
-    return p?.kind === "hv.command" && typeof p.typed === "string" && typeof p.expanded === "string"
+    return p?.kind === "hv.prompt-template" && typeof p.typed === "string" && typeof p.expanded === "string"
       ? (p as { kind: string; typed: string; expanded: string } & Record<string, unknown>)
       : null;
   } catch {

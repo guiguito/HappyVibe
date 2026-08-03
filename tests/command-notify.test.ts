@@ -16,7 +16,7 @@ const notify = (payload: unknown): { method: string; message: string } => ({
   message: JSON.stringify(payload),
 });
 
-const PAYLOAD = { kind: "hv.command", name: "explain", typed: "/explain src/a.ts", expanded: "Explain `src/a.ts`." };
+const PAYLOAD = { kind: "hv.prompt-template", name: "explain", typed: "/explain src/a.ts", expanded: "Explain `src/a.ts`." };
 
 describe("parseCommandNotify", () => {
   it("returns the WHOLE payload, so nothing is lost on re-serialization", () => {
@@ -30,14 +30,14 @@ describe("parseCommandNotify", () => {
 
   it("ignores a malformed payload rather than throwing", () => {
     expect(parseCommandNotify({ method: "notify", message: "{not json" })).toBeNull();
-    expect(parseCommandNotify(notify({ kind: "hv.command", typed: 1, expanded: "x" }))).toBeNull();
+    expect(parseCommandNotify(notify({ kind: "hv.prompt-template", typed: 1, expanded: "x" }))).toBeNull();
   });
 });
 
 describe("commandNotifyMessage", () => {
   it("keeps `kind` — without it the renderer never draws the card", () => {
     const out = JSON.parse(commandNotifyMessage(PAYLOAD, "/explain @a.ts"));
-    expect(out.kind).toBe("hv.command");
+    expect(out.kind).toBe("hv.prompt-template");
   });
 
   it("substitutes the user's typed text and preserves every other field", () => {

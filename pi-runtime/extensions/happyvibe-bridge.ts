@@ -368,7 +368,7 @@ export default function (pi: ExtensionAPI) {
       const pair = pairExpanded(commandPair, (event as { prompt?: string }).prompt ?? "");
       if (pair) {
         ctx.ui.notify(
-          JSON.stringify({ kind: "hv.command", name: commandName(pair.typed), ...pair }),
+          JSON.stringify({ kind: "hv.prompt-template", name: commandName(pair.typed), ...pair }),
           "info",
         );
       }

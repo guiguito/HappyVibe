@@ -12,7 +12,7 @@ import { PiClient } from "../src/main/pi/PiClient";
  *     completes a turn. The `input` hook sits in front of EVERY user prompt, so
  *     this is the assertion that matters — if it is red, revert the hook. The
  *     card is worth less than the composer.
- *  2. An approved command expands, and the bridge emits exactly one hv.command
+ *  2. An approved command expands, and the bridge emits exactly one hv.prompt-template
  *     notify carrying BOTH the typed and the expanded text (the pairing Pi
  *     itself does not preserve).
  *  3. An unapproved .md in <agentDir>/prompts is absent from get_commands —
@@ -88,7 +88,7 @@ test.skipIf(!KEY)(
         client.respondUi(r.id, { value: "Allow" });
         return;
       }
-      if (r.method !== "notify" || !r.message?.includes('"hv.command"')) return;
+      if (r.method !== "notify" || !r.message?.includes('"hv.prompt-template"')) return;
       try {
         notifies.push(JSON.parse(r.message));
       } catch {
@@ -103,7 +103,7 @@ test.skipIf(!KEY)(
       }));
     await client.send({ type: "prompt", message: "Reply with exactly the word PONG and nothing else." });
     await turnDone;
-    expect(notifies, "a plain prompt must not produce an hv.command pairing").toHaveLength(0);
+    expect(notifies, "a plain prompt must not produce an hv.prompt-template pairing").toHaveLength(0);
 
     // (2) The command: expands, and pairs.
     turnDone = new Promise<void>((resolve) =>
@@ -113,7 +113,7 @@ test.skipIf(!KEY)(
     await client.send({ type: "prompt", message: "/greet World" });
     await turnDone;
 
-    expect(notifies, "expected exactly one hv.command notify").toHaveLength(1);
+    expect(notifies, "expected exactly one hv.prompt-template notify").toHaveLength(1);
     const pair = notifies[0] as { name?: string; typed?: string; expanded?: string };
     expect(pair.name).toBe("greet");
     expect(pair.typed).toBe("/greet World");
