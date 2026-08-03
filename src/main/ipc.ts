@@ -12,6 +12,7 @@ import {
   saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
+  listMarketplaces, addMarketplace, removeMarketplace,
 } from "./config";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
@@ -26,6 +27,15 @@ import {
   type PromptTemplateProvenance, type PromptTemplateSource, type DiscoveredPromptTemplate,
 } from "./promptTemplates";
 import { refuseReservedNames } from "./promptTemplatesImport";
+// §25 plugin marketplaces — pure modules (classify/marketplace/scan) plus the
+// impure install and the network side.
+import { ACCEPTED_COMPONENTS, classifyPlugin } from "./plugins/classify";
+import { type MarketplaceEntry, type ParsedMarketplace } from "./plugins/marketplace";
+import { scanPluginDir, type PluginScan } from "./plugins/scan";
+import { fetchMarketplace, fetchPluginDir } from "./plugins/fetch";
+import {
+  findPluginServers, installPluginCommands, installPluginSkills, pluginOrigin,
+} from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
   authJsonProviders, BYOK_PROVIDERS, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, OAUTH_PROVIDERS, syncModelsJson,
@@ -2729,6 +2739,257 @@ export function registerIpc(win: BrowserWindow): void {
       return { imported };
     },
   );
+
+  // ── §25 Plugin marketplaces ───────────────────────────────────────────────
+  // Browse a Claude Code marketplace, filter it to the components whose
+  // execution funnels through tool_call, and install/remove a plugin as a unit.
+  // Nothing here invents a trust mechanism: skills land in skillRegistry,
+  // commands in promptTemplateRegistry, servers in mcp.json.
+  interface PluginInstallSession {
+    marketplaceId: string;
+    entry: MarketplaceEntry;
+    scan: PluginScan;
+    cleanup?: () => void;
+  }
+  const pluginSessions = new Map<string, PluginInstallSession>();
+  let pluginSeq = 0;
+  /** Cache the parsed list per url for this app run — 278 entries, one fetch. */
+  const marketplaceCache = new Map<string, ParsedMarketplace>();
+
+  const loadMarketplace = async (id: string, force = false): Promise<ParsedMarketplace> => {
+    const cfg = listMarketplaces().find((m) => m.id === id);
+    if (!cfg) throw new Error(`no marketplace listed with id "${id}"`);
+    const hit = marketplaceCache.get(cfg.url);
+    if (hit && !force) return hit;
+    const parsed = await fetchMarketplace(cfg.url);
+    marketplaceCache.set(cfg.url, parsed);
+    return parsed;
+  };
+
+  ipcMain.handle("hv:plugins-marketplaces", () => listMarketplaces());
+
+  ipcMain.handle("hv:plugins-add-marketplace", async (_e, url: string) => {
+    const clean = String(url ?? "").trim();
+    if (!/^https:\/\//.test(clean)) return { ok: false as const, error: "Use an https URL to a marketplace.json." };
+    try {
+      const parsed = await fetchMarketplace(clean);
+      const id = parsed.name || clean;
+      addMarketplace({ id, url: clean });
+      marketplaceCache.set(clean, parsed);
+      void log.append({ type: "plugin.marketplace-added", data: { id, url: clean, entries: parsed.entries.length } });
+      return { ok: true as const, id, entries: parsed.entries.length };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  ipcMain.handle("hv:plugins-remove-marketplace", (_e, id: string) => removeMarketplace(String(id)));
+
+  /**
+   * The browse list. Classified from the ENTRY alone — no per-plugin download,
+   * which is what makes 278 rows viable. A rejected row is still returned, with
+   * its reason: hiding it makes the store look broken to someone who came
+   * looking for a plugin they read about.
+   */
+  ipcMain.handle("hv:plugins-list", async (_e, marketplaceId: string, force?: boolean) => {
+    try {
+      const mp = await loadMarketplace(String(marketplaceId), force === true);
+      return {
+        ok: true as const,
+        name: mp.name,
+        description: mp.description,
+        plugins: mp.entries.map((entry) => {
+          // Entry-level components are all we know before a download; a plugin
+          // that looks clean here can still reject at scan time (a tree-only
+          // hooks/ dir), and the confirm dialog is where that surfaces.
+          const v = classifyPlugin({ manifest: null, topLevel: [], entryComponents: entry.entryComponents });
+          const rejectedEarly = entry.entryComponents.some(
+            (c) => !ACCEPTED_COMPONENTS.includes(c as (typeof ACCEPTED_COMPONENTS)[number]),
+          );
+          return {
+            name: entry.name,
+            description: entry.description,
+            category: entry.category,
+            homepage: entry.homepage,
+            ref: entry.source.ref,
+            sha: entry.source.sha,
+            accepted: !rejectedEarly,
+            reason: rejectedEarly ? v.reason : undefined,
+          };
+        }),
+      };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : String(e), plugins: [] };
+    }
+  });
+
+  /**
+   * Download a plugin at its pinned sha, scan it, and return everything the
+   * confirm dialog must show BEFORE anything is written.
+   */
+  ipcMain.handle("hv:plugins-scan", async (_e, marketplaceId: string, name: string) => {
+    let workDir: string | undefined;
+    try {
+      const mp = await loadMarketplace(String(marketplaceId));
+      const entry = mp.entries.find((x) => x.name === name);
+      if (!entry) return { ok: false as const, error: `"${name}" is not in that marketplace.` };
+      workDir = path.join(userData, "plugin-import", `pl-${++pluginSeq}-${Date.now()}`);
+      let localRoot: string | undefined;
+      if (!entry.source.repoUrl) {
+        // A "./path" entry lives in the marketplace repo, so fetch that repo —
+        // pinned by nothing of its own, which is why it inherits the list's ref.
+        const cfg = listMarketplaces().find((m) => m.id === marketplaceId)!;
+        const repo = parseForgeUrl(cfg.url.replace(/\/raw\/.*$/, "").replace(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/.*$/, "https://github.com/$1/$2"));
+        if (!repo) return { ok: false as const, error: "Could not work out which repo hosts that marketplace." };
+        const { root } = await downloadAndExtract(repo, workDir);
+        const tops = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory());
+        localRoot = tops.length === 1 ? path.join(root, tops[0].name) : root;
+      }
+      const { dir } = await fetchPluginDir(entry.source, workDir, localRoot);
+      const scan = scanPluginDir(dir, entry.entryComponents);
+      const token = `pl-${pluginSeq}-${Date.now()}`;
+      const wd = workDir;
+      pluginSessions.set(token, {
+        marketplaceId: String(marketplaceId),
+        entry,
+        scan,
+        cleanup: () => fs.rmSync(wd, { recursive: true, force: true }),
+      });
+      return {
+        ok: true as const,
+        token,
+        name: scan.name,
+        description: scan.description,
+        accepted: scan.verdict.accepted,
+        reason: scan.verdict.reason,
+        sha: entry.source.sha,
+        ref: entry.source.ref,
+        // A rejected skill is reported but not installable — the UI shows it
+        // struck through with the reason rather than pretending it isn't there.
+        skills: scan.skills.map((s) => ({
+          dir: s.dir, name: s.name, description: s.description, scriptCount: s.scriptCount,
+          screen: s.screen.verdict, screenReason: s.screen.reason, pluginRootRefs: s.pluginRootRefs,
+        })),
+        commands: scan.commands.map((c) => ({ file: c.file, name: c.name, description: c.description })),
+        mcpServers: Object.keys(scan.mcpServers),
+        dropped: scan.dropped,
+      };
+    } catch (e) {
+      if (workDir) fs.rmSync(workDir, { recursive: true, force: true });
+      return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  ipcMain.handle(
+    "hv:plugins-install",
+    (_e, token: string, sel: { skillDirs: string[]; commandFiles: string[]; mcpKeys: string[] }) => {
+      const session = pluginSessions.get(token);
+      if (!session) return { ok: false as const, error: "That plugin scan expired — open it again." };
+      const { scan, entry, marketplaceId } = session;
+      if (!scan.verdict.accepted) {
+        return { ok: false as const, error: scan.verdict.reason ?? "That plugin is not supported in HappyVibe." };
+      }
+      const now = new Date().toISOString();
+      const provenance = {
+        source: "plugin",
+        sourceUrl: entry.source.repoUrl ?? undefined,
+        ref: entry.source.ref,
+        commitSha: entry.source.sha ?? undefined,
+        importedAt: now,
+        plugin: scan.name,
+        marketplace: marketplaceId,
+      };
+      try {
+        // Commands first: they are the only step that can REFUSE on a name
+        // collision, and refusing after copying skills would leave a half
+        // install with no plugin record to remove.
+        const commands = installPluginCommands(scan, {
+          destDir: managedPromptTemplatesDir(agentDir()),
+          files: sel.commandFiles ?? [],
+        });
+        for (const name of commands) {
+          const file = path.join(managedPromptTemplatesDir(agentDir()), `${name}.md`);
+          promptTemplateRegistry.approve(readPromptTemplateFile(file, "managed"), now, { enabled: true, provenance });
+        }
+
+        const installed = installPluginSkills(scan, {
+          destParent: managedSkillsDir(agentDir()),
+          skillDirs: sel.skillDirs ?? [],
+        });
+        for (const s of installed) {
+          // §25: enabled:false. Import approves with enabled:true, and
+          // per-workspace activation is opt-OUT, so a 62-skill plugin would
+          // otherwise pay every card on every turn the moment it landed.
+          skillRegistry.approve(s.skill, now, { enabled: false, provenance });
+        }
+
+        const servers: string[] = [];
+        for (const key of sel.mcpKeys ?? []) {
+          const cfg = scan.mcpServers[key];
+          if (!cfg) continue;
+          // origin is what lets removal take these with it — it must be on the
+          // FIRST write or the install is unattributable forever.
+          writeMcpServer(globalMcpFile(), key, { ...cfg, origin: pluginOrigin(scan.name, marketplaceId) }, { failIfExists: true });
+          servers.push(key);
+        }
+
+        session.cleanup?.();
+        pluginSessions.delete(token);
+        void log.append({
+          type: "plugin.installed",
+          data: { plugin: scan.name, marketplace: marketplaceId, sha: entry.source.sha,
+                  skills: installed.length, commands: commands.length, servers: servers.length,
+                  dropped: scan.dropped },
+        });
+        if (installed.length > 0) { skillsChanged(); scheduleSkillReload("global", null); }
+        if (commands.length > 0) { promptTemplatesChanged(); schedulePromptTemplateReload("global", null); }
+        if (servers.length > 0) scheduleMcpReload("global", null);
+        return {
+          ok: true as const,
+          skills: installed.map((s) => s.skill.name),
+          substituted: installed.reduce((n, s) => n + s.substituted, 0),
+          commands,
+          servers,
+        };
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+  );
+
+  /**
+   * Remove everything a plugin installed, found by its provenance/origin link
+   * rather than from a plugin registry we would have to keep in sync with disk.
+   */
+  ipcMain.handle("hv:plugins-remove", (_e, plugin: string) => {
+    const id = String(plugin);
+    const now = new Date().toISOString();
+    const removedSkills: string[] = [];
+    const removedCommands: string[] = [];
+    try {
+      for (const s of scanSkillsDir(managedSkillsDir(agentDir()), "managed")) {
+        if (skillRegistry.record(s.id)?.provenance?.plugin !== id) continue;
+        removeSkillDir(s.id, [managedSkillsDir(agentDir())]);
+        skillRegistry.forget(s.id, now);
+        removedSkills.push(s.name);
+      }
+      for (const c of scanPromptTemplatesDir(managedPromptTemplatesDir(agentDir()), "managed")) {
+        if (promptTemplateRegistry.record(c.id)?.provenance?.plugin !== id) continue;
+        removePromptTemplateFile(c.id, [managedPromptTemplatesDir(agentDir())]);
+        promptTemplateRegistry.forget(c.id, now);
+        removedCommands.push(c.name);
+      }
+      const servers = findPluginServers(globalMcpFile(), id);
+      for (const name of servers) writeMcpServer(globalMcpFile(), name, null);
+      void log.append({ type: "plugin.removed", data: { plugin: id, skills: removedSkills.length, commands: removedCommands.length, servers: servers.length } });
+      if (removedSkills.length > 0) { skillsChanged(); scheduleSkillReload("global", null); }
+      if (removedCommands.length > 0) { promptTemplatesChanged(); schedulePromptTemplateReload("global", null); }
+      if (servers.length > 0) scheduleMcpReload("global", null);
+      return { ok: true as const, skills: removedSkills, commands: removedCommands, servers };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
 
   // Remove a command: managed/workspace/claude → delete the file, bundled →
   // refused (it is reinstalled at startup), linked → drop the DIRECTORY

@@ -161,6 +161,51 @@ interface HvSkillDetail {
   approved: string | null;
 }
 
+/** §25 — one row in the marketplace browse list. Classified from the marketplace
+ *  ENTRY alone, so 278 rows cost one fetch and no per-plugin download. A rejected
+ *  row is still shown, greyed with its reason — hiding it makes the store look
+ *  broken to someone who came looking for a plugin they read about. */
+interface HvPluginCard {
+  name: string;
+  description: string;
+  category?: string;
+  homepage?: string;
+  /** Branch or tag, display only. */
+  ref?: string;
+  /** The commit we would install — every object source carries one. */
+  sha: string | null;
+  accepted: boolean;
+  /** Present when !accepted: "uses hooks, not supported in HappyVibe". */
+  reason?: string;
+}
+
+/** §25 — everything the confirm dialog must show BEFORE anything is written. */
+interface HvPluginScan {
+  ok: true;
+  token: string;
+  name: string;
+  description: string;
+  accepted: boolean;
+  reason?: string;
+  sha: string | null;
+  ref?: string;
+  skills: Array<{
+    dir: string;
+    name: string;
+    description: string;
+    scriptCount: number;
+    /** "reject" cannot be installed — it would run and fail silently. */
+    screen: "ok" | "reject" | "warn";
+    screenReason?: string;
+    /** How many ${CLAUDE_PLUGIN_ROOT} refs install would rewrite. */
+    pluginRootRefs: number;
+  }>;
+  commands: Array<{ file: string; name: string; description: string }>;
+  mcpServers: string[];
+  /** Dropped thing ⇢ count, for the disclosure banner. Empty ⇒ no banner. */
+  dropped: Record<string, number>;
+}
+
 /** §24 — mirrors PromptTemplateView in src/main/commands/view.ts (from hv:prompt-templates-list). */
 interface HvPromptTemplateView {
   /** Absolute path to the .md file — the approval key AND the --prompt-template arg. */
@@ -517,6 +562,37 @@ interface HvApi {
   ): Promise<{ ok: true; action: "delete" | "unlink" } | { ok: false; error: string }>;
   promptTemplatesPromote(id: string): Promise<string>;
   onPromptTemplatesChanged(cb: () => void): () => void;
+
+  // §25 plugin marketplaces.
+  pluginMarketplaces(): Promise<Array<{ id: string; url: string }>>;
+  pluginAddMarketplace(
+    url: string,
+  ): Promise<{ ok: true; id: string; entries: number } | { ok: false; error: string }>;
+  pluginRemoveMarketplace(id: string): Promise<Array<{ id: string; url: string }>>;
+  pluginList(
+    marketplaceId: string,
+    force?: boolean,
+  ): Promise<
+    | { ok: true; name: string; description?: string; plugins: HvPluginCard[] }
+    | { ok: false; error: string; plugins: HvPluginCard[] }
+  >;
+  pluginScan(
+    marketplaceId: string,
+    name: string,
+  ): Promise<HvPluginScan | { ok: false; error: string }>;
+  pluginInstall(
+    token: string,
+    sel: { skillDirs: string[]; commandFiles: string[]; mcpKeys: string[] },
+  ): Promise<
+    | { ok: true; skills: string[]; substituted: number; commands: string[]; servers: string[] }
+    | { ok: false; error: string }
+  >;
+  pluginRemove(
+    plugin: string,
+  ): Promise<
+    | { ok: true; skills: string[]; commands: string[]; servers: string[] }
+    | { ok: false; error: string }
+  >;
 
   // MCP server config (additive). Changes apply to new sessions.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;

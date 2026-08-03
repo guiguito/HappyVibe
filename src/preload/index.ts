@@ -231,6 +231,15 @@ contextBridge.exposeInMainWorld("hv", {
   promptTemplatesImportSelect: (token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null) =>
     ipcRenderer.invoke("hv:prompt-templates-import-select", token, ids, scope, workspaceId),
   promptTemplatesDelete: (id: string, workspaceId: string | null) => ipcRenderer.invoke("hv:prompt-templates-delete", id, workspaceId),
+  // §25 plugin marketplaces.
+  pluginMarketplaces: () => ipcRenderer.invoke("hv:plugins-marketplaces"),
+  pluginAddMarketplace: (url: string) => ipcRenderer.invoke("hv:plugins-add-marketplace", url),
+  pluginRemoveMarketplace: (id: string) => ipcRenderer.invoke("hv:plugins-remove-marketplace", id),
+  pluginList: (marketplaceId: string, force?: boolean) => ipcRenderer.invoke("hv:plugins-list", marketplaceId, force),
+  pluginScan: (marketplaceId: string, name: string) => ipcRenderer.invoke("hv:plugins-scan", marketplaceId, name),
+  pluginInstall: (token: string, sel: { skillDirs: string[]; commandFiles: string[]; mcpKeys: string[] }) =>
+    ipcRenderer.invoke("hv:plugins-install", token, sel),
+  pluginRemove: (plugin: string) => ipcRenderer.invoke("hv:plugins-remove", plugin),
   promptTemplatesPromote: (id: string) => ipcRenderer.invoke("hv:prompt-templates-promote", id),
   /** Does ~/.claude/commands exist? Drives the one-click link suggestion. */
   onPromptTemplatesChanged: (cb: () => void): (() => void) => {

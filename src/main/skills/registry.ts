@@ -24,12 +24,20 @@ import type { DiscoveredSkill } from "./discovery";
  */
 
 export interface SkillProvenance {
-  /** "local" | "linked" | "git" | "bundled" | "created" */
+  /** "local" | "linked" | "git" | "bundled" | "created" | "plugin" */
   source: string;
   sourceUrl?: string;
   ref?: string;
   commitSha?: string;
   importedAt?: string;
+  /**
+   * §25: the plugin this came from, and the marketplace that listed it. This
+   * pair IS the plugin↔component link — removal finds a plugin's skills by
+   * scanning for it, which is why §25 needs no separate plugin store. Present
+   * only on marketplace installs.
+   */
+  plugin?: string;
+  marketplace?: string;
 }
 
 export interface SkillRecord {

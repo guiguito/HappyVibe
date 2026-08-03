@@ -24,12 +24,15 @@ import type { DiscoveredPromptTemplate } from "./discovery";
  */
 
 export interface PromptTemplateProvenance {
-  /** "local" | "linked" | "git" | "bundled" | "created" */
+  /** "local" | "linked" | "git" | "bundled" | "created" | "plugin" */
   source: string;
   sourceUrl?: string;
   ref?: string;
   commitSha?: string;
   importedAt?: string;
+  /** §25: the plugin/marketplace this came from — the link removal scans for. */
+  plugin?: string;
+  marketplace?: string;
 }
 
 export interface PromptTemplateRecord {

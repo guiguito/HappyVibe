@@ -46,6 +46,9 @@ interface ConfigFile {
   /** Round 8: user-remapped keyboard shortcuts, action id → canonical binding
       ("Mod-Shift-e"). An absent id means that action keeps its default. */
   shortcuts?: Record<string, string>;
+  /** §25: plugin marketplaces the user has listed. Absent = the one built-in
+      (the official Anthropic list). The resolver supports N; V1 ships one. */
+  marketplaces?: Array<{ id: string; url: string }>;
 }
 
 function load(): ConfigFile {
@@ -500,4 +503,42 @@ export function writeSubagentConfig(): void {
   // "intercom delivery was not acknowledged" on every run. Off = quiet, no loss.
   config.intercomBridge = { ...(config.intercomBridge as object | undefined), mode: "off" };
   fs.writeFileSync(file, `${JSON.stringify(config, null, "\t")}\n`);
+}
+
+/**
+ * §25: the plugin marketplaces the user has listed.
+ *
+ * The resolver, schema and UI support N marketplaces; V1 ships exactly ONE
+ * listed — the official Anthropic directory, which ships in every Claude Code
+ * install and so is the list users arrive already expecting. Pre-listing the
+ * other surveyed marketplaces would spend day-one trust on repos we do not
+ * control. Adding another is a user action; the app lists nothing on the user's
+ * behalf, the same posture as §24's decision to stop auto-scanning
+ * `.claude/commands`.
+ */
+export const OFFICIAL_MARKETPLACE = {
+  id: "claude-plugins-official",
+  url: "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json",
+};
+
+export function listMarketplaces(): Array<{ id: string; url: string }> {
+  return load().marketplaces ?? [OFFICIAL_MARKETPLACE];
+}
+
+/** Add (or replace by id) a marketplace. Seeds the built-in first, so removing
+ *  the official one and adding another does not silently resurrect it. */
+export function addMarketplace(entry: { id: string; url: string }): Array<{ id: string; url: string }> {
+  const cfg = load();
+  const cur = cfg.marketplaces ?? [OFFICIAL_MARKETPLACE];
+  cfg.marketplaces = [...cur.filter((m) => m.id !== entry.id), entry];
+  save(cfg);
+  return cfg.marketplaces;
+}
+
+export function removeMarketplace(id: string): Array<{ id: string; url: string }> {
+  const cfg = load();
+  const cur = cfg.marketplaces ?? [OFFICIAL_MARKETPLACE];
+  cfg.marketplaces = cur.filter((m) => m.id !== id);
+  save(cfg);
+  return cfg.marketplaces;
 }
