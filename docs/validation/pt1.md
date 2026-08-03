@@ -1,4 +1,4 @@
-# CM1 — Commands (prompt templates) against pinned Pi 0.83.0
+# PT1 — Prompt templates against pinned Pi 0.83.0
 
 Measured 2026-08-02 against `@earendil-works/pi-coding-agent@0.83.0` as vendored in
 `pi-runtime/`. PRD §24 is the product decision; this file is the evidence, written
@@ -30,7 +30,7 @@ args survive. Pinned in both directions by `tests/resource-gate-contract.test.ts
 
 `core/prompt-templates.js:199-210` stats the path: a directory is scanned
 **non-recursively** for `*.md`; a file is loaded directly; a non-`.md` file path is
-**silently ignored**. HappyVibe passes **files**, one per approved command, because
+**silently ignored**. HappyVibe passes **files**, one per approved prompt template, because
 PRD §24 makes approval per-file — approving a directory would silently approve
 whatever lands in it later.
 
@@ -64,8 +64,8 @@ Everything else — including `allowed-tools` — is parsed and discarded.
 
 **A missing description does not block loading.** Pi falls back to the first
 non-empty body line, `slice(0, 60)`, with `"..."` appended only when the line was
-longer (`:88-96`). So commands have no analogue of skills' `loadable`/`error`
-axis, and `src/main/commands/discovery.ts` mirrors that fallback exactly —
+longer (`:88-96`). So prompt templates have no analogue of skills' `loadable`/`error`
+axis, and `src/main/promptTemplates/discovery.ts` mirrors that fallback exactly —
 including the fact that the slice is **not trimmed**, and that the body is
 CRLF-normalised and trimmed only when frontmatter is present.
 
@@ -80,7 +80,7 @@ nested substitution.
    `return`s *before* expansion at `:823-826`. A prompt file named `hv-plan` can
    never run, yet still appears in `get_commands` as `source:"prompt"`. Hence the
    `shadowed` status and the import refusal in PRD §24.
-   `tests/commands-reserved.test.ts` derives the reserved set by scanning the
+   `tests/prompt-templates-reserved.test.ts` derives the reserved set by scanning the
    bridge's own `registerCommand` literals, so the list cannot rot.
 
 2. **Explicit paths are merged LAST and dedupe is first-wins.**
@@ -104,7 +104,7 @@ nested substitution.
 **The original typed text is preserved nowhere** — not in the message history, not
 in the session file, not on any RPC event. `message_start` / `message_end` /
 `entry_appended` all carry the expansion. `queue_update` carries the expansion too,
-which is why a steered command used to render differently from an idle one.
+which is why a steered prompt template used to render differently from an idle one.
 
 Two adjacent hooks straddle the expansion in the same call stack:
 
@@ -114,7 +114,7 @@ Two adjacent hooks straddle the expansion in the same call stack:
 | `before_agent_start` | `agent-session.js:882` | the **expanded** text (`prompt` field) |
 
 so pairing them is exact, not heuristic. That is the whole of
-`pi-runtime/extensions/hv-commands.ts`.
+`pi-runtime/extensions/hv-prompt-templates.ts`.
 
 ### The `input` hook fails open — verified, not assumed
 
@@ -126,7 +126,7 @@ because the failure mode here is "no user prompt reaches the model" and a
 transcript nicety must never be able to cause that — same rule as
 `before_provider_request` in `tc1.md`.
 
-`tests/commands-bridge.test.ts` asserts the fail-open case **first**, before the
+`tests/prompt-templates-bridge.test.ts` asserts the fail-open case **first**, before the
 feature itself. If that assertion is red, revert the hook.
 
 ## `get_commands`

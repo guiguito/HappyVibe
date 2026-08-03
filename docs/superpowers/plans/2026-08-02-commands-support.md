@@ -1,5 +1,9 @@
 # Commands (prompt templates) Implementation Plan
 
+> **Superseded terminology (2026-08-03):** this shipped as **Prompt templates** — see PRD §24.
+> The body below is left as the historical record of what was decided on the day; its paths and
+> identifiers (`src/main/commands/`, `Command*`, `hv:commands-*`) are pre-rename.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship user-authored `/slash` commands (Pi prompt templates) as a visible, reviewable, gated HappyVibe surface in both global and workspace scopes — plus a transcript card that makes an expansion honest.
