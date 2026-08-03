@@ -4,7 +4,7 @@ import { toTranscriptItems, type RestoredMessage } from "../src/renderer/src/res
 /**
  * The seam that had no test. Both sides of it were correct — main paired the
  * command and the bubble knew how to draw a card — but the mapper between them
- * rebuilt user items field by field and dropped `command`, so a reopened session
+ * rebuilt user items field by field and dropped `promptTemplate`, so a reopened session
  * silently fell back to showing the raw expansion. Every other test passed.
  */
 const CTX = { sessionId: "s1", workspaceId: "/ws" };
@@ -14,21 +14,21 @@ const ids = (): (() => number) => {
 };
 
 describe("toTranscriptItems", () => {
-  it("carries `command` through, so a reopened session redraws the card", () => {
+  it("carries `promptTemplate` through, so a reopened session redraws the card", () => {
     const msgs: RestoredMessage[] = [
-      { kind: "user", text: "Review the changes…", command: { typed: "/review README.md" } },
+      { kind: "user", text: "Review the changes…", promptTemplate: { typed: "/review README.md" } },
     ];
     const [item] = toTranscriptItems(msgs, CTX, ids());
     expect(item).toMatchObject({
       kind: "user",
       text: "Review the changes…",
-      command: { typed: "/review README.md" },
+      promptTemplate: { typed: "/review README.md" },
     });
   });
 
   it("leaves an ordinary user message without a command", () => {
     const [item] = toTranscriptItems([{ kind: "user", text: "hello" }], CTX, ids());
-    expect((item as { command?: unknown }).command).toBeUndefined();
+    expect((item as { promptTemplate?: unknown }).promptTemplate).toBeUndefined();
   });
 
   it("rebuilds tool cards, marking a recorded error as error and everything else done", () => {

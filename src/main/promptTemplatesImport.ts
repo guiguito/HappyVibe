@@ -1,4 +1,4 @@
-import { RESERVED_COMMAND_NAMES } from "./commands";
+import { RESERVED_SLASH_COMMANDS } from "./promptTemplates";
 
 /**
  * §24 import collision refusal — PURE so it is testable without Electron
@@ -12,6 +12,6 @@ import { RESERVED_COMMAND_NAMES } from "./commands";
  *
  * @returns the first colliding command name, or null when the batch is clean.
  */
-export function refuseReservedCommands(candidates: Array<{ name: string }>): string | null {
-  return candidates.find((c) => RESERVED_COMMAND_NAMES.has(c.name))?.name ?? null;
+export function refuseReservedNames(candidates: Array<{ name: string }>): string | null {
+  return candidates.find((c) => RESERVED_SLASH_COMMANDS.has(c.name))?.name ?? null;
 }

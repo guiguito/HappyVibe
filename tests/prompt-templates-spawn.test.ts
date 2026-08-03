@@ -5,7 +5,7 @@ import { resolvePiSpawn } from "../src/main/pi/spawn";
 const runtime = path.join(process.cwd(), "pi-runtime");
 
 test("passes one --prompt-template per approved command, and always --no-prompt-templates", () => {
-  const { args } = resolvePiSpawn("/ws", "/sessions", runtime, { commands: ["/a/x.md", "/b/y.md"] });
+  const { args } = resolvePiSpawn("/ws", "/sessions", runtime, { promptTemplates: ["/a/x.md", "/b/y.md"] });
   expect(args).toContain("--no-prompt-templates");
   expect(args.join(" ")).toContain("--prompt-template /a/x.md");
   expect(args.join(" ")).toContain("--prompt-template /b/y.md");

@@ -40,7 +40,7 @@ export function typedText(typed: string): string {
  * Returns the ORIGINAL array when nothing matches, so callers can skip the
  * re-render (an unmatched pairing is a no-op, never a mutation).
  */
-export function applyCommandPair(
+export function applyPromptTemplatePair(
   items: TranscriptItem[],
   pair: { typed: string; expanded: string },
 ): TranscriptItem[] {
@@ -55,7 +55,7 @@ export function applyCommandPair(
     const it = items[i];
     if (it.kind !== "user") continue;
     // Already decorated (a duplicate notify, or a restore that got there first).
-    if ("command" in it && it.command) continue;
+    if ("promptTemplate" in it && it.promptTemplate) continue;
     const sameInvocation =
       it.text === typed ||
       it.text === pair.typed ||
@@ -63,7 +63,7 @@ export function applyCommandPair(
       (!!name && (it.text === `/${name}` || it.text.startsWith(`/${name} `)));
     if (!sameInvocation) continue;
     const next = items.slice();
-    next[i] = { ...it, text: pair.expanded, command: { typed } };
+    next[i] = { ...it, text: pair.expanded, promptTemplate: { typed } };
     return next;
   }
   return items;

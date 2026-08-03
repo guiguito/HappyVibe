@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { inlineMentionPaths, willExpand } from "../src/main/commandMentions";
+import { inlineMentionPaths, willExpand } from "../src/main/promptTemplateMentions";
 
 /**
  * §24 × F3. `/explain @Game.ts` used to reach Pi as the command PLUS the whole

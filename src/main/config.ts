@@ -26,7 +26,7 @@ interface ConfigFile {
   linkedSkillDirs?: string[];
   /** §24 Commands: external prompt-template dirs linked in place (e.g.
       ~/.claude/commands). Same review-before-active gate as linkedSkillDirs. */
-  linkedCommandDirs?: string[];
+  linkedPromptTemplateDirs?: string[];
   /** §16 (2026-07-30): user-defined OpenAI-compatible endpoints. */
   customEndpoints?: CustomEndpoint[];
   /** safeStorage-encrypted keys for those endpoints, base64, by endpoint id. */
@@ -308,15 +308,15 @@ export function setLinkedSkillDirs(dirs: string[]): void {
 
 // §24 Commands: linked external prompt dirs (referenced in place, not copied —
 // ~/.claude/commands is typically git-tracked and owned by another tool).
-export function getLinkedCommandDirs(): string[] {
-  return load().linkedCommandDirs ?? [];
+export function getLinkedPromptTemplateDirs(): string[] {
+  return load().linkedPromptTemplateDirs ?? [];
 }
 
-export function setLinkedCommandDirs(dirs: string[]): void {
+export function setLinkedPromptTemplateDirs(dirs: string[]): void {
   const cfg = load();
   const clean = [...new Set(dirs.filter((d) => typeof d === "string" && d.trim()))];
-  if (clean.length) cfg.linkedCommandDirs = clean;
-  else delete cfg.linkedCommandDirs;
+  if (clean.length) cfg.linkedPromptTemplateDirs = clean;
+  else delete cfg.linkedPromptTemplateDirs;
   save(cfg);
 }
 

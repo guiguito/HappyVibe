@@ -7,16 +7,16 @@
  *                       team-owned — PRD §24 "read in place, never copied") so
  *                       the user knows they are editing the repo, not just an app
  *                       setting, and that a `git pull` can bring it straight back
- *  bundled            → refused (installBundledCommands reinstalls at startup)
+ *  bundled            → refused (installBundledPromptTemplates reinstalls at startup)
  *  linked             → unlink the DIRECTORY reference; never touch the files,
  *                       they belong to another tool (e.g. ~/.claude/commands)
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-export type CommandDeleteAction = "delete" | "unlink" | "refused";
-export interface CommandDeletePlan {
-  action: CommandDeleteAction;
+export type PromptTemplateDeleteAction = "delete" | "unlink" | "refused";
+export interface PromptTemplateDeletePlan {
+  action: PromptTemplateDeleteAction;
   /** The file to delete, or — for `unlink` — the linked directory to drop. */
   path: string;
   reason?: string;
@@ -27,10 +27,10 @@ const GIT_TRACKED =
 
 /**
  * Policy only — which KIND of removal a command gets, from its source. Path
- * confinement is NOT decided here; it is enforced by removeCommandFile against
+ * confinement is NOT decided here; it is enforced by removePromptTemplateFile against
  * the caller's allowed roots.
  */
-export function planCommandRemoval(view: { id: string; source: string }): CommandDeletePlan {
+export function planPromptTemplateRemoval(view: { id: string; source: string }): PromptTemplateDeletePlan {
   if (view.source === "bundled") {
     return {
       action: "refused",
@@ -58,7 +58,7 @@ export function planCommandRemoval(view: { id: string; source: string }): Comman
  * arbitrary id from the renderer, so both sides are realpath'd before comparing.
  * Not recursive: a command is one file, and rmSync throws on a directory.
  */
-export function removeCommandFile(file: string, allowedRoots: string[]): void {
+export function removePromptTemplateFile(file: string, allowedRoots: string[]): void {
   const abs = realish(file);
   const ok = allowedRoots.some((root) => {
     const r = realish(root);

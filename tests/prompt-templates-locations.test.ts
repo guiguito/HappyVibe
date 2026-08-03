@@ -3,17 +3,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  bundledCommandsDir,
+  bundledPromptTemplatesDir,
   claudeCommandsDir,
-  CommandRegistry,
-  discoverGlobalCommands,
-  discoverWorkspaceCommands,
-  installBundledCommands,
+  PromptTemplateRegistry,
+  discoverGlobalPromptTemplates,
+  discoverWorkspacePromptTemplates,
+  installBundledPromptTemplates,
   isShadowed,
-  managedCommandsDir,
-  scanCommandsDir,
-  workspaceCommandsDir,
-} from "../src/main/commands";
+  managedPromptTemplatesDir,
+  scanPromptTemplatesDir,
+  workspacePromptTemplatesDir,
+} from "../src/main/promptTemplates";
 
 const NOW = "2026-08-02T00:00:00.000Z";
 let tmp: string;
@@ -32,32 +32,32 @@ const write = (dir: string, name: string, body: string): string => {
 };
 
 test("the four scope roots", () => {
-  expect(managedCommandsDir("/agent")).toBe(path.join("/agent", "prompts"));
-  expect(bundledCommandsDir("/runtime")).toBe(path.join("/runtime", "prompts"));
-  expect(workspaceCommandsDir("/ws")).toBe(path.join("/ws", ".agents", "prompts"));
+  expect(managedPromptTemplatesDir("/agent")).toBe(path.join("/agent", "prompts"));
+  expect(bundledPromptTemplatesDir("/runtime")).toBe(path.join("/runtime", "prompts"));
+  expect(workspacePromptTemplatesDir("/ws")).toBe(path.join("/ws", ".agents", "prompts"));
   expect(claudeCommandsDir("/ws")).toBe(path.join("/ws", ".claude", "commands"));
 });
 
 test("scans .agents/prompts and .claude/commands with distinct sources", () => {
   const ws = path.join(tmp, "ws");
-  write(workspaceCommandsDir(ws), "mine.md", "mine\n");
+  write(workspacePromptTemplatesDir(ws), "mine.md", "mine\n");
   write(claudeCommandsDir(ws), "team.md", "team\n");
-  const bySource = Object.fromEntries(discoverWorkspaceCommands(ws).map((c) => [c.name, c.source]));
+  const bySource = Object.fromEntries(discoverWorkspacePromptTemplates(ws).map((c) => [c.name, c.source]));
   expect(bySource).toEqual({ mine: "workspace", team: "claude" });
 });
 
 test("a workspace with neither root yields nothing", () => {
-  expect(discoverWorkspaceCommands(path.join(tmp, "empty-ws"))).toEqual([]);
+  expect(discoverWorkspacePromptTemplates(path.join(tmp, "empty-ws"))).toEqual([]);
 });
 
 test("global scope is bundled + managed + linked, in that order", () => {
-  const managedDir = managedCommandsDir(path.join(tmp, "agent"));
-  const bundledDir = bundledCommandsDir(path.join(tmp, "runtime"));
+  const managedDir = managedPromptTemplatesDir(path.join(tmp, "agent"));
+  const bundledDir = bundledPromptTemplatesDir(path.join(tmp, "runtime"));
   const linked = path.join(tmp, "dot-claude-commands");
   write(managedDir, "m.md", "m\n");
   write(bundledDir, "b.md", "b\n");
   write(linked, "l.md", "l\n");
-  const found = discoverGlobalCommands({ managedDir, bundledDir, linkedDirs: [linked] });
+  const found = discoverGlobalPromptTemplates({ managedDir, bundledDir, linkedDirs: [linked] });
   expect(found.map((c) => [c.name, c.source])).toEqual([
     ["b", "bundled"],
     ["m", "managed"],
@@ -65,8 +65,8 @@ test("global scope is bundled + managed + linked, in that order", () => {
   ]);
 });
 
-test("installBundledCommands pre-approves bundled commands, off by default, with provenance", () => {
-  const bundledDir = bundledCommandsDir(path.join(tmp, "runtime"));
+test("installBundledPromptTemplates pre-approves bundled commands, off by default, with provenance", () => {
+  const bundledDir = bundledPromptTemplatesDir(path.join(tmp, "runtime"));
   write(bundledDir, "review.md", "---\ndescription: Review the diff\n---\nReview $1.\n");
   write(bundledDir, "explain.md", "Explain $1.\n");
   fs.writeFileSync(
@@ -74,10 +74,10 @@ test("installBundledCommands pre-approves bundled commands, off by default, with
     JSON.stringify({ source: "https://example.test/pack", ref: "main", commit: "deadbeef" }),
   );
 
-  const reg = new CommandRegistry(store);
-  installBundledCommands(bundledDir, reg, NOW);
+  const reg = new PromptTemplateRegistry(store);
+  installBundledPromptTemplates(bundledDir, reg, NOW);
 
-  const found = scanCommandsDir(bundledDir, "bundled");
+  const found = scanPromptTemplatesDir(bundledDir, "bundled");
   expect(found.length).toBe(2); // bundled.json is not a command
   for (const c of found) {
     expect(reg.approvalStatus(c), c.name).toBe("approved"); // trusted (no needs-review)
@@ -89,12 +89,12 @@ test("installBundledCommands pre-approves bundled commands, off by default, with
 });
 
 test("idempotent: an unchanged bundle writes nothing on the second pass", () => {
-  const bundledDir = bundledCommandsDir(path.join(tmp, "runtime"));
+  const bundledDir = bundledPromptTemplatesDir(path.join(tmp, "runtime"));
   write(bundledDir, "review.md", "Review $1.\n");
-  const reg = new CommandRegistry(store);
-  installBundledCommands(bundledDir, reg, NOW);
+  const reg = new PromptTemplateRegistry(store);
+  installBundledPromptTemplates(bundledDir, reg, NOW);
   const after1 = fs.readFileSync(store, "utf8");
-  installBundledCommands(bundledDir, reg, NOW);
+  installBundledPromptTemplates(bundledDir, reg, NOW);
   expect(fs.readFileSync(store, "utf8")).toBe(after1);
 });
 
@@ -103,12 +103,12 @@ test("idempotent: an unchanged bundle writes nothing on the second pass", () => 
 // (which Pi drops silently) or a name a /hv-* command already owns would all
 // reach users as a broken starter command.
 test("the shipped starter bundle installs approved and OFF, with hints and no risk pills", () => {
-  const bundledDir = bundledCommandsDir(path.join(__dirname, "..", "pi-runtime"));
-  const found = scanCommandsDir(bundledDir, "bundled");
+  const bundledDir = bundledPromptTemplatesDir(path.join(__dirname, "..", "pi-runtime"));
+  const found = scanPromptTemplatesDir(bundledDir, "bundled");
   expect(found.map((c) => c.name).sort()).toEqual(["explain", "review", "test"]);
 
-  const reg = new CommandRegistry(store);
-  installBundledCommands(bundledDir, reg, NOW);
+  const reg = new PromptTemplateRegistry(store);
+  installBundledPromptTemplates(bundledDir, reg, NOW);
   for (const c of found) {
     expect(reg.approvalStatus(c), c.name).toBe("approved");
     expect(reg.record(c.id)?.enabled, c.name).toBe(false);
@@ -120,16 +120,16 @@ test("the shipped starter bundle installs approved and OFF, with hints and no ri
 });
 
 test("a bundle bump re-approves but keeps the user's on/off", () => {
-  const bundledDir = bundledCommandsDir(path.join(tmp, "runtime"));
+  const bundledDir = bundledPromptTemplatesDir(path.join(tmp, "runtime"));
   const file = write(bundledDir, "review.md", "Review $1.\n");
-  const reg = new CommandRegistry(store);
-  installBundledCommands(bundledDir, reg, NOW);
+  const reg = new PromptTemplateRegistry(store);
+  installBundledPromptTemplates(bundledDir, reg, NOW);
   reg.setEnabled(file, true, NOW); // user turned it on
 
   fs.writeFileSync(file, "Review $1 harder.\n"); // bundle bumped
-  const bumped = scanCommandsDir(bundledDir, "bundled")[0];
+  const bumped = scanPromptTemplatesDir(bundledDir, "bundled")[0];
   expect(reg.approvalStatus(bumped)).toBe("needs-review"); // content moved
-  installBundledCommands(bundledDir, reg, NOW); // startup runs again
+  installBundledPromptTemplates(bundledDir, reg, NOW); // startup runs again
   expect(reg.approvalStatus(bumped)).toBe("approved"); // still vetted
   expect(reg.record(file)?.enabled).toBe(true); // not clobbered back to off
 });

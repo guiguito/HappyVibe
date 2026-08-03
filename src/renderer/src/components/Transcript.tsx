@@ -84,9 +84,9 @@ export type TranscriptItem = { id?: number } & (
   // W2.1: `images` = data URLs of attached images (user bubbles only).
   // §9 round 9: `outOfContext` marks an item loaded from BELOW the compaction
   // boundary — visible, but not something the agent can still see.
-  // §24: `command` marks a user message that Pi produced by expanding a prompt
+  // §24: `promptTemplate` marks a user message that Pi produced by expanding a prompt
   // template. `text` is the EXPANSION (it is what the model received and what
-  // the session file stores); `command.typed` is the `/review src/foo.ts` the
+  // the session file stores); `promptTemplate.typed` is the `/review src/foo.ts` the
   // user actually wrote, which Pi keeps nowhere — the bridge pairs the two off
   // its input/before_agent_start hooks. Present → the bubble leads with the
   // typed form and discloses the expansion; absent → today's plain bubble.
@@ -95,7 +95,7 @@ export type TranscriptItem = { id?: number } & (
       text: string;
       images?: string[];
       outOfContext?: boolean;
-      command?: { typed: string };
+      promptTemplate?: { typed: string };
     }
   | { kind: "tool"; card: ToolCardData; outOfContext?: boolean }
   // §23: the plan-ready card (read from the workspace plan file).
@@ -233,14 +233,14 @@ function UserBubble({
   const text = stripInjectedBlocks("text" in it ? it.text : "");
   const images = "images" in it ? it.images : undefined;
   const [expanded, setExpanded] = useState(false);
-  // §24: a command invocation is exactly the disclosure this bubble already
+  // §24: a promptTemplate invocation is exactly the disclosure this bubble already
   // implements — lead with the short form, reveal the long one — so it reuses
   // the collapse rather than adding a second widget. The only differences are
   // that the trigger is the invocation rather than a length threshold, and that
   // the expansion starts hidden however short it is (the user typed six
   // characters; a wall of generated prompt is never the honest default).
-  const command = "command" in it ? it.command : undefined;
-  const long = command ? true : text.length > LONG_MESSAGE_CHARS;
+  const promptTemplate = "promptTemplate" in it ? it.promptTemplate : undefined;
+  const long = promptTemplate ? true : text.length > LONG_MESSAGE_CHARS;
   const collapsed = long && !expanded;
   return (
     <div className="self-end max-w-[85%] group">
@@ -253,20 +253,20 @@ function UserBubble({
             ))}
           </div>
         )}
-        {/* §24: the command header. Monospace because it is something the user
+        {/* §24: the promptTemplate header. Monospace because it is something the user
             typed verbatim, and it stays visible whether or not the expansion is. */}
-        {command && (
+        {promptTemplate && (
           <div className="flex items-center gap-2 font-mono text-sm font-bold">
             {/* Stripped again here because a RESTORED item carries main's raw
                 `typed`, which still holds the appended @file blocks. */}
-            <span className="rounded-md bg-paper/25 px-1.5 py-0.5">{stripInjectedBlocks(command.typed).trim()}</span>
+            <span className="rounded-md bg-paper/25 px-1.5 py-0.5">{stripInjectedBlocks(promptTemplate.typed).trim()}</span>
           </div>
         )}
         <div
           className={
             collapsed
-              ? command ? "hidden" : "relative max-h-64 overflow-hidden"
-              : command ? "mt-2 border-t-2 border-paper/25 pt-2 text-[0.85rem] text-paper/90" : undefined
+              ? promptTemplate ? "hidden" : "relative max-h-64 overflow-hidden"
+              : promptTemplate ? "mt-2 border-t-2 border-paper/25 pt-2 text-[0.85rem] text-paper/90" : undefined
           }
         >
           {splitMentionSegments(text).map((seg, i) =>
@@ -288,7 +288,7 @@ function UserBubble({
           >
             {/* §24: name what is hidden. "Show more" would imply the rest of
                 something the user wrote — this is a prompt they never saw. */}
-            {command
+            {promptTemplate
               ? expanded ? "Hide the expanded prompt" : "Show the expanded prompt"
               : expanded ? "Show less" : "Show more"}
           </button>

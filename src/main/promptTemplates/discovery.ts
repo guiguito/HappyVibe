@@ -27,9 +27,9 @@ import { createHash } from "node:crypto";
  * `.md`) — renaming a command means renaming its file.
  */
 
-export type CommandSource = "managed" | "workspace" | "linked" | "bundled" | "claude";
+export type PromptTemplateSource = "managed" | "workspace" | "linked" | "bundled" | "claude";
 
-export interface DiscoveredCommand {
+export interface DiscoveredPromptTemplate {
   /** Absolute path to the `.md` file — the `--prompt-template` arg AND the approval key. */
   id: string;
   /** basename minus `.md` — Pi has no frontmatter `name` key. */
@@ -38,7 +38,7 @@ export interface DiscoveredCommand {
   description: string;
   /** frontmatter["argument-hint"], the `/name <hint>` suffix the composer shows. */
   argumentHint?: string;
-  source: CommandSource;
+  source: PromptTemplateSource;
   /** sha256 over the file's bytes — approval key part 2. */
   hash: string;
   /** The template text Pi expands (frontmatter stripped) — the inspector body and the diff. */
@@ -63,7 +63,7 @@ const DESC_MAX = 60;
  * own `utils/frontmatter.js` — otherwise our hash/diff/token count would
  * describe a slightly different string than the one Pi actually sends.
  */
-export function parseCommandFrontmatter(content: string): { description?: string; argumentHint?: string; body: string } {
+export function parsePromptTemplateFrontmatter(content: string): { description?: string; argumentHint?: string; body: string } {
   const normalized = content.replace(/\r\n?/g, "\n");
   const m = /^---\n([\s\S]*?)\n---/.exec(normalized);
   if (!m) return { body: normalized }; // no frontmatter → the whole file is the body, untrimmed (Pi does the same)
@@ -89,7 +89,7 @@ export function parseCommandFrontmatter(content: string): { description?: string
  * that matches no approval record, so it reads as needs-review rather than
  * silently staying trusted.
  */
-export function hashCommandFile(file: string): string {
+export function hashPromptTemplateFile(file: string): string {
   const h = createHash("sha256");
   try {
     h.update(fs.readFileSync(file));
@@ -99,15 +99,15 @@ export function hashCommandFile(file: string): string {
   return h.digest("hex");
 }
 
-/** Parse one `.md` file into a DiscoveredCommand. */
-export function readCommandFile(file: string, source: CommandSource): DiscoveredCommand {
+/** Parse one `.md` file into a DiscoveredPromptTemplate. */
+export function readPromptTemplateFile(file: string, source: PromptTemplateSource): DiscoveredPromptTemplate {
   let raw = "";
   try {
     raw = fs.readFileSync(file, "utf8");
   } catch {
     /* unreadable — an empty command, still listed so the user can see it exists */
   }
-  const fm = parseCommandFrontmatter(raw);
+  const fm = parsePromptTemplateFrontmatter(raw);
   // Pi's fallback, verbatim: the first line with any non-whitespace, sliced (NOT
   // trimmed) at 60 chars with "..." only when it was actually cut.
   let description = (fm.description ?? "").trim();
@@ -121,7 +121,7 @@ export function readCommandFile(file: string, source: CommandSource): Discovered
     description,
     argumentHint: fm.argumentHint,
     source,
-    hash: hashCommandFile(file),
+    hash: hashPromptTemplateFile(file),
     body: fm.body,
     hasBashInjection: fm.body.includes("!`"),
     estTokens: { body: Math.ceil(fm.body.length / 4) },
@@ -135,14 +135,14 @@ export function readCommandFile(file: string, source: CommandSource): Discovered
  * skipped as elsewhere. Sorted by name so the UI order and the spawn arg order
  * are stable. A missing scan root yields [].
  */
-export function scanCommandsDir(root: string, source: CommandSource): DiscoveredCommand[] {
+export function scanPromptTemplatesDir(root: string, source: PromptTemplateSource): DiscoveredPromptTemplate[] {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
   } catch {
     return [];
   }
-  const out: DiscoveredCommand[] = [];
+  const out: DiscoveredPromptTemplate[] = [];
   for (const e of entries) {
     if (e.name.startsWith(".") || e.name === "node_modules" || !e.name.endsWith(".md")) continue;
     const abs = path.join(root, e.name);
@@ -154,7 +154,7 @@ export function scanCommandsDir(root: string, source: CommandSource): Discovered
         continue; // broken symlink
       }
     }
-    if (isFile) out.push(readCommandFile(abs, source));
+    if (isFile) out.push(readPromptTemplateFile(abs, source));
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }

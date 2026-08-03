@@ -164,8 +164,8 @@ export interface WorkspaceEntry {
   skillsActive?: Record<string, boolean>;
   /** §24: per-workspace command activation checklist, keyed by command id
    *  (absolute FILE path — approval is per file, never per directory). Absent id
-   *  = default, resolved in resolveActiveCommands. Only stores explicit overrides. */
-  commandsActive?: Record<string, boolean>;
+   *  = default, resolved in resolveActivePromptTemplates. Only stores explicit overrides. */
+  promptTemplatesActive?: Record<string, boolean>;
 }
 
 /** V2.A: workspace paths are dialog-provided strings — compare them
@@ -239,18 +239,18 @@ export class WorkspaceRegistry {
   }
 
   /** §24: the explicit command-activation overrides for a workspace (empty if none). */
-  getCommandsActive(p: string): Record<string, boolean> {
-    return this.find(p)?.commandsActive ?? {};
+  getPromptTemplatesActive(p: string): Record<string, boolean> {
+    return this.find(p)?.promptTemplatesActive ?? {};
   }
 
   /** Set (on=true|false) or clear (on=null → back to default) one command's activation for a workspace. */
-  setCommandActive(p: string, commandId: string, on: boolean | null): void {
+  setPromptTemplateActive(p: string, templateId: string, on: boolean | null): void {
     const entry = this.find(p);
     if (!entry) return;
-    entry.commandsActive ??= {};
-    if (on === null) delete entry.commandsActive[commandId];
-    else entry.commandsActive[commandId] = on;
-    if (Object.keys(entry.commandsActive).length === 0) delete entry.commandsActive;
+    entry.promptTemplatesActive ??= {};
+    if (on === null) delete entry.promptTemplatesActive[templateId];
+    else entry.promptTemplatesActive[templateId] = on;
+    if (Object.keys(entry.promptTemplatesActive).length === 0) delete entry.promptTemplatesActive;
     this.save();
   }
 }

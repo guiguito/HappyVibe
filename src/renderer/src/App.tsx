@@ -32,8 +32,8 @@ import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
 import { SkillsView } from "./components/SkillsView";
-import { CommandsView } from "./components/CommandsView";
-import { applyCommandPair } from "./commandPair";
+import { PromptTemplatesView } from "./components/PromptTemplatesView";
+import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
@@ -539,7 +539,7 @@ export default function App(): React.JSX.Element {
               const pair = { typed: p.typed, expanded: p.expanded };
               setTranscripts((prev) => {
                 const cur = prev[sid] ?? [];
-                const next = applyCommandPair(cur, pair);
+                const next = applyPromptTemplatePair(cur, pair);
                 // Identity means nothing matched — skip the re-render.
                 return next === cur ? prev : { ...prev, [sid]: next };
               });
@@ -1382,8 +1382,8 @@ export default function App(): React.JSX.Element {
         {activeView === "skills" && (
           <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
-        {activeView === "commands" && (
-          <CommandsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+        {activeView === "promptTemplates" && (
+          <PromptTemplatesView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
         {activeView === "mcp" && <McpView />}
         {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}

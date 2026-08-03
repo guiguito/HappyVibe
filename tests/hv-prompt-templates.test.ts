@@ -3,8 +3,8 @@ import {
   rememberTyped,
   pairExpanded,
   commandName,
-  type CommandPairState,
-} from "../pi-runtime/extensions/hv-commands";
+  type TemplatePairState,
+} from "../pi-runtime/extensions/hv-prompt-templates";
 
 /**
  * §24: the typed↔expanded pairing that lets a command render as a card instead
@@ -13,7 +13,7 @@ import {
  */
 describe("hv-commands pairing", () => {
   it("pairs a slash prompt with its expansion", () => {
-    const s: CommandPairState = {};
+    const s: TemplatePairState = {};
     rememberTyped(s, "/review src/foo.ts");
     expect(pairExpanded(s, "Review src/foo.ts for correctness bugs.")).toEqual({
       typed: "/review src/foo.ts",
@@ -22,19 +22,19 @@ describe("hv-commands pairing", () => {
   });
 
   it("returns null when the text came through unchanged (an extension command, not a template)", () => {
-    const s: CommandPairState = {};
+    const s: TemplatePairState = {};
     rememberTyped(s, "/hv-tools");
     expect(pairExpanded(s, "/hv-tools")).toBeNull();
   });
 
   it("ignores an ordinary non-slash prompt", () => {
-    const s: CommandPairState = {};
+    const s: TemplatePairState = {};
     rememberTyped(s, "hello there");
     expect(pairExpanded(s, "hello there")).toBeNull();
   });
 
   it("never pairs the same invocation twice", () => {
-    const s: CommandPairState = {};
+    const s: TemplatePairState = {};
     rememberTyped(s, "/review");
     expect(pairExpanded(s, "Review the diff.")).not.toBeNull();
     // A second turn with no fresh `input` must not re-use the consumed slot.
@@ -42,14 +42,14 @@ describe("hv-commands pairing", () => {
   });
 
   it("a plain prompt arriving after a command does not inherit the pairing", () => {
-    const s: CommandPairState = {};
+    const s: TemplatePairState = {};
     rememberTyped(s, "/review");
     rememberTyped(s, "actually, never mind");
     expect(pairExpanded(s, "actually, never mind")).toBeNull();
   });
 
   it("survives a non-string expansion without throwing (the hook must fail open)", () => {
-    const s: CommandPairState = {};
+    const s: TemplatePairState = {};
     rememberTyped(s, "/review");
     expect(pairExpanded(s, undefined as unknown as string)).toBeNull();
   });

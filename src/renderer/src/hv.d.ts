@@ -21,7 +21,7 @@ type RestoreItem =
   // §24: `command` is set by main when this user message was a prompt-template
   // expansion (paired by hash against the logged command.invoked event), so a
   // reopened session redraws the card instead of a wall of expanded prompt.
-  | { kind: "user" | "assistant"; text: string; command?: { typed: string } }
+  | { kind: "user" | "assistant"; text: string; promptTemplate?: { typed: string } }
   | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
@@ -161,8 +161,8 @@ interface HvSkillDetail {
   approved: string | null;
 }
 
-/** §24 — mirrors CommandView in src/main/commands/view.ts (from hv:commands-list). */
-interface HvCommandView {
+/** §24 — mirrors PromptTemplateView in src/main/commands/view.ts (from hv:prompt-templates-list). */
+interface HvPromptTemplateView {
   /** Absolute path to the .md file — the approval key AND the --prompt-template arg. */
   id: string;
   name: string;
@@ -179,21 +179,21 @@ interface HvCommandView {
   provenance?: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string };
 }
 
-interface HvCommandsList {
-  global: HvCommandView[];
+interface HvPromptTemplatesList {
+  global: HvPromptTemplateView[];
   /** `commands` = this workspace's two roots; `checklist` = every approved+enabled command, global included. */
-  workspace: { commands: HvCommandView[]; checklist: HvCommandView[] } | null;
+  workspace: { templates: HvPromptTemplateView[]; checklist: HvPromptTemplateView[] } | null;
 }
 
 /** §24 — a scan result from a local-folder or git-URL import (pick which to import). */
-interface HvCommandImportScan {
+interface HvPromptTemplateImportScan {
   token: string | null;
-  commands: Array<{ id: string; name: string; description: string; argumentHint?: string; hasBashInjection: boolean }>;
+  templates: Array<{ id: string; name: string; description: string; argumentHint?: string; hasBashInjection: boolean }>;
   error?: string;
 }
 
-/** §24 — the inspector payload (hv:commands-read). `current`/`approved` are both TEMPLATE BODIES. */
-interface HvCommandDetail {
+/** §24 — the inspector payload (hv:prompt-templates-read). `current`/`approved` are both TEMPLATE BODIES. */
+interface HvPromptTemplateDetail {
   name: string;
   description: string;
   argumentHint?: string;
@@ -493,31 +493,31 @@ interface HvApi {
   onSkillsChanged(cb: () => void): () => void;
 
   // §24 Commands (prompt templates) — the §14 surface, channel for channel.
-  commandsList(workspaceId?: string): Promise<HvCommandsList>;
-  commandsRead(id: string): Promise<HvCommandDetail>;
-  commandsApprove(id: string): Promise<void>;
-  commandsSetEnabled(id: string, enabled: boolean): Promise<void>;
-  commandsSetActive(workspaceId: string, id: string, on: boolean | null): Promise<void>;
-  commandsGetLinked(): Promise<string[]>;
-  commandsSetLinked(dirs: string[]): Promise<void>;
+  promptTemplatesList(workspaceId?: string): Promise<HvPromptTemplatesList>;
+  promptTemplatesRead(id: string): Promise<HvPromptTemplateDetail>;
+  promptTemplatesApprove(id: string): Promise<void>;
+  promptTemplatesSetEnabled(id: string, enabled: boolean): Promise<void>;
+  promptTemplatesSetActive(workspaceId: string, id: string, on: boolean | null): Promise<void>;
+  promptTemplatesGetLinked(): Promise<string[]>;
+  promptTemplatesSetLinked(dirs: string[]): Promise<void>;
   /** With a dir: link it straight away (the ~/.claude/commands suggestion). Without: open the picker. */
-  commandsAddLinked(dir?: string): Promise<string[]>;
-  commandsImportLocal(): Promise<HvCommandImportScan | null>;
-  commandsImportGit(url: string): Promise<HvCommandImportScan>;
+  promptTemplatesAddLinked(dir?: string): Promise<string[]>;
+  promptTemplatesImportLocal(): Promise<HvPromptTemplateImportScan | null>;
+  promptTemplatesImportGit(url: string): Promise<HvPromptTemplateImportScan>;
   /** `reserved` = the batch was refused because that name is a bridge command (PRD §24). */
-  commandsImportSelect(
+  promptTemplatesImportSelect(
     token: string,
     ids: string[],
     scope: "global" | "workspace",
     workspaceId: string | null,
   ): Promise<{ imported: string[]; reserved?: string; error?: string }>;
-  commandsDelete(
+  promptTemplatesDelete(
     id: string,
     workspaceId: string | null,
   ): Promise<{ ok: true; action: "delete" | "unlink" } | { ok: false; error: string }>;
-  commandsPromote(id: string): Promise<string>;
-  commandsClaudeDir(): Promise<{ path: string; exists: boolean }>;
-  onCommandsChanged(cb: () => void): () => void;
+  promptTemplatesPromote(id: string): Promise<string>;
+  promptTemplatesClaudeDir(): Promise<{ path: string; exists: boolean }>;
+  onPromptTemplatesChanged(cb: () => void): () => void;
 
   // MCP server config (additive). Changes apply to new sessions.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;

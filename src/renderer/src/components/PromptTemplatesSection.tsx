@@ -24,20 +24,20 @@ import { SkillDiff, SOURCE_TONE, STATUS_LABEL, STATUS_TONE } from "./SkillsSecti
 
 /** Commands have no `error` state and skills have no `shadowed` one; everything
  *  else is the same palette, so map rather than restate the classes. */
-const CMD_STATUS_TONE: Record<HvCommandView["status"], string> = {
+const PT_STATUS_TONE: Record<HvPromptTemplateView["status"], string> = {
   active: STATUS_TONE.active,
   disabled: STATUS_TONE.disabled,
   "needs-review": STATUS_TONE["needs-review"],
   shadowed: STATUS_TONE.error,
 };
-const CMD_STATUS_LABEL: Record<HvCommandView["status"], string> = {
+const PT_STATUS_LABEL: Record<HvPromptTemplateView["status"], string> = {
   active: STATUS_LABEL.active,
   disabled: STATUS_LABEL.disabled,
   "needs-review": STATUS_LABEL["needs-review"],
   shadowed: "shadowed",
 };
 /** `claude` is the one source skills don't have — plum, the one unused tone. */
-const CMD_SOURCE_TONE: Record<HvCommandView["source"], string> = {
+const PT_SOURCE_TONE: Record<HvPromptTemplateView["source"], string> = {
   ...SOURCE_TONE,
   claude: "bg-plum-soft text-plum border-plum/50",
 };
@@ -56,14 +56,14 @@ const importBtn =
  * PRD §24). That directory is LINKED in place, never copied: it is typically
  * git-tracked and team-owned, so a copy would drift on the next pull.
  */
-export function CommandImportControls({
+export function PromptTemplateImportControls({
   scope,
   workspaceId,
 }: {
   scope: "global" | "workspace";
   workspaceId: string | null;
 }): React.JSX.Element {
-  const [scan, setScan] = useState<HvCommandImportScan | null>(null);
+  const [scan, setScan] = useState<HvPromptTemplateImportScan | null>(null);
   const [gitOpen, setGitOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +72,7 @@ export function CommandImportControls({
 
   useEffect(() => {
     if (scope !== "global") return; // workspace .claude/commands is a scan root, not a link
-    void Promise.all([window.hv.commandsClaudeDir(), window.hv.commandsGetLinked()])
+    void Promise.all([window.hv.promptTemplatesClaudeDir(), window.hv.promptTemplatesGetLinked()])
       .then(([d, linked]) => setClaudeDir(d.exists && !linked.includes(d.path) ? d : null))
       .catch(() => setClaudeDir(null));
   }, [scope]);
@@ -82,8 +82,8 @@ export function CommandImportControls({
     setBusy(true);
     setError(null);
     try {
-      const linked = await window.hv.commandsGetLinked();
-      if (!linked.includes(claudeDir.path)) await window.hv.commandsSetLinked([...linked, claudeDir.path]);
+      const linked = await window.hv.promptTemplatesGetLinked();
+      if (!linked.includes(claudeDir.path)) await window.hv.promptTemplatesSetLinked([...linked, claudeDir.path]);
       setClaudeDir(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -92,14 +92,14 @@ export function CommandImportControls({
     }
   };
 
-  const runScan = async (fn: () => Promise<HvCommandImportScan | null>): Promise<void> => {
+  const runScan = async (fn: () => Promise<HvPromptTemplateImportScan | null>): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
       const r = await fn();
       if (!r) return; // dialog cancelled
       if (r.error || !r.token) setError(r.error ?? "No commands found.");
-      else if (r.commands.length === 0) setError("No commands found in that source.");
+      else if (r.templates.length === 0) setError("No commands found in that source.");
       else setScan(r);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -122,14 +122,14 @@ export function CommandImportControls({
             Link ~/.claude/commands
           </button>
         )}
-        <button type="button" disabled={busy} className={importBtn} onClick={() => void runScan(() => window.hv.commandsImportLocal())}>
+        <button type="button" disabled={busy} className={importBtn} onClick={() => void runScan(() => window.hv.promptTemplatesImportLocal())}>
           Import folder
         </button>
         <button type="button" disabled={busy} className={importBtn} onClick={() => setGitOpen(true)}>
           Import from Git URL
         </button>
         {scope === "global" && (
-          <button type="button" disabled={busy} className={importBtn} onClick={() => void window.hv.commandsAddLinked()}>
+          <button type="button" disabled={busy} className={importBtn} onClick={() => void window.hv.promptTemplatesAddLinked()}>
             Link a directory
           </button>
         )}
@@ -142,7 +142,7 @@ export function CommandImportControls({
           onClose={() => setGitOpen(false)}
           onScan={async (url) => {
             setGitOpen(false);
-            await runScan(() => window.hv.commandsImportGit(url));
+            await runScan(() => window.hv.promptTemplatesImportGit(url));
           }}
         />
       )}
@@ -184,12 +184,12 @@ function ImportPicker({
   workspaceId,
   onClose,
 }: {
-  scan: HvCommandImportScan;
+  scan: HvPromptTemplateImportScan;
   scope: "global" | "workspace";
   workspaceId: string | null;
   onClose: () => void;
 }): React.JSX.Element {
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(scan.commands.map((c) => c.id)));
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(scan.templates.map((c) => c.id)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toggle = (id: string): void => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -200,7 +200,7 @@ function ImportPicker({
       // Main refuses the whole batch when a name a bridge /hv-* command already
       // owns is in it (PRD §24) and names the clash — keep the picker open so
       // the user can deselect that one and import the rest.
-      const res = await window.hv.commandsImportSelect(scan.token!, [...selected], scope, workspaceId);
+      const res = await window.hv.promptTemplatesImportSelect(scan.token!, [...selected], scope, workspaceId);
       if (res.error) { setError(res.error); return; }
       onClose();
     } catch (e) {
@@ -217,13 +217,13 @@ function ImportPicker({
           Choose which commands to import. They're approved on import ({scope === "workspace" ? "into this workspace" : "as global commands"}).
         </p>
         <div className="flex items-center gap-2 pb-1 text-[11px] font-bold text-ink-soft">
-          <button className="underline hover:text-ink" onClick={() => setSelected(new Set(scan.commands.map((c) => c.id)))}>Select all</button>
+          <button className="underline hover:text-ink" onClick={() => setSelected(new Set(scan.templates.map((c) => c.id)))}>Select all</button>
           <span>·</span>
           <button className="underline hover:text-ink" onClick={() => setSelected(new Set())}>Deselect all</button>
-          <span className="ml-auto tabular-nums">{selected.size}/{scan.commands.length}</span>
+          <span className="ml-auto tabular-nums">{selected.size}/{scan.templates.length}</span>
         </div>
         <div className="flex-1 overflow-y-auto rounded-xl border-2 border-line">
-          {scan.commands.map((c) => (
+          {scan.templates.map((c) => (
             <label key={c.id} className="flex items-start gap-2 px-3 py-2 border-b border-line last:border-b-0 cursor-pointer hover:bg-paper-deep/30">
               <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} className="mt-1 size-4 accent-tangerine cursor-pointer" />
               <div className="min-w-0">
@@ -246,20 +246,20 @@ function ImportPicker({
 }
 
 /** Status pill — exported so the workspace block shows the same four states. */
-export function CommandStatusPill({ status }: { status: HvCommandView["status"] }): React.JSX.Element {
+export function PromptTemplateStatusPill({ status }: { status: HvPromptTemplateView["status"] }): React.JSX.Element {
   return (
-    <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 shrink-0 ${CMD_STATUS_TONE[status]}`}>
-      {CMD_STATUS_LABEL[status]}
+    <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 shrink-0 ${PT_STATUS_TONE[status]}`}>
+      {PT_STATUS_LABEL[status]}
     </span>
   );
 }
 
 /** The pills that sit after the name on a row — shared by the global list and
  *  the workspace block so the two surfaces can't drift apart. */
-export function CommandRowPills({ cmd }: { cmd: HvCommandView }): React.JSX.Element {
+export function PromptTemplateRowPills({ cmd }: { cmd: HvPromptTemplateView }): React.JSX.Element {
   return (
     <>
-      <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${CMD_SOURCE_TONE[cmd.source]}`}>
+      <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${PT_SOURCE_TONE[cmd.source]}`}>
         {cmd.source}
       </span>
       {cmd.status === "shadowed" && (
@@ -276,24 +276,24 @@ export function CommandRowPills({ cmd }: { cmd: HvCommandView }): React.JSX.Elem
   );
 }
 
-export function CommandsSection({ workspaceId }: { workspaceId: string | null }): React.JSX.Element {
-  const [commands, setCommands] = useState<HvCommandView[] | null>(null);
+export function PromptTemplatesSection({ workspaceId }: { workspaceId: string | null }): React.JSX.Element {
+  const [commands, setCommands] = useState<HvPromptTemplateView[] | null>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    void window.hv.commandsList(workspaceId ?? undefined).then((l) => setCommands(l.global));
+    void window.hv.promptTemplatesList(workspaceId ?? undefined).then((l) => setCommands(l.global));
   }, [workspaceId]);
 
   useEffect(() => {
     refresh();
-    return window.hv.onCommandsChanged(refresh);
+    return window.hv.onPromptTemplatesChanged(refresh);
   }, [refresh]);
 
   const needsReview = commands?.filter((c) => c.status === "needs-review").length ?? 0;
 
   return (
     <>
-      <CommandImportControls scope="global" workspaceId={workspaceId} />
+      <PromptTemplateImportControls scope="global" workspaceId={workspaceId} />
       {needsReview > 0 && (
         <div className="mb-3 rounded-xl border-2 border-honey/60 bg-honey-soft px-3 py-2 text-sm font-semibold text-tangerine-deep">
           {needsReview === 1
@@ -318,10 +318,10 @@ export function CommandsSection({ workspaceId }: { workspaceId: string | null })
               className="w-full text-left px-4 py-3 border-b border-line last:border-b-0 hover:bg-paper-deep/30 cursor-pointer block"
             >
               <div className="flex items-center gap-2 flex-wrap">
-                <CommandStatusPill status={c.status} />
+                <PromptTemplateStatusPill status={c.status} />
                 <span className="font-mono font-bold">/{c.name}</span>
                 {c.argumentHint && <span className="font-mono text-xs text-ink-soft">{c.argumentHint}</span>}
-                <CommandRowPills cmd={c} />
+                <PromptTemplateRowPills cmd={c} />
                 <span className="ml-auto shrink-0 text-ink-soft">›</span>
               </div>
               <p className="text-sm text-ink-soft mt-1 line-clamp-2">{c.description || "(no description)"}</p>
@@ -330,7 +330,7 @@ export function CommandsSection({ workspaceId }: { workspaceId: string | null })
         </div>
       )}
 
-      {inspecting && <CommandInspector id={inspecting} onClose={() => setInspecting(null)} onChanged={refresh} />}
+      {inspecting && <PromptTemplateInspector id={inspecting} onClose={() => setInspecting(null)} onChanged={refresh} />}
     </>
   );
 }
@@ -340,7 +340,7 @@ export function CommandsSection({ workspaceId }: { workspaceId: string | null })
  *  changed after approval. No file list and no token weight: a command is one
  *  file, and it costs nothing until it is invoked.
  *  Exported so workspace settings can reuse it for project-command review. */
-export function CommandInspector({
+export function PromptTemplateInspector({
   id,
   workspaceId,
   canApprove = true,
@@ -355,13 +355,13 @@ export function CommandInspector({
   onClose: () => void;
   onChanged: () => void;
 }): React.JSX.Element {
-  const [detail, setDetail] = useState<HvCommandDetail | null>(null);
+  const [detail, setDetail] = useState<HvPromptTemplateDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    void window.hv.commandsRead(id).then(setDetail).catch(() => setDetail(null));
+    void window.hv.promptTemplatesRead(id).then(setDetail).catch(() => setDetail(null));
   }, [id]);
   useEffect(load, [load]);
 
@@ -396,10 +396,10 @@ export function CommandInspector({
                 </h2>
                 <p className="text-sm text-ink-soft mt-0.5">{detail.description}</p>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${CMD_STATUS_TONE[detail.status]}`}>
-                    {CMD_STATUS_LABEL[detail.status]}
+                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${PT_STATUS_TONE[detail.status]}`}>
+                    {PT_STATUS_LABEL[detail.status]}
                   </span>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${CMD_SOURCE_TONE[detail.source]}`}>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${PT_SOURCE_TONE[detail.source]}`}>
                     {detail.source}
                   </span>
                   <span className="text-[11px] text-ink-soft" title="A command is expanded into your prompt only when you type it — it is not part of the system prompt">
@@ -465,7 +465,7 @@ export function CommandInspector({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void act(() => window.hv.commandsPromote(id).then(() => undefined))}
+                  onClick={() => void act(() => window.hv.promptTemplatesPromote(id).then(() => undefined))}
                   className="rounded-xl border-2 border-line font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 enabled:cursor-pointer disabled:opacity-40 mr-auto"
                   title="Copy this project command into the global managed dir"
                 >
@@ -496,7 +496,7 @@ export function CommandInspector({
                     setError(null);
                     setBusy(true); // same in-flight guard as Approve/Disable — this is destructive
                     try {
-                      const res = await window.hv.commandsDelete(id, workspaceId ?? null);
+                      const res = await window.hv.promptTemplatesDelete(id, workspaceId ?? null);
                       if (!res.ok) { setError(res.error); return; }
                       onChanged();
                       onClose();
@@ -515,7 +515,7 @@ export function CommandInspector({
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void act(() => window.hv.commandsApprove(id))}
+                    onClick={() => void act(() => window.hv.promptTemplatesApprove(id))}
                     className="rounded-xl bg-tangerine text-paper font-bold text-sm px-5 py-2 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40"
                   >
                     {changed ? "Re-approve" : "Approve"}
@@ -530,7 +530,7 @@ export function CommandInspector({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void act(() => window.hv.commandsSetEnabled(id, false))}
+                  onClick={() => void act(() => window.hv.promptTemplatesSetEnabled(id, false))}
                   className="rounded-xl border-2 border-line font-bold text-sm px-5 py-2 hover:bg-paper-deep/40 enabled:cursor-pointer disabled:opacity-40"
                 >
                   Disable
@@ -539,7 +539,7 @@ export function CommandInspector({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void act(() => window.hv.commandsSetEnabled(id, true))}
+                  onClick={() => void act(() => window.hv.promptTemplatesSetEnabled(id, true))}
                   className="rounded-xl bg-tangerine text-paper font-bold text-sm px-5 py-2 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40"
                 >
                   Enable

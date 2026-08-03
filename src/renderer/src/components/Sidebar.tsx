@@ -5,7 +5,7 @@ import type { SessionStatus } from "../App";
 // §13 round 6: the old combined "agents" page split into four peer destinations.
 export type View =
   // §24: Commands sits beside Skills — same trust model, its own page.
-  | "chat" | "skills" | "commands" | "mcp" | "agents" | "tools"
+  | "chat" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools"
   // Round 8: the settings scroll exploded into pages, each its own destination.
   | "models" | "permissions" | "sysprompt" | "stats" | "audit" | "shortcuts"
   | "workspace";
@@ -45,7 +45,7 @@ function SkillsIcon(): React.JSX.Element {
 }
 // §24: a terminal prompt — a command is something you type, not something the
 // model discovers, and the glyph should say so at a glance.
-function CommandsIcon(): React.JSX.Element {
+function PromptTemplatesIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 17l6-5-6-5" />
@@ -131,7 +131,7 @@ function KeyboardIcon(): React.JSX.Element {
     their order at the top; the exploded settings pages sit below a divider. */
 const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
   { view: "skills", label: "Skills", Icon: SkillsIcon },
-  { view: "commands", label: "Commands", Icon: CommandsIcon },
+  { view: "promptTemplates", label: "Prompt templates", Icon: PromptTemplatesIcon },
   { view: "mcp", label: "MCP", Icon: McpIcon },
   { view: "agents", label: "Agents", Icon: AgentsIcon },
   { view: "tools", label: "All Tools", Icon: ToolsIcon },

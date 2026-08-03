@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { DiscoveredCommand } from "./discovery";
+import type { DiscoveredPromptTemplate } from "./discovery";
 
 /**
  * Command approval registry (PRD §24 trust) — a direct port of
@@ -18,12 +18,12 @@ import type { DiscoveredCommand } from "./discovery";
  *    command stops loading until re-approved.
  *  - Enablement (`enabled`): the global on/off on the Commands screen. Bundled
  *    commands are approved at install but enabled=false (off by default).
- *  - Activation (WorkspaceRegistry.commandsActive): the per-workspace checklist.
+ *  - Activation (WorkspaceRegistry.promptTemplatesActive): the per-workspace checklist.
  * A session spawns with commands that are trusted AND enabled AND active for
- * its workspace (resolveActiveCommands, below).
+ * its workspace (resolveActivePromptTemplates, below).
  */
 
-export interface CommandProvenance {
+export interface PromptTemplateProvenance {
   /** "local" | "linked" | "git" | "bundled" | "created" */
   source: string;
   sourceUrl?: string;
@@ -32,20 +32,20 @@ export interface CommandProvenance {
   importedAt?: string;
 }
 
-export interface CommandRecord {
+export interface PromptTemplateRecord {
   id: string;
   hash: string;
   enabled: boolean;
   approvedAt: string;
-  provenance?: CommandProvenance;
+  provenance?: PromptTemplateProvenance;
   /** Approved template body — the "before" side of the re-review diff. No file list: a command is one file. */
   snapshot?: { body: string };
 }
 
 export type ApprovalStatus = "approved" | "needs-review";
 
-export class CommandRegistry {
-  private latest = new Map<string, CommandRecord>();
+export class PromptTemplateRegistry {
+  private latest = new Map<string, PromptTemplateRecord>();
 
   constructor(private readonly file: string) {
     let raw: string;
@@ -57,7 +57,7 @@ export class CommandRegistry {
     for (const line of raw.split("\n")) {
       if (!line.trim()) continue;
       try {
-        const rec = JSON.parse(line) as CommandRecord;
+        const rec = JSON.parse(line) as PromptTemplateRecord;
         if (rec && typeof rec.id === "string") this.latest.set(rec.id, rec);
       } catch {
         /* skip corrupt line */
@@ -65,25 +65,25 @@ export class CommandRegistry {
     }
   }
 
-  private append(rec: CommandRecord): void {
+  private append(rec: PromptTemplateRecord): void {
     this.latest.set(rec.id, rec);
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.appendFileSync(this.file, JSON.stringify(rec) + "\n", "utf8");
   }
 
-  record(id: string): CommandRecord | undefined {
+  record(id: string): PromptTemplateRecord | undefined {
     return this.latest.get(id);
   }
 
   /** approved iff a record exists whose hash matches the file's current hash. */
-  approvalStatus(cmd: DiscoveredCommand): ApprovalStatus {
+  approvalStatus(cmd: DiscoveredPromptTemplate): ApprovalStatus {
     const rec = this.latest.get(cmd.id);
     return rec && rec.hash === cmd.hash ? "approved" : "needs-review";
   }
 
   /** Snapshot the current on-disk body and record approval. Defaults to enabled=on. */
-  approve(cmd: DiscoveredCommand, now: string, opts?: { enabled?: boolean; provenance?: CommandProvenance }): CommandRecord {
-    const rec: CommandRecord = {
+  approve(cmd: DiscoveredPromptTemplate, now: string, opts?: { enabled?: boolean; provenance?: PromptTemplateProvenance }): PromptTemplateRecord {
+    const rec: PromptTemplateRecord = {
       id: cmd.id,
       hash: cmd.hash,
       enabled: opts?.enabled ?? true,
@@ -97,10 +97,10 @@ export class CommandRegistry {
   }
 
   /** Toggle the global on/off without changing trust (keeps hash/snapshot/provenance). No-op if never approved. */
-  setEnabled(id: string, enabled: boolean, now: string): CommandRecord | undefined {
+  setEnabled(id: string, enabled: boolean, now: string): PromptTemplateRecord | undefined {
     const cur = this.latest.get(id);
     if (!cur) return undefined;
-    const rec: CommandRecord = { ...cur, enabled, approvedAt: now };
+    const rec: PromptTemplateRecord = { ...cur, enabled, approvedAt: now };
     this.append(rec);
     return rec;
   }
@@ -126,9 +126,9 @@ export class CommandRegistry {
  * dropping the flag would only hide the collision from `get_commands` where the
  * UI can no longer explain it. PURE, the single source of truth for what spawns.
  */
-export function resolveActiveCommands(
-  discovered: DiscoveredCommand[],
-  registry: Pick<CommandRegistry, "approvalStatus" | "record">,
+export function resolveActivePromptTemplates(
+  discovered: DiscoveredPromptTemplate[],
+  registry: Pick<PromptTemplateRegistry, "approvalStatus" | "record">,
   activation: Record<string, boolean> | undefined,
 ): string[] {
   const out: string[] = [];

@@ -58,7 +58,7 @@ export interface PiSpawnOptions {
       plus one `--prompt-template <file>` per entry, additive exactly like
       `--skill` is with `--no-skills`. Per FILE, never per directory: a directory
       would silently approve whatever lands in it later (PRD §24). */
-  commands?: string[];
+  promptTemplates?: string[];
   /** §14: per-session skills manifest JSON → HV_SKILLS_FILE (the bridge serves
       use_skill and detects raw SKILL.md reads from it). */
   skillsFile?: string;
@@ -157,7 +157,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       "--no-extensions",
       "--no-prompt-templates",
       // §24 Commands: add back exactly the approved+active ones, by FILE.
-      ...(opts.commands ?? []).flatMap((f) => ["--prompt-template", f]),
+      ...(opts.promptTemplates ?? []).flatMap((f) => ["--prompt-template", f]),
       "--no-themes",
       "--session-dir", sessionDir,
       "--provider", model.provider,

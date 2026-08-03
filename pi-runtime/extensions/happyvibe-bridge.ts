@@ -19,7 +19,7 @@ import { parseBuiltins } from "./hv-builtins";
 import {
   buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
-import { commandName, pairExpanded, rememberTyped, type CommandPairState } from "./hv-commands";
+import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from "./hv-prompt-templates";
 // Async subagents (PRD §12): pi-subagents is co-resident on the SAME pi.events
 // bus, so the bridge subscribes to its in-process lifecycle events and relays
 // them as hv.subagent notifies (they never reach RPC stdout on their own). The
@@ -159,7 +159,7 @@ let skillManifest: SkillManifest = { skills: [] };
 // One slot holding the typed text between the `input` and `before_agent_start`
 // hooks of a single prompt() call. Pi awaits handlers serially between those two
 // points, so at most one prompt is ever mid-flight — see hv-commands.ts.
-const commandPair: CommandPairState = {};
+const commandPair: TemplatePairState = {};
 
 /** JSON envelope for the fire-and-forget bridge→main channel (B4 hv.audit precedent). */
 const ctxPayload = (o: Record<string, unknown>): string => JSON.stringify({ kind: "hv.context", ...o });

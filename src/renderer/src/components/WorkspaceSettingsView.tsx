@@ -3,7 +3,7 @@ import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
 import { ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
-import { CommandImportControls, CommandInspector, CommandRowPills, CommandStatusPill } from "./CommandsSection";
+import { PromptTemplateImportControls, PromptTemplateInspector, PromptTemplateRowPills, PromptTemplateStatusPill } from "./PromptTemplatesSection";
 import { McpServersSection } from "./McpServersSection";
 import { McpCatalogSection } from "./McpCatalogSection";
 
@@ -141,7 +141,7 @@ export function WorkspaceSettingsView({ workspace }: { workspace: string }): Rea
           title="Commands"
           subtitle="This project's slash commands, and which global ones are on here."
         >
-          <WorkspaceCommandsBlock workspace={workspace} />
+          <WorkspacePromptTemplatesBlock workspace={workspace} />
         </Section>
 
         <Section icon="mcp" title="Workspace MCP" subtitle="Servers for this project only.">
@@ -294,22 +294,22 @@ function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.E
  * skills: a project command is clickable AND approvable here; a global one is
  * clickable but can only be switched off for this workspace.
  */
-function WorkspaceCommandsBlock({ workspace }: { workspace: string }): React.JSX.Element {
-  const [data, setData] = useState<HvCommandsList["workspace"]>(null);
+function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): React.JSX.Element {
+  const [data, setData] = useState<HvPromptTemplatesList["workspace"]>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    void window.hv.commandsList(workspace).then((l) => setData(l.workspace));
+    void window.hv.promptTemplatesList(workspace).then((l) => setData(l.workspace));
   }, [workspace]);
   useEffect(() => {
     refresh();
-    return window.hv.onCommandsChanged(refresh);
+    return window.hv.onPromptTemplatesChanged(refresh);
   }, [refresh]);
 
   if (!data) return <p className="text-sm text-ink-soft">Loading…</p>;
 
   const toggle = (id: string, on: boolean): void => {
-    void window.hv.commandsSetActive(workspace, id, on);
+    void window.hv.promptTemplatesSetActive(workspace, id, on);
   };
   // The checklist mixes global + this project's approved commands; only the
   // global half belongs under "Global commands in this workspace" — the
@@ -318,28 +318,28 @@ function WorkspaceCommandsBlock({ workspace }: { workspace: string }): React.JSX
 
   return (
     <>
-      <CommandImportControls scope="workspace" workspaceId={workspace} />
+      <PromptTemplateImportControls scope="workspace" workspaceId={workspace} />
 
       <div className="mb-4">
         <div className="text-[11px] font-semibold text-ink-soft mb-1.5">
           This project's commands (.agents/prompts and .claude/commands)
         </div>
-        {data.commands.length === 0 ? (
+        {data.templates.length === 0 ? (
           <p className="text-xs text-ink-soft">
             No project commands yet. Import one above, or drop a .md file into .agents/prompts.
           </p>
         ) : (
           <div className="rounded-xl border-2 border-line overflow-hidden">
-            {data.commands.map((c) => (
+            {data.templates.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 onClick={() => setInspecting(c.id)}
                 className="w-full text-left px-3 py-2 border-b border-line last:border-b-0 hover:bg-paper-deep/30 cursor-pointer flex items-center gap-2 flex-wrap"
               >
-                <CommandStatusPill status={c.status} />
+                <PromptTemplateStatusPill status={c.status} />
                 <span className="font-mono font-bold text-sm">/{c.name}</span>
-                <CommandRowPills cmd={c} />
+                <PromptTemplateRowPills cmd={c} />
                 <span className="ml-auto text-ink-soft">›</span>
               </button>
             ))}
@@ -373,7 +373,7 @@ function WorkspaceCommandsBlock({ workspace }: { workspace: string }): React.JSX
       </p>
 
       {inspecting && (
-        <CommandInspector
+        <PromptTemplateInspector
           id={inspecting}
           workspaceId={workspace}
           canApprove={!globalChecklist.some((c) => c.id === inspecting)}

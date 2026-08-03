@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 export type RestoreItem =
   // §24: `command` is present when this user message was a prompt-template
   // expansion — the renderer then draws the command card instead of the bubble.
-  | { kind: "user" | "assistant"; text: string; command?: { typed: string } }
+  | { kind: "user" | "assistant"; text: string; promptTemplate?: { typed: string } }
   | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
   // §23: the plan card, emitted at its plan_complete position (not the bottom).
   // planPath comes from the plan_complete tool RESULT; status/done/total are
@@ -70,12 +70,12 @@ export function expandedHash(text: string): string {
  * counting them would misattribute the card after the first mismatch. Mutates in
  * place and returns the same array (the caller owns freshly built items).
  */
-export function pairCommandItems(items: RestoreItem[], typedByHash: Map<string, string>): RestoreItem[] {
+export function pairPromptTemplateItems(items: RestoreItem[], typedByHash: Map<string, string>): RestoreItem[] {
   if (typedByHash.size === 0) return items;
   for (const it of items) {
     if (it.kind !== "user") continue;
     const typed = typedByHash.get(expandedHash(it.text));
-    if (typed) it.command = { typed };
+    if (typed) it.promptTemplate = { typed };
   }
   return items;
 }

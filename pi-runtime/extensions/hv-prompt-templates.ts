@@ -25,13 +25,13 @@
  * queue would model a concurrency that cannot happen.
  */
 
-export interface CommandPairState {
+export interface TemplatePairState {
   /** The last `/`-prefixed text seen on `input`, awaiting its expansion. */
   typed?: string;
 }
 
 /** A resolved invocation: what the user typed, and what Pi actually sent. */
-export interface CommandPair {
+export interface TemplatePair {
   typed: string;
   expanded: string;
 }
@@ -41,7 +41,7 @@ export interface CommandPair {
  * anything else clears the slot rather than filling it — an ordinary prompt
  * arriving between a command and its expansion must not inherit the pairing.
  */
-export function rememberTyped(state: CommandPairState, text: string): void {
+export function rememberTyped(state: TemplatePairState, text: string): void {
   state.typed = typeof text === "string" && text.startsWith("/") ? text : undefined;
 }
 
@@ -51,7 +51,7 @@ export function rememberTyped(state: CommandPairState, text: string): void {
  * the text came through unchanged — an unexpanded `/hv-tools` or a bare `/typo`
  * is not a command invocation and must render as the plain bubble it is today.
  */
-export function pairExpanded(state: CommandPairState, expanded: string): CommandPair | null {
+export function pairExpanded(state: TemplatePairState, expanded: string): TemplatePair | null {
   const typed = state.typed;
   state.typed = undefined;
   if (!typed || typeof expanded !== "string" || expanded === typed) return null;

@@ -1,10 +1,10 @@
 import { Section } from "./Section";
-import { CommandsSection } from "./CommandsSection";
+import { PromptTemplatesSection } from "./PromptTemplatesSection";
 
 /** §24 global commands page — the sibling of SkillsView, one tier down the
  *  resource ladder (skills → commands). Workspace commands live in each
  *  workspace's settings. */
-export function CommandsView({
+export function PromptTemplatesView({
   workspaceId,
 }: {
   /** Accepted so the route can pass the same pair as SkillsView, but unused:
@@ -26,11 +26,11 @@ export function CommandsView({
           title="Global commands"
           subtitle="Reviewed, gated prompt templates. Typing /name expands the file into your message — nothing runs on its own. Project commands are managed in each workspace's settings."
         >
-          <CommandsSection workspaceId={workspaceId} />
+          <PromptTemplatesSection workspaceId={workspaceId} />
         </Section>
       </div>
     </div>
   );
 }
 
-export default CommandsView;
+export default PromptTemplatesView;

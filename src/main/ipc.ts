@@ -7,9 +7,9 @@ import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedCommandDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen,
+  agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setLinkedCommandDirs, setLinkedSkillDirs, writeSubagentConfig,
+  saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
 } from "./config";
@@ -20,12 +20,12 @@ import {
   type DiscoveredSkill, type SkillProvenance,
 } from "./skills";
 import {
-  bundledCommandsDir, claudeCommandsDir, CommandRegistry, discoverGlobalCommands, discoverWorkspaceCommands,
-  installBundledCommands, managedCommandsDir, planCommandRemoval, readCommandFile, removeCommandFile,
-  resolveActiveCommands, scanCommandsDir, toCommandView, workspaceCommandsDir,
-  type CommandProvenance, type CommandSource, type DiscoveredCommand,
-} from "./commands";
-import { refuseReservedCommands } from "./commandsImport";
+  bundledPromptTemplatesDir, claudeCommandsDir, PromptTemplateRegistry, discoverGlobalPromptTemplates, discoverWorkspacePromptTemplates,
+  installBundledPromptTemplates, managedPromptTemplatesDir, planPromptTemplateRemoval, readPromptTemplateFile, removePromptTemplateFile,
+  resolveActivePromptTemplates, scanPromptTemplatesDir, toPromptTemplateView, workspacePromptTemplatesDir,
+  type PromptTemplateProvenance, type PromptTemplateSource, type DiscoveredPromptTemplate,
+} from "./promptTemplates";
+import { refuseReservedNames } from "./promptTemplatesImport";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
   authJsonProviders, BYOK_PROVIDERS, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, OAUTH_PROVIDERS, syncModelsJson,
@@ -51,8 +51,8 @@ import {
   previewRestore, restoreSnapshot, stampSnapshot,
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
-import { expandedHash, pairCommandItems, restoreItems, type RestoreItem } from "./restore";
-import { inlineMentionPaths, willExpand } from "./commandMentions";
+import { expandedHash, pairPromptTemplateItems, restoreItems, type RestoreItem } from "./restore";
+import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
@@ -115,7 +115,7 @@ function parseSkillNotify(r: { method?: string; message?: string }): Record<stri
  * rendering while the restore path (which reads the log, not the notify) kept
  * working and hid it. Pinned by tests/command-notify.test.ts.
  */
-export function parseCommandNotify(
+export function parsePromptTemplateNotify(
   r: { method?: string; message?: string },
 ): ({ kind: string; typed: string; expanded: string } & Record<string, unknown>) | null {
   if (r.method !== "notify") return null;
@@ -132,7 +132,7 @@ export function parseCommandNotify(
 /** The envelope main forwards for a pairing: the payload verbatim, with `typed`
  *  replaced by what the user actually wrote. Every other field — `kind` above
  *  all — must survive. */
-export function commandNotifyMessage(
+export function promptTemplateNotifyMessage(
   payload: Record<string, unknown>,
   typed: string,
 ): string {
@@ -140,7 +140,7 @@ export function commandNotifyMessage(
 }
 
 /** Which config source a live respawn is applying — cosmetic, shown in the renderer notice. */
-type ReloadReason = "mcp" | "skills" | "commands";
+type ReloadReason = "mcp" | "skills" | "promptTemplates";
 
 /** §23: a plan-family notify (hv.plan | hv.plan-status | hv.plan.blocked), else null. */
 function parsePlanNotify(r: { method?: string; message?: string }): Record<string, unknown> | null {
@@ -229,27 +229,27 @@ export function registerIpc(win: BrowserWindow): void {
   // key is a file path and the gate is `--no-prompt-templates` + one
   // `--prompt-template <file>` per approved command. There is NO manifest —
   // Pi expands templates itself, so the bridge is handed nothing about commands.
-  const commandRegistry = new CommandRegistry(path.join(userData, "commands-approvals.jsonl"));
+  const promptTemplateRegistry = new PromptTemplateRegistry(path.join(userData, "prompt-templates-approvals.jsonl"));
   try {
-    installBundledCommands(bundledCommandsDir(piRuntimeDir()), commandRegistry, new Date().toISOString());
+    installBundledPromptTemplates(bundledPromptTemplatesDir(piRuntimeDir()), promptTemplateRegistry, new Date().toISOString());
   } catch (e) {
     console.warn("[hv] bundled commands install failed:", e);
   }
-  const globalCommandDirs = () => ({
-    managedDir: managedCommandsDir(agentDir()),
-    bundledDir: bundledCommandsDir(piRuntimeDir()),
-    linkedDirs: getLinkedCommandDirs(),
+  const globalPromptTemplateDirs = () => ({
+    managedDir: managedPromptTemplatesDir(agentDir()),
+    bundledDir: bundledPromptTemplatesDir(piRuntimeDir()),
+    linkedDirs: getLinkedPromptTemplateDirs(),
   });
-  const globalCommands = (): DiscoveredCommand[] => discoverGlobalCommands(globalCommandDirs());
+  const globalPromptTemplates = (): DiscoveredPromptTemplate[] => discoverGlobalPromptTemplates(globalPromptTemplateDirs());
   /** The command FILES a session in this workspace should spawn with (--prompt-template args). */
-  const activeCommandEntries = (workspace: string): string[] => {
-    const activation = workspaces.getCommandsActive(workspace);
+  const activePromptTemplateEntries = (workspace: string): string[] => {
+    const activation = workspaces.getPromptTemplatesActive(workspace);
     return [
-      ...resolveActiveCommands(globalCommands(), commandRegistry, activation),
-      ...resolveActiveCommands(discoverWorkspaceCommands(workspace), commandRegistry, activation),
+      ...resolveActivePromptTemplates(globalPromptTemplates(), promptTemplateRegistry, activation),
+      ...resolveActivePromptTemplates(discoverWorkspacePromptTemplates(workspace), promptTemplateRegistry, activation),
     ];
   };
-  const commandsChanged = (): void => send("hv:commands-changed");
+  const promptTemplatesChanged = (): void => send("hv:prompt-templates-changed");
   /**
    * §24: main's OUTGOING message → what the user actually typed. Only populated
    * when the two differ, i.e. when a command's @mentions were rewritten to paths
@@ -265,9 +265,9 @@ export function registerIpc(win: BrowserWindow): void {
    * by sha256(expanded). Restore hashes each user message against this map, so a
    * reloaded transcript shows the card instead of the expansion (restore.ts).
    */
-  const commandPairs = async (sessionId: string): Promise<Map<string, string>> =>
+  const promptTemplatePairs = async (sessionId: string): Promise<Map<string, string>> =>
     new Map(
-      (await log.read({ type: "command.invoked", sessionId }))
+      (await log.read({ type: "prompt-template.invoked", sessionId }))
         .map((ev) => [String(ev.data?.expandedHash ?? ""), String(ev.data?.typed ?? "")] as const)
         .filter(([hash, typed]) => hash && typed),
     );
@@ -356,7 +356,7 @@ export function registerIpc(win: BrowserWindow): void {
       skillsFile: sessionId ? writeSkillsManifest(sessionId, entries) : undefined,
       // §24: one --prompt-template per approved ∩ enabled ∩ active command. No
       // manifest counterpart — the bridge reads nothing about commands.
-      commands: workspace && sessionId ? activeCommandEntries(workspace) : [],
+      promptTemplates: workspace && sessionId ? activePromptTemplateEntries(workspace) : [],
     };
   };
 
@@ -635,9 +635,9 @@ export function registerIpc(win: BrowserWindow): void {
       }
       // §24: a prompt template expanded. Log {typed, sha256(expanded)} — the
       // expansion itself is already in the session file, and the hash is what
-      // re-pairs the card after a reload (restore.ts pairCommandItems). Forward
+      // re-pairs the card after a reload (restore.ts pairPromptTemplateItems). Forward
       // the envelope too, so the live transcript can draw the card now.
-      const command = parseCommandNotify(r);
+      const command = parsePromptTemplateNotify(r);
       if (command) {
         // §24: the bridge reports MAIN's outgoing text, which is not what the
         // user typed — @mentions have been rewritten to paths by then. Recover
@@ -646,12 +646,12 @@ export function registerIpc(win: BrowserWindow): void {
         const typed = typedByOutgoing.get(command.typed) ?? command.typed;
         typedByOutgoing.delete(command.typed);
         void log.append({
-          type: "command.invoked",
+          type: "prompt-template.invoked",
           sessionId,
           workspaceId: meta?.workspaceId,
           data: { sessionId, typed, expandedHash: expandedHash(command.expanded) },
         });
-        send("hv:ui-request", { ...r, message: commandNotifyMessage(command, typed), sessionId });
+        send("hv:ui-request", { ...r, message: promptTemplateNotifyMessage(command, typed), sessionId });
         return;
       }
       // Async subagents: lifecycle relays drive activity gating (a live async run
@@ -950,8 +950,8 @@ export function registerIpc(win: BrowserWindow): void {
     scheduleRuntimeReload("skills", scope, workspaceId);
   // §24: same machinery again — approving/toggling/importing a command changes
   // the --prompt-template set, which Pi only reads at spawn.
-  const scheduleCommandReload = (scope: "global" | "workspace", workspaceId: string | null): void =>
-    scheduleRuntimeReload("commands", scope, workspaceId);
+  const schedulePromptTemplateReload = (scope: "global" | "workspace", workspaceId: string | null): void =>
+    scheduleRuntimeReload("promptTemplates", scope, workspaceId);
 
   app.on("will-quit", () => {
     clearTimeout(mcpReloadTimer); // don't spawn during teardown
@@ -1026,7 +1026,7 @@ export function registerIpc(win: BrowserWindow): void {
         return parsed ? { path: p, status: parsed.status, done: parsed.done, total: parsed.total } : null;
       };
 
-      const typedByHash = await commandPairs(sessionId); // §24: card pairing (see restore.ts)
+      const typedByHash = await promptTemplatePairs(sessionId); // §24: card pairing (see restore.ts)
 
       // Rebuild the transcript from Pi's session FILE, not `get_messages`.
       // That RPC is the first thing a freshly spawned child has to answer, so it
@@ -1043,14 +1043,14 @@ export function registerIpc(win: BrowserWindow): void {
           const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
           if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }
         }
-        return pairCommandItems(items, typedByHash);
+        return pairPromptTemplateItems(items, typedByHash);
       };
 
       /** Fallback for a live session with no session file yet (see below). */
       const loadFromClient = async (c: PiClient): Promise<RestoreItem[]> => {
         try {
           const res = await c.send({ type: "get_messages" });
-          return pairCommandItems(
+          return pairPromptTemplateItems(
             restoreItems((res.data as { messages?: Parameters<typeof restoreItems>[0] })?.messages ?? []),
             typedByHash,
           );
@@ -1097,7 +1097,7 @@ export function registerIpc(win: BrowserWindow): void {
     if (!meta) throw new Error("Unknown session");
     // §24: pair command cards here too — the earlier region is still transcript,
     // and a half-paired transcript is exactly the disagreement §24 exists to fix.
-    return pairCommandItems(earlierItems(readSessionFile(sessionDir(), meta.piSessionFile)), await commandPairs(sessionId));
+    return pairPromptTemplateItems(earlierItems(readSessionFile(sessionDir(), meta.piSessionFile)), await promptTemplatePairs(sessionId));
   });
 
   // Shared by close and delete: capture stats best-effort, log session.end,
@@ -1193,7 +1193,7 @@ export function registerIpc(win: BrowserWindow): void {
       // to its workspace-relative path instead and let the command do its job.
       // Skills are deliberately excluded (they APPEND args, so blocks already
       // land correctly) — see commandMentions.ts.
-      if (willExpand(msg, activeCommandEntries(meta.workspaceId))) {
+      if (willExpand(msg, activePromptTemplateEntries(meta.workspaceId))) {
         outgoing = inlineMentionPaths(msg, mentions);
         if (outgoing !== msg) {
           if (typedByOutgoing.size > 64) typedByOutgoing.clear();
@@ -1906,7 +1906,7 @@ export function registerIpc(win: BrowserWindow): void {
       // DOTFILE_ALLOW. Matching it here costs nothing and is correct the day it
       // is allowed; until then a .claude/commands change shows on the next fetch.
       if (relDirs.some((d) => d.startsWith(".agents/prompts") || d.startsWith(".claude/commands") || d === ".agents" || d === "")) {
-        commandsChanged();
+        promptTemplatesChanged();
       }
       // §23: when a plan dir changed, re-parse plan files and push live progress.
       if (relDirs.some((d) => d === PLAN_DIR || d === ".agents" || d === "")) {
@@ -2385,7 +2385,7 @@ export function registerIpc(win: BrowserWindow): void {
       // scan BY NAME (a prompt template's command name IS its filename stem).
       const meta = index.get(sessionId);
       const scanned = new Map(
-        [...globalCommands(), ...(meta ? discoverWorkspaceCommands(meta.workspaceId) : [])].map((c) => [c.name, c] as const),
+        [...globalPromptTemplates(), ...(meta ? discoverWorkspacePromptTemplates(meta.workspaceId) : [])].map((c) => [c.name, c] as const),
       );
       return cmds
         .filter((c): c is { name: string; source?: string } => typeof c.name === "string")
@@ -2520,26 +2520,26 @@ export function registerIpc(win: BrowserWindow): void {
   // reading on: a command is a FILE (so the id is a file path and every scan is
   // flat — the parent dir IS the scan root), and there is no manifest, because
   // Pi expands templates itself and the bridge never sees them.
-  const knownCommandRoots = (): string[] => {
-    const { managedDir, bundledDir, linkedDirs } = globalCommandDirs();
+  const knownPromptTemplateRoots = (): string[] => {
+    const { managedDir, bundledDir, linkedDirs } = globalPromptTemplateDirs();
     return [
       managedDir, bundledDir, ...linkedDirs,
-      ...workspaces.list().flatMap((w) => [workspaceCommandsDir(w), claudeCommandsDir(w)]),
+      ...workspaces.list().flatMap((w) => [workspacePromptTemplatesDir(w), claudeCommandsDir(w)]),
     ];
   };
   /** The known scan root this file sits directly in, or null — never trust a renderer path. */
-  const commandRoot = (id: string): string | null => {
+  const promptTemplateRoot = (id: string): string | null => {
     if (!id.endsWith(".md")) return null;
     const parent = path.resolve(path.dirname(id));
-    return knownCommandRoots().find((r) => path.resolve(r) === parent) ?? null;
+    return knownPromptTemplateRoots().find((r) => path.resolve(r) === parent) ?? null;
   };
   /** Read one command file, source inferred from which root it lives in. */
-  const readKnownCommand = (id: string): DiscoveredCommand => {
-    const root = commandRoot(id);
+  const readKnownPromptTemplate = (id: string): DiscoveredPromptTemplate => {
+    const root = promptTemplateRoot(id);
     if (!root) throw new Error("Unknown command location");
-    const { managedDir, bundledDir, linkedDirs } = globalCommandDirs();
+    const { managedDir, bundledDir, linkedDirs } = globalPromptTemplateDirs();
     const same = (a: string, b: string): boolean => path.resolve(a) === path.resolve(b);
-    const source: CommandSource = same(root, bundledDir)
+    const source: PromptTemplateSource = same(root, bundledDir)
       ? "bundled"
       : same(root, managedDir)
         ? "managed"
@@ -2548,29 +2548,29 @@ export function registerIpc(win: BrowserWindow): void {
           : workspaces.list().some((w) => same(root, claudeCommandsDir(w)))
             ? "claude"
             : "workspace";
-    return readCommandFile(id, source);
+    return readPromptTemplateFile(id, source);
   };
 
-  ipcMain.handle("hv:commands-list", (_e, workspaceId?: string) => {
-    const global = globalCommands().map((c) => toCommandView(c, commandRegistry));
+  ipcMain.handle("hv:prompt-templates-list", (_e, workspaceId?: string) => {
+    const global = globalPromptTemplates().map((c) => toPromptTemplateView(c, promptTemplateRegistry));
     if (!workspaceId) return { global, workspace: null };
-    const activation = workspaces.getCommandsActive(workspaceId);
-    const ws = discoverWorkspaceCommands(workspaceId);
+    const activation = workspaces.getPromptTemplatesActive(workspaceId);
+    const ws = discoverWorkspacePromptTemplates(workspaceId);
     // Activation checklist = every APPROVED + enabled command (global + this
     // workspace), its status computed against this workspace's overrides.
-    const checklist = [...globalCommands(), ...ws]
-      .filter((c) => commandRegistry.approvalStatus(c) === "approved" && commandRegistry.record(c.id)?.enabled)
-      .map((c) => toCommandView(c, commandRegistry, activation));
-    return { global, workspace: { commands: ws.map((c) => toCommandView(c, commandRegistry, activation)), checklist } };
+    const checklist = [...globalPromptTemplates(), ...ws]
+      .filter((c) => promptTemplateRegistry.approvalStatus(c) === "approved" && promptTemplateRegistry.record(c.id)?.enabled)
+      .map((c) => toPromptTemplateView(c, promptTemplateRegistry, activation));
+    return { global, workspace: { templates: ws.map((c) => toPromptTemplateView(c, promptTemplateRegistry, activation)), checklist } };
   });
 
-  ipcMain.handle("hv:commands-read", (_e, id: string) => {
-    const cmd = readKnownCommand(id);
-    const rec = commandRegistry.record(id);
+  ipcMain.handle("hv:prompt-templates-read", (_e, id: string) => {
+    const cmd = readKnownPromptTemplate(id);
+    const rec = promptTemplateRegistry.record(id);
     // Unlinking drops the whole configured root, not just this file — say how
     // many other commands come with it so the confirm can be honest.
-    const linkedRoot = cmd.source === "linked" ? commandRoot(id) ?? undefined : undefined;
-    const linkedSiblings = linkedRoot ? Math.max(0, scanCommandsDir(linkedRoot, "linked").length - 1) : 0;
+    const linkedRoot = cmd.source === "linked" ? promptTemplateRoot(id) ?? undefined : undefined;
+    const linkedSiblings = linkedRoot ? Math.max(0, scanPromptTemplatesDir(linkedRoot, "linked").length - 1) : 0;
     return {
       name: cmd.name,
       description: cmd.description,
@@ -2580,7 +2580,7 @@ export function registerIpc(win: BrowserWindow): void {
       linkedSiblings,
       hasBashInjection: cmd.hasBashInjection,
       estTokens: cmd.estTokens,
-      status: toCommandView(cmd, commandRegistry).status,
+      status: toPromptTemplateView(cmd, promptTemplateRegistry).status,
       provenance: rec?.provenance ?? null,
       // Both sides of the re-review diff are the TEMPLATE BODY (frontmatter
       // stripped) — that is what the registry snapshots and what Pi expands.
@@ -2589,139 +2589,139 @@ export function registerIpc(win: BrowserWindow): void {
     };
   });
 
-  ipcMain.handle("hv:commands-approve", (_e, id: string) => {
-    const cmd = readKnownCommand(id);
-    commandRegistry.approve(cmd, new Date().toISOString());
-    void log.append({ type: "command.approved", data: { id, name: cmd.name, source: cmd.source } });
-    commandsChanged();
-    scheduleCommandReload("global", null);
+  ipcMain.handle("hv:prompt-templates-approve", (_e, id: string) => {
+    const cmd = readKnownPromptTemplate(id);
+    promptTemplateRegistry.approve(cmd, new Date().toISOString());
+    void log.append({ type: "prompt-template.approved", data: { id, name: cmd.name, source: cmd.source } });
+    promptTemplatesChanged();
+    schedulePromptTemplateReload("global", null);
   });
 
-  ipcMain.handle("hv:commands-set-enabled", (_e, id: string, enabled: boolean) => {
-    if (!commandRoot(id)) throw new Error("Unknown command location");
-    commandRegistry.setEnabled(id, !!enabled, new Date().toISOString());
-    void log.append({ type: enabled ? "command.enabled" : "command.disabled", data: { id } });
-    commandsChanged();
-    scheduleCommandReload("global", null);
+  ipcMain.handle("hv:prompt-templates-set-enabled", (_e, id: string, enabled: boolean) => {
+    if (!promptTemplateRoot(id)) throw new Error("Unknown command location");
+    promptTemplateRegistry.setEnabled(id, !!enabled, new Date().toISOString());
+    void log.append({ type: enabled ? "prompt-template.enabled" : "prompt-template.disabled", data: { id } });
+    promptTemplatesChanged();
+    schedulePromptTemplateReload("global", null);
   });
 
-  ipcMain.handle("hv:commands-set-active", (_e, workspaceId: string, id: string, on: boolean | null) => {
+  ipcMain.handle("hv:prompt-templates-set-active", (_e, workspaceId: string, id: string, on: boolean | null) => {
     if (!workspaces.list().some((w) => path.resolve(w) === path.resolve(workspaceId))) throw new Error("Unknown workspace");
-    workspaces.setCommandActive(workspaceId, id, on);
-    void log.append({ type: "command.activation", workspaceId, data: { id, active: on } });
-    commandsChanged();
-    scheduleCommandReload("workspace", workspaceId);
+    workspaces.setPromptTemplateActive(workspaceId, id, on);
+    void log.append({ type: "prompt-template.activation", workspaceId, data: { id, active: on } });
+    promptTemplatesChanged();
+    schedulePromptTemplateReload("workspace", workspaceId);
   });
 
-  ipcMain.handle("hv:commands-get-linked", () => getLinkedCommandDirs());
-  ipcMain.handle("hv:commands-set-linked", (_e, dirs: string[]) => {
-    setLinkedCommandDirs(Array.isArray(dirs) ? dirs : []);
-    commandsChanged();
-    scheduleCommandReload("global", null);
+  ipcMain.handle("hv:prompt-templates-get-linked", () => getLinkedPromptTemplateDirs());
+  ipcMain.handle("hv:prompt-templates-set-linked", (_e, dirs: string[]) => {
+    setLinkedPromptTemplateDirs(Array.isArray(dirs) ? dirs : []);
+    promptTemplatesChanged();
+    schedulePromptTemplateReload("global", null);
   });
-  ipcMain.handle("hv:commands-add-linked", async (_e, dir?: string) => {
+  ipcMain.handle("hv:prompt-templates-add-linked", async (_e, dir?: string) => {
     // An explicit dir is the one-click ~/.claude/commands suggestion; no arg
     // opens the picker. Linked dirs are referenced in place, never copied.
     let picked = typeof dir === "string" && dir.trim() ? dir : null;
     if (!picked) {
       const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Link a commands directory" });
-      if (r.canceled || !r.filePaths[0]) return getLinkedCommandDirs();
+      if (r.canceled || !r.filePaths[0]) return getLinkedPromptTemplateDirs();
       picked = r.filePaths[0];
     }
-    setLinkedCommandDirs([...getLinkedCommandDirs(), picked]);
-    commandsChanged();
-    scheduleCommandReload("global", null);
-    return getLinkedCommandDirs();
+    setLinkedPromptTemplateDirs([...getLinkedPromptTemplateDirs(), picked]);
+    promptTemplatesChanged();
+    schedulePromptTemplateReload("global", null);
+    return getLinkedPromptTemplateDirs();
   });
 
   /** Is ~/.claude/commands there? Drives the one-click link suggestion (PRD §24). */
-  ipcMain.handle("hv:commands-claude-dir", () => {
+  ipcMain.handle("hv:prompt-templates-claude-dir", () => {
     const dir = path.join(os.homedir(), ".claude", "commands");
     return { path: dir, exists: fs.existsSync(dir) };
   });
 
   // ── §24 Import: local folder + git-URL tarball, both two-phase (scan → pick →
   //    copy), reusing §14's gitImport as-is (it is source-agnostic). ───────────
-  interface CommandImportSession {
-    commands: Array<{ id: string; name: string; description: string; argumentHint?: string; hasBashInjection: boolean }>;
-    provenance: CommandProvenance;
+  interface PromptTemplateImportSession {
+    templates: Array<{ id: string; name: string; description: string; argumentHint?: string; hasBashInjection: boolean }>;
+    provenance: PromptTemplateProvenance;
     cleanup?: () => void;
   }
-  const commandImports = new Map<string, CommandImportSession>();
-  let commandImportSeq = 0;
+  const promptTemplateImports = new Map<string, PromptTemplateImportSession>();
+  let promptTemplateImportSeq = 0;
   /**
    * Where commands live in an arbitrary folder or repo: the root itself, each
    * immediate subdirectory (`commands/`, `prompts/`), and `.claude/commands`
    * (dotdirs are skipped by the scanner, and that path is the whole point).
    * Deliberately shallow — Pi's own template loading is not recursive either.
    */
-  const scanImportRoot = (root: string): DiscoveredCommand[] => {
+  const scanImportRoot = (root: string): DiscoveredPromptTemplate[] => {
     let subs: string[] = [];
     try {
       subs = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith(".")).map((d) => path.join(root, d.name));
     } catch {
       /* unreadable root — the flat scan below returns [] too */
     }
-    return [root, ...subs, path.join(root, ".claude", "commands")].flatMap((d) => scanCommandsDir(d, "managed"));
+    return [root, ...subs, path.join(root, ".claude", "commands")].flatMap((d) => scanPromptTemplatesDir(d, "managed"));
   };
-  const registerCommandImport = (
-    found: DiscoveredCommand[],
-    provenance: CommandProvenance,
+  const registerPromptTemplateImport = (
+    found: DiscoveredPromptTemplate[],
+    provenance: PromptTemplateProvenance,
     cleanup?: () => void,
-  ): { token: string; commands: CommandImportSession["commands"] } => {
-    const token = `cmd-${++commandImportSeq}-${Date.now()}`;
-    const commands = found.map((c) => ({ id: c.id, name: c.name, description: c.description, argumentHint: c.argumentHint, hasBashInjection: c.hasBashInjection }));
-    commandImports.set(token, { commands, provenance, cleanup });
-    return { token, commands };
+  ): { token: string; templates: PromptTemplateImportSession["templates"] } => {
+    const token = `pt-${++promptTemplateImportSeq}-${Date.now()}`;
+    const templates = found.map((c) => ({ id: c.id, name: c.name, description: c.description, argumentHint: c.argumentHint, hasBashInjection: c.hasBashInjection }));
+    promptTemplateImports.set(token, { templates, provenance, cleanup });
+    return { token, templates };
   };
-  app.on("will-quit", () => { for (const s of commandImports.values()) s.cleanup?.(); });
+  app.on("will-quit", () => { for (const s of promptTemplateImports.values()) s.cleanup?.(); });
 
-  ipcMain.handle("hv:commands-import-local", async () => {
+  ipcMain.handle("hv:prompt-templates-import-local", async () => {
     const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Import commands from a folder" });
     if (r.canceled || !r.filePaths[0]) return null;
     const found = scanImportRoot(r.filePaths[0]);
-    if (found.length === 0) return { token: null, commands: [], error: "No .md commands found in that folder." };
-    return registerCommandImport(found, { source: "local", importedAt: new Date().toISOString() });
+    if (found.length === 0) return { token: null, templates: [], error: "No .md commands found in that folder." };
+    return registerPromptTemplateImport(found, { source: "local", importedAt: new Date().toISOString() });
   });
 
-  ipcMain.handle("hv:commands-import-git", async (_e, url: string) => {
+  ipcMain.handle("hv:prompt-templates-import-git", async (_e, url: string) => {
     const archive = parseForgeUrl(String(url));
-    if (!archive) return { token: null, commands: [], error: "Unsupported URL. Use a GitHub/GitLab/Bitbucket/Codeberg repo URL." };
-    const workDir = path.join(userData, "commands-import", `dl-${++commandImportSeq}-${Date.now()}`);
+    if (!archive) return { token: null, templates: [], error: "Unsupported URL. Use a GitHub/GitLab/Bitbucket/Codeberg repo URL." };
+    const workDir = path.join(userData, "prompt-templates-import", `dl-${++promptTemplateImportSeq}-${Date.now()}`);
     try {
       const { root, archiveHash } = await downloadAndExtract(archive, workDir);
       const found = scanImportRoot(root);
-      if (found.length === 0) { fs.rmSync(workDir, { recursive: true, force: true }); return { token: null, commands: [], error: "No .md commands found in that repository." }; }
-      return registerCommandImport(
+      if (found.length === 0) { fs.rmSync(workDir, { recursive: true, force: true }); return { token: null, templates: [], error: "No .md commands found in that repository." }; }
+      return registerPromptTemplateImport(
         found,
         { source: "git", sourceUrl: archive.archiveUrl, ref: archive.ref, commitSha: archiveHash, importedAt: new Date().toISOString() },
         () => fs.rmSync(workDir, { recursive: true, force: true }),
       );
     } catch (e) {
       fs.rmSync(workDir, { recursive: true, force: true });
-      return { token: null, commands: [], error: e instanceof Error ? e.message : String(e) };
+      return { token: null, templates: [], error: e instanceof Error ? e.message : String(e) };
     }
   });
 
   // Copy the chosen files into the destination dir, confined; approve each.
   ipcMain.handle(
-    "hv:commands-import-select",
+    "hv:prompt-templates-import-select",
     (_e, token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null) => {
-      const session = commandImports.get(token);
+      const session = promptTemplateImports.get(token);
       if (!session) throw new Error("Import session expired — scan again.");
-      const chosen = session.commands.filter((c) => ids.includes(c.id));
+      const chosen = session.templates.filter((c) => ids.includes(c.id));
       // PRD §24: Pi matches an extension command BEFORE expanding a template, so
       // importing a name the bridge owns writes a file that can never run.
       // Refuse the batch and name the clash — the session stays open so the user
       // can deselect it and import the rest.
-      const reserved = refuseReservedCommands(chosen);
+      const reserved = refuseReservedNames(chosen);
       if (reserved) {
         return { imported: [], reserved, error: `"/${reserved}" is a built-in HappyVibe command — a command file with that name could never run. Rename it and import again.` };
       }
       const destParent =
         scope === "workspace"
           ? resolveInWorkspace(workspaces.list(), workspaceId ?? "", path.join(".agents", "prompts"))
-          : managedCommandsDir(agentDir());
+          : managedPromptTemplatesDir(agentDir());
       fs.mkdirSync(destParent, { recursive: true });
       const now = new Date().toISOString();
       const imported: string[] = [];
@@ -2729,15 +2729,15 @@ export function registerIpc(win: BrowserWindow): void {
         const dest = path.join(destParent, path.basename(c.id));
         if (!path.resolve(dest).startsWith(path.resolve(destParent) + path.sep)) continue; // confinement
         fs.copyFileSync(c.id, dest);
-        const cmd = readCommandFile(dest, scope === "workspace" ? "workspace" : "managed");
-        commandRegistry.approve(cmd, now, { enabled: true, provenance: session.provenance });
+        const cmd = readPromptTemplateFile(dest, scope === "workspace" ? "workspace" : "managed");
+        promptTemplateRegistry.approve(cmd, now, { enabled: true, provenance: session.provenance });
         imported.push(cmd.name);
-        void log.append({ type: "command.imported", workspaceId: scope === "workspace" ? workspaceId ?? undefined : undefined, data: { name: cmd.name, source: session.provenance.source, scope } });
+        void log.append({ type: "prompt-template.imported", workspaceId: scope === "workspace" ? workspaceId ?? undefined : undefined, data: { name: cmd.name, source: session.provenance.source, scope } });
       }
       session.cleanup?.();
-      commandImports.delete(token);
-      commandsChanged();
-      scheduleCommandReload(scope, scope === "workspace" ? workspaceId : null);
+      promptTemplateImports.delete(token);
+      promptTemplatesChanged();
+      schedulePromptTemplateReload(scope, scope === "workspace" ? workspaceId : null);
       return { imported };
     },
   );
@@ -2745,33 +2745,33 @@ export function registerIpc(win: BrowserWindow): void {
   // Remove a command: managed/workspace/claude → delete the file, bundled →
   // refused (it is reinstalled at startup), linked → drop the DIRECTORY
   // reference only (those files belong to another tool).
-  ipcMain.handle("hv:commands-delete", (_e, id: string, _workspaceId: string | null) => {
-    if (!commandRoot(id)) return { ok: false as const, error: "That command no longer exists." };
-    const cmd = readKnownCommand(id);
-    const plan = planCommandRemoval({ id: cmd.id, source: cmd.source });
+  ipcMain.handle("hv:prompt-templates-delete", (_e, id: string, _workspaceId: string | null) => {
+    if (!promptTemplateRoot(id)) return { ok: false as const, error: "That command no longer exists." };
+    const cmd = readKnownPromptTemplate(id);
+    const plan = planPromptTemplateRemoval({ id: cmd.id, source: cmd.source });
     if (plan.action === "refused") return { ok: false as const, error: plan.reason ?? "This command cannot be deleted." };
     try {
       if (plan.action === "unlink") {
-        const linked = getLinkedCommandDirs();
+        const linked = getLinkedPromptTemplateDirs();
         const root = linked.find((d) => path.resolve(d) === path.resolve(plan.path));
         if (!root) return { ok: false as const, error: "That linked directory is no longer configured." };
-        setLinkedCommandDirs(linked.filter((d) => d !== root));
+        setLinkedPromptTemplateDirs(linked.filter((d) => d !== root));
       } else {
-        removeCommandFile(plan.path, [
-          managedCommandsDir(agentDir()),
-          ...workspaces.list().flatMap((w) => [workspaceCommandsDir(w), claudeCommandsDir(w)]),
+        removePromptTemplateFile(plan.path, [
+          managedPromptTemplatesDir(agentDir()),
+          ...workspaces.list().flatMap((w) => [workspacePromptTemplatesDir(w), claudeCommandsDir(w)]),
         ]);
       }
-      commandRegistry.forget(id, new Date().toISOString());
-      void log.append({ type: "command.deleted", data: { id, name: cmd.name, source: cmd.source, action: plan.action } });
-      commandsChanged();
+      promptTemplateRegistry.forget(id, new Date().toISOString());
+      void log.append({ type: "prompt-template.deleted", data: { id, name: cmd.name, source: cmd.source, action: plan.action } });
+      promptTemplatesChanged();
       // Derive the workspace from the command's own path (a caller-supplied id
       // that didn't match meant no respawn and a still-loaded deleted command —
       // the §14 bug this mirrors).
       const owner = cmd.source === "workspace" || cmd.source === "claude"
-        ? workspaces.list().find((w) => [workspaceCommandsDir(w), claudeCommandsDir(w)].some((r) => path.resolve(r) === path.resolve(path.dirname(id)))) ?? null
+        ? workspaces.list().find((w) => [workspacePromptTemplatesDir(w), claudeCommandsDir(w)].some((r) => path.resolve(r) === path.resolve(path.dirname(id)))) ?? null
         : null;
-      scheduleCommandReload(owner ? "workspace" : "global", owner);
+      schedulePromptTemplateReload(owner ? "workspace" : "global", owner);
       return { ok: true as const, action: plan.action };
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
@@ -2780,32 +2780,32 @@ export function registerIpc(win: BrowserWindow): void {
 
   // Promote a workspace (or .claude) command to global: copy into the managed
   // dir, approved — same content, so the trust carries over.
-  ipcMain.handle("hv:commands-promote", (_e, id: string) => {
-    const root = commandRoot(id);
-    const fromWorkspace = !!root && workspaces.list().some((w) => [workspaceCommandsDir(w), claudeCommandsDir(w)].some((r) => path.resolve(r) === path.resolve(root)));
+  ipcMain.handle("hv:prompt-templates-promote", (_e, id: string) => {
+    const root = promptTemplateRoot(id);
+    const fromWorkspace = !!root && workspaces.list().some((w) => [workspacePromptTemplatesDir(w), claudeCommandsDir(w)].some((r) => path.resolve(r) === path.resolve(root)));
     if (!fromWorkspace) throw new Error("Only workspace commands can be promoted.");
-    const destParent = managedCommandsDir(agentDir());
+    const destParent = managedPromptTemplatesDir(agentDir());
     fs.mkdirSync(destParent, { recursive: true });
     const dest = path.join(destParent, path.basename(id));
     fs.copyFileSync(id, dest);
-    const promoted = readCommandFile(dest, "managed");
-    commandRegistry.approve(promoted, new Date().toISOString(), { enabled: true, provenance: { source: "promoted", importedAt: new Date().toISOString() } });
-    void log.append({ type: "command.promoted", data: { name: promoted.name, from: id, to: dest } });
-    commandsChanged();
-    scheduleCommandReload("global", null);
+    const promoted = readPromptTemplateFile(dest, "managed");
+    promptTemplateRegistry.approve(promoted, new Date().toISOString(), { enabled: true, provenance: { source: "promoted", importedAt: new Date().toISOString() } });
+    void log.append({ type: "prompt-template.promoted", data: { name: promoted.name, from: id, to: dest } });
+    promptTemplatesChanged();
+    schedulePromptTemplateReload("global", null);
     return dest;
   });
 
   // Live on-disk change detection for the managed prompts dir (workspace command
   // dirs ride the workspace watcher above). An edit flips an approved command
   // back to needs-review, so the renderer must re-fetch.
-  const managedPromptsDir = managedCommandsDir(agentDir());
+  const managedPromptsDir = managedPromptTemplatesDir(agentDir());
   fs.mkdirSync(managedPromptsDir, { recursive: true });
   try {
-    let commandWatchTimer: ReturnType<typeof setTimeout> | undefined;
+    let promptTemplateWatchTimer: ReturnType<typeof setTimeout> | undefined;
     const cw = fs.watch(managedPromptsDir, () => {
-      clearTimeout(commandWatchTimer);
-      commandWatchTimer = setTimeout(() => commandsChanged(), 200);
+      clearTimeout(promptTemplateWatchTimer);
+      promptTemplateWatchTimer = setTimeout(() => promptTemplatesChanged(), 200);
     });
     app.on("will-quit", () => { try { cw.close(); } catch { /* already closed */ } });
   } catch {

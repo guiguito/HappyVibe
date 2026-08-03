@@ -1,5 +1,5 @@
-import type { DiscoveredCommand } from "./discovery";
-import type { CommandProvenance, CommandRegistry } from "./registry";
+import type { DiscoveredPromptTemplate } from "./discovery";
+import type { PromptTemplateProvenance, PromptTemplateRegistry } from "./registry";
 
 /**
  * Command status for the UI (PRD §24) — PURE, the sibling of
@@ -8,7 +8,7 @@ import type { CommandProvenance, CommandRegistry } from "./registry";
  * the renderer shows.
  *
  *  - shadowed     : the name collides with a bridge `/hv-*` command, so Pi can
- *                   never reach this file (see RESERVED_COMMAND_NAMES)
+ *                   never reach this file (see RESERVED_SLASH_COMMANDS)
  *  - needs-review : not approved at the current content hash (new OR changed)
  *  - active       : approved + enabled (+ active in this workspace when a
  *                   workspace activation map is supplied)
@@ -19,7 +19,7 @@ import type { CommandProvenance, CommandRegistry } from "./registry";
  * describe whether HappyVibe passes `--prompt-template`, and none of them can
  * make a shadowed command reachable.
  */
-export type CommandStatus = "active" | "disabled" | "needs-review" | "shadowed";
+export type PromptTemplateStatus = "active" | "disabled" | "needs-review" | "shadowed";
 
 /**
  * Command names the bridge registers as extension commands. Pi matches
@@ -33,7 +33,7 @@ export type CommandStatus = "active" | "disabled" | "needs-review" | "shadowed";
  * `pi-runtime/extensions/happyvibe-bridge.ts`. If that test just went red, you
  * added (or renamed) an `/hv-*` command — add it here too.
  */
-export const RESERVED_COMMAND_NAMES: ReadonlySet<string> = new Set([
+export const RESERVED_SLASH_COMMANDS: ReadonlySet<string> = new Set([
   "hv-agents",
   "hv-auth-status",
   "hv-context",
@@ -53,36 +53,36 @@ export const RESERVED_COMMAND_NAMES: ReadonlySet<string> = new Set([
 
 /** A bare command name (no leading slash), as discovery derives it from the filename. */
 export function isShadowed(name: string): boolean {
-  return RESERVED_COMMAND_NAMES.has(name);
+  return RESERVED_SLASH_COMMANDS.has(name);
 }
 
-export interface CommandView {
+export interface PromptTemplateView {
   id: string;
   name: string;
   description: string;
   argumentHint?: string;
-  source: DiscoveredCommand["source"];
-  status: CommandStatus;
+  source: DiscoveredPromptTemplate["source"];
+  status: PromptTemplateStatus;
   hasBashInjection: boolean;
-  estTokens: DiscoveredCommand["estTokens"];
+  estTokens: DiscoveredPromptTemplate["estTokens"];
   /** true when it was approved before but the content changed — the re-review case (diff available). */
   changed: boolean;
-  provenance?: CommandProvenance;
+  provenance?: PromptTemplateProvenance;
 }
 
 /**
- * @param activation per-workspace checklist (commandId → on/off). Omit for the
+ * @param activation per-workspace checklist (templateId → on/off). Omit for the
  * global Commands screen (status reflects the global enabled flag only). Supply
  * it for the workspace settings view (status reflects approved ∩ active-here).
  */
-export function toCommandView(
-  cmd: DiscoveredCommand,
-  registry: Pick<CommandRegistry, "approvalStatus" | "record">,
+export function toPromptTemplateView(
+  cmd: DiscoveredPromptTemplate,
+  registry: Pick<PromptTemplateRegistry, "approvalStatus" | "record">,
   activation?: Record<string, boolean>,
-): CommandView {
+): PromptTemplateView {
   const rec = registry.record(cmd.id);
   const needsReview = registry.approvalStatus(cmd) !== "approved";
-  let status: CommandStatus;
+  let status: PromptTemplateStatus;
   if (isShadowed(cmd.name)) {
     status = "shadowed";
   } else if (needsReview) {

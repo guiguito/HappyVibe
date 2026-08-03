@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCommandNotify, commandNotifyMessage } from "../src/main/ipc";
+import { parsePromptTemplateNotify, promptTemplateNotifyMessage } from "../src/main/ipc";
 
 /**
  * §24: main re-emits the bridge's pairing envelope to the renderer with `typed`
@@ -18,38 +18,38 @@ const notify = (payload: unknown): { method: string; message: string } => ({
 
 const PAYLOAD = { kind: "hv.prompt-template", name: "explain", typed: "/explain src/a.ts", expanded: "Explain `src/a.ts`." };
 
-describe("parseCommandNotify", () => {
+describe("parsePromptTemplateNotify", () => {
   it("returns the WHOLE payload, so nothing is lost on re-serialization", () => {
-    expect(parseCommandNotify(notify(PAYLOAD))).toMatchObject(PAYLOAD);
+    expect(parsePromptTemplateNotify(notify(PAYLOAD))).toMatchObject(PAYLOAD);
   });
 
   it("ignores other notify kinds and non-notifies", () => {
-    expect(parseCommandNotify(notify({ kind: "hv.skill", name: "x" }))).toBeNull();
-    expect(parseCommandNotify({ method: "select", message: JSON.stringify(PAYLOAD) })).toBeNull();
+    expect(parsePromptTemplateNotify(notify({ kind: "hv.skill", name: "x" }))).toBeNull();
+    expect(parsePromptTemplateNotify({ method: "select", message: JSON.stringify(PAYLOAD) })).toBeNull();
   });
 
   it("ignores a malformed payload rather than throwing", () => {
-    expect(parseCommandNotify({ method: "notify", message: "{not json" })).toBeNull();
-    expect(parseCommandNotify(notify({ kind: "hv.prompt-template", typed: 1, expanded: "x" }))).toBeNull();
+    expect(parsePromptTemplateNotify({ method: "notify", message: "{not json" })).toBeNull();
+    expect(parsePromptTemplateNotify(notify({ kind: "hv.prompt-template", typed: 1, expanded: "x" }))).toBeNull();
   });
 });
 
-describe("commandNotifyMessage", () => {
+describe("promptTemplateNotifyMessage", () => {
   it("keeps `kind` — without it the renderer never draws the card", () => {
-    const out = JSON.parse(commandNotifyMessage(PAYLOAD, "/explain @a.ts"));
+    const out = JSON.parse(promptTemplateNotifyMessage(PAYLOAD, "/explain @a.ts"));
     expect(out.kind).toBe("hv.prompt-template");
   });
 
   it("substitutes the user's typed text and preserves every other field", () => {
-    const out = JSON.parse(commandNotifyMessage(PAYLOAD, "/explain @a.ts"));
+    const out = JSON.parse(promptTemplateNotifyMessage(PAYLOAD, "/explain @a.ts"));
     expect(out).toEqual({ ...PAYLOAD, typed: "/explain @a.ts" });
     expect(out.name).toBe("explain");
     expect(out.expanded).toBe(PAYLOAD.expanded);
   });
 
-  it("round-trips back through parseCommandNotify", () => {
-    const msg = commandNotifyMessage(PAYLOAD, "/explain @a.ts");
-    const reparsed = parseCommandNotify({ method: "notify", message: msg });
+  it("round-trips back through parsePromptTemplateNotify", () => {
+    const msg = promptTemplateNotifyMessage(PAYLOAD, "/explain @a.ts");
+    const reparsed = parsePromptTemplateNotify({ method: "notify", message: msg });
     expect(reparsed?.typed).toBe("/explain @a.ts");
   });
 });

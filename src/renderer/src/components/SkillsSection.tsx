@@ -515,7 +515,7 @@ export function SkillInspector({
 }
 
 /** Minimal line diff for re-review (added/removed lines). Exported for §24's
- *  CommandInspector, which re-reviews the same way over a different file. */
+ *  PromptTemplateInspector, which re-reviews the same way over a different file. */
 export function SkillDiff({ before, after }: { before: string; after: string }): React.JSX.Element {
   const parts = diffLines(before, after);
   return (

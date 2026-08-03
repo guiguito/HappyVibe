@@ -19,7 +19,7 @@ import type { TranscriptItem } from "./components/Transcript";
 
 /** The restored-message shape main sends (mirrors `RestoreItem` in hv.d.ts). */
 export type RestoredMessage =
-  | { kind: "user" | "assistant"; text: string; command?: { typed: string } }
+  | { kind: "user" | "assistant"; text: string; promptTemplate?: { typed: string } }
   | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
@@ -64,8 +64,8 @@ export function toTranscriptItems(
         },
       };
     }
-    // §24: `command` rides along so a reopened session redraws the command card
+    // §24: `promptTemplate` rides along so a reopened session redraws the card
     // instead of the raw expansion. See the module comment before removing it.
-    return { kind: m.kind, text: m.text, command: m.command, id: nextId() };
+    return { kind: m.kind, text: m.text, promptTemplate: m.promptTemplate, id: nextId() };
   }) as TranscriptItem[];
 }

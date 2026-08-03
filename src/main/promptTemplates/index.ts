@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { scanCommandsDir, type DiscoveredCommand } from "./discovery";
-import type { CommandProvenance, CommandRegistry } from "./registry";
+import { scanPromptTemplatesDir, type DiscoveredPromptTemplate } from "./discovery";
+import type { PromptTemplateProvenance, PromptTemplateRegistry } from "./registry";
 
 /**
  * Command locations + discovery orchestration (PRD §24), a near-clone of
@@ -35,15 +35,15 @@ export * from "./remove";
 export * from "../skills/gitImport";
 
 /** HappyVibe-managed global commands live here (copied imports, promoted commands). */
-export function managedCommandsDir(agentDir: string): string {
+export function managedPromptTemplatesDir(agentDir: string): string {
   return path.join(agentDir, "prompts");
 }
 /** Bundled starter commands ship inside the runtime bundle. */
-export function bundledCommandsDir(runtimeDir: string): string {
+export function bundledPromptTemplatesDir(runtimeDir: string): string {
   return path.join(runtimeDir, "prompts");
 }
 /** Project commands a workspace owns, written by HappyVibe. */
-export function workspaceCommandsDir(workspacePath: string): string {
+export function workspacePromptTemplatesDir(workspacePath: string): string {
   return path.join(workspacePath, ".agents", "prompts");
 }
 /** Claude Code's project commands — scanned, badged and never written to. */
@@ -53,23 +53,23 @@ export function claudeCommandsDir(workspacePath: string): string {
 
 /** All global-scope commands: bundled + managed + linked. Bundled/managed ids
  *  can't collide (distinct roots); linked dirs are scanned in place. */
-export function discoverGlobalCommands(opts: {
+export function discoverGlobalPromptTemplates(opts: {
   managedDir: string;
   bundledDir: string;
   linkedDirs: string[];
-}): DiscoveredCommand[] {
+}): DiscoveredPromptTemplate[] {
   return [
-    ...scanCommandsDir(opts.bundledDir, "bundled"),
-    ...scanCommandsDir(opts.managedDir, "managed"),
-    ...opts.linkedDirs.flatMap((d) => scanCommandsDir(d, "linked")),
+    ...scanPromptTemplatesDir(opts.bundledDir, "bundled"),
+    ...scanPromptTemplatesDir(opts.managedDir, "managed"),
+    ...opts.linkedDirs.flatMap((d) => scanPromptTemplatesDir(d, "linked")),
   ];
 }
 
 /** Workspace-scope commands for one workspace, from both roots. */
-export function discoverWorkspaceCommands(workspacePath: string): DiscoveredCommand[] {
+export function discoverWorkspacePromptTemplates(workspacePath: string): DiscoveredPromptTemplate[] {
   return [
-    ...scanCommandsDir(workspaceCommandsDir(workspacePath), "workspace"),
-    ...scanCommandsDir(claudeCommandsDir(workspacePath), "claude"),
+    ...scanPromptTemplatesDir(workspacePromptTemplatesDir(workspacePath), "workspace"),
+    ...scanPromptTemplatesDir(claudeCommandsDir(workspacePath), "claude"),
   ];
 }
 
@@ -85,15 +85,15 @@ export function discoverWorkspaceCommands(workspacePath: string): DiscoveredComm
  * commands. Never touches user-imported/managed commands. Unlike skills there is
  * no `loadable` filter to apply: Pi loads every readable .md.
  */
-export function installBundledCommands(bundledDir: string, registry: CommandRegistry, now: string): void {
+export function installBundledPromptTemplates(bundledDir: string, registry: PromptTemplateRegistry, now: string): void {
   let meta: { source?: string; ref?: string; commit?: string } = {};
   try {
     meta = JSON.parse(fs.readFileSync(path.join(bundledDir, "bundled.json"), "utf8"));
   } catch {
     /* no manifest — provenance stays minimal */
   }
-  const provenance: CommandProvenance = { source: "bundled", sourceUrl: meta.source, ref: meta.ref, commitSha: meta.commit };
-  for (const cmd of scanCommandsDir(bundledDir, "bundled")) {
+  const provenance: PromptTemplateProvenance = { source: "bundled", sourceUrl: meta.source, ref: meta.ref, commitSha: meta.commit };
+  for (const cmd of scanPromptTemplatesDir(bundledDir, "bundled")) {
     const rec = registry.record(cmd.id);
     if (!rec) {
       registry.approve(cmd, now, { enabled: false, provenance }); // first install: off by default
