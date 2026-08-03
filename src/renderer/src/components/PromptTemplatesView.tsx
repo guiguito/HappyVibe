@@ -15,7 +15,7 @@ export function PromptTemplatesView({
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
-        <h1 className="font-black text-3xl tracking-tight mb-2">Commands</h1>
+        <h1 className="font-black text-3xl tracking-tight mb-2">Prompt templates</h1>
         <p className="text-sm text-ink-soft mb-8">Reusable prompts you type as /name. Reviewed and gated, like skills.</p>
 
         {/* Global only — a project's own commands are managed in its workspace
