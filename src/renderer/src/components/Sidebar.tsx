@@ -131,7 +131,7 @@ function KeyboardIcon(): React.JSX.Element {
     their order at the top; the exploded settings pages sit below a divider. */
 const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
   { view: "skills", label: "Skills", Icon: SkillsIcon },
-  { view: "promptTemplates", label: "Prompt templates", Icon: PromptTemplatesIcon },
+  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon },
   { view: "mcp", label: "MCP", Icon: McpIcon },
   { view: "agents", label: "Agents", Icon: AgentsIcon },
   { view: "tools", label: "All Tools", Icon: ToolsIcon },

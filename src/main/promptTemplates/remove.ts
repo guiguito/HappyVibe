@@ -35,7 +35,7 @@ export function planPromptTemplateRemoval(view: { id: string; source: string }):
     return {
       action: "refused",
       path: view.id,
-      reason: "Bundled prompt templates ship with HappyVibe and are reinstalled at startup — disable it instead.",
+      reason: "Bundled prompts ship with HappyVibe and are reinstalled at startup — disable it instead.",
     };
   }
   // Scans are flat and non-recursive (discovery.ts), so a linked command's parent
@@ -64,7 +64,7 @@ export function removePromptTemplateFile(file: string, allowedRoots: string[]): 
     const r = realish(root);
     return abs !== r && abs.startsWith(r + path.sep);
   });
-  if (!ok) throw new Error(`Refusing to delete ${path.resolve(file)}: outside the managed prompt-template roots.`);
+  if (!ok) throw new Error(`Refusing to delete ${path.resolve(file)}: outside the managed prompt roots.`);
   fs.rmSync(abs, { maxRetries: 3 });
 }
 

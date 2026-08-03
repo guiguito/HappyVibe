@@ -43,7 +43,7 @@ const PT_SOURCE_TONE: Record<HvPromptTemplateView["source"], string> = {
 };
 
 const BASH_RISK =
-  "This prompt template uses Claude Code's inline !`bash` injection, which Pi does not support: the prompt will contain the literal text instead of the command's output.";
+  "This prompt uses Claude Code's inline !`bash` injection, which Pi does not support: the prompt will contain the literal text instead of the command's output.";
 const SHADOW_RISK =
   "A built-in /hv-… command owns this name. Pi matches built-ins before prompt templates, so this file can never run — rename it to use it.";
 
@@ -98,8 +98,8 @@ export function PromptTemplateImportControls({
     try {
       const r = await fn();
       if (!r) return; // dialog cancelled
-      if (r.error || !r.token) setError(r.error ?? "No prompt templates found.");
-      else if (r.templates.length === 0) setError("No prompt templates found in that source.");
+      if (r.error || !r.token) setError(r.error ?? "No prompts found.");
+      else if (r.templates.length === 0) setError("No prompts found in that source.");
       else setScan(r);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -212,9 +212,9 @@ function ImportPicker({
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
       <div className="w-full max-w-lg rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-5 flex flex-col max-h-[80vh]" onMouseDown={(e) => e.stopPropagation()}>
-        <h3 className="font-black text-lg mb-1">Import prompt templates</h3>
+        <h3 className="font-black text-lg mb-1">Import prompts</h3>
         <p className="text-xs text-ink-soft mb-3">
-          Choose which prompt templates to import. They're approved on import ({scope === "workspace" ? "into this workspace" : "as global prompt templates"}).
+          Choose which prompts to import. They're approved on import ({scope === "workspace" ? "into this workspace" : "as global prompts"}).
         </p>
         <div className="flex items-center gap-2 pb-1 text-[11px] font-bold text-ink-soft">
           <button className="underline hover:text-ink" onClick={() => setSelected(new Set(scan.templates.map((c) => c.id)))}>Select all</button>
@@ -297,15 +297,15 @@ export function PromptTemplatesSection({ workspaceId }: { workspaceId: string | 
       {needsReview > 0 && (
         <div className="mb-3 rounded-xl border-2 border-honey/60 bg-honey-soft px-3 py-2 text-sm font-semibold text-tangerine-deep">
           {needsReview === 1
-            ? "1 prompt template needs review before it can run."
-            : `${needsReview} prompt templates need review before they can run.`}
+            ? "1 prompt needs review before it can run."
+            : `${needsReview} prompts need review before they can run.`}
         </div>
       )}
       {commands === null ? (
         <p className="text-sm text-ink-soft">Loading…</p>
       ) : commands.length === 0 ? (
         <p className="text-sm text-ink-soft">
-          No prompt templates yet. Drop a <span className="font-mono">.md</span> file into the managed prompts
+          No prompts yet. Drop a <span className="font-mono">.md</span> file into the managed prompts
           directory, or link an existing commands directory to review it here.
         </p>
       ) : (
@@ -455,7 +455,7 @@ export function PromptTemplateInspector({
             {!showDiff && (
               <div className="md flex-1 overflow-y-auto rounded-xl border-2 border-line bg-card px-4 py-3 text-sm">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {stripSkillFrontMatter(detail.current) || "*(empty prompt template)*"}
+                  {stripSkillFrontMatter(detail.current) || "*(empty prompt)*"}
                 </ReactMarkdown>
               </div>
             )}
@@ -467,7 +467,7 @@ export function PromptTemplateInspector({
                   disabled={busy}
                   onClick={() => void act(() => window.hv.promptTemplatesPromote(id).then(() => undefined))}
                   className="rounded-xl border-2 border-line font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 enabled:cursor-pointer disabled:opacity-40 mr-auto"
-                  title="Copy this project prompt template into the global managed dir"
+                  title="Copy this project prompt into the global managed dir"
                 >
                   Promote to global
                 </button>
@@ -486,7 +486,7 @@ export function PromptTemplateInspector({
                     const msg = unlink
                       ? `Unlink this directory?\n\n${detail.linkedRoot ?? id}\n\nHappyVibe stops looking at the whole directory${
                           detail.linkedSiblings
-                            ? `, so “/${detail.name}” and ${detail.linkedSiblings} other prompt template${detail.linkedSiblings === 1 ? "" : "s"} from it will disappear`
+                            ? `, so “/${detail.name}” and ${detail.linkedSiblings} other prompt${detail.linkedSiblings === 1 ? "" : "s"} from it will disappear`
                             : `, so “/${detail.name}” will disappear`
                         }. No files are deleted — the directory belongs to another tool.`
                       : detail.source === "workspace" || detail.source === "claude"
@@ -509,7 +509,7 @@ export function PromptTemplateInspector({
                 </button>
               )}
               {detail.status === "shadowed" ? (
-                <span className="text-sm text-berry font-semibold self-center">This prompt template can never run.</span>
+                <span className="text-sm text-berry font-semibold self-center">This prompt can never run.</span>
               ) : detail.status === "needs-review" ? (
                 canApprove ? (
                   <button

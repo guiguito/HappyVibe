@@ -233,7 +233,7 @@ export function registerIpc(win: BrowserWindow): void {
   try {
     installBundledPromptTemplates(bundledPromptTemplatesDir(piRuntimeDir()), promptTemplateRegistry, new Date().toISOString());
   } catch (e) {
-    console.warn("[hv] bundled prompt templates install failed:", e);
+    console.warn("[hv] bundled prompts install failed:", e);
   }
   const globalPromptTemplateDirs = () => ({
     managedDir: managedPromptTemplatesDir(agentDir()),
@@ -2536,7 +2536,7 @@ export function registerIpc(win: BrowserWindow): void {
   /** Read one command file, source inferred from which root it lives in. */
   const readKnownPromptTemplate = (id: string): DiscoveredPromptTemplate => {
     const root = promptTemplateRoot(id);
-    if (!root) throw new Error("Unknown prompt-template location");
+    if (!root) throw new Error("Unknown prompt location");
     const { managedDir, bundledDir, linkedDirs } = globalPromptTemplateDirs();
     const same = (a: string, b: string): boolean => path.resolve(a) === path.resolve(b);
     const source: PromptTemplateSource = same(root, bundledDir)
@@ -2598,7 +2598,7 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   ipcMain.handle("hv:prompt-templates-set-enabled", (_e, id: string, enabled: boolean) => {
-    if (!promptTemplateRoot(id)) throw new Error("Unknown prompt-template location");
+    if (!promptTemplateRoot(id)) throw new Error("Unknown prompt location");
     promptTemplateRegistry.setEnabled(id, !!enabled, new Date().toISOString());
     void log.append({ type: enabled ? "prompt-template.enabled" : "prompt-template.disabled", data: { id } });
     promptTemplatesChanged();
@@ -2624,7 +2624,7 @@ export function registerIpc(win: BrowserWindow): void {
     // opens the picker. Linked dirs are referenced in place, never copied.
     let picked = typeof dir === "string" && dir.trim() ? dir : null;
     if (!picked) {
-      const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Link a prompt-templates directory" });
+      const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Link a prompts directory" });
       if (r.canceled || !r.filePaths[0]) return getLinkedPromptTemplateDirs();
       picked = r.filePaths[0];
     }
@@ -2677,10 +2677,10 @@ export function registerIpc(win: BrowserWindow): void {
   app.on("will-quit", () => { for (const s of promptTemplateImports.values()) s.cleanup?.(); });
 
   ipcMain.handle("hv:prompt-templates-import-local", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Import prompt templates from a folder" });
+    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Import prompts from a folder" });
     if (r.canceled || !r.filePaths[0]) return null;
     const found = scanImportRoot(r.filePaths[0]);
-    if (found.length === 0) return { token: null, templates: [], error: "No .md prompt templates found in that folder." };
+    if (found.length === 0) return { token: null, templates: [], error: "No .md prompts found in that folder." };
     return registerPromptTemplateImport(found, { source: "local", importedAt: new Date().toISOString() });
   });
 
@@ -2691,7 +2691,7 @@ export function registerIpc(win: BrowserWindow): void {
     try {
       const { root, archiveHash } = await downloadAndExtract(archive, workDir);
       const found = scanImportRoot(root);
-      if (found.length === 0) { fs.rmSync(workDir, { recursive: true, force: true }); return { token: null, templates: [], error: "No .md prompt templates found in that repository." }; }
+      if (found.length === 0) { fs.rmSync(workDir, { recursive: true, force: true }); return { token: null, templates: [], error: "No .md prompts found in that repository." }; }
       return registerPromptTemplateImport(
         found,
         { source: "git", sourceUrl: archive.archiveUrl, ref: archive.ref, commitSha: archiveHash, importedAt: new Date().toISOString() },
@@ -2716,7 +2716,7 @@ export function registerIpc(win: BrowserWindow): void {
       // can deselect it and import the rest.
       const reserved = refuseReservedNames(chosen);
       if (reserved) {
-        return { imported: [], reserved, error: `"/${reserved}" is a built-in HappyVibe command — a prompt template with that name could never run. Rename it and import again.` };
+        return { imported: [], reserved, error: `"/${reserved}" is a built-in HappyVibe command — a prompt with that name could never run. Rename it and import again.` };
       }
       const destParent =
         scope === "workspace"
@@ -2746,10 +2746,10 @@ export function registerIpc(win: BrowserWindow): void {
   // refused (it is reinstalled at startup), linked → drop the DIRECTORY
   // reference only (those files belong to another tool).
   ipcMain.handle("hv:prompt-templates-delete", (_e, id: string, _workspaceId: string | null) => {
-    if (!promptTemplateRoot(id)) return { ok: false as const, error: "That prompt template no longer exists." };
+    if (!promptTemplateRoot(id)) return { ok: false as const, error: "That prompt no longer exists." };
     const cmd = readKnownPromptTemplate(id);
     const plan = planPromptTemplateRemoval({ id: cmd.id, source: cmd.source });
-    if (plan.action === "refused") return { ok: false as const, error: plan.reason ?? "This prompt template cannot be deleted." };
+    if (plan.action === "refused") return { ok: false as const, error: plan.reason ?? "This prompt cannot be deleted." };
     try {
       if (plan.action === "unlink") {
         const linked = getLinkedPromptTemplateDirs();
@@ -2783,7 +2783,7 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:prompt-templates-promote", (_e, id: string) => {
     const root = promptTemplateRoot(id);
     const fromWorkspace = !!root && workspaces.list().some((w) => [workspacePromptTemplatesDir(w), claudeCommandsDir(w)].some((r) => path.resolve(r) === path.resolve(root)));
-    if (!fromWorkspace) throw new Error("Only workspace prompt templates can be promoted.");
+    if (!fromWorkspace) throw new Error("Only workspace prompts can be promoted.");
     const destParent = managedPromptTemplatesDir(agentDir());
     fs.mkdirSync(destParent, { recursive: true });
     const dest = path.join(destParent, path.basename(id));

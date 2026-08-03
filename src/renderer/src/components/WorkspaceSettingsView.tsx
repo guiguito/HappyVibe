@@ -138,8 +138,8 @@ export function WorkspaceSettingsView({ workspace }: { workspace: string }): Rea
 
         <Section
           icon="sysprompt"
-          title="Prompt templates"
-          subtitle="This project's prompt templates, and which global ones are on here."
+          title="Prompts"
+          subtitle="This project's prompts, and which global ones are on here."
         >
           <WorkspacePromptTemplatesBlock workspace={workspace} />
         </Section>
@@ -312,7 +312,7 @@ function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): Re
     void window.hv.promptTemplatesSetActive(workspace, id, on);
   };
   // The checklist mixes global + this project's approved commands; only the
-  // global half belongs under "Global prompt templates in this workspace" — the
+  // global half belongs under "Global prompts in this workspace" — the
   // project's own already have their section above.
   const globalChecklist = data.checklist.filter((c) => c.source !== "workspace" && c.source !== "claude");
 
@@ -322,11 +322,11 @@ function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): Re
 
       <div className="mb-4">
         <div className="text-[11px] font-semibold text-ink-soft mb-1.5">
-          This project's prompt templates (.agents/prompts and .claude/commands)
+          This project's prompts (.agents/prompts and .claude/commands)
         </div>
         {data.templates.length === 0 ? (
           <p className="text-xs text-ink-soft">
-            No project prompt templates yet. Import one above, or drop a .md file into .agents/prompts.
+            No project prompts yet. Import one above, or drop a .md file into .agents/prompts.
           </p>
         ) : (
           <div className="rounded-xl border-2 border-line overflow-hidden">
@@ -347,9 +347,9 @@ function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): Re
         )}
       </div>
 
-      <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Global prompt templates in this workspace</div>
+      <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Global prompts in this workspace</div>
       {globalChecklist.length === 0 ? (
-        <p className="text-xs text-ink-soft">No approved global prompt templates yet. Approve them in the Prompt templates view.</p>
+        <p className="text-xs text-ink-soft">No approved global prompts yet. Approve them in the Prompts view.</p>
       ) : (
         <div className="rounded-xl border-2 border-line overflow-hidden">
           {globalChecklist.map((c) => (
@@ -369,7 +369,7 @@ function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): Re
         </div>
       )}
       <p className="text-xs text-ink-soft mt-1.5">
-        Toggling a prompt template respawns this workspace's sessions to apply the change (the conversation is preserved).
+        Toggling a prompt respawns this workspace's sessions to apply the change (the conversation is preserved).
       </p>
 
       {inspecting && (
