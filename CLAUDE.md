@@ -180,6 +180,17 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   forever, while a real edit inside the 1 ms tolerance read as unedited and got clobbered. Legacy
   `{version, installedMtime}` stamps can't prove authorship, so they are repaired towards the
   bundle leaving a one-time `<agent>.md.bak`. Pinned by `tests/builtin-agents-uninstall.test.ts`.
+- **`yaml` is a ROOT dep pinned to what Pi depends on (2.8.3) — move it with the Pi pin.** Same
+  relationship as pi-runtime's typebox, for a sharper reason: Pi decides what loads, and Pi's
+  frontmatter reader IS `yaml.parse` (`dist/utils/frontmatter.js`). Both `parseSkillFrontmatter`
+  (skills/discovery.ts) and `parsePromptTemplateFrontmatter` (promptTemplates/discovery.ts) hand-rolled
+  a one-line `key: value` scan, so ANY multi-line YAML scalar read as empty — and for skills that is
+  not cosmetic: empty description ⇒ `loadable:false` ⇒ the Skills page claims "SKILL.md is missing a
+  description (Pi will not load it)" AND `resolveActiveSkills` refuses to pass the dir to `--skill`, so
+  a skill Pi loads fine is unusable in HappyVibe. Found via Anthropic's own `math-olympiad` plugin
+  (folded `description:`, scanned to zero skills). Long descriptions are idiomatic in the Agent Skills
+  spec, so this is the common case, not a corner. Match Pi on types too: `disable-model-invocation`
+  is `=== true` (a real boolean), and malformed YAML degrades to "no frontmatter" rather than throwing.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array

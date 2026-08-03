@@ -60,7 +60,7 @@ export interface ParsedMarketplace {
 }
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -121,14 +121,14 @@ describe("parseMarketplace", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```
 L=/tmp/vitest.log; npx vitest run tests/plugin-marketplace.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
 ```
 Expected: FAIL — cannot resolve `src/main/plugins/marketplace`.
 
-- [ ] **Step 3: Write the fixture**
+- [x] **Step 3: Write the fixture**
 
 Trim the real file to the five entries the test names, keeping their `source` objects byte-identical:
 
@@ -145,7 +145,7 @@ PY
 ```
 (Run from the repo root so the output path lands in `tests/fixtures/`. Create the dir first if needed.)
 
-- [ ] **Step 4: Implement `marketplace.ts`**
+- [x] **Step 4: Implement `marketplace.ts`**
 
 ```ts
 import { KNOWN_COMPONENT_KEYS } from "./classify";
@@ -251,13 +251,13 @@ export function entryArchiveUrl(src: PluginSourceRef): string | null {
 }
 ```
 
-- [ ] **Step 5: Run the test — expect PASS**
+- [x] **Step 5: Run the test — expect PASS**
 
 ```
 L=/tmp/vitest.log; npx vitest run tests/plugin-marketplace.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/main/plugins/marketplace.ts tests/plugin-marketplace.test.ts tests/fixtures/marketplace-official.json
@@ -288,7 +288,7 @@ export interface Verdict {
 }
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -361,13 +361,13 @@ describe("classifyPlugin", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```
 L=/tmp/vitest.log; npx vitest run tests/plugin-classify.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
 ```
 
-- [ ] **Step 3: Implement `classify.ts`**
+- [x] **Step 3: Implement `classify.ts`**
 
 ```ts
 /**
@@ -489,13 +489,13 @@ export function classifyPlugin(input: ClassifyInput): Verdict {
 }
 ```
 
-- [ ] **Step 4: Run the test — expect PASS**
+- [x] **Step 4: Run the test — expect PASS**
 
 ```
 L=/tmp/vitest.log; npx vitest run tests/plugin-classify.test.ts tests/plugin-marketplace.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/plugins/classify.ts tests/plugin-classify.test.ts
@@ -517,7 +517,7 @@ git commit -m "feat(plugins): classify a plugin's component surface from tree, m
 export interface ScreenResult { verdict: "ok" | "reject" | "warn"; reason?: string }
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -567,13 +567,13 @@ describe("substitutePluginRoot", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```
 L=/tmp/vitest.log; npx vitest run tests/plugin-screen.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
 ```
 
-- [ ] **Step 3: Implement `screen.ts`**
+- [x] **Step 3: Implement `screen.ts`**
 
 ```ts
 /**
@@ -624,7 +624,7 @@ export function countPluginRootRefs(text: string): number {
 }
 ```
 
-- [ ] **Step 4: Run the test — expect PASS**, then commit
+- [x] **Step 4: Run the test — expect PASS**, then commit
 
 ```bash
 L=/tmp/vitest.log; npx vitest run tests/plugin-screen.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
@@ -659,7 +659,7 @@ export interface PluginScan {
 }
 ```
 
-- [ ] **Step 1: Write the failing test** (builds a fake plugin tree in a temp dir)
+- [x] **Step 1: Write the failing test** (builds a fake plugin tree in a temp dir)
 
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -725,13 +725,13 @@ describe("scanPluginDir", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```
 L=/tmp/vitest.log; npx vitest run tests/plugin-scan.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
 ```
 
-- [ ] **Step 3: Implement `src/main/plugins/scan.ts`**
+- [x] **Step 3: Implement `src/main/plugins/scan.ts`**
 
 Read the manifest from `<dir>/.claude-plugin/plugin.json` (tolerate absent/corrupt → `null`), list top-level entries with `fs.readdirSync(dir, {withFileTypes:true})`, call `classifyPlugin`. Then:
 - skills: `scanSkillsDir(path.join(dir,"skills"), "managed")`, and for each, `screenSkillText(fs.readFileSync(skill.skillMdPath,"utf8"))` + `countPluginRootRefs`.
@@ -741,7 +741,7 @@ Read the manifest from `<dir>/.claude-plugin/plugin.json` (tolerate absent/corru
 
 Every read is wrapped: a corrupt plugin must scan to a verdict, never throw.
 
-- [ ] **Step 4: Run the test — expect PASS**, then commit
+- [x] **Step 4: Run the test — expect PASS**, then commit
 
 ```bash
 L=/tmp/vitest.log; npx vitest run tests/plugin-scan.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
@@ -765,7 +765,7 @@ git commit -m "feat(plugins): scan an extracted plugin into installable componen
   - `pluginOrigin(pluginId, marketplaceId): {plugin: string; marketplace: string}`.
   - `findPluginServers(mcpFile, pluginId): string[]` — server names whose `origin.plugin` matches, for removal.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -848,15 +848,15 @@ describe("origin link", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```
 L=/tmp/vitest.log; npx vitest run tests/plugin-install.test.ts > $L 2>&1; echo "EXIT=$?"; tail -30 $L
 ```
 
-- [ ] **Step 3: Implement `install.ts`** — confinement first (resolve the destination and assert it is inside `destParent`, the `ipc.ts:2326` pattern), `fs.cpSync`, then walk the copy and `substitutePluginRoot` every text file (`.md`, `.sh`, `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.txt`, `.json`, `.yaml`, `.yml`), then `readSkillDir(dest, "managed")` so the returned hash covers the substituted bytes.
+- [x] **Step 3: Implement `install.ts`** — confinement first (resolve the destination and assert it is inside `destParent`, the `ipc.ts:2326` pattern), `fs.cpSync`, then walk the copy and `substitutePluginRoot` every text file (`.md`, `.sh`, `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.txt`, `.json`, `.yaml`, `.yml`), then `readSkillDir(dest, "managed")` so the returned hash covers the substituted bytes.
 
-- [ ] **Step 4: Run the test — expect PASS**, then commit
+- [x] **Step 4: Run the test — expect PASS**, then commit
 
 ```bash
 L=/tmp/vitest.log; npx vitest run tests/plugin-install.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
@@ -883,7 +883,7 @@ git commit -m "feat(plugins): install a plugin's components, origin-linked and c
 - `hv:plugins-install(token, {skillDirs, commandFiles, mcpKeys})` → installed summary; approves skills `enabled:false`, approves commands, writes servers with `origin`, then `scheduleSkillReload` + `scheduleMcpReload`
 - `hv:plugins-remove(pluginId)` → removes skills/commands by provenance and servers by `origin`
 
-- [ ] **Step 1: Seed the marketplace list in config**
+- [x] **Step 1: Seed the marketplace list in config**
 
 ```ts
 // §25: the resolver supports N marketplaces; V1 ships exactly one listed.
@@ -898,16 +898,16 @@ export function listMarketplaces(): Array<{ id: string; url: string }> {
 }
 ```
 
-- [ ] **Step 2: Add the handlers**, following the `hv:skills-import-*` shape exactly: a `Map<string, PluginInstallSession>` with a token, a `cleanup()` that `rmSync`es the download dir, and `void log.append({type:"plugin.installed", data:{...}})` on success.
+- [x] **Step 2: Add the handlers**, following the `hv:skills-import-*` shape exactly: a `Map<string, PluginInstallSession>` with a token, a `cleanup()` that `rmSync`es the download dir, and `void log.append({type:"plugin.installed", data:{...}})` on success.
 
-- [ ] **Step 3: Typecheck**
+- [x] **Step 3: Typecheck**
 
 ```
 npm run typecheck
 ```
 Expected: clean (this runs node + web with `--composite false`).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/main/ipc.ts src/preload/index.ts src/renderer/src/hv.d.ts src/main/config.ts
@@ -928,29 +928,29 @@ Follow `McpCatalogSection.tsx` for the card grid + confirm dialog and `SkillsSec
 
 The confirm dialog must show, before anything is written: the resolved `sha`, what will be installed (n skills / m commands / k servers), the **disclosure banner** when `dropped` is non-empty, that skills land **disabled**, and any `${CLAUDE_PLUGIN_ROOT}` substitution count.
 
-- [ ] **Step 1: Build the page**, - [ ] **Step 2: `npm run typecheck`**, - [ ] **Step 3: Commit**
+- [x] **Step 1: Build the page**, - [x] **Step 2: `npm run typecheck`**, - [x] **Step 3: Commit**
 
 ---
 
 ### Task 8: Full gate + GUI pass
 
-- [ ] **Step 1: Full gate**
+- [x] **Step 1: Full gate**
 
 ```
 L=/tmp/gate.log; npm run gate > $L 2>&1; echo "EXIT=$?"; tail -30 $L
 ```
 Expected: both typechecks pass, ~908+ tests pass, build succeeds.
 
-- [ ] **Step 2: Is a live-Pi run required?**
+- [x] **Step 2: Is a live-Pi run required?**
 
 ```
 npm run live:why
 ```
 Empty output ⇒ not required, and say so. This feature touches no `pi-runtime/extensions/`, `src/main/pi/` or live test file, so it should be empty.
 
-- [ ] **Step 3: GUI pass** — `npm run dev`, then attach via the electron-debug MCP and drive: Plugins page loads the official marketplace, a rejected plugin is greyed with its reason, installing an accepted one shows the confirm with the sha and disclosure, installed skills appear on the Skills page as **disabled**, an installed server appears on the MCP page, and Remove takes all three away. Use `deepseek-v4-flash` for any model turn.
+- [x] **Step 3: GUI pass** — `npm run dev`, then attach via the electron-debug MCP and drive: Plugins page loads the official marketplace, a rejected plugin is greyed with its reason, installing an accepted one shows the confirm with the sha and disclosure, installed skills appear on the Skills page as **disabled**, an installed server appears on the MCP page, and Remove takes all three away. Use `deepseek-v4-flash` for any model turn.
 
-- [ ] **Step 4: Commit** any GUI fixes, one per bug.
+- [x] **Step 4: Commit** any GUI fixes, one per bug.
 
 ---
 
@@ -959,3 +959,32 @@ Empty output ⇒ not required, and say so. This feature touches no `pi-runtime/e
 **Spec coverage:** §25 scope → Task 2; classifier (both calibrations) → Task 2; multi-marketplace + `sha` pin → Tasks 1, 6; screening + substitution → Tasks 3, 5; install-lands-disabled → Task 6; disclosure → Tasks 4, 7; provenance/removal → Tasks 5, 6. §13's MCP-by-import → Tasks 4–6. §24's top-level-commands-only → Tasks 4, 5.
 
 **Deferred deliberately:** no marketplace refresh/cache-invalidation UI (re-scan on open is enough at 278 entries); no per-entry "update available" (§14 out-of-scope); the workspace tier for plugin skills (global only in V1, matching MCP's global-tier decision).
+
+---
+
+## Outcome (2026-08-04) — implemented, gate green
+
+All eight tasks landed. `npm run gate` green (120 files, 1107 tests). `npm run live:why`
+printed nothing, so the live-Pi batch was **not required** and was not run.
+
+Three things differed from the plan, all because reality was checked before coding:
+
+1. **A pre-existing bug blocked Task 4 and was fixed at its root.** Both frontmatter readers
+   scanned one `key: value` line at a time while Pi uses `yaml.parse`, so any multi-line
+   `description:` read as empty — which for skills means `loadable:false`, a false "missing a
+   description" on the Skills page, and `resolveActiveSkills` refusing to pass the dir to
+   `--skill`. Anthropic's own `math-olympiad` hit it. Fixed in the two shared readers with
+   `yaml` pinned to Pi's version; recorded in CLAUDE.md.
+2. **Task 5's confinement test initially passed for the wrong reason** (ENOENT, not the guard).
+   Rewritten to drive the guard through a `basename === ".."` path.
+3. **The GUI pass found two real gaps**, both fixed: install had no inverse in the UI, and the
+   browse line claimed "266 of 278 supported" when entry-level classification can only rule out
+   12 — about thirty points of overstatement.
+
+Verified in the running app, not just in tests: browse fetches all 278 real entries; installing
+42crunch pins to its commit (shown before the write) and lands 5 skills **DISABLED/MANAGED**; a
+hooks-bearing bundled `./path` entry rejects at scan with only Cancel offered; Remove empties both
+the Installed block and the Skills page.
+
+Still open: workspace-tier plugin installs (global only, matching the MCP-tier decision), and the
+`agents/` surface, which stays blocked until the subagent permission gap closes.
