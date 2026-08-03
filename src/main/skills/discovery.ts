@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { parse as parseYaml } from "yaml";
 
 /**
  * Skills discovery + content hashing (PRD §14) — PURE, electron-free,
@@ -52,34 +53,51 @@ export interface DiscoveredSkill {
 const SCRIPT_EXTS = new Set([".sh", ".js", ".mjs", ".cjs", ".ts", ".py", ".rb", ".pl", ".php", ".bash", ".zsh"]);
 
 /**
- * Minimal YAML frontmatter reader — only the scalar keys skills use
- * (name, description, disable-model-invocation). Handles `key: value` with
- * optional single/double quotes; ignores everything else. ponytail: not a full
- * YAML parser — skill frontmatter is flat scalars per the Agent Skills spec.
+ * YAML frontmatter reader for the three keys skills use (name, description,
+ * disable-model-invocation).
+ *
+ * Uses the REAL `yaml` parser, pinned to the version Pi itself depends on,
+ * because Pi's `dist/utils/frontmatter.js` is `yaml.parse` — so anything less
+ * disagrees with Pi about what loads. It was hand-rolled as a one-line
+ * `key: value` scan, and the divergence was not hypothetical: Anthropic's own
+ * `math-olympiad` plugin writes `description:` as a folded multi-line scalar,
+ * which read as "" → `loadable: false` → the Skills page reported "missing a
+ * description (Pi will not load it)" about a skill Pi loads perfectly, and
+ * `resolveActiveSkills` then refused to pass it to `--skill` at all. Long
+ * descriptions are idiomatic in the Agent Skills spec, so this is common.
+ *
+ * MOVE THE `yaml` PIN WITH PI'S. Same reasoning as the typebox pin in
+ * pi-runtime: the point is agreement with Pi, not "latest".
+ *
+ * Fails soft on malformed YAML (returns "no frontmatter") — a corrupt skill
+ * must surface as not-loadable, never as a thrown scan.
  */
 export function parseSkillFrontmatter(content: string): {
   name?: string;
   description?: string;
   disableModelInvocation: boolean;
 } {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
   const out: { name?: string; description?: string; disableModelInvocation: boolean } = {
     disableModelInvocation: false,
   };
-  if (!m) return out;
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z0-9_-]+)\s*:\s*(.*)$/.exec(line);
-    if (!kv) continue;
-    const key = kv[1];
-    let val = kv[2].trim();
-    // strip matching surrounding quotes
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-      val = val.slice(1, -1);
-    }
-    if (key === "name") out.name = val;
-    else if (key === "description") out.description = val;
-    else if (key === "disable-model-invocation") out.disableModelInvocation = val === "true";
+  // Match Pi's extraction exactly: normalize newlines, require a leading ---,
+  // and end at the first "\n---".
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!normalized.startsWith("---")) return out;
+  const end = normalized.indexOf("\n---", 3);
+  if (end === -1) return out;
+  let fm: unknown;
+  try {
+    fm = parseYaml(normalized.slice(4, end));
+  } catch {
+    return out; // malformed → treat as no frontmatter, like Pi's callers do
   }
+  if (!fm || typeof fm !== "object" || Array.isArray(fm)) return out;
+  const rec = fm as Record<string, unknown>;
+  if (typeof rec.name === "string") out.name = rec.name;
+  if (typeof rec.description === "string") out.description = rec.description;
+  // Pi tests `=== true` (a real boolean), not the string "true".
+  out.disableModelInvocation = rec["disable-model-invocation"] === true;
   return out;
 }
 
