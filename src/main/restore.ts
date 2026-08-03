@@ -9,8 +9,12 @@
  * file, so a reopened session can show the same tool cards it did live.
  */
 
+import { createHash } from "node:crypto";
+
 export type RestoreItem =
-  | { kind: "user" | "assistant"; text: string }
+  // §24: `command` is present when this user message was a prompt-template
+  // expansion — the renderer then draws the command card instead of the bubble.
+  | { kind: "user" | "assistant"; text: string; promptTemplate?: { typed: string } }
   | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
   // §23: the plan card, emitted at its plan_complete position (not the bottom).
   // planPath comes from the plan_complete tool RESULT; status/done/total are
@@ -46,6 +50,34 @@ export function messageText(content: unknown): string {
 /** plan_complete's result text is `Plan saved to <relPath>. It is ready…`. */
 function planPathFromResult(text: string): string | null {
   return /Plan saved to (\S+?\.md)/.exec(text)?.[1] ?? null;
+}
+
+/**
+ * §24: the join key between a logged `command.invoked` event and a restored user
+ * message. Pi keeps only the expanded text, so the hash of that text is the only
+ * thing both sides can agree on. TRIMMED on both sides — main hashes the
+ * bridge's `expanded`, restore hashes the message text, and Pi's own trimming
+ * would otherwise decide whether the card appears.
+ */
+export function expandedHash(text: string): string {
+  return createHash("sha256").update(text.trim()).digest("hex");
+}
+
+/**
+ * §24: attach the typed form (`/review src/foo.ts`) to every restored user
+ * message whose text matches a logged invocation. Pairing is by HASH, never by
+ * ordinal: ask-user answers and queued messages are user messages too, so
+ * counting them would misattribute the card after the first mismatch. Mutates in
+ * place and returns the same array (the caller owns freshly built items).
+ */
+export function pairPromptTemplateItems(items: RestoreItem[], typedByHash: Map<string, string>): RestoreItem[] {
+  if (typedByHash.size === 0) return items;
+  for (const it of items) {
+    if (it.kind !== "user") continue;
+    const typed = typedByHash.get(expandedHash(it.text));
+    if (typed) it.promptTemplate = { typed };
+  }
+  return items;
 }
 
 export function restoreItems(raw: RawMessage[]): RestoreItem[] {

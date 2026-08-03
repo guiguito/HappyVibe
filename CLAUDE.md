@@ -14,8 +14,8 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   and it was ~20 of the 55 typecheck runs in this repo's history.
 
 ## Tests
-- Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated) — **13 files**:
-  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,mcp-bridge,plan-bridge}.test.ts
+- Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated) — **14 files**:
+  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,prompt-templates-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,mcp-bridge,plan-bridge}.test.ts
   Source of truth = `grep -rl "skipIf(!KEY" tests/` — re-derive, don't trust the list above.
   Canonical invocation: `npm run test:live`
   (= `grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism`)
@@ -206,6 +206,32 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   starter skills are pre-approved but `enabled:false`; a bundle hash bump re-approves while KEEPING
   the user's on/off. Scopes: `<agentDir>/skills` (managed) + `<runtimeDir>/skills` (bundled) + linked
   dirs (global), `<workspace>/.agents/skills` (workspace).
+- Prompt templates (§24, `src/main/promptTemplates/` + `hv-prompt-templates.ts` + bridge): the skills
+  model one axis simpler — a prompt template is one `.md` FILE, so approval is per file
+  (`--prompt-template <file>`, never a directory: Pi accepts a dir but then approving a folder
+  would approve whatever lands in it later). `--no-prompt-templates` already ships unconditionally.
+  Two skills concepts are deliberately ABSENT: `scriptCount` (replaced by a `` !`bash` `` risk pill,
+  the CC feature Pi silently drops) and `loadable`/`error` — **a description-less prompt template still
+  loads**, Pi falls back to the first body line at 60 chars. **The bridge does no gating and there
+  is NO manifest** — Pi expands templates itself, so resting context cost is zero and prompt templates are
+  excluded from the gauge. Scopes: `<agentDir>/prompts` + `<runtimeDir>/prompts` + linked dirs
+  (global), `<workspace>/.agents/prompts` (workspace) — exactly one workspace root, mirroring
+  `.agents/skills`. `.claude/commands` is NEVER auto-scanned in either scope (2026-08-03): the app
+  does not reach into another tool's directory unasked, so a user imports or links it. Evidence:
+  docs/validation/pt1.md.
+- **A prompt template whose name collides with a `/hv-*` command is silently unreachable.** Pi matches
+  extension commands and RETURNS before template expansion (`agent-session.js:799-806`), yet the
+  file still appears in `get_commands` as `source:"prompt"` — so it looks installed and never runs.
+  Hence the `shadowed` status and the import refusal. `RESERVED_SLASH_COMMANDS` is pinned by
+  `tests/prompt-templates-reserved.test.ts`, which DERIVES the truth by scanning the bridge's own
+  `registerCommand` literals — add a new `/hv-*` command and that test tells you.
+- **The bridge's `input` hook sits in front of EVERY user prompt and must fail OPEN.** It exists
+  only to capture the typed text before Pi expands a template over it (Pi keeps the expansion alone,
+  `agent-session.js:867-875`, so the transcript otherwise shows the typed text when idle and the
+  expansion after a reload — same keystrokes, different history). Pi already wraps input handlers
+  (`runner.js:933-955`) and `undefined` continues; only `{action:"handled"}` swallows a prompt. The
+  bridge wraps its own body too. `tests/prompt-templates-bridge.test.ts` asserts a plain non-slash prompt
+  still completes BEFORE it asserts the feature — if that is red, revert the hook, not the test.
 - Resource gate: spawn passes `--no-extensions --no-prompt-templates --no-themes` beside
   `--no-skills` — ALL FOUR of Pi's auto-discovery tiers are deny-by-default, because `bash` is the
   one fs writer that is not path-confined, so an approved bash command can plant a bare `.ts` in

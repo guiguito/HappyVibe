@@ -52,6 +52,13 @@ export interface PiSpawnOptions {
       `--skill <dir>` per entry (additive even with --no-skills). Always
       `--no-skills`, even when empty, so discovery is off by default. */
   skills?: string[];
+  /** §24 Commands: absolute FILE paths (one per approved command) this session
+      is allowed to load as prompt templates. Enforced with `--no-prompt-templates`
+      (which already ships unconditionally — Pi never sees an unapproved command)
+      plus one `--prompt-template <file>` per entry, additive exactly like
+      `--skill` is with `--no-skills`. Per FILE, never per directory: a directory
+      would silently approve whatever lands in it later (PRD §24). */
+  promptTemplates?: string[];
   /** §14: per-session skills manifest JSON → HV_SKILLS_FILE (the bridge serves
       use_skill and detects raw SKILL.md reads from it). */
   skillsFile?: string;
@@ -149,6 +156,8 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // whole permission layer at spawn.
       "--no-extensions",
       "--no-prompt-templates",
+      // §24 Commands: add back exactly the approved+active ones, by FILE.
+      ...(opts.promptTemplates ?? []).flatMap((f) => ["--prompt-template", f]),
       "--no-themes",
       "--session-dir", sessionDir,
       "--provider", model.provider,

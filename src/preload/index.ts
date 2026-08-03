@@ -213,6 +213,32 @@ contextBridge.exposeInMainWorld("hv", {
     return () => ipcRenderer.removeListener("hv:skills-changed", listener);
   },
 
+  // ── §24 Commands (prompt templates) ──────────────────────────────
+  // The skills surface, channel for channel: list/read/approve/enable/activate,
+  // linked dirs, two-phase import, delete/promote. Changes apply live via
+  // respawn-resume; on-disk / config changes push hv:prompt-templates-changed.
+  promptTemplatesList: (workspaceId?: string) => ipcRenderer.invoke("hv:prompt-templates-list", workspaceId),
+  promptTemplatesRead: (id: string) => ipcRenderer.invoke("hv:prompt-templates-read", id),
+  promptTemplatesApprove: (id: string) => ipcRenderer.invoke("hv:prompt-templates-approve", id),
+  promptTemplatesSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke("hv:prompt-templates-set-enabled", id, enabled),
+  promptTemplatesSetActive: (workspaceId: string, id: string, on: boolean | null) =>
+    ipcRenderer.invoke("hv:prompt-templates-set-active", workspaceId, id, on),
+  promptTemplatesGetLinked: () => ipcRenderer.invoke("hv:prompt-templates-get-linked"),
+  promptTemplatesSetLinked: (dirs: string[]) => ipcRenderer.invoke("hv:prompt-templates-set-linked", dirs),
+  promptTemplatesAddLinked: (dir?: string) => ipcRenderer.invoke("hv:prompt-templates-add-linked", dir),
+  promptTemplatesImportLocal: () => ipcRenderer.invoke("hv:prompt-templates-import-local"),
+  promptTemplatesImportGit: (url: string) => ipcRenderer.invoke("hv:prompt-templates-import-git", url),
+  promptTemplatesImportSelect: (token: string, ids: string[], scope: "global" | "workspace", workspaceId: string | null) =>
+    ipcRenderer.invoke("hv:prompt-templates-import-select", token, ids, scope, workspaceId),
+  promptTemplatesDelete: (id: string, workspaceId: string | null) => ipcRenderer.invoke("hv:prompt-templates-delete", id, workspaceId),
+  promptTemplatesPromote: (id: string) => ipcRenderer.invoke("hv:prompt-templates-promote", id),
+  /** Does ~/.claude/commands exist? Drives the one-click link suggestion. */
+  onPromptTemplatesChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on("hv:prompt-templates-changed", listener);
+    return () => ipcRenderer.removeListener("hv:prompt-templates-changed", listener);
+  },
+
   // ── MCP server config (additive). Changes apply to new sessions. ──
   mcpGet: (workspaceId?: string) => ipcRenderer.invoke("hv:mcp-get", workspaceId),
   mcpSetServer: (scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: unknown) =>

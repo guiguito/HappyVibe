@@ -18,7 +18,10 @@ interface SessionMeta {
 /** Round-4: reopened sessions restore tool cards too (intent + result live in
     the session file), not just user/assistant text. */
 type RestoreItem =
-  | { kind: "user" | "assistant"; text: string }
+  // §24: `command` is set by main when this user message was a prompt-template
+  // expansion (paired by hash against the logged command.invoked event), so a
+  // reopened session redraws the card instead of a wall of expanded prompt.
+  | { kind: "user" | "assistant"; text: string; promptTemplate?: { typed: string } }
   | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
@@ -153,6 +156,53 @@ interface HvSkillDetail {
   scriptCount: number;
   estTokens: { card: number; body: number };
   status: "active" | "disabled" | "needs-review" | "error";
+  provenance: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string } | null;
+  current: string;
+  approved: string | null;
+}
+
+/** §24 — mirrors PromptTemplateView in src/main/commands/view.ts (from hv:prompt-templates-list). */
+interface HvPromptTemplateView {
+  /** Absolute path to the .md file — the approval key AND the --prompt-template arg. */
+  id: string;
+  name: string;
+  description: string;
+  argumentHint?: string;
+  source: "managed" | "workspace" | "linked" | "bundled";
+  /** "shadowed" = the name collides with a bridge /hv-* command, so Pi can never reach it. */
+  status: "active" | "disabled" | "needs-review" | "shadowed";
+  /** Body uses CC's inline !`cmd` injection, which Pi passes through literally — a risk pill, never a block. */
+  hasBashInjection: boolean;
+  /** Paid only on invocation: a command never enters the system prompt. */
+  estTokens: { body: number };
+  changed: boolean;
+  provenance?: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string };
+}
+
+interface HvPromptTemplatesList {
+  global: HvPromptTemplateView[];
+  /** `commands` = this workspace's two roots; `checklist` = every approved+enabled command, global included. */
+  workspace: { templates: HvPromptTemplateView[]; checklist: HvPromptTemplateView[] } | null;
+}
+
+/** §24 — a scan result from a local-folder or git-URL import (pick which to import). */
+interface HvPromptTemplateImportScan {
+  token: string | null;
+  templates: Array<{ id: string; name: string; description: string; argumentHint?: string; hasBashInjection: boolean }>;
+  error?: string;
+}
+
+/** §24 — the inspector payload (hv:prompt-templates-read). `current`/`approved` are both TEMPLATE BODIES. */
+interface HvPromptTemplateDetail {
+  name: string;
+  description: string;
+  argumentHint?: string;
+  source: "managed" | "workspace" | "linked" | "bundled";
+  linkedRoot?: string;
+  linkedSiblings?: number;
+  hasBashInjection: boolean;
+  estTokens: { body: number };
+  status: "active" | "disabled" | "needs-review" | "shadowed";
   provenance: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string } | null;
   current: string;
   approved: string | null;
@@ -435,9 +485,38 @@ interface HvApi {
   ): Promise<{ ok: true; kind: "delete" | "unlink" } | { ok: false; error: string }>;
   /** §14 round 6: the skills Pi actually loaded for this session (from the manifest). */
   skillsSession(sessionId: string): Promise<Array<{ name: string; scope: "global" | "workspace" }>>;
-  /** §14 round 6: Pi's slash commands (pure get_commands query) — skills are source:"skill". */
-  listCommands(sessionId: string): Promise<Array<{ name: string; source: string }>>;
+  /** §14 round 6: Pi's slash commands (pure get_commands query) — skills are
+      source:"skill", prompt templates source:"prompt". §24: main joins Pi's list
+      against its own scan by NAME to add description/argumentHint, which
+      get_commands does not carry. */
+  listCommands(sessionId: string): Promise<Array<{ name: string; source: string; description?: string; argumentHint?: string }>>;
   onSkillsChanged(cb: () => void): () => void;
+
+  // §24 Commands (prompt templates) — the §14 surface, channel for channel.
+  promptTemplatesList(workspaceId?: string): Promise<HvPromptTemplatesList>;
+  promptTemplatesRead(id: string): Promise<HvPromptTemplateDetail>;
+  promptTemplatesApprove(id: string): Promise<void>;
+  promptTemplatesSetEnabled(id: string, enabled: boolean): Promise<void>;
+  promptTemplatesSetActive(workspaceId: string, id: string, on: boolean | null): Promise<void>;
+  promptTemplatesGetLinked(): Promise<string[]>;
+  promptTemplatesSetLinked(dirs: string[]): Promise<void>;
+  /** With a dir: link it straight away (the ~/.claude/commands suggestion). Without: open the picker. */
+  promptTemplatesAddLinked(dir?: string): Promise<string[]>;
+  promptTemplatesImportLocal(): Promise<HvPromptTemplateImportScan | null>;
+  promptTemplatesImportGit(url: string): Promise<HvPromptTemplateImportScan>;
+  /** `reserved` = the batch was refused because that name is a bridge command (PRD §24). */
+  promptTemplatesImportSelect(
+    token: string,
+    ids: string[],
+    scope: "global" | "workspace",
+    workspaceId: string | null,
+  ): Promise<{ imported: string[]; reserved?: string; error?: string }>;
+  promptTemplatesDelete(
+    id: string,
+    workspaceId: string | null,
+  ): Promise<{ ok: true; action: "delete" | "unlink" } | { ok: false; error: string }>;
+  promptTemplatesPromote(id: string): Promise<string>;
+  onPromptTemplatesChanged(cb: () => void): () => void;
 
   // MCP server config (additive). Changes apply to new sessions.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;

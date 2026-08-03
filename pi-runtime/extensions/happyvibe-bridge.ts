@@ -19,6 +19,7 @@ import { parseBuiltins } from "./hv-builtins";
 import {
   buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
+import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from "./hv-prompt-templates";
 // Async subagents (PRD §12): pi-subagents is co-resident on the SAME pi.events
 // bus, so the bridge subscribes to its in-process lifecycle events and relays
 // them as hv.subagent notifies (they never reach RPC stdout on their own). The
@@ -153,6 +154,12 @@ let contextMarks = new Set<MarkKey>();
 // exact set of skills this session spawned with (approved ∩ enabled ∩ active).
 // Re-read on session_start so a respawn (hibernation/reload) reflects new config.
 let skillManifest: SkillManifest = { skills: [] };
+
+// ── §24 Commands ─────────────────────────────────────────────────────────────
+// One slot holding the typed text between the `input` and `before_agent_start`
+// hooks of a single prompt() call. Pi awaits handlers serially between those two
+// points, so at most one prompt is ever mid-flight — see hv-commands.ts.
+const commandPair: TemplatePairState = {};
 
 /** JSON envelope for the fire-and-forget bridge→main channel (B4 hv.audit precedent). */
 const ctxPayload = (o: Record<string, unknown>): string => JSON.stringify({ kind: "hv.context", ...o });
@@ -334,7 +341,40 @@ export default function (pi: ExtensionAPI) {
     busUi = ctx.ui;
   });
 
-  pi.on("before_agent_start", async (event) => {
+  // §24 Commands: capture the ORIGINAL typed text before Pi expands a prompt
+  // template over it. This handler sits in front of EVERY user prompt, so it is
+  // written to be incapable of affecting one: it returns undefined (→
+  // {action:"continue"}, runner.js:958-960) and swallows its own throw. Pi
+  // already wraps each input handler in try/catch and only reports an
+  // extension_error (runner.js:933-955), so this is belt-and-braces — but the
+  // failure mode here would be "no prompt reaches the model", and a transcript
+  // nicety must never be able to cause that. Same rule as
+  // before_provider_request (docs/validation/tc1.md): the hook fails OPEN.
+  pi.on("input", async (event) => {
+    try {
+      rememberTyped(commandPair, (event as { text?: string }).text ?? "");
+    } catch {
+      /* never block a prompt for a card */
+    }
+    return undefined;
+  });
+
+  pi.on("before_agent_start", async (event, ctx) => {
+    // §24: the expansion landed — pair it with what the user actually typed and
+    // tell main, which persists {typed, sha256(expanded)} so the card survives a
+    // reload. Wrapped because this handler also owns the system prompt: a throw
+    // here would cost the turn its AGENTS.md/agents/plan/skills injection.
+    try {
+      const pair = pairExpanded(commandPair, (event as { prompt?: string }).prompt ?? "");
+      if (pair) {
+        ctx.ui.notify(
+          JSON.stringify({ kind: "hv.prompt-template", name: commandName(pair.typed), ...pair }),
+          "info",
+        );
+      }
+    } catch {
+      /* fail open */
+    }
     const sp = (event.systemPrompt ?? "") as string;
     // W2.3: nested AGENTS.md injection — content re-read at injection time so
     // it's always current. Returning systemPrompt replaces it for THIS TURN

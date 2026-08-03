@@ -3,6 +3,7 @@ import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
 import { ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
+import { PromptTemplateImportControls, PromptTemplateInspector, PromptTemplateRowPills, PromptTemplateStatusPill } from "./PromptTemplatesSection";
 import { McpServersSection } from "./McpServersSection";
 import { McpCatalogSection } from "./McpCatalogSection";
 
@@ -133,6 +134,14 @@ export function WorkspaceSettingsView({ workspace }: { workspace: string }): Rea
 
         <Section icon="skills" title="Skills" subtitle="This project's skills, and which global ones are on here.">
           <WorkspaceSkillsBlock workspace={workspace} />
+        </Section>
+
+        <Section
+          icon="sysprompt"
+          title="Prompts"
+          subtitle="This project's prompts, and which global ones are on here."
+        >
+          <WorkspacePromptTemplatesBlock workspace={workspace} />
         </Section>
 
         <Section icon="mcp" title="Workspace MCP" subtitle="Servers for this project only.">
@@ -267,6 +276,104 @@ function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.E
 
       {inspecting && (
         <SkillInspector
+          id={inspecting}
+          workspaceId={workspace}
+          canApprove={!globalChecklist.some((c) => c.id === inspecting)}
+          onClose={() => setInspecting(null)}
+          onChanged={refresh}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * §24: the ONLY surface for workspace-scoped commands — review of this
+ * project's `.agents/prompts` and `.claude/commands`, plus the per-workspace
+ * activation checklist over every approved global command. Same rights split as
+ * skills: a project command is clickable AND approvable here; a global one is
+ * clickable but can only be switched off for this workspace.
+ */
+function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): React.JSX.Element {
+  const [data, setData] = useState<HvPromptTemplatesList["workspace"]>(null);
+  const [inspecting, setInspecting] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    void window.hv.promptTemplatesList(workspace).then((l) => setData(l.workspace));
+  }, [workspace]);
+  useEffect(() => {
+    refresh();
+    return window.hv.onPromptTemplatesChanged(refresh);
+  }, [refresh]);
+
+  if (!data) return <p className="text-sm text-ink-soft">Loading…</p>;
+
+  const toggle = (id: string, on: boolean): void => {
+    void window.hv.promptTemplatesSetActive(workspace, id, on);
+  };
+  // The checklist mixes global + this project's approved commands; only the
+  // global half belongs under "Global prompts in this workspace" — the
+  // project's own already have their section above.
+  const globalChecklist = data.checklist.filter((c) => c.source !== "workspace");
+
+  return (
+    <>
+      <PromptTemplateImportControls scope="workspace" workspaceId={workspace} />
+
+      <div className="mb-4">
+        <div className="text-[11px] font-semibold text-ink-soft mb-1.5">
+          This project's prompts (.agents/prompts)
+        </div>
+        {data.templates.length === 0 ? (
+          <p className="text-xs text-ink-soft">
+            No project prompts yet. Import one above, or drop a .md file into .agents/prompts.
+          </p>
+        ) : (
+          <div className="rounded-xl border-2 border-line overflow-hidden">
+            {data.templates.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setInspecting(c.id)}
+                className="w-full text-left px-3 py-2 border-b border-line last:border-b-0 hover:bg-paper-deep/30 cursor-pointer flex items-center gap-2 flex-wrap"
+              >
+                <PromptTemplateStatusPill status={c.status} />
+                <span className="font-mono font-bold text-sm">/{c.name}</span>
+                <PromptTemplateRowPills cmd={c} />
+                <span className="ml-auto text-ink-soft">›</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Global prompts in this workspace</div>
+      {globalChecklist.length === 0 ? (
+        <p className="text-xs text-ink-soft">No approved global prompts yet. Approve them in the Prompts view.</p>
+      ) : (
+        <div className="rounded-xl border-2 border-line overflow-hidden">
+          {globalChecklist.map((c) => (
+            <div key={c.id} className="flex items-center gap-2 px-3 py-2 border-b border-line last:border-b-0 hover:bg-paper-deep/30">
+              <input
+                type="checkbox"
+                checked={c.status === "active"}
+                onChange={(e) => toggle(c.id, e.target.checked)}
+                className="size-4 accent-tangerine cursor-pointer"
+              />
+              <button type="button" onClick={() => setInspecting(c.id)} className="font-mono font-bold text-sm text-left hover:underline cursor-pointer">
+                /{c.name}
+              </button>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-soft">{c.source}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-ink-soft mt-1.5">
+        Toggling a prompt respawns this workspace's sessions to apply the change (the conversation is preserved).
+      </p>
+
+      {inspecting && (
+        <PromptTemplateInspector
           id={inspecting}
           workspaceId={workspace}
           canApprove={!globalChecklist.some((c) => c.id === inspecting)}

@@ -32,6 +32,9 @@ import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
 import { SkillsView } from "./components/SkillsView";
+import { PromptTemplatesView } from "./components/PromptTemplatesView";
+import { applyPromptTemplatePair } from "./promptTemplatePair";
+import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
@@ -521,7 +524,26 @@ export default function App(): React.JSX.Element {
         // path already renders as its own tool card, so only detected reads here).
         if (r.method === "notify") {
           try {
-            const p = JSON.parse(r.message ?? "") as { kind?: string; name?: string; detected?: boolean };
+            const p = JSON.parse(r.message ?? "") as {
+              kind?: string;
+              name?: string;
+              detected?: boolean;
+              typed?: string;
+              expanded?: string;
+            };
+            // §24: Pi expanded a prompt template. The bubble on screen holds
+            // either the typed text (idle send) or the expansion (steered via
+            // queue_update) depending on a race the user never chose, so fold
+            // the pairing in and let both collapse to the same card.
+            if (p?.kind === "hv.prompt-template" && p.typed && p.expanded) {
+              const pair = { typed: p.typed, expanded: p.expanded };
+              setTranscripts((prev) => {
+                const cur = prev[sid] ?? [];
+                const next = applyPromptTemplatePair(cur, pair);
+                // Identity means nothing matched — skip the re-render.
+                return next === cur ? prev : { ...prev, [sid]: next };
+              });
+            }
             if (p?.kind === "hv.skill" && p.name) {
               // Round 6: track EVERY invocation for the top-bar chip's "used"
               // marks — the use_skill happy path (detected:false) used to be
@@ -990,28 +1012,10 @@ export default function App(): React.JSX.Element {
         // Reconstructs tool cards too (intent + result persist in the session
         // file); reconstructed cards are "done" and render collapsed by default.
         // Stable ids (like appendItem) keep rewind (#11) + React keys working.
-        const items: TranscriptItem[] = messages.map((m) =>
-          m.kind === "tool"
-            ? {
-                kind: "tool" as const,
-                id: idCounter.current++,
-                card: {
-                  toolCallId: m.toolCallId,
-                  toolName: m.toolName,
-                  args: m.args,
-                  status: m.error ? ("error" as const) : ("done" as const),
-                  result: m.result,
-                },
-              }
-            : m.kind === "plan"
-              ? {
-                  // §23: the PlanCard at its original position, with the plan
-                  // file's real status/progress (so the CTA is right on reopen).
-                  kind: "plan" as const,
-                  id: idCounter.current++,
-                  card: { sessionId: id, workspaceId: meta.workspaceId, path: m.planPath, status: m.status ?? "draft", done: m.done ?? 0, total: m.total ?? 0 },
-                }
-              : { kind: m.kind, text: m.text, id: idCounter.current++ },
+        const items: TranscriptItem[] = toTranscriptItems(
+          messages,
+          { sessionId: id, workspaceId: meta.workspaceId },
+          () => idCounter.current++,
         );
         // §14 round 6: the skills chip's "used" marks came only from live hv.skill
         // notifies, so a REOPENED session reported "0 used" while its own restored
@@ -1377,6 +1381,9 @@ export default function App(): React.JSX.Element {
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
         {activeView === "skills" && (
           <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+        )}
+        {activeView === "promptTemplates" && (
+          <PromptTemplatesView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
         {activeView === "mcp" && <McpView />}
         {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
