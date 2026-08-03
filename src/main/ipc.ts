@@ -20,7 +20,7 @@ import {
   type DiscoveredSkill, type SkillProvenance,
 } from "./skills";
 import {
-  bundledPromptTemplatesDir, claudeCommandsDir, PromptTemplateRegistry, discoverGlobalPromptTemplates, discoverWorkspacePromptTemplates,
+  bundledPromptTemplatesDir, PromptTemplateRegistry, discoverGlobalPromptTemplates, discoverWorkspacePromptTemplates,
   installBundledPromptTemplates, managedPromptTemplatesDir, planPromptTemplateRemoval, readPromptTemplateFile, removePromptTemplateFile,
   resolveActivePromptTemplates, scanPromptTemplatesDir, toPromptTemplateView, workspacePromptTemplatesDir,
   type PromptTemplateProvenance, type PromptTemplateSource, type DiscoveredPromptTemplate,
@@ -1899,13 +1899,9 @@ export function registerIpc(win: BrowserWindow): void {
         skillsChanged();
         autoApproveCreatedSkills(workspaceId);
       }
-      // §24: same for the two workspace command roots — an edit flips an
-      // approved command back to needs-review, a git pull can add a new one.
-      // ponytail: `.claude` events never actually arrive — watch.ts drops any
-      // path segment failing files.ts isVisibleEntry, and `.claude` is not in
-      // DOTFILE_ALLOW. Matching it here costs nothing and is correct the day it
-      // is allowed; until then a .claude/commands change shows on the next fetch.
-      if (relDirs.some((d) => d.startsWith(".agents/prompts") || d.startsWith(".claude/commands") || d === ".agents" || d === "")) {
+      // §24: same for the workspace prompt root — an edit flips an approved
+      // template back to needs-review, a git pull can add a new one.
+      if (relDirs.some((d) => d.startsWith(".agents/prompts") || d === ".agents" || d === "")) {
         promptTemplatesChanged();
       }
       // §23: when a plan dir changed, re-parse plan files and push live progress.
@@ -2524,7 +2520,7 @@ export function registerIpc(win: BrowserWindow): void {
     const { managedDir, bundledDir, linkedDirs } = globalPromptTemplateDirs();
     return [
       managedDir, bundledDir, ...linkedDirs,
-      ...workspaces.list().flatMap((w) => [workspacePromptTemplatesDir(w), claudeCommandsDir(w)]),
+      ...workspaces.list().map((w) => workspacePromptTemplatesDir(w)),
     ];
   };
   /** The known scan root this file sits directly in, or null — never trust a renderer path. */
@@ -2545,9 +2541,7 @@ export function registerIpc(win: BrowserWindow): void {
         ? "managed"
         : linkedDirs.some((d) => same(root, d))
           ? "linked"
-          : workspaces.list().some((w) => same(root, claudeCommandsDir(w)))
-            ? "claude"
-            : "workspace";
+          : "workspace";
     return readPromptTemplateFile(id, source);
   };
 
@@ -2620,7 +2614,7 @@ export function registerIpc(win: BrowserWindow): void {
     schedulePromptTemplateReload("global", null);
   });
   ipcMain.handle("hv:prompt-templates-add-linked", async (_e, dir?: string) => {
-    // An explicit dir is the one-click ~/.claude/commands suggestion; no arg
+    // An explicit dir comes from a caller that already knows the path; no arg
     // opens the picker. Linked dirs are referenced in place, never copied.
     let picked = typeof dir === "string" && dir.trim() ? dir : null;
     if (!picked) {
@@ -2753,7 +2747,7 @@ export function registerIpc(win: BrowserWindow): void {
       } else {
         removePromptTemplateFile(plan.path, [
           managedPromptTemplatesDir(agentDir()),
-          ...workspaces.list().flatMap((w) => [workspacePromptTemplatesDir(w), claudeCommandsDir(w)]),
+          ...workspaces.list().map((w) => workspacePromptTemplatesDir(w)),
         ]);
       }
       promptTemplateRegistry.forget(id, new Date().toISOString());
@@ -2762,8 +2756,8 @@ export function registerIpc(win: BrowserWindow): void {
       // Derive the workspace from the command's own path (a caller-supplied id
       // that didn't match meant no respawn and a still-loaded deleted command —
       // the §14 bug this mirrors).
-      const owner = cmd.source === "workspace" || cmd.source === "claude"
-        ? workspaces.list().find((w) => [workspacePromptTemplatesDir(w), claudeCommandsDir(w)].some((r) => path.resolve(r) === path.resolve(path.dirname(id)))) ?? null
+      const owner = cmd.source === "workspace"
+        ? workspaces.list().find((w) => path.resolve(workspacePromptTemplatesDir(w)) === path.resolve(path.dirname(id))) ?? null
         : null;
       schedulePromptTemplateReload(owner ? "workspace" : "global", owner);
       return { ok: true as const, action: plan.action };
@@ -2772,11 +2766,11 @@ export function registerIpc(win: BrowserWindow): void {
     }
   });
 
-  // Promote a workspace (or .claude) command to global: copy into the managed
+  // Promote a workspace prompt to global: copy into the managed
   // dir, approved — same content, so the trust carries over.
   ipcMain.handle("hv:prompt-templates-promote", (_e, id: string) => {
     const root = promptTemplateRoot(id);
-    const fromWorkspace = !!root && workspaces.list().some((w) => [workspacePromptTemplatesDir(w), claudeCommandsDir(w)].some((r) => path.resolve(r) === path.resolve(root)));
+    const fromWorkspace = !!root && workspaces.list().some((w) => path.resolve(workspacePromptTemplatesDir(w)) === path.resolve(root));
     if (!fromWorkspace) throw new Error("Only workspace prompts can be promoted.");
     const destParent = managedPromptTemplatesDir(agentDir());
     fs.mkdirSync(destParent, { recursive: true });

@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import {
   bundledPromptTemplatesDir,
-  claudeCommandsDir,
   PromptTemplateRegistry,
   discoverGlobalPromptTemplates,
   discoverWorkspacePromptTemplates,
@@ -31,19 +30,22 @@ const write = (dir: string, name: string, body: string): string => {
   return f;
 };
 
-test("the four scope roots", () => {
+test("the three scope roots", () => {
   expect(managedPromptTemplatesDir("/agent")).toBe(path.join("/agent", "prompts"));
   expect(bundledPromptTemplatesDir("/runtime")).toBe(path.join("/runtime", "prompts"));
   expect(workspacePromptTemplatesDir("/ws")).toBe(path.join("/ws", ".agents", "prompts"));
-  expect(claudeCommandsDir("/ws")).toBe(path.join("/ws", ".claude", "commands"));
 });
 
-test("scans .agents/prompts and .claude/commands with distinct sources", () => {
+/** A workspace has exactly ONE prompt root, matching skills (.agents/skills).
+ *  `.claude/commands` is NOT auto-scanned — a user imports or links it, so the
+ *  app never reaches into a directory another tool owns without being asked. */
+test("scans .agents/prompts only — .claude/commands is not a scan root", () => {
   const ws = path.join(tmp, "ws");
   write(workspacePromptTemplatesDir(ws), "mine.md", "mine\n");
-  write(claudeCommandsDir(ws), "team.md", "team\n");
-  const bySource = Object.fromEntries(discoverWorkspacePromptTemplates(ws).map((c) => [c.name, c.source]));
-  expect(bySource).toEqual({ mine: "workspace", team: "claude" });
+  write(path.join(ws, ".claude", "commands"), "team.md", "team\n");
+  const found = discoverWorkspacePromptTemplates(ws);
+  expect(found.map((c) => c.name)).toEqual(["mine"]);
+  expect(found.every((c) => c.source === "workspace")).toBe(true);
 });
 
 test("a workspace with neither root yields nothing", () => {

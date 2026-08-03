@@ -17,12 +17,6 @@ describe("planPromptTemplateRemoval", () => {
     expect(p.reason).toMatch(/git-tracked/i);
   });
 
-  it("deletes a .claude/commands file, warning it is probably git-tracked and team-owned", () => {
-    const p = planPromptTemplateRemoval({ id: "/ws/proj/.claude/commands/team.md", source: "claude" });
-    expect(p.action).toBe("delete");
-    expect(p.reason).toMatch(/git-tracked/i);
-  });
-
   it("refuses to delete a bundled command — the runtime reinstalls it at startup", () => {
     const p = planPromptTemplateRemoval({ id: "/runtime/prompts/review.md", source: "bundled" });
     expect(p.action).toBe("refused");

@@ -168,7 +168,7 @@ interface HvPromptTemplateView {
   name: string;
   description: string;
   argumentHint?: string;
-  source: "managed" | "workspace" | "linked" | "bundled" | "claude";
+  source: "managed" | "workspace" | "linked" | "bundled";
   /** "shadowed" = the name collides with a bridge /hv-* command, so Pi can never reach it. */
   status: "active" | "disabled" | "needs-review" | "shadowed";
   /** Body uses CC's inline !`cmd` injection, which Pi passes through literally — a risk pill, never a block. */
@@ -197,7 +197,7 @@ interface HvPromptTemplateDetail {
   name: string;
   description: string;
   argumentHint?: string;
-  source: "managed" | "workspace" | "linked" | "bundled" | "claude";
+  source: "managed" | "workspace" | "linked" | "bundled";
   linkedRoot?: string;
   linkedSiblings?: number;
   hasBashInjection: boolean;

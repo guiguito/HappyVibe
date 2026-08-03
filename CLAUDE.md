@@ -215,8 +215,9 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   loads**, Pi falls back to the first body line at 60 chars. **The bridge does no gating and there
   is NO manifest** — Pi expands templates itself, so resting context cost is zero and prompt templates are
   excluded from the gauge. Scopes: `<agentDir>/prompts` + `<runtimeDir>/prompts` + linked dirs
-  (global), `<workspace>/.agents/prompts` AND `<workspace>/.claude/commands` (workspace) — the
-  latter is READ IN PLACE, never copied, because it is git-tracked and team-owned. Evidence:
+  (global), `<workspace>/.agents/prompts` (workspace) — exactly one workspace root, mirroring
+  `.agents/skills`. `.claude/commands` is NEVER auto-scanned in either scope (2026-08-03): the app
+  does not reach into another tool's directory unasked, so a user imports or links it. Evidence:
   docs/validation/pt1.md.
 - **A prompt template whose name collides with a `/hv-*` command is silently unreachable.** Pi matches
   extension commands and RETURNS before template expansion (`agent-session.js:799-806`), yet the

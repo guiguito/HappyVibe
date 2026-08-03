@@ -83,14 +83,14 @@ test("isShadowed only matches the bridge's own commands", () => {
 });
 
 test("the view carries the row's risk pill and inspector fields", () => {
-  const c = mk("g", `---\ndescription: Risky.\nargument-hint: "[file]"\n---\nContext: !\`git status\``, "claude");
+  const c = mk("g", `---\ndescription: Risky.\nargument-hint: "[file]"\n---\nContext: !\`git status\``, "workspace");
   const v = toPromptTemplateView(c, reg());
   expect(v).toMatchObject({
     id: c.id,
     name: "g",
     description: "Risky.",
     argumentHint: "[file]",
-    source: "claude",
+    source: "workspace",
     hasBashInjection: true,
     estTokens: c.estTokens,
   });

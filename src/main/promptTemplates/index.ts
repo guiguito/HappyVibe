@@ -46,10 +46,6 @@ export function bundledPromptTemplatesDir(runtimeDir: string): string {
 export function workspacePromptTemplatesDir(workspacePath: string): string {
   return path.join(workspacePath, ".agents", "prompts");
 }
-/** Claude Code's project commands — scanned, badged and never written to. */
-export function claudeCommandsDir(workspacePath: string): string {
-  return path.join(workspacePath, ".claude", "commands");
-}
 
 /** All global-scope commands: bundled + managed + linked. Bundled/managed ids
  *  can't collide (distinct roots); linked dirs are scanned in place. */
@@ -69,7 +65,6 @@ export function discoverGlobalPromptTemplates(opts: {
 export function discoverWorkspacePromptTemplates(workspacePath: string): DiscoveredPromptTemplate[] {
   return [
     ...scanPromptTemplatesDir(workspacePromptTemplatesDir(workspacePath), "workspace"),
-    ...scanPromptTemplatesDir(claudeCommandsDir(workspacePath), "claude"),
   ];
 }
 

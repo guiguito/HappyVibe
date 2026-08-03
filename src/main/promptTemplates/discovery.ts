@@ -27,7 +27,7 @@ import { createHash } from "node:crypto";
  * `.md`) — renaming a command means renaming its file.
  */
 
-export type PromptTemplateSource = "managed" | "workspace" | "linked" | "bundled" | "claude";
+export type PromptTemplateSource = "managed" | "workspace" | "linked" | "bundled";
 
 export interface DiscoveredPromptTemplate {
   /** Absolute path to the `.md` file — the `--prompt-template` arg AND the approval key. */

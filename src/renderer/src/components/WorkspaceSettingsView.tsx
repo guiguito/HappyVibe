@@ -314,7 +314,7 @@ function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): Re
   // The checklist mixes global + this project's approved commands; only the
   // global half belongs under "Global prompts in this workspace" — the
   // project's own already have their section above.
-  const globalChecklist = data.checklist.filter((c) => c.source !== "workspace" && c.source !== "claude");
+  const globalChecklist = data.checklist.filter((c) => c.source !== "workspace");
 
   return (
     <>
@@ -322,7 +322,7 @@ function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): Re
 
       <div className="mb-4">
         <div className="text-[11px] font-semibold text-ink-soft mb-1.5">
-          This project's prompts (.agents/prompts and .claude/commands)
+          This project's prompts (.agents/prompts)
         </div>
         {data.templates.length === 0 ? (
           <p className="text-xs text-ink-soft">

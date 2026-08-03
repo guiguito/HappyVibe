@@ -36,12 +36,6 @@ const PT_STATUS_LABEL: Record<HvPromptTemplateView["status"], string> = {
   "needs-review": STATUS_LABEL["needs-review"],
   shadowed: "shadowed",
 };
-/** `claude` is the one source skills don't have — plum, the one unused tone. */
-const PT_SOURCE_TONE: Record<HvPromptTemplateView["source"], string> = {
-  ...SOURCE_TONE,
-  claude: "bg-plum-soft text-plum border-plum/50",
-};
-
 const BASH_RISK =
   "This prompt uses Claude Code's inline !`bash` injection, which Pi does not support: the prompt will contain the literal text instead of the command's output.";
 const SHADOW_RISK =
@@ -223,7 +217,7 @@ export function PromptTemplateStatusPill({ status }: { status: HvPromptTemplateV
 export function PromptTemplateRowPills({ cmd }: { cmd: HvPromptTemplateView }): React.JSX.Element {
   return (
     <>
-      <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${PT_SOURCE_TONE[cmd.source]}`}>
+      <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${SOURCE_TONE[cmd.source]}`}>
         {cmd.source}
       </span>
       {cmd.status === "shadowed" && (
@@ -363,7 +357,7 @@ export function PromptTemplateInspector({
                   <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${PT_STATUS_TONE[detail.status]}`}>
                     {PT_STATUS_LABEL[detail.status]}
                   </span>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${PT_SOURCE_TONE[detail.source]}`}>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${SOURCE_TONE[detail.source]}`}>
                     {detail.source}
                   </span>
                   <span className="text-[11px] text-ink-soft" title="Added to your message only when you type it — never part of the system prompt">
@@ -425,7 +419,7 @@ export function PromptTemplateInspector({
             )}
 
             <div className="mt-4 flex justify-end gap-2">
-              {(detail.source === "workspace" || detail.source === "claude") && detail.status !== "needs-review" && detail.status !== "shadowed" && (
+              {detail.source === "workspace" && detail.status !== "needs-review" && detail.status !== "shadowed" && (
                 <button
                   type="button"
                   disabled={busy}
@@ -453,7 +447,7 @@ export function PromptTemplateInspector({
                             ? `, so “/${detail.name}” and ${detail.linkedSiblings} other prompt${detail.linkedSiblings === 1 ? "" : "s"} from it will disappear`
                             : `, so “/${detail.name}” will disappear`
                         }. No files are deleted — the directory belongs to another tool.`
-                      : detail.source === "workspace" || detail.source === "claude"
+                      : detail.source === "workspace"
                         ? `Delete “/${detail.name}”?\n\n${id}\n\nThis deletes a file from your project, which is probably tracked by git.`
                         : `Delete “/${detail.name}”?\n\n${id}\n\nThe file is removed from disk.`;
                     if (!window.confirm(msg)) return;

@@ -41,7 +41,7 @@ export function planPromptTemplateRemoval(view: { id: string; source: string }):
   // Scans are flat and non-recursive (discovery.ts), so a linked command's parent
   // dir IS the configured linked root — no findLinkedRoot walk needed.
   if (view.source === "linked") return { action: "unlink", path: path.dirname(view.id) };
-  if (view.source === "workspace" || view.source === "claude") {
+  if (view.source === "workspace") {
     return { action: "delete", path: view.id, reason: GIT_TRACKED };
   }
   return { action: "delete", path: view.id };
