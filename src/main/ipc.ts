@@ -33,6 +33,7 @@ import { marketplaceRepoArchive, type MarketplaceEntry } from "./plugins/marketp
 import { CATALOG_GENERATED_AT, PLUGIN_CATALOG } from "./plugins/catalog.generated";
 import { scanPluginDir, type PluginScan } from "./plugins/scan";
 import { fetchMarketplace, fetchPluginDir } from "./plugins/fetch";
+import { normalizePluginMcpServer } from "./plugins/mcpImport";
 import {
   findPluginServers, installPluginCommands, installPluginSkills, pluginOrigin,
 } from "./plugins/install";
@@ -2937,9 +2938,18 @@ export function registerIpc(win: BrowserWindow): void {
         for (const key of sel.mcpKeys ?? []) {
           const cfg = scan.mcpServers[key];
           if (!cfg) continue;
+          // normalize first: a plugin's non-auth header (Miro's X-AI-Source)
+          // otherwise suppresses the adapter's OAuth auto-detection, so the
+          // server connects unauthenticated in a session even though signing in
+          // on the MCP page worked. See plugins/mcpImport.ts.
           // origin is what lets removal take these with it — it must be on the
           // FIRST write or the install is unattributable forever.
-          writeMcpServer(globalMcpFile(), key, { ...cfg, origin: pluginOrigin(scan.name, marketplaceId) }, { failIfExists: true });
+          writeMcpServer(
+            globalMcpFile(),
+            key,
+            { ...normalizePluginMcpServer(cfg), origin: pluginOrigin(scan.name, marketplaceId) },
+            { failIfExists: true },
+          );
           servers.push(key);
         }
 
