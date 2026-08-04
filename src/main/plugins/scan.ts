@@ -3,7 +3,7 @@ import path from "node:path";
 import { classifyPlugin, type Verdict } from "./classify";
 import { countPluginRootRefs, screenSkillText, type ScreenResult } from "./screen";
 import { scanSkillsDir } from "../skills/discovery";
-import { readMcpFile, type McpServerConfig } from "../mcp";
+import { type McpServerConfig } from "../mcp";
 
 /**
  * §25 — turn an extracted plugin directory into the components HappyVibe can
@@ -47,6 +47,44 @@ export interface PluginScan {
   mcpServers: Record<string, McpServerConfig>;
   /** Dropped thing ⇢ how many, for the disclosure banner. */
   dropped: Record<string, number>;
+}
+
+/**
+ * Read a PLUGIN's `.mcp.json`, which comes in two shapes in the wild — measured
+ * across the official marketplace: **169 wrapped** in `{mcpServers:{…}}` and
+ * **26 bare**, a straight `name → config` map with no wrapper. The bare set is
+ * github, linear, context7, playwright, asana, firebase, gitlab, terraform…
+ * i.e. the ones people come for.
+ *
+ * This deliberately does NOT go through `readMcpFile`, which requires the
+ * wrapper and is right to: that function reads HappyVibe's OWN config
+ * (`mcp.json`, the workspace `.mcp.json` we write), and loosening it would
+ * change how we parse the user's files. A plugin's file is a foreign format, so
+ * it gets a foreign reader.
+ */
+export function readPluginMcpServers(file: string): Record<string, McpServerConfig> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return {}; // absent or corrupt — the plugin simply declares no servers
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const o = raw as Record<string, unknown>;
+  const wrapped = o.mcpServers;
+  const src =
+    wrapped && typeof wrapped === "object" && !Array.isArray(wrapped)
+      ? (wrapped as Record<string, unknown>)
+      : o;
+  const out: Record<string, McpServerConfig> = {};
+  for (const [name, cfg] of Object.entries(src)) {
+    // Skip the wrapper key itself and any scalar metadata ($schema and friends),
+    // so a bare file cannot produce a server that is really a string.
+    if (name === "mcpServers") continue;
+    if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) continue;
+    out[name] = cfg as McpServerConfig;
+  }
+  return out;
 }
 
 /** Read `<dir>/.claude-plugin/plugin.json`; null when absent or corrupt. */
@@ -202,7 +240,7 @@ export function scanPluginDir(dir: string, entryComponents: string[] = []): Plug
   const nestedCommands = nestedMarkdown(commandsDir);
 
   // ── MCP servers (tree AND manifest; the manifest wins a key clash) ────────
-  const fromFile = readMcpFile(path.join(dir, ".mcp.json")).mcpServers;
+  const fromFile = readPluginMcpServers(path.join(dir, ".mcp.json"));
   const declared = manifest?.mcpServers;
   const fromManifest =
     declared && typeof declared === "object" && !Array.isArray(declared)

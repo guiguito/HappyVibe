@@ -78,6 +78,42 @@ describe("scanPluginDir", () => {
     expect(Object.keys(scanPluginDir(root).mcpServers)).toEqual(["demo"]);
   });
 
+  it("reads a BARE .mcp.json — the shape the first-party plugins actually use", () => {
+    // Measured across the real marketplace: 169 plugins wrap their servers in
+    // {mcpServers:{…}} and 26 write a bare name→config map with no wrapper —
+    // and the bare set is github, linear, context7, playwright, asana, firebase,
+    // gitlab, terraform… i.e. the ones people come for. readMcpFile requires the
+    // wrapper (correctly: it is HappyVibe's OWN config format), so reading a
+    // plugin's file with it returned ZERO servers and MCP-by-import silently
+    // imported nothing for all 26.
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "hv-bare-"));
+    fs.writeFileSync(
+      path.join(d, ".mcp.json"),
+      JSON.stringify({
+        github: {
+          type: "http",
+          url: "https://api.githubcopilot.com/mcp/",
+          headers: { Authorization: "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" },
+        },
+      }),
+    );
+    const s = scanPluginDir(d);
+    expect(Object.keys(s.mcpServers)).toEqual(["github"]);
+    expect(s.mcpServers.github.url).toBe("https://api.githubcopilot.com/mcp/");
+    expect(s.verdict.components).toEqual(["mcpServers"]);
+    fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  it("ignores scalar keys in a bare .mcp.json rather than inventing a server", () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "hv-bare2-"));
+    fs.writeFileSync(
+      path.join(d, ".mcp.json"),
+      JSON.stringify({ $schema: "https://example.com/s.json", real: { url: "https://x" } }),
+    );
+    expect(Object.keys(scanPluginDir(d).mcpServers)).toEqual(["real"]);
+    fs.rmSync(d, { recursive: true, force: true });
+  });
+
   it("counts dropped hook COMMANDS, not hook files", () => {
     // 3 commands across 2 events — the number the banner should show.
     expect(scanPluginDir(root).dropped).toMatchObject({ hooks: 3 });
