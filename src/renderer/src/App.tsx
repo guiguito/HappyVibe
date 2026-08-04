@@ -47,7 +47,7 @@ import {
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
-import { buildGridStyle } from "./paneGrid";
+import { buildGridStyle, toolbarSlot } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
@@ -1552,7 +1552,9 @@ export default function App(): React.JSX.Element {
                 <div
                   key={slot}
                   style={{ gridArea: STRIPS[slot] }}
-                  className={`min-w-0 h-11 ${edge} ${slot === wsTabs.focused ? "bg-paper-deep/30" : ""}`}
+                  className={`min-w-0 h-11 ${edge} ${slot === wsTabs.focused ? "bg-paper-deep/30" : ""} ${
+                    slot === toolbarSlot(wsTabs) ? "pr-24" : ""
+                  }`}
                   onMouseDown={() => updateTabs(wsId, (t) => focusPane(t, slot))}
                 >
                   <TabStrip
@@ -1590,7 +1592,10 @@ export default function App(): React.JSX.Element {
             {/* v5.1: persistent top-right toolbar — split + file-panel controls,
                 always visible regardless of split state. */}
             {wsId && (
-              <div style={{ gridArea: "toolbar" }} className="h-11 flex items-stretch border-b-2 border-line bg-paper">
+              // Absolute, NOT a grid cell: as a column it existed only in row 1
+              // while content below spanned into it, so strips and panes had
+              // different widths (see paneGrid.ts).
+              <div className="absolute top-0 right-0 z-20 h-11 flex items-stretch border-b-2 border-l-2 border-line bg-paper">
                 <CenterToolbar
                   split={wsTabs.split}
                   treeOpen={treeOpen}
