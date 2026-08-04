@@ -425,31 +425,7 @@ export function ChatView({
 
   // #8: filter the transcript by search text (message kinds that carry text).
 
-  if (!workspace || !sessionId) {
-    return (
-      <div className="flex-1 flex items-center justify-center px-8">
-        <div className="text-center max-w-md">
-          <div className="mx-auto mb-6 size-16 rounded-2xl bg-honey border-2 border-ink/80 shadow-pop -rotate-3 flex items-center justify-center">
-            <svg viewBox="0 0 24 24" className="size-8 rotate-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.2 3.9A2 2 0 0 0 7.5 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-            </svg>
-          </div>
-          <h1 className="font-black text-3xl tracking-tight">Pick a project, make a vibe.</h1>
-          <p className="text-ink-soft mt-2 mb-7">
-            Add a workspace, then hit <span className="font-bold text-tangerine">+</span> next to it in the sidebar
-            to start a session.
-          </p>
-          <button
-            type="button"
-            onClick={onOpenFolder}
-            className="rounded-xl bg-tangerine text-paper font-bold px-6 py-3 border-2 border-tangerine-deep shadow-pop transition-all hover:brightness-105 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none cursor-pointer"
-          >
-            Add a workspace folder…
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (!workspace || !sessionId) return <ChatWelcome onOpenFolder={onOpenFolder} />;
 
   const queued = queue.steering.length + queue.followUp.length;
   // V2.C1: while a delegation runs, the composer stays fully enabled but
@@ -1333,4 +1309,38 @@ function SkillsChip({ skills }: { skills: Array<{ name: string; scope: string; u
       )}
     </div>
   );
+}
+
+/**
+ * The no-session center: "Pick a project, make a vibe."
+ *
+ * Extracted so App can render it directly when NO chat tab is open. Round 5
+ * always mounted one ChatView (its chat area fell back to contentA), so this
+ * showed on a fresh launch; round 11 renders one ChatView per open chat tab, and
+ * with none open the centre was a blank void that read as a crash.
+ */
+export function ChatWelcome({ onOpenFolder }: { onOpenFolder: () => void }): React.JSX.Element {
+  return (
+      <div className="flex-1 flex items-center justify-center px-8">
+        <div className="text-center max-w-md">
+          <div className="mx-auto mb-6 size-16 rounded-2xl bg-honey border-2 border-ink/80 shadow-pop -rotate-3 flex items-center justify-center">
+            <svg viewBox="0 0 24 24" className="size-8 rotate-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.2 3.9A2 2 0 0 0 7.5 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+            </svg>
+          </div>
+          <h1 className="font-black text-3xl tracking-tight">Pick a project, make a vibe.</h1>
+          <p className="text-ink-soft mt-2 mb-7">
+            Add a workspace, then hit <span className="font-bold text-tangerine">+</span> next to it in the sidebar
+            to start a session.
+          </p>
+          <button
+            type="button"
+            onClick={onOpenFolder}
+            className="rounded-xl bg-tangerine text-paper font-bold px-6 py-3 border-2 border-tangerine-deep shadow-pop transition-all hover:brightness-105 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none cursor-pointer"
+          >
+            Add a workspace folder…
+          </button>
+        </div>
+      </div>
+    );
 }

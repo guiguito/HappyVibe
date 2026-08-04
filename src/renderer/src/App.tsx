@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar, type View } from "./components/Sidebar";
-import { ChatView } from "./components/ChatView";
+import { ChatView, ChatWelcome } from "./components/ChatView";
 import { ModelsView } from "./components/ModelsView";
 import { PermissionsView } from "./components/PermissionsView";
 import { SystemPromptView } from "./components/SystemPromptView";
@@ -47,6 +47,8 @@ import {
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
+import { buildGridStyle } from "./paneGrid";
+import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
 import { AgentsMdPanel } from "./components/AgentsMdPanel";
@@ -60,118 +62,6 @@ export type SessionStatus = "running" | "crashed" | "waking";
 
 // §23: plan-mode transition tools — never rendered as raw tool cards.
 const PLAN_TOOL_NAMES = new Set(["plan_complete", "plan_start", "plan_status_update"]);
-
-/**
- * Workspaces that must stay fs-watched. Two independent reasons, and a workspace
- * qualifying for both is still ONE watch:
- *  - F6: it has an open editor tab, so an agent edit auto-refreshes the tab
- *    (FileTab subscribes to hv:fs-changed) even with the file drawer closed.
- *  - §23: it has an active plan, whose n/m progress rides the same watcher (main
- *    re-parses the plan file and pushes hv:plan-changed). Without this the
- *    "Implementing n/m" badge freezes at its implement-time count whenever the
- *    drawer and every editor tab are closed.
- * Main-side watches are refcounted, so this coexists with the file tree's watch.
- */
-export function watchTargets(
-  tabsByWs: Record<string, WorkspaceTabs>,
-  activePlan: Record<string, PlanCardData>,
-): Set<string> {
-  const want = new Set(
-    Object.entries(tabsByWs).filter(([, t]) => allFiles(t).length > 0).map(([w]) => w),
-  );
-  for (const p of Object.values(activePlan)) if (p.workspaceId) want.add(p.workspaceId);
-  return want;
-}
-
-/**
- * Round 11: the CSS grid for a 2×2 pane layout, derived from the tab model.
- *
- * Every pane's content is mounted ONCE and placed by `grid-area` (the invariant
- * in tabs.ts), so the geometry has to be expressible as named areas in ONE flat
- * grid — no nested containers. Consequences, both deliberate:
- *
- *  - a half that is NOT cross-split spans both content rows/columns, so it fills
- *    its side while the other half is divided;
- *  - the cross divider is shared (`sizes.cross`), because in a flat grid the two
- *    halves' inner tracks are literally the same tracks.
- *
- * The toolbar (§7 round 5.1) keeps its own always-present cell in the strip row,
- * and content in the rows BELOW it spans into that column rather than wasting it.
- *
- * That span is why the first track is an exact PERCENTAGE and not an `fr`. With
- * `1fr 1fr auto`, half A gets (W−toolbar)/2 while half B gets (W−toolbar)/2 +
- * toolbar — measured 538 vs 718 at a claimed 50/50, and the draggable handle,
- * positioned at `main%` of the container, sat 90px off the boundary it moves. A
- * percentage first track puts that boundary exactly at `main%` of the full width,
- * so the halves are equal AND the handle is on its own line.
- *
- * The row form subtracts the strip rows for the same reason: the cross boundary
- * is `44px + inner`, so the inner track is `calc(cross% − 44px)`.
- */
-/** Tab-strip height — must match the `h-11` on every strip cell. */
-const STRIP_PX = 44;
-
-export function buildGridStyle(t: WorkspaceTabs): React.CSSProperties {
-  /** Two columns whose FIRST boundary lands exactly at `r` of the full width. */
-  const cols = (r: number): string => `${r * 100}% minmax(0,1fr)`;
-  /** Four rows (strip, content, strip, content) with the boundary at `r` of the height. */
-  const rows = (r: number): string =>
-    `${STRIP_PX}px calc(${r * 100}% - ${STRIP_PX}px) ${STRIP_PX}px minmax(0,1fr)`;
-  const [subA, subB] = t.subSplit;
-
-  if (!t.split) {
-    return {
-      gridTemplateColumns: "minmax(0,1fr) auto",
-      gridTemplateRows: `${STRIP_PX}px minmax(0,1fr)`,
-      gridTemplateAreas: '"stripA toolbar" "contentA contentA"',
-    };
-  }
-
-  if (t.split === "v") {
-    // Halves side by side; a cross-split half divides into ROWS.
-    if (!subA && !subB) {
-      return {
-        gridTemplateColumns: `${cols(t.sizes.main)} auto`,
-        gridTemplateRows: `${STRIP_PX}px minmax(0,1fr)`,
-        gridTemplateAreas: '"stripA stripB toolbar" "contentA contentB contentB"',
-      };
-    }
-    // Four rows: stripA/B, upper content, the inner strip row, lower content.
-    const colA = subA ? ["contentA", "stripC", "contentC"] : ["contentA", "contentA", "contentA"];
-    const colB = subB ? ["contentB", "stripD", "contentD"] : ["contentB", "contentB", "contentB"];
-    return {
-      gridTemplateColumns: `${cols(t.sizes.main)} auto`,
-      gridTemplateRows: rows(t.sizes.cross),
-      gridTemplateAreas: [
-        '"stripA stripB toolbar"',
-        `"${colA[0]} ${colB[0]} ${colB[0]}"`,
-        `"${colA[1]} ${colB[1]} ${colB[1]}"`,
-        `"${colA[2]} ${colB[2]} ${colB[2]}"`,
-      ].join(" "),
-    };
-  }
-
-  // split === "h": halves stacked; a cross-split half divides into COLUMNS.
-  if (!subA && !subB) {
-    return {
-      gridTemplateColumns: "minmax(0,1fr) auto",
-      gridTemplateRows: rows(t.sizes.main),
-      gridTemplateAreas:
-        '"stripA toolbar" "contentA contentA" "stripB stripB" "contentB contentB"',
-    };
-  }
-  const rowA = subA
-    ? ['"stripA stripC toolbar"', '"contentA contentC contentC"']
-    : ['"stripA stripA toolbar"', '"contentA contentA contentA"'];
-  const rowB = subB
-    ? ['"stripB stripD stripD"', '"contentB contentD contentD"']
-    : ['"stripB stripB stripB"', '"contentB contentB contentB"'];
-  return {
-    gridTemplateColumns: `${cols(t.sizes.cross)} auto`,
-    gridTemplateRows: rows(t.sizes.main),
-    gridTemplateAreas: [...rowA, ...rowB].join(" "),
-  };
-}
 
 export default function App(): React.JSX.Element {
   const [keyState, setKeyState] = useState<KeyState>("loading");
@@ -1728,6 +1618,18 @@ export default function App(): React.JSX.Element {
                 </div>
               );
             })}
+            {/* Round 11 bugfix: with no workspace layout active (fresh launch,
+                nothing opened yet) there are no strips and no ChatViews, so the
+                centre was a blank void that read as a crash. Round 5 always
+                mounted one ChatView and showed this welcome; keep that. */}
+            {!wsId && (
+              <div
+                style={{ gridArea: "contentA" }}
+                className={`min-h-0 min-w-0 flex-col ${activeView === "chat" ? "flex" : "hidden"}`}
+              >
+                <ChatWelcome onOpenFolder={addWorkspace} />
+              </div>
+            )}
             {/* Round 11: ONE ChatView per open chat tab, all mounted, so two
                 sessions can stream at once and either can be watched. Placement
                 is by grid-area like every other tab (mount-once invariant). */}

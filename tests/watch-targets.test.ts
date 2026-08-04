@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { watchTargets } from "../src/renderer/src/App";
+import { watchTargets } from "../src/renderer/src/watchTargets";
 import { emptyTabs, openFile, type WorkspaceTabs } from "../src/renderer/src/tabs";
 import { type PlanCardData } from "../src/renderer/src/components/PlanCard";
 

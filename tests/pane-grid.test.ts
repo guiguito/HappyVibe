@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { buildGridStyle } from "../src/renderer/src/App";
+import { buildGridStyle } from "../src/renderer/src/paneGrid";
 import { emptyTabs, openFile, setSize, splitHalf, splitPane } from "../src/renderer/src/tabs";
 
 /**
