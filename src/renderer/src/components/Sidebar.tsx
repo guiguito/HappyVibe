@@ -191,6 +191,7 @@ function SessionRow({
   pending,
   planning,
   selected,
+  open,
   onSelect,
   onRename,
   onArchive,
@@ -203,6 +204,8 @@ function SessionRow({
   /** §23: this session is in plan mode. */
   planning?: boolean;
   selected: boolean;
+  /** Round 11: has an open chat tab, but is not the focused one. */
+  open: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
   onArchive: () => void;
@@ -231,7 +234,12 @@ function SessionRow({
   return (
     <div
       className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold cursor-pointer ${
-        selected ? "bg-honey-soft border border-honey/60" : "border border-transparent hover:bg-card/70"
+        selected
+          ? "bg-honey-soft border border-honey/60"
+          : open
+            // Open elsewhere in the layout: marked, but quieter than the focused row.
+            ? "bg-card border border-line"
+            : "border border-transparent hover:bg-card/70"
       } ${session.archived ? "opacity-60" : ""}`}
       onClick={onSelect}
       title={session.title}
@@ -320,6 +328,7 @@ export function Sidebar({
   pending,
   planning,
   selectedId,
+  openSessionIds,
   view,
   onNavigate,
   onAddWorkspace,
@@ -342,6 +351,12 @@ export function Sidebar({
   /** §23: sessions currently in plan mode → a 🧭 badge. */
   planning?: Record<string, boolean>;
   selectedId: string | null;
+  /**
+   * Round 11: every session with an open chat tab. `selectedId` is the FOCUSED
+   * one — with tabs, "which sessions are on screen" and "which one am I in" are
+   * two different facts, and the row has to show both.
+   */
+  openSessionIds: ReadonlySet<string>;
   view: View;
   onNavigate: (v: View) => void;
   /** Round 8: the Settings group's open/closed state (persisted in App). */
@@ -583,6 +598,7 @@ export function Sidebar({
                       pending={pending[s.id] ?? 0}
                       planning={planning?.[s.id] ?? false}
                       selected={view === "chat" && s.id === selectedId}
+                      open={openSessionIds.has(s.id)}
                       onSelect={() => onSelectSession(s.id)}
                       onRename={(title) => onRenameSession(s.id, title)}
                       onArchive={() => onArchiveSession(s.id, !s.archived)}

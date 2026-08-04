@@ -1,35 +1,46 @@
 import { useState } from "react";
-import { basename, CHAT_TAB, type Pane, type TabId } from "../tabs";
+import { basename, sessionOf, type Pane, type TabId } from "../tabs";
 
 /**
- * WS6 — center tab strip for ONE pane: the chat tab (session title, never
- * closable) + one tab per open file (basename, dirty dot, close X, middle-click
- * close). Tabs are draggable between a split's two strips (HTML5 DnD carrying
- * the TabId). v5.1: tabs-only — split/unsplit + file-panel controls live in the
- * App-level top-right toolbar, and search + context bubble float over the chat.
+ * WS6 — center tab strip for ONE pane: one tab per open chat (session title) and
+ * one per open file (basename, dirty dot, close X, middle-click close). Tabs are
+ * draggable between panes (HTML5 DnD carrying the TabId). v5.1: tabs-only —
+ * split/unsplit + file-panel controls live in the App-level top-right toolbar.
+ *
+ * Round 11: a chat tab is per SESSION, so a strip can hold several, each with its
+ * own title and its own working dot; and a trailing `+` fills the pane without
+ * leaving it. Chat tabs ARE closable now (closing hides the session, it does not
+ * end it), which is why the close button is no longer file-only.
  */
 const DRAG_MIME = "application/x-hv-tabid";
 
 export function TabStrip({
   pane,
   paneIndex,
-  sessionTitle,
+  sessionTitleFor,
   dirty,
-  chatBusy = false,
+  busyFor,
   onSelect,
   onClose,
   onMoveTab,
+  onNewSession,
+  onOpenFilePanel,
 }: {
   pane: Pane;
-  paneIndex: 0 | 1;
-  sessionTitle: string;
+  /** Slot index in the 2×2 grid (0–3). */
+  paneIndex: number;
+  /** A chat tab's label — per tab now, since a strip can hold several sessions. */
+  sessionTitleFor: (sessionId: string) => string;
   /** relPath → has unsaved edits. */
   dirty: Record<string, boolean>;
-  /** WS7: pulse dot on the chat tab while the agent works (moved from the header). */
-  chatBusy?: boolean;
+  /** WS7: pulse dot while that session's agent works. Per session (round 11). */
+  busyFor: (sessionId: string) => boolean;
   onSelect: (tab: TabId) => void;
   onClose: (tab: TabId) => void;
-  onMoveTab: (tab: TabId, toPane: 0 | 1) => void;
+  onMoveTab: (tab: TabId, toPane: number) => void;
+  /** Round 11: the trailing `+` — fill this pane without leaving it. */
+  onNewSession: () => void;
+  onOpenFilePanel: () => void;
 }): React.JSX.Element {
   const tab = (active: boolean): string =>
     `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors ${
@@ -61,7 +72,9 @@ export function TabStrip({
         )}
         {pane.tabs.map((id) => {
           const active = pane.active === id;
-          const isChat = id === CHAT_TAB;
+          const sid = sessionOf(id);
+          const isChat = sid !== null;
+          const label = isChat ? sessionTitleFor(sid) : basename(id);
           return (
             <span
               key={id}
@@ -72,18 +85,18 @@ export function TabStrip({
               onDragStart={(e) => e.dataTransfer.setData(DRAG_MIME, id)}
               onClick={() => onSelect(id)}
               onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(id)}
-              onAuxClick={(e) => e.button === 1 && !isChat && onClose(id)}
+              onAuxClick={(e) => e.button === 1 && onClose(id)}
               className={tab(active)}
-              title={isChat ? sessionTitle : id}
+              title={isChat ? label : id}
             >
               {isChat && <ChatGlyph />}
-              <span className="truncate">{isChat ? sessionTitle : basename(id)}</span>
-              {isChat && chatBusy && <span className="size-1.5 rounded-full bg-tangerine animate-pulse shrink-0" title="Working…" />}
+              <span className="truncate">{label}</span>
+              {isChat && busyFor(sid) && <span className="size-1.5 rounded-full bg-tangerine animate-pulse shrink-0" title="Working…" />}
               {!isChat && dirty[id] && <span className="size-1.5 rounded-full bg-tangerine shrink-0" title="Unsaved changes" />}
-              {!isChat && (
+              {(
                 <button
                   type="button"
-                  aria-label={`Close ${basename(id)}`}
+                  aria-label={`Close ${label}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onClose(id);
@@ -97,6 +110,47 @@ export function TabStrip({
           );
         })}
       </div>
+      {/* Round 11: fill THIS pane — a new session, or the file panel to pick from. */}
+      <NewTabButton onNewSession={onNewSession} onOpenFilePanel={onOpenFilePanel} />
+    </div>
+  );
+}
+
+/** The trailing `+`: a two-item menu, closed on blur so there is no backdrop. */
+function NewTabButton({
+  onNewSession,
+  onOpenFilePanel,
+}: {
+  onNewSession: () => void;
+  onOpenFilePanel: () => void;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const item =
+    "block w-full text-left px-3 py-2 text-[13px] hover:bg-paper-deep/60 cursor-pointer whitespace-nowrap";
+  return (
+    <div className="relative shrink-0 flex items-stretch" onBlur={(e) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+    }}>
+      <button
+        type="button"
+        title="New tab in this pane"
+        aria-label="New tab in this pane"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center border-l-2 border-line px-2.5 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer font-black"
+      >
+        +
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
+          <button type="button" className={item} onClick={() => { setOpen(false); onNewSession(); }}>
+            New session
+          </button>
+          <button type="button" className={item} onClick={() => { setOpen(false); onOpenFilePanel(); }}>
+            Open file…
+          </button>
+        </div>
+      )}
     </div>
   );
 }
