@@ -43,7 +43,7 @@ import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming"
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
   activateTab, allChats, allFiles, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
-  isChatTab, liveSlots, moveTab, openChat, openFile, sessionOf, setSize, splitAt, splitOptions,
+  isChatTab, liveSlots, moveTab, openChat, openFile, paneOf, sessionOf, setSize, splitAt, splitOptions,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
@@ -1143,9 +1143,19 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  const send = async (msg: string, behavior?: "followUp", attachments?: ImageAttachment[], mentions?: string[]): Promise<void> => {
-    if (!selectedId) return;
-    const sid = selectedId;
+  /**
+   * Round 11: `sid` is a PARAMETER, not `selectedId`. Every chat tab is mounted, so
+   * in a split two composers can be visible at once — and typing into one while
+   * another is "selected" sent the prompt to the wrong session. A handler shared by
+   * N instances must never resolve which session from a global.
+   */
+  const send = async (
+    sid: string,
+    msg: string,
+    behavior?: "followUp",
+    attachments?: ImageAttachment[],
+    mentions?: string[],
+  ): Promise<void> => {
     // W2.1: attached images ride the RPC `images` param (ImageContent[]).
     const images = attachments?.length ? buildImages(attachments) : undefined;
     // F3: @file mention warnings (skipped binaries, over-cap dirs) surface as notices.
@@ -1190,9 +1200,8 @@ export default function App(): React.JSX.Element {
   // would be wrong, not just wasteful: a respawn resets that session's
   // in-memory permission grants and dangerous mode to safe defaults. So the
   // restart is conditional on the session actually being crashed.
-  const retryCrash = async (): Promise<void> => {
-    if (!selectedId) return;
-    const sid = selectedId;
+  /** Same rule as `send`: the session is a parameter, never `selectedId`. */
+  const retryCrash = async (sid: string): Promise<void> => {
     const lastUser = [...(transcripts[sid] ?? [])].reverse().find((it) => it.kind === "user");
     if (statuses[sid] === "crashed") {
       setStatuses((p) => {
@@ -1202,7 +1211,7 @@ export default function App(): React.JSX.Element {
       });
       await selectSession(sid);
     }
-    if (lastUser && lastUser.kind === "user") await send(lastUser.text);
+    if (lastUser && lastUser.kind === "user") await send(sid, lastUser.text);
   };
 
   // macOS dock badge mirrors total unanswered permission prompts.
@@ -1641,6 +1650,15 @@ export default function App(): React.JSX.Element {
               <Fragment key={sid}>
             <div
               style={{ gridArea: area ?? undefined }}
+              // Round 11: a click ANYWHERE in the pane focuses it — not just on its
+              // tab strip. Two composers can be visible at once, so "the pane I am
+              // typing in" has to be the focused one or every global read (stats,
+              // cost, the sidebar highlight) describes a different session.
+              onMouseDown={() => {
+                const slot = paneOf(wsTabs, chatTab(sid));
+                if (wsId && slot >= 0) updateTabs(wsId, (t) => focusPane(t, slot));
+                if (selectedId !== sid) setSelectedId(sid);
+              }}
               className={`min-h-0 min-w-0 flex-col ${paneDivider(area)} ${activeView === "chat" && area ? "flex" : "hidden"}`}
             >
               <ChatView
@@ -1689,8 +1707,8 @@ export default function App(): React.JSX.Element {
             } : undefined}
             composerInsert={composerInsert?.sid === sid ? composerInsert : undefined}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
-            onSend={send}
-            onRetry={retryCrash}
+            onSend={(msg, behavior, images, mentions) => void send(sid, msg, behavior, images, mentions)}
+            onRetry={() => void retryCrash(sid)}
             onCompact={() => void window.hv.compactSession(sid)}
             onAbort={() => {
               // Mark BEFORE committing: the abort has a renderer→main→child round
