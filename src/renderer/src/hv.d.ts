@@ -161,10 +161,10 @@ interface HvSkillDetail {
   approved: string | null;
 }
 
-/** §25 — one row in the marketplace browse list. Classified from the marketplace
- *  ENTRY alone, so 278 rows cost one fetch and no per-plugin download. A rejected
- *  row is still shown, greyed with its reason — hiding it makes the store look
- *  broken to someone who came looking for a plugin they read about. */
+/** §25 — one row in the plugin store. Every row is a plugin that was VERIFIED at
+ *  release time by the app's own classifier and can actually be installed, so
+ *  there is no `accepted`/`reason` pair: unsupported plugins are not listed at
+ *  all. Mirrors PluginCatalogEntry in src/main/plugins/catalog.generated.ts. */
 interface HvPluginCard {
   name: string;
   description: string;
@@ -172,11 +172,12 @@ interface HvPluginCard {
   homepage?: string;
   /** Branch or tag, display only. */
   ref?: string;
-  /** The commit we would install — every object source carries one. */
+  /** The commit it was verified at, and the one install fetches. */
   sha: string | null;
-  accepted: boolean;
-  /** Present when !accepted: "uses hooks, not supported in HappyVibe". */
-  reason?: string;
+  /** simple-icons class; absent → BrandMark renders a monogram. */
+  brand?: string;
+  /** Counts from the verification pass, so a card needs no download. */
+  counts: { skills: number; commands: number; servers: number };
 }
 
 /** §25 — everything the confirm dialog must show BEFORE anything is written. */
@@ -569,13 +570,8 @@ interface HvApi {
     url: string,
   ): Promise<{ ok: true; id: string; entries: number } | { ok: false; error: string }>;
   pluginRemoveMarketplace(id: string): Promise<Array<{ id: string; url: string }>>;
-  pluginList(
-    marketplaceId: string,
-    force?: boolean,
-  ): Promise<
-    | { ok: true; name: string; description?: string; plugins: HvPluginCard[] }
-    | { ok: false; error: string; plugins: HvPluginCard[] }
-  >;
+  /** The embedded, verified store. No network — everything listed installs. */
+  pluginList(): Promise<{ ok: true; name: string; generatedAt: string; plugins: HvPluginCard[] }>;
   pluginScan(
     marketplaceId: string,
     name: string,

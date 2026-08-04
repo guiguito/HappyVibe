@@ -12,7 +12,7 @@ import {
   saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
-  listMarketplaces, addMarketplace, removeMarketplace,
+  listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
 } from "./config";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
@@ -29,8 +29,8 @@ import {
 import { refuseReservedNames } from "./promptTemplatesImport";
 // §25 plugin marketplaces — pure modules (classify/marketplace/scan) plus the
 // impure install and the network side.
-import { ACCEPTED_COMPONENTS, classifyPlugin } from "./plugins/classify";
-import { type MarketplaceEntry, type ParsedMarketplace } from "./plugins/marketplace";
+import { marketplaceRepoArchive, type MarketplaceEntry } from "./plugins/marketplace";
+import { CATALOG_GENERATED_AT, PLUGIN_CATALOG } from "./plugins/catalog.generated";
 import { scanPluginDir, type PluginScan } from "./plugins/scan";
 import { fetchMarketplace, fetchPluginDir } from "./plugins/fetch";
 import {
@@ -2753,18 +2753,36 @@ export function registerIpc(win: BrowserWindow): void {
   }
   const pluginSessions = new Map<string, PluginInstallSession>();
   let pluginSeq = 0;
-  /** Cache the parsed list per url for this app run — 278 entries, one fetch. */
-  const marketplaceCache = new Map<string, ParsedMarketplace>();
-
-  const loadMarketplace = async (id: string, force = false): Promise<ParsedMarketplace> => {
-    const cfg = listMarketplaces().find((m) => m.id === id);
-    if (!cfg) throw new Error(`no marketplace listed with id "${id}"`);
-    const hit = marketplaceCache.get(cfg.url);
-    if (hit && !force) return hit;
-    const parsed = await fetchMarketplace(cfg.url);
-    marketplaceCache.set(cfg.url, parsed);
-    return parsed;
+  /**
+   * The marketplace's own repo, extracted ONCE per run — every bare "./path"
+   * entry lives inside it, so without this, opening N first-party plugins
+   * downloaded the same ~3 MB N times.
+   *
+   * Because it is SHARED, a scan session that uses it must not clean it up (see
+   * hv:plugins-scan) or dismissing one dialog would delete the tree every other
+   * first-party card depends on. It is removed on quit instead.
+   */
+  const localCheckouts = new Map<string, { dir: string; workDir: string }>();
+  const localCheckout = async (url: string): Promise<{ dir: string; workDir: string }> => {
+    const hit = localCheckouts.get(url);
+    if (hit) return hit;
+    const repo = marketplaceRepoArchive(url);
+    if (!repo) throw new Error("Could not work out which repo hosts that marketplace.");
+    const workDir = path.join(userData, "plugin-import", `mp-${++pluginSeq}-${Date.now()}`);
+    const { root } = await downloadAndExtract(
+      { archiveUrl: repo.archiveUrl, host: "", owner: "", repo: "", ref: repo.ref },
+      workDir,
+    );
+    const tops = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory());
+    const entry = { dir: tops.length === 1 ? path.join(root, tops[0].name) : root, workDir };
+    localCheckouts.set(url, entry);
+    return entry;
   };
+  app.on("will-quit", () => {
+    for (const { workDir } of localCheckouts.values()) {
+      fs.rmSync(workDir, { recursive: true, force: true });
+    }
+  });
 
   ipcMain.handle("hv:plugins-marketplaces", () => listMarketplaces());
 
@@ -2772,10 +2790,13 @@ export function registerIpc(win: BrowserWindow): void {
     const clean = String(url ?? "").trim();
     if (!/^https:\/\//.test(clean)) return { ok: false as const, error: "Use an https URL to a marketplace.json." };
     try {
+      // Validates that the URL really is a marketplace before recording it.
+      // Its plugins are NOT listed yet: phase 2 indexes a user-added marketplace
+      // (see the Notion "Let user add markeplace" page) rather than listing
+      // unverified entries the user could click and be refused.
       const parsed = await fetchMarketplace(clean);
       const id = parsed.name || clean;
       addMarketplace({ id, url: clean });
-      marketplaceCache.set(clean, parsed);
       void log.append({ type: "plugin.marketplace-added", data: { id, url: clean, entries: parsed.entries.length } });
       return { ok: true as const, id, entries: parsed.entries.length };
     } catch (e) {
@@ -2791,37 +2812,12 @@ export function registerIpc(win: BrowserWindow): void {
    * its reason: hiding it makes the store look broken to someone who came
    * looking for a plugin they read about.
    */
-  ipcMain.handle("hv:plugins-list", async (_e, marketplaceId: string, force?: boolean) => {
-    try {
-      const mp = await loadMarketplace(String(marketplaceId), force === true);
-      return {
-        ok: true as const,
-        name: mp.name,
-        description: mp.description,
-        plugins: mp.entries.map((entry) => {
-          // Entry-level components are all we know before a download; a plugin
-          // that looks clean here can still reject at scan time (a tree-only
-          // hooks/ dir), and the confirm dialog is where that surfaces.
-          const v = classifyPlugin({ manifest: null, topLevel: [], entryComponents: entry.entryComponents });
-          const rejectedEarly = entry.entryComponents.some(
-            (c) => !ACCEPTED_COMPONENTS.includes(c as (typeof ACCEPTED_COMPONENTS)[number]),
-          );
-          return {
-            name: entry.name,
-            description: entry.description,
-            category: entry.category,
-            homepage: entry.homepage,
-            ref: entry.source.ref,
-            sha: entry.source.sha,
-            accepted: !rejectedEarly,
-            reason: rejectedEarly ? v.reason : undefined,
-          };
-        }),
-      };
-    } catch (e) {
-      return { ok: false as const, error: e instanceof Error ? e.message : String(e), plugins: [] };
-    }
-  });
+  ipcMain.handle("hv:plugins-list", () => ({
+    ok: true as const,
+    name: OFFICIAL_MARKETPLACE.id,
+    generatedAt: CATALOG_GENERATED_AT,
+    plugins: PLUGIN_CATALOG,
+  }));
 
   /**
    * Download a plugin at its pinned sha, scan it, and return everything the
@@ -2830,30 +2826,41 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:plugins-scan", async (_e, marketplaceId: string, name: string) => {
     let workDir: string | undefined;
     try {
-      const mp = await loadMarketplace(String(marketplaceId));
-      const entry = mp.entries.find((x) => x.name === name);
-      if (!entry) return { ok: false as const, error: `"${name}" is not in that marketplace.` };
-      workDir = path.join(userData, "plugin-import", `pl-${++pluginSeq}-${Date.now()}`);
+      const cat = PLUGIN_CATALOG.find((p) => p.name === name);
+      if (!cat) return { ok: false as const, error: `"${name}" is not in the catalog.` };
+      // The catalog carries everything a scan needs, so nothing is fetched to
+      // find it — only the plugin itself is downloaded, at the sha it was
+      // verified at.
+      const entry: MarketplaceEntry = {
+        name: cat.name,
+        description: cat.description,
+        category: cat.category,
+        homepage: cat.homepage,
+        source: cat.source,
+        entryComponents: [],
+      };
       let localRoot: string | undefined;
-      if (!entry.source.repoUrl) {
-        // A "./path" entry lives in the marketplace repo, so fetch that repo —
-        // pinned by nothing of its own, which is why it inherits the list's ref.
-        const cfg = listMarketplaces().find((m) => m.id === marketplaceId)!;
-        const repo = parseForgeUrl(cfg.url.replace(/\/raw\/.*$/, "").replace(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/.*$/, "https://github.com/$1/$2"));
-        if (!repo) return { ok: false as const, error: "Could not work out which repo hosts that marketplace." };
-        const { root } = await downloadAndExtract(repo, workDir);
-        const tops = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory());
-        localRoot = tops.length === 1 ? path.join(root, tops[0].name) : root;
+      let cleanup: (() => void) | undefined;
+      if (entry.source.repoUrl) {
+        // Its own repo — its own working dir, cleaned up with the session.
+        workDir = path.join(userData, "plugin-import", `pl-${++pluginSeq}-${Date.now()}`);
+        const wd = workDir;
+        cleanup = () => fs.rmSync(wd, { recursive: true, force: true });
+      } else {
+        // A "./path" entry lives in the SHARED marketplace checkout. Deliberately
+        // no cleanup: removing it here would delete the tree every other
+        // first-party card resolves against.
+        const url = listMarketplaces().find((m) => m.id === marketplaceId)?.url ?? OFFICIAL_MARKETPLACE.url;
+        localRoot = (await localCheckout(url)).dir;
       }
-      const { dir } = await fetchPluginDir(entry.source, workDir, localRoot);
+      const { dir } = await fetchPluginDir(entry.source, workDir ?? localRoot ?? "", localRoot);
       const scan = scanPluginDir(dir, entry.entryComponents);
-      const token = `pl-${pluginSeq}-${Date.now()}`;
-      const wd = workDir;
+      const token = `pl-${++pluginSeq}-${Date.now()}`;
       pluginSessions.set(token, {
         marketplaceId: String(marketplaceId),
         entry,
         scan,
-        cleanup: () => fs.rmSync(wd, { recursive: true, force: true }),
+        cleanup,
       });
       return {
         ok: true as const,

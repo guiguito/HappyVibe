@@ -18,7 +18,7 @@ export function PluginsView(): React.JSX.Element {
         <Section
           icon="skills"
           title="Marketplace"
-          subtitle="Nothing installs on its own: you pick what comes in, skills arrive switched off, and plugins using hooks or agents are shown greyed with the reason rather than hidden."
+          subtitle="Every plugin here was checked against the permission gate before the release, so anything listed installs. Nothing installs on its own — you pick what comes in, and skills arrive switched off."
         >
           <PluginsSection />
         </Section>

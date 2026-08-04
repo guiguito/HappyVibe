@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
+import { BrandMark } from "./BrandMark";
 
 /**
- * §25 plugin marketplace browser.
+ * §25 plugin store.
  *
- * Browsing is one fetch of the marketplace list; a plugin is only downloaded
- * when the user opens it, and even then nothing is written until they confirm.
+ * Every plugin listed here was verified at release time by the app's own
+ * classifier and can be installed — the list is embedded, so this page needs no
+ * network and cannot show something that will refuse on click. Plugins using
+ * hooks, agents, monitors or LSP servers are absent rather than greyed: a store
+ * full of things you cannot install is a worse message than a shorter store.
  *
- * Rejected plugins are shown greyed WITH their reason rather than hidden — the
- * same one-line branch either way, and it turns the restriction into a visible
- * safety claim instead of an apparent gap.
+ * Installing still downloads the plugin at the commit it was verified at, so
+ * what was checked is exactly what lands.
  */
 
 type Card = HvPluginCard;
@@ -20,19 +23,18 @@ interface Chosen {
   servers: Set<string>;
 }
 
+const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? "" : "s"}`;
+
 export function PluginsSection(): React.JSX.Element {
-  const [marketplaces, setMarketplaces] = useState<Array<{ id: string; url: string }>>([]);
-  const [active, setActive] = useState<string | null>(null);
   const [cards, setCards] = useState<Card[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [listError, setListError] = useState<string | null>(null);
+  const [generatedAt, setGeneratedAt] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [showRejected, setShowRejected] = useState(true);
   const [category, setCategory] = useState<string | null>(null);
 
   const [scan, setScan] = useState<HvPluginScan | null>(null);
   const [scanning, setScanning] = useState<string | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Chosen>({ skills: new Set(), commands: new Set(), servers: new Set() });
   const [installing, setInstalling] = useState(false);
   const [done, setDone] = useState<{ skills: string[]; commands: string[]; servers: string[]; substituted: number } | null>(null);
@@ -46,36 +48,15 @@ export function PluginsSection(): React.JSX.Element {
   };
 
   useEffect(() => {
-    void window.hv.pluginMarketplaces().then((ms) => {
-      setMarketplaces(ms);
-      setActive((cur) => cur ?? ms[0]?.id ?? null);
+    void window.hv.pluginList().then((res) => {
+      setLoading(false);
+      setCards(res.plugins);
+      setGeneratedAt(res.generatedAt);
     });
     refreshInstalled();
   }, []);
 
-  const remove = (plugin: string): void => {
-    setRemoving(plugin);
-    void window.hv.pluginRemove(plugin).then((res) => {
-      setRemoving(null);
-      refreshInstalled();
-      if (!res.ok) setListError(res.error);
-    });
-  };
-
-  const load = (id: string, force = false): void => {
-    setLoading(true);
-    setListError(null);
-    void window.hv.pluginList(id, force).then((res) => {
-      setLoading(false);
-      setCards(res.plugins);
-      if (!res.ok) setListError(res.error);
-    });
-  };
-
-  useEffect(() => {
-    if (active) load(active);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  const installedNames = useMemo(() => new Set(installed.map((p) => p.plugin)), [installed]);
 
   const categories = useMemo(
     () => [...new Set(cards.map((c) => c.category).filter((c): c is string => !!c))].sort(),
@@ -85,29 +66,23 @@ export function PluginsSection(): React.JSX.Element {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return cards.filter((c) => {
-      if (!showRejected && !c.accepted) return false;
       if (category && c.category !== category) return false;
       if (!q) return true;
       return c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q);
     });
-  }, [cards, query, showRejected, category]);
-
-  const acceptedCount = cards.filter((c) => c.accepted).length;
+  }, [cards, query, category]);
 
   const openPlugin = (card: Card): void => {
-    if (!active) return;
     setScanning(card.name);
-    setScanError(null);
+    setError(null);
     setDone(null);
-    void window.hv.pluginScan(active, card.name).then((res) => {
+    void window.hv.pluginScan("claude-plugins-official", card.name).then((res) => {
       setScanning(null);
       if (!("ok" in res) || res.ok !== true) {
-        setScanError((res as { error: string }).error);
+        setError((res as { error: string }).error);
         return;
       }
       setScan(res);
-      // Preselect everything installable — the picker is the consent surface,
-      // and skills land disabled anyway.
       setChosen({
         skills: new Set(res.skills.filter((s) => s.screen !== "reject").map((s) => s.dir)),
         commands: new Set(res.commands.map((c) => c.file)),
@@ -127,7 +102,7 @@ export function PluginsSection(): React.JSX.Element {
   const install = (): void => {
     if (!scan) return;
     setInstalling(true);
-    setScanError(null);
+    setError(null);
     void window.hv
       .pluginInstall(scan.token, {
         skillDirs: [...chosen.skills],
@@ -137,13 +112,22 @@ export function PluginsSection(): React.JSX.Element {
       .then((res) => {
         setInstalling(false);
         if (!res.ok) {
-          setScanError(res.error);
+          setError(res.error);
           return;
         }
         setDone({ skills: res.skills, commands: res.commands, servers: res.servers, substituted: res.substituted });
         setScan(null);
         refreshInstalled();
       });
+  };
+
+  const remove = (plugin: string): void => {
+    setRemoving(plugin);
+    void window.hv.pluginRemove(plugin).then((res) => {
+      setRemoving(null);
+      refreshInstalled();
+      if (!res.ok) setError(res.error);
+    });
   };
 
   const totalChosen = chosen.skills.size + chosen.commands.size + chosen.servers.size;
@@ -161,9 +145,9 @@ export function PluginsSection(): React.JSX.Element {
                   <span className="font-semibold">{p.plugin}</span>
                   <span className="ml-1.5 text-ink-soft">
                     {[
-                      p.skills.length ? `${p.skills.length} skill${p.skills.length > 1 ? "s" : ""}` : null,
-                      p.commands.length ? `${p.commands.length} prompt${p.commands.length > 1 ? "s" : ""}` : null,
-                      p.servers.length ? `${p.servers.length} server${p.servers.length > 1 ? "s" : ""}` : null,
+                      p.skills.length ? plural(p.skills.length, "skill") : null,
+                      p.commands.length ? plural(p.commands.length, "prompt") : null,
+                      p.servers.length ? plural(p.servers.length, "server") : null,
                     ].filter(Boolean).join(" · ")}
                   </span>
                 </span>
@@ -180,32 +164,13 @@ export function PluginsSection(): React.JSX.Element {
         </div>
       )}
 
-      {/* ── marketplace picker + search ─────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
-        {marketplaces.length > 1 && (
-          <select
-            value={active ?? ""}
-            onChange={(e) => setActive(e.target.value)}
-            className="rounded-lg border border-line bg-paper px-2 py-1.5 text-sm"
-          >
-            {marketplaces.map((m) => (
-              <option key={m.id} value={m.id}>{m.id}</option>
-            ))}
-          </select>
-        )}
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search plugins…"
-          className="flex-1 min-w-40 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm"
-        />
-        <button
-          onClick={() => active && load(active, true)}
-          className="rounded-lg border border-line px-2.5 py-1.5 text-xs font-semibold hover:bg-paper-soft"
-        >
-          Refresh
-        </button>
-      </div>
+      {/* ── search ──────────────────────────────────────────────────────── */}
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search plugins…"
+        className="w-full rounded-lg border border-line bg-paper px-3 py-1.5 text-sm"
+      />
 
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         <button
@@ -223,44 +188,32 @@ export function PluginsSection(): React.JSX.Element {
             {c}
           </button>
         ))}
-        <label className="ml-auto flex items-center gap-1.5 text-ink-soft">
-          <input type="checkbox" checked={showRejected} onChange={(e) => setShowRejected(e.target.checked)} />
-          Show unsupported
-        </label>
       </div>
 
-      {loading && <p className="text-sm text-ink-soft">Loading the marketplace…</p>}
-      {listError && (
-        <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{listError}</p>
-      )}
-      {!loading && !listError && cards.length > 0 && (
-        // Deliberately NOT "N of M supported". The marketplace listing only
-        // declares SOME components (the official one puts lspServers on the
-        // entry and nothing else), so the greyed count here is the set we can
-        // rule out without downloading anything — far fewer than the set that
-        // really rejects. Claiming a support rate from it would overstate it by
-        // about thirty points; the true check runs when a plugin is opened.
+      {loading && <p className="text-sm text-ink-soft">Loading…</p>}
+      {!loading && (
+        // Staleness is disclosed rather than hidden: the list is a snapshot, and
+        // a plugin added upstream since then appears at the next release.
         <p className="text-xs text-ink-soft">
-          {cards.length} plugins. {cards.length - acceptedCount} are already ruled out from the listing; the
-          rest are checked against the permission gate when you open them.
+          {cards.length} plugins, each verified to install here · checked {generatedAt}
         </p>
       )}
-      {scanError && !scan && (
-        <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{scanError}</p>
+      {error && (
+        <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
       )}
       {done && (
         <div className="rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-900">
           Installed{" "}
           {[
-            done.skills.length ? `${done.skills.length} skill${done.skills.length > 1 ? "s" : ""}` : null,
-            done.commands.length ? `${done.commands.length} prompt${done.commands.length > 1 ? "s" : ""}` : null,
-            done.servers.length ? `${done.servers.length} MCP server${done.servers.length > 1 ? "s" : ""}` : null,
+            done.skills.length ? plural(done.skills.length, "skill") : null,
+            done.commands.length ? plural(done.commands.length, "prompt") : null,
+            done.servers.length ? plural(done.servers.length, "MCP server") : null,
           ].filter(Boolean).join(" · ") || "nothing"}
           .{" "}
           {done.skills.length > 0 && (
             <>The skills are <strong>off</strong> until you enable them on the Skills page.</>
           )}
-          {done.substituted > 0 && ` ${done.substituted} plugin-root path${done.substituted > 1 ? "s were" : " was"} rewritten to the install location.`}
+          {done.substituted > 0 && ` ${plural(done.substituted, "plugin-root path")} rewritten to the install location.`}
         </div>
       )}
 
@@ -269,22 +222,27 @@ export function PluginsSection(): React.JSX.Element {
         {shown.map((c) => (
           <button
             key={c.name}
-            disabled={!c.accepted || scanning !== null}
+            disabled={scanning !== null}
             onClick={() => openPlugin(c)}
-            title={c.accepted ? undefined : c.reason}
-            className={`text-left rounded-xl border p-3 transition ${
-              c.accepted
-                ? "border-line bg-paper hover:border-ink/40 hover:shadow-sm"
-                : "border-line/60 bg-paper-soft/40 opacity-60 cursor-not-allowed"
-            }`}
+            className="text-left rounded-xl border border-line bg-paper p-3 transition hover:border-ink/40 hover:shadow-sm disabled:opacity-60"
           >
             <div className="flex items-baseline gap-2">
+              <BrandMark name={c.name} brand={c.brand} />
               <span className="font-semibold text-sm truncate">{c.name}</span>
-              {c.category && <span className="text-[10px] uppercase tracking-wide text-ink-soft">{c.category}</span>}
+              {installedNames.has(c.name) && (
+                <span className="text-[10px] font-bold uppercase tracking-wide text-green-700">installed</span>
+              )}
               {scanning === c.name && <span className="ml-auto text-xs text-ink-soft">opening…</span>}
             </div>
             <p className="mt-1 text-xs text-ink-soft line-clamp-2">{c.description}</p>
-            {!c.accepted && <p className="mt-1.5 text-xs font-medium text-ink-soft">⃠ {c.reason}</p>}
+            <p className="mt-1.5 text-[11px] text-ink-soft">
+              {[
+                c.counts.skills ? plural(c.counts.skills, "skill") : null,
+                c.counts.commands ? plural(c.counts.commands, "prompt") : null,
+                c.counts.servers ? plural(c.counts.servers, "MCP server") : null,
+              ].filter(Boolean).join(" · ")}
+              {c.category && <span className="ml-1.5 uppercase tracking-wide opacity-70">{c.category}</span>}
+            </p>
           </button>
         ))}
       </div>
@@ -297,91 +255,80 @@ export function PluginsSection(): React.JSX.Element {
             <h3 className="font-black text-lg tracking-tight">{scan.name}</h3>
             <p className="mt-1 text-sm text-ink-soft">{scan.description}</p>
 
-            {!scan.accepted ? (
-              <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                {scan.reason}
-              </p>
-            ) : (
-              <>
-                {/* Disclosure: computed, shown only when non-empty. */}
-                {Object.keys(scan.dropped).length > 0 && (
-                  <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    <strong>This is a Claude Code plugin.</strong> HappyVibe installs skills, top-level
-                    prompts and MCP servers only — so{" "}
-                    {Object.entries(scan.dropped).map(([k, n], i, arr) => (
-                      <span key={k}>
-                        {n} {k}
-                        {i < arr.length - 2 ? ", " : i === arr.length - 2 ? " and " : ""}
-                      </span>
-                    ))}{" "}
-                    will not be installed, and behaviour may differ from the author's setup.
-                  </div>
-                )}
-
-                <PickList
-                  title="Skills"
-                  note="Installed switched OFF — enable them on the Skills page."
-                  rows={scan.skills.map((s) => ({
-                    id: s.dir,
-                    label: s.name,
-                    sub: s.description,
-                    disabled: s.screen === "reject",
-                    warn:
-                      s.screen === "reject"
-                        ? s.screenReason
-                        : s.screen === "warn"
-                          ? s.screenReason
-                          : s.pluginRootRefs > 0
-                            ? `${s.pluginRootRefs} plugin-root path${s.pluginRootRefs > 1 ? "s" : ""} will be rewritten to the install location`
-                            : undefined,
-                    badge: s.scriptCount > 0 ? `${s.scriptCount} scripts` : undefined,
-                  }))}
-                  chosen={chosen.skills}
-                  onToggle={(id) => toggle("skills", id)}
-                />
-                <PickList
-                  title="Prompts"
-                  note="Typed as /name."
-                  rows={scan.commands.map((c) => ({ id: c.file, label: `/${c.name}`, sub: c.description }))}
-                  chosen={chosen.commands}
-                  onToggle={(id) => toggle("commands", id)}
-                />
-                <PickList
-                  title="MCP servers"
-                  note="Written to your global mcp.json, and removed with the plugin."
-                  rows={scan.mcpServers.map((k) => ({ id: k, label: k }))}
-                  chosen={chosen.servers}
-                  onToggle={(id) => toggle("servers", id)}
-                />
-
-                <p className="mt-4 text-[11px] text-ink-soft">
-                  Installing from commit{" "}
-                  <code className="font-mono">{scan.sha ? scan.sha.slice(0, 10) : "the marketplace checkout"}</code>
-                  {scan.ref && <> ({scan.ref})</>}.
-                </p>
-              </>
+            {/* Computed, and shown only when non-empty. A verified plugin can
+                still be dropping namespaced commands Pi cannot read. */}
+            {Object.keys(scan.dropped).length > 0 && (
+              <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <strong>This is a Claude Code plugin.</strong> HappyVibe installs skills, top-level
+                prompts and MCP servers only — so{" "}
+                {Object.entries(scan.dropped).map(([k, n], i, arr) => (
+                  <span key={k}>
+                    {n} {k}
+                    {i < arr.length - 2 ? ", " : i === arr.length - 2 ? " and " : ""}
+                  </span>
+                ))}{" "}
+                will not be installed, and behaviour may differ from the author's setup.
+              </div>
             )}
 
-            {scanError && (
-              <p className="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{scanError}</p>
+            <PickList
+              title="Skills"
+              note="Installed switched OFF — enable them on the Skills page."
+              rows={scan.skills.map((s) => ({
+                id: s.dir,
+                label: s.name,
+                sub: s.description,
+                disabled: s.screen === "reject",
+                warn:
+                  s.screen === "reject" || s.screen === "warn"
+                    ? s.screenReason
+                    : s.pluginRootRefs > 0
+                      ? `${plural(s.pluginRootRefs, "plugin-root path")} will be rewritten to the install location`
+                      : undefined,
+                badge: s.scriptCount > 0 ? `${s.scriptCount} scripts` : undefined,
+              }))}
+              chosen={chosen.skills}
+              onToggle={(id) => toggle("skills", id)}
+            />
+            <PickList
+              title="Prompts"
+              note="Typed as /name."
+              rows={scan.commands.map((c) => ({ id: c.file, label: `/${c.name}`, sub: c.description }))}
+              chosen={chosen.commands}
+              onToggle={(id) => toggle("commands", id)}
+            />
+            <PickList
+              title="MCP servers"
+              note="Written to your global mcp.json, and removed with the plugin."
+              rows={scan.mcpServers.map((k) => ({ id: k, label: k }))}
+              chosen={chosen.servers}
+              onToggle={(id) => toggle("servers", id)}
+            />
+
+            <p className="mt-4 text-[11px] text-ink-soft">
+              Installing from the commit this was verified at:{" "}
+              <code className="font-mono">{scan.sha ? scan.sha.slice(0, 10) : "the marketplace snapshot"}</code>
+              {scan.ref && <> ({scan.ref})</>}.
+            </p>
+
+            {error && (
+              <p className="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
             )}
 
             <div className="mt-5 flex justify-end gap-2">
               <button
-                onClick={() => { setScan(null); setScanError(null); }}
+                onClick={() => { setScan(null); setError(null); }}
                 className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold hover:bg-paper-soft"
               >
                 Cancel
               </button>
-              {scan.accepted && (
-                <button
-                  disabled={installing || totalChosen === 0}
-                  onClick={install}
-                  className="rounded-lg bg-ink px-3 py-1.5 text-sm font-semibold text-paper disabled:opacity-50"
-                >
-                  {installing ? "Installing…" : `Install ${totalChosen} item${totalChosen === 1 ? "" : "s"}`}
-                </button>
-              )}
+              <button
+                disabled={installing || totalChosen === 0}
+                onClick={install}
+                className="rounded-lg bg-ink px-3 py-1.5 text-sm font-semibold text-paper disabled:opacity-50"
+              >
+                {installing ? "Installing…" : `Install ${plural(totalChosen, "item")}`}
+              </button>
             </div>
           </div>
         </div>

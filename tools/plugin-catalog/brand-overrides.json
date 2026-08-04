@@ -14,7 +14,12 @@
   ],
   "overrides": {
     "circle-skills": "si-circleci",
-    "aws-serverless": "si-amazonwebservices",
-    "context7": "si-upstash"
+    "context7": "si-upstash",
+    "aws-serverless": null
+  },
+  "_notes": {
+    "circle-skills": "auto-match picked si-circle, a payments company; this is CircleCI",
+    "context7": "a product of Upstash; simple-icons has no si-context7",
+    "aws-serverless": "auto-match picked si-serverless, which is a different vendor. simple-icons ships no AWS mark at all — it was removed in v13's 'request permission, or remove' batch (see BrandMark.tsx) — so this takes the monogram rather than someone else's logo."
   }
 }

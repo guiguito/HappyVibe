@@ -235,7 +235,7 @@ contextBridge.exposeInMainWorld("hv", {
   pluginMarketplaces: () => ipcRenderer.invoke("hv:plugins-marketplaces"),
   pluginAddMarketplace: (url: string) => ipcRenderer.invoke("hv:plugins-add-marketplace", url),
   pluginRemoveMarketplace: (id: string) => ipcRenderer.invoke("hv:plugins-remove-marketplace", id),
-  pluginList: (marketplaceId: string, force?: boolean) => ipcRenderer.invoke("hv:plugins-list", marketplaceId, force),
+  pluginList: () => ipcRenderer.invoke("hv:plugins-list"),
   pluginScan: (marketplaceId: string, name: string) => ipcRenderer.invoke("hv:plugins-scan", marketplaceId, name),
   pluginInstall: (token: string, sel: { skillDirs: string[]; commandFiles: string[]; mcpKeys: string[] }) =>
     ipcRenderer.invoke("hv:plugins-install", token, sel),
