@@ -64,9 +64,34 @@ export const KNOWN_COMPONENT_KEYS: string[] = [
 export const ACCEPTED_COMPONENTS = ["commands", "mcpServers", "skills"] as const;
 
 /**
- * Benign manifest metadata, observed across 25 bundled manifests plus 42crunch's
- * (fetched at its pinned commit). A key outside this set AND outside
+ * Benign manifest metadata. A key outside this set AND outside
  * KNOWN_COMPONENT_KEYS rejects, by name.
+ *
+ * This list is DATA CALIBRATED AGAINST THE REAL MARKETPLACE, and evidence has
+ * corrected it twice:
+ *  - `category` — the survey validated 42crunch by hand as clean, yet its
+ *    manifest carries it, so the first version rejected the one plugin used to
+ *    prove the classifier worked.
+ *  - the six below — the generator's run summary showed **44 of 278 plugins
+ *    (16%) rejected purely on metadata**. Each was read in a real manifest
+ *    before being allowed:
+ *      `$schema`      a JSON-schema pointer
+ *      `displayName`  a prettier name ("MLflow Skills")
+ *      `logo`         an asset path ("assets/logo.svg"); we render simple-icons
+ *      `problem`      a prose paragraph on what the plugin is for
+ *      `interface`    display metadata (descriptions, category, capabilities)
+ *      `userConfig`   a DECLARATION of config fields the host may collect
+ *                     (title/description/type/sensitive) — descriptive, with no
+ *                     execution surface. Of the 17 plugins declaring it, ZERO are
+ *                     MCP-only and 15 carry skills or commands, so rejecting them
+ *                     was pure loss. Known gap: HappyVibe does not collect that
+ *                     config, so such a plugin's MCP server can land without its
+ *                     credentials — the per-server confirm still gates that.
+ *
+ * Reject-by-name is deliberately KEPT rather than relaxed to "ignore unknown
+ * metadata": a manifest field is exactly where the next executable component type
+ * will announce itself, and naming the key is what turns a benign addition into a
+ * one-line data change instead of an unexplained missing plugin.
  */
 export const ALLOWED_MANIFEST_KEYS = new Set<string>([
   "name",
@@ -78,8 +103,25 @@ export const ALLOWED_MANIFEST_KEYS = new Set<string>([
   "license",
   "keywords",
   "category",
+  "$schema",
+  "displayName",
+  "logo",
+  "problem",
+  "interface",
+  "userConfig",
+  "categories",
+  "defaultEnabled",
+  "minClaudeCodeVersion",
+  // Allowed as a KEY only — its contents are inspected for component types by
+  // detectComponents, because `experimental.monitors` is how a monitor is
+  // declared (real, from `convex`) and a monitor is an out-of-band shell-exec
+  // surface at the same trust level as a hook.
+  "experimental",
   ...ACCEPTED_COMPONENTS,
 ]);
+
+/** Manifest keys whose OBJECT VALUE may itself declare component types. */
+const NESTED_COMPONENT_NAMESPACES = ["experimental"];
 
 export interface Verdict {
   accepted: boolean;
@@ -112,6 +154,14 @@ export function detectComponents(
   for (const key of KNOWN_COMPONENT_KEYS) {
     if (manifest && key in manifest) found.add(key);
     if (entryComponents.includes(key)) found.add(key);
+  }
+  // A namespace can hide a component type: `experimental: { monitors: … }`.
+  for (const ns of NESTED_COMPONENT_NAMESPACES) {
+    const block = manifest?.[ns];
+    if (!block || typeof block !== "object" || Array.isArray(block)) continue;
+    for (const key of KNOWN_COMPONENT_KEYS) {
+      if (key in (block as Record<string, unknown>)) found.add(key);
+    }
   }
   return [...found].sort();
 }

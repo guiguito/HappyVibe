@@ -82,6 +82,43 @@ describe("classifyPlugin", () => {
     expect(v.rejected).toContain("monitors");
   });
 
+  it("accepts the benign metadata real manifests ship", () => {
+    // Found by the generator's run summary: these six were rejecting 44 of 278
+    // plugins (16%) on metadata alone. Each was read in a real manifest and
+    // carries no execution surface — see the note on ALLOWED_MANIFEST_KEYS.
+    for (const key of ["$schema", "displayName", "logo", "problem", "interface", "userConfig"]) {
+      const v = classifyPlugin({ manifest: { ...clean, [key]: "x" }, topLevel: ["skills"] });
+      expect(v.accepted, key).toBe(true);
+    }
+  });
+
+  it("looks INSIDE experimental — that is where monitors are declared", () => {
+    // Real shape, from the `convex` plugin:
+    //   "experimental": { "monitors": "./monitors/monitors.json" }
+    // A monitor runs a shell command for the lifetime of the session, unsandboxed,
+    // at the same trust level as a hook. Allowing `experimental` as plain metadata
+    // would have listed and installed that.
+    const v = classifyPlugin({
+      manifest: { ...clean, experimental: { monitors: "./monitors/monitors.json" } },
+      topLevel: ["skills"],
+    });
+    expect(v.accepted).toBe(false);
+    expect(v.rejected).toContain("monitors");
+    expect(v.reason).toBe("uses monitors, not supported in HappyVibe");
+  });
+
+  it("accepts an experimental block that declares nothing executable", () => {
+    const v = classifyPlugin({ manifest: { ...clean, experimental: { telemetry: true } }, topLevel: ["skills"] });
+    expect(v.accepted).toBe(true);
+  });
+
+  it("still rejects a component type dressed as metadata", () => {
+    // The allowlist getting longer must not make it permissive.
+    for (const key of ["monitors", "lspServers", "hooks", "agents", "channels"]) {
+      expect(classifyPlugin({ manifest: { ...clean, [key]: {} }, topLevel: [] }).accepted, key).toBe(false);
+    }
+  });
+
   it("names an unrecognised metadata key rather than failing silently", () => {
     const v = classifyPlugin({ manifest: { ...clean, wobble: 1 }, topLevel: ["skills"] });
     expect(v.accepted).toBe(false);
