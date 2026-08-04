@@ -21,6 +21,8 @@ interface ConfigFile {
   /** Round 3 #14: persistent "bypass all permissions" — global default + per-
       workspace override (tri-state: absent = inherit global). */
   bypassAll?: boolean;
+  /** Round 11: set only when the user turns OFF open-files context (default on). */
+  openFilesContextOff?: boolean;
   workspaceBypass?: Record<string, boolean>;
   /** §14 Skills: external skill dirs linked in place (e.g. ~/.claude/skills).
       Scanned for skills that still go through review-before-active. */
@@ -281,6 +283,25 @@ export function setLongCache(on: boolean): void {
   const cfg = load();
   if (on) cfg.longCache = true;
   else delete cfg.longCache;
+  save(cfg);
+}
+
+/**
+ * Round 11: tell the agent which files the user has open (paths only).
+ *
+ * ON by default, and global rather than per-workspace: "which files am I looking
+ * at" is a property of how the user works, not of a project, so the tri-state a
+ * workspace tier implies would buy nothing. Stored inverted (only the OFF state
+ * is written) so the default needs no migration.
+ */
+export function getOpenFilesContext(): boolean {
+  return !load().openFilesContextOff;
+}
+
+export function setOpenFilesContext(on: boolean): void {
+  const cfg = load();
+  if (on) delete cfg.openFilesContextOff;
+  else cfg.openFilesContextOff = true;
   save(cfg);
 }
 

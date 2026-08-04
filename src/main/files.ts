@@ -309,3 +309,43 @@ export function importEntries(
   }
   return written;
 }
+
+// ── round 11: the files the user has open, as context ────────────────────────
+
+/** Delimiters kept as constants so the builder and the stripper cannot drift. */
+const OPEN_FILES_OPEN = "<open-files>";
+const OPEN_FILES_CLOSE = "</open-files>";
+
+/**
+ * Round 11: the files the user currently has open in the built-in editor.
+ *
+ * PATHS ONLY, never contents — the point is "here is what I'm looking at", and
+ * the bytes are what `@file` mentions are for. It rides the same per-prompt seam
+ * as those mention blocks, so the paths are counted under Conversation in the
+ * context breakdown (no new category, no silent inflation of the system-prompt
+ * figure) and cost a few dozen tokens rather than a file's worth.
+ *
+ * Sorted, so an unchanged set renders byte-identically and `openFilesChanged`
+ * can be a plain comparison.
+ */
+export function buildOpenFilesBlock(relPaths: string[]): string {
+  if (!relPaths.length) return "";
+  return `${OPEN_FILES_OPEN}\n${[...relPaths].sort().join("\n")}\n${OPEN_FILES_CLOSE}`;
+}
+
+/**
+ * Has the open-file set changed since that session's previous prompt?
+ *
+ * The block rides each prompt, so without this check turn 1's stale list would
+ * sit in context beside turn 5's. Sending only on change keeps the most recent
+ * block always current, and an unchanged set costs nothing. `undefined` prev
+ * means "nothing sent yet" — but an empty set is still no change, so a session
+ * with no open files never sends an empty block.
+ */
+export function openFilesChanged(prev: string[] | undefined, next: string[]): boolean {
+  if (!prev) return next.length > 0;
+  if (prev.length !== next.length) return true;
+  const a = [...prev].sort();
+  const b = [...next].sort();
+  return a.some((v, i) => v !== b[i]);
+}

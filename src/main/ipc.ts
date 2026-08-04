@@ -7,7 +7,7 @@ import { PiClient } from "./pi/PiClient";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen,
+  agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig,
   resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
@@ -54,7 +54,7 @@ import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
-import { buildMentionBlocks, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
+import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
@@ -281,6 +281,13 @@ export function registerIpc(win: BrowserWindow): void {
    * title, never a message.
    */
   const typedByOutgoing = new Map<string, string>();
+  /**
+   * Round 11: the open-file set last sent to each session, so the block rides a
+   * prompt only when it CHANGED. Without this every turn carries its own
+   * snapshot and the model sees a history of stale lists. Cleared when the
+   * session ends (an id is never reused).
+   */
+  const lastOpenFiles = new Map<string, string[]>();
   /**
    * §24: the typed form of every command invocation logged for a session, keyed
    * by sha256(expanded). Restore hashes each user message against this map, so a
@@ -1223,6 +1230,7 @@ export function registerIpc(win: BrowserWindow): void {
     index.remove(sessionId);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
     deleteSessionSnapshots(snapshotDir(), sessionId); // §9: snapshots die with the session
+    lastOpenFiles.delete(sessionId); // round 11: no stale set for a dead session
     void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId });
     sessionsChanged();
   });
@@ -1245,7 +1253,15 @@ export function registerIpc(win: BrowserWindow): void {
   // the message the model sees; the raw msg is still used for the title/echo.
   ipcMain.handle(
     "hv:prompt-session",
-    async (_e, sessionId: string, msg: string, behavior?: PromptBehavior, images?: PromptImage[], mentions?: string[]) => {
+    async (
+      _e,
+      sessionId: string,
+      msg: string,
+      behavior?: PromptBehavior,
+      images?: PromptImage[],
+      mentions?: string[],
+      openFiles?: string[],
+    ) => {
     if (behavior !== undefined && behavior !== "steer" && behavior !== "followUp") {
       throw new Error("Invalid prompt behavior");
     }
@@ -1256,6 +1272,9 @@ export function registerIpc(win: BrowserWindow): void {
     }
     if (mentions !== undefined && !(Array.isArray(mentions) && mentions.every((m) => typeof m === "string"))) {
       throw new Error("Invalid mentions payload");
+    }
+    if (openFiles !== undefined && !(Array.isArray(openFiles) && openFiles.every((m) => typeof m === "string"))) {
+      throw new Error("Invalid openFiles payload");
     }
     let client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
@@ -1292,6 +1311,18 @@ export function registerIpc(win: BrowserWindow): void {
         const { blocks, warnings: w } = buildMentionBlocks(workspaces.list(), meta.workspaceId, mentions);
         if (blocks) outgoing = `${msg}\n\n${blocks}`;
         warnings = w;
+      }
+    }
+    // Round 11: which files the user has open, PATHS ONLY, appended after any
+    // mention blocks. Sent only when the set CHANGED since this session's last
+    // prompt — otherwise every turn would carry its own snapshot and turn 1's
+    // stale list would sit in context beside turn 5's. The newest block is
+    // therefore always the current one.
+    if (getOpenFilesContext() && openFiles) {
+      if (openFilesChanged(lastOpenFiles.get(sessionId), openFiles)) {
+        const block = buildOpenFilesBlock(openFiles);
+        if (block) outgoing = `${outgoing}\n\n${block}`;
+        lastOpenFiles.set(sessionId, [...openFiles]);
       }
     }
     // §9 rewind: the snapshot a rewind to THIS message restores to. A capture
@@ -1755,6 +1786,9 @@ export function registerIpc(win: BrowserWindow): void {
   // sessions for (a respawn resets their grants + dangerous mode). Next spawn.
   ipcMain.handle("hv:get-long-cache", () => getLongCache());
   ipcMain.handle("hv:set-long-cache", (_e, on: boolean) => setLongCache(!!on));
+  // Round 11: open-files context. Global and ON by default (§9).
+  ipcMain.handle("hv:get-open-files-context", () => getOpenFilesContext());
+  ipcMain.handle("hv:set-open-files-context", (_e, on: boolean) => setOpenFilesContext(!!on));
 
   // Round 8: keyboard-shortcut overrides. Stored whole; the renderer merges
   // them with the defaults (shortcuts.ts), so main stays ignorant of the action list.

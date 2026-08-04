@@ -370,7 +370,9 @@ interface HvApi {
     behavior?: "steer" | "followUp",
     images?: Array<{ type: "image"; data: string; mimeType: string }>,
     /** F3: workspace-relative paths of @file references — content injected main-side. */
-    mentions?: string[]
+    mentions?: string[],
+    /** Round 11: paths of the files open in the editor — PATHS ONLY, no content. */
+    openFiles?: string[]
   ): Promise<{ warnings: string[] }>;
   abortSession(sessionId: string): Promise<void>;
   // W2.1: per-session model override + image attach
@@ -514,6 +516,9 @@ interface HvApi {
   /** Extended prompt-cache retention (PI_CACHE_RETENTION=long). Global, applied
       at the next spawn — live sessions keep the retention they started with. */
   getLongCache(): Promise<boolean>;
+  /** Round 11: is the open-files list sent with prompts? Global, default on. */
+  getOpenFilesContext(): Promise<boolean>;
+  setOpenFilesContext(on: boolean): Promise<void>;
   setLongCache(on: boolean): Promise<void>;
 
   /** Round 8: keyboard-shortcut overrides (action id → canonical binding). */

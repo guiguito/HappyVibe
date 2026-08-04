@@ -31,8 +31,10 @@ contextBridge.exposeInMainWorld("hv", {
     msg: string,
     behavior?: "steer" | "followUp",
     images?: Array<{ type: "image"; data: string; mimeType: string }>,
-    mentions?: string[]
-  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images, mentions),
+    mentions?: string[],
+    // Round 11: workspace-relative paths of the files open in the editor.
+    openFiles?: string[]
+  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images, mentions, openFiles),
   abortSession: (sessionId: string) => ipcRenderer.invoke("hv:abort-session", sessionId),
 
   // ── W2.1: per-session model override + image attach (additive) ──
@@ -192,6 +194,8 @@ contextBridge.exposeInMainWorld("hv", {
 
   // Extended prompt-cache retention (PI_CACHE_RETENTION=long) — next spawn.
   getLongCache: () => ipcRenderer.invoke("hv:get-long-cache"),
+  getOpenFilesContext: () => ipcRenderer.invoke("hv:get-open-files-context"),
+  setOpenFilesContext: (on: boolean) => ipcRenderer.invoke("hv:set-open-files-context", on),
   setLongCache: (on: boolean) => ipcRenderer.invoke("hv:set-long-cache", on),
   getShortcuts: () => ipcRenderer.invoke("hv:get-shortcuts"),
   setShortcuts: (map: Record<string, string>) => ipcRenderer.invoke("hv:set-shortcuts", map),

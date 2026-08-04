@@ -1096,13 +1096,17 @@ export default function App(): React.JSX.Element {
     const images = attachments?.length ? buildImages(attachments) : undefined;
     // F3: @file mention warnings (skipped binaries, over-cap dirs) surface as notices.
     const noteWarnings = (w: string[]): void => w.forEach((text) => appendItem(sid, { kind: "notice", text }));
+    // Round 11: the files open in THIS session's workspace, paths only. Main
+    // decides whether to send them (global setting) and whether the set changed.
+    const ws = sessions.find((x) => x.id === sid)?.workspaceId;
+    const openFiles = ws ? allFiles(tabsByWs[ws] ?? emptyTabs) : undefined;
     // B2: while the agent runs, a bare prompt errors — Enter/send steers
     // (V2.A: the Queue button is gone; the followUp behavior plumbing stays).
     // The message shows as a chip (queue_update) and only joins the
     // transcript when Pi delivers it.
     if (busy[sid]) {
       try {
-        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions);
+        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions, openFiles);
         noteWarnings(warnings);
       } catch (err) {
         surface(err);
@@ -1116,7 +1120,7 @@ export default function App(): React.JSX.Element {
     delete aborted.current[sid];
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
-      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions);
+      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles);
       noteWarnings(warnings);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
