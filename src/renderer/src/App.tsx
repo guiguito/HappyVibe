@@ -47,7 +47,7 @@ import {
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
-import { buildGridStyle } from "./paneGrid";
+import { buildGridStyle, paneEdges } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
@@ -1385,13 +1385,15 @@ export default function App(): React.JSX.Element {
     const p = liveSlots(wsTabs).find((s) => wsTabs.panes[s]!.active === tab);
     return p != null ? AREAS[p] : null;
   };
-  // Divider borders: a cell draws the edge it shares with the cell before it.
+  /**
+   * A content cell draws only its LEFT edge. The horizontal rule is owned by the
+   * tab strip directly above it (TabStrip has its own border-b), so adding
+   * border-t here doubled that line to 4px.
+   */
   const paneDivider = (area?: string | null): string => {
-    const primary = wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line";
-    const secondary = wsTabs.split === "v" ? "border-t-2 border-line" : "border-l-2 border-line";
-    if (area === "contentB") return primary;
-    if (area === "contentC" || area === "contentD") return secondary;
-    return "";
+    const slot = ["contentA", "contentB", "contentC", "contentD"].indexOf(area ?? "");
+    if (slot < 0) return "";
+    return paneEdges(wsTabs, slot).left ? "border-l-2 border-line" : "";
   };
   // v5.1: a persistent `toolbar` area is pinned top-right (strip row only);
   // content spans under it. The file tree is a separate absolute overlay (below),
@@ -1550,13 +1552,11 @@ export default function App(): React.JSX.Element {
             {wsId && liveSlots(wsTabs).map((slot) => {
               const pane = wsTabs.panes[slot]!;
               const STRIPS = ["stripA", "stripB", "stripC", "stripD"] as const;
-              // Slot 1 sits across the primary divider; 2 and 3 across a cross one.
-              const edge =
-                slot === 1
-                  ? wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line"
-                  : slot >= 2
-                    ? wsTabs.split === "v" ? "border-t-2 border-line" : "border-l-2 border-line"
-                    : "";
+              // A pane can be in column 2 AND row 2 (slot 3 always is), so both
+              // edges come from one rule — the old one returned only one and the
+              // primary divider stopped halfway down.
+              const e = paneEdges(wsTabs, slot);
+              const edge = `${e.left ? "border-l-2 border-line" : ""} ${e.top ? "border-t-2 border-line" : ""}`;
               return (
                 <div
                   key={slot}

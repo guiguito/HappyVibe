@@ -32,6 +32,26 @@ import type { WorkspaceTabs } from "./tabs";
 const STRIP_PX = 44;
 
 
+/**
+ * Which edges a pane draws, so adjacent panes never double a rule or leave a gap.
+ *
+ * A pane can sit in column 2 AND row 2 at once — slot 3 always does — and the old
+ * per-area rule returned only ONE border, so the primary divider stopped halfway
+ * down at the cross split (measured: contentD had border-t and no border-l, while
+ * contentB above it had border-l). The caller must also apply `top` to the tab
+ * STRIP only: a strip already draws its own bottom rule, so a border-t on the
+ * content beneath it doubled the line to 4px.
+ */
+export function paneEdges(t: WorkspaceTabs, slot: number): { left: boolean; top: boolean } {
+  if (!t.split) return { left: false, top: false };
+  const v = t.split === "v";
+  // Which grid cell the slot occupies: halves lie along the primary axis, their
+  // cross partners across it.
+  const col2 = v ? slot === 1 || slot === 3 : slot === 2 || slot === 3;
+  const row2 = v ? slot === 2 || slot === 3 : slot === 1 || slot === 3;
+  return { left: col2, top: row2 };
+}
+
 export function buildGridStyle(t: WorkspaceTabs): React.CSSProperties {
   /** Two columns whose boundary lands exactly at `r` of the full width. */
   const cols = (r: number): string => `${r * 100}% minmax(0,1fr)`;

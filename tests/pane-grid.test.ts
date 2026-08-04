@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { buildGridStyle } from "../src/renderer/src/paneGrid";
+import { buildGridStyle, paneEdges } from "../src/renderer/src/paneGrid";
 import { emptyTabs, openFile, setSize, splitHalf, splitPane } from "../src/renderer/src/tabs";
 
 /**
@@ -153,3 +153,45 @@ test("no layout mentions a toolbar track — it is an overlay now", () => {
   for (const t of layouts) expect(areas(buildGridStyle(t))).not.toContain("toolbar");
 });
 
+
+// ── pane borders: no gaps, no doubled rules ─────────────────────────────────
+
+/**
+ * Regression: a pane can be in column 2 AND row 2 at once (slot 3 always is), and
+ * the old rule returned only one border — so the primary divider stopped halfway
+ * down at the cross split. Measured in the app: contentD drew border-t and no
+ * border-l while contentB directly above it drew border-l.
+ */
+test("an unsplit pane draws no edges", () => {
+  expect(paneEdges(emptyTabs, 0)).toEqual({ left: false, top: false });
+});
+
+test("vertical split: the second half draws its left edge", () => {
+  const t = splitPane(emptyTabs, "v");
+  expect(paneEdges(t, 0)).toEqual({ left: false, top: false });
+  expect(paneEdges(t, 1)).toEqual({ left: true, top: false });
+});
+
+test("horizontal split: the second half draws its TOP edge, not a left one", () => {
+  const t = splitPane(emptyTabs, "h");
+  expect(paneEdges(t, 1)).toEqual({ left: false, top: true });
+});
+
+test("slot 3 draws BOTH edges — it is in column 2 and row 2", () => {
+  const v = splitHalf(splitPane(emptyTabs, "v"), 1);
+  expect(paneEdges(v, 3)).toEqual({ left: true, top: true });
+  const h = splitHalf(splitPane(emptyTabs, "h"), 1);
+  expect(paneEdges(h, 3)).toEqual({ left: true, top: true });
+});
+
+test("a cross partner of the FIRST half draws only the cross edge", () => {
+  const v = splitHalf(splitPane(emptyTabs, "v"), 0);
+  expect(paneEdges(v, 2)).toEqual({ left: false, top: true }); // stacked under A
+  const h = splitHalf(splitPane(emptyTabs, "h"), 0);
+  expect(paneEdges(h, 2)).toEqual({ left: true, top: false }); // beside A
+});
+
+test("the divider is continuous: every pane in column 2 draws a left edge", () => {
+  const t = splitHalf(splitPane(emptyTabs, "v"), 1); // A full height, B over D
+  for (const slot of [1, 3]) expect(paneEdges(t, slot).left, `slot ${slot}`).toBe(true);
+});
