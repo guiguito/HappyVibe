@@ -53,5 +53,21 @@ Invoke `superpowers:writing-plans` and write the implementation plan to
 `docs/superpowers/plans/YYYY-MM-DD-<feature>.md`. Every task names the files it touches and its
 verification step (which typecheck, which test file, whether it needs a live-Pi run or a GUI pass).
 
+**The plan's verification section names observable GUI assertions, not "a GUI pass."** "Needs a GUI
+pass" is a reminder, not a verification — it is the line that lets a page ship looking right while
+overstating a number or missing a control. For anything touching `src/renderer/` or `src/main/`,
+write down what will be TRUE on screen, in terms someone can check without re-deriving the design:
+
+- the observable claim per change ("the list shows only verified plugins", not "the list works");
+- **at least one absence assertion**, named — the thing the feature exists to exclude, by name
+  (`security-guidance` and `hookify` are absent), because an absence cannot be screenshotted;
+- **which page each is observed on** — the surface that owns a resource is usually not the surface
+  that changed it, and that is exactly where a wrong default hides;
+- the one regression the design risks, as a sequence someone can perform (open two, dismiss one,
+  open a third).
+
+Write these while the design is fresh. Recovering them later, from the diff, is how a GUI pass turns
+into looking at a screenshot and calling it verified.
+
 Then **stop**. Do not implement. End your message with: "Plan is ready — switch to Opus and say
 go." I will switch models and come back.
