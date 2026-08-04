@@ -86,7 +86,12 @@ to "check", and do not re-run it in `/land`.
 If `DEEPSEEK_API_KEY` is absent say so and name the files that therefore skipped. **A skip is
 not a pass.** One live failure ⇒ rerun that file in isolation before calling it a regression.
 
-### 5. UI pass — only if `src/renderer/` was touched
+### 5. UI pass — if `src/renderer/` **or** `src/main/` was touched
+Renderer-only used to be the trigger, and that was wrong: a main-side change is where the
+stale-bundle trap lives — a committed, unit-tested fix once looked broken for hours because main was
+still running an old bundle (see `uicheck.md` §"Am I even looking at the new code?"). If either tree
+changed, you owe a pass.
+
 Follow `uicheck.md` exactly: `attach {debugPort: 9222}`, **never `start_app`** (it has hung for
 30 minutes here). If the attach fails, print the launch line and **stop** — I launch it, you
 attach:
@@ -95,9 +100,14 @@ attach:
 HV_DEBUG_PORT=9222 npm run dev
 ```
 
-Then: screenshot the window, `get_console_messages` with `level: error`, and show me the after
-picture. The feature is not done because the types pass and the tests are green — it is done
-when the screenshot shows it.
+Then, per `uicheck.md`: confirm you are on the new build (restart + `grep out/main/index.js` if
+main changed), screenshot, `get_console_messages` with `level: error`, **and assert** — one
+`evaluate` returning the facts as JSON, including at least one absence check and the state on any
+other page this change affects. Name the assertions before running them and paste the output.
+
+The feature is not done because the types pass and the tests are green — nor because the screenshot
+looks right. A page can render perfectly and still be lying about a count, a missing control, or
+something that should have been excluded.
 
 ### 6. Commit and hand off
 - One commit on the branch, existing convention (`type(scope): imperative summary`, see
