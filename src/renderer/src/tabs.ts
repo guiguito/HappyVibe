@@ -285,6 +285,54 @@ export function splitPane(t: WorkspaceTabs, dir: "h" | "v"): WorkspaceTabs {
 }
 
 /**
+ * Which split directions are legal for ONE pane, given the 2×2 ceiling.
+ *
+ * This is what makes the per-pane controls honest: a strip only offers the button
+ * that will actually do something to its own pane. The global toolbar it replaces
+ * acted on the FOCUSED half — invisible state — and would silently ROTATE the
+ * whole layout when asked for a direction the model could not divide on.
+ *
+ * Rules: the first split is a free choice; afterwards a half can only be divided
+ * on the CROSS axis (its partner sits across it); and a cross partner, or a half
+ * that already has one, is the ceiling.
+ */
+export function splitOptions(t: WorkspaceTabs, slot: number): { v: boolean; h: boolean } {
+  if (t.panes[slot] == null) return { v: false, h: false };
+  if (!t.split) return { v: true, h: true };
+  if (slot >= 2) return { v: false, h: false };
+  if (t.subSplit[slot as 0 | 1]) return { v: false, h: false };
+  const legal = cross(t.split);
+  return { v: legal === "v", h: legal === "h" };
+}
+
+/** Split the pane NAMED, not the focused one. No-op when illegal (splitOptions). */
+export function splitAt(t: WorkspaceTabs, slot: number, dir: "h" | "v"): WorkspaceTabs {
+  const opts = splitOptions(t, slot);
+  if (!(dir === "v" ? opts.v : opts.h)) return t;
+  return t.split ? splitHalf(t, slot as 0 | 1) : splitPane(t, dir);
+}
+
+/**
+ * Close ONE pane: its tabs move into a sibling, then the layout collapses.
+ *
+ * Per-pane counterpart of `unsplit` (which flattens everything). Refuses on the
+ * last pane — there would be nowhere for the tabs to go, and an empty layout is
+ * what `closeTab` already produces.
+ */
+export function closePane(t: WorkspaceTabs, slot: number): WorkspaceTabs {
+  const pane = t.panes[slot];
+  const live = liveSlots(t);
+  if (!pane || live.length < 2) return t;
+  const target = live.find((s) => s !== slot)!;
+  const panes = [...t.panes] as Slots;
+  const dst = panes[target]!;
+  const merged = [...dst.tabs, ...pane.tabs.filter((x) => !dst.tabs.includes(x))];
+  panes[target] = { tabs: merged, active: dst.active ?? merged[0] ?? null };
+  panes[slot] = { tabs: [], active: null };
+  return normalize(panes, t.split, t.subSplit, target, t.sizes);
+}
+
+/**
  * Split one half on the cross axis — the second level, and the last. A half
  * already split is a no-op: 2×2 is the ceiling (§7 round 11).
  */

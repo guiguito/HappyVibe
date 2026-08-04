@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import {
   activateTab, activeTabOf, allChats, allFiles, bufferKey, chatTab, closeTab, emptyTabs, isChatTab,
-  closeSessionTabs, liveSlots, moveTab, openChat, openFile, resolveCardPath, sessionOf, setSize, splitHalf, splitPane,
+  closePane, closeSessionTabs, liveSlots, moveTab, openChat, openFile, splitAt, splitOptions, resolveCardPath, sessionOf, setSize, splitHalf, splitPane,
   unsplit,
 } from "../src/renderer/src/tabs";
 
@@ -331,4 +331,84 @@ test("closeSessionTabs drops a deleted session's tab wherever it lives", () => {
 test("closeSessionTabs is a no-op for a session with no tab", () => {
   const t = openChat(emptyTabs, "s1");
   expect(closeSessionTabs(t, "nope")).toBe(t);
+});
+
+// ── per-pane split controls (round 11, after GUI feedback) ───────────────────
+
+/**
+ * The global toolbar's "split this half again" acted on the FOCUSED half — state
+ * the user cannot see — and "split horizontally" while already split vertically
+ * silently ROTATED the layout instead of adding a pane. Both are replaced by
+ * per-pane controls, so a button in a strip only ever affects that strip's pane
+ * and is offered only when it is legal.
+ */
+test("an unsplit pane offers both directions", () => {
+  expect(splitOptions(emptyTabs, 0)).toEqual({ v: true, h: true });
+});
+
+test("once split, a half can only divide on the CROSS axis", () => {
+  const v = splitPane(openFile(emptyTabs, "a"), "v");
+  expect(splitOptions(v, 0)).toEqual({ v: false, h: true });
+  expect(splitOptions(v, 1)).toEqual({ v: false, h: true });
+  const h = splitPane(openFile(emptyTabs, "a"), "h");
+  expect(splitOptions(h, 0)).toEqual({ v: true, h: false });
+});
+
+test("a cross partner is the ceiling — no direction is offered", () => {
+  const t = splitHalf(splitPane(openFile(emptyTabs, "a"), "v"), 0);
+  expect(splitOptions(t, 2)).toEqual({ v: false, h: false });
+});
+
+test("an already-cross-split half offers nothing", () => {
+  const t = splitHalf(splitPane(openFile(emptyTabs, "a"), "v"), 0);
+  expect(splitOptions(t, 0)).toEqual({ v: false, h: false });
+});
+
+test("splitOptions is empty for a slot that does not exist", () => {
+  expect(splitOptions(emptyTabs, 1)).toEqual({ v: false, h: false });
+});
+
+test("splitAt creates the primary split from the only pane", () => {
+  const t = splitAt(openFile(emptyTabs, "a"), 0, "v");
+  expect(t.split).toBe("v");
+  expect(liveSlots(t)).toEqual([0, 1]);
+});
+
+test("splitAt divides the pane it names, not the focused one", () => {
+  let t = openFile(splitPane(openFile(emptyTabs, "a"), "v"), "b");
+  expect(t.focused).toBe(1);
+  t = splitAt(t, 0, "h"); // pane 0, while pane 1 is focused
+  expect(t.subSplit).toEqual([true, false]);
+  expect(liveSlots(t)).toEqual([0, 1, 2]);
+});
+
+test("splitAt is a no-op for an illegal direction — never a silent rotate", () => {
+  const t = splitPane(openFile(emptyTabs, "a"), "v");
+  expect(splitAt(t, 0, "v")).toBe(t); // would have rotated the layout before
+  expect(splitAt(t, 2, "h")).toBe(t); // no such pane
+});
+
+test("closePane moves its tabs into a sibling and collapses", () => {
+  let t = openFile(openFile(emptyTabs, "a"), "b");
+  t = splitPane(t, "v");
+  t = openFile(t, "c");
+  t = closePane(t, 1);
+  expect(t.split).toBeNull();
+  expect(liveSlots(t)).toEqual([0]);
+  expect(t.panes[0].tabs).toEqual(["a", "b", "c"]);
+});
+
+test("closePane keeps the remaining split when four panes become three", () => {
+  let t = openFile(splitPane(openFile(emptyTabs, "a"), "v"), "b");
+  t = openFile(splitHalf(t, 0), "c");
+  t = openFile(splitHalf(t, 1), "d");
+  expect(liveSlots(t)).toEqual([0, 1, 2, 3]);
+  t = closePane(t, 2);
+  expect(t.subSplit).toEqual([false, true]);
+  expect(allFiles(t).sort()).toEqual(["a", "b", "c", "d"]); // nothing lost
+});
+
+test("closePane refuses on the last pane — there is nowhere to move the tabs", () => {
+  const t = openFile(emptyTabs, "a");
+  expect(closePane(t, 0)).toBe(t);
 });

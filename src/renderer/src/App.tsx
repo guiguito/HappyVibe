@@ -42,8 +42,8 @@ import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgen
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
-  activateTab, allChats, allFiles, bufferKey, chatTab, closeSessionTabs, closeTab, emptyTabs, focusPane,
-  isChatTab, liveSlots, moveTab, openChat, openFile, sessionOf, setSize, splitHalf, splitPane, unsplit,
+  activateTab, allChats, allFiles, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
+  isChatTab, liveSlots, moveTab, openChat, openFile, sessionOf, setSize, splitAt, splitOptions, unsplit,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
@@ -1576,6 +1576,13 @@ export default function App(): React.JSX.Element {
                     onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
                     onNewSession={() => void newSession(wsId)}
                     onOpenFilePanel={() => setTreeOpen(true)}
+                    splitOptions={splitOptions(wsTabs, slot)}
+                    onSplit={(dir) => updateTabs(wsId, (t) => splitAt(t, slot, dir))}
+                    onClosePane={
+                      liveSlots(wsTabs).length > 1
+                        ? () => updateTabs(wsId, (t) => closePane(t, slot))
+                        : undefined
+                    }
                   />
                 </div>
               );
@@ -1586,11 +1593,7 @@ export default function App(): React.JSX.Element {
               <div style={{ gridArea: "toolbar" }} className="h-11 flex items-stretch border-b-2 border-line bg-paper">
                 <CenterToolbar
                   split={wsTabs.split}
-                  subSplit={wsTabs.subSplit}
-                  focusedHalf={wsTabs.focused === 1 || wsTabs.focused === 3 ? 1 : 0}
                   treeOpen={treeOpen}
-                  onSplit={(dir) => updateTabs(wsId, (t) => splitPane(t, dir))}
-                  onSplitHalf={(half) => updateTabs(wsId, (t) => splitHalf(t, half))}
                   onUnsplit={() => updateTabs(wsId, unsplit)}
                   onToggleTree={() => setTreeOpen((o) => !o)}
                 />
@@ -1862,63 +1865,37 @@ function PaneDividers({
   );
 }
 
-/** v5.1: persistent top-right toolbar — split controls + file-panel toggle. */
+/**
+ * v5.1: persistent top-right toolbar.
+ *
+ * Round 11 (after GUI feedback): the split controls MOVED into each pane's tab
+ * strip. One global set could not say which pane it would divide — it acted on
+ * the focused half, which is invisible — and asking for a direction the model
+ * cannot divide on silently ROTATED the whole layout instead. What is left here
+ * is genuinely layout-wide: flatten every pane, and the workspace file drawer.
+ */
 function CenterToolbar({
   split,
-  subSplit,
-  focusedHalf,
   treeOpen,
-  onSplit,
-  onSplitHalf,
   onUnsplit,
   onToggleTree,
 }: {
   split: "h" | "v" | null;
-  /** Round 11: is each half already cross-split? Drives the second-level button. */
-  subSplit: [boolean, boolean];
-  /** Which half the focused pane belongs to — the one "split this half" acts on. */
-  focusedHalf: 0 | 1;
   treeOpen: boolean;
-  onSplit: (dir: "h" | "v") => void;
-  onSplitHalf: (half: 0 | 1) => void;
   onUnsplit: () => void;
   onToggleTree: () => void;
 }): React.JSX.Element {
   const btn = "shrink-0 flex items-center border-l-2 border-line px-2.5 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer transition-colors";
   return (
     <div className="flex items-stretch">
-      <button type="button" onClick={() => onSplit("v")} aria-pressed={split === "v"} title="Split — side by side" aria-label="Split vertically"
-        className={`${btn} ${split === "v" ? "text-tangerine-deep bg-paper-deep/50" : ""}`}>
-        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" />
-        </svg>
-      </button>
-      <button type="button" onClick={() => onSplit("h")} aria-pressed={split === "h"} title="Split — stacked" aria-label="Split horizontally"
-        className={`${btn} ${split === "h" ? "text-tangerine-deep bg-paper-deep/50" : ""}`}>
-        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 12h18" />
-        </svg>
-      </button>
-      {/* Round 11: the second level. Only offered once a primary split exists,
-          and disabled when THIS half is already split — 2×2 is the ceiling, so a
-          greyed control says that where a silently-ignored click would not. */}
+      {/* Only with a split to flatten — per-pane close lives in each strip. */}
       {split && (
-        <button
-          type="button"
-          onClick={() => onSplitHalf(focusedHalf)}
-          disabled={subSplit[focusedHalf]}
-          title={subSplit[focusedHalf] ? "This half is already split (2×2 is the maximum)" : "Split this half again"}
-          aria-label="Split this half again"
-          className={`${btn} disabled:opacity-40 disabled:cursor-default`}
-        >
+        <button type="button" onClick={onUnsplit} title="Merge every pane back into one" aria-label="Merge every pane into one" className={btn}>
+          {/* One undivided rectangle — "make it a single pane" — so it reads
+              against the divided rectangles that SPLIT a pane. */}
           <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" /><path d="M3 12h18" />
+            <rect x="3" y="4" width="18" height="16" rx="2" />
           </svg>
-        </button>
-      )}
-      {split && (
-        <button type="button" onClick={onUnsplit} title="Close split" aria-label="Close split" className={btn}>
-          <span className="text-sm font-bold leading-none">⊟</span>
         </button>
       )}
       <FilesToggle treeOpen={treeOpen} onToggle={onToggleTree} />

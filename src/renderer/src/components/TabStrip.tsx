@@ -25,6 +25,9 @@ export function TabStrip({
   onMoveTab,
   onNewSession,
   onOpenFilePanel,
+  splitOptions,
+  onSplit,
+  onClosePane,
 }: {
   pane: Pane;
   /** Slot index in the 2×2 grid (0–3). */
@@ -41,6 +44,16 @@ export function TabStrip({
   /** Round 11: the trailing `+` — fill this pane without leaving it. */
   onNewSession: () => void;
   onOpenFilePanel: () => void;
+  /**
+   * Which split directions this pane can offer (tabs.ts splitOptions). Per pane
+   * rather than one global toolbar: the old control acted on the FOCUSED half,
+   * which the user cannot see, and rotated the layout when asked for a direction
+   * the model could not divide on.
+   */
+  splitOptions: { v: boolean; h: boolean };
+  onSplit: (dir: "h" | "v") => void;
+  /** Absent on the last pane — there is nothing to close into. */
+  onClosePane?: () => void;
 }): React.JSX.Element {
   const tab = (active: boolean): string =>
     `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors ${
@@ -117,7 +130,58 @@ export function TabStrip({
       <NewTabButton onNewSession={onNewSession} onOpenFilePanel={onOpenFilePanel} />
       {/* Absorbs the leftover width so the strip remains a drop target end to end. */}
       <span className="flex-1 min-w-0" />
+      {/* This pane's own layout controls. Only what is legal for THIS pane is
+          rendered, so a visible button always does something to the strip it
+          sits in — nothing depends on which pane happens to be focused. */}
+      {splitOptions.v && (
+        <PaneButton title="Split this pane — side by side" label="Split this pane vertically" onClick={() => onSplit("v")}>
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" />
+          </svg>
+        </PaneButton>
+      )}
+      {splitOptions.h && (
+        <PaneButton title="Split this pane — stacked" label="Split this pane horizontally" onClick={() => onSplit("h")}>
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 12h18" />
+          </svg>
+        </PaneButton>
+      )}
+      {onClosePane && (
+        <PaneButton title="Close this pane (its tabs move to the next one)" label="Close this pane" onClick={onClosePane}>
+          {/* An X, deliberately NOT another box-with-a-line: beside the two split
+              glyphs and the merge-all one, a fourth rectangle was unreadable. */}
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden>
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </PaneButton>
+      )}
     </div>
+  );
+}
+
+/** One of this pane's layout controls, in its own strip. */
+function PaneButton({
+  title,
+  label,
+  onClick,
+  children,
+}: {
+  title: string;
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={label}
+      onClick={onClick}
+      className="shrink-0 flex items-center border-l-2 border-line px-2 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer transition-colors"
+    >
+      {children}
+    </button>
   );
 }
 
