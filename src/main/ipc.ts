@@ -2916,7 +2916,10 @@ export function registerIpc(win: BrowserWindow): void {
         });
         for (const name of commands) {
           const file = path.join(managedPromptTemplatesDir(agentDir()), `${name}.md`);
-          promptTemplateRegistry.approve(readPromptTemplateFile(file, "managed"), now, { enabled: true, provenance });
+          // enabled:false, exactly like the skills below — a plugin install must
+          // not change what the agent can do until the user switches something
+          // on, and the install message says so.
+          promptTemplateRegistry.approve(readPromptTemplateFile(file, "managed"), now, { enabled: false, provenance });
         }
 
         const installed = installPluginSkills(scan, {

@@ -202,18 +202,33 @@ export function PluginsSection(): React.JSX.Element {
         <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
       )}
       {done && (
+        // The handover. Nothing installed here is live yet, and each kind is
+        // finished on a different page — so name only the parts that actually
+        // apply rather than reciting all three at someone who installed one skill.
         <div className="rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-900">
-          Installed{" "}
-          {[
-            done.skills.length ? plural(done.skills.length, "skill") : null,
-            done.commands.length ? plural(done.commands.length, "prompt") : null,
-            done.servers.length ? plural(done.servers.length, "MCP server") : null,
-          ].filter(Boolean).join(" · ") || "nothing"}
-          .{" "}
-          {done.skills.length > 0 && (
-            <>The skills are <strong>off</strong> until you enable them on the Skills page.</>
+          <p>
+            Installed{" "}
+            {[
+              done.skills.length ? plural(done.skills.length, "skill") : null,
+              done.commands.length ? plural(done.commands.length, "prompt") : null,
+              done.servers.length ? plural(done.servers.length, "MCP server") : null,
+            ].filter(Boolean).join(" · ") || "nothing"}
+            . <strong>Nothing from it is active yet — that part is yours:</strong>
+          </p>
+          <ul className="mt-1 ml-4 list-disc space-y-0.5">
+            {done.skills.length > 0 && (
+              <li>enable {done.skills.length === 1 ? "the skill" : `each of the ${done.skills.length} skills`} on the <strong>Skills</strong> page</li>
+            )}
+            {done.commands.length > 0 && (
+              <li>enable {done.commands.length === 1 ? "the prompt" : `each of the ${done.commands.length} prompts`} on the <strong>Prompts</strong> page</li>
+            )}
+            {done.servers.length > 0 && (
+              <li>connect {done.servers.length === 1 ? "the server" : `each of the ${done.servers.length} servers`} on the <strong>MCP</strong> page — most need signing in before the agent can use them</li>
+            )}
+          </ul>
+          {done.substituted > 0 && (
+            <p className="mt-1">{plural(done.substituted, "plugin-root path")} rewritten to the install location.</p>
           )}
-          {done.substituted > 0 && ` ${plural(done.substituted, "plugin-root path")} rewritten to the install location.`}
         </div>
       )}
 
@@ -259,8 +274,8 @@ export function PluginsSection(): React.JSX.Element {
                 still be dropping namespaced commands Pi cannot read. */}
             {Object.keys(scan.dropped).length > 0 && (
               <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                <strong>This is a Claude Code plugin.</strong> HappyVibe installs skills, top-level
-                prompts and MCP servers only — so{" "}
+                <strong>This plugin ships more than HappyVibe installs.</strong> Skills, top-level
+                prompts and MCP servers come in — so{" "}
                 {Object.entries(scan.dropped).map(([k, n], i, arr) => (
                   <span key={k}>
                     {n} {k}
@@ -273,7 +288,7 @@ export function PluginsSection(): React.JSX.Element {
 
             <PickList
               title="Skills"
-              note="Installed switched OFF — enable them on the Skills page."
+              note="Arrive switched OFF — enable them on the Skills page."
               rows={scan.skills.map((s) => ({
                 id: s.dir,
                 label: s.name,
@@ -292,20 +307,29 @@ export function PluginsSection(): React.JSX.Element {
             />
             <PickList
               title="Prompts"
-              note="Typed as /name."
+              note="Arrive switched OFF — enable them on the Prompts page, then type /name."
               rows={scan.commands.map((c) => ({ id: c.file, label: `/${c.name}`, sub: c.description }))}
               chosen={chosen.commands}
               onToggle={(id) => toggle("commands", id)}
             />
             <PickList
               title="MCP servers"
-              note="Written to your global mcp.json, and removed with the plugin."
+              note="Added to your global mcp.json but NOT connected — sign in on the MCP page. Removed with the plugin."
               rows={scan.mcpServers.map((k) => ({ id: k, label: k }))}
               chosen={chosen.servers}
               onToggle={(id) => toggle("servers", id)}
             />
 
-            <p className="mt-4 text-[11px] text-ink-soft">
+            {/* Said BEFORE the click, not only after: installing is not enabling,
+                and the follow-up is the user's. The success banner repeats it with
+                real counts. */}
+            <p className="mt-4 rounded-lg border border-line bg-paper-soft/60 px-3 py-2 text-xs">
+              Installing copies these in and nothing more — <strong>skills and prompts arrive switched
+              off, and MCP servers arrive unconnected</strong>. Turning each one on, and signing in to
+              any server, is up to you afterwards.
+            </p>
+
+            <p className="mt-3 text-[11px] text-ink-soft">
               Installing from the commit this was verified at:{" "}
               <code className="font-mono">{scan.sha ? scan.sha.slice(0, 10) : "the marketplace snapshot"}</code>
               {scan.ref && <> ({scan.ref})</>}.
