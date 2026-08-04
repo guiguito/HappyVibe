@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventLog, type LogEvent } from "../src/main/log";
 import { aggregate } from "../src/main/analytics";
+import type { ApiCall } from "../src/main/calls";
 
 const tmpFile = () => join(mkdtempSync(join(tmpdir(), "hv-analytics-")), "events.jsonl");
 
@@ -198,5 +199,85 @@ describe("analytics.aggregate — pure", () => {
     expect(a.totalSessions).toBe(1);
     expect(a.tokens).toEqual({ input: 5, output: 5 });
     expect(a.cost).toBeCloseTo(0.01, 6);
+  });
+});
+
+// ── round 11: cost comes from the ledger, so Stats agrees with the session pill ──
+
+describe("ledger-backed cost", () => {
+  const call = (over: Partial<ApiCall> = {}): ApiCall => ({
+    ts: "2026-08-04T10:00:00.000Z",
+    provider: "deepseek",
+    model: "deepseek-v4",
+    input: 100,
+    output: 50,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0.25,
+    billing: "metered",
+    ...over,
+  });
+
+  test("plan-provider spend is excluded from the dashboard total", () => {
+    const events = [
+      ev({ type: "session.start", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", workspaceId: "/w" }),
+      ev({ type: "session.end", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", data: { stats: { cost: 4.2, tokens: { input: 10, output: 5 } } } }),
+    ];
+    // stats.cost prices a ChatGPT subscription at API rates; the ledger does not.
+    const a = aggregate(events, {}, () => [call({ provider: "openai-codex", billing: "plan", cost: 4.2 })]);
+    expect(a.cost).toBe(0);
+  });
+
+  test("a still-open session contributes its spend (stats.cost never saw it)", () => {
+    const events = [ev({ type: "session.start", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", workspaceId: "/w" })];
+    const a = aggregate(events, {}, () => [call({ cost: 1.5 })]);
+    expect(a.cost).toBe(1.5);
+    expect(a.openSessions).toBe(1);
+  });
+
+  test("unknown-price calls are flagged rather than counted as zero", () => {
+    const events = [
+      ev({ type: "session.start", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", workspaceId: "/w" }),
+      ev({ type: "session.end", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", data: { stats: null } }),
+    ];
+    const a = aggregate(events, {}, () => [call({ cost: 0, billing: "unknown" })]);
+    expect(a.costUnknown).toBe(true);
+    expect(a.cost).toBe(0);
+  });
+
+  test("a session file that cannot be read marks the total unknown, not zero", () => {
+    const events = [ev({ type: "session.start", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", workspaceId: "/w" })];
+    const a = aggregate(events, {}, () => null);
+    expect(a.costUnknown).toBe(true);
+  });
+
+  test("per-workspace and per-model cost also come from the ledger", () => {
+    const events = [
+      ev({ type: "session.start", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", workspaceId: "/w" }),
+      ev({ type: "session.end", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", data: { stats: { cost: 99 } } }),
+    ];
+    const a = aggregate(events, {}, () => [
+      call({ cost: 1, model: "m1" }),
+      call({ cost: 2, model: "m2", billing: "plan" }),
+    ]);
+    expect(a.perWorkspace[0].cost).toBe(1); // plan row excluded here too
+    expect(a.perModel.map((b) => b.key).sort()).toEqual(["m1", "m2"]);
+    expect(a.perModel.find((b) => b.key === "m2")?.cost).toBe(0);
+  });
+
+  test("tokens come from the ledger too, so a live session is not 0", () => {
+    const events = [ev({ type: "session.start", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", workspaceId: "/w" })];
+    const a = aggregate(events, {}, () => [call({ input: 7, output: 3 })]);
+    expect(a.tokens).toEqual({ input: 7, output: 3 });
+  });
+
+  test("without a ledger reader the old stats path still applies", () => {
+    const events = [
+      ev({ type: "session.start", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", workspaceId: "/w" }),
+      ev({ type: "session.end", ts: "2026-08-04T10:00:00.000Z", sessionId: "s1", data: { stats: { cost: 2, tokens: { input: 4, output: 1 } } } }),
+    ];
+    const a = aggregate(events, {});
+    expect(a.cost).toBe(2);
+    expect(a.costUnknown).toBe(false);
   });
 });

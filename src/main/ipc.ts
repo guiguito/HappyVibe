@@ -43,7 +43,7 @@ import {
   type ByokProvider,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
-import { ledgerTotal, parseCalls, planProvidersFor } from "./calls";
+import { ledgerTotal, parseCalls, planProvidersFor, type ApiCall } from "./calls";
 import { deleteSessionFile, readSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
@@ -1692,8 +1692,21 @@ export function registerIpc(win: BrowserWindow): void {
     log.read({ type: "permission.decision", ...filter }));
 
   // ── B7: local analytics (read + aggregate in main, never leaves the machine) ──
-  ipcMain.handle("hv:get-analytics", async (_e, filter?: AnalyticsFilter) =>
-    aggregate(await log.read(), filter ?? {}));
+  ipcMain.handle("hv:get-analytics", async (_e, filter?: AnalyticsFilter) => {
+    // Round 11: money comes from the ledger, not from `stats.cost`, so Stats and
+    // the per-session cost pill are the same arithmetic with the same policy —
+    // plan spend excluded, unknown prices flagged. Resolved once per call
+    // because planProvidersFor depends on which keys are configured.
+    const plans = planProvidersFor(providerKeyStatus());
+    const readCalls = (sessionId: string): ApiCall[] | null => {
+      const meta = index.get(sessionId);
+      if (!meta) return null; // no meta ⇒ we cannot price it ⇒ unknown, not $0
+      const text = readSessionFile(sessionDir(), meta.piSessionFile);
+      if (text == null) return null;
+      return parseCalls(text, plans);
+    };
+    return aggregate(await log.read(), filter ?? {}, readCalls);
+  });
 
   // B7 onboarding: "seen the wow-flow" flag lives in config (userData), shown
   // once, re-openable from the Help affordance.

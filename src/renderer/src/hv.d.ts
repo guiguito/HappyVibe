@@ -305,7 +305,10 @@ interface HvAnalytics {
   openSessions: number;
   crashes: number;
   tokens: { input: number; output: number };
+  /** Metered dollars only — plan spend is excluded (§19). */
   cost: number;
+  /** Some spend could not be priced; render `$X+?`, never a total that looks whole. */
+  costUnknown: boolean;
   duration: { avgMs: number | null; medianMs: number | null; count: number };
   sessionsPerDay: Array<{ date: string; count: number }>;
   perWorkspace: HvBreakdown[];
