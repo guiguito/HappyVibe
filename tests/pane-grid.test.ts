@@ -21,12 +21,12 @@ test("vertical split: two columns, both halves present", () => {
   const css = buildGridStyle(t);
   expect(areas(css)).toContain("stripA stripB");
   expect(areas(css)).toContain("contentA contentB");
-  expect(String(css.gridTemplateColumns)).toContain("0.5fr");
+  expect(String(css.gridTemplateColumns)).toContain("50%");
 });
 
 test("the main ratio drives the track sizes", () => {
   const t = setSize(splitPane(openFile(emptyTabs, "a"), "v"), "main", 0.3);
-  expect(String(buildGridStyle(t).gridTemplateColumns)).toBe("minmax(0,0.3fr) minmax(0,0.7fr) auto");
+  expect(String(buildGridStyle(t).gridTemplateColumns)).toBe("30% minmax(0,1fr) auto");
 });
 
 test("cross-splitting one half gives it an inner strip; the other half SPANS", () => {
@@ -63,8 +63,8 @@ test("horizontal split with a cross-split half divides into COLUMNS", () => {
   const css = buildGridStyle(t);
   expect(areas(css)).toContain("contentA contentC");
   // The cross ratio drives columns here, and main drives rows.
-  expect(String(css.gridTemplateColumns)).toContain("0.5fr");
-  expect(String(css.gridTemplateRows)).toContain("0.5fr");
+  expect(String(css.gridTemplateColumns)).toContain("50%");
+  expect(String(css.gridTemplateRows)).toContain("calc(50% - 44px)");
 });
 
 test("every live pane always has an area — no pane can be unrenderable", () => {
@@ -83,4 +83,38 @@ test("every live pane always has an area — no pane can be unrenderable", () =>
     const live = ([0, 1, 2, 3] as const).filter((i) => t.panes[i] != null);
     for (const slot of live) expect(a, `slot ${slot} of ${JSON.stringify(t.subSplit)}`).toContain(NAMES[slot]);
   }
+});
+
+/**
+ * Regression: the toolbar occupies a third column and content BELOW row 1 spans
+ * into it, so `1fr 1fr auto` gave half A (W-toolbar)/2 and half B that plus the
+ * toolbar — measured 538 vs 718 px at a claimed 50/50 in the running app, with
+ * the draggable handle 90px off the boundary it moves. The first track must be an
+ * exact percentage of the FULL width so the boundary lands at `main%`.
+ */
+test("the first column is an exact percentage, not an fr — the halves must be equal", () => {
+  const t = splitPane(openFile(emptyTabs, "a"), "v");
+  const cols = String(buildGridStyle(t).gridTemplateColumns);
+  expect(cols).toBe("50% minmax(0,1fr) auto");
+  expect(cols).not.toContain("0.5fr");
+});
+
+test("a dragged main ratio moves the boundary to exactly that percentage", () => {
+  const t = setSize(splitPane(openFile(emptyTabs, "a"), "v"), "main", 0.3);
+  expect(String(buildGridStyle(t).gridTemplateColumns)).toBe("30% minmax(0,1fr) auto");
+});
+
+test("the cross boundary subtracts the strip rows, so its handle sits on the line", () => {
+  let t = openFile(splitPane(openFile(emptyTabs, "a"), "v"), "b");
+  t = setSize(splitHalf(t, 0), "cross", 0.4);
+  // row2 ends at 44 + (40% - 44) = 40% of the height.
+  expect(String(buildGridStyle(t).gridTemplateRows)).toBe("44px calc(40% - 44px) 44px minmax(0,1fr)");
+});
+
+test("horizontal split puts the main ratio on the ROWS and cross on the columns", () => {
+  let t = openFile(splitPane(openFile(emptyTabs, "a"), "h"), "b");
+  t = splitHalf(t, 0);
+  const css = buildGridStyle(t);
+  expect(String(css.gridTemplateRows)).toContain("calc(50% - 44px)");
+  expect(String(css.gridTemplateColumns)).toBe("50% minmax(0,1fr) auto");
 });
