@@ -201,6 +201,17 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   none and were dropped as "nothing to install" — MCP-by-import silently imported nothing for every
   first-party MCP plugin. Unit fixtures used the wrapped shape, so the suite was green; only running
   over the real marketplace caught it.
+- **"Signs in and lists tools on the MCP page, but unusable in a session" = the adapter skipped OAuth
+  because of a NON-AUTH header.** `supportsOAuth` (adapter `mcp-auth-flow.ts`) returns false the moment
+  a remote server has ANY custom header — right for `Authorization: Bearer …`, where the header IS the
+  credential, wrong for a telemetry tag. The Miro plugin ships `X-AI-Source: claude-code-plugin`, so the
+  adapter built no auth provider, never read the tokens main had stored, and connected unauthenticated.
+  The split symptom is the diagnostic: **main does OAuth explicitly (`mcpOAuth.ts`) while the adapter
+  auto-detects**, so the page can look perfectly healthy while sessions fail. `normalizePluginMcpServer`
+  (plugins/mcpImport.ts) sets `auth:"oauth"` when no header looks credential-shaped;
+  `tests/mcp-plugin-import-auth.test.ts` pins the upstream heuristic as a pin-bump gate, so when the
+  adapter learns to tell auth headers apart, delete the workaround. Debug this class by running the
+  vendored `supportsOAuth` over the real `mcp.json` rather than reading its comments.
 - **§25's plugin store is GENERATED, not fetched** — `npm run catalog:plugins` writes
   `src/main/plugins/catalog.generated.ts`, and only plugins that pass are listed. Re-run it after ANY
   change to `plugins/classify.ts` or `plugins/scan.ts`, because the classifier is what the catalog
