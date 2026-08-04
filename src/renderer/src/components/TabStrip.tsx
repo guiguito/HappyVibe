@@ -64,7 +64,10 @@ export function TabStrip({
       onDragLeave={() => setDropHover(false)}
       onDrop={(e) => { setDropHover(false); onDrop(e); }}
     >
-      <div className="flex-1 min-w-0 flex items-stretch overflow-x-auto">
+      {/* Sized to its tabs, NOT flex-1: the `+` belongs immediately after the last
+          tab, and a growing strip would push it to the far edge. `min-w-0` still
+          lets it shrink and scroll when the tabs outgrow the pane. */}
+      <div className="min-w-0 flex items-stretch overflow-x-auto">
         {pane.tabs.length === 0 && (
           <span className="flex items-center px-3.5 text-[12px] italic text-ink-soft select-none">
             Drag a tab here
@@ -112,6 +115,8 @@ export function TabStrip({
       </div>
       {/* Round 11: fill THIS pane — a new session, or the file panel to pick from. */}
       <NewTabButton onNewSession={onNewSession} onOpenFilePanel={onOpenFilePanel} />
+      {/* Absorbs the leftover width so the strip remains a drop target end to end. */}
+      <span className="flex-1 min-w-0" />
     </div>
   );
 }
@@ -137,12 +142,14 @@ function NewTabButton({
         aria-label="New tab in this pane"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center border-l-2 border-line px-2.5 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer font-black"
+        className="flex items-center px-2.5 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer font-black shrink-0"
       >
         +
       </button>
+      {/* Drops to the RIGHT (left-0): the `+` now sits just after the last tab, so
+          a right-aligned menu would extend leftward off the pane. */}
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
+        <div className="absolute left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
           <button type="button" className={item} onClick={() => { setOpen(false); onNewSession(); }}>
             New session
           </button>
