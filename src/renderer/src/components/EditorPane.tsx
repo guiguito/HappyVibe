@@ -129,6 +129,7 @@ export default function CodeEditor({
   docVersion,
   onChange,
   onSave,
+  onSelectionChange,
   saveKey,
   searchKey,
 }: {
@@ -139,6 +140,12 @@ export default function CodeEditor({
   docVersion: number;
   onChange: (text: string) => void;
   onSave: () => void;
+  /**
+   * Round 11: the current selection, for "Send to chat". null when nothing is
+   * selected — the action must be unavailable rather than silently sending the
+   * whole file (`@file` is what does that).
+   */
+  onSelectionChange?: (sel: { text: string; startLine: number; endLine: number } | null) => void;
   /** Round 8: resolved bindings from the shortcut registry (canonical CM form). */
   saveKey: string;
   searchKey: string;
@@ -151,7 +158,7 @@ export default function CodeEditor({
   // waiting for a remount would mean waiting for a restart.
   const keysCompartment = useRef(new Compartment());
   // Fresh callbacks without rebuilding the view.
-  const cbs = useRef({ onChange, onSave });
+  const cbs = useRef({ onChange, onSave, onSelectionChange });
   const keymapFor = (save: string, find: string) =>
     keymap.of([
       { key: save, preventDefault: true, run: () => (cbs.current.onSave(), true) },
@@ -163,7 +170,7 @@ export default function CodeEditor({
       ...historyKeymap,
     ]);
   useEffect(() => {
-    cbs.current = { onChange, onSave };
+    cbs.current = { onChange, onSave, onSelectionChange };
   });
 
   useEffect(() => {
@@ -189,6 +196,19 @@ export default function CodeEditor({
           keysCompartment.current.of(keymapFor(saveKey, searchKey)),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) cbs.current.onChange(u.state.doc.toString());
+            // Round 11: report the selection so FileTab can offer "Send to chat".
+            if (u.selectionSet || u.docChanged) {
+              const r = u.state.selection.main;
+              cbs.current.onSelectionChange?.(
+                r.empty
+                  ? null
+                  : {
+                      text: u.state.sliceDoc(r.from, r.to),
+                      startLine: u.state.doc.lineAt(r.from).number,
+                      endLine: u.state.doc.lineAt(r.to).number,
+                    },
+              );
+            }
           }),
         ],
       }),

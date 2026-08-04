@@ -94,6 +94,7 @@ export function ChatView({
   onRewind,
   onLoadEarlier,
   activePlan,
+  composerInsert,
 }: {
   workspace: string | null;
   sessionId: string | null;
@@ -132,6 +133,12 @@ export function ChatView({
   sessionSkills?: Array<{ name: string; scope: string; used: boolean }>;
   onTogglePlan?: (on: boolean) => void;
   onOpenAgentsMd: () => void;
+  /**
+   * Round 11: text pushed in from outside the composer (the editor's "Send to
+   * chat"). Appended on NONCE change, so sending the same selection twice still
+   * lands — the same mechanism the rewind-to-composer path uses.
+   */
+  composerInsert?: { text: string; nonce: number };
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[]) => void;
   onAbort: () => void;
   onRestart: () => void;
@@ -164,6 +171,18 @@ export function ChatView({
     setMultiline(sh > 44); // one line ≈ 36px; > 44 means it wrapped
   }, []);
   useEffect(() => { autoGrow(); }, [input, autoGrow]);
+  // Round 11: external composer insert (the editor's "Send to chat"). Keyed on
+  // the NONCE, so sending the same selection twice still appends; the text itself
+  // is deliberately not a dependency.
+  const lastInsert = useRef(0);
+  useEffect(() => {
+    const n = composerInsert?.nonce ?? 0;
+    if (!n || n === lastInsert.current) return;
+    lastInsert.current = n;
+    setInput((prev) => (prev.trim() ? `${prev.replace(/\s*$/, "")}\n\n` : "") + composerInsert!.text);
+    taRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerInsert?.nonce]);
   // F3: @file mentions — label→relPath map for the composed text, a recursive
   // workspace index (fetched lazily, invalidated on fs change / workspace switch),
   // and the live dropdown state.

@@ -261,6 +261,13 @@ export default function App(): React.JSX.Element {
   // they merge into the committed bubble rather than starting a new one. Cleared
   // at agent_end.
   const aborted = useRef<Record<string, boolean>>({});
+  /**
+   * Round 11: text pushed into a composer from outside it (the editor's "Send to
+   * chat"). The nonce is what makes a repeat send of the SAME text still fire —
+   * ChatView appends on nonce change. Same shape as the rewind-to-composer path;
+   * no store and no event bus, matching how every other prop reaches ChatView.
+   */
+  const [composerInsert, setComposerInsert] = useState<{ sid: string; text: string; nonce: number } | null>(null);
   // Set when the user grants a permission; the next matching
   // tool_execution_start in that session adopts it so the outcome shows on the card.
   const pendingApproval = useRef<Record<string, { tool: string; choice: "Allow" | "Allow for session" } | null>>({});
@@ -1672,6 +1679,7 @@ export default function App(): React.JSX.Element {
               commitStream(sid);
               setBusy((p) => ({ ...p, [sid]: false }));
             } : undefined}
+            composerInsert={composerInsert?.sid === sid ? composerInsert : undefined}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={send}
             onRetry={retryCrash}
@@ -1717,6 +1725,16 @@ export default function App(): React.JSX.Element {
                   active={activeView === "chat" && wsId === w && area !== null}
                   gridArea={area ?? undefined}
                   className={paneDivider(area)}
+                  onSendToChat={
+                    // The chat that receives it is the focused one; with no chat
+                    // open there is nowhere to send, so the button is not offered.
+                    selectedId
+                      ? (text) => {
+                          setComposerInsert((prev) => ({ sid: selectedId, text, nonce: (prev?.nonce ?? 0) + 1 }));
+                          setView("chat");
+                        }
+                      : undefined
+                  }
                   onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
                   saveKey={bindings.save}
                   searchKey={bindings.search}
