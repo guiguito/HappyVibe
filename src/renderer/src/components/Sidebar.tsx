@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SessionStatus } from "../App";
+import { workspaceEmoji } from "../workspaceEmoji";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
 // §13 round 6: the old combined "agents" page split into four peer destinations.
@@ -377,6 +378,35 @@ export function Sidebar({
     localStorage.setItem("hv:ws-collapsed", JSON.stringify([...collapsed]));
   }, [collapsed]);
 
+  // Round 11: the workspace-tree / Settings split, dragged by the handle below.
+  // 0 = "auto", i.e. the original flex-1 behaviour; double-clicking the handle
+  // returns to it. Persisted like the other sidebar state (no IPC — this is a
+  // renderer-local preference).
+  const treeRef = useRef<HTMLDivElement>(null);
+  const [treePx, setTreePx] = useState(() => {
+    const v = Number(localStorage.getItem("hv:sidebar-split"));
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  });
+  useEffect(() => {
+    localStorage.setItem("hv:sidebar-split", String(treePx));
+  }, [treePx]);
+
+  const startResize = (e: React.MouseEvent): void => {
+    e.preventDefault(); // else the drag selects sidebar text
+    const startY = e.clientY;
+    const startH = treeRef.current?.getBoundingClientRect().height ?? 0;
+    const onMove = (ev: MouseEvent): void => {
+      // Floor keeps a usable tree; ceiling always leaves room for the Settings row.
+      setTreePx(Math.max(96, Math.min(startH + ev.clientY - startY, window.innerHeight - 160)));
+    };
+    const onUp = (): void => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   const q = filter.trim().toLowerCase();
   const visible = (s: SessionMeta): boolean =>
     (showArchived || !s.archived) && (!q || s.title.toLowerCase().includes(q));
@@ -416,9 +446,11 @@ export function Sidebar({
               type="button"
               onClick={onToggleCollapsed}
               title={basename(ws)}
-              className="size-8 shrink-0 flex items-center justify-center rounded-lg border-2 border-line bg-card text-[11px] font-black uppercase text-ink-soft hover:text-ink hover:border-honey cursor-pointer"
+              className="size-8 shrink-0 flex items-center justify-center rounded-lg border-2 border-line bg-card text-base hover:border-honey cursor-pointer"
             >
-              {basename(ws).replace(/[^a-z0-9]/gi, "").slice(0, 2) || "·"}
+              {/* Round 11: the emoji replaces two-letter initials — a column of
+                  `HA`/`FL`/`DE` was unreadable at 48px. */}
+              <span aria-hidden>{workspaceEmoji(ws)}</span>
             </button>
           ))}
         </div>
@@ -468,8 +500,13 @@ export function Sidebar({
         />
       </div>
 
-      {/* Workspace tree */}
-      <div className="flex-1 min-h-32 overflow-y-auto px-4 pb-2">
+      {/* Workspace tree. Round 11: an explicit height when the user has dragged
+          the handle, otherwise `flex-1` as before. */}
+      <div
+        ref={treeRef}
+        style={treePx ? { flex: "0 0 auto", height: treePx } : undefined}
+        className="flex-1 min-h-32 overflow-y-auto px-4 pb-2"
+      >
         <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
           <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">workspaces</span>
           <button
@@ -502,6 +539,8 @@ export function Sidebar({
                   className="flex-1 min-w-0 flex items-center gap-1 font-bold text-sm text-left cursor-pointer"
                   title={ws}
                 >
+                  {/* Round 11: derived from the path — decoration, not data. */}
+                  <span className="shrink-0" aria-hidden>{workspaceEmoji(ws)}</span>
                   <span className="truncate">{basename(ws)}</span>
                   <Chevron open={!isCollapsed} />
                 </button>
@@ -573,7 +612,21 @@ export function Sidebar({
         )}
       </div>
 
-      <div className="px-4 pt-4 pb-1 border-t-2 border-line min-h-0 flex flex-col">
+      {/* Round 11: the drag handle. It sits ON the border the user pointed at, and
+          it is the only resizer in the app — hence hand-rolled rather than a dep. */}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        title="Drag to resize"
+        onMouseDown={startResize}
+        onDoubleClick={() => setTreePx(0)}
+        className="h-1.5 shrink-0 cursor-row-resize hover:bg-tangerine/40 transition-colors"
+      />
+
+      {/* Round 11: max-h is the actual defect fix — the footer was content-sized
+          with no bound, so its own overflow never engaged and ten nav rows
+          squeezed the tree to its 128px floor. */}
+      <div className="px-4 pt-4 pb-1 border-t-2 border-line min-h-0 max-h-[60%] flex flex-col">
         <button
           type="button"
           onClick={onToggleSettingsOpen}
