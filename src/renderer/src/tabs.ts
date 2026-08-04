@@ -315,7 +315,8 @@ export function splitAt(t: WorkspaceTabs, slot: number, dir: "h" | "v"): Workspa
 /**
  * Close ONE pane: its tabs move into a sibling, then the layout collapses.
  *
- * Per-pane counterpart of `unsplit` (which flattens everything). Refuses on the
+ * Closing panes one at a time IS the merge — the old layout-wide "unsplit" was
+ * deleted with the global toolbar it lived in. Refuses on the
  * last pane — there would be nowhere for the tabs to go, and an empty layout is
  * what `closeTab` already produces.
  */
@@ -347,19 +348,6 @@ export function splitHalf(t: WorkspaceTabs, half: 0 | 1): WorkspaceTabs {
   return { ...t, panes: panes as WorkspaceTabs["panes"], subSplit, focused: slot };
 }
 
-/** Collapse everything back into one pane, merging every tab in slot order. */
-export function unsplit(t: WorkspaceTabs): WorkspaceTabs {
-  const merged: TabId[] = [];
-  for (const i of liveSlots(t)) for (const id of t.panes[i]!.tabs) if (!merged.includes(id)) merged.push(id);
-  const active = activeTabOf(t) ?? merged[0] ?? null;
-  return {
-    panes: [{ tabs: merged, active }, null, null, null],
-    split: null,
-    subSplit: [false, false],
-    focused: 0,
-    sizes: { main: 0.5, cross: 0.5 },
-  };
-}
 
 /** Move a tab to another pane (drag between strips). Collapses an emptied pane. */
 export function moveTab(t: WorkspaceTabs, tab: TabId, toSlot: number): WorkspaceTabs {

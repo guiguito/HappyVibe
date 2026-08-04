@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { buildGridStyle, toolbarSlot } from "../src/renderer/src/paneGrid";
+import { buildGridStyle } from "../src/renderer/src/paneGrid";
 import { emptyTabs, openFile, setSize, splitHalf, splitPane } from "../src/renderer/src/tabs";
 
 /**
@@ -153,10 +153,3 @@ test("no layout mentions a toolbar track — it is an overlay now", () => {
   for (const t of layouts) expect(areas(buildGridStyle(t))).not.toContain("toolbar");
 });
 
-test("toolbarSlot names the pane sharing row 1 with the overlay", () => {
-  expect(toolbarSlot(emptyTabs)).toBe(0);
-  expect(toolbarSlot(splitPane(emptyTabs, "v"))).toBe(1);
-  expect(toolbarSlot(splitPane(emptyTabs, "h"))).toBe(0);
-  // halves stacked and the top one divided → its cross partner is rightmost
-  expect(toolbarSlot(splitHalf(splitPane(emptyTabs, "h"), 0))).toBe(2);
-});

@@ -2,7 +2,6 @@ import { expect, test } from "vitest";
 import {
   activateTab, activeTabOf, allChats, allFiles, bufferKey, chatTab, closeTab, emptyTabs, isChatTab,
   closePane, closeSessionTabs, liveSlots, moveTab, openChat, openFile, splitAt, splitOptions, resolveCardPath, sessionOf, setSize, splitHalf, splitPane,
-  unsplit,
 } from "../src/renderer/src/tabs";
 
 // ── tab identity: a chat is per SESSION (round 11) ───────────────────────────
@@ -161,15 +160,6 @@ test("when only a cross-split half remains, its split becomes the primary one", 
   expect(allFiles(t).sort()).toEqual(["b", "c"]);
 });
 
-test("unsplit merges every pane's tabs into one, in slot order", () => {
-  let t = openFile(splitPane(openFile(emptyTabs, "a"), "v"), "b");
-  t = splitHalf(t, 0);
-  t = openFile(t, "c");
-  t = unsplit(t);
-  expect(t.split).toBeNull();
-  expect(liveSlots(t)).toEqual([0]);
-  expect(t.panes[0].tabs).toEqual(["a", "b", "c"]);
-});
 
 // ── moving tabs between panes ────────────────────────────────────────────────
 

@@ -43,11 +43,11 @@ import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming"
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
   activateTab, allChats, allFiles, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
-  isChatTab, liveSlots, moveTab, openChat, openFile, sessionOf, setSize, splitAt, splitOptions, unsplit,
+  isChatTab, liveSlots, moveTab, openChat, openFile, sessionOf, setSize, splitAt, splitOptions,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
-import { buildGridStyle, toolbarSlot } from "./paneGrid";
+import { buildGridStyle } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
@@ -1552,9 +1552,7 @@ export default function App(): React.JSX.Element {
                 <div
                   key={slot}
                   style={{ gridArea: STRIPS[slot] }}
-                  className={`min-w-0 h-11 ${edge} ${slot === wsTabs.focused ? "bg-paper-deep/30" : ""} ${
-                    slot === toolbarSlot(wsTabs) ? "pr-24" : ""
-                  }`}
+                  className={`min-w-0 h-11 ${edge} ${slot === wsTabs.focused ? "bg-paper-deep/30" : ""}`}
                   onMouseDown={() => updateTabs(wsId, (t) => focusPane(t, slot))}
                 >
                   <TabStrip
@@ -1585,25 +1583,20 @@ export default function App(): React.JSX.Element {
                         ? () => updateTabs(wsId, (t) => closePane(t, slot))
                         : undefined
                     }
+                    filesOpen={treeOpen && wsTabs.focused === slot}
+                    onToggleFiles={() => {
+                      // Focus this pane first: a file picked from the drawer opens
+                      // into the focused pane, so "browse files into THIS pane"
+                      // has to mean exactly that.
+                      updateTabs(wsId, (t) => focusPane(t, slot));
+                      setTreeOpen(!(treeOpen && wsTabs.focused === slot));
+                    }}
                   />
                 </div>
               );
             })}
             {/* v5.1: persistent top-right toolbar — split + file-panel controls,
                 always visible regardless of split state. */}
-            {wsId && (
-              // Absolute, NOT a grid cell: as a column it existed only in row 1
-              // while content below spanned into it, so strips and panes had
-              // different widths (see paneGrid.ts).
-              <div className="absolute top-0 right-0 z-20 h-11 flex items-stretch border-b-2 border-l-2 border-line bg-paper">
-                <CenterToolbar
-                  split={wsTabs.split}
-                  treeOpen={treeOpen}
-                  onUnsplit={() => updateTabs(wsId, unsplit)}
-                  onToggleTree={() => setTreeOpen((o) => !o)}
-                />
-              </div>
-            )}
             {/* Round 11: draggable dividers. Absolutely positioned over the grid
                 lines rather than grid children, so they cost no track and cannot
                 perturb the areas the mount-once placement depends on. */}
@@ -1785,25 +1778,6 @@ export default function App(): React.JSX.Element {
   );
 }
 
-/** WS6: the file-tree toggle. */
-function FilesToggle({ treeOpen, onToggle }: { treeOpen: boolean; onToggle: () => void }): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={treeOpen}
-      aria-label={treeOpen ? "Hide the file tree" : "Browse workspace files"}
-      title={treeOpen ? "Hide the file tree" : "Browse workspace files"}
-      className={`shrink-0 flex items-center border-l-2 border-line px-3 cursor-pointer transition-colors ${
-        treeOpen ? "text-tangerine-deep bg-paper-deep/50" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
-      }`}
-    >
-      <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-      </svg>
-    </button>
-  );
-}
 
 /**
  * Round 11: the draggable pane dividers.
@@ -1870,40 +1844,3 @@ function PaneDividers({
   );
 }
 
-/**
- * v5.1: persistent top-right toolbar.
- *
- * Round 11 (after GUI feedback): the split controls MOVED into each pane's tab
- * strip. One global set could not say which pane it would divide — it acted on
- * the focused half, which is invisible — and asking for a direction the model
- * cannot divide on silently ROTATED the whole layout instead. What is left here
- * is genuinely layout-wide: flatten every pane, and the workspace file drawer.
- */
-function CenterToolbar({
-  split,
-  treeOpen,
-  onUnsplit,
-  onToggleTree,
-}: {
-  split: "h" | "v" | null;
-  treeOpen: boolean;
-  onUnsplit: () => void;
-  onToggleTree: () => void;
-}): React.JSX.Element {
-  const btn = "shrink-0 flex items-center border-l-2 border-line px-2.5 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer transition-colors";
-  return (
-    <div className="flex items-stretch">
-      {/* Only with a split to flatten — per-pane close lives in each strip. */}
-      {split && (
-        <button type="button" onClick={onUnsplit} title="Merge every pane back into one" aria-label="Merge every pane into one" className={btn}>
-          {/* One undivided rectangle — "make it a single pane" — so it reads
-              against the divided rectangles that SPLIT a pane. */}
-          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <rect x="3" y="4" width="18" height="16" rx="2" />
-          </svg>
-        </button>
-      )}
-      <FilesToggle treeOpen={treeOpen} onToggle={onToggleTree} />
-    </div>
-  );
-}

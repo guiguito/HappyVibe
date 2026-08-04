@@ -4,13 +4,17 @@ import { basename, sessionOf, type Pane, type TabId } from "../tabs";
 /**
  * WS6 — center tab strip for ONE pane: one tab per open chat (session title) and
  * one per open file (basename, dirty dot, close X, middle-click close). Tabs are
- * draggable between panes (HTML5 DnD carrying the TabId). v5.1: tabs-only —
- * split/unsplit + file-panel controls live in the App-level top-right toolbar.
+ * draggable between panes (HTML5 DnD carrying the TabId).
  *
  * Round 11: a chat tab is per SESSION, so a strip can hold several, each with its
  * own title and its own working dot; and a trailing `+` fills the pane without
  * leaving it. Chat tabs ARE closable now (closing hides the session, it does not
  * end it), which is why the close button is no longer file-only.
+ *
+ * Every LAYOUT control lives here too — split, file drawer, close pane — because
+ * the global toolbar they replaced sat in the top strip row and pushed that one
+ * pane's controls 96px inward while every other pane's sat flush at its own edge.
+ * Per pane, all four strips are identical and each button acts on its own pane.
  */
 const DRAG_MIME = "application/x-hv-tabid";
 
@@ -28,6 +32,8 @@ export function TabStrip({
   splitOptions,
   onSplit,
   onClosePane,
+  filesOpen,
+  onToggleFiles,
 }: {
   pane: Pane;
   /** Slot index in the 2×2 grid (0–3). */
@@ -54,6 +60,14 @@ export function TabStrip({
   onSplit: (dir: "h" | "v") => void;
   /** Absent on the last pane — there is nothing to close into. */
   onClosePane?: () => void;
+  /**
+   * The file drawer, per pane. It used to be one button in a global toolbar, whose
+   * presence in the top strip row is what forced THAT pane's controls 96px inward
+   * while every other pane's sat flush. Per pane it also reads better: a file
+   * picked from the drawer opens into the pane you asked from.
+   */
+  filesOpen: boolean;
+  onToggleFiles: () => void;
 }): React.JSX.Element {
   const tab = (active: boolean): string =>
     `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors ${
@@ -147,6 +161,16 @@ export function TabStrip({
           </svg>
         </PaneButton>
       )}
+      <PaneButton
+        title={filesOpen ? "Hide the file tree" : "Browse files into this pane"}
+        label={filesOpen ? "Hide the file tree" : "Browse files into this pane"}
+        onClick={onToggleFiles}
+        pressed={filesOpen}
+      >
+        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+      </PaneButton>
       {onClosePane && (
         <PaneButton title="Close this pane (its tabs move to the next one)" label="Close this pane" onClick={onClosePane}>
           {/* An X, deliberately NOT another box-with-a-line: beside the two split
@@ -165,11 +189,13 @@ function PaneButton({
   title,
   label,
   onClick,
+  pressed,
   children,
 }: {
   title: string;
   label: string;
   onClick: () => void;
+  pressed?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
@@ -177,8 +203,11 @@ function PaneButton({
       type="button"
       title={title}
       aria-label={label}
+      aria-pressed={pressed}
       onClick={onClick}
-      className="shrink-0 flex items-center border-l-2 border-line px-2 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer transition-colors"
+      className={`shrink-0 flex items-center border-l-2 border-line px-2 cursor-pointer transition-colors ${
+        pressed ? "text-tangerine-deep bg-paper-deep/50" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
+      }`}
     >
       {children}
     </button>

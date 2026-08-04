@@ -16,29 +16,21 @@
  *  - the cross divider is shared (`sizes.cross`), because in a flat grid the two
  *    halves' inner tracks are literally the same tracks.
  *
- * THE TOOLBAR IS NOT A COLUMN. It used to occupy a third column present only in
- * row 1, while content below spanned into it — so a pane's content measured 628px
- * while its own tab strip measured 552px, strips in different rows had different
- * right edges, and the bottom-right pane's controls sat flush against the window
- * while the top-right pane's stopped short. Reserving that column in every row
- * instead would leave a permanently dead ~76px gutter. So the toolbar is an
- * absolute overlay (App.tsx) and only the strip that shares row 1 with it —
- * `toolbarSlot` below — pads itself clear. Every strip now spans exactly its pane.
+ * THERE IS NO TOOLBAR TRACK. A global toolbar used to occupy a third column
+ * present only in row 1, while content below spanned into it — so a pane's content
+ * measured 628px while its own strip measured 552px, and no two strips shared a
+ * right edge. Reserving that column in every row would have left a permanently
+ * dead ~76px gutter; making it an overlay instead pushed the top-right pane's
+ * controls 96px inward while every other pane's sat flush. Both were the same
+ * mistake: a layout-wide control cannot share a per-pane row. Every layout control
+ * now lives in its own pane's strip (TabStrip.tsx), so the grid is purely panes and
+ * every strip spans exactly the one it belongs to.
  */
 import type { WorkspaceTabs } from "./tabs";
 
 /** Tab-strip height — must match the `h-11` on every strip cell. */
 const STRIP_PX = 44;
 
-/**
- * Which pane's strip shares row 1 with the toolbar overlay, and therefore has to
- * keep its own controls clear of it.
- */
-export function toolbarSlot(t: WorkspaceTabs): number {
-  if (!t.split) return 0;
-  if (t.split === "v") return 1; // halves side by side → B is rightmost in row 1
-  return t.subSplit[0] ? 2 : 0; // halves stacked → row 1 is A, or A|C when A is split
-}
 
 export function buildGridStyle(t: WorkspaceTabs): React.CSSProperties {
   /** Two columns whose boundary lands exactly at `r` of the full width. */
