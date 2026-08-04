@@ -6,6 +6,7 @@ import { BYOK_PROVIDERS, buildProviderEnv, keySource, type ByokProvider, type Ke
 import { customEndpointEnv, type CustomEndpoint } from "./modelsJson";
 import { mcpSecretEnvVar } from "./mcpSecretName";
 import { resolveBypass as resolveBypassPure } from "./bypass";
+import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -516,10 +517,10 @@ export function writeSubagentConfig(): void {
  * behalf, the same posture as §24's decision to stop auto-scanning
  * `.claude/commands`.
  */
-export const OFFICIAL_MARKETPLACE = {
-  id: "claude-plugins-official",
-  url: "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json",
-};
+// Defined in an electron-free module so the release-time catalog generator can
+// import the URL without pulling in the app; re-exported so callers here and in
+// ipc.ts are unchanged.
+export { OFFICIAL_MARKETPLACE };
 
 export function listMarketplaces(): Array<{ id: string; url: string }> {
   return load().marketplaces ?? [OFFICIAL_MARKETPLACE];

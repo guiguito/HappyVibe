@@ -25,7 +25,8 @@
     "test": "DEEPSEEK_API_KEY=sk-REPLACE vitest run",
     "test:live": "grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism",
     "gate": "npm run build && npm test",
-    "live:why": "git diff --name-only main...HEAD | grep -E 'pi-runtime/extensions/|src/main/pi/'; git diff --name-only main...HEAD | grep '^tests/' | xargs grep -l 'skipIf(!KEY' 2>/dev/null"
+    "live:why": "git diff --name-only main...HEAD | grep -E 'pi-runtime/extensions/|src/main/pi/'; git diff --name-only main...HEAD | grep '^tests/' | xargs grep -l 'skipIf(!KEY' 2>/dev/null",
+    "catalog:plugins": "node --experimental-strip-types --import jiti/register tools/plugin-catalog/build.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
@@ -72,6 +73,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
+    "jiti": "2.7.0",
     "prettier": "^3.7.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

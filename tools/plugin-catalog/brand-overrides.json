@@ -1,0 +1,20 @@
+{
+  "_comment": [
+    "§25 brand-icon corrections for the generated plugin catalog.",
+    "The generator auto-matches a plugin's name, then its repo owner, against the",
+    "real simple-icons slugs parsed out of node_modules/simple-icons-font. Auto-match",
+    "is right about 45% of the time and WRONG often enough to need this file: a logo",
+    "reads as a claim about who published the plugin, so a plausible-but-wrong one is",
+    "worse than the neutral monogram BrandMark falls back to.",
+    "",
+    "Key = plugin name. Value = a simple-icons class, or null to force the monogram.",
+    "Overrides always win over auto-match. Every value is validated against the real",
+    "slug set by tests/plugin-catalog.test.ts, so a typo fails the suite rather than",
+    "shipping a blank square."
+  ],
+  "overrides": {
+    "circle-skills": "si-circleci",
+    "aws-serverless": "si-amazonwebservices",
+    "context7": "si-upstash"
+  }
+}
