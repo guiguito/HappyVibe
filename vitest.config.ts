@@ -13,6 +13,14 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
+    // Every test we own lives in tests/ (verified: nothing matches outside it).
+    // Pinning the glob matters because vitest's DEFAULT include walks the whole
+    // tree, and §25's catalog generator caches ~199 downloaded plugin repos under
+    // tools/plugin-catalog/.cache — each with its own suite. Unpinned, `npm test`
+    // collected 3084 files and 1412 third-party failures, i.e. the gate became
+    // other people's test results. An exclude for that one path would work today
+    // and break the next time anything lands in the tree.
+    include: ["tests/**/*.test.ts"],
     testTimeout: 30_000,
     hookTimeout: 60_000,
     // Parallelism is NOT capped here: the 86-file non-live suite is pure and

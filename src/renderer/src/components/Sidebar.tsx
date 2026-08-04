@@ -5,7 +5,8 @@ import type { SessionStatus } from "../App";
 // §13 round 6: the old combined "agents" page split into four peer destinations.
 export type View =
   // §24: Commands sits beside Skills — same trust model, its own page.
-  | "chat" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools"
+  // §25: Plugins sits above them — it is where skills/prompts/servers come FROM.
+  | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools"
   // Round 8: the settings scroll exploded into pages, each its own destination.
   | "models" | "permissions" | "sysprompt" | "stats" | "audit" | "shortcuts"
   | "workspace";
@@ -45,6 +46,14 @@ function SkillsIcon(): React.JSX.Element {
 }
 // §24: a terminal prompt — a command is something you type, not something the
 // model discovers, and the glyph should say so at a glance.
+/** §25: a jigsaw piece — the plugin glyph Claude Code and the docs both use. */
+function PluginsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 3.5a1.5 1.5 0 0 1 3 0V5h2.5A1.5 1.5 0 0 1 17 6.5V9h1.5a1.5 1.5 0 0 1 0 3H17v2.5a1.5 1.5 0 0 1-1.5 1.5H13v1.5a1.5 1.5 0 0 1-3 0V16H6.5A1.5 1.5 0 0 1 5 14.5V12H3.5a1.5 1.5 0 0 1 0-3H5V6.5A1.5 1.5 0 0 1 6.5 5H10z" />
+    </svg>
+  );
+}
 function PromptTemplatesIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -130,6 +139,8 @@ function KeyboardIcon(): React.JSX.Element {
     the flat footer had grown to seven entries. The four round-6 pages keep
     their order at the top; the exploded settings pages sit below a divider. */
 const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
+  // §25 first: it is the source the three below get their contents from.
+  { view: "plugins", label: "Plugins", Icon: PluginsIcon },
   { view: "skills", label: "Skills", Icon: SkillsIcon },
   { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon },
   { view: "mcp", label: "MCP", Icon: McpIcon },

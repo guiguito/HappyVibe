@@ -37,7 +37,7 @@ const PT_STATUS_LABEL: Record<HvPromptTemplateView["status"], string> = {
   shadowed: "shadowed",
 };
 const BASH_RISK =
-  "This prompt uses Claude Code's inline !`bash` injection, which Pi does not support: the prompt will contain the literal text instead of the command's output.";
+  "This prompt uses inline !`bash` injection, which Pi does not support: the prompt will contain the literal text instead of the command's output.";
 const SHADOW_RISK =
   "A built-in /hv-… command owns this name. Pi matches built-ins before prompt templates, so this file can never run — rename it to use it.";
 

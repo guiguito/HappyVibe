@@ -33,6 +33,7 @@ import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextS
 import { AgentsView } from "./components/AgentsView";
 import { SkillsView } from "./components/SkillsView";
 import { PromptTemplatesView } from "./components/PromptTemplatesView";
+import { PluginsView } from "./components/PluginsView";
 import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
@@ -1385,6 +1386,7 @@ export default function App(): React.JSX.Element {
         {activeView === "promptTemplates" && (
           <PromptTemplatesView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
+        {activeView === "plugins" && <PluginsView />}
         {activeView === "mcp" && <McpView />}
         {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}

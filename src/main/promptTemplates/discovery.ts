@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { parse as parseYaml } from "yaml";
 
 /**
  * Command (prompt template) discovery + content hashing (PRD §24) — PURE,
@@ -68,17 +69,22 @@ export function parsePromptTemplateFrontmatter(content: string): { description?:
   const m = /^---\n([\s\S]*?)\n---/.exec(normalized);
   if (!m) return { body: normalized }; // no frontmatter → the whole file is the body, untrimmed (Pi does the same)
   const out: { description?: string; argumentHint?: string; body: string } = { body: normalized.slice(m[0].length).trim() };
-  for (const line of m[1].split("\n")) {
-    const kv = /^([A-Za-z0-9_-]+)\s*:\s*(.*)$/.exec(line);
-    if (!kv) continue;
-    let val = kv[2].trim();
-    // strip matching surrounding quotes
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-      val = val.slice(1, -1);
-    }
-    if (kv[1] === "description") out.description = val;
-    else if (kv[1] === "argument-hint") out.argumentHint = val;
+  // Real YAML, for the same reason as skills/discovery.ts parseSkillFrontmatter:
+  // Pi's frontmatter reader IS yaml.parse, so a one-line `key: value` scan
+  // disagrees with Pi on any multi-line scalar — and a long `description:` split
+  // over several lines is exactly what real Claude Code commands ship.
+  // Fails soft: malformed YAML leaves description/argumentHint unset, which is
+  // the same degraded-not-broken outcome as a template with no frontmatter.
+  let fm: unknown;
+  try {
+    fm = parseYaml(m[1]);
+  } catch {
+    return out;
   }
+  if (!fm || typeof fm !== "object" || Array.isArray(fm)) return out;
+  const rec = fm as Record<string, unknown>;
+  if (typeof rec.description === "string") out.description = rec.description.trim();
+  if (typeof rec["argument-hint"] === "string") out.argumentHint = rec["argument-hint"].trim();
   return out;
 }
 

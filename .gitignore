@@ -11,3 +11,4 @@ release
 
 # tokensave code-graph index (local-only, not shared)
 .tokensave/
+tools/plugin-catalog/.cache/

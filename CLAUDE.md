@@ -180,6 +180,46 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   forever, while a real edit inside the 1 ms tolerance read as unedited and got clobbered. Legacy
   `{version, installedMtime}` stamps can't prove authorship, so they are repaired towards the
   bundle leaving a one-time `<agent>.md.bak`. Pinned by `tests/builtin-agents-uninstall.test.ts`.
+- **`yaml` is a ROOT dep pinned to what Pi depends on (2.8.3) — move it with the Pi pin.** Same
+  relationship as pi-runtime's typebox, for a sharper reason: Pi decides what loads, and Pi's
+  frontmatter reader IS `yaml.parse` (`dist/utils/frontmatter.js`). Both `parseSkillFrontmatter`
+  (skills/discovery.ts) and `parsePromptTemplateFrontmatter` (promptTemplates/discovery.ts) hand-rolled
+  a one-line `key: value` scan, so ANY multi-line YAML scalar read as empty — and for skills that is
+  not cosmetic: empty description ⇒ `loadable:false` ⇒ the Skills page claims "SKILL.md is missing a
+  description (Pi will not load it)" AND `resolveActiveSkills` refuses to pass the dir to `--skill`, so
+  a skill Pi loads fine is unusable in HappyVibe. Found via Anthropic's own `math-olympiad` plugin
+  (folded `description:`, scanned to zero skills). Long descriptions are idiomatic in the Agent Skills
+  spec, so this is the common case, not a corner. Match Pi on types too: `disable-model-invocation`
+  is `=== true` (a real boolean), and malformed YAML degrades to "no frontmatter" rather than throwing.
+- **A PLUGIN's `.mcp.json` is not our `.mcp.json`.** Two shapes exist upstream — measured across the
+  278-entry official marketplace: **169 wrapped** in `{mcpServers:{…}}` and **26 bare**, a straight
+  `name → config` map, and the bare set is `github`, `linear`, `context7`, `playwright`, `asana`,
+  `firebase`, `gitlab`, `terraform`. Read a plugin's file with `readPluginMcpServers`
+  (plugins/scan.ts), never `readMcpFile`: the latter requires the wrapper and is RIGHT to, because it
+  parses HappyVibe's own config (`mcp.json`, the workspace `.mcp.json` we write). Using it on a
+  plugin returned zero servers for all 26, so they classified as *having* mcpServers while offering
+  none and were dropped as "nothing to install" — MCP-by-import silently imported nothing for every
+  first-party MCP plugin. Unit fixtures used the wrapped shape, so the suite was green; only running
+  over the real marketplace caught it.
+- **"Signs in and lists tools on the MCP page, but unusable in a session" = the adapter skipped OAuth
+  because of a NON-AUTH header.** `supportsOAuth` (adapter `mcp-auth-flow.ts`) returns false the moment
+  a remote server has ANY custom header — right for `Authorization: Bearer …`, where the header IS the
+  credential, wrong for a telemetry tag. The Miro plugin ships `X-AI-Source: claude-code-plugin`, so the
+  adapter built no auth provider, never read the tokens main had stored, and connected unauthenticated.
+  The split symptom is the diagnostic: **main does OAuth explicitly (`mcpOAuth.ts`) while the adapter
+  auto-detects**, so the page can look perfectly healthy while sessions fail. `normalizePluginMcpServer`
+  (plugins/mcpImport.ts) sets `auth:"oauth"` when no header looks credential-shaped;
+  `tests/mcp-plugin-import-auth.test.ts` pins the upstream heuristic as a pin-bump gate, so when the
+  adapter learns to tell auth headers apart, delete the workaround. Debug this class by running the
+  vendored `supportsOAuth` over the real `mcp.json` rather than reading its comments.
+- **§25's plugin store is GENERATED, not fetched** — `npm run catalog:plugins` writes
+  `src/main/plugins/catalog.generated.ts`, and only plugins that pass are listed. Re-run it after ANY
+  change to `plugins/classify.ts` or `plugins/scan.ts`, because the classifier is what the catalog
+  encodes; `tests/plugin-catalog.test.ts` guards the committed data but cannot re-verify a plugin.
+  The generator reuses the app's own `scanPluginDir` on purpose — a second classifier would drift,
+  and the drift shows up as a refusal in front of the user. Read its run summary: the reject-reason
+  histogram is what surfaced both bugs above, and a benign new manifest key shows up there as
+  `declares "x", which HappyVibe does not recognise` rather than as a silently missing plugin.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array

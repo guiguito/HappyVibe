@@ -34,6 +34,41 @@ test("parseSkillFrontmatter reads name/description and quotes", () => {
   expect(parseSkillFrontmatter("no frontmatter here")).toEqual({ disableModelInvocation: false });
 });
 
+test("parseSkillFrontmatter reads a MULTI-LINE description (Pi uses a real YAML parser)", () => {
+  // Anthropic's own `math-olympiad` plugin writes its description as a folded
+  // YAML scalar. A one-line `key: value` reader saw description:"" → loadable
+  // false → the Skills page claimed "missing a description (Pi will not load
+  // it)" and resolveActiveSkills refused to pass it to --skill. Pi loads it
+  // fine: it calls yaml.parse (dist/utils/frontmatter.js).
+  const folded = parseSkillFrontmatter(
+    `---\nname: math-olympiad\ndescription:\n  "Solve competition math problems\n  with adversarial verification\n  that catches errors."\n---\nbody`,
+  );
+  expect(folded.name).toBe("math-olympiad");
+  expect(folded.description).toBe(
+    "Solve competition math problems with adversarial verification that catches errors.",
+  );
+
+  // Block scalars too — the other spelling real skills use. `|` keeps the
+  // trailing newline (real YAML semantics), and Pi passes the value through
+  // unchanged, so the parser must not trim it either — readSkillDir does.
+  const block = parseSkillFrontmatter(`---\nname: b\ndescription: |\n  Line one.\n  Line two.\n---\nbody`);
+  expect(block.description).toBe("Line one.\nLine two.\n");
+
+  const folded2 = parseSkillFrontmatter(`---\nname: c\ndescription: >\n  Line one.\n  Line two.\n---\nbody`);
+  expect(folded2.description).toBe("Line one. Line two.\n");
+});
+
+test("parseSkillFrontmatter matches Pi on types and survives junk", () => {
+  // Pi tests `frontmatter["disable-model-invocation"] === true` — a real boolean,
+  // not the string "true".
+  expect(parseSkillFrontmatter(`---\nname: x\ndescription: y\ndisable-model-invocation: false\n---`).disableModelInvocation).toBe(false);
+  // A non-string name must not crash the caller that does name.trim().
+  expect(parseSkillFrontmatter(`---\nname: 123\ndescription: y\n---`).name).toBeUndefined();
+  // Malformed YAML must degrade to "no frontmatter", never throw.
+  expect(() => parseSkillFrontmatter(`---\nname: [unclosed\n---\nbody`)).not.toThrow();
+  expect(parseSkillFrontmatter(`---\nname: [unclosed\n---\nbody`).disableModelInvocation).toBe(false);
+});
+
 test("readSkillDir: name falls back to dir basename; missing description → not loadable", () => {
   const withName = writeSkill("a", "name: pdf-tools\ndescription: Extract text from PDFs.");
   const s = readSkillDir(withName, "managed");

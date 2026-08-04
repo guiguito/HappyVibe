@@ -161,6 +161,52 @@ interface HvSkillDetail {
   approved: string | null;
 }
 
+/** §25 — one row in the plugin store. Every row is a plugin that was VERIFIED at
+ *  release time by the app's own classifier and can actually be installed, so
+ *  there is no `accepted`/`reason` pair: unsupported plugins are not listed at
+ *  all. Mirrors PluginCatalogEntry in src/main/plugins/catalog.generated.ts. */
+interface HvPluginCard {
+  name: string;
+  description: string;
+  category?: string;
+  homepage?: string;
+  /** Branch or tag, display only. */
+  ref?: string;
+  /** The commit it was verified at, and the one install fetches. */
+  sha: string | null;
+  /** simple-icons class; absent → BrandMark renders a monogram. */
+  brand?: string;
+  /** Counts from the verification pass, so a card needs no download. */
+  counts: { skills: number; commands: number; servers: number };
+}
+
+/** §25 — everything the confirm dialog must show BEFORE anything is written. */
+interface HvPluginScan {
+  ok: true;
+  token: string;
+  name: string;
+  description: string;
+  accepted: boolean;
+  reason?: string;
+  sha: string | null;
+  ref?: string;
+  skills: Array<{
+    dir: string;
+    name: string;
+    description: string;
+    scriptCount: number;
+    /** "reject" cannot be installed — it would run and fail silently. */
+    screen: "ok" | "reject" | "warn";
+    screenReason?: string;
+    /** How many ${CLAUDE_PLUGIN_ROOT} refs install would rewrite. */
+    pluginRootRefs: number;
+  }>;
+  commands: Array<{ file: string; name: string; description: string }>;
+  mcpServers: string[];
+  /** Dropped thing ⇢ count, for the disclosure banner. Empty ⇒ no banner. */
+  dropped: Record<string, number>;
+}
+
 /** §24 — mirrors PromptTemplateView in src/main/commands/view.ts (from hv:prompt-templates-list). */
 interface HvPromptTemplateView {
   /** Absolute path to the .md file — the approval key AND the --prompt-template arg. */
@@ -517,6 +563,37 @@ interface HvApi {
   ): Promise<{ ok: true; action: "delete" | "unlink" } | { ok: false; error: string }>;
   promptTemplatesPromote(id: string): Promise<string>;
   onPromptTemplatesChanged(cb: () => void): () => void;
+
+  // §25 plugin marketplaces.
+  pluginMarketplaces(): Promise<Array<{ id: string; url: string }>>;
+  pluginAddMarketplace(
+    url: string,
+  ): Promise<{ ok: true; id: string; entries: number } | { ok: false; error: string }>;
+  pluginRemoveMarketplace(id: string): Promise<Array<{ id: string; url: string }>>;
+  /** The embedded, verified store. No network — everything listed installs. */
+  pluginList(): Promise<{ ok: true; name: string; generatedAt: string; plugins: HvPluginCard[] }>;
+  pluginScan(
+    marketplaceId: string,
+    name: string,
+  ): Promise<HvPluginScan | { ok: false; error: string }>;
+  pluginInstall(
+    token: string,
+    sel: { skillDirs: string[]; commandFiles: string[]; mcpKeys: string[] },
+  ): Promise<
+    | { ok: true; skills: string[]; substituted: number; commands: string[]; servers: string[] }
+    | { ok: false; error: string }
+  >;
+  /** Derived from the same provenance/origin links Remove uses, so the list
+   *  cannot disagree with what removing would actually take away. */
+  pluginInstalled(): Promise<
+    Array<{ plugin: string; marketplace?: string; skills: string[]; commands: string[]; servers: string[] }>
+  >;
+  pluginRemove(
+    plugin: string,
+  ): Promise<
+    | { ok: true; skills: string[]; commands: string[]; servers: string[] }
+    | { ok: false; error: string }
+  >;
 
   // MCP server config (additive). Changes apply to new sessions.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;
