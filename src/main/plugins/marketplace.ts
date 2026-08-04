@@ -125,6 +125,31 @@ export function parseMarketplace(raw: unknown): ParsedMarketplace {
 }
 
 /**
+ * The archive of the repo a marketplace's OWN files live in, derived from the
+ * URL its list was fetched from. Needed by anything that resolves a bare
+ * "./path" entry, since those plugins live inside that repo rather than in one
+ * of their own.
+ *
+ * Keeps the ref. A `raw.githubusercontent.com` URL carries the branch (or a
+ * sha) in its path, and the earlier inline version of this discarded it, so the
+ * fetch silently fell back to HEAD — the same tree only while a marketplace
+ * happens to sit on its default branch.
+ */
+export function marketplaceRepoArchive(listUrl: string): { archiveUrl: string; ref: string } | null {
+  const codeload = (owner: string, repo: string, ref: string): { archiveUrl: string; ref: string } => ({
+    archiveUrl: `https://codeload.github.com/${owner}/${repo}/tar.gz/${ref}`,
+    ref,
+  });
+  // https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path…>
+  const raw = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\//.exec(listUrl);
+  if (raw) return codeload(raw[1], raw[2], raw[3]);
+  // A plain repo URL carries no ref, so HEAD is the honest answer.
+  const gh = /^https:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:[/?#]|$)/.exec(listUrl);
+  if (gh) return codeload(gh[1], gh[2], "HEAD");
+  return null;
+}
+
+/**
  * codeload (or generic forge) archive URL for an entry, pinned to its sha.
  * Returns null when the plugin lives in the marketplace repo — the caller
  * already has those files.

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { parseMarketplace, entryArchiveUrl } from "../src/main/plugins/marketplace";
+import { parseMarketplace, entryArchiveUrl, marketplaceRepoArchive } from "../src/main/plugins/marketplace";
 
 /**
  * The fixture is a verbatim cut of the real
@@ -131,5 +131,46 @@ describe("entryArchiveUrl", () => {
     expect(entryArchiveUrl({ repoUrl: "https://gitlab.com/o/n.git", sha: "abc", subdir: "" })).toBe(
       "https://gitlab.com/o/n/archive/abc.tar.gz",
     );
+  });
+});
+
+describe("marketplaceRepoArchive", () => {
+  it("keeps the BRANCH from a raw.githubusercontent URL", () => {
+    // The inline version this replaced dropped the ref and fell back to HEAD.
+    // Harmless while the official list sits on `main`, silently the wrong tree
+    // for a marketplace hosted anywhere else — and the 53 marketplace-local
+    // plugins are resolved out of exactly this checkout.
+    expect(
+      marketplaceRepoArchive(
+        "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json",
+      ),
+    ).toEqual({
+      archiveUrl: "https://codeload.github.com/anthropics/claude-plugins-official/tar.gz/main",
+      ref: "main",
+    });
+  });
+
+  it("keeps a non-default branch", () => {
+    expect(
+      marketplaceRepoArchive("https://raw.githubusercontent.com/o/n/dev/.claude-plugin/marketplace.json")?.ref,
+    ).toBe("dev");
+  });
+
+  it("keeps a sha used as the ref", () => {
+    const sha = "30287f5e3f122a646d1ac5ca3ab96e130c52a3ad";
+    expect(marketplaceRepoArchive(`https://raw.githubusercontent.com/o/n/${sha}/x.json`)?.ref).toBe(sha);
+  });
+
+  it("falls back to HEAD for a plain github.com URL, which carries no ref", () => {
+    expect(marketplaceRepoArchive("https://github.com/o/n/blob/main/x.json")).toEqual({
+      archiveUrl: "https://codeload.github.com/o/n/tar.gz/HEAD",
+      ref: "HEAD",
+    });
+  });
+
+  it("returns null for anything it cannot map", () => {
+    expect(marketplaceRepoArchive("https://example.com/marketplace.json")).toBeNull();
+    expect(marketplaceRepoArchive("not a url")).toBeNull();
+    expect(marketplaceRepoArchive("https://raw.githubusercontent.com/onlyowner")).toBeNull();
   });
 });
