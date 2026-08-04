@@ -173,6 +173,22 @@ export interface WorkspaceEntry {
  *  setModel silently no-op or getModel miss the override. */
 const normPath = (p: string): string => p.replace(/\/+$/, "") || "/";
 
+/**
+ * Round 11: every session belonging to a workspace, archived ones included.
+ *
+ * Removing a workspace used to drop only the registry entry, leaving each
+ * session's `workspaceId` pointing at a workspace that no longer exists —
+ * invisible in the sidebar (which iterates workspaces) and never cleaned up.
+ * Both removal outcomes need this list: to archive them, or to delete them.
+ *
+ * Uses the same trailing-slash normalisation as the registry, so a workspace
+ * added as "/w/" still matches sessions recorded under "/w".
+ */
+export function sessionsOfWorkspace(sessions: SessionMeta[], workspace: string): SessionMeta[] {
+  const target = normPath(workspace);
+  return sessions.filter((s) => normPath(s.workspaceId) === target);
+}
+
 export class WorkspaceRegistry {
   private entries: WorkspaceEntry[];
 

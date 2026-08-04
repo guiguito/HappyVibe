@@ -24,7 +24,14 @@ function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
 }
 
-export function WorkspaceSettingsView({ workspace }: { workspace: string }): React.JSX.Element {
+export function WorkspaceSettingsView({
+  workspace,
+  onRemoved,
+}: {
+  workspace: string;
+  /** Round 11: the workspace is gone — App refreshes the list and leaves this page. */
+  onRemoved: () => void;
+}): React.JSX.Element {
   const [models, setModels] = useState<HvModel[]>([]);
   const [model, setModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [bypass, setBypass] = useState<boolean | null>(null); // #14: tri-state override
@@ -147,8 +154,125 @@ export function WorkspaceSettingsView({ workspace }: { workspace: string }): Rea
         <Section icon="mcp" title="Workspace MCP" subtitle="Servers for this project only.">
           <WorkspaceMcpBlock workspace={workspace} />
         </Section>
+
+        {/* Round 11: removal moved here from an unconfirmed hover "×" in the
+            sidebar. Last section on the page, because it is the one thing here
+            that cannot be undone by clicking again. */}
+        <Section icon="permissions" title="Remove workspace" subtitle="Take this project out of HappyVibe.">
+          <RemoveWorkspaceBlock workspace={workspace} onRemoved={onRemoved} />
+        </Section>
       </div>
     </div>
+  );
+}
+
+/**
+ * Round 11: the two ways to remove a workspace, each confirmed and each stating
+ * what happens to its sessions — the old "×" asked nothing and silently left
+ * every session pointing at a workspace that no longer existed.
+ */
+function RemoveWorkspaceBlock({ workspace, onRemoved }: { workspace: string; onRemoved: () => void }): React.JSX.Element {
+  const [count, setCount] = useState<number | null>(null);
+  const [confirm, setConfirm] = useState<"forget" | "delete" | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void window.hv.workspaceSessionCount(workspace).then(setCount);
+  }, [workspace]);
+
+  const n = count ?? 0;
+  const sessions = `${n} session${n === 1 ? "" : "s"}`;
+  const name = basename(workspace);
+
+  const run = async (mode: "forget" | "delete"): Promise<void> => {
+    setBusy(true);
+    try {
+      await window.hv.removeWorkspace(workspace, mode);
+      onRemoved();
+    } finally {
+      setBusy(false);
+      setConfirm(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="rounded-xl border-2 border-line bg-card p-4 flex items-start justify-between gap-4">
+        <div>
+          <div className="font-bold">Forget workspace</div>
+          <p className="text-sm text-ink-soft mt-0.5">
+            Takes <strong>{name}</strong> out of the workspace list and archives its {sessions}. Nothing on disk is
+            touched, and adding the folder again brings them back.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setConfirm("forget")}
+          className="shrink-0 rounded-xl border-2 border-line-strong bg-card text-ink font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 cursor-pointer disabled:opacity-50"
+        >
+          Forget
+        </button>
+      </div>
+
+      <div className="mt-3 rounded-xl border-2 border-berry/50 bg-berry-soft/30 p-4 flex items-start justify-between gap-4">
+        <div>
+          <div className="font-bold text-berry">Delete permanently</div>
+          <p className="text-sm text-ink-soft mt-0.5">
+            Removes <strong>{name}</strong> and permanently deletes its {sessions} — conversations and history included.
+            Your files are never touched. This cannot be undone.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setConfirm("delete")}
+          className="shrink-0 rounded-xl border-2 border-berry bg-berry text-paper font-bold text-sm px-4 py-2 shadow-sticker hover:brightness-105 cursor-pointer disabled:opacity-50"
+        >
+          Delete
+        </button>
+      </div>
+
+      {/* Same warm dialog pattern as the session-delete confirm and CompactDialog. */}
+      {confirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirm(null)}>
+          <div
+            className="w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-black text-xl">
+              {confirm === "forget" ? `Forget ${name}?` : `Delete ${name} permanently?`}
+            </h2>
+            <p className="text-sm text-ink-soft mt-2">
+              {confirm === "forget"
+                ? `Its ${sessions} will be archived. Add the folder again and they come back.`
+                : `Its ${sessions} and their history will be permanently deleted. This cannot be undone.`}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirm(null)}
+                className="rounded-xl border-2 border-line-strong text-ink-soft font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void run(confirm)}
+                className={`rounded-xl font-bold text-sm px-5 py-2 border-2 shadow-sticker hover:brightness-105 cursor-pointer disabled:opacity-50 ${
+                  confirm === "delete"
+                    ? "bg-berry text-paper border-berry"
+                    : "bg-tangerine text-paper border-tangerine-deep"
+                }`}
+              >
+                {confirm === "forget" ? "Forget" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

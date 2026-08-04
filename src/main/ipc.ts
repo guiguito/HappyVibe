@@ -44,7 +44,7 @@ import {
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { ledgerTotal, parseCalls, planProvidersFor, type ApiCall } from "./calls";
-import { deleteSessionFile, readSessionFile, SessionIndex, WorkspaceRegistry, type SessionMeta } from "./store";
+import { deleteSessionFile, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
@@ -1035,7 +1035,37 @@ export function registerIpc(win: BrowserWindow): void {
     workspaces.add(r.filePaths[0]);
     return r.filePaths[0];
   });
-  ipcMain.handle("hv:remove-workspace", (_e, ws: string) => workspaces.remove(ws));
+  /**
+   * Round 11: removal is a confirmed choice between two outcomes, and neither
+   * leaves orphans behind (the old one-liner dropped the registry entry and left
+   * every session pointing at a workspace that no longer existed).
+   *
+   *   forget — archive its sessions; re-adding the folder brings them back, and
+   *            nothing on disk is touched.
+   *   delete — permanently remove them, session files and snapshots included.
+   *
+   * Both reuse the paths the session UI already calls (`hv:archive-session` /
+   * `hv:delete-session`) rather than adding a second delete implementation.
+   */
+  ipcMain.handle("hv:remove-workspace", async (_e, ws: string, mode: "forget" | "delete" = "forget") => {
+    const affected = sessionsOfWorkspace(index.list(), ws);
+    for (const s of affected) {
+      if (mode === "delete") {
+        if (manager.get(s.id)) await endSession(s.id);
+        index.remove(s.id);
+        deleteSessionFile(sessionDir(), s.piSessionFile);
+        deleteSessionSnapshots(snapshotDir(), s.id);
+        void log.append({ type: "session.delete", sessionId: s.id, workspaceId: s.workspaceId });
+      } else if (!s.archived) {
+        index.update(s.id, { archived: true });
+      }
+    }
+    workspaces.remove(ws);
+    sessionsChanged();
+    return { sessions: affected.length };
+  });
+  /** Count for the confirm dialog — asked BEFORE anything is written. */
+  ipcMain.handle("hv:workspace-session-count", (_e, ws: string) => sessionsOfWorkspace(index.list(), ws).length);
 
   // ── sessions ─────────────────────────────────────────────────────
   ipcMain.handle("hv:list-sessions", () => index.list());

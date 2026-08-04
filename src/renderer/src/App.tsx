@@ -1328,10 +1328,6 @@ export default function App(): React.JSX.Element {
         view={activeView}
         onNavigate={(v) => !needsSetup && setView(v)}
         onAddWorkspace={addWorkspace}
-        onRemoveWorkspace={async (ws) => {
-          await window.hv.removeWorkspace(ws);
-          setWorkspaces(await window.hv.listWorkspaces());
-        }}
         onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
         onNewSession={newSession}
         onSelectSession={selectSession}
@@ -1393,7 +1389,20 @@ export default function App(): React.JSX.Element {
           />
         )}
         {activeView === "permissions" && <PermissionsView />}
-        {activeView === "workspace" && wsSettings && <WorkspaceSettingsView workspace={wsSettings} />}
+        {activeView === "workspace" && wsSettings && (
+          <WorkspaceSettingsView
+            workspace={wsSettings}
+            onRemoved={async () => {
+              // Round 11: the workspace is gone — refresh the list, drop its tabs,
+              // and leave a page that now describes nothing.
+              setWorkspaces(await window.hv.listWorkspaces());
+              setSessions(await window.hv.listSessions());
+              setTabsByWs((p) => { const n = { ...p }; delete n[wsSettings]; return n; });
+              setWsSettings(null);
+              setView("chat");
+            }}
+          />
+        )}
         {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
         {activeView === "stats" && <DashboardView workspaces={workspaces} />}
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}

@@ -344,7 +344,10 @@ interface HvApi {
 
   listWorkspaces(): Promise<string[]>;
   addWorkspace(): Promise<string | null>;
-  removeWorkspace(ws: string): Promise<void>;
+  /** Round 11: "forget" archives its sessions (restorable), "delete" removes them for good. */
+  removeWorkspace(ws: string, mode: "forget" | "delete"): Promise<{ sessions: number }>;
+  /** How many sessions removal would affect — for the confirm, before anything is written. */
+  workspaceSessionCount(ws: string): Promise<number>;
   listSessions(): Promise<SessionMeta[]>;
   createSession(workspaceId: string): Promise<SessionMeta>;
   openSession(sessionId: string): Promise<{

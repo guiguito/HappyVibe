@@ -1,8 +1,8 @@
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SessionIndex, WorkspaceRegistry } from "../src/main/store";
+import { SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "../src/main/store";
 import { resolvePiSpawn } from "../src/main/pi/spawn";
 import { resolveModelTier } from "../src/renderer/src/composer";
 
@@ -142,4 +142,30 @@ test("chip-side resolveModelTier agrees with the spawn resolution on the same in
   const chip = resolveModelTier(sessionTier, workspaceTier, GLOBAL);
   expect(chip).toEqual({ ref: { provider: "openai", modelId: "gpt-5" }, tier: "workspace" });
   expect(chip?.ref).toEqual(resolveSpawnModel(index, workspaces, ws, meta.id));
+});
+
+// ── round 11: removing a workspace must not orphan its sessions ───────────────
+
+describe("sessionsOfWorkspace", () => {
+  const s = (id: string, workspaceId: string): SessionMeta =>
+    ({ id, workspaceId, title: id, createdAt: "", updatedAt: "", archived: false, titleSource: "fallback" });
+
+  test("selects only that workspace's sessions", () => {
+    const all = [s("a", "/w"), s("b", "/other"), s("c", "/w")];
+    expect(sessionsOfWorkspace(all, "/w").map((x) => x.id)).toEqual(["a", "c"]);
+  });
+
+  test("matching is trailing-slash-insensitive, like every other workspace compare", () => {
+    expect(sessionsOfWorkspace([s("a", "/w")], "/w/")).toHaveLength(1);
+    expect(sessionsOfWorkspace([s("a", "/w/")], "/w")).toHaveLength(1);
+  });
+
+  test("no sessions for an unknown workspace", () => {
+    expect(sessionsOfWorkspace([s("a", "/w")], "/nope")).toEqual([]);
+  });
+
+  test("archived sessions are included — they belong to the workspace too", () => {
+    const archived = { ...s("a", "/w"), archived: true };
+    expect(sessionsOfWorkspace([archived], "/w")).toHaveLength(1);
+  });
 });

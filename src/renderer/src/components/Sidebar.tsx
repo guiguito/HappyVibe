@@ -323,7 +323,6 @@ export function Sidebar({
   view,
   onNavigate,
   onAddWorkspace,
-  onRemoveWorkspace,
   onWorkspaceSettings,
   onNewSession,
   onSelectSession,
@@ -352,7 +351,6 @@ export function Sidebar({
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
   onAddWorkspace: () => void;
-  onRemoveWorkspace: (ws: string) => void;
   /** W1.4: open the workspace-settings surface (model override, rules, prompt additions). */
   onWorkspaceSettings: (ws: string) => void;
   onNewSession: (ws: string) => void;
@@ -558,14 +556,9 @@ export function Sidebar({
                     <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
                   </svg>
                 </button>
-                <button
-                  type="button"
-                  title="Forget workspace"
-                  onClick={() => onRemoveWorkspace(ws)}
-                  className="invisible group-hover:visible text-ink-soft hover:text-berry cursor-pointer font-bold text-xs w-3 shrink-0"
-                >
-                  ×
-                </button>
+                {/* Round 11: the "×" is gone. An unconfirmed one-click remove sat
+                    next to "New session"; removal now lives in a confirmed danger
+                    zone at the bottom of the workspace settings page (the gear). */}
                 <button
                   type="button"
                   title="New session"
