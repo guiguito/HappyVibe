@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { applyDelta, updateToolCard, indexTool } from "../src/renderer/src/streaming";
+import { applyDelta, updateToolCard, indexTool, mergeIntoLastAssistant } from "../src/renderer/src/streaming";
 import type { TranscriptItem } from "../src/renderer/src/components/Transcript";
 
 describe("applyDelta", () => {
@@ -55,4 +55,36 @@ describe("updateToolCard", () => {
     expect(next[0]).toBe(items[0]);
     expect(next[2]).toBe(items[2]);
   });
+});
+
+// ── round 11: post-abort deltas must not start a second bubble ────────────────
+
+test("post-abort text merges into the last assistant item, not a new one", () => {
+  const items = [
+    { id: 1, kind: "user", text: "hi" },
+    { id: 2, kind: "assistant", text: "Sure, I'll start by" },
+  ] as unknown as TranscriptItem[];
+  const out = mergeIntoLastAssistant(items, " reading the file.");
+  expect(out).toHaveLength(2);
+  expect((out[1] as { text: string }).text).toBe("Sure, I'll start by reading the file.");
+});
+
+test("merge appends a fresh bubble when the transcript does not end in one", () => {
+  const items = [
+    { id: 1, kind: "assistant", text: "done" },
+    { id: 2, kind: "tool", card: {} },
+  ] as unknown as TranscriptItem[];
+  const out = mergeIntoLastAssistant(items, "tail");
+  expect(out).toHaveLength(3);
+  expect(out[2]).toEqual({ kind: "assistant", text: "tail" });
+});
+
+test("empty text never mutates the transcript", () => {
+  const items = [{ id: 1, kind: "assistant", text: "a" }] as unknown as TranscriptItem[];
+  expect(mergeIntoLastAssistant(items, "")).toBe(items);
+});
+
+test("merge on an empty transcript starts the bubble", () => {
+  const out = mergeIntoLastAssistant([], "hello");
+  expect(out).toEqual([{ kind: "assistant", text: "hello" }]);
 });

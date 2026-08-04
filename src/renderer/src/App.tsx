@@ -39,7 +39,7 @@ import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
-import { applyDelta, updateToolCard } from "./streaming";
+import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
   activateTab, allFiles, bufferKey, CHAT_TAB, closeTab, emptyTabs, moveTab, openFile, splitPane, unsplit,
@@ -183,6 +183,11 @@ export default function App(): React.JSX.Element {
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
   const seenOnboarding = useRef(true); // assume seen until config says otherwise
   const streaming = useRef<Record<string, boolean>>({});
+  // Round 11: sessions whose turn the user aborted. Stop closes the bubble
+  // immediately, but deltas still in flight land after that — while this is set
+  // they merge into the committed bubble rather than starting a new one. Cleared
+  // at agent_end.
+  const aborted = useRef<Record<string, boolean>>({});
   // Set when the user grants a permission; the next matching
   // tool_execution_start in that session adopts it so the outcome shows on the card.
   const pendingApproval = useRef<Record<string, { tool: string; choice: "Allow" | "Allow for session" } | null>>({});
@@ -736,6 +741,14 @@ export default function App(): React.JSX.Element {
       }
       const ame = (e as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
       if (e.type === "message_update" && ame?.type === "text_delta" && ame.delta) {
+        // Round 11: Stop already closed this bubble, but the abort is still in
+        // flight (renderer → main → child stdin), so late deltas land here. Merge
+        // them into the bubble we just committed instead of opening a second one.
+        if (aborted.current[sid]) {
+          const delta = ame.delta;
+          setTranscripts((p) => ({ ...p, [sid]: mergeIntoLastAssistant(p[sid] ?? [], delta) }));
+          return;
+        }
         // Perf: accumulate in the ref (O(1)) and repaint one live bubble per
         // frame — no transcript-array copy, no committed-markdown re-parse.
         streamRef.current[sid] = applyDelta(streamRef.current, sid, ame.delta, streaming.current[sid]);
@@ -750,6 +763,7 @@ export default function App(): React.JSX.Element {
       }
       if (e.type === "agent_end") {
         commitStream(sid); // finalize the live bubble into the transcript
+        delete aborted.current[sid]; // the abort window closes with the turn
         // Flush a deferred provider error that was NOT retried (or exhausted its
         // retries) as the single hard error card for the turn.
         const err = pendingError.current[sid];
@@ -1097,6 +1111,9 @@ export default function App(): React.JSX.Element {
     }
     appendItem(sid, { kind: "user", text: msg, images: attachments?.map(attachmentUrl) });
     streaming.current[sid] = false;
+    // A fresh prompt ends any abort window: this turn's text belongs to a new
+    // bubble, never merged into the one the user stopped.
+    delete aborted.current[sid];
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
       const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions);
@@ -1505,6 +1522,9 @@ export default function App(): React.JSX.Element {
               // main aborts any live turn before flipping plan mode (hv:plan-set);
               // mirror the Stop path and clear busy now so the composer unlocks
               // even if the aborted turn's agent_end never arrives.
+              // planSet aborts a busy session in main (abortIfBusy), so this is an
+              // abort window too — late deltas merge rather than split the bubble.
+              aborted.current[selectedId] = true;
               void window.hv.planSet(selectedId, on).catch(() => {});
               commitStream(selectedId);
               setBusy((p) => ({ ...p, [selectedId]: false }));
@@ -1515,6 +1535,10 @@ export default function App(): React.JSX.Element {
             onCompact={() => selectedId && void window.hv.compactSession(selectedId)}
             onAbort={() => {
               if (!selectedId) return;
+              // Mark BEFORE committing: the abort has a renderer→main→child round
+              // trip to make, so deltas arriving in that window must merge into the
+              // bubble commitStream is about to close, not open a second one.
+              aborted.current[selectedId] = true;
               void window.hv.abortSession(selectedId);
               // Stop is an explicit end: clear busy now instead of waiting for an
               // agent_end that an abort may not emit (else the composer stays
