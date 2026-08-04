@@ -88,6 +88,21 @@ describe("the generated plugin catalog", () => {
     }
   });
 
+  it("never lists a plugin whose MCP server we could never authenticate with", () => {
+    // Both carry real skills, so they would pass every other check — they are
+    // excluded because mcpOAuth.ts does DCR only and these vendors issue
+    // credentials solely to pre-registered clients.
+    for (const banned of ["figma", "slack"]) {
+      expect(PLUGIN_CATALOG.find((e) => e.name === banned), banned).toBeUndefined();
+    }
+  });
+
+  it("still lists servers that authenticate with a token", () => {
+    // The other half of that rule: GitHub cannot do DCR either, but a bearer PAT
+    // works, so excluding it would have cost the most-installed connector.
+    expect(PLUGIN_CATALOG.find((e) => e.name === "github")).toBeDefined();
+  });
+
   it("lists the plugins the store exists for", () => {
     // If a regeneration silently drops these, the store is broken even if every
     // other assertion here passes.

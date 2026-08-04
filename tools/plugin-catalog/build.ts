@@ -127,6 +127,9 @@ async function main(): Promise<void> {
     return {
       manifest: readPluginManifest(dir),
       topLevel: fs.readdirSync(dir),
+      // Feeds the client-allowlist gate in classifyEntries: a plugin whose
+      // server only pre-approved clients can reach is not listed.
+      mcpServers: s.mcpServers,
       counts: {
         // A skill that failed the path screen cannot be installed, so it must
         // not be counted as something this plugin offers.

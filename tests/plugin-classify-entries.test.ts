@@ -74,6 +74,54 @@ describe("classifyEntries", () => {
   });
 });
 
+describe("the client-allowlist gate runs inside the shared pass", () => {
+  // In classifyEntries rather than the generator, so phase 2's runtime indexer
+  // for user-added marketplaces inherits it without re-implementing anything.
+  it("refuses a plugin whose MCP server no client of ours can authenticate with", async () => {
+    const r = await classifyEntries(
+      [entry("figma")],
+      probeOf({ figma: { ...clean, mcpServers: { figma: { url: "https://mcp.figma.com/mcp" } } } }),
+    );
+    expect(r.classified[0].verdict.accepted).toBe(false);
+    expect(r.classified[0].verdict.reason).toContain("Figma");
+    expect(installable(r)).toEqual([]);
+  });
+
+  it("keeps a plugin whose MCP server authenticates with a token", async () => {
+    // The GitHub trap: no DCR, but a bearer PAT works, so it must survive.
+    const r = await classifyEntries(
+      [entry("github")],
+      probeOf({
+        github: {
+          ...clean,
+          mcpServers: { github: { url: "https://api.githubcopilot.com/mcp/", headers: { Authorization: "Bearer x" } } },
+        },
+      }),
+    );
+    expect(r.classified[0].verdict.accepted).toBe(true);
+  });
+
+  it("does not gate a plugin with no servers, or a probe that read none", async () => {
+    const r = await classifyEntries([entry("skillsonly")], probeOf({ skillsonly: clean }));
+    expect(r.classified[0].verdict.accepted).toBe(true);
+  });
+
+  it("leaves an already-rejected verdict's reason intact", async () => {
+    // The component reason is the more useful one; the gate must not overwrite it.
+    const r = await classifyEntries(
+      [entry("both")],
+      probeOf({
+        both: {
+          ...clean,
+          topLevel: ["skills", "hooks"],
+          mcpServers: { figma: { url: "https://mcp.figma.com/mcp" } },
+        },
+      }),
+    );
+    expect(r.classified[0].verdict.reason).toBe("uses hooks, not supported in HappyVibe");
+  });
+});
+
 describe("installable", () => {
   it("keeps only accepted entries that actually carry something", async () => {
     const r = await classifyEntries(

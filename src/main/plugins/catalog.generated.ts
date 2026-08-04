@@ -1216,24 +1216,6 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
-    "name": "figma",
-    "description": "Figma design platform integration. Access design files, extract component information, read design tokens, and translate designs into code. Bridge the gap between design and development workflows.",
-    "category": "design",
-    "homepage": "https://github.com/figma/mcp-server-guide",
-    "sha": "30b6fe64af0a4b3efb75e76a99f3c96eece2457a",
-    "source": {
-      "repoUrl": "https://github.com/figma/mcp-server-guide.git",
-      "sha": "30b6fe64af0a4b3efb75e76a99f3c96eece2457a",
-      "subdir": ""
-    },
-    "brand": "si-figma",
-    "counts": {
-      "skills": 12,
-      "commands": 0,
-      "servers": 1
-    }
-  },
-  {
     "name": "firebase",
     "description": "Google Firebase MCP integration. Manage Firestore databases, authentication, cloud functions, hosting, and storage. Build and manage your Firebase backend directly from your development workflow.",
     "category": "database",
@@ -2768,23 +2750,6 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
       "skills": 1,
       "commands": 0,
       "servers": 0
-    }
-  },
-  {
-    "name": "slack",
-    "description": "Slack workspace integration. Search messages, access channels, read threads, and stay connected with your team's communications while coding. Find relevant discussions and context quickly.",
-    "category": "productivity",
-    "homepage": "https://github.com/slackapi/slack-mcp-plugin/tree/main",
-    "sha": "62ea620cbb2e481bcfeee4ced544f090d2f03195",
-    "source": {
-      "repoUrl": "https://github.com/slackapi/slack-mcp-plugin.git",
-      "sha": "62ea620cbb2e481bcfeee4ced544f090d2f03195",
-      "subdir": ""
-    },
-    "counts": {
-      "skills": 7,
-      "commands": 5,
-      "servers": 1
     }
   },
   {

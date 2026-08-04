@@ -1,5 +1,7 @@
 import { classifyPlugin, type Verdict } from "./classify";
 import type { MarketplaceEntry } from "./marketplace";
+import type { McpServerConfig } from "../mcp";
+import { preregisteredVendor } from "../mcpPreregistered";
 
 /**
  * §25 — the one classification pass over a marketplace's entries.
@@ -26,6 +28,11 @@ export interface PluginProbe {
   topLevel: string[];
   /** Installable component counts, for the card. */
   counts: { skills: number; commands: number; servers: number };
+  /**
+   * The plugin's declared MCP servers, so the client-allowlist gate below can
+   * see their hosts. Omit when the probe could not read them.
+   */
+  mcpServers?: Record<string, McpServerConfig>;
 }
 
 /** Obtain a probe for one entry. Return null to skip it (dead repo, bad path). */
@@ -42,6 +49,37 @@ export interface ClassifyEntriesResult {
   classified: ClassifiedEntry[];
   /** Entries we could not probe at all — recorded, never thrown. */
   skipped: Array<{ name: string; reason: string }>;
+}
+
+/**
+ * Refuse a plugin carrying an MCP server no HappyVibe install could ever
+ * authenticate with (§25). Applied AFTER `classifyPlugin` rather than inside it,
+ * because that function is pure over the manifest and tree and knows nothing
+ * about server configs.
+ *
+ * Whole-plugin, not server-only: a plugin whose headline capability cannot work
+ * should not be offered for its side dishes. It costs the `figma` and `slack`
+ * plugins' skills, which is accepted.
+ *
+ * Living here rather than in the generator is deliberate — this is policy, so
+ * phase 2's runtime indexer for user-added marketplaces inherits it for free.
+ */
+export function gatePreregistered(
+  verdict: Verdict,
+  servers: Record<string, McpServerConfig> | undefined,
+): Verdict {
+  if (!verdict.accepted || !servers) return verdict;
+  for (const cfg of Object.values(servers)) {
+    const blocked = preregisteredVendor(cfg);
+    if (blocked) {
+      return {
+        ...verdict,
+        accepted: false,
+        reason: `needs a ${blocked.vendor} MCP server that only pre-approved clients can connect to`,
+      };
+    }
+  }
+  return verdict;
 }
 
 /**
@@ -64,11 +102,14 @@ export async function classifyEntries(
       } else {
         out.classified.push({
           entry,
-          verdict: classifyPlugin({
-            manifest: p.manifest,
-            topLevel: p.topLevel,
-            entryComponents: entry.entryComponents,
-          }),
+          verdict: gatePreregistered(
+            classifyPlugin({
+              manifest: p.manifest,
+              topLevel: p.topLevel,
+              entryComponents: entry.entryComponents,
+            }),
+            p.mcpServers,
+          ),
           counts: p.counts,
         });
       }
