@@ -40,7 +40,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   themselves. This is exactly what CI runs (CI has no key at all), and it is STRICTLY MORE than
   the old exclude glob: 9 key-free tests live inside those 14 files (context-bridge ×2,
   rules-bridge ×3, agents-bridge ×2, agents-md-bridge, subagent-discovery-bridge) and the glob
-  threw them on the floor. Measured: 107 files, 908 tests, 15 skipped, ~20-33 s.
+  threw them on the floor. Measured: 139 files, 1253 tests, 15 skipped, ~25-40 s (2026-08-04).
   **Never add an exclude list back — the list is the thing that drifted.**
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
