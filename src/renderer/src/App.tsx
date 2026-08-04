@@ -1048,6 +1048,36 @@ export default function App(): React.JSX.Element {
    * sidebar own its lifecycle, §17) — this only stops showing it, which is why
    * there is no confirm and nothing is deleted.
    */
+  /**
+   * Round 11: get a session to run the skill creator in AND leave the user on its
+   * chat. Both halves are the fix: the button was hidden without a session, and
+   * on the path where it did fire the interview streamed into a chat nobody was
+   * looking at — which is exactly "it does nothing".
+   */
+  const openSessionForSkillCreator = async (workspaceId?: string): Promise<string | null> => {
+    const ws = workspaceId ?? wsId ?? workspaces[0];
+    if (!ws) return null;
+    // A session already focused in this workspace is the one to use.
+    const current = selectedId && sessions.find((x) => x.id === selectedId);
+    if (current && current.workspaceId === ws) {
+      await selectSession(current.id);
+      return current.id;
+    }
+    try {
+      const meta = await window.hv.createSession(ws);
+      setStatuses((p) => ({ ...p, [meta.id]: "running" }));
+      setTranscripts((p) => ({ ...p, [meta.id]: [] }));
+      setSelectedId(meta.id);
+      setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, meta.id) }));
+      setSessions(await window.hv.listSessions());
+      setView("chat");
+      return meta.id;
+    } catch (err) {
+      surface(err);
+      return null;
+    }
+  };
+
   const closeChatTab = (wsId: string, paneIdx: number, tab: TabId): void => {
     setTabsByWs((p) => ({ ...p, [wsId]: closeTab(p[wsId] ?? emptyTabs, paneIdx, tab) }));
     const sid = sessionOf(tab);
@@ -1497,6 +1527,13 @@ export default function App(): React.JSX.Element {
         {activeView === "workspace" && wsSettings && (
           <WorkspaceSettingsView
             workspace={wsSettings}
+            onNewSkillSession={async () => {
+              const sid = await openSessionForSkillCreator(wsSettings);
+              // The creator's prompt is fired by SkillsSection; echo it so the
+              // transcript shows what was sent (hv:prompt-session emits none).
+              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator" });
+              return sid;
+            }}
             onRemoved={async () => {
               // Round 11: the workspace is gone — refresh the list, drop its tabs,
               // and leave a page that now describes nothing.
@@ -1512,7 +1549,15 @@ export default function App(): React.JSX.Element {
         {activeView === "stats" && <DashboardView workspaces={workspaces} />}
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
         {activeView === "skills" && (
-          <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+          <SkillsView
+            sessionId={selectedId}
+            workspaceId={selected?.workspaceId ?? null}
+            onNewSkillSession={async () => {
+              const sid = await openSessionForSkillCreator();
+              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator" });
+              return sid;
+            }}
+          />
         )}
         {activeView === "promptTemplates" && (
           <PromptTemplatesView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />

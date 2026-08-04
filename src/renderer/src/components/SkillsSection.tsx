@@ -46,15 +46,41 @@ const importBtn =
  * managed dir; workspace settings import to <ws>/.agents/skills. onImported is
  * fired after a successful import (lists refresh via onSkillsChanged anyway).
  */
+/**
+ * Round 11: can the guided creator be offered here?
+ *
+ * Yes whenever the host can produce a session — which is now always, because
+ * `onNewSkillSession` creates one if none is focused. It used to be
+ * `sessionId != null`, and the WORKSPACE surface passes no session, so the button
+ * §14 placed there simply did not render; on the global page it vanished whenever
+ * no session was selected. Kept as a named predicate so that regression has a
+ * test rather than living inside JSX.
+ */
+export function canStartSkillCreator(
+  sessionId?: string | null,
+  onNewSkillSession?: () => Promise<string | null>,
+): boolean {
+  // A host that can CREATE a session qualifies, which is the fix: the old test
+  // was `sessionId != null` alone.
+  return sessionId != null || onNewSkillSession != null;
+}
+
 export function ImportControls({
   scope,
   workspaceId,
   sessionId,
+  onNewSkillSession,
 }: {
   scope: "global" | "workspace";
   workspaceId: string | null;
-  /** When set, shows the "New skill" (guided, skill-creator) button targeting this session. */
+  /** The session to run the creator in, when one is already focused. */
   sessionId?: string | null;
+  /**
+   * Round 11: returns a session id AND leaves the user on that session's chat —
+   * creating the session if none is focused. Without it the button is hidden,
+   * which is how it went missing from the workspace view that §14 put it on.
+   */
+  onNewSkillSession?: () => Promise<string | null>;
 }): React.JSX.Element {
   const [scan, setScan] = useState<HvSkillImportScan | null>(null);
   const [gitOpen, setGitOpen] = useState(false);
@@ -62,15 +88,18 @@ export function ImportControls({
   const [error, setError] = useState<string | null>(null);
 
   const newSkill = async (): Promise<void> => {
-    if (!sessionId) return;
     setBusy(true);
     setError(null);
     try {
-      const r = await window.hv.skillsNewSkill(sessionId);
+      // Round 11: get a session AND go to it. The interview streams into a chat,
+      // so staying on this page was indistinguishable from nothing happening.
+      const sid = onNewSkillSession ? await onNewSkillSession() : sessionId ?? null;
+      if (!sid) { setError("Could not open a session for the skill creator."); return; }
+      const r = await window.hv.skillsNewSkill(sid);
       if (!r.ok) { setError(r.error ?? "Could not start the skill creator."); return; }
       // skill-creator is now loaded in the session — fire it as a prompt so it
       // interviews the user and writes the skill into .agents/skills.
-      await window.hv.promptSession(sessionId, "/skill:skill-creator");
+      await window.hv.promptSession(sid, "/skill:skill-creator");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -97,7 +126,7 @@ export function ImportControls({
   return (
     <div className="mb-3">
       <div className="flex flex-wrap items-center gap-2">
-        {sessionId && (
+        {canStartSkillCreator(sessionId, onNewSkillSession) && (
           <button type="button" disabled={busy} className="text-xs font-bold rounded-lg bg-tangerine text-paper border-2 border-tangerine-deep px-3 py-1.5 shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40" onClick={() => void newSkill()}>
             + New skill
           </button>
@@ -228,7 +257,16 @@ function ImportPicker({
   );
 }
 
-export function SkillsSection({ workspaceId, sessionId }: { workspaceId: string | null; sessionId?: string | null }): React.JSX.Element {
+export function SkillsSection({
+  workspaceId,
+  sessionId,
+  onNewSkillSession,
+}: {
+  workspaceId: string | null;
+  sessionId?: string | null;
+  /** Round 11: open (creating if needed) a session and navigate to its chat. */
+  onNewSkillSession?: () => Promise<string | null>;
+}): React.JSX.Element {
   const [skills, setSkills] = useState<HvSkillView[] | null>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);
 
@@ -245,7 +283,7 @@ export function SkillsSection({ workspaceId, sessionId }: { workspaceId: string 
 
   return (
     <>
-      <ImportControls scope="global" workspaceId={workspaceId} sessionId={sessionId} />
+      <ImportControls scope="global" workspaceId={workspaceId} sessionId={sessionId} onNewSkillSession={onNewSkillSession} />
       {needsReview > 0 && (
         <div className="mb-3 rounded-xl border-2 border-honey/60 bg-honey-soft px-3 py-2 text-sm font-semibold text-tangerine-deep">
           {needsReview} skill{needsReview > 1 ? "s" : ""} need{needsReview > 1 ? "" : "s"} review before they can run.

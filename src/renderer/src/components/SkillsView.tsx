@@ -5,9 +5,12 @@ import { SkillsSection } from "./SkillsSection";
 export function SkillsView({
   sessionId,
   workspaceId,
+  onNewSkillSession,
 }: {
   sessionId: string | null;
   workspaceId: string | null;
+  /** Round 11: open (creating if needed) a session and navigate to its chat. */
+  onNewSkillSession: () => Promise<string | null>;
 }): React.JSX.Element {
   return (
     <div className="flex-1 overflow-y-auto">
@@ -21,7 +24,7 @@ export function SkillsView({
           title="Global skills"
           subtitle="Reviewed, gated capability packs the agent can load. Workspace-specific skills are managed in each workspace's settings."
         >
-          <SkillsSection workspaceId={workspaceId} sessionId={sessionId} />
+          <SkillsSection workspaceId={workspaceId} sessionId={sessionId} onNewSkillSession={onNewSkillSession} />
         </Section>
       </div>
     </div>

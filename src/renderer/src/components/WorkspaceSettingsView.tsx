@@ -27,10 +27,13 @@ function basename(p: string): string {
 export function WorkspaceSettingsView({
   workspace,
   onRemoved,
+  onNewSkillSession,
 }: {
   workspace: string;
   /** Round 11: the workspace is gone — App refreshes the list and leaves this page. */
   onRemoved: () => void;
+  /** Round 11: open (creating if needed) a session in this workspace, and go to it. */
+  onNewSkillSession: () => Promise<string | null>;
 }): React.JSX.Element {
   const [models, setModels] = useState<HvModel[]>([]);
   const [model, setModel] = useState<{ provider: string; modelId: string } | null>(null);
@@ -140,7 +143,7 @@ export function WorkspaceSettingsView({
         </Section>
 
         <Section icon="skills" title="Skills" subtitle="This project's skills, and which global ones are on here.">
-          <WorkspaceSkillsBlock workspace={workspace} />
+          <WorkspaceSkillsBlock workspace={workspace} onNewSkillSession={onNewSkillSession} />
         </Section>
 
         <Section
@@ -322,7 +325,14 @@ function WorkspaceMcpBlock({ workspace }: { workspace: string }): React.JSX.Elem
   );
 }
 
-function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.Element {
+function WorkspaceSkillsBlock({
+  workspace,
+  onNewSkillSession,
+}: {
+  workspace: string;
+  /** Round 11: §14 put "New skill" on THIS surface, and it never rendered here. */
+  onNewSkillSession?: () => Promise<string | null>;
+}): React.JSX.Element {
   const [data, setData] = useState<HvSkillsList["workspace"]>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);
 
@@ -346,7 +356,7 @@ function WorkspaceSkillsBlock({ workspace }: { workspace: string }): React.JSX.E
 
   return (
     <>
-      <ImportControls scope="workspace" workspaceId={workspace} />
+      <ImportControls scope="workspace" workspaceId={workspace} onNewSkillSession={onNewSkillSession} />
 
       <div className="mb-4">
         <div className="text-[11px] font-semibold text-ink-soft mb-1.5">This project's skills (.agents/skills)</div>
