@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import {
   activateTab, activeTabOf, allChats, allFiles, bufferKey, chatTab, closeTab, emptyTabs, isChatTab,
-  liveSlots, moveTab, openChat, openFile, resolveCardPath, sessionOf, setSize, splitHalf, splitPane,
+  closeSessionTabs, liveSlots, moveTab, openChat, openFile, resolveCardPath, sessionOf, setSize, splitHalf, splitPane,
   unsplit,
 } from "../src/renderer/src/tabs";
 
@@ -266,4 +266,69 @@ test("relative paths normalize; escapes above the root → null", () => {
   expect(resolveCardPath("/ws", "src/../b.md")).toBe("b.md");
   expect(resolveCardPath("/ws", "../outside")).toBeNull();
   expect(resolveCardPath("/ws", "src/../../x")).toBeNull();
+});
+
+// ── round 11 regression: closing a chat tab must not strand the layout ───────
+
+/**
+ * Reported: "closed a new session opened from tab bar and design crashed."
+ *
+ * The center area rendered nothing at all — no strip, no toolbar, not even the
+ * empty-pane placeholder — while the sidebar still showed the sessions as open.
+ * Cause was in App: `wsId` was derived from the SELECTED session, and closing the
+ * focused chat tab cleared `selectedId`, so the whole layout became
+ * unrenderable even though every tab, file and unsaved buffer still existed.
+ *
+ * These pin the two halves of the fix that live in this module: closing a chat
+ * leaves a sibling ACTIVE (so selection has somewhere to go), and the layout is
+ * never emptied while other tabs remain.
+ */
+test("closing the active chat activates a sibling chat, so selection has a target", () => {
+  let t = openChat(openChat(emptyTabs, "s1"), "s2");
+  expect(t.panes[0].active).toBe(chatTab("s2"));
+  t = closeTab(t, 0, chatTab("s2"));
+  expect(t.panes[0].active).toBe(chatTab("s1"));
+  expect(sessionOf(activeTabOf(t)!)).toBe("s1");
+});
+
+test("closing the only chat leaves file tabs — and something still active", () => {
+  let t = openFile(openChat(emptyTabs, "s1"), "a.ts");
+  t = closeTab(t, 0, chatTab("s1"));
+  expect(t.panes[0].tabs).toEqual(["a.ts"]);
+  expect(activeTabOf(t)).toBe("a.ts");
+  expect(allChats(t)).toEqual([]);
+});
+
+test("closing a chat in one pane never touches another pane's tabs", () => {
+  let t = openChat(openChat(emptyTabs, "s1"), "s2");
+  t = splitPane(t, "v");
+  t = openFile(t, "a.ts");
+  t = closeTab(t, 0, chatTab("s2"));
+  expect(t.panes[0].tabs).toEqual([chatTab("s1")]);
+  expect(t.panes[1]!.tabs).toEqual(["a.ts"]);
+  expect(liveSlots(t)).toEqual([0, 1]);
+});
+
+test("closing the last tab of all leaves ONE empty pane that can still render", () => {
+  let t = openChat(emptyTabs, "s1");
+  t = closeTab(t, 0, chatTab("s1"));
+  expect(liveSlots(t)).toEqual([0]);
+  expect(t.panes[0]).toEqual({ tabs: [], active: null });
+  expect(t.split).toBeNull();
+});
+
+test("closeSessionTabs drops a deleted session's tab wherever it lives", () => {
+  let t = openChat(openChat(emptyTabs, "s1"), "s2");
+  t = splitPane(t, "v");
+  t = openChat(t, "s3");
+  t = closeSessionTabs(t, "s1");
+  expect(allChats(t).sort()).toEqual(["s2", "s3"]);
+  t = closeSessionTabs(t, "s3"); // empties pane 1 → collapses
+  expect(allChats(t)).toEqual(["s2"]);
+  expect(t.split).toBeNull();
+});
+
+test("closeSessionTabs is a no-op for a session with no tab", () => {
+  const t = openChat(emptyTabs, "s1");
+  expect(closeSessionTabs(t, "nope")).toBe(t);
 });

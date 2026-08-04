@@ -327,6 +327,19 @@ export function moveTab(t: WorkspaceTabs, tab: TabId, toSlot: number): Workspace
   return normalize(panes, t.split, t.subSplit, toSlot, t.sizes);
 }
 
+/**
+ * Drop a session's chat tab from every pane (the session was deleted).
+ *
+ * Tab lifecycle and session lifecycle are separate — closing a tab leaves the
+ * session running — but deletion is the one direction where the tab MUST follow,
+ * or a strip keeps a tab for a session that no longer exists.
+ */
+export function closeSessionTabs(t: WorkspaceTabs, sessionId: string): WorkspaceTabs {
+  const tab = chatTab(sessionId);
+  const slot = paneOf(t, tab);
+  return slot < 0 ? t : closeTab(t, slot, tab);
+}
+
 /** Move a divider. `main` splits the halves, `cross` is the shared second level. */
 export function setSize(t: WorkspaceTabs, which: "main" | "cross", ratio: number): WorkspaceTabs {
   return { ...t, sizes: { ...t.sizes, [which]: clampRatio(ratio) } };

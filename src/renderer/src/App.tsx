@@ -42,7 +42,7 @@ import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgen
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
-  activateTab, allChats, allFiles, bufferKey, chatTab, closeTab, emptyTabs, focusPane,
+  activateTab, allChats, allFiles, bufferKey, chatTab, closeSessionTabs, closeTab, emptyTabs, focusPane,
   isChatTab, liveSlots, moveTab, openChat, openFile, sessionOf, setSize, splitHalf, splitPane, unsplit,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
@@ -239,6 +239,12 @@ export default function App(): React.JSX.Element {
   // within a workspace keeps them; another workspace has its own set. The
   // docked file-tree pane is a global toggle (closed by default).
   const [tabsByWs, setTabsByWs] = useState<Record<string, WorkspaceTabs>>({});
+  /**
+   * Which workspace's tabs the center area shows. Its own state rather than a
+   * projection of the selected session — see the note on `wsId` below for the
+   * blank-center bug that caused.
+   */
+  const [activeWs, setActiveWs] = useState<string | null>(null);
   const [treeOpen, setTreeOpen] = useState(false);
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
@@ -992,6 +998,7 @@ export default function App(): React.JSX.Element {
       setAgentsMd(rel);
       return;
     }
+    setActiveWs(wsId); // the layout being filled is this workspace's
     setTabsByWs((p) => ({ ...p, [wsId]: openFile(p[wsId] ?? emptyTabs, rel) }));
   }, []);
 
@@ -1086,6 +1093,7 @@ export default function App(): React.JSX.Element {
       setStatuses((p) => ({ ...p, [meta.id]: "running" }));
       setTranscripts((p) => ({ ...p, [meta.id]: [] }));
       setSelectedId(meta.id);
+      setActiveWs(ws);
       setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, meta.id) }));
       setSessions(await window.hv.listSessions());
       setView("chat");
@@ -1096,10 +1104,18 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  const closeChatTab = (wsId: string, paneIdx: number, tab: TabId): void => {
-    setTabsByWs((p) => ({ ...p, [wsId]: closeTab(p[wsId] ?? emptyTabs, paneIdx, tab) }));
+  const closeChatTab = (ws: string, paneIdx: number, tab: TabId): void => {
     const sid = sessionOf(tab);
-    if (sid && selectedId === sid) setSelectedId(null);
+    const next = closeTab(tabsByWs[ws] ?? emptyTabs, paneIdx, tab);
+    setTabsByWs((p) => ({ ...p, [ws]: next }));
+    if (sid && selectedId === sid) {
+      // Follow whatever took its place in that pane when it is a chat, so the
+      // sidebar highlight, shortcuts and stats keep pointing at something real.
+      // Going straight to null was half of the blank-center bug above.
+      const a = next.panes[next.focused]?.active;
+      const nextSid = a ? sessionOf(a) : null;
+      setSelectedId(nextSid);
+    }
   };
   // WS6: mutate this workspace's tab layout with a pure tabs.ts helper.
   const updateTabs = (wsId: string, fn: (t: WorkspaceTabs) => WorkspaceTabs): void =>
@@ -1128,6 +1144,7 @@ export default function App(): React.JSX.Element {
       setSelectedId(meta.id);
       setView("chat");
       // Round 11: a new session is a new tab, in the workspace it belongs to.
+      setActiveWs(workspaceId);
       setTabsByWs((p) => ({ ...p, [workspaceId]: openChat(p[workspaceId] ?? emptyTabs, meta.id) }));
       setError(null);
       if (firstEver) setOnboarding(true);
@@ -1148,7 +1165,10 @@ export default function App(): React.JSX.Element {
     // Round 11: opening a session ADDS a tab (or focuses the one it already has)
     // rather than replacing whatever chat was on screen.
     const ws = sessions.find((x) => x.id === id)?.workspaceId;
-    if (ws) setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, id) }));
+    if (ws) {
+      setActiveWs(ws);
+      setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, id) }));
+    }
     if (statuses[id] === "running") return;
     // Show a loader while the Pi process starts / the session file loads — for
     // ANY not-yet-running open, not only hibernated resumes (round-4 follow-up:
@@ -1398,7 +1418,19 @@ export default function App(): React.JSX.Element {
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
-  const wsId = selected?.workspaceId ?? null;
+  /**
+   * The workspace whose layout the center area is showing.
+   *
+   * Round 11 bugfix: this used to be `selected?.workspaceId`, i.e. a projection
+   * of the SELECTED SESSION. Chat tabs became closable in this round, which made
+   * "tabs exist but no session is selected" reachable for the first time — and
+   * with wsId null every `{wsId && …}` block stopped rendering, so closing a chat
+   * tab blanked the whole center area while every tab, file and unsaved buffer
+   * was still there, invisible. The layout belongs to a workspace, not to a
+   * selection, so it tracks the workspace directly and only falls back to the
+   * selected session's (first paint, before anything has been opened).
+   */
+  const wsId = activeWs ?? selected?.workspaceId ?? null;
   const wsTabs = (wsId ? tabsByWs[wsId] : undefined) ?? emptyTabs;
   // F6: refresh the global-shortcut closure with the current render's state.
   shortcutRef.current = (e: KeyboardEvent): void => {
@@ -1489,6 +1521,15 @@ export default function App(): React.JSX.Element {
         onDeleteSession={async (id) => {
           // V2.C2: deleting the selected session falls back to no-selection.
           if (selectedId === id) setSelectedId(null);
+          // Round 11: the tab must follow a DELETION (closing a tab leaves the
+          // session alive, but a deleted session has to lose its tab, or the
+          // strip keeps one for a session that no longer exists).
+          setTabsByWs((p) => {
+            const ws = sessions.find((x) => x.id === id)?.workspaceId;
+            const t = ws ? p[ws] : undefined;
+            if (!ws || !t) return p;
+            return { ...p, [ws]: closeSessionTabs(t, id) };
+          });
           // §23: drop its plan too — activePlan feeds watchTargets, so a stale
           // entry would keep the workspace watched for a session that is gone.
           setActivePlan((p) => {
@@ -1558,6 +1599,7 @@ export default function App(): React.JSX.Element {
               setWorkspaces(await window.hv.listWorkspaces());
               setSessions(await window.hv.listSessions());
               setTabsByWs((p) => { const n = { ...p }; delete n[wsSettings]; return n; });
+              setActiveWs((w) => (w === wsSettings ? null : w));
               setWsSettings(null);
               setView("chat");
             }}
