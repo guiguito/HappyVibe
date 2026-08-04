@@ -77,6 +77,16 @@ import { hasNodeRuntime } from "./nodePreflight";
 import { isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 
+/**
+ * One provider's auth status, as the bridge's `/hv-auth-status` reports it
+ * (mirrors AuthProviderStatus in src/renderer/src/auth.ts). Main keeps the map so
+ * a sign-in result outlives whichever page happened to be mounted.
+ */
+interface AuthProviderState {
+  configured: boolean;
+  source?: string;
+  label?: string;
+}
 
 function truncateTitle(msg: string): string {
   const oneLine = msg.replace(/\s+/g, " ").trim();
@@ -416,6 +426,20 @@ export function registerIpc(win: BrowserWindow): void {
   let utility: PiClient | null = null;
   let utilityStarting: Promise<PiClient> | null = null;
 
+  /**
+   * Round 11: last-known provider auth status, held in main so a successful
+   * sign-in survives whatever the user is looking at. The result arrives as ONE
+   * fire-and-forget `hv.auth` notify; before this it was only ever read by a
+   * mounted ModelsView, so navigating away mid-browser-round-trip lost it.
+   * Mirrors the MCP status map's shape (get + push).
+   */
+  let authState: Record<string, AuthProviderState> = {};
+  /** Ask the bridge to re-report status; the answer lands as an hv.auth notify. */
+  const requestAuthStatus = async (): Promise<void> => {
+    const c = await ensureUtility();
+    void c.send({ type: "prompt", message: "/hv-auth-status" }).catch(() => {});
+  };
+
   const startUtility = async (): Promise<PiClient> => {
     utility?.stop();
     utility = null;
@@ -437,8 +461,32 @@ export function registerIpc(win: BrowserWindow): void {
       // Auth landed/left → the model list changed (OAuth results only flow as
       // hv.auth ui-requests, so this is where main learns about them).
       try {
-        const p = JSON.parse(r.message ?? "") as { kind?: string; stage?: string };
-        if (p?.kind === "hv.auth" && (p.stage === "success" || p.stage === "logged_out")) providersChanged();
+        const p = JSON.parse(r.message ?? "") as {
+          kind?: string;
+          stage?: string;
+          providers?: Record<string, AuthProviderState>;
+        };
+        if (p?.kind !== "hv.auth") return;
+        // Round 11: hold the status HERE. It used to live only in a mounted
+        // ModelsView, so navigating away during the browser round-trip dropped
+        // the one fire-and-forget success notify — permanently, since nothing
+        // persisted it and only that page listened.
+        if (p.stage === "status" && p.providers) {
+          authState = p.providers;
+          send("hv:auth-state-changed", authState);
+          return;
+        }
+        if (p.stage === "success" || p.stage === "logged_out") {
+          providersChanged();
+          // Pi's AuthStorage reads its file ONCE at process start, so the utility
+          // must respawn or it keeps serving the pre-login credential set — the
+          // api-key path already does this (hv:set-provider-key). Then re-ask for
+          // status so the stored state (and every renderer) catches up.
+          void (async () => {
+            await restartUtility();
+            await requestAuthStatus();
+          })().catch(() => {});
+        }
       } catch {
         /* not JSON — not an hv.auth notify */
       }
@@ -1523,9 +1571,11 @@ export function registerIpc(win: BrowserWindow): void {
     void c.send({ type: "prompt", message: `/hv-logout ${provider}` }).catch(() => {});
   });
   ipcMain.handle("hv:auth-status", async () => {
-    const c = await ensureUtility();
-    void c.send({ type: "prompt", message: "/hv-auth-status" }).catch(() => {});
+    await requestAuthStatus();
   });
+  // Round 11: the state main already holds, so a page mounting after a sign-in
+  // renders it immediately instead of waiting for a notify that already fired.
+  ipcMain.handle("hv:auth-state", () => authState);
 
   ipcMain.handle("hv:detect-ollama", () => detectOllama());
 

@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
 import { mergeOllamaModelsJson } from "../src/main/providers";
+import { isSignedIn } from "../src/renderer/src/auth";
 
 /**
  * B3 contract test — hv-auth-status / hv-login emit hv.auth-shaped
@@ -139,3 +140,28 @@ test("hv-login github-copilot starts with an hv.auth prompt input; cancel aborts
   const auth = JSON.parse(fs.readFileSync(path.join(agentDir, "auth.json"), "utf8"));
   expect(auth["github-copilot"]).toBeUndefined();
 }, 60_000);
+
+// ── round 11: "signed in" must recognise an OAuth credential, not just a key ──
+
+describe("isSignedIn", () => {
+  test("an api-key credential reads as signed in", () => {
+    expect(isSignedIn({ configured: true, source: "stored" })).toBe(true);
+  });
+
+  test("a stored OAuth credential reads as signed in whatever Pi calls its source", () => {
+    // The old predicate demanded source === "stored" (what Pi reports for an
+    // api_key), so any other spelling left the card on "Sign in" forever.
+    expect(isSignedIn({ configured: true, source: "oauth" })).toBe(true);
+    expect(isSignedIn({ configured: true, source: "credentials" })).toBe(true);
+    expect(isSignedIn({ configured: true })).toBe(true);
+  });
+
+  test("an env-provided credential is not 'signed in' — there is nothing to sign out of", () => {
+    expect(isSignedIn({ configured: true, source: "env" })).toBe(false);
+  });
+
+  test("unconfigured is never signed in", () => {
+    expect(isSignedIn({ configured: false, source: "stored" })).toBe(false);
+    expect(isSignedIn(undefined)).toBe(false);
+  });
+});

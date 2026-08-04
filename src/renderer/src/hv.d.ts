@@ -441,6 +441,9 @@ interface HvApi {
   authLoginCancel(provider: string): Promise<void>;
   authLogout(provider: string): Promise<void>;
   authStatus(): Promise<void>;
+  /** Round 11: last-known provider auth status, held in main (survives page unmounts). */
+  authState(): Promise<Record<string, { configured: boolean; source?: string; label?: string }>>;
+  onAuthStateChanged(cb: (s: Record<string, { configured: boolean; source?: string; label?: string }>) => void): () => void;
   detectOllama(): Promise<{ running: boolean; models: string[] }>;
   /** §16 (2026-07-30): user-defined OpenAI-compatible endpoints. */
   getCustomEndpoints(): Promise<{ endpoints: HvCustomEndpoint[]; keyStatus: Record<string, boolean> }>;

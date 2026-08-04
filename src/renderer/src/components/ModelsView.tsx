@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { parseAuth, type AuthEvent, type AuthProviderStatus } from "../auth";
+import { isSignedIn, parseAuth, type AuthEvent, type AuthProviderStatus } from "../auth";
 import { AuthFlowModal } from "./AuthFlowModal";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
@@ -121,6 +121,12 @@ export function ModelsView({
   useEffect(() => {
     // Deferred: refresh() sets state from async IPC results, not render data.
     void Promise.resolve().then(refresh);
+    // Round 11: seed from the state main holds. The success notify is fired ONCE
+    // and only while this page is mounted — signing in and navigating away used
+    // to lose it permanently. Main now keeps it and pushes changes, so this page
+    // is correct whenever it mounts.
+    void window.hv.authState().then(setAuth);
+    const offAuthState = window.hv.onAuthStateChanged(setAuth);
     const off = window.hv.onUiRequest((r) => {
       const e = parseAuth(r);
       if (!e) return;
@@ -140,7 +146,10 @@ export function ModelsView({
         void window.hv.listModels().then(setModels);
       }
     });
-    return off;
+    return () => {
+      off();
+      offAuthState();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -174,7 +183,7 @@ export function ModelsView({
     if (firstRun) onSaved();
   };
 
-  const signedIn = (id: string): boolean => auth[id]?.configured === true && auth[id]?.source === "stored";
+  const signedIn = (id: string): boolean => isSignedIn(auth[id]);
 
   // ── configured-providers summary ──
   const configured: Array<{ key: string; label: string; chip: string; action?: React.ReactNode }> = [

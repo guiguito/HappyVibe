@@ -98,6 +98,14 @@ contextBridge.exposeInMainWorld("hv", {
   authLoginCancel: (provider: string) => ipcRenderer.invoke("hv:auth-login-cancel", provider),
   authLogout: (provider: string) => ipcRenderer.invoke("hv:auth-logout", provider),
   authStatus: () => ipcRenderer.invoke("hv:auth-status"),
+  // Round 11: the status main already holds, so a page mounting after a sign-in
+  // does not depend on a notify that already fired.
+  authState: () => ipcRenderer.invoke("hv:auth-state"),
+  onAuthStateChanged: (cb: (s: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, s: unknown): void => cb(s);
+    ipcRenderer.on("hv:auth-state-changed", h);
+    return () => ipcRenderer.removeListener("hv:auth-state-changed", h);
+  },
   detectOllama: () => ipcRenderer.invoke("hv:detect-ollama"),
   getCustomEndpoints: () => ipcRenderer.invoke("hv:get-custom-endpoints"),
   saveCustomEndpoint: (endpoint: unknown, key?: string) =>
