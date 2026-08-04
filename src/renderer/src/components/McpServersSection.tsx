@@ -29,6 +29,30 @@ export type ConnectResultState =
   | { phase: "ok"; serverName: string; tools: { name: string; description?: string }[] }
   | { phase: "error"; serverName: string; error: string; retry: () => void };
 
+/**
+ * A server's tools with their descriptions. Shared by the post-install confirm
+ * modal and (round 11) the tool-count disclosure on each server row — the same
+ * data, and it was already fetched for both.
+ */
+export function McpToolList({
+  tools,
+  className = "",
+}: {
+  tools: { name: string; description?: string }[];
+  className?: string;
+}): React.JSX.Element {
+  return (
+    <ul className={`rounded-xl bg-card border border-line divide-y divide-line max-h-48 overflow-y-auto ${className}`}>
+      {tools.map((t) => (
+        <li key={t.name} className="px-3 py-2">
+          <span className="font-mono text-xs font-bold">{t.name}</span>
+          {t.description && <span className="block text-xs text-ink-soft mt-0.5">{t.description}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function McpConnectResult({
   state,
   onClose,
@@ -87,18 +111,7 @@ export function McpConnectResult({
             <p className="text-sm text-ink-soft mb-3">
               {state.tools.length} {state.tools.length === 1 ? "tool" : "tools"} discovered.
             </p>
-            {state.tools.length > 0 && (
-              <ul className="rounded-xl bg-card border border-line divide-y divide-line mb-4 max-h-48 overflow-y-auto">
-                {state.tools.map((t) => (
-                  <li key={t.name} className="px-3 py-2">
-                    <span className="font-mono text-xs font-bold">{t.name}</span>
-                    {t.description && (
-                      <span className="block text-xs text-ink-soft mt-0.5">{t.description}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {state.tools.length > 0 && <McpToolList tools={state.tools} className="mb-4" />}
             <div className="flex justify-end">
               <button
                 type="button"
@@ -179,6 +192,8 @@ export function McpServersSection({
   const [error, setError] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<Map<string, McpServerStatusLike>>(new Map());
   const [connectResult, setConnectResult] = useState<ConnectResultState | null>(null);
+  // Round 11: which servers have their tool list open (keyed by statusKey).
+  const [openTools, setOpenTools] = useState<ReadonlySet<string>>(new Set());
   const unsubRef = useRef<(() => void) | null>(null);
   // Bumped on every connect attempt AND on dismiss, so a result that lands
   // after the user walked away can't reopen the modal behind them.
@@ -283,10 +298,8 @@ export function McpServersSection({
             const isHttp = typeof s.cfg.url === "string";
             const brand = brandIconFor(s.name);
             return (
-              <div
-                key={`${s.scope}:${s.name}`}
-                className="px-4 py-3 border-b border-line last:border-b-0 flex items-center gap-3"
-              >
+              <div key={`${s.scope}:${s.name}`} className="border-b border-line last:border-b-0">
+              <div className="px-4 py-3 flex items-center gap-3">
                 {/* Round 8: real glyph when simple-icons has one, else a tinted
                     monogram — a hand-added server should never render as a blank
                     square just because we don't ship its logo. */}
@@ -300,7 +313,20 @@ export function McpServersSection({
                     <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
                       {s.scope}
                     </span>
-                    <McpStatusBadge status={status} />
+                    <McpStatusBadge
+                      status={status}
+                      open={openTools.has(sKey)}
+                      onToggleTools={
+                        status?.tools?.length
+                          ? () =>
+                              setOpenTools((prev) => {
+                                const next = new Set(prev);
+                                if (!next.delete(sKey)) next.add(sKey);
+                                return next;
+                              })
+                          : undefined
+                      }
+                    />
                     {s.cfg.directTools ? (
                       <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 bg-honey-soft text-tangerine-deep border-honey/60 shrink-0">
                         direct
@@ -355,6 +381,14 @@ export function McpServersSection({
                   Remove
                 </button>
               </div>
+              {/* Round 11: the tool list the count badge opens. `status.tools`
+                  already carries descriptions — it was fetched and discarded. */}
+              {openTools.has(sKey) && status?.tools?.length ? (
+                <div className="px-4 pb-3">
+                  <McpToolList tools={status.tools} />
+                </div>
+              ) : null}
+              </div>
             );
           })}
         </div>
@@ -385,7 +419,17 @@ export function McpServersSection({
   );
 }
 
-function McpStatusBadge({ status }: { status: McpServerStatusLike | undefined }): React.JSX.Element {
+function McpStatusBadge({
+  status,
+  open = false,
+  onToggleTools,
+}: {
+  status: McpServerStatusLike | undefined;
+  /** Round 11: is the tool list expanded? */
+  open?: boolean;
+  /** Provided only when there is a tool list to show — absent keeps the plain badge. */
+  onToggleTools?: () => void;
+}): React.JSX.Element {
   if (!status) {
     return (
       <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
@@ -395,10 +439,25 @@ function McpStatusBadge({ status }: { status: McpServerStatusLike | undefined })
   }
   const { state, toolCount, error } = status;
   if (state === "connected") {
+    const label = `${toolCount} ${toolCount === 1 ? "tool" : "tools"}`;
+    const cls =
+      "text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-leaf-soft text-leaf border border-leaf/50 shrink-0";
+    // A server that reported no tools (or connected before this shipped) keeps
+    // the plain badge — never an empty disclosure.
+    if (!onToggleTools) return <span className={cls}>{label}</span>;
     return (
-      <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-leaf-soft text-leaf border border-leaf/50 shrink-0">
-        {toolCount} {toolCount === 1 ? "tool" : "tools"}
-      </span>
+      <button
+        type="button"
+        onClick={onToggleTools}
+        aria-expanded={open}
+        title={open ? "Hide the tool list" : "Show the tools and what they do"}
+        className={`${cls} inline-flex items-center gap-1 cursor-pointer hover:brightness-105`}
+      >
+        <span className={`transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
+          ▸
+        </span>
+        {label}
+      </button>
     );
   }
   if (state === "needs-auth") {
