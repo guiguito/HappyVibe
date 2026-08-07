@@ -163,14 +163,22 @@ export function planSlug(body: string): string {
 
 // ── Tool-call gate (runs BEFORE dangerous/bypass + rules in the bridge) ──────
 
-/** Tools that mutate and are always blocked while planning. */
-const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "subagent"]);
+/** Tools that mutate and are always blocked while planning.
+ * §26: terminal_run must be NAMED. An unrecognised tool falls to floor-ask,
+ * which prompts forever but never blocks — and plan mode is read-only, so a
+ * planning agent must not be able to start a process at all. */
+const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "subagent", "terminal_run"]);
 /** Read-only tools that pass straight through the plan gate. */
 const PLAN_PASS_TOOLS = new Set([
   // use_skill only returns an ALREADY-APPROVED SKILL.md's text (spawn-time trust
   // gate, §14) — strictly a read. Without it, planning raised a permission modal
   // on every skill load.
   "read", "grep", "glob", "list", "ls", "find", "ask_user", "use_skill", "plan_complete", "plan_start", "plan_status_update",
+  // §26: reading a log is a read. Killing REMOVES power rather than exercising
+  // it, and a planning agent that started something before entering plan mode
+  // must be able to stop it — neither is worth a modal. floor-ask would clamp
+  // allow→ask and prompt on every single poll.
+  "terminal_read", "terminal_kill",
 ]);
 
 export type PlanGate =

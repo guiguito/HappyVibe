@@ -10,7 +10,10 @@ import { ToolIcon } from "./ToolCard";
  * toolLabel falls back to a derived/prettified label).
  */
 function argsFromSummary(tool: string, summary: string): unknown {
-  if (tool === "bash") return { command: summary };
+  // §26: the bridge summarises terminal_run AS its command, exactly like bash,
+  // so the modal shows what will RUN rather than the model's own description of
+  // it. Rebuilding {command} here (and not {intent}) is what keeps that true.
+  if (tool === "bash" || tool === "terminal_run") return { command: summary };
   try {
     return JSON.parse(summary);
   } catch {

@@ -153,13 +153,21 @@ test.skipIf(!KEY)(
       //     a `read`), each emitting its own safe-default audit, so taking
       //     whichever arrived first asserted on an unrelated tool at random.
       //  2. Re-ask when the turn ends with no bash call at all (see reask.ts).
+      //  3. Name `bash` and rule out terminal_run explicitly. Measured, not
+      //     defensive: §26 part 2's three terminal tools dilute a small model's
+      //     tool choice, and over 5 trials of the older wording bash was called
+      //     3/5 times before they existed, 1/5 with them registered and 0/5
+      //     with the steer line too — it stopped calling tools rather than
+      //     picking a different one. 5/5 with the wording below.
       const isBashAudit = (r: UiReq): boolean =>
         isKind(r, "hv.audit") && payloadOf(r).tool === "bash";
       const called = await askUntil(
         () => c.send({
           type: "prompt",
           message:
-            "You MUST immediately run exactly this shell command using the bash tool: touch forbidden.txt. Do not explain, do not ask questions — just call the bash tool with that command right now.",
+            "Call the `bash` tool right now with command exactly: touch forbidden.txt\n\nUse the "
+            + "`bash` tool specifically — this is a one-off command that finishes immediately, so it is NOT a "
+            + "terminal_run. Do not explain, do not ask questions, do not reply in prose: make the tool call.",
         }),
         () => requests.slice(seen).some(isBashAudit),
       );

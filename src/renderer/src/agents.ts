@@ -235,6 +235,26 @@ export interface SubagentEvent {
 }
 
 /** The hv.subagent payload when this notify is a subagent lifecycle relay, else null. */
+/** §26 part 2: an agent terminal opened or was stopped. Fire-and-forget. */
+export interface TerminalEvent {
+  stage: "started" | "killed";
+  terminalId?: string;
+  title?: string;
+  intent?: string;
+  workspaceId?: string;
+}
+
+export function parseTerminalEvent(r: { method?: string; message?: string }): TerminalEvent | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "") as { kind?: string; stage?: string };
+    if (p.kind !== "hv.terminal" || (p.stage !== "started" && p.stage !== "killed")) return null;
+    return p as unknown as TerminalEvent;
+  } catch {
+    return null;
+  }
+}
+
 export function parseSubagentEvent(r: { method?: string; message?: string }): SubagentEvent | null {
   if (r.method !== "notify") return null;
   try {

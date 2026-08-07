@@ -16,6 +16,7 @@ import {
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
 } from "./config";
 import { TerminalManager } from "./terminals";
+import { AgentTerminals } from "./agentTerminals";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
   findLinkedRoot, managedSkillsDir, parseForgeUrl, planSkillRemoval, readSkillDir, removeSkillDir, resolveActiveSkills, scanSkillsDir,
@@ -64,6 +65,7 @@ import {
   previewRestore, restoreSnapshot, stampSnapshot,
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
+import { buildTerminalPrompt } from "../../pi-runtime/extensions/hv-terminal";
 import { expandedHash, pairPromptTemplateItems, restoreItems, type RestoreItem } from "./restore";
 import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
@@ -177,6 +179,40 @@ function parsePlanNotify(r: { method?: string; message?: string }): Record<strin
   }
 }
 
+/** §26 part 2: the blocking agent-terminal inputs. Main ALWAYS answers one. */
+function parseTerminalReq(r: { method?: string; title?: string }):
+  | { kind: "run"; command: string; terminalId?: string; intent?: string }
+  | { kind: "read"; terminalId: string; lines?: number; waitMs?: number }
+  | { kind: "kill"; terminalId: string }
+  | null {
+  if (r.method !== "input") return null;
+  try {
+    const p = JSON.parse(r.title ?? "") as Record<string, unknown>;
+    if (p.kind === "hv.terminal-run" && typeof p.command === "string") {
+      return {
+        kind: "run",
+        command: p.command,
+        terminalId: typeof p.terminalId === "string" ? p.terminalId : undefined,
+        intent: typeof p.intent === "string" ? p.intent : undefined,
+      };
+    }
+    if (p.kind === "hv.terminal-read" && typeof p.terminalId === "string") {
+      return {
+        kind: "read",
+        terminalId: p.terminalId,
+        lines: typeof p.lines === "number" ? p.lines : undefined,
+        waitMs: typeof p.waitMs === "number" ? p.waitMs : undefined,
+      };
+    }
+    if (p.kind === "hv.terminal-kill" && typeof p.terminalId === "string") {
+      return { kind: "kill", terminalId: p.terminalId };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** §23: the blocking plan-write input payload (main writes the file, answers with the path), else null. */
 function parsePlanWrite(r: { method?: string; title?: string }): { plan: string } | null {
   if (r.method !== "input") return null;
@@ -211,14 +247,53 @@ export function registerIpc(win: BrowserWindow): void {
   // instead of starting a fresh shell. Data goes straight out on a push
   // channel; the renderer writes it into xterm without it ever touching React
   // state (§7's streaming invariant).
+  // §26 part 2: terminal_read's `waitMs` settles for quiet rather than making
+  // the agent sleep in bash. One tap on the data callback, no other consumer.
+  const termDataTaps = new Map<string, Set<() => void>>();
+  const onTerminalData = (id: string, cb: () => void): (() => void) => {
+    const set = termDataTaps.get(id) ?? new Set();
+    termDataTaps.set(id, set);
+    set.add(cb);
+    return () => set.delete(cb);
+  };
   const terminals = new TerminalManager(
-    (id, data) => send("hv:term-data", { id, data }),
+    (id, data) => {
+      for (const cb of termDataTaps.get(id) ?? []) cb();
+      send("hv:term-data", { id, data });
+    },
     (id, code) => send("hv:term-exit", { id, code }),
     (id, title) => send("hv:term-title", { id, title }),
   );
+  // §26 part 2: who owns which terminal, the cap, the busy-reuse refusal and the
+  // interleave hold. TerminalManager stays session-ignorant.
+  const agentTerminals = new AgentTerminals(terminals);
   // A PTY is a child of main, not of a Pi session, so nothing else tears them
   // down. Without this a quit leaks every running shell.
   app.on("before-quit", () => terminals.killAll());
+
+  /**
+   * §26: resolve when the terminal has produced no bytes for ~400ms, or when
+   * the cap expires. Without it the agent's only way to wait is bash("sleep 3"),
+   * a second gated tool call per poll, forever.
+   */
+  const settleQuiet = (terminalId: string, capMs: number): Promise<void> => {
+    const QUIET_MS = 400;
+    return new Promise((resolve) => {
+      let last = Date.now();
+      const started = last;
+      const off = onTerminalData(terminalId, () => {
+        last = Date.now();
+      });
+      const tick = setInterval(() => {
+        if (Date.now() - last >= QUIET_MS || Date.now() - started >= capMs) {
+          clearInterval(tick);
+          off();
+          resolve();
+        }
+      }, 100);
+      tick.unref?.();
+    });
+  };
 
   // ── §14 Skills ─────────────────────────────────────────────────────────────
   const skillRegistry = new SkillRegistry(path.join(userData, "skills-approvals.jsonl"));
@@ -305,6 +380,13 @@ export function registerIpc(win: BrowserWindow): void {
    * session ends (an id is never reused).
    */
   const lastOpenFiles = new Map<string, string[]>();
+  /**
+   * §26 part 2: the same idea for the terminals a session started. The RENDERED
+   * block is stored rather than the list, because it is sorted and therefore
+   * byte-stable — so the change check is a string compare and needs no
+   * openFilesChanged twin.
+   */
+  const lastOpenTerminals = new Map<string, string>();
   /**
    * §24: the typed form of every command invocation logged for a session, keyed
    * by sha256(expanded). Restore hashes each user message against this map, so a
@@ -759,6 +841,75 @@ export function registerIpc(win: BrowserWindow): void {
           void log.append({ type: "subagent.interrupt", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId } });
         }
         send("hv:ui-request", { ...r, sessionId });
+        return;
+      }
+      // §26 part 2: the blocking terminal inputs. Main ALWAYS respondUi — a
+      // failure is a JSON {ok:false,reason}, never a dropped response, or the
+      // bridge waits on ctx.ui.input forever and the turn hangs.
+      const term = parseTerminalReq(r as { method?: string; title?: string });
+      if (term) {
+        void (async () => {
+          const rid = r.id;
+          const reply = (v: unknown): void => client.respondUi(rid, { value: JSON.stringify(v) });
+          // The card is a transcript item, so it rides the same ui-request
+          // channel the delegation card does. A notify carries its payload in
+          // `message` (a blocking input uses `title`) — the renderer's parsers
+          // all read `message`, so this must too.
+          const notify = (payload: Record<string, unknown>): void =>
+            send("hv:ui-request", {
+              id: `hv-term-${Date.now()}`,
+              method: "notify",
+              message: JSON.stringify({ kind: "hv.terminal", ...payload }),
+              sessionId,
+            });
+          try {
+            const wsId = meta?.workspaceId;
+            if (!wsId) throw new Error("No workspace for this session");
+            if (term.kind === "run") {
+              const res = await agentTerminals.run(
+                sessionId, wsId, wsId, getTerminalSettings(), term.command, term.terminalId,
+              );
+              if (res.ok) {
+                // §26: every terminal_run is audited WITH its command — the one
+                // thing `npm run dev &> /tmp/log &` gives you nothing of.
+                void log.append({
+                  type: "terminal.run",
+                  sessionId,
+                  workspaceId: wsId,
+                  data: { terminalId: res.terminalId, command: term.command },
+                });
+                notify({
+                  stage: "started",
+                  terminalId: res.terminalId,
+                  title: res.title,
+                  command: term.command,
+                  intent: term.intent,
+                  workspaceId: wsId,
+                });
+              }
+              reply(res);
+            } else if (term.kind === "read") {
+              if (term.waitMs && term.waitMs > 0) {
+                await settleQuiet(term.terminalId, Math.min(term.waitMs, 15_000));
+              }
+              reply(agentTerminals.read(sessionId, term.terminalId, term.lines));
+            } else {
+              const res = agentTerminals.kill(sessionId, term.terminalId);
+              if (res.ok) {
+                void log.append({
+                  type: "terminal.kill",
+                  sessionId,
+                  workspaceId: wsId,
+                  data: { terminalId: term.terminalId },
+                });
+                notify({ stage: "killed", terminalId: term.terminalId });
+              }
+              reply(res);
+            }
+          } catch (e) {
+            reply({ ok: false, reason: e instanceof Error ? e.message : String(e) });
+          }
+        })();
         return;
       }
       // §23 Plan Mode. plan-write is a BLOCKING input: main writes the workspace
@@ -1219,7 +1370,16 @@ export function registerIpc(win: BrowserWindow): void {
 
   // Shared by close and delete: capture stats best-effort, log session.end,
   // stop the process.
-  const endSession = async (sessionId: string): Promise<void> => {
+  //
+  // §26 part 2: a session that started terminals must not silently kill them
+  // (hostile — a dev server dies because a chat closed) and must not silently
+  // leak them either. The renderer asks first, with two named outcomes, and
+  // passes the answer here. `keep` needs no work in main: an agent terminal
+  // already IS an ordinary workspace terminal — releasing the claim is the
+  // whole promotion. Absent decision = keep, the safe direction.
+  const endSession = async (sessionId: string, terminals_?: "stop" | "keep"): Promise<void> => {
+    const owned = agentTerminals.releaseSession(sessionId);
+    if (terminals_ === "stop") for (const id of owned) terminals.kill(id);
     const client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
     let stats: unknown = null;
@@ -1239,19 +1399,32 @@ export function registerIpc(win: BrowserWindow): void {
     manager.stop(sessionId);
   };
 
-  ipcMain.handle("hv:close-session", (_e, sessionId: string) => endSession(sessionId));
+  ipcMain.handle("hv:close-session", (_e, sessionId: string, terminals_?: "stop" | "keep") =>
+    endSession(sessionId, terminals_),
+  );
+
+  // §26 part 2: what the close/delete confirm has to name. Empty ⇒ no confirm,
+  // so a session with no terminals closes exactly as it did before.
+  ipcMain.handle("hv:session-terminals", (_e, sessionId: string) =>
+    agentTerminals
+      .ownedBy(sessionId)
+      .map((id) => terminals.get(id))
+      .filter((i): i is NonNullable<typeof i> => !!i && i.running)
+      .map((i) => ({ id: i.id, title: i.title })),
+  );
 
   // V2.C2: permanent delete — confirm happens renderer-side. Stop first if
   // live (same stats/session.end capture as close), drop the index entry,
   // delete the Pi session file (sessionDir-confined; missing file fine).
-  ipcMain.handle("hv:delete-session", async (_e, sessionId: string) => {
+  ipcMain.handle("hv:delete-session", async (_e, sessionId: string, terminals_?: "stop" | "keep") => {
     const meta = index.get(sessionId);
     if (!meta) return;
-    if (manager.get(sessionId)) await endSession(sessionId);
+    if (manager.get(sessionId)) await endSession(sessionId, terminals_);
     index.remove(sessionId);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
     deleteSessionSnapshots(snapshotDir(), sessionId); // §9: snapshots die with the session
     lastOpenFiles.delete(sessionId); // round 11: no stale set for a dead session
+    lastOpenTerminals.delete(sessionId); // §26: same, for the terminals block
     void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId });
     sessionsChanged();
   });
@@ -1339,11 +1512,23 @@ export function registerIpc(win: BrowserWindow): void {
     // prompt — otherwise every turn would carry its own snapshot and turn 1's
     // stale list would sit in context beside turn 5's. The newest block is
     // therefore always the current one.
-    if (getOpenFilesContext() && openFiles) {
-      if (openFilesChanged(lastOpenFiles.get(sessionId), openFiles)) {
+    //
+    // §26 part 2: the terminals THIS session started ride the same seam under
+    // the same toggle — one setting, one answer, disclosed in its description.
+    // It is what lets an agent still find a dev server it opened three
+    // compactions ago; with the toggle off it will lose track of one.
+    if (getOpenFilesContext()) {
+      if (openFiles && openFilesChanged(lastOpenFiles.get(sessionId), openFiles)) {
         const block = buildOpenFilesBlock(openFiles);
         if (block) outgoing = `${outgoing}\n\n${block}`;
         lastOpenFiles.set(sessionId, [...openFiles]);
+      }
+      // The block is sorted, so an unchanged set renders byte-identically and
+      // the change check is a plain string compare (openFilesChanged's trick).
+      const terms = agentTerminals.buildOpenTerminalsBlock(sessionId);
+      if (terms && terms !== lastOpenTerminals.get(sessionId)) {
+        outgoing = `${outgoing}\n\n${terms}`;
+        lastOpenTerminals.set(sessionId, terms);
       }
     }
     // §9 rewind: the snapshot a rewind to THIS message restores to. A capture
@@ -1836,13 +2021,31 @@ export function registerIpc(win: BrowserWindow): void {
     });
     return info;
   });
-  ipcMain.handle("hv:term-input", (_e, id: string, data: string) => terminals.write(id, String(data)));
+  ipcMain.handle("hv:term-input", (_e, id: string, data: string) => {
+    const d = String(data);
+    // §26 part 2: main is the only place that sees BOTH writers, which is what
+    // makes the interleave hold possible at all — an agent-terminal card and a
+    // workspace tab route their keystrokes through this one handler. Still
+    // ungated: permissions gate the agent, not the human.
+    agentTerminals.noteUserInput(id, d);
+    terminals.write(id, d);
+  });
   ipcMain.handle("hv:term-resize", (_e, id: string, cols: number, rows: number) =>
     terminals.resize(id, cols, rows),
   );
   ipcMain.handle("hv:term-close", (_e, id: string) => terminals.kill(id));
   ipcMain.handle("hv:term-list", (_e, ws?: string) => terminals.list(ws));
   ipcMain.handle("hv:term-snapshot", (_e, id: string) => terminals.snapshot(id));
+  // §26 part 2: the RENDERED grid as plain text — the agent-terminal card's
+  // collapsed tail. It exists because the first version accumulated raw PTY
+  // bytes in the renderer and stripped CSI escapes with a regex, which left
+  // control characters behind: zsh's line editor writes `s`, a backspace, then
+  // rewrites, so `sleep 600` was displayed as `ssleep 600`. That is precisely
+  // the failure §26 built the headless mirror to avoid — one buffer, more
+  // readers, never a second parser.
+  ipcMain.handle("hv:term-text", (_e, id: string, lines?: number) =>
+    terminals.readText(id, Math.min(Math.max(1, Math.floor(lines ?? 3)), 200)),
+  );
   ipcMain.handle("hv:term-foreground", (_e, id: string) => terminals.foreground(id));
   ipcMain.handle("hv:get-terminal-settings", () => getTerminalSettings());
   ipcMain.handle("hv:set-terminal-settings", (_e, s: Record<string, unknown>) =>
@@ -1857,8 +2060,12 @@ export function registerIpc(win: BrowserWindow): void {
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.
   ipcMain.handle("hv:builtin-prompt", (_e, name: string) => {
-    if (name !== "plan") return { text: "" };
-    return { text: buildPlanPrompt() };
+    if (name === "plan") return { text: buildPlanPrompt() };
+    // §26: the Terminal group's resting cost is the steer line PLUS three tool
+    // schemas, so showing only the steer line would understate what turning it
+    // off saves. Descriptions come from the bridge's own registrations.
+    if (name === "terminal") return { text: buildTerminalPrompt() };
+    return { text: "" };
   });
 
   ipcMain.handle("hv:read-audit", (_e, filter?: { sessionId?: string; workspaceId?: string }) =>

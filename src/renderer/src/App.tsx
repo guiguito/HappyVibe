@@ -38,7 +38,7 @@ import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
-import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
+import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTerminalEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
@@ -135,6 +135,24 @@ export default function App(): React.JSX.Element {
   // §26. Terminals live in MAIN; this is only what the view needs to label a
   // tab and decide whether closing it needs a confirm.
   const [terminals, setTerminals] = useState<Record<string, HvTerminalInfo>>({});
+  /**
+   * §26 part 2: the terminals each SESSION's agent started, and the only thing
+   * about them the `terminals` map above does not already carry — the model's
+   * intent and when it began. Title and running-state are read from that map,
+   * which the push channel keeps live, so an exited terminal drops out of the
+   * card stack with no extra bookkeeping.
+   */
+  const [agentTerms, setAgentTerms] = useState<Record<string, Record<string, { intent: string; startedAt: number }>>>({});
+  /**
+   * §26 part 2: ending a session that started terminals asks, with two NAMED
+   * outcomes. Silently killing a dev server because a chat closed is hostile;
+   * silently leaking one is worse. Held as a promise resolver so the delete
+   * flow can simply await the answer.
+   */
+  const [termConfirm, setTermConfirm] = useState<{
+    terms: Array<{ id: string; title: string }>;
+    resolve: (d: "stop" | "keep" | null) => void;
+  } | null>(null);
   const [termSettings, setTermSettings] = useState<HvTerminalSettings | null>(null);
   // Gate the layout WRITER until the stored layout has been read back, or the
   // first render's empty {} would overwrite it before it ever loaded.
@@ -606,6 +624,36 @@ export default function App(): React.JSX.Element {
         // triggered assistant turn — this just manages the card + a flow notice.
         const sub = parseSubagentEvent(r);
         if (sub) handleSubagentEvent(sid, sub);
+        // §26 part 2: an agent terminal opened or was killed. Fire-and-forget,
+        // like the subagent relays — it drives the sticky card, never a modal.
+        const termEv = parseTerminalEvent(r);
+        if (termEv) {
+          if (termEv.stage === "started" && termEv.terminalId) {
+            const { terminalId, title } = termEv;
+            // The card needs the terminal in the shared map straight away: main
+            // pushes title/exit updates for it, but never an initial record.
+            setTerminals((p) =>
+              p[terminalId]
+                ? p
+                : {
+                    ...p,
+                    [terminalId]: {
+                      id: terminalId,
+                      workspaceId: termEv.workspaceId ?? "",
+                      title: title ?? "",
+                      running: true,
+                      exitCode: null,
+                    },
+                  },
+            );
+            setAgentTerms((p) => ({
+              ...p,
+              [sid]: { ...(p[sid] ?? {}), [terminalId]: { intent: termEv.intent ?? "", startedAt: Date.now() } },
+            }));
+          } else if (termEv.terminalId) {
+            dropAgentTerminal(sid, termEv.terminalId);
+          }
+        }
         // §14: raw-read fallback — the model loaded a skill by reading SKILL.md
         // instead of use_skill. Surface a lightweight notice (the use_skill happy
         // path already renders as its own tool card, so only detected reads here).
@@ -1047,6 +1095,42 @@ export default function App(): React.JSX.Element {
     }, 400);
     return () => clearTimeout(id);
   }, [tabsByWs, layoutLoaded]);
+
+  /**
+   * §26 part 2: this session's terminal no longer belongs on its card stack —
+   * it was killed, or the human promoted it to a tab. The PTY's own fate is
+   * decided elsewhere; this only forgets the card.
+   */
+  const dropAgentTerminal = (sid: string, terminalId: string): void =>
+    setAgentTerms((p) => {
+      const forSession = p[sid];
+      if (!forSession?.[terminalId]) return p;
+      const { [terminalId]: _gone, ...rest } = forSession;
+      return { ...p, [sid]: rest };
+    });
+
+  /**
+   * §26 part 2: the human moves an agent terminal into a tab of its own. The
+   * agent NEVER does this — that invariant is the reason the card exists. The
+   * PTY is untouched: the tab just attaches a fresh emulator to main's buffer.
+   */
+  const openAgentTerminalAsTab = (sid: string, ws: string, terminalId: string): void => {
+    setTabsByWs((p) => ({ ...p, [ws]: openTerminal(p[ws] ?? emptyTabs, terminalId) }));
+    dropAgentTerminal(sid, terminalId);
+    setActiveWs(ws);
+    setView("chat");
+  };
+
+  /**
+   * §26 part 2: ask before ending a session that still has terminals running.
+   * Returns undefined when there are none, so a session without terminals ends
+   * exactly as it did before — no extra click for the common case.
+   */
+  const askAboutTerminals = async (sid: string): Promise<"stop" | "keep" | null | undefined> => {
+    const terms = await window.hv.sessionTerminals(sid).catch(() => []);
+    if (!terms.length) return undefined;
+    return new Promise((resolve) => setTermConfirm({ terms, resolve }));
+  };
 
   /** §26: open a terminal in the focused pane of `ws`. ⌘T and the `+` menu. */
   const newTerminal = async (ws: string): Promise<void> => {
@@ -1583,6 +1667,11 @@ export default function App(): React.JSX.Element {
         onRenameSession={(id, title) => window.hv.renameSession(id, title)}
         onArchiveSession={(id, archived) => window.hv.archiveSession(id, archived)}
         onDeleteSession={async (id) => {
+          // §26: the terminals this session started outlive it unless the user
+          // says otherwise — asked BEFORE anything is torn down, so cancelling
+          // leaves the session exactly as it was.
+          const decision = await askAboutTerminals(id);
+          if (decision === null) return;
           // V2.C2: deleting the selected session falls back to no-selection.
           if (selectedId === id) setSelectedId(null);
           // Round 11: the tab must follow a DELETION (closing a tab leaves the
@@ -1602,7 +1691,15 @@ export default function App(): React.JSX.Element {
             delete next[id];
             return next;
           });
-          await window.hv.deleteSession(id); // sessions-changed broadcast refreshes the list
+          // "keep" needs no work: an agent terminal already IS an ordinary
+          // workspace terminal, so main just releases the claim. Its tab, if
+          // the user wants one, is Open-as-tab from the card.
+          await window.hv.deleteSession(id, decision ?? undefined); // sessions-changed broadcast refreshes the list
+          setAgentTerms((p) => {
+            if (!(id in p)) return p;
+            const { [id]: _gone, ...rest } = p;
+            return rest;
+          });
         }}
         settingsOpen={settingsOpen}
         onToggleSettingsOpen={() => setSettingsOpen((o) => !o)}
@@ -1870,6 +1967,23 @@ export default function App(): React.JSX.Element {
             queue={queues[sid] ?? emptyQueue}
             delegations={Object.values(delegations[sid] ?? {})}
             onStopRun={(runId) => void window.hv.subagentInterrupt(sid, runId)}
+            // §26 part 2: title and running-state come from the shared
+            // `terminals` map, which the push channel keeps live — so an exited
+            // terminal leaves the card stack with no extra bookkeeping.
+            terminalRuns={Object.entries(agentTerms[sid] ?? {}).flatMap(([id, meta]) => {
+              const info = terminals[id];
+              return info ? [{ terminalId: id, title: info.title, running: info.running, intent: meta.intent, startedAt: meta.startedAt }] : [];
+            })}
+            terminalSettings={termSettings}
+            onStopTerminal={(id) => {
+              // No confirmation: the human can always kill an agent terminal.
+              void window.hv.termClose(id);
+              dropAgentTerminal(sid, id);
+            }}
+            onOpenTerminalAsTab={(id) => {
+              const ws = sess?.workspaceId;
+              if (ws) openAgentTerminalAsTab(sid, ws, id);
+            }}
             contextSnapshot={contextSnapshots[sid] ?? null}
             fallbackWindow={fallbackWindow}
             stats={sid === selectedId ? selStats : undefined}
@@ -1977,6 +2091,47 @@ export default function App(): React.JSX.Element {
       {uiReq?.kind === "permission" && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
       {uiReq?.kind === "askUser" && (
         <AskUserModal key={uiReq.req.id} ask={uiReq.ask} onSubmit={respondAskUser} onDismiss={() => respondAskUser(null)} />
+      )}
+      {/* §26 part 2: two NAMED outcomes, reusing the workspace-removal confirm
+          pattern. Never silently kill (hostile — a dev server dies because a
+          chat closed), never silently leak. */}
+      {termConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8"
+          onClick={() => { termConfirm.resolve(null); setTermConfirm(null); }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border-2 border-tangerine bg-card p-5 shadow-sticker-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="font-bold mb-1">
+              {termConfirm.terms.length === 1
+                ? "1 process started by this session is still running"
+                : `${termConfirm.terms.length} processes started by this session are still running`}
+            </div>
+            <ul className="text-sm text-ink-soft mb-4 list-disc pl-5">
+              {termConfirm.terms.map((t) => (
+                <li key={t.id} className="font-mono">{t.title || t.id}</li>
+              ))}
+            </ul>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { termConfirm.resolve("keep"); setTermConfirm(null); }}
+                className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+              >
+                Keep them as terminals
+              </button>
+              <button
+                type="button"
+                onClick={() => { termConfirm.resolve("stop"); setTermConfirm(null); }}
+                className="rounded-xl bg-berry text-paper font-bold text-sm px-4 py-2 border-2 border-berry shadow-sticker cursor-pointer hover:brightness-105"
+              >
+                Stop them
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
       {/* WS7: AGENTS.md editor — root from the "+" menu, any AGENTS.md from the tree. */}

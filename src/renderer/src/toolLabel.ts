@@ -146,6 +146,20 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       const d = describeCommand(cmd);
       return { icon: "terminal", label: d.label, ...(d.destructive ? { destructive: true } : {}) };
     }
+    // §26 part 2. The CARD leads with the model's intent (§7); the permission
+    // MODAL never does — it reconstructs {command} from the bridge's factual
+    // summary, so `intent` is absent there and the describeCommand fallback runs.
+    case "terminal_run": {
+      const cmd = str("command");
+      if (intent) return { icon: "terminal", label: intent };
+      if (!cmd) return { icon: "terminal", label: "Running a command in a terminal" };
+      const d = describeCommand(cmd);
+      return { icon: "terminal", label: d.label, ...(d.destructive ? { destructive: true } : {}) };
+    }
+    case "terminal_kill":
+      return { icon: "terminal", label: intent ?? "Stopping a terminal" };
+    case "terminal_read":
+      return { icon: "terminal", label: "Reading terminal output" };
     case "edit": {
       const p = str("path");
       // W2.2: the path itself moved out of the label into the card's

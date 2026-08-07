@@ -8,15 +8,18 @@ export interface BuiltinToggles {
   plan: boolean;
   askUser: boolean;
   planAppend: string;
+  /** §26 part 2: the grouped "Terminal" entry — all three tools or none. */
+  terminal: boolean;
 }
 
 export function parseBuiltins(raw: string | undefined): BuiltinToggles {
-  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "" };
+  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true };
   if (!raw) return out;
   try {
-    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string }>;
+    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean }>;
     if (p.plan === false) out.plan = false;
     if (p.askUser === false) out.askUser = false;
+    if (p.terminal === false) out.terminal = false;
     if (typeof p.planAppend === "string") out.planAppend = p.planAppend;
     // Defence in depth (Important 3): Plan mode's prompt and applyPlanTools'
     // `required` array both hard-require ask_user — a hand-edited config with

@@ -390,8 +390,12 @@ interface HvApi {
   }>;
   /** §9: the pre-compaction history, display only — never re-entered into context. */
   loadEarlier(sessionId: string): Promise<RestoreItem[]>;
-  closeSession(sessionId: string): Promise<void>;
-  deleteSession(sessionId: string): Promise<void>;
+  /** §26: `terminals` answers the two-named-outcomes confirm when this session
+   *  started terminals that are still running. Omitted ⇒ keep (the safe way). */
+  closeSession(sessionId: string, terminals?: "stop" | "keep"): Promise<void>;
+  deleteSession(sessionId: string, terminals?: "stop" | "keep"): Promise<void>;
+  /** §26: the live agent terminals this session owns. Empty ⇒ no confirm. */
+  sessionTerminals(sessionId: string): Promise<Array<{ id: string; title: string }>>;
   renameSession(sessionId: string, title: string): Promise<void>;
   archiveSession(sessionId: string, archived: boolean): Promise<void>;
   promptSession(
@@ -538,8 +542,8 @@ interface HvApi {
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
   // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
-  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string }>;
-  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string }): Promise<void>;
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
 
@@ -565,6 +569,8 @@ interface HvApi {
   termList(workspaceId?: string): Promise<HvTerminalInfo[]>;
   /** addon-serialize output from main's headless mirror: repaints after ⌘R. */
   termSnapshot(id: string): Promise<string | null>;
+  /** §26 part 2: the rendered grid as plain text (the card's collapsed tail). */
+  termText(id: string, lines?: number): Promise<string | null>;
   /** The foreground command, or null at an idle prompt. Drives the close confirm. */
   termForeground(id: string): Promise<string | null>;
   /** Raw PTY bytes. Goes straight to term.write() — never through React state. */

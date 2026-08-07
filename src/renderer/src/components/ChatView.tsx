@@ -12,6 +12,7 @@ import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
 import { delegationHint, formatElapsed, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
+import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
 import {
   attachmentUrl, dropUnknownProvider, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
@@ -67,6 +68,10 @@ export function ChatView({
   queue = emptyQueue,
   delegations = [],
   onStopRun,
+  terminalRuns = [],
+  terminalSettings,
+  onStopTerminal,
+  onOpenTerminalAsTab,
   contextSnapshot = null,
   fallbackWindow,
   stats = null,
@@ -112,6 +117,12 @@ export function ChatView({
   delegations?: DelegationRun[];
   /** Interrupt a running async subagent (stop button on its card). */
   onStopRun?: (runId: string) => void;
+  /** §26 part 2: this session's live agent terminals, as sticky cards. */
+  terminalRuns?: TerminalRun[];
+  terminalSettings?: HvTerminalSettings | null;
+  onStopTerminal?: (terminalId: string) => void;
+  /** The agent never opens a tab; this is the human doing it from the card. */
+  onOpenTerminalAsTab?: (terminalId: string) => void;
   contextSnapshot?: ContextSnapshot | null;
   fallbackWindow?: number | null;
   /** WS7: stats/search/context are lifted to App so the controls live in the tab strip. */
@@ -774,7 +785,25 @@ export function ChatView({
           items={items}
           streaming={streaming}
           busy={busy}
-          header={delegations.length > 0 ? <DelegationSection runs={delegations} items={items} onStopRun={onStopRun} /> : undefined}
+          header={
+            delegations.length > 0 || terminalRuns.length > 0 ? (
+              // §26: the terminal stack is a SIBLING of the delegation stack in
+              // the same sticky container, and sits below it — the two must not
+              // fight for the pin, and a delegation is the shorter-lived of the
+              // two so it reads better on top.
+              <div className="sticky top-0 z-20 px-6">
+                {delegations.length > 0 && <DelegationSection runs={delegations} items={items} onStopRun={onStopRun} />}
+                {terminalRuns.length > 0 && terminalSettings && (
+                  <TerminalStack
+                    runs={terminalRuns}
+                    settings={terminalSettings}
+                    onStop={onStopTerminal!}
+                    onOpenAsTab={onOpenTerminalAsTab!}
+                  />
+                )}
+              </div>
+            ) : undefined
+          }
           onRetry={onRetry}
           workspace={workspace}
           onOpenFile={onOpenFile}
@@ -1141,21 +1170,22 @@ const OUTCOME_LINGER_MS = 1100;
  * transcript content (z-20), below modals/panels (z-40+).
  */
 function DelegationSection({ runs, items, onStopRun }: { runs: DelegationRun[]; items: TranscriptItem[]; onStopRun?: (runId: string) => void }): React.JSX.Element {
+  // §26: the `sticky top-0 z-20 px-6` wrapper moved OUT to the caller, so this
+  // section and the terminal stack share one pinned container instead of each
+  // pinning separately and overlapping.
   return (
-    <div className="sticky top-0 z-20 px-6">
-      <div className="max-w-3xl mx-auto w-full flex flex-col">
-        {runs.map((run) => (
-          <DelegationRunCard
-            key={run.id}
-            run={run}
-            // Foreground runs stream their child transcript onto the in-flow tool
-            // card; async (detached) runs have none — their live progress rides
-            // run.live from the status poller instead.
-            trace={run.kind === "fg" && run.toolCallId ? traceFor(items, run.toolCallId) : undefined}
-            onStopRun={onStopRun}
-          />
-        ))}
-      </div>
+    <div className="max-w-3xl mx-auto w-full flex flex-col">
+      {runs.map((run) => (
+        <DelegationRunCard
+          key={run.id}
+          run={run}
+          // Foreground runs stream their child transcript onto the in-flow tool
+          // card; async (detached) runs have none — their live progress rides
+          // run.live from the status poller instead.
+          trace={run.kind === "fg" && run.toolCallId ? traceFor(items, run.toolCallId) : undefined}
+          onStopRun={onStopRun}
+        />
+      ))}
     </div>
   );
 }
