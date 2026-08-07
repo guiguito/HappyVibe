@@ -144,7 +144,20 @@ export default function App(): React.JSX.Element {
    * projection of the selected session — see the note on `wsId` below for the
    * blank-center bug that caused.
    */
-  const [activeWs, setActiveWs] = useState<string | null>(null);
+  /**
+   * §26: seeded from localStorage, like the sidebar rail and the settings group
+   * above — the active workspace is a pure UI cursor of exactly that class.
+   *
+   * This is load-bearing for the persisted layout rather than a nicety. Without
+   * it a reload restored tabsByWs correctly and then rendered the WELCOME
+   * screen, because `wsId` resolves through activeWs and there was nothing to
+   * resolve: the tabs were all there, addressed to a workspace nobody was
+   * looking at. Found in the GUI, not by a test — no unit could have seen it.
+   */
+  const [activeWs, setActiveWs] = useState<string | null>(() => localStorage.getItem("hv:active-ws"));
+  useEffect(() => {
+    if (activeWs) localStorage.setItem("hv:active-ws", activeWs);
+  }, [activeWs]);
   const [treeOpen, setTreeOpen] = useState(false);
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
@@ -410,12 +423,26 @@ export default function App(): React.JSX.Element {
           window.hv.termList(),
         ]);
         setTerminals(Object.fromEntries(termList.map((t) => [t.id, t])));
-        setTabsByWs(
-          restoreLayout(raw, {
-            sessions: new Set(sessionList.map((x) => x.id)),
-            terminals: new Set(termList.map((t) => t.id)),
-          }),
-        );
+        const layout = restoreLayout(raw, {
+          sessions: new Set(sessionList.map((x) => x.id)),
+          terminals: new Set(termList.map((t) => t.id)),
+        });
+        setTabsByWs(layout);
+        // Land on a workspace that actually has restored tabs. The remembered
+        // one may have been removed, or emptied by pruning, while the app was
+        // closed — in which case any restored workspace beats the welcome
+        // screen, which is what the user would otherwise get with their tabs
+        // sitting in state, invisible.
+        const remembered = localStorage.getItem("hv:active-ws");
+        const target = remembered && layout[remembered] ? remembered : Object.keys(layout)[0];
+        if (target) {
+          setActiveWs(target);
+          // Re-select the focused pane's chat, so the sidebar highlight, the
+          // context bubble and the cost pill point at something real.
+          const active = layout[target]!.panes[layout[target]!.focused]?.active;
+          const sid = active ? sessionOf(active) : null;
+          if (sid) setSelectedId(sid);
+        }
       } catch {
         /* a corrupt layout costs the tab arrangement, never the app */
       } finally {
@@ -1662,7 +1689,7 @@ export default function App(): React.JSX.Element {
         {activeView === "plugins" && <PluginsView />}
         {activeView === "mcp" && <McpView />}
         {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
-        {activeView === "terminal" && <TerminalView />}
+        {activeView === "terminal" && <TerminalView settings={termSettings} onChange={setTermSettings} />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
           <AllToolsView

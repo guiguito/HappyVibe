@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Section } from "./Section";
 import { TERMINAL_PALETTES, contrastRatio } from "../terminalTheme";
 import { DEFAULT_TERMINAL_SETTINGS } from "../../../main/terminalSettings";
@@ -31,27 +30,38 @@ const ANSI = ["red", "green", "yellow", "blue", "magenta", "cyan"] as const;
 // defaults is how a "Reset" button starts lying about what the default is.
 const defaults = DEFAULT_TERMINAL_SETTINGS as unknown as HvTerminalSettings;
 
-export function TerminalView(): React.JSX.Element {
-  const [s, setS] = useState<HvTerminalSettings | null>(null);
-
-  useEffect(() => {
-    void window.hv.getTerminalSettings().then(setS);
-  }, []);
-
+/**
+ * Settings are OWNED BY APP and passed in, mirroring ShortcutsView's
+ * `bindings` / `onChange` pair in the same render chain.
+ *
+ * Not a stylistic choice: this page held its own copy first, and the section
+ * subtitle's promise — "changes apply to terminals you already have open" —
+ * was then simply false. App mounts every emulator, so App has to be the one
+ * that learns a setting changed; a page-local copy writes to disk and reaches
+ * nothing on screen. Caught in the GUI, where the terminal stayed dark after
+ * switching to Paper.
+ */
+export function TerminalView({
+  settings,
+  onChange,
+}: {
+  settings: HvTerminalSettings | null;
+  onChange: (next: HvTerminalSettings) => void;
+}): React.JSX.Element {
+  const s = settings;
   if (!s) return <div className="p-6 text-sm text-ink-soft">Loading…</div>;
 
-  const patch = (next: Partial<HvTerminalSettings>): void => {
+  const apply = (next: HvTerminalSettings): void => {
     // Optimistic, then reconciled with what main actually stored — main
     // range-checks every field, so a typed-in fontSize of 0 comes back as 6
     // and the input must show that rather than the rejected value.
-    setS({ ...s, ...next });
-    void window.hv.setTerminalSettings({ ...s, ...next }).then(setS);
+    onChange(next);
+    void window.hv.setTerminalSettings(next).then(onChange);
   };
 
-  const resetAll = (): void => {
-    setS(defaults);
-    void window.hv.setTerminalSettings(defaults).then(setS);
-  };
+  const patch = (next: Partial<HvTerminalSettings>): void => apply({ ...s, ...next });
+
+  const resetAll = (): void => apply(defaults);
 
   const changed = <K extends keyof HvTerminalSettings>(key: K): boolean =>
     JSON.stringify(defaults[key]) !== JSON.stringify(s[key]);
