@@ -102,22 +102,92 @@ Against the running dev build, in the GUI:
   Escape when idle, which is what lets it sit last in the chain.
 - Zero console errors throughout.
 
+## The bug the GUI pass found, and the worse one hiding behind it
+
+Reported as `Voice input: Could not start recording.` — dictation failed on every
+attempt. Two defects, and the second is the one worth remembering.
+
+**1. The audio worklet cannot be a `blob:` URL.** The first implementation
+inlined the processor as a blob for bundling convenience. The renderer's CSP is
+`script-src 'self'`, and `'self'` does not cover `blob:`, so `addModule()` was
+blocked outright:
+
+```
+Loading the script 'blob:http://localhost:5173/…' violates the following Content
+Security Policy directive: "script-src 'self'". Note that 'script-src-elem' was
+not explicitly set, so 'script-src' is used as a fallback. The action has been
+blocked.
+```
+
+The spec already contained the answer — §7.3 cites this same CSP as the reason
+the model download runs in main rather than the renderer — the reasoning simply
+was not carried across to the worklet. Fixed by making it a real file
+(`voice-worklet.js`) loaded through Vite's `?url`.
+
+**2. `?url` alone would still have shipped broken, and only when packaged.**
+Vite inlines assets under 4 kB as `data:` URLs, and the worklet is 2,171 bytes.
+So the "fixed" build produced:
+
+```js
+const workletUrl = "data:text/javascript;base64,LyoqCiAqIMKnMjcvwq…"
+```
+
+`script-src 'self'` covers `data:` no better than `blob:`. In **dev** Vite serves
+a real file URL and everything works; in the **built app** it is an inlined data
+URL and dictation dies. Works-in-dev-breaks-in-release, caught only by reading
+the emitted bundle rather than trusting the source change.
+
+The fix is a targeted `assetsInlineLimit` predicate in `electron.vite.config.ts`
+returning `false` for `voice-worklet` and `undefined` for everything else. The
+built bundle now reads:
+
+```js
+const workletUrl = "" + new URL("voice-worklet-CDKraGXU.js", import.meta.url).href
+```
+
+— an emitted sibling asset, same-origin, referenced relatively so it also
+resolves under `file://` in the packaged app.
+
+**Never widen the CSP to `blob:`/`data:` to make a worklet load.** That trades
+the renderer's only-bundled-code-executes guarantee for a bundling convenience.
+`tests/voice-worklet-csp.test.ts` pins all of it: the CSP is unchanged, the
+worklet is a real file, no voice module calls `createObjectURL`, the config
+exclusion exists, and — the assertion that would actually have caught defect 2 —
+the **built** bundle references the worklet as a file rather than a data URL.
+`npm run gate` builds before it tests, so that last one runs against fresh output.
+
+**3. A generic error message turned a one-line bug into a mystery.** The handler
+collapsed every non-`CaptureError` to `"Could not start recording."`, discarding
+`"Unable to load a worklet's module."` — the string that names the problem. It
+now always surfaces the underlying message and logs the object. The lesson is
+cheap and general: a fallback string is for when there is genuinely nothing to
+say, not instead of what the error said.
+
+### Verified after the fix, live
+
+`startCapture()` through the app's own module: **no throw**, **53 level updates in
+1.5 s** (≈35 Hz, the intended ~30 Hz meter), and a quiet room measured
+`maxLevel 0.0025` against the 0.005 floor — so the energy gate returned **0
+samples and called nothing**. That is the gate working, not failing: silence
+never reaches the model.
+
 ## Not verified, and why
 
-**Anything requiring a live microphone.** `getMediaAccessStatus('microphone')`
-reads `not-determined` on this dev build, and granting it means a macOS TCC dialog
-— a system modal, which the debugging session must not trigger. So these remain
-open, all of them on the recording path:
+**Anything requiring actual speech.** Permission is now granted and capture is
+proven (above), but nothing has spoken into the microphone, so these are still
+open:
 
-- the red recording state and the live level meter moving with speech;
-- the transcript appending to the composer, blank-line separated;
+- a transcript of real speech appending to the composer, blank-line separated;
+- the level meter visibly tracking a voice rather than room tone — the numbers say
+  it updates at 35 Hz, but "moves when you speak" is a human observation;
 - the **full** Escape sequence (dropdown open *and* recording live: first Escape
   closes the dropdown, second cancels the recording);
 - the tap-to-latch / second-tap-to-stop gesture end to end;
 - the 5-minute cap.
 
-Each is unit-tested at the reducer and gate level. What is untested is the wiring
-between them and a real audio device, and that needs a human with a microphone.
+Each is unit-tested at the reducer and gate level, and the two ends — capture and
+transcription — are separately proven. What is untested is a human voice traversing
+the whole chain in one go.
 
 **Packaging.** The three signing changes (§8.2 + §8.4) are in the tree but no
 packaged build was produced, so the load-bearing assertion is unrun:

@@ -26,6 +26,18 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
+    build: {
+      // §27: the audio worklet MUST stay a real emitted file. Vite inlines
+      // assets under 4 kB as `data:` URLs, and the renderer's CSP is
+      // `script-src 'self'`, which covers neither `data:` nor `blob:` — so an
+      // inlined worklet is blocked by addModule() exactly like a blob one, but
+      // ONLY in the built app, because dev serves it as a real file URL. That
+      // is the "works in dev, broken in release" shape, so it is pinned by
+      // tests/voice-worklet-csp.test.ts against the built bundle.
+      // `false` = never inline; `undefined` = Vite's normal behaviour.
+      assetsInlineLimit: (filePath: string) =>
+        filePath.includes('voice-worklet') ? false : undefined
+    },
     plugins: [react(), tailwindcss()]
   }
 })

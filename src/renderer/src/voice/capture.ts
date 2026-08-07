@@ -8,7 +8,10 @@
  * silent empty transcript rather than an error the user can act on.
  */
 import { floatToInt16, passesLengthGate, passesEnergyGate } from "./gates";
-import { workletUrl } from "./worklet";
+// A REAL same-origin asset, not a blob: URL — the renderer's CSP is
+// `script-src 'self'` and blob: is not covered by it, so addModule() on a blob
+// is blocked outright. See voice-worklet.js and tests/voice-worklet-csp.test.ts.
+import workletUrl from "./voice-worklet.js?url";
 
 /** The rate the model wants; Chromium's own resampler gets us there. */
 const TARGET_RATE = 16000;
@@ -108,7 +111,7 @@ export async function startCapture(opts: CaptureOpts = {}): Promise<CaptureSessi
     throw new CaptureError("failed", `Unsupported audio rate ${ctx.sampleRate} Hz.`);
   }
 
-  await ctx.audioWorklet.addModule(workletUrl());
+  await ctx.audioWorklet.addModule(workletUrl);
   const source = ctx.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(ctx, "voice-processor");
 

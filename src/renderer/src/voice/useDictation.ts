@@ -6,7 +6,7 @@ import {
   type GestureEvent,
   type GestureState,
 } from "./gesture";
-import { startCapture, CaptureError, type CaptureSession } from "./capture";
+import { startCapture, type CaptureSession } from "./capture";
 import type { MicState } from "../components/MicButton";
 
 /**
@@ -87,7 +87,16 @@ export function useDictation({ onText, onError, onNeedsActivation }: Options): D
     } catch (err) {
       gesture.current = initialGesture();
       setRecording(false);
-      onError(err instanceof CaptureError ? err.message : "Could not start recording.");
+      // ALWAYS surface the underlying message. The first version collapsed
+      // every non-CaptureError to "Could not start recording.", and when the
+      // audio worklet was blocked by the renderer CSP that string was the only
+      // symptom available — the real error ("Unable to load a worklet's
+      // module") existed but was thrown away, so a one-line fix read as a
+      // mystery. A generic fallback is only for the case with nothing to say.
+      const detail = err instanceof Error ? err.message : String(err);
+      onError(detail || "Could not start recording.");
+      // Keep the full object in the console for anyone with devtools open.
+      console.error("[voice] startCapture failed", err);
     }
   }, [onError]);
 

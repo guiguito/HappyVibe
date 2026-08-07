@@ -281,6 +281,22 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `layoutPersist.ts` — main never learns what a tab is, same division of labour as `shortcuts`).
   `activeWs` persists in localStorage beside `hv:sidebar-collapsed`: without it the layout restores
   into state and the app still renders the WELCOME screen, because `wsId` resolves through `activeWs`.
+- **The renderer's CSP is `script-src 'self'`, which covers neither `blob:` NOR `data:` — so an
+  AudioWorklet/Worker script must be a REAL emitted file, and Vite will silently inline it into a
+  `data:` URL if it is under 4 kB.** §27's worklet hit both halves. A blob URL fails in dev *and*
+  prod (`AbortError: Unable to load a worklet's module.`, with the CSP refusal only in the console);
+  switching to Vite's `?url` fixes dev but a 2,171-byte file then gets inlined as
+  `data:text/javascript;base64,…`, which is blocked **only in the built app** — works-in-dev,
+  broken-in-release, invisible unless you read the emitted bundle. Fix is a targeted
+  `assetsInlineLimit` predicate in `electron.vite.config.ts` (`false` for `voice-worklet`,
+  `undefined` otherwise); the built bundle must read
+  `new URL("voice-worklet-<hash>.js", import.meta.url)`. **Never widen the CSP to `blob:`/`data:`
+  to make a script load** — that trades the only-bundled-code-executes guarantee for a bundling
+  convenience. `tests/voice-worklet-csp.test.ts` pins the CSP, the real file, the config exclusion
+  and the BUILT output (gate builds before it tests, so that arm actually runs). Corollary that cost
+  the most time: the failure surfaced as a generic "Could not start recording." because the handler
+  collapsed non-`CaptureError`s and threw away the message that named the problem — always surface
+  the underlying `err.message`.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array
