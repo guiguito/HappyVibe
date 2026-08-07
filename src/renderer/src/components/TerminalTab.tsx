@@ -5,6 +5,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { TERMINAL_PALETTES } from "../terminalTheme";
+import { fontStack } from "../../../main/terminalSettings";
 
 /**
  * §26 — one mounted emulator, bound to one terminal id in main.
@@ -58,7 +59,7 @@ export function TerminalTab({
     if (!el) return;
 
     const t = new Terminal({
-      fontFamily: live.current.fontFamily,
+      fontFamily: fontStack(live.current.fontFamily),
       fontSize: live.current.fontSize,
       lineHeight: live.current.lineHeight,
       letterSpacing: live.current.letterSpacing,
@@ -159,7 +160,7 @@ export function TerminalTab({
   useEffect(() => {
     const t = term.current;
     if (!t) return;
-    t.options.fontFamily = settings.fontFamily;
+    t.options.fontFamily = fontStack(settings.fontFamily);
     t.options.fontSize = settings.fontSize;
     t.options.lineHeight = settings.lineHeight;
     t.options.letterSpacing = settings.letterSpacing;

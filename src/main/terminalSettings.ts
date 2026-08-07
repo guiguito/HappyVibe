@@ -15,6 +15,8 @@ export type BellStyle = "off" | "visual" | "sound";
 export interface TerminalSettings {
   // Appearance — every field below is handed straight to xterm.
   style: TerminalStyle;
+  /** A single FAMILY NAME, not a CSS stack — the picker offers verified
+   *  monospace families and the renderer appends the fallbacks (fontStack). */
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
@@ -43,7 +45,7 @@ export interface TerminalSettings {
 
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   style: "workshop",
-  fontFamily: '"JetBrains Mono Variable", ui-monospace, "SF Mono", monospace',
+  fontFamily: "JetBrains Mono Variable",
   fontSize: 13,
   lineHeight: 1.4,
   letterSpacing: 0,
@@ -75,6 +77,29 @@ const str = (v: unknown, fallback: string): string =>
   typeof v === "string" && v.length > 0 ? v : fallback;
 
 /**
+ * A stored value → a bare family name.
+ *
+ * `fontFamily` used to hold a whole CSS stack, because the field was free text.
+ * It now holds one family, and this is the whole migration: take the first
+ * entry and unquote it. Doing it in the merge rather than in a migration step
+ * means a config written by an older build reads correctly forever, and a user
+ * who hand-edits a stack back in gets the same treatment.
+ */
+export function normalizeFamily(value: string): string {
+  const first = value.split(",")[0]?.trim() ?? "";
+  return first.replace(/^["']|["']$/g, "").trim();
+}
+
+/**
+ * A family name → what xterm is actually given. The fallbacks matter: a font
+ * uninstalled after it was chosen must degrade to *a monospace*, never to the
+ * proportional default, which would silently ruin every column alignment.
+ */
+export function fontStack(family: string): string {
+  return `"${family.replace(/"/g, "")}", ui-monospace, monospace`;
+}
+
+/**
  * A stored partial → a complete, sane settings object.
  *
  * Every field is range-checked rather than trusted: this reads a JSON file a
@@ -88,7 +113,7 @@ export function mergeTerminalSettings(
   const d = DEFAULT_TERMINAL_SETTINGS;
   return {
     style: STYLES.includes(p.style as TerminalStyle) ? (p.style as TerminalStyle) : d.style,
-    fontFamily: str(p.fontFamily, d.fontFamily),
+    fontFamily: normalizeFamily(str(p.fontFamily, d.fontFamily)) || d.fontFamily,
     fontSize: num(p.fontSize, d.fontSize, 6, 48),
     lineHeight: num(p.lineHeight, d.lineHeight, 1, 3),
     letterSpacing: num(p.letterSpacing, d.letterSpacing, -5, 20),

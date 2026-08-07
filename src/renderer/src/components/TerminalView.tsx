@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { Section } from "./Section";
 import { TERMINAL_PALETTES, contrastRatio } from "../terminalTheme";
-import { DEFAULT_TERMINAL_SETTINGS } from "../../../main/terminalSettings";
+import { DEFAULT_TERMINAL_SETTINGS, fontStack } from "../../../main/terminalSettings";
+import { BUNDLED_MONO, listMonospaceFamilies } from "../monospaceFonts";
 
 /**
  * §26 — Settings → Terminal.
@@ -25,6 +27,9 @@ const STYLES = [
 
 const ANSI = ["red", "green", "yellow", "blue", "magenta", "cyan"] as const;
 
+/** Must match the picker menu's max-h-72 (18rem) — the flip decision reads it. */
+const MENU_MAX_PX = 288;
+
 // Imported rather than fetched, and rather than restated here. terminalSettings
 // is electron-free precisely so both sides can share it — a second copy of the
 // defaults is how a "Reset" button starts lying about what the default is.
@@ -48,6 +53,16 @@ export function TerminalView({
   settings: HvTerminalSettings | null;
   onChange: (next: HvTerminalSettings) => void;
 }): React.JSX.Element {
+  // null = still enumerating. Done here rather than in App because
+  // queryLocalFonts throws SecurityError unless the window is visible, and this
+  // page being on screen is the closest thing to a guarantee of that.
+  const [families, setFamilies] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void listMonospaceFamilies().then((f) => { if (live) setFamilies(f); });
+    return () => { live = false; };
+  }, []);
+
   const s = settings;
   if (!s) return <div className="p-6 text-sm text-ink-soft">Loading…</div>;
 
@@ -182,8 +197,16 @@ export function TerminalView({
       </Section>
 
       <Section icon="terminal" title="Appearance" subtitle="Passed straight to the emulator; changes apply to terminals you already have open.">
-        <Row label="Font family" hint="JetBrains Mono ships with the app. Name any font installed on your machine." field="fontFamily">
-          <input value={s.fontFamily} onChange={(e) => patch({ fontFamily: e.target.value })} className={`${input} w-64`} />
+        <Row
+          label="Font family"
+          hint={
+            families === null
+              ? "Looking for monospace fonts on this machine…"
+              : `${families.length} monospace ${families.length === 1 ? "font" : "fonts"} found on this machine.`
+          }
+          field="fontFamily"
+        >
+          <FontPicker value={s.fontFamily} families={families} onPick={(f) => patch({ fontFamily: f })} />
         </Row>
         <Row label="Font size" field="fontSize">{num(s.fontSize, (v) => patch({ fontSize: v }))}</Row>
         <Row label="Line height" field="lineHeight">{num(s.lineHeight, (v) => patch({ lineHeight: v }), 0.1)}</Row>
@@ -262,6 +285,126 @@ export function TerminalView({
           <input value={s.wordSeparator} onChange={(e) => patch({ wordSeparator: e.target.value })} className={`${input} w-64 font-mono`} />
         </Row>
       </Section>
+    </div>
+  );
+}
+
+/**
+ * The monospace picker.
+ *
+ * Every row is rendered IN ITS OWN FONT, and that is not decoration — it is the
+ * filter metrics cannot apply. `Wingdings 2` is genuinely fixed-width and
+ * passes every measurement, so it appears in the list; it is excluded by being
+ * obviously wrong the moment you see it drawn. Same principle as the palette
+ * swatches above: show the real thing rather than describe it.
+ *
+ * A popover rather than a native <select> because <option> font-family support
+ * is inconsistent, and the preview is the whole point. Follows the pattern the
+ * pane `+` menu already uses — button, absolute panel, closed on blur, no
+ * backdrop.
+ */
+function FontPicker({
+  value,
+  families,
+  onPick,
+}: {
+  value: string;
+  /** null while enumerating. */
+  families: string[] | null;
+  onPick: (family: string) => void;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  // The row sits mid-page, so a menu that always drops DOWN gets clipped by the
+  // viewport in a short window. Measured at open time rather than guessed —
+  // ModelSelect solved the same problem with a `direction` prop.
+  const [dropUp, setDropUp] = useState(false);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const list = families ?? [];
+  // A font chosen on another machine, or since uninstalled, must not vanish
+  // silently — it is shown, selected, and labelled for what it is.
+  const missing = families !== null && !list.includes(value);
+  const options = missing ? [value, ...list] : list;
+
+  return (
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={families === null}
+        onClick={() => {
+          const box = trigger.current?.getBoundingClientRect();
+          setDropUp(!!box && window.innerHeight - box.bottom < MENU_MAX_PX + 24);
+          setOpen((o) => !o);
+        }}
+        className="w-64 flex items-center justify-between gap-2 rounded-lg border-2 border-line bg-paper px-2 py-1 text-[13px] cursor-pointer hover:border-line-strong disabled:opacity-60 disabled:cursor-default"
+      >
+        <span className="truncate" style={{ fontFamily: fontStack(value) }}>
+          {value}
+        </span>
+        <span className="shrink-0 text-ink-soft">{families === null ? "…" : "▾"}</span>
+      </button>
+
+      {missing && (
+        <div className="mt-1 text-[11px] font-bold text-berry">
+          Not installed on this machine — falling back to a system monospace.
+        </div>
+      )}
+
+      {open && families !== null && (
+        <div
+          role="listbox"
+          className={`absolute right-0 z-30 max-h-72 w-72 overflow-y-auto rounded-xl border-2 border-line-strong bg-paper shadow-pop ${
+            dropUp ? "bottom-full mb-1" : "mt-1"
+          }`}
+        >
+          {options.map((family) => {
+            const selected = family === value;
+            const unavailable = missing && family === value;
+            return (
+              <button
+                key={family}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onPick(family);
+                  setOpen(false);
+                }}
+                className={`block w-full px-3 py-2 text-left cursor-pointer hover:bg-paper-deep/60 ${
+                  selected ? "bg-honey-soft/60" : ""
+                }`}
+              >
+                {/* The name, drawn in the font it names. */}
+                <div
+                  className="text-[13px] truncate"
+                  style={unavailable ? undefined : { fontFamily: fontStack(family) }}
+                >
+                  {family}
+                </div>
+                {/* A fixed sample, so widths are comparable down the column. */}
+                <div
+                  className="text-[11px] text-ink-soft truncate"
+                  style={unavailable ? undefined : { fontFamily: fontStack(family) }}
+                >
+                  {unavailable ? "not installed" : "iIl1 0O ->= {}"}
+                </div>
+                {family === BUNDLED_MONO && !unavailable && (
+                  <div className="text-[10px] uppercase tracking-wide text-ink-soft mt-0.5">
+                    ships with the app
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

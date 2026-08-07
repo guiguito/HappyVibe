@@ -235,6 +235,18 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   forever. And a bad shell path does **not** throw from `pty.spawn`: node-pty's helper spawns fine
   and the exec fails inside it, arriving as an immediate non-zero exit, so both routes land on one
   inert state via `fail()`.
+- **The terminal font field is a measured picker (`monospaceFonts.ts`), and `SF Mono` is the reason.**
+  `queryLocalFonts()` works in Electron with no permission prompt but **throws `SecurityError:
+  Page needs to be visible` on a backgrounded window** — hence the probed `PROBE_FAMILIES` fallback,
+  and why enumeration runs from the settings page rather than at boot. It reports style but NOT
+  advance width, so monospace-ness is measured (`i`/`l`/`W`), and presence is measured by comparing
+  a family against TWO fallbacks. Measured on a stock Mac: 180 families → 7 monospace. `SF Mono`
+  does **not** resolve from a web context at all (Apple restricts it), which is what made the old
+  free-text field fail silently. Metrics cannot exclude `Wingdings 2` (genuinely fixed-width) —
+  **rendering each row in its own font is the filter**, so never "simplify" the picker to a plain
+  list. `fontFamily` stores a family NAME; `normalizeFamily` in the merge is the whole migration
+  from the old CSS-stack value, and `fontStack` appends `ui-monospace, monospace` so an uninstalled
+  font degrades to a monospace rather than to a proportional one.
 - **`allFiles` (tabs.ts) means "not a chat AND not a terminal" — never loosen it to "not a chat".**
   It feeds THREE consumers: the mounted `FileTab` list, the fs watch targets (`watchTargets.ts`),
   and §9's open-files block injected into the agent's context. When it meant merely "not a chat", a

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TERMINAL_SETTINGS,
+  fontStack,
   mergeTerminalSettings,
+  normalizeFamily,
   resolveSpawn,
 } from "../src/main/terminalSettings";
 
@@ -105,5 +107,59 @@ describe("resolveSpawn", () => {
     const r = resolveSpawn(d, { GOOD: "1", GONE: undefined });
     expect(r.env.GOOD).toBe("1");
     expect("GONE" in r.env).toBe(false);
+  });
+});
+
+describe("fontFamily is a family NAME, not a CSS stack", () => {
+  it("defaults to the bundled family alone", () => {
+    expect(DEFAULT_TERMINAL_SETTINGS.fontFamily).toBe("JetBrains Mono Variable");
+    expect(DEFAULT_TERMINAL_SETTINGS.fontFamily).not.toContain(",");
+  });
+
+  it("normalizes a legacy stack down to its first family — this IS the migration", () => {
+    // The field used to be free text holding a whole stack. Doing this in the
+    // merge rather than a migration step means an older config reads correctly
+    // forever, and a hand-edited stack gets the same treatment.
+    expect(normalizeFamily('"JetBrains Mono Variable", ui-monospace, "SF Mono", monospace')).toBe(
+      "JetBrains Mono Variable",
+    );
+    expect(normalizeFamily("Menlo, monospace")).toBe("Menlo");
+    expect(normalizeFamily("'Fira Code', monospace")).toBe("Fira Code");
+    expect(normalizeFamily("  Monaco  ")).toBe("Monaco");
+  });
+
+  it("applies that normalization through mergeTerminalSettings", () => {
+    const legacy = mergeTerminalSettings({
+      fontFamily: '"JetBrains Mono Variable", ui-monospace, "SF Mono", monospace',
+    });
+    expect(legacy.fontFamily).toBe("JetBrains Mono Variable");
+    expect(mergeTerminalSettings({ fontFamily: "Menlo, monospace" }).fontFamily).toBe("Menlo");
+  });
+
+  it("falls back to the default rather than storing an empty family", () => {
+    expect(mergeTerminalSettings({ fontFamily: "" }).fontFamily).toBe("JetBrains Mono Variable");
+    expect(mergeTerminalSettings({ fontFamily: ", , ," }).fontFamily).toBe("JetBrains Mono Variable");
+    expect(mergeTerminalSettings({ fontFamily: '""' }).fontFamily).toBe("JetBrains Mono Variable");
+  });
+});
+
+describe("fontStack", () => {
+  it("degrades to A MONOSPACE, never to the proportional default", () => {
+    // A font uninstalled after it was chosen must not silently ruin every
+    // column alignment in the terminal.
+    const stack = fontStack("Fira Code");
+    expect(stack).toBe('"Fira Code", ui-monospace, monospace');
+    expect(stack.endsWith("monospace")).toBe(true);
+  });
+
+  it("strips quotes so a family name cannot break out of the CSS string", () => {
+    expect(fontStack('Fira" Code')).toBe('"Fira Code", ui-monospace, monospace');
+    // The guard is that the family stays INSIDE its own quotes, so the result
+    // must carry exactly the two the wrapper added — no third quote to escape
+    // through. Asserting on a substring instead was testing nothing: the
+    // stripped text is still present, and harmlessly so.
+    for (const hostile of ['"; color: red; "', 'a", monospace; x:"b', '""""']) {
+      expect([...fontStack(hostile)].filter((c) => c === '"')).toHaveLength(2);
+    }
   });
 });
