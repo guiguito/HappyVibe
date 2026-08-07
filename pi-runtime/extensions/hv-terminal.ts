@@ -78,3 +78,38 @@ export const TERMINAL_STEER_LINE =
   "background) go to `terminal_run`, never to `bash` with a trailing `&`. A backgrounded bash " +
   "process is invisible to the user and cannot be stopped by them; a terminal is a card they " +
   "can watch, type into and kill. Poll it with `terminal_read`, and clean up with `terminal_kill`.";
+
+/**
+ * The three tool descriptions, HERE rather than inline at their registerTool
+ * calls, because §13 round 6 shows a built-in's prompt read-only on the All
+ * Tools page and "read-only" is worth nothing if the page renders a second copy
+ * that can drift from what the model is actually told. The bridge registers
+ * these; main serves the same constants to the settings page.
+ */
+export const TERMINAL_TOOL_DESCRIPTIONS: Record<string, string> = {
+  terminal_run:
+    "Run ONE command line in a persistent terminal the user can see, type into and stop. " +
+    "Use this for anything long-running (dev servers, watchers, `docker compose up`) instead of " +
+    "backgrounding a bash command. Omit terminalId to open a new terminal; pass one to reuse an " +
+    "IDLE terminal you already own (reusing a busy one is refused — the bytes would go to the " +
+    "running program's stdin, not the shell). Exactly one command line per call: newlines are " +
+    "rejected, and each call is permission-gated separately. Poll the output with terminal_read.",
+  terminal_read:
+    "Read the most recent output of one of your terminals, as plain text. Defaults to the last " +
+    "200 lines and is capped there. Pass waitMs to wait (up to 15s) for the output to go quiet " +
+    "before reading, instead of sleeping in bash. Tells you whether the terminal is still running " +
+    "and whether the USER has typed into it since your last read — if they have, re-read before " +
+    "assuming you know its state.",
+  terminal_kill:
+    "Stop one of your terminals and the process running in it. Clean up when you are done, and " +
+    "when you have hit the limit on open terminals.",
+};
+
+/** What the All Tools page shows for the grouped Terminal entry. */
+export function buildTerminalPrompt(append = ""): string {
+  const tools = Object.entries(TERMINAL_TOOL_DESCRIPTIONS)
+    .map(([name, description]) => `${name}\n  ${description}`)
+    .join("\n\n");
+  const body = `${TERMINAL_STEER_LINE}\n\n${tools}`;
+  return append.trim() ? `${body}\n\n${append.trim()}` : body;
+}

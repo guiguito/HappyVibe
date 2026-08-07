@@ -14,6 +14,8 @@ interface Builtins {
   plan: boolean;
   askUser: boolean;
   planAppend: string;
+  /** §26 part 2: the grouped Terminal entry — all three tools or none. */
+  terminal: boolean;
 }
 
 const HINT =
@@ -240,6 +242,85 @@ function AskUserRow({
   );
 }
 
+/**
+ * §26 part 2 — ONE entry for three tools, following Plan mode's precedent.
+ *
+ * A per-tool switch would be actively harmful: an agent that can terminal_run
+ * but not terminal_read starts processes it cannot observe, and one that can
+ * run and read but not terminal_kill cannot clean up. Those are not
+ * configurations anyone wants, so they are not reachable.
+ *
+ * There is deliberately no promotion path on turning it off. HV_BUILTINS
+ * resolves at SPAWN and this write respawns nothing, so the toggle cannot take
+ * tools away from a session that is currently running. On a later unrelated
+ * respawn the tools simply do not register, the card stops being fed, and the
+ * PTY keeps running as an ordinary workspace terminal — still in the terminal
+ * list, still openable as a tab. Do not build one.
+ */
+function TerminalRow({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (on: boolean) => void;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const [promptError, setPromptError] = useState(false);
+
+  useEffect(() => {
+    if (open && prompt === null && !promptError) {
+      void window.hv.builtinPrompt("terminal")
+        .then((r) => setPrompt(r.text))
+        .catch(() => setPromptError(true));
+    }
+  }, [open, prompt, promptError]);
+
+  return (
+    <div className="border-b border-line last:border-b-0">
+      <div className="w-full px-4 py-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex-1 min-w-0 text-left flex items-center gap-2.5 cursor-pointer"
+        >
+          <span className={`shrink-0 text-ink-soft transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+          <span className="min-w-0">
+            <span className="font-bold block">Terminal — 3 tools</span>
+            {/* Honest about the trade: this is not a safety improvement. With
+                the group off the model does not stop wanting a dev server — it
+                goes back to `npm run dev &> /tmp/log &`, where you cannot see
+                or stop it. Round 6's driver was context, so say what it costs. */}
+            <span className="text-xs text-ink-soft">
+              Lets the agent run long-running commands in terminals you can watch, type into and stop. Turning this
+              off doesn&apos;t stop it wanting to — it goes back to backgrounding commands in bash, where you can
+              neither see nor stop them. Saves the context cost of three tool schemas.
+            </span>
+          </span>
+        </button>
+        <TogglePill on={on} onClick={() => onChange(!on)} />
+      </div>
+      {open && (
+        <div className="px-4 pb-4 pt-0">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-2">
+            built-in prompt (read-only)
+          </div>
+          {promptError ? (
+            <p className="text-sm text-berry">Could not load the built-in prompt.</p>
+          ) : prompt === null ? (
+            <p className="text-sm text-ink-soft">Loading…</p>
+          ) : (
+            <pre className="font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-72 select-text">
+              {prompt}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BuiltinToolsBlock({
   onPlanChange,
 }: {
@@ -283,6 +364,16 @@ export function BuiltinToolsBlock({
           }}
         />
         {askUserError && <p className="px-4 pb-2 -mt-1 text-xs font-semibold text-berry">{askUserError}</p>}
+        <TerminalRow
+          on={builtins.terminal}
+          onChange={(on) => {
+            setAskUserError(null);
+            void window.hv.builtinsSet({ terminal: on }).then(
+              () => patch({ terminal: on }),
+              (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
+            );
+          }}
+        />
       </div>
     </Section>
   );

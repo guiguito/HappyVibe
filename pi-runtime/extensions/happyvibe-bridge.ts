@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
 import { EMPTY_RULES, evaluate, isWaitTool, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
-import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE } from "./hv-terminal";
+import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { unwrapMcpCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
@@ -1030,27 +1030,27 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "terminal_run",
     label: "Run in terminal",
-    description:
-      "Run ONE command line in a persistent terminal the user can see, type into and stop. " +
-      "Use this for anything long-running (dev servers, watchers, `docker compose up`) instead of " +
-      "backgrounding a bash command. Omit terminalId to open a new terminal; pass one to reuse an " +
-      "IDLE terminal you already own (reusing a busy one is refused — the bytes would go to the " +
-      "running program's stdin, not the shell). Exactly one command line per call: newlines are " +
-      "rejected, and each call is permission-gated separately. Poll the output with terminal_read.",
+    // The descriptions live in hv-terminal.ts because the All Tools page shows
+    // them read-only (§13 round 6), and "read-only" means nothing if the page
+    // renders a second copy that can drift from what the model is told.
+    description: TERMINAL_TOOL_DESCRIPTIONS.terminal_run,
     parameters: Type.Object({
       intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are running and why." }),
       command: Type.String({ description: "One command line. No embedded newlines." }),
       terminalId: Type.Optional(Type.String({ description: "Reuse this terminal instead of opening a new one. It must be idle." })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const { command, terminalId } = params as { command?: unknown; terminalId?: string };
+      const { command, terminalId, intent } = params as { command?: unknown; terminalId?: string; intent?: string };
       // Belt and braces: the tool_call handler already refused a multi-line
       // command before the permission prompt (that ordering is the point), so
       // this arm only catches a call that reached execute some other way.
       const checked = checkCommand(command);
       if (!checked.ok) return { content: [{ type: "text", text: checked.reason }], details: {} };
+      // `intent` rides along so main can echo it on the hv.terminal notify: the
+      // CARD leads with the model's headline (§7). The permission prompt does
+      // not see this — it was built from the factual summary long before.
       const raw = await ctx.ui.input(
-        JSON.stringify({ kind: "hv.terminal-run", command: checked.command, terminalId }),
+        JSON.stringify({ kind: "hv.terminal-run", command: checked.command, terminalId, intent }),
         "",
       );
       return terminalReply(raw);
@@ -1060,12 +1060,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "terminal_read",
     label: "Read terminal",
-    description:
-      "Read the most recent output of one of your terminals, as plain text. Defaults to the last " +
-      "200 lines and is capped there. Pass waitMs to wait (up to 15s) for the output to go quiet " +
-      "before reading, instead of sleeping in bash. Tells you whether the terminal is still running " +
-      "and whether the USER has typed into it since your last read — if they have, re-read before " +
-      "assuming you know its state.",
+    description: TERMINAL_TOOL_DESCRIPTIONS.terminal_read,
     parameters: Type.Object({
       terminalId: Type.String({ description: "The terminal to read." }),
       lines: Type.Optional(Type.Number({ description: "How many trailing lines. Default 200, capped at 200." })),
@@ -1081,9 +1076,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "terminal_kill",
     label: "Stop terminal",
-    description:
-      "Stop one of your terminals and the process running in it. Clean up when you are done, and " +
-      "when you have hit the limit on open terminals.",
+    description: TERMINAL_TOOL_DESCRIPTIONS.terminal_kill,
     parameters: Type.Object({
       intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are stopping and why." }),
       terminalId: Type.String({ description: "The terminal to stop." }),

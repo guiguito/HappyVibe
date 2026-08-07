@@ -65,6 +65,7 @@ import {
   previewRestore, restoreSnapshot, stampSnapshot,
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
+import { buildTerminalPrompt } from "../../pi-runtime/extensions/hv-terminal";
 import { expandedHash, pairPromptTemplateItems, restoreItems, type RestoreItem } from "./restore";
 import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
@@ -180,7 +181,7 @@ function parsePlanNotify(r: { method?: string; message?: string }): Record<strin
 
 /** §26 part 2: the blocking agent-terminal inputs. Main ALWAYS answers one. */
 function parseTerminalReq(r: { method?: string; title?: string }):
-  | { kind: "run"; command: string; terminalId?: string }
+  | { kind: "run"; command: string; terminalId?: string; intent?: string }
   | { kind: "read"; terminalId: string; lines?: number; waitMs?: number }
   | { kind: "kill"; terminalId: string }
   | null {
@@ -192,6 +193,7 @@ function parseTerminalReq(r: { method?: string; title?: string }):
         kind: "run",
         command: p.command,
         terminalId: typeof p.terminalId === "string" ? p.terminalId : undefined,
+        intent: typeof p.intent === "string" ? p.intent : undefined,
       };
     }
     if (p.kind === "hv.terminal-read" && typeof p.terminalId === "string") {
@@ -850,12 +852,14 @@ export function registerIpc(win: BrowserWindow): void {
           const rid = r.id;
           const reply = (v: unknown): void => client.respondUi(rid, { value: JSON.stringify(v) });
           // The card is a transcript item, so it rides the same ui-request
-          // channel the delegation card does.
+          // channel the delegation card does. A notify carries its payload in
+          // `message` (a blocking input uses `title`) — the renderer's parsers
+          // all read `message`, so this must too.
           const notify = (payload: Record<string, unknown>): void =>
             send("hv:ui-request", {
               id: `hv-term-${Date.now()}`,
               method: "notify",
-              title: JSON.stringify({ kind: "hv.terminal", ...payload }),
+              message: JSON.stringify({ kind: "hv.terminal", ...payload }),
               sessionId,
             });
           try {
@@ -874,7 +878,14 @@ export function registerIpc(win: BrowserWindow): void {
                   workspaceId: wsId,
                   data: { terminalId: res.terminalId, command: term.command },
                 });
-                notify({ stage: "started", terminalId: res.terminalId, title: res.title, command: term.command });
+                notify({
+                  stage: "started",
+                  terminalId: res.terminalId,
+                  title: res.title,
+                  command: term.command,
+                  intent: term.intent,
+                  workspaceId: wsId,
+                });
               }
               reply(res);
             } else if (term.kind === "read") {
@@ -2039,8 +2050,12 @@ export function registerIpc(win: BrowserWindow): void {
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.
   ipcMain.handle("hv:builtin-prompt", (_e, name: string) => {
-    if (name !== "plan") return { text: "" };
-    return { text: buildPlanPrompt() };
+    if (name === "plan") return { text: buildPlanPrompt() };
+    // §26: the Terminal group's resting cost is the steer line PLUS three tool
+    // schemas, so showing only the steer line would understate what turning it
+    // off saves. Descriptions come from the bridge's own registrations.
+    if (name === "terminal") return { text: buildTerminalPrompt() };
+    return { text: "" };
   });
 
   ipcMain.handle("hv:read-audit", (_e, filter?: { sessionId?: string; workspaceId?: string }) =>
