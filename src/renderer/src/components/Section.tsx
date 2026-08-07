@@ -34,6 +34,12 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
     </>
   ),
   permissions: <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />,
+  terminal: (
+    <>
+      <path d="M4 17l6-5-6-5" />
+      <path d="M12 19h8" />
+    </>
+  ),
   audit: (
     <>
       <path d="M9 12h6M9 16h6M9 8h2" />

@@ -10,6 +10,7 @@ export type View =
   | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools"
   // Round 8: the settings scroll exploded into pages, each its own destination.
   | "models" | "permissions" | "sysprompt" | "stats" | "audit" | "shortcuts"
+  | "terminal"
   | "workspace";
 
 function basename(p: string): string {
@@ -127,6 +128,15 @@ function AuditIcon(): React.JSX.Element {
   );
 }
 
+function TerminalIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 17l6-5-6-5" />
+      <path d="M12 19h8" />
+    </svg>
+  );
+}
+
 function KeyboardIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -153,6 +163,8 @@ const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> =
   { view: "stats", label: "Stats", Icon: StatsIcon },
   { view: "audit", label: "Audit log", Icon: AuditIcon },
   { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
+  // §26.
+  { view: "terminal", label: "Terminal", Icon: TerminalIcon },
 ];
 
 /** Round 8: the collapse affordance — an actual chevron rather than a 10px

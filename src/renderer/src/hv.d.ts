@@ -1,4 +1,34 @@
 declare global {
+/** §26. Mirrors TerminalInfo in src/main/terminals.ts (separate tsconfig roots). */
+interface HvTerminalInfo {
+  id: string;
+  workspaceId: string;
+  /** The foreground command, else the shell name. What the tab strip shows. */
+  title: string;
+  running: boolean;
+  exitCode: number | null;
+}
+/** §26. Mirrors TerminalSettings in src/main/terminalSettings.ts. */
+interface HvTerminalSettings {
+  style: "workshop" | "paper" | "carbon";
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  cursorStyle: "bar" | "block" | "underline";
+  cursorBlink: boolean;
+  minimumContrastRatio: number;
+  shellPath: string | null;
+  shellArgs: string[];
+  env: Record<string, string>;
+  scrollback: number;
+  copyOnSelect: boolean;
+  rightClickPastes: boolean;
+  warnMultilinePaste: boolean;
+  confirmCloseRunning: boolean;
+  bell: "off" | "visual" | "sound";
+  wordSeparator: string;
+}
 /** Mirrors SessionMeta in src/main/store.ts (separate tsconfig roots — kept in sync by hand). */
 interface SessionMeta {
   id: string;
@@ -524,6 +554,29 @@ interface HvApi {
   /** Round 8: keyboard-shortcut overrides (action id → canonical binding). */
   getShortcuts(): Promise<Record<string, string>>;
   setShortcuts(map: Record<string, string>): Promise<void>;
+
+  // §26 Terminals (additive). No permission surface anywhere here: permissions
+  // gate the agent, not the human. Part 2 is where the gate comes back.
+  termCreate(workspaceId: string, cols?: number, rows?: number): Promise<HvTerminalInfo>;
+  termInput(id: string, data: string): Promise<void>;
+  termResize(id: string, cols: number, rows: number): Promise<void>;
+  /** Closing a terminal tab kills its PTY — a terminal tab IS its terminal. */
+  termClose(id: string): Promise<void>;
+  termList(workspaceId?: string): Promise<HvTerminalInfo[]>;
+  /** addon-serialize output from main's headless mirror: repaints after ⌘R. */
+  termSnapshot(id: string): Promise<string | null>;
+  /** The foreground command, or null at an idle prompt. Drives the close confirm. */
+  termForeground(id: string): Promise<string | null>;
+  /** Raw PTY bytes. Goes straight to term.write() — never through React state. */
+  onTermData(cb: (p: { id: string; data: string }) => void): () => void;
+  onTermExit(cb: (p: { id: string; code: number }) => void): () => void;
+  onTermTitle(cb: (p: { id: string; title: string }) => void): () => void;
+  getTerminalSettings(): Promise<HvTerminalSettings>;
+  setTerminalSettings(s: Partial<HvTerminalSettings>): Promise<HvTerminalSettings>;
+  /** §26: the centre-area tab layout, stored opaquely — the renderer validates
+      and prunes it on restore (layoutPersist.ts). */
+  getLayout(): Promise<Record<string, unknown>>;
+  setLayout(l: Record<string, unknown>): Promise<void>;
 
   // §14 Skills (additive)
   skillsList(workspaceId?: string): Promise<HvSkillsList>;

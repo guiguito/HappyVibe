@@ -11,6 +11,7 @@
 
 export type ShortcutId =
   | "newSession"
+  | "newTerminal"
   | "closeTab"
   | "save"
   | "search"
@@ -27,7 +28,12 @@ export interface ShortcutAction {
 
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "newSession", label: "New session in the current workspace", defaultKey: "Mod-n" },
-  { id: "closeTab", label: "Close the active file tab", defaultKey: "Mod-w" },
+  // §26. Mod-t was free — nothing in the app registered it.
+  { id: "newTerminal", label: "New terminal in the current workspace", defaultKey: "Mod-t" },
+  // §26 widened this from files to "file or terminal". A chat is still exempt:
+  // closing a chat tab only hides a session, so it needs no keyboard route,
+  // whereas closing a terminal KILLS a process and therefore confirms first.
+  { id: "closeTab", label: "Close the active file or terminal tab", defaultKey: "Mod-w" },
   { id: "save", label: "Save the open file", defaultKey: "Mod-s" },
   // One action, two consumers: whichever of the chat / the editor has focus.
   // Two actions would make the default ⌘F conflict with itself on first render.

@@ -7,6 +7,7 @@ import { customEndpointEnv, type CustomEndpoint } from "./modelsJson";
 import { mcpSecretEnvVar } from "./mcpSecretName";
 import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
+import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -52,6 +53,19 @@ interface ConfigFile {
   /** §25: plugin marketplaces the user has listed. Absent = the one built-in
       (the official Anthropic list). The resolver supports N; V1 ships one. */
   marketplaces?: Array<{ id: string; url: string }>;
+  /** §26: terminal settings. GLOBAL only — every field is appearance or
+      personal habit, and the one per-workspace candidate (the shell) belongs
+      in a project's own dotfiles where every other tool will read it too.
+      Stored as a partial; mergeTerminalSettings supplies and range-checks the
+      rest, because this file is hand-editable and a fontSize of 0 would
+      otherwise reach xterm's constructor. */
+  terminal?: Partial<TerminalSettings>;
+  /** §26: the centre-area tab layout, per workspace. Persisted so a renderer
+      reload restores chats, files, terminals and pane sizes alike — which is
+      also what makes a terminal survive ⌘R, since main never stopped owning
+      the PTY. Written opaquely; the renderer owns validation and pruning
+      (layoutPersist.ts), exactly as it owns the shortcut merge below. */
+  layout?: Record<string, unknown>;
 }
 
 function load(): ConfigFile {
@@ -315,6 +329,33 @@ export function getShortcuts(): Record<string, string> {
 export function setShortcuts(map: Record<string, string>): void {
   const cfg = load();
   cfg.shortcuts = map;
+  save(cfg);
+}
+
+/** §26: terminal settings, always complete and always in range — the merge is
+    what stands between a hand-edited config.json and xterm's constructor. */
+export function getTerminalSettings(): TerminalSettings {
+  return mergeTerminalSettings(load().terminal);
+}
+
+export function setTerminalSettings(settings: Partial<TerminalSettings>): TerminalSettings {
+  const cfg = load();
+  cfg.terminal = mergeTerminalSettings(settings);
+  save(cfg);
+  return cfg.terminal as TerminalSettings;
+}
+
+/** §26: the tab layout, stored opaquely. The renderer validates and prunes it
+    on restore (layoutPersist.ts), so main never has to know what a tab is —
+    the same division of labour as getShortcuts above. */
+export function getLayout(): Record<string, unknown> {
+  return load().layout ?? {};
+}
+
+export function setLayout(layout: Record<string, unknown>): void {
+  const cfg = load();
+  if (Object.keys(layout).length > 0) cfg.layout = layout;
+  else delete cfg.layout;
   save(cfg);
 }
 

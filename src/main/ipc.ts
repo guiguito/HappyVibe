@@ -13,7 +13,9 @@ import {
   resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
+  getTerminalSettings, setTerminalSettings, getLayout, setLayout,
 } from "./config";
+import { TerminalManager } from "./terminals";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
   findLinkedRoot, managedSkillsDir, parseForgeUrl, planSkillRemoval, readSkillDir, removeSkillDir, resolveActiveSkills, scanSkillsDir,
@@ -202,6 +204,21 @@ export function registerIpc(win: BrowserWindow): void {
   const workspaces = new WorkspaceRegistry(path.join(userData, "workspaces.json"));
   const log = new EventLog(path.join(userData, "events.jsonl"));
   const pidFile = path.join(userData, "pi-pids.json");
+
+  // ── §26 Terminals ──────────────────────────────────────────────────────────
+  // PTYs are owned by MAIN, so they outlive a renderer reload — which is the
+  // whole reason a re-attaching tab can repaint from the headless mirror
+  // instead of starting a fresh shell. Data goes straight out on a push
+  // channel; the renderer writes it into xterm without it ever touching React
+  // state (§7's streaming invariant).
+  const terminals = new TerminalManager(
+    (id, data) => send("hv:term-data", { id, data }),
+    (id, code) => send("hv:term-exit", { id, code }),
+    (id, title) => send("hv:term-title", { id, title }),
+  );
+  // A PTY is a child of main, not of a Pi session, so nothing else tears them
+  // down. Without this a quit leaks every running shell.
+  app.on("before-quit", () => terminals.killAll());
 
   // ── §14 Skills ─────────────────────────────────────────────────────────────
   const skillRegistry = new SkillRegistry(path.join(userData, "skills-approvals.jsonl"));
@@ -1067,6 +1084,10 @@ export function registerIpc(win: BrowserWindow): void {
         index.update(s.id, { archived: true });
       }
     }
+    // §26: a terminal belongs to the workspace, not to a session, so nothing
+    // above touches it. Both outcomes kill them — "forget" stops showing the
+    // workspace, and a shell you can no longer see or close is a leak.
+    terminals.killWorkspace(ws);
     workspaces.remove(ws);
     sessionsChanged();
     return { sessions: affected.length };
@@ -1794,6 +1815,44 @@ export function registerIpc(win: BrowserWindow): void {
   // them with the defaults (shortcuts.ts), so main stays ignorant of the action list.
   ipcMain.handle("hv:get-shortcuts", () => getShortcuts());
   ipcMain.handle("hv:set-shortcuts", (_e, map: Record<string, string>) => setShortcuts(map ?? {}));
+
+  // ── §26 Terminals ──────────────────────────────────────────────────────────
+  // No permission gate anywhere in this block, deliberately: permissions gate
+  // the AGENT, not the human (§26). Part 2 is where the gate comes back.
+  ipcMain.handle("hv:term-create", (_e, ws: string, cols?: number, rows?: number) => {
+    // cwd comes from the REGISTRY, never from the renderer's string — the same
+    // posture every other fs entry point in this file takes.
+    const known = workspaces.list().find((p) => p.replace(/\/+$/, "") === String(ws).replace(/\/+$/, ""));
+    if (!known) throw new Error("Unknown workspace");
+    const settings = getTerminalSettings();
+    const info = terminals.create(known, known, settings, cols ?? 80, rows ?? 24);
+    // ONE entry, on open. Not per command and not per keystroke: the audit
+    // trail should not be silent about the existence of a shell, and should
+    // not pretend to be a keylogger either (§26).
+    void log.append({
+      type: "terminal.open",
+      workspaceId: known,
+      data: { terminalId: info.id, shell: settings.shellPath ?? process.env.SHELL ?? "/bin/zsh" },
+    });
+    return info;
+  });
+  ipcMain.handle("hv:term-input", (_e, id: string, data: string) => terminals.write(id, String(data)));
+  ipcMain.handle("hv:term-resize", (_e, id: string, cols: number, rows: number) =>
+    terminals.resize(id, cols, rows),
+  );
+  ipcMain.handle("hv:term-close", (_e, id: string) => terminals.kill(id));
+  ipcMain.handle("hv:term-list", (_e, ws?: string) => terminals.list(ws));
+  ipcMain.handle("hv:term-snapshot", (_e, id: string) => terminals.snapshot(id));
+  ipcMain.handle("hv:term-foreground", (_e, id: string) => terminals.foreground(id));
+  ipcMain.handle("hv:get-terminal-settings", () => getTerminalSettings());
+  ipcMain.handle("hv:set-terminal-settings", (_e, s: Record<string, unknown>) =>
+    setTerminalSettings(s ?? {}),
+  );
+
+  // §26: the tab layout, stored opaquely — the renderer validates and prunes
+  // it on restore (layoutPersist.ts), so main never learns what a tab is.
+  ipcMain.handle("hv:get-layout", () => getLayout());
+  ipcMain.handle("hv:set-layout", (_e, l: Record<string, unknown>) => setLayout(l ?? {}));
 
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.

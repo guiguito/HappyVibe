@@ -14,7 +14,7 @@ import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
 import { ShortcutsView } from "./components/ShortcutsView";
-import { eventToBinding, resolveBindings, type ShortcutId } from "./shortcuts";
+import { eventToBinding, formatBinding, resolveBindings, type ShortcutId } from "./shortcuts";
 import {
   dropSession,
   headFor,
@@ -42,11 +42,14 @@ import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgen
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
-  activateTab, allChats, allFiles, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
-  isChatTab, liveSlots, moveTab, openChat, openFile, paneOf, sessionOf, setSize, splitAt, splitOptions,
+  activateTab, allChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
+  isChatTab, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, sessionOf, setSize, splitAt, splitOptions, termTab, terminalOf,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
+import { TerminalTab } from "./components/TerminalTab";
+import { TerminalView } from "./components/TerminalView";
+import { restoreLayout } from "./layoutPersist";
 import { buildGridStyle, paneEdges } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
@@ -129,6 +132,13 @@ export default function App(): React.JSX.Element {
   // within a workspace keeps them; another workspace has its own set. The
   // docked file-tree pane is a global toggle (closed by default).
   const [tabsByWs, setTabsByWs] = useState<Record<string, WorkspaceTabs>>({});
+  // §26. Terminals live in MAIN; this is only what the view needs to label a
+  // tab and decide whether closing it needs a confirm.
+  const [terminals, setTerminals] = useState<Record<string, HvTerminalInfo>>({});
+  const [termSettings, setTermSettings] = useState<HvTerminalSettings | null>(null);
+  // Gate the layout WRITER until the stored layout has been read back, or the
+  // first render's empty {} would overwrite it before it ever loaded.
+  const [layoutLoaded, setLayoutLoaded] = useState(false);
   /**
    * Which workspace's tabs the center area shows. Its own state rather than a
    * projection of the selected session — see the note on `wsId` below for the
@@ -146,6 +156,23 @@ export default function App(): React.JSX.Element {
   // the user remapped on the shortcuts page.
   const [bindings, setBindings] = useState<Record<ShortcutId, string>>(() => resolveBindings(null));
   useEffect(() => { void window.hv.getShortcuts().then((m) => setBindings(resolveBindings(m))); }, []);
+
+  // ── §26 Terminals ────────────────────────────────────────────────────────
+  // Settings are global, so they load once and every mounted emulator reads
+  // the same object.
+  useEffect(() => { void window.hv.getTerminalSettings().then(setTermSettings); }, []);
+  // Lifecycle pushes. A terminal that exits stays in the map with running:false
+  // — §26 refuses to close a tab out from under someone, so the tab must be
+  // able to keep rendering an inert one.
+  useEffect(() => {
+    const offTitle = window.hv.onTermTitle(({ id, title }) =>
+      setTerminals((p) => (p[id] ? { ...p, [id]: { ...p[id]!, title } } : p)),
+    );
+    const offExit = window.hv.onTermExit(({ id, code }) =>
+      setTerminals((p) => (p[id] ? { ...p, [id]: { ...p[id]!, running: false, exitCode: code } } : p)),
+    );
+    return () => { offTitle(); offExit(); };
+  }, []);
   // F6: global shortcuts. The handler closure is refreshed each render (reads
   // live wsId/tabs/newSession); a single listener reads it through the ref so we
   // don't re-subscribe every render. ⌘F/⌘S stay owned by chat/editor.
@@ -362,6 +389,39 @@ export default function App(): React.JSX.Element {
     window.hv.hasAnyProvider().then((ok) => setKeyState(ok ? "present" : "missing"));
     window.hv.listWorkspaces().then(setWorkspaces);
     window.hv.listSessions().then(setSessions);
+    /**
+     * §26: restore the tab layout.
+     *
+     * This is what makes a terminal survive ⌘R, and it is deliberately NOT a
+     * terminal-specific path: the layout was React state only, so a reload
+     * dropped chats and files too. Restoring only terminals would have made
+     * the newest tab type the one that survives, which reads as a bug in the
+     * other two.
+     *
+     * Sessions and live terminals are fetched FIRST because a tab that
+     * outlives its subject renders nothing and cannot be closed — pruning
+     * needs to know what is still real (layoutPersist.ts).
+     */
+    void (async () => {
+      try {
+        const [raw, sessionList, termList] = await Promise.all([
+          window.hv.getLayout(),
+          window.hv.listSessions(),
+          window.hv.termList(),
+        ]);
+        setTerminals(Object.fromEntries(termList.map((t) => [t.id, t])));
+        setTabsByWs(
+          restoreLayout(raw, {
+            sessions: new Set(sessionList.map((x) => x.id)),
+            terminals: new Set(termList.map((t) => t.id)),
+          }),
+        );
+      } catch {
+        /* a corrupt layout costs the tab arrangement, never the app */
+      } finally {
+        setLayoutLoaded(true);
+      }
+    })();
     // B7: has the user seen the wow-flow? (drives auto-show on first session)
     void window.hv.getOnboardingSeen().then((seen) => { seenOnboarding.current = seen; });
 
@@ -946,8 +1006,62 @@ export default function App(): React.JSX.Element {
     return () => { live = false; off(); };
   }, [selectedId]);
 
+  /**
+   * §26: persist the layout. Debounced, because a divider drag fires this on
+   * every animation frame and config.json is a whole-file rewrite.
+   *
+   * Gated on layoutLoaded: the first render's `{}` would otherwise land before
+   * the stored layout had been read, wiping it on every launch.
+   */
+  useEffect(() => {
+    if (!layoutLoaded) return;
+    const id = setTimeout(() => {
+      void window.hv.setLayout(tabsByWs as unknown as Record<string, unknown>).catch(() => {});
+    }, 400);
+    return () => clearTimeout(id);
+  }, [tabsByWs, layoutLoaded]);
+
+  /** §26: open a terminal in the focused pane of `ws`. ⌘T and the `+` menu. */
+  const newTerminal = async (ws: string): Promise<void> => {
+    try {
+      const info = await window.hv.termCreate(ws);
+      setTerminals((p) => ({ ...p, [info.id]: info }));
+      setTabsByWs((p) => ({ ...p, [ws]: openTerminal(p[ws] ?? emptyTabs, info.id) }));
+      setActiveWs(ws);
+      setView("chat");
+    } catch (err) {
+      surface(err);
+    }
+  };
+
+  /**
+   * §26: close a terminal tab, which KILLS its PTY — a terminal tab IS its
+   * terminal. That is why this confirms where closing a chat tab does not: a
+   * chat tab only stops showing a session that keeps running.
+   */
+  const closeTerminalTab = async (ws: string, paneIdx: number, tab: TabId): Promise<void> => {
+    const id = terminalOf(tab);
+    if (!id) return;
+    const info = terminals[id];
+    // Ask main rather than trusting the cached title: the poll is 500ms and a
+    // confirm must not be decided by a stale label.
+    if (info?.running && termSettings?.confirmCloseRunning) {
+      const running = await window.hv.termForeground(id).catch(() => null);
+      if (running && !window.confirm(`${running} is still running. Close anyway?`)) return;
+    }
+    await window.hv.termClose(id).catch(() => {});
+    setTerminals((p) => {
+      const next = { ...p };
+      delete next[id];
+      return next;
+    });
+    setTabsByWs((p) => ({ ...p, [ws]: closeTab(p[ws] ?? emptyTabs, paneIdx, tab) }));
+  };
+
   const closeFileTab = (wsId: string, paneIdx: number, tab: TabId): void => {
-    if (isChatTab(tab)) return; // a chat tab closes via closeChatTab, not here
+    // A chat closes via closeChatTab and a terminal via closeTerminalTab —
+    // each has different semantics (a chat keeps running, a terminal dies).
+    if (isChatTab(tab) || isTermTab(tab)) return;
     const key = bufferKey(wsId, tab);
     if (dirtyMap[key] && !window.confirm(`Close ${tab}? Unsaved changes will be lost.`)) return;
     setTabsByWs((p) => ({ ...p, [wsId]: closeTab(p[wsId] ?? emptyTabs, paneIdx, tab) }));
@@ -1347,24 +1461,37 @@ export default function App(): React.JSX.Element {
       if (ws) void newSession(ws);
       return;
     }
+    if (is("newTerminal")) {
+      e.preventDefault();
+      const ws = wsId ?? workspaces[0];
+      if (ws) void newTerminal(ws);
+      return;
+    }
     if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
     if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
     if (is("closeTab")) {
-      // Close the FOCUSED pane's active tab if it is a file; window close is ⌘⇧W.
-      // Round 11: prefer the focused pane rather than "the first pane with a
-      // closable tab" — with four panes that was arbitrary.
+      // Close the FOCUSED pane's active tab if it is a file or a TERMINAL (§26);
+      // window close is ⌘⇧W. Round 11: prefer the focused pane rather than "the
+      // first pane with a closable tab" — with four panes that was arbitrary.
+      // A CHAT stays exempt: closing one only hides a session that keeps
+      // running, so it needs no keyboard route. A terminal is the opposite —
+      // closing it kills a process — which is why it routes through a confirm.
       if (!wsId) return;
+      const close = (slot: number, tab: TabId): void => {
+        if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
+        else closeFileTab(wsId, slot, tab);
+      };
       const focusedActive = wsTabs.panes[wsTabs.focused]?.active;
       if (focusedActive && !isChatTab(focusedActive)) {
         e.preventDefault();
-        closeFileTab(wsId, wsTabs.focused, focusedActive);
+        close(wsTabs.focused, focusedActive);
         return;
       }
       const i = liveSlots(wsTabs).find((s) => {
         const a = wsTabs.panes[s]?.active;
         return a && !isChatTab(a);
       });
-      if (i != null) { e.preventDefault(); closeFileTab(wsId, i, wsTabs.panes[i]!.active!); }
+      if (i != null) { e.preventDefault(); close(i, wsTabs.panes[i]!.active!); }
     }
   };
   // Round 11: every session with an open chat tab in THIS workspace. Each gets a
@@ -1377,6 +1504,15 @@ export default function App(): React.JSX.Element {
   // Every open file across ALL workspaces stays mounted (hidden) so unsaved
   // buffers survive session/workspace/view switches.
   const openFileEntries = Object.entries(tabsByWs).flatMap(([w, t]) => allFiles(t).map((f) => [w, f] as const));
+  /**
+   * §26: every terminal with a tab in THIS workspace gets a mounted emulator.
+   *
+   * Scoped to the active workspace, unlike openFileEntries above: a file tab
+   * stays mounted across workspaces to protect an unsaved BUFFER, and a
+   * terminal has no such thing — its buffer lives in main's headless mirror,
+   * so an off-workspace terminal can be unmounted and repainted on return.
+   */
+  const terminalIds = wsId ? allTerminals(wsTabs) : [];
   // WS6 / round 11: which pane's content cell a tab occupies when it's that
   // pane's active tab. Content is mounted flat and placed via CSS grid-area
   // (NEVER reparented — see the invariant in tabs.ts).
@@ -1526,6 +1662,7 @@ export default function App(): React.JSX.Element {
         {activeView === "plugins" && <PluginsView />}
         {activeView === "mcp" && <McpView />}
         {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
+        {activeView === "terminal" && <TerminalView />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
           <AllToolsView
@@ -1568,6 +1705,8 @@ export default function App(): React.JSX.Element {
                     pane={pane}
                     paneIndex={slot}
                     sessionTitleFor={(sid) => sessions.find((x) => x.id === sid)?.title ?? "Session"}
+                    terminalTitleFor={(tid) => terminals[tid]?.title ?? "Terminal"}
+                    terminalExited={(tid) => terminals[tid]?.running === false}
                     dirty={dirtyForWs}
                     busyFor={(sid) => !!busy[sid]}
                     onSelect={(tab) => {
@@ -1578,12 +1717,22 @@ export default function App(): React.JSX.Element {
                       if (sid) { setSelectedId(sid); setView("chat"); }
                     }}
                     onClose={(tab) => {
-                      const sid = sessionOf(tab);
-                      if (sid) closeChatTab(wsId, slot, tab);
+                      // Three tab kinds, three lifecycles: a chat keeps its
+                      // session running, a file may hold unsaved edits, and a
+                      // terminal DIES with its tab (§26) — so it confirms.
+                      if (isChatTab(tab)) closeChatTab(wsId, slot, tab);
+                      else if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
                       else closeFileTab(wsId, slot, tab);
                     }}
                     onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
                     onNewSession={() => void newSession(wsId)}
+                    onNewTerminal={() => {
+                      // Focus first, so the terminal lands in the pane whose
+                      // `+` was clicked rather than in whatever was focused.
+                      updateTabs(wsId, (t) => focusPane(t, slot));
+                      void newTerminal(wsId);
+                    }}
+                    newTerminalKey={formatBinding(bindings.newTerminal)}
                     onOpenFilePanel={() => setTreeOpen(true)}
                     splitOptions={splitOptions(wsTabs, slot)}
                     onSplit={(dir) => updateTabs(wsId, (t) => splitAt(t, slot, dir))}
@@ -1604,6 +1753,25 @@ export default function App(): React.JSX.Element {
                 </div>
               );
             })}
+            {/* §26: one mounted emulator per open terminal, a FLAT grid child
+                exactly like ChatView and FileTab. Nesting it inside a pane
+                would remount it on every drag between panes — which for a
+                terminal does not merely lose a buffer, it detaches the PTY
+                listener and throws the whole thing away. */}
+            {termSettings &&
+              terminalIds.map((tid) => {
+                const area = areaFor(termTab(tid));
+                return (
+                  <TerminalTab
+                    key={tid}
+                    terminalId={tid}
+                    settings={termSettings}
+                    gridArea={area ?? undefined}
+                    hidden={area === null}
+                    searchKey={bindings.search}
+                  />
+                );
+              })}
             {/* v5.1: persistent top-right toolbar — split + file-panel controls,
                 always visible regardless of split state. */}
             {/* Round 11: draggable dividers. Absolutely positioned over the grid
