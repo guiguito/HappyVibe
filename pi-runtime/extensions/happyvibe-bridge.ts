@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
 import { EMPTY_RULES, evaluate, isWaitTool, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
+import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE } from "./hv-terminal";
 import { unwrapMcpCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
@@ -38,8 +39,39 @@ import { ASYNC_DIR } from "../node_modules/pi-subagents/src/shared/types.ts";
 const sessionGrants = new Set<string>();
 
 function summarize(toolName: string, input: Record<string, unknown>): string {
-  if (toolName === "bash" && typeof input.command === "string") return input.command.slice(0, 300);
+  // §26 + §13's MCP rule: the permission prompt shows what will RUN. `intent` is
+  // the model's own words and must never be what a user approves against — so
+  // terminal_run summarises as its command, exactly like bash.
+  if ((toolName === "bash" || toolName === "terminal_run") && typeof input.command === "string") {
+    return input.command.slice(0, 300);
+  }
   return JSON.stringify(input).slice(0, 300);
+}
+
+/**
+ * §26: main ALWAYS answers a hv.terminal-* input, with an error string on
+ * failure — same contract as hv.plan-write, and for the same reason: a bridge
+ * left waiting on ctx.ui.input hangs the turn with no way out.
+ */
+function terminalReply(raw: unknown): {
+  content: Array<{ type: "text"; text: string }>;
+  details: Record<string, unknown>;
+} {
+  if (typeof raw !== "string" || !raw) {
+    return {
+      content: [{ type: "text", text: "The terminal request failed. Try again, or start a new terminal." }],
+      details: {},
+    };
+  }
+  try {
+    const p = JSON.parse(raw) as { ok?: boolean; reason?: string; text?: string } & Record<string, unknown>;
+    if (p.ok === false) {
+      return { content: [{ type: "text", text: p.reason ?? "The terminal request was refused." }], details: p };
+    }
+    return { content: [{ type: "text", text: p.text ?? JSON.stringify(p) }], details: p };
+  } catch {
+    return { content: [{ type: "text", text: raw }], details: {} };
+  }
 }
 
 // ── W1.1 intent (PRD "Chat experience") ─────────────────────────────────────
@@ -65,7 +97,10 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
 // skill load surfaces as a transcript card with a model-authored "why". Built-in
 // `read` can't carry intent (params stripped), which is exactly why a raw read of
 // a SKILL.md only gets the derived-label fallback card.
-const INTENT_TOOLS = ["ask_user", "mcp", "use_skill"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+// §26: terminal_run/terminal_kill take the REQUIRED intent, per the standing rule
+// above. `subagent`'s demotion to optional (below) is deliberately NOT copied — a
+// terminal that starts is a card in someone's transcript and must say why.
+const INTENT_TOOLS = ["ask_user", "mcp", "use_skill", "terminal_run", "terminal_kill"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
 // `subagent` advertises intent but does NOT require it: the delegation `task` is
 // already a fine customer-facing headline (the UI uses intent ?? task), and a
 // hard requirement made looser models (e.g. Kimi) fail their first delegation
@@ -228,7 +263,10 @@ function loadRules(): void {
 }
 
 type AuditDecision = "allow" | "allow-session" | "deny";
-type AuditSource = "rule" | "user" | "dangerous" | "safe-default" | "plan";
+// §26 adds "terminal": a refusal the terminal feature itself makes (a multi-line
+// command, or a bash call backgrounded with `&`). Distinct from "rule" because
+// no rule fired, and from "plan" because it applies outside Plan Mode too.
+type AuditSource = "rule" | "user" | "dangerous" | "safe-default" | "plan" | "terminal";
 
 /** Every permission decision emits one hv.audit notify — main's audit channel. */
 function audit(
@@ -390,7 +428,11 @@ export default function (pi: ExtensionAPI) {
     const planSection = builtins.plan && plan.enabled ? "\n\n" + buildPlanPrompt(builtins.planAppend) : "";
     // §14: steer the model to use_skill (intent card) over a raw SKILL.md read.
     const skillSection = buildUseSkillGuidance(skillManifest);
-    const injected = sp + section + agentsSection + planSection + skillSection;
+    // §26: steer long-running commands to terminal_run rather than a
+    // backgrounded bash call. Only while the group is registered — otherwise
+    // the prompt would name a tool the model does not have.
+    const terminalSection = builtins.terminal ? "\n\n" + TERMINAL_STEER_LINE : "";
+    const injected = sp + section + agentsSection + planSection + skillSection + terminalSection;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -532,6 +574,34 @@ export default function (pi: ExtensionAPI) {
       if (hit) {
         ctx.ui.notify(JSON.stringify({ kind: "hv.skill", stage: "invoked", name: hit.name, scope: hit.scope, detected: true }), "info");
       }
+    }
+
+    // §26: refuse a multi-line command BEFORE the permission prompt. This
+    // ordering IS the mechanism — describeCommand builds the modal's label from
+    // the first segment only, so prompting here would ask the user to approve a
+    // string they are being shown just part of.
+    if (tool === "terminal_run") {
+      const checked = checkCommand(input.command);
+      if (!checked.ok) {
+        audit(ctx.ui, { tool, summary, decision: "deny", source: "terminal" });
+        return { block: true, reason: checked.reason };
+      }
+    }
+
+    // §26: once terminals exist, `npm run dev &` is the model reaching for the
+    // broken thing with the working thing beside it. Gated on builtins.terminal
+    // because with the group OFF there is nowhere to redirect to, and blocking
+    // `&` would turn a context-saving setting into a capability removal it never
+    // advertised.
+    if (builtins.terminal && tool === "bash" && typeof input.command === "string" && hasBackgroundAmpersand(input.command)) {
+      audit(ctx.ui, { tool, summary, decision: "deny", source: "terminal" });
+      return {
+        block: true,
+        reason:
+          "Backgrounding with `&` hides the process from the user and leaves them unable to stop it. " +
+          "Use terminal_run instead — the same long-running command becomes a card they can watch, " +
+          "type into and kill, and you can poll it with terminal_read.",
+      };
     }
 
     // §23 Plan Mode clamp — runs BEFORE dangerous/bypass and the rule engine, so
@@ -946,6 +1016,85 @@ export default function (pi: ExtensionAPI) {
       };
     },
   });
+
+  // ── §26 part 2: agent terminals ──────────────────────────────────────────
+  // Gated as ONE group, following Plan mode's precedent: an agent that can run
+  // but not read starts processes it cannot observe, and one that can run and
+  // read but not kill cannot clean up after itself. Those are not configurations
+  // anyone wants, so they are not reachable.
+  //
+  // Every tool is a thin shell over a BLOCKING hv.terminal-* input: main owns the
+  // PTYs (§26 part 1), so it owns the cap, the busy-reuse refusal and the
+  // interleave hold too. terminalReply guarantees the turn never hangs.
+  if (builtins.terminal) {
+  pi.registerTool({
+    name: "terminal_run",
+    label: "Run in terminal",
+    description:
+      "Run ONE command line in a persistent terminal the user can see, type into and stop. " +
+      "Use this for anything long-running (dev servers, watchers, `docker compose up`) instead of " +
+      "backgrounding a bash command. Omit terminalId to open a new terminal; pass one to reuse an " +
+      "IDLE terminal you already own (reusing a busy one is refused — the bytes would go to the " +
+      "running program's stdin, not the shell). Exactly one command line per call: newlines are " +
+      "rejected, and each call is permission-gated separately. Poll the output with terminal_read.",
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are running and why." }),
+      command: Type.String({ description: "One command line. No embedded newlines." }),
+      terminalId: Type.Optional(Type.String({ description: "Reuse this terminal instead of opening a new one. It must be idle." })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const { command, terminalId } = params as { command?: unknown; terminalId?: string };
+      // Belt and braces: the tool_call handler already refused a multi-line
+      // command before the permission prompt (that ordering is the point), so
+      // this arm only catches a call that reached execute some other way.
+      const checked = checkCommand(command);
+      if (!checked.ok) return { content: [{ type: "text", text: checked.reason }], details: {} };
+      const raw = await ctx.ui.input(
+        JSON.stringify({ kind: "hv.terminal-run", command: checked.command, terminalId }),
+        "",
+      );
+      return terminalReply(raw);
+    },
+  });
+
+  pi.registerTool({
+    name: "terminal_read",
+    label: "Read terminal",
+    description:
+      "Read the most recent output of one of your terminals, as plain text. Defaults to the last " +
+      "200 lines and is capped there. Pass waitMs to wait (up to 15s) for the output to go quiet " +
+      "before reading, instead of sleeping in bash. Tells you whether the terminal is still running " +
+      "and whether the USER has typed into it since your last read — if they have, re-read before " +
+      "assuming you know its state.",
+    parameters: Type.Object({
+      terminalId: Type.String({ description: "The terminal to read." }),
+      lines: Type.Optional(Type.Number({ description: "How many trailing lines. Default 200, capped at 200." })),
+      waitMs: Type.Optional(Type.Number({ description: "Wait up to this many ms for output to go quiet first. Capped at 15000." })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const { terminalId, lines, waitMs } = params as { terminalId?: string; lines?: number; waitMs?: number };
+      const raw = await ctx.ui.input(JSON.stringify({ kind: "hv.terminal-read", terminalId, lines, waitMs }), "");
+      return terminalReply(raw);
+    },
+  });
+
+  pi.registerTool({
+    name: "terminal_kill",
+    label: "Stop terminal",
+    description:
+      "Stop one of your terminals and the process running in it. Clean up when you are done, and " +
+      "when you have hit the limit on open terminals.",
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are stopping and why." }),
+      terminalId: Type.String({ description: "The terminal to stop." }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const { terminalId } = params as { terminalId?: string };
+      const raw = await ctx.ui.input(JSON.stringify({ kind: "hv.terminal-kill", terminalId }), "");
+      return terminalReply(raw);
+    },
+  });
+  } // builtins.terminal
 
   // ── §23 Plan Mode: registered tools ──────────────────────────────────────
   // Gated as a whole block: plan_start is the model's own entry point into Plan

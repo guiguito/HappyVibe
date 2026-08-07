@@ -390,8 +390,12 @@ interface HvApi {
   }>;
   /** §9: the pre-compaction history, display only — never re-entered into context. */
   loadEarlier(sessionId: string): Promise<RestoreItem[]>;
-  closeSession(sessionId: string): Promise<void>;
-  deleteSession(sessionId: string): Promise<void>;
+  /** §26: `terminals` answers the two-named-outcomes confirm when this session
+   *  started terminals that are still running. Omitted ⇒ keep (the safe way). */
+  closeSession(sessionId: string, terminals?: "stop" | "keep"): Promise<void>;
+  deleteSession(sessionId: string, terminals?: "stop" | "keep"): Promise<void>;
+  /** §26: the live agent terminals this session owns. Empty ⇒ no confirm. */
+  sessionTerminals(sessionId: string): Promise<Array<{ id: string; title: string }>>;
   renameSession(sessionId: string, title: string): Promise<void>;
   archiveSession(sessionId: string, archived: boolean): Promise<void>;
   promptSession(

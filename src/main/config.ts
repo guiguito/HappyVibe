@@ -35,9 +35,10 @@ interface ConfigFile {
   customEndpoints?: CustomEndpoint[];
   /** safeStorage-encrypted keys for those endpoints, base64, by endpoint id. */
   customKeys?: Record<string, string>;
-  /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user).
-      Global only — no per-workspace tier. Absent key = on (fail-open default). */
-  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string };
+  /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user,
+      and §26's grouped Terminal entry). Global only — no per-workspace tier.
+      Absent key = on (fail-open default). */
+  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean };
   /** Extended prompt-cache retention (PI_CACHE_RETENTION=long). Global only,
       absent = off — the default is cheaper for short-gap sessions, see
       getLongCache. */
@@ -265,17 +266,19 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
 
 // §13 round 6: global on/off for built-in custom tools. Both default true
 // (fail-open — same convention as HV_BYPASS's persistent setting).
-export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string } {
+export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean } {
   const t = load().builtinTools;
   const plan = t?.plan ?? true;
   // Plan mode's prompt and its applyPlanTools required-list both depend on
   // ask_user, so the bridge force-couples them (hv-builtins parseBuiltins). Apply
   // the SAME clamp here or the settings row would read "off" for a tool that is
   // in fact registered — the UI must not disagree with the runtime.
-  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "" };
+  // §26's terminal group has no such coupling: the three tools depend on each
+  // other and on nothing else, which is why they are one entry.
+  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true };
 }
 
-export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string }): void {
+export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean }): void {
   const cfg = load();
   cfg.builtinTools = { ...cfg.builtinTools, ...t };
   save(cfg);
