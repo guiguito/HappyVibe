@@ -13,6 +13,7 @@ import { computeGauge, type ContextSnapshot, type SessionStats } from "../contex
 import { delegationHint, formatElapsed, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
+import { appendToComposer } from "../composerText";
 import {
   attachmentUrl, dropUnknownProvider, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
@@ -185,12 +186,14 @@ export function ChatView({
   // Round 11: external composer insert (the editor's "Send to chat"). Keyed on
   // the NONCE, so sending the same selection twice still appends; the text itself
   // is deliberately not a dependency.
+  // §27: the append rule now lives in composerText.ts, shared with dictation so
+  // the two paths cannot land text in different places.
   const lastInsert = useRef(0);
   useEffect(() => {
     const n = composerInsert?.nonce ?? 0;
     if (!n || n === lastInsert.current) return;
     lastInsert.current = n;
-    setInput((prev) => (prev.trim() ? `${prev.replace(/\s*$/, "")}\n\n` : "") + composerInsert!.text);
+    setInput((prev) => appendToComposer(prev, composerInsert!.text));
     taRef.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerInsert?.nonce]);
