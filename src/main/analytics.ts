@@ -14,6 +14,15 @@
  * zero. Money is an ESTIMATE (surfaced as such in the UI).
  */
 import type { LogEvent } from "./log";
+import { ledgerTotal, type ApiCall } from "./calls";
+
+/**
+ * Read a session's billed calls from its Pi session file. Returns null when the
+ * file cannot be read (deleted, unreadable) — which marks the total UNKNOWN
+ * rather than silently contributing $0. Supplied by ipc.ts; when omitted the
+ * aggregate falls back to the old `stats.cost` path.
+ */
+export type ReadCalls = (sessionId: string) => ApiCall[] | null;
 
 /** get_session_stats payload we read (superset of renderer SessionStats). All optional. */
 interface Stats {
@@ -39,7 +48,13 @@ export interface Analytics {
   openSessions: number; // start with no matching end (still-open or crashed)
   crashes: number;
   tokens: { input: number; output: number };
-  cost: number; // estimated, summed from session.end stats
+  cost: number; // estimated; metered dollars only (see costUnknown)
+  /**
+   * True when some spend could not be priced — an unknown-rate call, or a
+   * session file we could not read. The UI must render `$X+?`, never a total
+   * that looks complete. §19 ruling 3: $0.00 and "unknown" are different facts.
+   */
+  costUnknown: boolean;
   duration: { avgMs: number | null; medianMs: number | null; count: number };
   /** yyyy-mm-dd → sessions started that day, ascending by date. */
   sessionsPerDay: Array<{ date: string; count: number }>;
@@ -85,7 +100,11 @@ const bySessionsDesc = (a: Breakdown, b: Breakdown): number =>
  * Aggregate an already-read event list. Kept separate from the read so it's a
  * trivially testable pure function (feed it synthetic LogEvents).
  */
-export function aggregate(events: LogEvent[], filter: AnalyticsFilter = {}): Analytics {
+export function aggregate(
+  events: LogEvent[],
+  filter: AnalyticsFilter = {},
+  readCalls?: ReadCalls,
+): Analytics {
   const matches = (e: LogEvent): boolean =>
     (!filter.workspaceId || e.workspaceId === filter.workspaceId) &&
     (!filter.sinceTs || e.ts >= filter.sinceTs);
@@ -135,23 +154,58 @@ export function aggregate(events: LogEvent[], filter: AnalyticsFilter = {}): Ana
     }
   }
 
-  // Tokens / cost / per-workspace / per-model come from ended sessions' stats.
   let inputTok = 0;
   let outputTok = 0;
   let cost = 0;
+  let costUnknown = false;
   const wsBuckets = new Map<string, Breakdown>();
   const modelBuckets = new Map<string, Breakdown>();
 
-  for (const [id, s] of endStats) {
-    const input = num(s?.tokens?.input);
-    const output = num(s?.tokens?.output);
-    const c = num(s?.cost);
-    inputTok += input;
-    outputTok += output;
-    cost += c;
-    const tok = input + output;
-    bump(wsBuckets, wsOf.get(id) ?? "(unknown)", tok, c);
-    if (s?.model) bump(modelBuckets, s.model, tok, c);
+  if (readCalls) {
+    // Round 11: money comes from the SAME ledger the session cost pill uses, so
+    // the two agree by construction. This applies the ledger's policy (plan
+    // excluded, unknown flagged) and covers every session we have ever seen —
+    // `stats.cost` only existed for ENDED ones, so a live, hibernated, crashed
+    // or stats-capture-failed session silently contributed $0.
+    for (const id of wsOf.keys()) {
+      const calls = readCalls(id);
+      if (!calls) {
+        costUnknown = true; // unreadable file: unknown, not free
+        continue;
+      }
+      const t = ledgerTotal(calls);
+      inputTok += t.input;
+      outputTok += t.output;
+      cost += t.cost;
+      if (t.unknown > 0) costUnknown = true;
+      bump(wsBuckets, wsOf.get(id) ?? "(unknown)", t.input + t.output, t.cost);
+      // Per-model from the calls themselves — the session file records the model
+      // per call, so a session that switched model mid-way splits correctly
+      // instead of being attributed wholesale to `stats.model`.
+      const perModel = new Map<string, ApiCall[]>();
+      for (const c of calls) {
+        const list = perModel.get(c.model);
+        if (list) list.push(c);
+        else perModel.set(c.model, [c]);
+      }
+      for (const [model, list] of perModel) {
+        const mt = ledgerTotal(list);
+        bump(modelBuckets, model, mt.input + mt.output, mt.cost);
+      }
+    }
+  } else {
+    // Legacy path (no ledger reader): tokens/cost from ended sessions' stats.
+    for (const [id, s] of endStats) {
+      const input = num(s?.tokens?.input);
+      const output = num(s?.tokens?.output);
+      const c = num(s?.cost);
+      inputTok += input;
+      outputTok += output;
+      cost += c;
+      const tok = input + output;
+      bump(wsBuckets, wsOf.get(id) ?? "(unknown)", tok, c);
+      if (s?.model) bump(modelBuckets, s.model, tok, c);
+    }
   }
 
   // Durations: only sessions with BOTH a start and an end. Guard clock skew.
@@ -175,6 +229,7 @@ export function aggregate(events: LogEvent[], filter: AnalyticsFilter = {}): Ana
     crashes,
     tokens: { input: inputTok, output: outputTok },
     cost,
+    costUnknown,
     duration: { avgMs, medianMs: median(durations), count: durations.length },
     sessionsPerDay: Object.keys(perDay)
       .sort()

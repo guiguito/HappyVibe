@@ -22,6 +22,21 @@ export interface AuthProviderStatus {
   label?: string;
 }
 
+/**
+ * Round 11: is this provider signed in through HappyVibe?
+ *
+ * The old test was `configured && source === "stored"` — "stored" is what Pi
+ * reports for an **api_key** credential, and the only test evidence we had was
+ * an api_key. Any other spelling for an OAuth credential therefore left the card
+ * on "Sign in" permanently, even after a successful browser round-trip.
+ *
+ * So: any credential Pi has is signed in, EXCEPT one coming from the
+ * environment — that one HappyVibe did not store and cannot sign out of.
+ */
+export function isSignedIn(entry: AuthProviderStatus | undefined): boolean {
+  return entry?.configured === true && entry.source !== "env";
+}
+
 export interface AuthEvent {
   stage: AuthStage;
   provider?: string;

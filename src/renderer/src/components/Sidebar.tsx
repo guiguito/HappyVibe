@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SessionStatus } from "../App";
+import { workspaceEmoji } from "../workspaceEmoji";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
 // §13 round 6: the old combined "agents" page split into four peer destinations.
@@ -190,6 +191,7 @@ function SessionRow({
   pending,
   planning,
   selected,
+  open,
   onSelect,
   onRename,
   onArchive,
@@ -202,6 +204,8 @@ function SessionRow({
   /** §23: this session is in plan mode. */
   planning?: boolean;
   selected: boolean;
+  /** Round 11: has an open chat tab, but is not the focused one. */
+  open: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
   onArchive: () => void;
@@ -230,7 +234,12 @@ function SessionRow({
   return (
     <div
       className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold cursor-pointer ${
-        selected ? "bg-honey-soft border border-honey/60" : "border border-transparent hover:bg-card/70"
+        selected
+          ? "bg-honey-soft border border-honey/60"
+          : open
+            // Open elsewhere in the layout: marked, but quieter than the focused row.
+            ? "bg-card border border-line"
+            : "border border-transparent hover:bg-card/70"
       } ${session.archived ? "opacity-60" : ""}`}
       onClick={onSelect}
       title={session.title}
@@ -319,10 +328,10 @@ export function Sidebar({
   pending,
   planning,
   selectedId,
+  openSessionIds,
   view,
   onNavigate,
   onAddWorkspace,
-  onRemoveWorkspace,
   onWorkspaceSettings,
   onNewSession,
   onSelectSession,
@@ -342,6 +351,12 @@ export function Sidebar({
   /** §23: sessions currently in plan mode → a 🧭 badge. */
   planning?: Record<string, boolean>;
   selectedId: string | null;
+  /**
+   * Round 11: every session with an open chat tab. `selectedId` is the FOCUSED
+   * one — with tabs, "which sessions are on screen" and "which one am I in" are
+   * two different facts, and the row has to show both.
+   */
+  openSessionIds: ReadonlySet<string>;
   view: View;
   onNavigate: (v: View) => void;
   /** Round 8: the Settings group's open/closed state (persisted in App). */
@@ -351,7 +366,6 @@ export function Sidebar({
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
   onAddWorkspace: () => void;
-  onRemoveWorkspace: (ws: string) => void;
   /** W1.4: open the workspace-settings surface (model override, rules, prompt additions). */
   onWorkspaceSettings: (ws: string) => void;
   onNewSession: (ws: string) => void;
@@ -376,6 +390,35 @@ export function Sidebar({
   useEffect(() => {
     localStorage.setItem("hv:ws-collapsed", JSON.stringify([...collapsed]));
   }, [collapsed]);
+
+  // Round 11: the workspace-tree / Settings split, dragged by the handle below.
+  // 0 = "auto", i.e. the original flex-1 behaviour; double-clicking the handle
+  // returns to it. Persisted like the other sidebar state (no IPC — this is a
+  // renderer-local preference).
+  const treeRef = useRef<HTMLDivElement>(null);
+  const [treePx, setTreePx] = useState(() => {
+    const v = Number(localStorage.getItem("hv:sidebar-split"));
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  });
+  useEffect(() => {
+    localStorage.setItem("hv:sidebar-split", String(treePx));
+  }, [treePx]);
+
+  const startResize = (e: React.MouseEvent): void => {
+    e.preventDefault(); // else the drag selects sidebar text
+    const startY = e.clientY;
+    const startH = treeRef.current?.getBoundingClientRect().height ?? 0;
+    const onMove = (ev: MouseEvent): void => {
+      // Floor keeps a usable tree; ceiling always leaves room for the Settings row.
+      setTreePx(Math.max(96, Math.min(startH + ev.clientY - startY, window.innerHeight - 160)));
+    };
+    const onUp = (): void => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
 
   const q = filter.trim().toLowerCase();
   const visible = (s: SessionMeta): boolean =>
@@ -416,9 +459,11 @@ export function Sidebar({
               type="button"
               onClick={onToggleCollapsed}
               title={basename(ws)}
-              className="size-8 shrink-0 flex items-center justify-center rounded-lg border-2 border-line bg-card text-[11px] font-black uppercase text-ink-soft hover:text-ink hover:border-honey cursor-pointer"
+              className="size-8 shrink-0 flex items-center justify-center rounded-lg border-2 border-line bg-card text-base hover:border-honey cursor-pointer"
             >
-              {basename(ws).replace(/[^a-z0-9]/gi, "").slice(0, 2) || "·"}
+              {/* Round 11: the emoji replaces two-letter initials — a column of
+                  `HA`/`FL`/`DE` was unreadable at 48px. */}
+              <span aria-hidden>{workspaceEmoji(ws)}</span>
             </button>
           ))}
         </div>
@@ -468,8 +513,13 @@ export function Sidebar({
         />
       </div>
 
-      {/* Workspace tree */}
-      <div className="flex-1 min-h-32 overflow-y-auto px-4 pb-2">
+      {/* Workspace tree. Round 11: an explicit height when the user has dragged
+          the handle, otherwise `flex-1` as before. */}
+      <div
+        ref={treeRef}
+        style={treePx ? { flex: "0 0 auto", height: treePx } : undefined}
+        className="flex-1 min-h-32 overflow-y-auto px-4 pb-2"
+      >
         <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
           <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">workspaces</span>
           <button
@@ -502,6 +552,8 @@ export function Sidebar({
                   className="flex-1 min-w-0 flex items-center gap-1 font-bold text-sm text-left cursor-pointer"
                   title={ws}
                 >
+                  {/* Round 11: derived from the path — decoration, not data. */}
+                  <span className="shrink-0" aria-hidden>{workspaceEmoji(ws)}</span>
                   <span className="truncate">{basename(ws)}</span>
                   <Chevron open={!isCollapsed} />
                 </button>
@@ -519,14 +571,9 @@ export function Sidebar({
                     <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
                   </svg>
                 </button>
-                <button
-                  type="button"
-                  title="Forget workspace"
-                  onClick={() => onRemoveWorkspace(ws)}
-                  className="invisible group-hover:visible text-ink-soft hover:text-berry cursor-pointer font-bold text-xs w-3 shrink-0"
-                >
-                  ×
-                </button>
+                {/* Round 11: the "×" is gone. An unconfirmed one-click remove sat
+                    next to "New session"; removal now lives in a confirmed danger
+                    zone at the bottom of the workspace settings page (the gear). */}
                 <button
                   type="button"
                   title="New session"
@@ -551,6 +598,7 @@ export function Sidebar({
                       pending={pending[s.id] ?? 0}
                       planning={planning?.[s.id] ?? false}
                       selected={view === "chat" && s.id === selectedId}
+                      open={openSessionIds.has(s.id)}
                       onSelect={() => onSelectSession(s.id)}
                       onRename={(title) => onRenameSession(s.id, title)}
                       onArchive={() => onArchiveSession(s.id, !s.archived)}
@@ -573,7 +621,21 @@ export function Sidebar({
         )}
       </div>
 
-      <div className="px-4 pt-4 pb-1 border-t-2 border-line min-h-0 flex flex-col">
+      {/* Round 11: the drag handle. It sits ON the border the user pointed at, and
+          it is the only resizer in the app — hence hand-rolled rather than a dep. */}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        title="Drag to resize"
+        onMouseDown={startResize}
+        onDoubleClick={() => setTreePx(0)}
+        className="h-1.5 shrink-0 cursor-row-resize hover:bg-tangerine/40 transition-colors"
+      />
+
+      {/* Round 11: max-h is the actual defect fix — the footer was content-sized
+          with no bound, so its own overflow never engaged and ten nav rows
+          squeezed the tree to its 128px floor. */}
+      <div className="px-4 pt-4 pb-1 border-t-2 border-line min-h-0 max-h-[60%] flex flex-col">
         <button
           type="button"
           onClick={onToggleSettingsOpen}

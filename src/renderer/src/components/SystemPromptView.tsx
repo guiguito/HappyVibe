@@ -117,7 +117,51 @@ export function SystemPromptView({ sessionId }: { sessionId: string | null }): R
             </button>
           </div>
         </Section>
+
+        {/* Round 11: this page is "what the agent is told before every message",
+            which is exactly what the open-file list is. */}
+        <Section
+          icon="sysprompt"
+          title="Open files"
+          subtitle="Let the agent see which files you have open."
+        >
+          <OpenFilesToggle />
+        </Section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Round 11: send the paths of the files open in the editor with each prompt.
+ *
+ * Paths only — never contents, which is what `@file` is for. Global rather than
+ * per-workspace (§9): which files you have open is a habit, not a project
+ * setting. Applies immediately, because it rides the prompt rather than the
+ * spawn — worth saying, since every other toggle on this page does not.
+ */
+function OpenFilesToggle(): React.JSX.Element {
+  const [on, setOn] = useState(true);
+  useEffect(() => { void window.hv.getOpenFilesContext().then(setOn); }, []);
+  return (
+    <div className="rounded-xl border-2 border-line bg-card p-4 flex items-start justify-between gap-4">
+      <div>
+        <div className="font-bold">Include open files</div>
+        <p className="text-sm text-ink-soft mt-0.5">
+          Tells the agent which files you currently have open, as a list of paths — never their contents. It helps the
+          agent answer &ldquo;this file&rdquo; without you spelling it out. Sent only when the list changes, and it
+          takes effect on your next message.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => { const next = !on; setOn(next); void window.hv.setOpenFilesContext(next); }}
+        className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm cursor-pointer ${
+          on ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"
+        }`}
+      >
+        {on ? "On" : "Off"}
+      </button>
     </div>
   );
 }

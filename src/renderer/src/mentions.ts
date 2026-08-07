@@ -90,10 +90,17 @@ export function extractMentions(text: string, map: Map<string, string>): string[
   return out;
 }
 
-/** Cut the injected `<file>`/`<file-listing>` blocks off a stored/echoed message. */
+/**
+ * Cut the injected `<file>`/`<file-listing>`/`<open-files>` blocks off a
+ * stored/echoed message, so the transcript shows what the user typed.
+ *
+ * Round 11 added `<open-files>` here rather than in each consumer: this one
+ * function already feeds transcript display, session restore and the
+ * prompt-template pairing, so a second stripper would have drifted.
+ */
 export function stripInjectedBlocks(text: string): string {
   let cut = -1;
-  for (const mk of ['\n\n<file path="', '\n\n<file-listing path="']) {
+  for (const mk of ['\n\n<file path="', '\n\n<file-listing path="', "\n\n<open-files>"]) {
     const i = text.indexOf(mk);
     if (i >= 0 && (cut < 0 || i < cut)) cut = i;
   }

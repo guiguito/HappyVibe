@@ -13,7 +13,10 @@ contextBridge.exposeInMainWorld("hv", {
   // ── B1: workspaces & multi-session ─────────────────────────────
   listWorkspaces: () => ipcRenderer.invoke("hv:list-workspaces"),
   addWorkspace: () => ipcRenderer.invoke("hv:add-workspace"),
-  removeWorkspace: (ws: string) => ipcRenderer.invoke("hv:remove-workspace", ws),
+  // Round 11: "forget" archives its sessions, "delete" removes them permanently.
+  removeWorkspace: (ws: string, mode: "forget" | "delete") =>
+    ipcRenderer.invoke("hv:remove-workspace", ws, mode),
+  workspaceSessionCount: (ws: string) => ipcRenderer.invoke("hv:workspace-session-count", ws),
   listSessions: () => ipcRenderer.invoke("hv:list-sessions"),
   createSession: (workspaceId: string) => ipcRenderer.invoke("hv:create-session", workspaceId),
   openSession: (sessionId: string) => ipcRenderer.invoke("hv:open-session", sessionId),
@@ -28,8 +31,10 @@ contextBridge.exposeInMainWorld("hv", {
     msg: string,
     behavior?: "steer" | "followUp",
     images?: Array<{ type: "image"; data: string; mimeType: string }>,
-    mentions?: string[]
-  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images, mentions),
+    mentions?: string[],
+    // Round 11: workspace-relative paths of the files open in the editor.
+    openFiles?: string[]
+  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images, mentions, openFiles),
   abortSession: (sessionId: string) => ipcRenderer.invoke("hv:abort-session", sessionId),
 
   // ── W2.1: per-session model override + image attach (additive) ──
@@ -98,6 +103,14 @@ contextBridge.exposeInMainWorld("hv", {
   authLoginCancel: (provider: string) => ipcRenderer.invoke("hv:auth-login-cancel", provider),
   authLogout: (provider: string) => ipcRenderer.invoke("hv:auth-logout", provider),
   authStatus: () => ipcRenderer.invoke("hv:auth-status"),
+  // Round 11: the status main already holds, so a page mounting after a sign-in
+  // does not depend on a notify that already fired.
+  authState: () => ipcRenderer.invoke("hv:auth-state"),
+  onAuthStateChanged: (cb: (s: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, s: unknown): void => cb(s);
+    ipcRenderer.on("hv:auth-state-changed", h);
+    return () => ipcRenderer.removeListener("hv:auth-state-changed", h);
+  },
   detectOllama: () => ipcRenderer.invoke("hv:detect-ollama"),
   getCustomEndpoints: () => ipcRenderer.invoke("hv:get-custom-endpoints"),
   saveCustomEndpoint: (endpoint: unknown, key?: string) =>
@@ -181,6 +194,8 @@ contextBridge.exposeInMainWorld("hv", {
 
   // Extended prompt-cache retention (PI_CACHE_RETENTION=long) — next spawn.
   getLongCache: () => ipcRenderer.invoke("hv:get-long-cache"),
+  getOpenFilesContext: () => ipcRenderer.invoke("hv:get-open-files-context"),
+  setOpenFilesContext: (on: boolean) => ipcRenderer.invoke("hv:set-open-files-context", on),
   setLongCache: (on: boolean) => ipcRenderer.invoke("hv:set-long-cache", on),
   getShortcuts: () => ipcRenderer.invoke("hv:get-shortcuts"),
   setShortcuts: (map: Record<string, string>) => ipcRenderer.invoke("hv:set-shortcuts", map),

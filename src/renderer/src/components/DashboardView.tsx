@@ -167,7 +167,14 @@ export function DashboardView({ workspaces }: { workspaces: string[] }): React.J
                 value={fmtNum(data.tokens.input + data.tokens.output)}
                 sub={`${fmtNum(data.tokens.input)} in · ${fmtNum(data.tokens.output)} out`}
               />
-              <Card label="Cost (est.)" value={fmtCost(data.cost)} sub="local estimate" />
+              {/* Round 11: the "+?" suffix and the sub-label carry §19's rule —
+                  a total that hides unknown-price calls reads as complete when
+                  it is not. Plan spend is already excluded upstream. */}
+              <Card
+                label="Cost (est.)"
+                value={fmtCost(data.cost) + (data.costUnknown ? "+?" : "")}
+                sub={data.costUnknown ? "estimate — some prices unknown" : "local estimate, plan spend excluded"}
+              />
               <Card
                 label="Avg session"
                 value={fmtDuration(data.duration.avgMs)}

@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { readSkillDir, type DiscoveredSkill } from "../src/main/skills/discovery";
 import { SkillRegistry } from "../src/main/skills/registry";
 import { toSkillView } from "../src/main/skills/view";
+import { canStartSkillCreator } from "../src/renderer/src/components/SkillsSection";
 
 let root: string;
 beforeEach(() => {
@@ -69,4 +70,25 @@ test("bundled approved skill shows disabled until globally enabled", () => {
   expect(toSkillView(s, reg).status).toBe("disabled");
   reg.setEnabled(s.id, true, NOW);
   expect(toSkillView(s, reg).status).toBe("active"); // one enable turns it on
+});
+
+// ── round 11: "New skill" reported as doing nothing ──────────────────────────
+
+describe("canStartSkillCreator", () => {
+  const makeSession = async (): Promise<string> => "new";
+
+  test("offered with NO session when the host can create one — the actual fix", () => {
+    // Before round 11 this was `sessionId != null`, so the workspace surface (which
+    // passes no session) never rendered the button §14 placed there.
+    expect(canStartSkillCreator(null, makeSession)).toBe(true);
+    expect(canStartSkillCreator(undefined, makeSession)).toBe(true);
+  });
+
+  test("still offered with a session selected", () => {
+    expect(canStartSkillCreator("s1")).toBe(true);
+  });
+
+  test("hidden only when there is neither a session nor a way to make one", () => {
+    expect(canStartSkillCreator(null, undefined)).toBe(false);
+  });
 });

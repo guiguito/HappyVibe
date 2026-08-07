@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { basename } from "../tabs";
+import { formatSelection } from "../sendToChat";
 
 // F6: files that get a rendered/raw preview toggle (rendered by default).
 const PREVIEWABLE = /\.(md|markdown|html|htm)$/i;
@@ -31,6 +32,7 @@ export function FileTab({
   relPath,
   active,
   gridArea,
+  onSendToChat,
   className = "",
   onDirtyChange,
   saveKey,
@@ -41,6 +43,11 @@ export function FileTab({
   active: boolean;
   /** WS6: which split pane's content cell this tab occupies when active. */
   gridArea?: string;
+  /**
+   * Round 11: send the current selection to the chat composer. Absent means the
+   * host cannot receive it (no chat open), so the button is not offered at all.
+   */
+  onSendToChat?: (text: string) => void;
   /** WS6: extra classes (e.g. the split-pane divider border). */
   className?: string;
   onDirtyChange: (dirty: boolean) => void;
@@ -52,6 +59,8 @@ export function FileTab({
   const [content, setContent] = useState("");
   const [docVersion, setDocVersion] = useState(0);
   // F6: md/html render in a preview by default; toggle to raw, editable source.
+  // Round 11: the editor's current selection, for "Send to chat".
+  const [selection, setSelection] = useState<{ text: string; startLine: number; endLine: number } | null>(null);
   const previewable = PREVIEWABLE.test(relPath);
   const isHtml = IS_HTML.test(relPath);
   const [view, setView] = useState<"rendered" | "raw">(previewable ? "rendered" : "raw");
@@ -192,7 +201,7 @@ export function FileTab({
               <Suspense
                 fallback={<div className="h-full flex items-center justify-center text-sm text-ink-soft">Opening editor…</div>}
               >
-                <CodeEditor path={relPath} doc={content} docVersion={docVersion} onChange={setContent} onSave={() => void save()} saveKey={saveKey} searchKey={searchKey} />
+                <CodeEditor path={relPath} doc={content} docVersion={docVersion} onChange={setContent} onSave={() => void save()} onSelectionChange={setSelection} saveKey={saveKey} searchKey={searchKey} />
               </Suspense>
             )}
           </div>
@@ -209,6 +218,18 @@ export function FileTab({
               >
                 {showPreview ? <CodeGlyph /> : <EyeGlyph />}
                 {showPreview ? "Source" : "Preview"}
+              </button>
+            )}
+            {/* Round 11: only with a selection — `@file` already covers whole files,
+                so silently sending everything would be the wrong thing. */}
+            {onSendToChat && selection && !showPreview && (
+              <button
+                type="button"
+                onClick={() => onSendToChat(formatSelection(relPath, selection.startLine, selection.endLine, selection.text))}
+                title={`Send lines ${selection.startLine}–${selection.endLine} to the chat`}
+                className="flex items-center gap-1.5 rounded-lg border-2 border-line-strong font-bold px-2 py-1 hover:bg-paper-deep/40 cursor-pointer shrink-0"
+              >
+                Send to chat
               </button>
             )}
             {dirty && <span className="font-bold text-tangerine-deep shrink-0">unsaved changes</span>}

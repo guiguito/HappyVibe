@@ -332,6 +332,18 @@ function PreBlock(props: React.HTMLAttributes<HTMLPreElement>): React.JSX.Elemen
 
 const MD_COMPONENTS = { pre: PreBlock };
 
+/**
+ * True when the viewport sits within `slack` px of the bottom. Streaming follows
+ * the transcript only while this holds, so scrolling up during a response is not
+ * undone on the next animation frame.
+ */
+export function isNearBottom(
+  el: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  slack = 120,
+): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= slack;
+}
+
 export function AssistantBubble({ text }: { text: string }): React.JSX.Element {
   return (
     <div>
@@ -379,13 +391,19 @@ export function Transcript({
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Round 11: follow the stream only from near the bottom. `streaming` is in the
+  // deps, so this runs once per rAF frame while text arrives — unconditionally
+  // scrolling made reading back during a response impossible.
   useEffect(() => {
+    const box = scrollRef.current;
+    if (box && !isNearBottom(box)) return;
     bottom.current?.scrollIntoView({ block: "end" });
   }, [items, busy, streaming]);
 
   // Round 4 #1: highlight search matches in-place via the CSS Custom Highlight
   // API — no DOM mutation, works uniformly across user text, markdown, and code.
   // The active match gets its own highlight + is scrolled into view.
+  const lastMatch = useRef("");
   useEffect(() => {
     const cssHighlights = (globalThis as unknown as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights;
     const HighlightCtor = (globalThis as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
@@ -416,7 +434,14 @@ export function Transcript({
     const rest = ranges.filter((_, i) => i !== active);
     if (rest.length) cssHighlights.set("hv-search", new HighlightCtor(...rest));
     cssHighlights.set("hv-search-active", new HighlightCtor(ranges[active]));
-    ranges[active].startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
+    // Round 11: re-center only when the QUERY or the active match changed. This
+    // effect also re-runs on every stream frame (`streaming` is in the deps), and
+    // re-centering per frame fought the user's own scrolling.
+    const matchKey = `${q} ${active}`;
+    if (lastMatch.current !== matchKey) {
+      lastMatch.current = matchKey;
+      ranges[active].startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
     return () => {
       cssHighlights.delete("hv-search");
       cssHighlights.delete("hv-search-active");

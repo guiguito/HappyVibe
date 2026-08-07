@@ -127,6 +127,17 @@ function DiffView({ lines }: { lines: DiffLine[] }): React.JSX.Element {
   );
 }
 
+/**
+ * One-line gist of a tool error, for the collapsed card (round 11). The full
+ * text lives in TechnicalDetails; this is only what the user sees first.
+ */
+export function errorSummary(result: unknown, max = 120): string {
+  const raw = typeof result === "string" ? result : result == null ? "" : JSON.stringify(result);
+  const line = raw.split("\n").map((l) => l.trim()).find(Boolean);
+  if (!line) return "The tool reported an error.";
+  return line.length > max ? line.slice(0, max) + "…" : line;
+}
+
 /** W1.1: raw tool name + args + result — always behind the "details" toggle. */
 function TechnicalDetails({ card }: { card: ToolCardData }): React.JSX.Element {
   const result =
@@ -428,11 +439,18 @@ export function ToolCard({
       </div>
       {diff && openDiff && <DiffView lines={diff.lines} />}
       {details && <TechnicalDetails card={card} />}
-      {/* Errors stay visible even though raw output otherwise sits behind details. */}
+      {/* Round 11: collapsed to one line — the agent usually recovers by itself, so
+          an expanded error per attempt is noise. Click (or the details toggle) for
+          the full text, which TechnicalDetails already renders. */}
       {card.status === "error" && !details && (
-        <div className="border-t-2 border-berry/30 bg-berry-soft/60 px-3.5 py-2 font-mono text-xs text-berry whitespace-pre-wrap">
-          {typeof card.result === "string" ? card.result : JSON.stringify(card.result)?.slice(0, 400)}
-        </div>
+        <button
+          type="button"
+          onClick={() => setDetails(true)}
+          title="Show the full error"
+          className="block w-full text-left border-t-2 border-berry/30 bg-berry-soft/60 px-3.5 py-2 font-mono text-xs text-berry truncate hover:bg-berry-soft cursor-pointer"
+        >
+          {errorSummary(card.result)}
+        </button>
       )}
     </div>
   );

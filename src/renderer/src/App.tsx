@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar, type View } from "./components/Sidebar";
-import { ChatView } from "./components/ChatView";
+import { ChatView, ChatWelcome } from "./components/ChatView";
 import { ModelsView } from "./components/ModelsView";
 import { PermissionsView } from "./components/PermissionsView";
 import { SystemPromptView } from "./components/SystemPromptView";
@@ -39,13 +39,16 @@ import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
-import { applyDelta, updateToolCard } from "./streaming";
+import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
-  activateTab, allFiles, bufferKey, CHAT_TAB, closeTab, emptyTabs, moveTab, openFile, splitPane, unsplit,
+  activateTab, allChats, allFiles, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
+  isChatTab, liveSlots, moveTab, openChat, openFile, paneOf, sessionOf, setSize, splitAt, splitOptions,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
+import { buildGridStyle, paneEdges } from "./paneGrid";
+import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
 import { AgentsMdPanel } from "./components/AgentsMdPanel";
@@ -59,28 +62,6 @@ export type SessionStatus = "running" | "crashed" | "waking";
 
 // §23: plan-mode transition tools — never rendered as raw tool cards.
 const PLAN_TOOL_NAMES = new Set(["plan_complete", "plan_start", "plan_status_update"]);
-
-/**
- * Workspaces that must stay fs-watched. Two independent reasons, and a workspace
- * qualifying for both is still ONE watch:
- *  - F6: it has an open editor tab, so an agent edit auto-refreshes the tab
- *    (FileTab subscribes to hv:fs-changed) even with the file drawer closed.
- *  - §23: it has an active plan, whose n/m progress rides the same watcher (main
- *    re-parses the plan file and pushes hv:plan-changed). Without this the
- *    "Implementing n/m" badge freezes at its implement-time count whenever the
- *    drawer and every editor tab are closed.
- * Main-side watches are refcounted, so this coexists with the file tree's watch.
- */
-export function watchTargets(
-  tabsByWs: Record<string, WorkspaceTabs>,
-  activePlan: Record<string, PlanCardData>,
-): Set<string> {
-  const want = new Set(
-    Object.entries(tabsByWs).filter(([, t]) => allFiles(t).length > 0).map(([w]) => w),
-  );
-  for (const p of Object.values(activePlan)) if (p.workspaceId) want.add(p.workspaceId);
-  return want;
-}
 
 export default function App(): React.JSX.Element {
   const [keyState, setKeyState] = useState<KeyState>("loading");
@@ -148,6 +129,12 @@ export default function App(): React.JSX.Element {
   // within a workspace keeps them; another workspace has its own set. The
   // docked file-tree pane is a global toggle (closed by default).
   const [tabsByWs, setTabsByWs] = useState<Record<string, WorkspaceTabs>>({});
+  /**
+   * Which workspace's tabs the center area shows. Its own state rather than a
+   * projection of the selected session — see the note on `wsId` below for the
+   * blank-center bug that caused.
+   */
+  const [activeWs, setActiveWs] = useState<string | null>(null);
   const [treeOpen, setTreeOpen] = useState(false);
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
@@ -183,6 +170,18 @@ export default function App(): React.JSX.Element {
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
   const seenOnboarding = useRef(true); // assume seen until config says otherwise
   const streaming = useRef<Record<string, boolean>>({});
+  // Round 11: sessions whose turn the user aborted. Stop closes the bubble
+  // immediately, but deltas still in flight land after that — while this is set
+  // they merge into the committed bubble rather than starting a new one. Cleared
+  // at agent_end.
+  const aborted = useRef<Record<string, boolean>>({});
+  /**
+   * Round 11: text pushed into a composer from outside it (the editor's "Send to
+   * chat"). The nonce is what makes a repeat send of the SAME text still fire —
+   * ChatView appends on nonce change. Same shape as the rewind-to-composer path;
+   * no store and no event bus, matching how every other prop reaches ChatView.
+   */
+  const [composerInsert, setComposerInsert] = useState<{ sid: string; text: string; nonce: number } | null>(null);
   // Set when the user grants a permission; the next matching
   // tool_execution_start in that session adopts it so the outcome shows on the card.
   const pendingApproval = useRef<Record<string, { tool: string; choice: "Allow" | "Allow for session" } | null>>({});
@@ -736,6 +735,14 @@ export default function App(): React.JSX.Element {
       }
       const ame = (e as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
       if (e.type === "message_update" && ame?.type === "text_delta" && ame.delta) {
+        // Round 11: Stop already closed this bubble, but the abort is still in
+        // flight (renderer → main → child stdin), so late deltas land here. Merge
+        // them into the bubble we just committed instead of opening a second one.
+        if (aborted.current[sid]) {
+          const delta = ame.delta;
+          setTranscripts((p) => ({ ...p, [sid]: mergeIntoLastAssistant(p[sid] ?? [], delta) }));
+          return;
+        }
         // Perf: accumulate in the ref (O(1)) and repaint one live bubble per
         // frame — no transcript-array copy, no committed-markdown re-parse.
         streamRef.current[sid] = applyDelta(streamRef.current, sid, ame.delta, streaming.current[sid]);
@@ -750,6 +757,7 @@ export default function App(): React.JSX.Element {
       }
       if (e.type === "agent_end") {
         commitStream(sid); // finalize the live bubble into the transcript
+        delete aborted.current[sid]; // the abort window closes with the turn
         // Flush a deferred provider error that was NOT retried (or exhausted its
         // retries) as the single hard error card for the turn.
         const err = pendingError.current[sid];
@@ -880,6 +888,7 @@ export default function App(): React.JSX.Element {
       setAgentsMd(rel);
       return;
     }
+    setActiveWs(wsId); // the layout being filled is this workspace's
     setTabsByWs((p) => ({ ...p, [wsId]: openFile(p[wsId] ?? emptyTabs, rel) }));
   }, []);
 
@@ -938,7 +947,7 @@ export default function App(): React.JSX.Element {
   }, [selectedId]);
 
   const closeFileTab = (wsId: string, paneIdx: number, tab: TabId): void => {
-    if (tab === CHAT_TAB) return; // chat is never closable
+    if (isChatTab(tab)) return; // a chat tab closes via closeChatTab, not here
     const key = bufferKey(wsId, tab);
     if (dirtyMap[key] && !window.confirm(`Close ${tab}? Unsaved changes will be lost.`)) return;
     setTabsByWs((p) => ({ ...p, [wsId]: closeTab(p[wsId] ?? emptyTabs, paneIdx, tab) }));
@@ -948,6 +957,55 @@ export default function App(): React.JSX.Element {
       delete next[key];
       return next;
     });
+  };
+  /**
+   * Round 11: close a chat tab. The SESSION keeps running (hibernation and the
+   * sidebar own its lifecycle, §17) — this only stops showing it, which is why
+   * there is no confirm and nothing is deleted.
+   */
+  /**
+   * Round 11: get a session to run the skill creator in AND leave the user on its
+   * chat. Both halves are the fix: the button was hidden without a session, and
+   * on the path where it did fire the interview streamed into a chat nobody was
+   * looking at — which is exactly "it does nothing".
+   */
+  const openSessionForSkillCreator = async (workspaceId?: string): Promise<string | null> => {
+    const ws = workspaceId ?? wsId ?? workspaces[0];
+    if (!ws) return null;
+    // A session already focused in this workspace is the one to use.
+    const current = selectedId && sessions.find((x) => x.id === selectedId);
+    if (current && current.workspaceId === ws) {
+      await selectSession(current.id);
+      return current.id;
+    }
+    try {
+      const meta = await window.hv.createSession(ws);
+      setStatuses((p) => ({ ...p, [meta.id]: "running" }));
+      setTranscripts((p) => ({ ...p, [meta.id]: [] }));
+      setSelectedId(meta.id);
+      setActiveWs(ws);
+      setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, meta.id) }));
+      setSessions(await window.hv.listSessions());
+      setView("chat");
+      return meta.id;
+    } catch (err) {
+      surface(err);
+      return null;
+    }
+  };
+
+  const closeChatTab = (ws: string, paneIdx: number, tab: TabId): void => {
+    const sid = sessionOf(tab);
+    const next = closeTab(tabsByWs[ws] ?? emptyTabs, paneIdx, tab);
+    setTabsByWs((p) => ({ ...p, [ws]: next }));
+    if (sid && selectedId === sid) {
+      // Follow whatever took its place in that pane when it is a chat, so the
+      // sidebar highlight, shortcuts and stats keep pointing at something real.
+      // Going straight to null was half of the blank-center bug above.
+      const a = next.panes[next.focused]?.active;
+      const nextSid = a ? sessionOf(a) : null;
+      setSelectedId(nextSid);
+    }
   };
   // WS6: mutate this workspace's tab layout with a pure tabs.ts helper.
   const updateTabs = (wsId: string, fn: (t: WorkspaceTabs) => WorkspaceTabs): void =>
@@ -975,6 +1033,9 @@ export default function App(): React.JSX.Element {
       setTranscripts((p) => ({ ...p, [meta.id]: [] }));
       setSelectedId(meta.id);
       setView("chat");
+      // Round 11: a new session is a new tab, in the workspace it belongs to.
+      setActiveWs(workspaceId);
+      setTabsByWs((p) => ({ ...p, [workspaceId]: openChat(p[workspaceId] ?? emptyTabs, meta.id) }));
       setError(null);
       if (firstEver) setOnboarding(true);
     } catch (err) {
@@ -991,6 +1052,13 @@ export default function App(): React.JSX.Element {
   const selectSession = async (id: string): Promise<void> => {
     setSelectedId(id);
     setView("chat");
+    // Round 11: opening a session ADDS a tab (or focuses the one it already has)
+    // rather than replacing whatever chat was on screen.
+    const ws = sessions.find((x) => x.id === id)?.workspaceId;
+    if (ws) {
+      setActiveWs(ws);
+      setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, id) }));
+    }
     if (statuses[id] === "running") return;
     // Show a loader while the Pi process starts / the session file loads — for
     // ANY not-yet-running open, not only hibernated resumes (round-4 follow-up:
@@ -1075,20 +1143,34 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  const send = async (msg: string, behavior?: "followUp", attachments?: ImageAttachment[], mentions?: string[]): Promise<void> => {
-    if (!selectedId) return;
-    const sid = selectedId;
+  /**
+   * Round 11: `sid` is a PARAMETER, not `selectedId`. Every chat tab is mounted, so
+   * in a split two composers can be visible at once — and typing into one while
+   * another is "selected" sent the prompt to the wrong session. A handler shared by
+   * N instances must never resolve which session from a global.
+   */
+  const send = async (
+    sid: string,
+    msg: string,
+    behavior?: "followUp",
+    attachments?: ImageAttachment[],
+    mentions?: string[],
+  ): Promise<void> => {
     // W2.1: attached images ride the RPC `images` param (ImageContent[]).
     const images = attachments?.length ? buildImages(attachments) : undefined;
     // F3: @file mention warnings (skipped binaries, over-cap dirs) surface as notices.
     const noteWarnings = (w: string[]): void => w.forEach((text) => appendItem(sid, { kind: "notice", text }));
+    // Round 11: the files open in THIS session's workspace, paths only. Main
+    // decides whether to send them (global setting) and whether the set changed.
+    const ws = sessions.find((x) => x.id === sid)?.workspaceId;
+    const openFiles = ws ? allFiles(tabsByWs[ws] ?? emptyTabs) : undefined;
     // B2: while the agent runs, a bare prompt errors — Enter/send steers
     // (V2.A: the Queue button is gone; the followUp behavior plumbing stays).
     // The message shows as a chip (queue_update) and only joins the
     // transcript when Pi delivers it.
     if (busy[sid]) {
       try {
-        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions);
+        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions, openFiles);
         noteWarnings(warnings);
       } catch (err) {
         surface(err);
@@ -1097,9 +1179,12 @@ export default function App(): React.JSX.Element {
     }
     appendItem(sid, { kind: "user", text: msg, images: attachments?.map(attachmentUrl) });
     streaming.current[sid] = false;
+    // A fresh prompt ends any abort window: this turn's text belongs to a new
+    // bubble, never merged into the one the user stopped.
+    delete aborted.current[sid];
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
-      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions);
+      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles);
       noteWarnings(warnings);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
@@ -1115,9 +1200,8 @@ export default function App(): React.JSX.Element {
   // would be wrong, not just wasteful: a respawn resets that session's
   // in-memory permission grants and dangerous mode to safe defaults. So the
   // restart is conditional on the session actually being crashed.
-  const retryCrash = async (): Promise<void> => {
-    if (!selectedId) return;
-    const sid = selectedId;
+  /** Same rule as `send`: the session is a parameter, never `selectedId`. */
+  const retryCrash = async (sid: string): Promise<void> => {
     const lastUser = [...(transcripts[sid] ?? [])].reverse().find((it) => it.kind === "user");
     if (statuses[sid] === "crashed") {
       setStatuses((p) => {
@@ -1127,7 +1211,7 @@ export default function App(): React.JSX.Element {
       });
       await selectSession(sid);
     }
-    if (lastUser && lastUser.kind === "user") await send(lastUser.text);
+    if (lastUser && lastUser.kind === "user") await send(sid, lastUser.text);
   };
 
   // macOS dock badge mirrors total unanswered permission prompts.
@@ -1233,7 +1317,19 @@ export default function App(): React.JSX.Element {
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
-  const wsId = selected?.workspaceId ?? null;
+  /**
+   * The workspace whose layout the center area is showing.
+   *
+   * Round 11 bugfix: this used to be `selected?.workspaceId`, i.e. a projection
+   * of the SELECTED SESSION. Chat tabs became closable in this round, which made
+   * "tabs exist but no session is selected" reachable for the first time — and
+   * with wsId null every `{wsId && …}` block stopped rendering, so closing a chat
+   * tab blanked the whole center area while every tab, file and unsaved buffer
+   * was still there, invisible. The layout belongs to a workspace, not to a
+   * selection, so it tracks the workspace directly and only falls back to the
+   * selected session's (first paint, before anything has been opened).
+   */
+  const wsId = activeWs ?? selected?.workspaceId ?? null;
   const wsTabs = (wsId ? tabsByWs[wsId] : undefined) ?? emptyTabs;
   // F6: refresh the global-shortcut closure with the current render's state.
   shortcutRef.current = (e: KeyboardEvent): void => {
@@ -1254,50 +1350,56 @@ export default function App(): React.JSX.Element {
     if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
     if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
     if (is("closeTab")) {
-      // Close the first closable (non-chat) active tab; window close is ⌘⇧W.
+      // Close the FOCUSED pane's active tab if it is a file; window close is ⌘⇧W.
+      // Round 11: prefer the focused pane rather than "the first pane with a
+      // closable tab" — with four panes that was arbitrary.
       if (!wsId) return;
-      const i = wsTabs.panes.findIndex((p) => p.active && p.active !== CHAT_TAB);
-      if (i >= 0) { e.preventDefault(); closeFileTab(wsId, i, wsTabs.panes[i].active!); }
+      const focusedActive = wsTabs.panes[wsTabs.focused]?.active;
+      if (focusedActive && !isChatTab(focusedActive)) {
+        e.preventDefault();
+        closeFileTab(wsId, wsTabs.focused, focusedActive);
+        return;
+      }
+      const i = liveSlots(wsTabs).find((s) => {
+        const a = wsTabs.panes[s]?.active;
+        return a && !isChatTab(a);
+      });
+      if (i != null) { e.preventDefault(); closeFileTab(wsId, i, wsTabs.panes[i]!.active!); }
     }
   };
+  // Round 11: every session with an open chat tab in THIS workspace. Each gets a
+  // mounted ChatView; only the one placed in a pane is visible.
+  const chatSessions = wsId ? allChats(wsTabs) : [];
+  // Every session with a chat tab in ANY workspace — the sidebar spans them all.
+  const openSessionIds = new Set(Object.values(tabsByWs).flatMap(allChats));
   const dirtyForWs: Record<string, boolean> = {};
   if (wsId) for (const f of allFiles(wsTabs)) dirtyForWs[f] = !!dirtyMap[bufferKey(wsId, f)];
   // Every open file across ALL workspaces stays mounted (hidden) so unsaved
   // buffers survive session/workspace/view switches.
   const openFileEntries = Object.entries(tabsByWs).flatMap(([w, t]) => allFiles(t).map((f) => [w, f] as const));
-  // WS6: which pane's content cell a tab occupies when it's that pane's active
-  // tab. Content is mounted flat and placed via CSS grid-area (never reparented).
-  const AREAS = ["contentA", "contentB"] as const;
+  // WS6 / round 11: which pane's content cell a tab occupies when it's that
+  // pane's active tab. Content is mounted flat and placed via CSS grid-area
+  // (NEVER reparented — see the invariant in tabs.ts).
+  const AREAS = ["contentA", "contentB", "contentC", "contentD"] as const;
   const areaFor = (tab: TabId): string | null => {
-    const p = wsTabs.panes.findIndex((pane) => pane.active === tab);
-    return p >= 0 ? AREAS[p] : null;
+    const p = liveSlots(wsTabs).find((s) => wsTabs.panes[s]!.active === tab);
+    return p != null ? AREAS[p] : null;
   };
-  const chatArea = selected ? areaFor(CHAT_TAB) : "contentA";
-  // Divider between the two split panes (left border for v, top border for h).
-  const paneDivider = (area?: string | null): string =>
-    area === "contentB" ? (wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line") : "";
+  /**
+   * A content cell draws only its LEFT edge. The horizontal rule is owned by the
+   * tab strip directly above it (TabStrip has its own border-b), so adding
+   * border-t here doubled that line to 4px.
+   */
+  const paneDivider = (area?: string | null): string => {
+    const slot = ["contentA", "contentB", "contentC", "contentD"].indexOf(area ?? "");
+    if (slot < 0) return "";
+    return paneEdges(wsTabs, slot).left ? "border-l-2 border-line" : "";
+  };
   // v5.1: a persistent `toolbar` area is pinned top-right (strip row only);
   // content spans under it. The file tree is a separate absolute overlay (below),
   // so opening it never shrinks the panes. Content stays mounted-flat (WS6).
   const TREE = treeOpen && !!wsId;
-  const gridStyle: React.CSSProperties =
-    wsTabs.split === "v"
-      ? {
-          gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) auto",
-          gridTemplateRows: "auto minmax(0,1fr)",
-          gridTemplateAreas: '"stripA stripB toolbar" "contentA contentB contentB"',
-        }
-      : wsTabs.split === "h"
-        ? {
-            gridTemplateColumns: "minmax(0,1fr) auto",
-            gridTemplateRows: "auto minmax(0,1fr) auto minmax(0,1fr)",
-            gridTemplateAreas: '"stripA toolbar" "contentA contentA" "stripB stripB" "contentB contentB"',
-          }
-        : {
-            gridTemplateColumns: "minmax(0,1fr) auto",
-            gridTemplateRows: "auto minmax(0,1fr)",
-            gridTemplateAreas: '"stripA toolbar" "contentA contentA"',
-          };
+  const gridStyle = buildGridStyle(wsTabs);
 
   return (
     <div className="h-full flex">
@@ -1308,13 +1410,10 @@ export default function App(): React.JSX.Element {
         pending={pendingCounts(uiQueue)}
         planning={Object.fromEntries(Object.entries(planMode).map(([sid, p]) => [sid, p.enabled]))}
         selectedId={selectedId}
+        openSessionIds={openSessionIds}
         view={activeView}
         onNavigate={(v) => !needsSetup && setView(v)}
         onAddWorkspace={addWorkspace}
-        onRemoveWorkspace={async (ws) => {
-          await window.hv.removeWorkspace(ws);
-          setWorkspaces(await window.hv.listWorkspaces());
-        }}
         onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
         onNewSession={newSession}
         onSelectSession={selectSession}
@@ -1323,6 +1422,15 @@ export default function App(): React.JSX.Element {
         onDeleteSession={async (id) => {
           // V2.C2: deleting the selected session falls back to no-selection.
           if (selectedId === id) setSelectedId(null);
+          // Round 11: the tab must follow a DELETION (closing a tab leaves the
+          // session alive, but a deleted session has to lose its tab, or the
+          // strip keeps one for a session that no longer exists).
+          setTabsByWs((p) => {
+            const ws = sessions.find((x) => x.id === id)?.workspaceId;
+            const t = ws ? p[ws] : undefined;
+            if (!ws || !t) return p;
+            return { ...p, [ws]: closeSessionTabs(t, id) };
+          });
           // §23: drop its plan too — activePlan feeds watchTargets, so a stale
           // entry would keep the workspace watched for a session that is gone.
           setActivePlan((p) => {
@@ -1376,12 +1484,41 @@ export default function App(): React.JSX.Element {
           />
         )}
         {activeView === "permissions" && <PermissionsView />}
-        {activeView === "workspace" && wsSettings && <WorkspaceSettingsView workspace={wsSettings} />}
+        {activeView === "workspace" && wsSettings && (
+          <WorkspaceSettingsView
+            workspace={wsSettings}
+            onNewSkillSession={async () => {
+              const sid = await openSessionForSkillCreator(wsSettings);
+              // The creator's prompt is fired by SkillsSection; echo it so the
+              // transcript shows what was sent (hv:prompt-session emits none).
+              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator" });
+              return sid;
+            }}
+            onRemoved={async () => {
+              // Round 11: the workspace is gone — refresh the list, drop its tabs,
+              // and leave a page that now describes nothing.
+              setWorkspaces(await window.hv.listWorkspaces());
+              setSessions(await window.hv.listSessions());
+              setTabsByWs((p) => { const n = { ...p }; delete n[wsSettings]; return n; });
+              setActiveWs((w) => (w === wsSettings ? null : w));
+              setWsSettings(null);
+              setView("chat");
+            }}
+          />
+        )}
         {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
         {activeView === "stats" && <DashboardView workspaces={workspaces} />}
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
         {activeView === "skills" && (
-          <SkillsView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+          <SkillsView
+            sessionId={selectedId}
+            workspaceId={selected?.workspaceId ?? null}
+            onNewSkillSession={async () => {
+              const sid = await openSessionForSkillCreator();
+              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator" });
+              return sid;
+            }}
+          />
         )}
         {activeView === "promptTemplates" && (
           <PromptTemplatesView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
@@ -1412,133 +1549,198 @@ export default function App(): React.JSX.Element {
               if (rel && wsId) { e.preventDefault(); openFileTab(wsId, rel); }
             }}
           >
-            {selected && wsId && (
-              <div style={{ gridArea: "stripA" }} className="min-w-0 h-11">
-                <TabStrip
-                  pane={wsTabs.panes[0]}
-                  paneIndex={0}
-                  sessionTitle={selected.title}
-                  dirty={dirtyForWs}
-                  onSelect={(tab) => updateTabs(wsId, (t) => activateTab(t, 0, tab))}
-                  onClose={(tab) => closeFileTab(wsId, 0, tab)}
-                  onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
-                  chatBusy={!!(selectedId && busy[selectedId])}
-                />
-              </div>
-            )}
+            {wsId && liveSlots(wsTabs).map((slot) => {
+              const pane = wsTabs.panes[slot]!;
+              const STRIPS = ["stripA", "stripB", "stripC", "stripD"] as const;
+              // A pane can be in column 2 AND row 2 (slot 3 always is), so both
+              // edges come from one rule — the old one returned only one and the
+              // primary divider stopped halfway down.
+              const e = paneEdges(wsTabs, slot);
+              const edge = `${e.left ? "border-l-2 border-line" : ""} ${e.top ? "border-t-2 border-line" : ""}`;
+              return (
+                <div
+                  key={slot}
+                  style={{ gridArea: STRIPS[slot] }}
+                  className={`min-w-0 h-11 ${edge} ${slot === wsTabs.focused ? "bg-paper-deep/30" : ""}`}
+                  onMouseDown={() => updateTabs(wsId, (t) => focusPane(t, slot))}
+                >
+                  <TabStrip
+                    pane={pane}
+                    paneIndex={slot}
+                    sessionTitleFor={(sid) => sessions.find((x) => x.id === sid)?.title ?? "Session"}
+                    dirty={dirtyForWs}
+                    busyFor={(sid) => !!busy[sid]}
+                    onSelect={(tab) => {
+                      updateTabs(wsId, (t) => activateTab(t, slot, tab));
+                      // Round 11: focusing a chat tab IS selecting that session —
+                      // the sidebar highlight, shortcuts and stats follow it.
+                      const sid = sessionOf(tab);
+                      if (sid) { setSelectedId(sid); setView("chat"); }
+                    }}
+                    onClose={(tab) => {
+                      const sid = sessionOf(tab);
+                      if (sid) closeChatTab(wsId, slot, tab);
+                      else closeFileTab(wsId, slot, tab);
+                    }}
+                    onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
+                    onNewSession={() => void newSession(wsId)}
+                    onOpenFilePanel={() => setTreeOpen(true)}
+                    splitOptions={splitOptions(wsTabs, slot)}
+                    onSplit={(dir) => updateTabs(wsId, (t) => splitAt(t, slot, dir))}
+                    onClosePane={
+                      liveSlots(wsTabs).length > 1
+                        ? () => updateTabs(wsId, (t) => closePane(t, slot))
+                        : undefined
+                    }
+                    filesOpen={treeOpen && wsTabs.focused === slot}
+                    onToggleFiles={() => {
+                      // Focus this pane first: a file picked from the drawer opens
+                      // into the focused pane, so "browse files into THIS pane"
+                      // has to mean exactly that.
+                      updateTabs(wsId, (t) => focusPane(t, slot));
+                      setTreeOpen(!(treeOpen && wsTabs.focused === slot));
+                    }}
+                  />
+                </div>
+              );
+            })}
             {/* v5.1: persistent top-right toolbar — split + file-panel controls,
                 always visible regardless of split state. */}
-            {selected && wsId && (
-              <div style={{ gridArea: "toolbar" }} className="h-11 flex items-stretch border-b-2 border-line bg-paper">
-                <CenterToolbar
-                  split={wsTabs.split}
-                  treeOpen={treeOpen}
-                  onSplit={(dir) => updateTabs(wsId, (t) => splitPane(t, dir))}
-                  onUnsplit={() => updateTabs(wsId, unsplit)}
-                  onToggleTree={() => setTreeOpen((o) => !o)}
-                />
+            {/* Round 11: draggable dividers. Absolutely positioned over the grid
+                lines rather than grid children, so they cost no track and cannot
+                perturb the areas the mount-once placement depends on. */}
+            {wsId && wsTabs.split && (
+              <PaneDividers
+                tabs={wsTabs}
+                onResize={(which, ratio) => updateTabs(wsId, (t) => setSize(t, which, ratio))}
+              />
+            )}
+            {/* An empty pane still needs to say what to do with it. */}
+            {wsId && liveSlots(wsTabs).filter((slot) => wsTabs.panes[slot]!.active === null).map((slot) => {
+              const CONTENTS = ["contentA", "contentB", "contentC", "contentD"] as const;
+              return (
+                <div
+                  key={`empty-${slot}`}
+                  style={{ gridArea: CONTENTS[slot] }}
+                  className={`min-h-0 flex items-center justify-center text-sm text-ink-soft ${paneDivider(CONTENTS[slot])}`}
+                >
+                  Open a file or drag a tab here.
+                </div>
+              );
+            })}
+            {/* Round 11 bugfix: with no workspace layout active (fresh launch,
+                nothing opened yet) there are no strips and no ChatViews, so the
+                centre was a blank void that read as a crash. Round 5 always
+                mounted one ChatView and showed this welcome; keep that. */}
+            {!wsId && (
+              <div
+                style={{ gridArea: "contentA" }}
+                className={`min-h-0 min-w-0 flex-col ${activeView === "chat" ? "flex" : "hidden"}`}
+              >
+                <ChatWelcome onOpenFolder={addWorkspace} />
               </div>
             )}
-            {selected && wsId && wsTabs.split && wsTabs.panes[1] && (
-              <div style={{ gridArea: "stripB" }} className={`min-w-0 h-11 ${wsTabs.split === "v" ? "border-l-2 border-line" : "border-t-2 border-line"}`}>
-                <TabStrip
-                  pane={wsTabs.panes[1]}
-                  paneIndex={1}
-                  sessionTitle={selected.title}
-                  dirty={dirtyForWs}
-                  onSelect={(tab) => updateTabs(wsId, (t) => activateTab(t, 1, tab))}
-                  onClose={(tab) => closeFileTab(wsId, 1, tab)}
-                  onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
-                  chatBusy={!!(selectedId && busy[selectedId])}
-                />
-              </div>
-            )}
-            {/* WS6: empty-pane placeholder (a split pane with no active tab). */}
-            {selected && wsTabs.split && wsTabs.panes[1] && wsTabs.panes[1].active === null && (
-              <div style={{ gridArea: "contentB" }} className={`min-h-0 flex items-center justify-center text-sm text-ink-soft ${paneDivider("contentB")}`}>
-                Open a file or drag a tab here.
-              </div>
-            )}
+            {/* Round 11: ONE ChatView per open chat tab, all mounted, so two
+                sessions can stream at once and either can be watched. Placement
+                is by grid-area like every other tab (mount-once invariant). */}
+            {chatSessions.map((sid) => {
+              const sess = sessions.find((x) => x.id === sid) ?? null;
+              const area = areaFor(chatTab(sid));
+              return (
+              <Fragment key={sid}>
             <div
-              style={{ gridArea: chatArea ?? undefined }}
-              className={`min-h-0 min-w-0 flex-col ${paneDivider(chatArea)} ${activeView === "chat" && chatArea ? "flex" : "hidden"}`}
+              style={{ gridArea: area ?? undefined }}
+              // Round 11: a click ANYWHERE in the pane focuses it — not just on its
+              // tab strip. Two composers can be visible at once, so "the pane I am
+              // typing in" has to be the focused one or every global read (stats,
+              // cost, the sidebar highlight) describes a different session.
+              onMouseDown={() => {
+                const slot = paneOf(wsTabs, chatTab(sid));
+                if (wsId && slot >= 0) updateTabs(wsId, (t) => focusPane(t, slot));
+                if (selectedId !== sid) setSelectedId(sid);
+              }}
+              className={`min-h-0 min-w-0 flex-col ${paneDivider(area)} ${activeView === "chat" && area ? "flex" : "hidden"}`}
             >
               <ChatView
-            workspace={selected?.workspaceId ?? null}
-            sessionId={selectedId}
-            sessionModel={selected?.model ?? null}
-            items={(selectedId ? transcripts[selectedId] : undefined) ?? []}
-            streaming={(selectedId ? streamText[selectedId] : undefined) || undefined}
-            busy={(selectedId && busy[selectedId]) || false}
-            waking={(selectedId && statuses[selectedId] === "waking") || false}
-            crashed={selectedId && statuses[selectedId] === "crashed" ? (crashCodes[selectedId] ?? -1) : null}
-            turns={(selectedId && turns[selectedId]) || 0}
-            queue={(selectedId ? queues[selectedId] : undefined) ?? emptyQueue}
-            delegations={selectedId ? Object.values(delegations[selectedId] ?? {}) : []}
-            onStopRun={(runId) => selectedId && void window.hv.subagentInterrupt(selectedId, runId)}
-            contextSnapshot={(selectedId ? contextSnapshots[selectedId] : undefined) ?? null}
+            workspace={sess?.workspaceId ?? null}
+            sessionId={sid}
+            sessionModel={sess?.model ?? null}
+            items={transcripts[sid] ?? []}
+            streaming={streamText[sid] || undefined}
+            busy={busy[sid] || false}
+            waking={(statuses[sid] === "waking") || false}
+            crashed={statuses[sid] === "crashed" ? (crashCodes[sid] ?? -1) : null}
+            turns={turns[sid] || 0}
+            queue={queues[sid] ?? emptyQueue}
+            delegations={Object.values(delegations[sid] ?? {})}
+            onStopRun={(runId) => void window.hv.subagentInterrupt(sid, runId)}
+            contextSnapshot={contextSnapshots[sid] ?? null}
             fallbackWindow={fallbackWindow}
-            stats={selStats}
-            searchOpen={searchOpen}
+            stats={sid === selectedId ? selStats : undefined}
+            searchOpen={searchOpen && sid === selectedId}
             onSearchOpenChange={setSearchOpen}
             searchKey={bindings.search}
-            contextOpen={contextOpen}
+            contextOpen={contextOpen && sid === selectedId}
             onContextOpenChange={setContextOpen}
-            costCalls={selCalls?.calls}
-            costTotal={selCalls?.total}
-            costOpen={costOpen}
+            costCalls={sid === selectedId ? selCalls?.calls : undefined}
+            costTotal={sid === selectedId ? selCalls?.total : undefined}
+            costOpen={costOpen && sid === selectedId}
             onCostOpenChange={setCostOpen}
-            planEnabled={(selectedId && planMode[selectedId]?.enabled) || false}
-            sessionSkills={
-              selectedId
-                ? (skillsLoaded[selectedId] ?? []).map((s) => ({
-                    ...s,
-                    used: (skillsUsed[selectedId] ?? []).includes(s.name),
-                  }))
-                : []
-            }
+            planEnabled={planMode[sid]?.enabled || false}
+            sessionSkills={(skillsLoaded[sid] ?? []).map((s) => ({
+              ...s,
+              used: (skillsUsed[sid] ?? []).includes(s.name),
+            }))}
             // Important 1 fix: the chip/exit-✕ only render when the global toggle
             // is on — otherwise clicking them would hit main's hv:plan-set bail
             // (a dead click) instead of simply not existing.
             onTogglePlan={planBuiltinOn ? (on) => {
-              if (!selectedId) return;
               // main aborts any live turn before flipping plan mode (hv:plan-set);
               // mirror the Stop path and clear busy now so the composer unlocks
               // even if the aborted turn's agent_end never arrives.
-              void window.hv.planSet(selectedId, on).catch(() => {});
-              commitStream(selectedId);
-              setBusy((p) => ({ ...p, [selectedId]: false }));
+              // planSet aborts a busy session in main (abortIfBusy), so this is an
+              // abort window too — late deltas merge rather than split the bubble.
+              aborted.current[sid] = true;
+              void window.hv.planSet(sid, on).catch(() => {});
+              commitStream(sid);
+              setBusy((p) => ({ ...p, [sid]: false }));
             } : undefined}
+            composerInsert={composerInsert?.sid === sid ? composerInsert : undefined}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
-            onSend={send}
-            onRetry={retryCrash}
-            onCompact={() => selectedId && void window.hv.compactSession(selectedId)}
+            onSend={(msg, behavior, images, mentions) => void send(sid, msg, behavior, images, mentions)}
+            onRetry={() => void retryCrash(sid)}
+            onCompact={() => void window.hv.compactSession(sid)}
             onAbort={() => {
-              if (!selectedId) return;
-              void window.hv.abortSession(selectedId);
+              // Mark BEFORE committing: the abort has a renderer→main→child round
+              // trip to make, so deltas arriving in that window must merge into the
+              // bubble commitStream is about to close, not open a second one.
+              aborted.current[sid] = true;
+              void window.hv.abortSession(sid);
               // Stop is an explicit end: clear busy now instead of waiting for an
               // agent_end that an abort may not emit (else the composer stays
               // stuck in steer-only mode). A late agent_end is idempotent here.
-              commitStream(selectedId);
-              setBusy((p) => ({ ...p, [selectedId]: false }));
+              commitStream(sid);
+              setBusy((p) => ({ ...p, [sid]: false }));
             }}
             onRestart={async () => {
-              if (!selectedId) return;
               setStatuses((p) => {
                 const next = { ...p };
-                delete next[selectedId];
+                delete next[sid];
                 return next;
               });
-              await selectSession(selectedId);
+              await selectSession(sid);
             }}
                 onOpenFolder={addWorkspace}
                 onOpenFile={openFileFromCard}
                 onOpenMcp={() => setView("mcp")}
                 onRewind={rewindTo}
-                onLoadEarlier={selectedId ? () => void loadEarlier(selectedId) : undefined}
-                activePlan={selectedId ? activePlan[selectedId] ?? null : null}
+                onLoadEarlier={() => void loadEarlier(sid)}
+                activePlan={activePlan[sid] ?? null}
               />
             </div>
+              </Fragment>
+              );
+            })}
             {openFileEntries.map(([w, f]) => {
               const area = wsId === w ? areaFor(f) : null;
               return (
@@ -1549,6 +1751,16 @@ export default function App(): React.JSX.Element {
                   active={activeView === "chat" && wsId === w && area !== null}
                   gridArea={area ?? undefined}
                   className={paneDivider(area)}
+                  onSendToChat={
+                    // The chat that receives it is the focused one; with no chat
+                    // open there is nowhere to send, so the button is not offered.
+                    selectedId
+                      ? (text) => {
+                          setComposerInsert((prev) => ({ sid: selectedId, text, nonce: (prev?.nonce ?? 0) + 1 }));
+                          setView("chat");
+                        }
+                      : undefined
+                  }
                   onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
                   saveKey={bindings.save}
                   searchKey={bindings.search}
@@ -1584,61 +1796,69 @@ export default function App(): React.JSX.Element {
   );
 }
 
-/** WS6: the file-tree toggle. */
-function FilesToggle({ treeOpen, onToggle }: { treeOpen: boolean; onToggle: () => void }): React.JSX.Element {
+
+/**
+ * Round 11: the draggable pane dividers.
+ *
+ * Absolutely positioned over the grid lines rather than being grid children, for
+ * the same reason the file drawer is an overlay (§21 round 5.1): a divider that
+ * occupied a track would change the areas that the mount-once placement depends
+ * on, and would shrink the panes it sits between.
+ *
+ * `main` runs along the primary split; `cross` is the shared second-level one
+ * (see the note on WorkspaceTabs.sizes for why it is shared).
+ */
+function PaneDividers({
+  tabs,
+  onResize,
+}: {
+  tabs: WorkspaceTabs;
+  onResize: (which: "main" | "cross", ratio: number) => void;
+}): React.JSX.Element | null {
+  if (!tabs.split) return null;
+  const vertical = tabs.split === "v";
+  const anyCross = tabs.subSplit[0] || tabs.subSplit[1];
+
+  const drag = (which: "main" | "cross", alongX: boolean) => (e: React.MouseEvent): void => {
+    e.preventDefault();
+    const box = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect();
+    if (!box) return;
+    const onMove = (ev: MouseEvent): void => {
+      const r = alongX ? (ev.clientX - box.left) / box.width : (ev.clientY - box.top) / box.height;
+      onResize(which, r);
+    };
+    const onUp = (): void => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  // A 6px hit strip centred on the line, tinted on hover so it is findable.
+  const hit = "absolute z-20 hover:bg-tangerine/40 transition-colors";
+  const pct = (r: number): string => `${r * 100}%`;
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={treeOpen}
-      aria-label={treeOpen ? "Hide the file tree" : "Browse workspace files"}
-      title={treeOpen ? "Hide the file tree" : "Browse workspace files"}
-      className={`shrink-0 flex items-center border-l-2 border-line px-3 cursor-pointer transition-colors ${
-        treeOpen ? "text-tangerine-deep bg-paper-deep/50" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
-      }`}
-    >
-      <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-      </svg>
-    </button>
+    <>
+      <div
+        role="separator"
+        aria-orientation={vertical ? "vertical" : "horizontal"}
+        title="Drag to resize"
+        onMouseDown={drag("main", vertical)}
+        className={`${hit} ${vertical ? "top-0 bottom-0 w-1.5 cursor-col-resize -translate-x-1/2" : "left-0 right-0 h-1.5 cursor-row-resize -translate-y-1/2"}`}
+        style={vertical ? { left: pct(tabs.sizes.main) } : { top: pct(tabs.sizes.main) }}
+      />
+      {anyCross && (
+        <div
+          role="separator"
+          aria-orientation={vertical ? "horizontal" : "vertical"}
+          title="Drag to resize"
+          onMouseDown={drag("cross", !vertical)}
+          className={`${hit} ${vertical ? "left-0 right-0 h-1.5 cursor-row-resize -translate-y-1/2" : "top-0 bottom-0 w-1.5 cursor-col-resize -translate-x-1/2"}`}
+          style={vertical ? { top: pct(tabs.sizes.cross) } : { left: pct(tabs.sizes.cross) }}
+        />
+      )}
+    </>
   );
 }
 
-/** v5.1: persistent top-right toolbar — split controls + file-panel toggle. */
-function CenterToolbar({
-  split,
-  treeOpen,
-  onSplit,
-  onUnsplit,
-  onToggleTree,
-}: {
-  split: "h" | "v" | null;
-  treeOpen: boolean;
-  onSplit: (dir: "h" | "v") => void;
-  onUnsplit: () => void;
-  onToggleTree: () => void;
-}): React.JSX.Element {
-  const btn = "shrink-0 flex items-center border-l-2 border-line px-2.5 text-ink-soft hover:text-ink hover:bg-paper-deep/40 cursor-pointer transition-colors";
-  return (
-    <div className="flex items-stretch">
-      <button type="button" onClick={() => onSplit("v")} aria-pressed={split === "v"} title="Split — side by side" aria-label="Split vertically"
-        className={`${btn} ${split === "v" ? "text-tangerine-deep bg-paper-deep/50" : ""}`}>
-        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" />
-        </svg>
-      </button>
-      <button type="button" onClick={() => onSplit("h")} aria-pressed={split === "h"} title="Split — stacked" aria-label="Split horizontally"
-        className={`${btn} ${split === "h" ? "text-tangerine-deep bg-paper-deep/50" : ""}`}>
-        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 12h18" />
-        </svg>
-      </button>
-      {split && (
-        <button type="button" onClick={onUnsplit} title="Close split" aria-label="Close split" className={btn}>
-          <span className="text-sm font-bold leading-none">⊟</span>
-        </button>
-      )}
-      <FilesToggle treeOpen={treeOpen} onToggle={onToggleTree} />
-    </div>
-  );
-}

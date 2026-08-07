@@ -25,6 +25,28 @@ export function applyDelta(buffers: StreamBuffers, sid: string, delta: string, a
   return active ? (buffers[sid] ?? "") + delta : delta;
 }
 
+/**
+ * Round 11: append `text` to the trailing assistant bubble, or push a new one
+ * when the transcript does not end in one.
+ *
+ * Stop closes the streaming bubble synchronously, but the abort still has to
+ * travel renderer → main → child stdin, so deltas already in flight arrive
+ * afterwards. Through `applyDelta` they would read as `active === false` and
+ * start a SECOND bubble mid-sentence — the reported "words cut to a new line".
+ * Only the abort window routes here; the bubble break at `tool_execution_start`
+ * is intentional and must keep working.
+ */
+export function mergeIntoLastAssistant(items: TranscriptItem[], text: string): TranscriptItem[] {
+  if (!text) return items;
+  const last = items[items.length - 1];
+  if (last?.kind === "assistant") {
+    const next = items.slice(0, -1);
+    next.push({ ...last, text: (last.text ?? "") + text });
+    return next;
+  }
+  return [...items, { kind: "assistant", text } as TranscriptItem];
+}
+
 // ── tool-card index (avoid re-scanning the whole transcript per update) ───────
 
 /**

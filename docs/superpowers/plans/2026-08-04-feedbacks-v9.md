@@ -1,0 +1,1312 @@
+# Feedbacks v9 (PRD round 11) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Ship the 15 round-11 feedback items — six chat/settings defects fixed at their root, a 2×2 resizable pane grid with per-session chat tabs, and four new affordances (sidebar split, workspace emoji, open-files-in-context, send-selection-to-chat).
+
+**Architecture:** Most items are one-file defect fixes in the renderer. The one structural change is `src/renderer/src/tabs.ts`, which goes from a 2-pane tuple with no size field to a flat 4-slot grid with per-divider ratios and per-session chat tab ids; `App.tsx` follows it. Two items reach main: workspace removal (archive-or-delete) and the Stats cost total (recomputed from `src/main/calls.ts` instead of summing `stats.cost`).
+
+**Tech Stack:** Electron + React 19 + TypeScript, Tailwind v4, CodeMirror 6, vitest. Vendored pinned Pi runtime — **no pin bump in this plan**, so `npm run test:live` is only required if a task touches `pi-runtime/extensions/`, `src/main/pi/`, or a live test file (check with `npm run live:why`).
+
+## Global Constraints
+
+- **PRD is authoritative:** every decision here is folded into `docs/prd.md` §5, §7 (×3), §9, §13, §14, §16, §19, §21 as `Decision (Feedback round 11, 2026-08-04)`. Read the relevant one before starting a task.
+- **Never run `npm run lint` or `npm run format`** — scaffold leftovers, 19,839 warnings, rewrites 85% of the repo (CLAUDE.md).
+- **Never pipe a test run to `tail`/`grep`.** Redirect once (`L=/tmp/vitest.log; npx vitest run <t> > $L 2>&1; echo "EXIT=$?"`), then grep the file for free.
+- **Never run `npm run typecheck` before `gate`/`build`** — `build` runs both typechecks first and fast-fails.
+- Full gate = `npm run gate`.
+- **`src/main` changes need a dev-server RESTART**, not a renderer reload. Before claiming a main-side fix is live, grep the BUILT artifact: `grep '<your change>' out/main/index.js`.
+- Renderer perf invariants hold: streaming text stays OUT of the transcripts array (`streamRef` + rAF in `App.tsx`); tool cards update via the `toolIndex` map, never a full `.map()`.
+- Every fs writer stays path-confined (pattern: `files.ts resolveInWorkspace`).
+- Workspace paths are compared only via `WorkspaceRegistry`'s `normPath` — never raw strings.
+- Mark deliberate simplifications with a `ponytail:` comment naming the ceiling.
+
+---
+
+## File Structure
+
+| File | Responsibility | Tasks |
+|---|---|---|
+| `src/renderer/src/components/Transcript.tsx` | Transcript render + auto-scroll + search scroll | T1 |
+| `src/renderer/src/streaming.ts` | Pure stream-buffer helpers (`applyDelta`) | T2 |
+| `src/renderer/src/components/ToolCard.tsx` | Tool cards, incl. error body default state | T3 |
+| `src/renderer/src/components/McpServersSection.tsx` | MCP server rows + status badge | T4 |
+| `src/main/analytics.ts` | Dashboard aggregate | T5 |
+| `src/main/calls.ts` | The cost ledger — single source for money | T5 |
+| `src/main/ipc.ts` | IPC surface; auth, workspace removal, prompt seam | T5, T6, T8, T9 |
+| `src/renderer/src/components/ModelsView.tsx` | Provider cards + sign-in | T6 |
+| `src/renderer/src/components/Sidebar.tsx` | Left panel: tree + settings group + split handle | T7, T8, T11 |
+| `src/renderer/src/workspaceEmoji.ts` | **NEW** — pure path→emoji derivation | T7 |
+| `src/main/store.ts` | `WorkspaceRegistry` | T8 |
+| `src/renderer/src/components/WorkspaceSettingsView.tsx` | Workspace settings page + danger zone | T8, T13 |
+| `src/renderer/src/components/SystemPromptView.tsx` | System prompt page + open-files toggle | T9 |
+| `src/renderer/src/tabs.ts` | **Center layout model** — 4 slots, sizes, session tabs | T10 |
+| `src/renderer/src/App.tsx` | Grid render, N ChatViews, `+` menu, wiring | T11, T12, T13 |
+| `src/renderer/src/components/TabStrip.tsx` | Per-pane tab strip + `+` button | T11 |
+| `src/renderer/src/components/EditorPane.tsx` | CodeMirror view; selection → send to chat | T12 |
+| `src/renderer/src/components/ChatView.tsx` | Composer; external insert | T12 |
+| `src/renderer/src/components/SkillsSection.tsx` | Skills list + New skill button | T13 |
+
+---
+
+## Task 1: Chat — auto-scroll only when the user is near the bottom
+
+Fixes: *"When it displays response I can't scroll up."* Root cause: `Transcript.tsx:380-384` runs an unconditional `scrollIntoView` with `streaming` in its dep array, so it fires once per rAF frame and re-pins the view.
+
+**Files:**
+- Modify: `src/renderer/src/components/Transcript.tsx:380-384` (auto-scroll) and `:419` (search re-center)
+- Test: `tests/transcript-scroll.test.ts` (new)
+
+**Interfaces:**
+- Produces: `isNearBottom(el: {scrollTop:number; scrollHeight:number; clientHeight:number}, slack?: number): boolean` exported from `src/renderer/src/components/Transcript.tsx` (pure, so it is unit-testable without a DOM).
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/transcript-scroll.test.ts
+import { expect, test } from "vitest";
+import { isNearBottom } from "../src/renderer/src/components/Transcript";
+
+const el = (scrollTop: number, scrollHeight = 1000, clientHeight = 400) =>
+  ({ scrollTop, scrollHeight, clientHeight });
+
+test("at the very bottom → near bottom", () => {
+  expect(isNearBottom(el(600))).toBe(true);
+});
+
+test("within the slack window → still near bottom (so streaming keeps following)", () => {
+  expect(isNearBottom(el(520))).toBe(true); // 80px from bottom, slack 120
+});
+
+test("scrolled up past the slack → NOT near bottom (the bug: this must not re-pin)", () => {
+  expect(isNearBottom(el(200))).toBe(false);
+});
+
+test("content shorter than the viewport is always near bottom", () => {
+  expect(isNearBottom(el(0, 300, 400))).toBe(true);
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `L=/tmp/v.log; npx vitest run tests/transcript-scroll.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: FAIL — `isNearBottom` is not exported.
+
+- [ ] **Step 3: Implement**
+
+In `Transcript.tsx`, above the component:
+
+```ts
+/**
+ * True when the viewport is within `slack` px of the bottom. Streaming only
+ * follows when this holds, so scrolling up during a response is not undone
+ * on the next animation frame.
+ */
+export function isNearBottom(
+  el: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  slack = 120,
+): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= slack;
+}
+```
+
+Then replace the effect at `:380-384`:
+
+```tsx
+const bottom = useRef<HTMLDivElement>(null);
+const scrollRef = useRef<HTMLDivElement>(null);
+// Follow the stream only from near the bottom; otherwise the per-frame
+// re-scroll makes reading back impossible while a response streams.
+useEffect(() => {
+  const box = scrollRef.current;
+  if (box && !isNearBottom(box)) return;
+  bottom.current?.scrollIntoView({ block: "end" });
+}, [items, busy, streaming]);
+```
+
+And guard the search re-center at `:419` the same way — it currently re-centers the active match on every stream frame whenever a query is present. Wrap that `scrollIntoView` so it only runs when `searchQuery`/`searchActiveIndex` changed, not when `streaming` ticked:
+
+```tsx
+const lastMatch = useRef<string>("");
+useEffect(() => {
+  const key = `${searchQuery} ${searchActiveIndex}`;
+  if (key === lastMatch.current) return;   // a stream tick, not a match change
+  lastMatch.current = key;
+  // …existing ranges[active] scrollIntoView…
+}, [searchQuery, searchActiveIndex, items, streaming, onSearchTotal]);
+```
+
+- [ ] **Step 4: Run the test**
+
+Run: `L=/tmp/v.log; npx vitest run tests/transcript-scroll.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: PASS (4 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/transcript-scroll.test.ts src/renderer/src/components/Transcript.tsx
+git commit -m "fix(chat): follow the stream only from the bottom, so scrolling up sticks"
+```
+
+---
+
+## Task 2: Chat — Stop no longer splits the message
+
+Fixes: *"When I click stop the stop is not 100% clean we have some words cut to a new line."*
+
+Root cause chain: `App.tsx:1516` `onAbort` calls `commitStream` **synchronously**, before the abort reaches Pi's stdin (renderer → main → child). `commitStream` (`App.tsx:343-359`) sets `streaming.current[sid] = false` and deletes the buffer, so the next in-flight delta hits `applyDelta(…, active=false)` → `return delta` (`streaming.ts:24-26`) and **starts a fresh bubble**, committed later as a second `{kind:"assistant"}` item.
+
+The fix belongs in the commit/delta pair, not in the button — **eight** call sites call `commitStream` — but it must stay scoped to the abort window, because the `tool_execution_start` commit (`App.tsx:652`) is *intentional* and a delta after it legitimately starts a new bubble.
+
+**Files:**
+- Modify: `src/renderer/src/streaming.ts` (add `mergeAfterAbort`)
+- Modify: `src/renderer/src/App.tsx` — `commitStream` (`:343`), the delta handler (`:738-744`), `onAbort` (`:1516`), `agent_end` (`:752`)
+- Test: `tests/streaming.test.ts` (extend)
+
+**Interfaces:**
+- Produces: `appendToLastAssistant(items, text)` is NOT introduced; instead `App.tsx` gains an `abortedRef: Record<string, boolean>` and the delta handler routes post-abort text into the last assistant item via the existing `setTranscripts` updater.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// append to tests/streaming.test.ts
+import { mergeIntoLastAssistant } from "../src/renderer/src/streaming";
+
+test("post-abort text merges into the last assistant item, not a new one", () => {
+  const items = [
+    { id: 1, kind: "user", text: "hi" },
+    { id: 2, kind: "assistant", text: "Sure, I'll start by" },
+  ] as any[];
+  const out = mergeIntoLastAssistant(items, " reading the file.");
+  expect(out).toHaveLength(2);
+  expect(out[1].text).toBe("Sure, I'll start by reading the file.");
+});
+
+test("merge is a no-op-safe append when the last item is not an assistant bubble", () => {
+  const items = [{ id: 1, kind: "assistant", text: "done" }, { id: 2, kind: "tool" }] as any[];
+  const out = mergeIntoLastAssistant(items, "tail");
+  expect(out).toHaveLength(3);
+  expect(out[2]).toEqual({ kind: "assistant", text: "tail" });
+});
+
+test("empty text never mutates the transcript", () => {
+  const items = [{ id: 1, kind: "assistant", text: "a" }] as any[];
+  expect(mergeIntoLastAssistant(items, "")).toBe(items);
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `L=/tmp/v.log; npx vitest run tests/streaming.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: FAIL — `mergeIntoLastAssistant` is not exported.
+
+- [ ] **Step 3: Implement the pure helper**
+
+In `src/renderer/src/streaming.ts`:
+
+```ts
+/**
+ * Append `text` to the trailing assistant bubble, or push a new one when the
+ * transcript does not end in one. Used for deltas that land after an abort has
+ * already closed the streaming bubble — without this they render as a second
+ * "AGENT" bubble mid-sentence.
+ */
+export function mergeIntoLastAssistant<T extends { kind: string; text?: string }>(
+  items: T[],
+  text: string,
+): T[] {
+  if (!text) return items;
+  const last = items[items.length - 1];
+  if (last?.kind === "assistant") {
+    const next = items.slice(0, -1);
+    next.push({ ...last, text: (last.text ?? "") + text });
+    return next;
+  }
+  return [...items, { kind: "assistant", text } as unknown as T];
+}
+```
+
+- [ ] **Step 4: Wire it in `App.tsx`**
+
+Add the ref beside `streaming`/`streamRef`:
+
+```tsx
+// Sessions whose turn the user aborted. Deltas still in flight (the abort
+// travels renderer → main → child stdin) merge into the bubble commitStream
+// just closed instead of starting a new one. Cleared at agent_end.
+const abortedRef = useRef<Record<string, boolean>>({});
+```
+
+In `onAbort` (`App.tsx:1516`), set it **before** `commitStream`:
+
+```tsx
+onAbort={() => {
+  if (!selectedId) return;
+  abortedRef.current[selectedId] = true;
+  void window.hv.abortSession(selectedId);
+  commitStream(selectedId);
+  setBusy((p) => ({ ...p, [selectedId]: false }));
+}}
+```
+
+In the delta handler (`App.tsx:738-744`), route post-abort deltas to the merge instead of the stream buffer:
+
+```tsx
+if (e.type === "message_update" && ame?.type === "text_delta" && ame.delta) {
+  if (abortedRef.current[sid]) {
+    setTranscripts((p) => ({ ...p, [sid]: mergeIntoLastAssistant(p[sid] ?? [], ame.delta) }));
+    return;
+  }
+  streamRef.current[sid] = applyDelta(streamRef.current, sid, ame.delta, streaming.current[sid]);
+  streaming.current[sid] = true;
+  scheduleFlush();
+}
+```
+
+At `agent_end` (`App.tsx:752`), clear the flag after the existing `commitStream(sid)`:
+
+```tsx
+delete abortedRef.current[sid];
+```
+
+- [ ] **Step 5: Run the tests**
+
+Run: `L=/tmp/v.log; npx vitest run tests/streaming.test.ts > $L 2>&1; echo "EXIT=$?"; tail -25 $L`
+Expected: PASS (existing + 3 new).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add tests/streaming.test.ts src/renderer/src/streaming.ts src/renderer/src/App.tsx
+git commit -m "fix(chat): merge post-abort deltas instead of starting a second bubble"
+```
+
+---
+
+## Task 3: Chat — tool errors collapsed by default
+
+Fixes: *"Errors shouldn't display expanded right away… it's a lot of noise."* `ToolCard.tsx:431-436` renders the error body unconditionally. `SubagentCard` in the same file already does collapsed-with-summary (`:241`, `:287-291`) — reuse that shape.
+
+**Files:**
+- Modify: `src/renderer/src/components/ToolCard.tsx:431-436`
+- Test: `tests/tool-error-summary.test.ts` (new)
+
+**Interfaces:**
+- Produces: `errorSummary(result: unknown, max?: number): string` exported from `ToolCard.tsx`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/tool-error-summary.test.ts
+import { expect, test } from "vitest";
+import { errorSummary } from "../src/renderer/src/components/ToolCard";
+
+test("first non-empty line, trimmed", () => {
+  expect(errorSummary("\n\nENOENT: no such file\nstack line 1\nstack line 2")).toBe("ENOENT: no such file");
+});
+
+test("long single lines are clipped with an ellipsis", () => {
+  expect(errorSummary("x".repeat(200), 40)).toBe("x".repeat(40) + "…");
+});
+
+test("non-string results are stringified", () => {
+  expect(errorSummary({ code: "EACCES" })).toContain("EACCES");
+});
+
+test("empty result yields a stable fallback", () => {
+  expect(errorSummary("")).toBe("The tool reported an error.");
+  expect(errorSummary(undefined)).toBe("The tool reported an error.");
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `L=/tmp/v.log; npx vitest run tests/tool-error-summary.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: FAIL — not exported.
+
+- [ ] **Step 3: Implement**
+
+```ts
+/** One-line gist of a tool error, for the collapsed card. */
+export function errorSummary(result: unknown, max = 120): string {
+  const raw = typeof result === "string" ? result : result == null ? "" : JSON.stringify(result);
+  const line = raw.split("\n").map((l) => l.trim()).find(Boolean);
+  if (!line) return "The tool reported an error.";
+  return line.length > max ? line.slice(0, max) + "…" : line;
+}
+```
+
+Replace `ToolCard.tsx:431-436` with a collapsed summary row. The full text already lives inside `TechnicalDetails`, so the body only needs the gist plus a hint that more is behind the toggle:
+
+```tsx
+{/* Collapsed by default (round 11): the agent usually recovers, so an
+    expanded error per attempt is noise. Full text is in the details toggle. */}
+{card.status === "error" && !details && (
+  <button
+    type="button"
+    onClick={() => setDetails(true)}
+    className="w-full text-left border-t-2 border-berry/30 bg-berry-soft/60 px-3.5 py-2 font-mono text-xs text-berry truncate hover:bg-berry-soft cursor-pointer"
+    title="Show the full error"
+  >
+    {errorSummary(card.result)}
+  </button>
+)}
+```
+
+- [ ] **Step 4: Run the test**
+
+Run: `L=/tmp/v.log; npx vitest run tests/tool-error-summary.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: PASS (4 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/tool-error-summary.test.ts src/renderer/src/components/ToolCard.tsx
+git commit -m "fix(chat): collapse tool errors to a one-line summary"
+```
+
+---
+
+## Task 4: MCP — the tool count opens into the tool list
+
+Fixes: *"MCP ⇒ We can click on the count of tools to see the list of tools and their description."* `status.tools` (with descriptions) is already in renderer state; `McpServersSection.tsx:396` destructures it away and keeps only `toolCount`. The list UI already exists at `:82-112` for the post-connect modal.
+
+**Files:**
+- Modify: `src/renderer/src/components/McpServersSection.tsx:388-427` (`McpStatusBadge`)
+- Test: none new — this is presentational reuse of typed data with no logic. Verified in the GUI pass below.
+
+**Interfaces:**
+- Consumes: `McpServerStatusLike.tools?: {name: string; description?: string}[]` (`src/renderer/src/hv.d.ts:321-330`).
+
+- [ ] **Step 1: Change the badge to a native disclosure**
+
+`McpStatusBadge` currently does `const { state, toolCount, error } = status;`. Take `tools` too, and when connected with a non-empty list render a `<details>` whose `<summary>` is today's badge. Follow the existing native-disclosure pattern on this page (`McpCatalogSection.tsx:154-165`, incl. its `ponytail:` comment and rotating caret):
+
+```tsx
+const { state, toolCount, error, tools } = status;
+```
+
+For the connected case, when `tools?.length`:
+
+```tsx
+{/* ponytail: native <details> — no disclosure state to manage. */}
+<details className="group/tools">
+  <summary className="cursor-pointer list-none inline-flex items-center gap-1 …same classes as the old badge…">
+    <span className="transition-transform group-open/tools:rotate-90">▸</span>
+    {toolCount} {toolCount === 1 ? "tool" : "tools"}
+  </summary>
+  <ul className="mt-2 max-h-48 overflow-y-auto border-2 border-line rounded-xl bg-paper divide-y divide-line/40">
+    {tools.map((t) => (
+      <li key={t.name} className="px-3 py-2">
+        <p className="font-mono text-xs text-ink">{t.name}</p>
+        {t.description && <p className="text-xs text-ink-soft mt-0.5">{t.description}</p>}
+      </li>
+    ))}
+  </ul>
+</details>
+```
+
+When `tools` is absent (a server connected before this shipped, or one that reported none) keep the plain `<span>` badge — no empty disclosure.
+
+- [ ] **Step 2: Typecheck**
+
+Run: `npm run build > /tmp/b.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/b.log`
+Expected: EXIT=0.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/renderer/src/components/McpServersSection.tsx
+git commit -m "feat(mcp): open the tool count into the tool list with descriptions"
+```
+
+---
+
+## Task 5: Stats — cost computed from the ledger
+
+Fixes: *"Stats ⇒ Is cost matching the one computed in session?"* — it was not. `analytics.ts:145-155` sums `stats.cost` with no billing policy, so a `openai-codex` session shows `plan` on its pill and real dollars on Stats (§19 ruling 3(b) reintroduced). Four dashboard-only paths also report `$0`: live, hibernated, crashed, and stats-capture-failed sessions.
+
+**Files:**
+- Modify: `src/main/analytics.ts` — take cost from the ledger, not `stats.cost`
+- Modify: `src/main/ipc.ts` — pass a ledger reader into the aggregate
+- Modify: `src/renderer/src/components/DashboardView.tsx:170` — render `unknown` honestly
+- Test: `tests/analytics.test.ts` (extend)
+
+**Interfaces:**
+- Consumes: `parseCalls(fileText, planProviders)` and `ledgerTotal(calls)` from `src/main/calls.ts:115,159`, returning `{cost:number; unknown:boolean}`-shaped totals (confirm the exact field names in `calls.ts:159-176` before writing).
+- Produces: `aggregate(events, readLedger)` where `readLedger: (sessionId: string) => {cost: number; hasUnknown: boolean} | null`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// append to tests/analytics.test.ts
+test("plan-provider spend is excluded from the dashboard total", () => {
+  const events = [
+    { ts: 1, type: "session.start", sessionId: "s1", workspaceId: "/w" },
+    { ts: 2, type: "session.end", sessionId: "s1", data: { stats: { cost: 4.2, tokens: { input: 10, output: 5 } } } },
+  ];
+  // the ledger says: this session was a subscription, nothing billable
+  const out = aggregate(events as any, () => ({ cost: 0, hasUnknown: false }));
+  expect(out.cost).toBe(0);   // NOT 4.2 — stats.cost prices a plan at API rates
+});
+
+test("a live session still contributes its spend", () => {
+  const events = [{ ts: 1, type: "session.start", sessionId: "s1", workspaceId: "/w" }];
+  const out = aggregate(events as any, () => ({ cost: 1.5, hasUnknown: false }));
+  expect(out.cost).toBe(1.5);  // no session.end at all
+});
+
+test("unknown-price calls are flagged, not counted as zero", () => {
+  const events = [
+    { ts: 1, type: "session.start", sessionId: "s1", workspaceId: "/w" },
+    { ts: 2, type: "session.end", sessionId: "s1", data: { stats: null } },
+  ];
+  const out = aggregate(events as any, () => ({ cost: 0.5, hasUnknown: true }));
+  expect(out.cost).toBe(0.5);
+  expect(out.costUnknown).toBe(true);
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `L=/tmp/v.log; npx vitest run tests/analytics.test.ts > $L 2>&1; echo "EXIT=$?"; tail -25 $L`
+Expected: FAIL — `aggregate` takes one argument.
+
+- [ ] **Step 3: Implement**
+
+Give `aggregate` a second parameter and iterate **every session seen** (from `session.start`), not only `endStats`:
+
+```ts
+export interface LedgerCost { cost: number; hasUnknown: boolean }
+
+export function aggregate(
+  events: LogEvent[],
+  readLedger: (sessionId: string) => LedgerCost | null = () => null,
+): Aggregate {
+  // …existing token/duration/retention passes unchanged…
+  // Cost comes from the ledger, per session, so the dashboard applies the same
+  // policy as the session pill (§19): plan excluded, unknown flagged, and a
+  // hibernated/live/crashed session is not silently $0.
+  let cost = 0;
+  let costUnknown = false;
+  for (const id of allSessionIds) {
+    const led = readLedger(id);
+    if (!led) { costUnknown = true; continue; }
+    cost += led.cost;
+    if (led.hasUnknown) costUnknown = true;
+  }
+  return { …, cost, costUnknown };
+}
+```
+
+Keep tokens sourced as they are (`stats.tokens`) — that is a separate number and §19 ruling 2 keeps cache columns only in the ledger view; add a `ponytail:` comment saying so.
+
+In `ipc.ts`, at the dashboard handler, pass a reader built on the existing pieces (`readSessionFile` + `parseCalls` + `planProvidersFor(providerKeyStatus())`, exactly as `hv:get-session-calls` does at `ipc.ts:1263-1271`), returning `null` when the session file cannot be read.
+
+In `DashboardView.tsx:170`, render `$X+?` when `costUnknown`, reusing `costPill` from `src/renderer/src/analytics-format.ts:50-59` so Stats and the session pill format money identically. Change `sub="local estimate"` to name the rule: `sub={data.costUnknown ? "estimate — some prices unknown" : "local estimate"}`.
+
+- [ ] **Step 4: Run the tests**
+
+Run: `L=/tmp/v.log; npx vitest run tests/analytics.test.ts tests/analytics-format.test.ts tests/calls.test.ts > $L 2>&1; echo "EXIT=$?"; tail -25 $L`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/analytics.test.ts src/main/analytics.ts src/main/ipc.ts src/renderer/src/components/DashboardView.tsx
+git commit -m "fix(stats): compute cost from the ledger so plan spend leaves the total"
+```
+
+---
+
+## Task 6: Codex sign-in updates the app
+
+Fixes: *"Codex login does not work well ⇒ once validated Open AI side it's not automatically updating in happyvibe."* Three independently sufficient causes.
+
+**Files:**
+- Modify: `src/main/ipc.ts:439-444` (hold auth state in main), `:1514-1517` (`hv:auth-login` → restart utility)
+- Modify: `src/preload/index.ts` (expose the pushed auth state)
+- Modify: `src/renderer/src/components/ModelsView.tsx:124-142` (consume the pushed state), `:177` (`signedIn`)
+- Test: `tests/auth-bridge.test.ts` (extend — covers the OAuth `source`, not just api_key)
+
+**Interfaces:**
+- Produces: `hv:auth-status-changed` push channel carrying `Record<string, {configured: boolean; source?: string}>`; `signedIn(entry)` predicate exported from `ModelsView.tsx`.
+
+- [ ] **Step 1: Write the failing test for the predicate**
+
+```ts
+// append to tests/auth-bridge.test.ts
+import { signedIn } from "../src/renderer/src/components/ModelsView";
+
+test("an api-key credential reads as signed in", () => {
+  expect(signedIn({ configured: true, source: "stored" })).toBe(true);
+});
+
+test("a stored OAuth credential reads as signed in whatever Pi calls its source", () => {
+  expect(signedIn({ configured: true, source: "oauth" })).toBe(true);
+  expect(signedIn({ configured: true })).toBe(true);
+});
+
+test("an env-provided credential is not 'signed in' — nothing to sign out of", () => {
+  expect(signedIn({ configured: true, source: "env" })).toBe(false);
+});
+
+test("unconfigured is never signed in", () => {
+  expect(signedIn({ configured: false, source: "stored" })).toBe(false);
+  expect(signedIn(undefined)).toBe(false);
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `L=/tmp/v.log; npx vitest run tests/auth-bridge.test.ts > $L 2>&1; echo "EXIT=$?"; tail -25 $L`
+Expected: FAIL — `signedIn` is not exported.
+
+- [ ] **Step 3: Fix (ii) — the predicate**
+
+In `ModelsView.tsx`, replace the inline `signedIn` at `:177` with an exported function that accepts any stored credential and only excludes `env`:
+
+```ts
+/**
+ * Signed in = a credential HappyVibe stored, api-key or OAuth. The old
+ * predicate demanded source === "stored", which is what Pi reports for an
+ * api_key; an OAuth credential reporting anything else left the card on
+ * "Sign in" forever.
+ */
+export function signedIn(entry?: { configured?: boolean; source?: string }): boolean {
+  return entry?.configured === true && entry.source !== "env";
+}
+```
+
+Use it as `signedIn(auth[id])` at the call sites (`:226-236`, `:181-194`).
+
+- [ ] **Step 4: Fix (i) — hold auth state in main and push it**
+
+At `ipc.ts:439-444`, where the `hv.auth` notify is already parsed, store it and broadcast, mirroring the MCP status map (`ipc.ts:477-489`):
+
+```ts
+if (p?.kind === "hv.auth" && (p.stage === "success" || p.stage === "logged_out")) {
+  providersChanged();
+  void refreshAuthStatus();   // re-queries /hv-auth-status, updates authStatusMap, broadcasts
+}
+```
+
+Add an `authStatusMap` in main plus `hv:auth-status` (returns it) and a `hv:auth-status-changed` push. In `ModelsView.tsx`, seed from `window.hv.authStatus()` on mount **and** subscribe to the push, so the result survives the page being unmounted during the browser round-trip.
+
+- [ ] **Step 5: Fix (iii) — restart the utility after a successful login**
+
+`hv:set-provider-key` calls `restartUtility()` (`ipc.ts:1501`); `hv:auth-login` does not. Pi's auth storage is read once at process start, so add the restart to the **success path** (in `refreshAuthStatus`, after a `success` stage), not to `hv:auth-login` itself — the login command must stay fire-and-forget or the flow blocks on the browser round-trip.
+
+- [ ] **Step 6: Run the tests**
+
+Run: `L=/tmp/v.log; npx vitest run tests/auth-bridge.test.ts tests/providers.test.ts > $L 2>&1; echo "EXIT=$?"; tail -25 $L`
+Expected: PASS. Then `npm run live:why` — if it prints anything, run `npm run test:live`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add tests/auth-bridge.test.ts src/main/ipc.ts src/preload/index.ts src/renderer/src/components/ModelsView.tsx
+git commit -m "fix(auth): keep provider sign-in state in main and restart the credential cache"
+```
+
+---
+
+## Task 7: Sidebar — draggable split + workspace emoji
+
+Fixes items 1 and 2. There is **no resizer anywhere in the repo** — this is the first, so keep it minimal and follow the `hv:*` localStorage convention (`App.tsx:153-157`, `Sidebar.tsx:369-378`).
+
+**Files:**
+- Create: `src/renderer/src/workspaceEmoji.ts`
+- Modify: `src/renderer/src/components/Sidebar.tsx` — `:472` (tree), `:505` (label), `:421` (rail initials), `:576` (footer)
+- Test: `tests/workspace-emoji.test.ts` (new)
+
+**Interfaces:**
+- Produces: `workspaceEmoji(path: string): string` — pure, deterministic, no stored field.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/workspace-emoji.test.ts
+import { expect, test } from "vitest";
+import { workspaceEmoji } from "../src/renderer/src/workspaceEmoji";
+
+test("deterministic for the same path", () => {
+  expect(workspaceEmoji("/Users/me/proj")).toBe(workspaceEmoji("/Users/me/proj"));
+});
+
+test("trailing slashes do not change the pick", () => {
+  expect(workspaceEmoji("/Users/me/proj/")).toBe(workspaceEmoji("/Users/me/proj"));
+});
+
+test("different paths generally differ", () => {
+  const picks = new Set(["/a/one", "/a/two", "/a/three", "/a/four"].map(workspaceEmoji));
+  expect(picks.size).toBeGreaterThan(1);
+});
+
+test("always returns exactly one emoji from the set", () => {
+  expect(workspaceEmoji("")).toBeTruthy();
+  expect([...workspaceEmoji("/x")].length).toBeLessThanOrEqual(2); // some emoji are 2 code units
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `L=/tmp/v.log; npx vitest run tests/workspace-emoji.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement the emoji**
+
+```ts
+/**
+ * A workspace's decorative emoji, derived from its path — no stored field, no
+ * picker, no migration (round 11). Moving or renaming the folder changes the
+ * emoji; that is accepted, nothing depends on it.
+ * ponytail: FNV-1a over the path, not a hash lib — 6 lines, and the only
+ * requirement is "stable and spread out".
+ */
+const PALETTE = [
+  "🌱", "🔧", "🎨", "🚀", "🐙", "📦", "🌊", "🔮", "🍋", "🧩",
+  "🛠️", "🌵", "🎯", "🦊", "🫧", "🪴", "⚡", "🧭", "🍄", "🎸",
+];
+
+export function workspaceEmoji(path: string): string {
+  const key = path.replace(/\/+$/, "");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return PALETTE[Math.abs(h) % PALETTE.length];
+}
+```
+
+Render it before the name at `Sidebar.tsx:505` and **replace** the 2-letter initials in the collapsed rail at `:421`.
+
+- [ ] **Step 4: Implement the split handle**
+
+In `Sidebar.tsx`, hold the tree's flex-basis in state persisted to `hv:sidebar-split`:
+
+```tsx
+const [treePx, setTreePx] = useState(() => {
+  const v = Number(localStorage.getItem("hv:sidebar-split"));
+  return Number.isFinite(v) && v > 0 ? v : 0;   // 0 = auto (today's behaviour)
+});
+useEffect(() => { localStorage.setItem("hv:sidebar-split", String(treePx)); }, [treePx]);
+```
+
+Give the tree `style={treePx ? { flex: "0 0 auto", height: treePx } : undefined}` and add a 5px handle between the tree and the footer:
+
+```tsx
+<div
+  role="separator"
+  aria-orientation="horizontal"
+  title="Drag to resize"
+  onMouseDown={(e) => {
+    const startY = e.clientY;
+    const startH = treeRef.current?.getBoundingClientRect().height ?? 0;
+    const onMove = (ev: MouseEvent) =>
+      setTreePx(Math.max(96, Math.min(startH + ev.clientY - startY, window.innerHeight - 160)));
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }}
+  className="h-1.5 shrink-0 cursor-row-resize hover:bg-tangerine/40"
+/>
+```
+
+Also fix the underlying defect: bound the footer so its own `overflow-y-auto` (`:589`) engages — `className="… max-h-[60%] …"` on the footer at `:576`. Without this, ten nav rows still squeeze the tree to its floor whenever the split is left on auto.
+
+- [ ] **Step 5: Run tests + build**
+
+Run: `L=/tmp/v.log; npx vitest run tests/workspace-emoji.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L` then `npm run build > /tmp/b.log 2>&1; echo "EXIT=$?"`
+Expected: both EXIT=0.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add tests/workspace-emoji.test.ts src/renderer/src/workspaceEmoji.ts src/renderer/src/components/Sidebar.tsx
+git commit -m "feat(sidebar): draggable tree/settings split and a per-workspace emoji"
+```
+
+---
+
+## Task 8: Workspace removal — confirmed, two outcomes, no orphans
+
+Fixes item 3. Today: a hover-revealed `×` at `Sidebar.tsx:522-529` → `App.tsx:1314` with **no confirm**, and `store.ts:208` leaves every session's `workspaceId` dangling.
+
+**Files:**
+- Modify: `src/main/ipc.ts:990` (`hv:remove-workspace` gains a mode)
+- Modify: `src/renderer/src/components/Sidebar.tsx:522-529` (delete the `×`)
+- Modify: `src/renderer/src/components/WorkspaceSettingsView.tsx` (danger zone at the bottom, after MCP)
+- Test: `tests/workspace-model.test.ts` (extend)
+
+**Interfaces:**
+- Produces: `removeWorkspace(ws: string, mode: "forget" | "delete"): Promise<{sessions: number}>` on the preload surface; main archives (mode `forget`) or permanently deletes (mode `delete`) every session whose `workspaceId` matches, reusing the existing archive and `deleteSessionFile` paths.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// append to tests/workspace-model.test.ts
+test("forget archives the workspace's sessions instead of orphaning them", () => {
+  const sessions = [
+    { id: "a", workspaceId: "/w", archived: false },
+    { id: "b", workspaceId: "/other", archived: false },
+  ];
+  const affected = sessionsOfWorkspace(sessions as any, "/w");
+  expect(affected.map((s) => s.id)).toEqual(["a"]);
+});
+
+test("workspace matching is normalized, so a trailing slash still matches", () => {
+  const sessions = [{ id: "a", workspaceId: "/w" }];
+  expect(sessionsOfWorkspace(sessions as any, "/w/")).toHaveLength(1);
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `L=/tmp/v.log; npx vitest run tests/workspace-model.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: FAIL — `sessionsOfWorkspace` not exported.
+
+- [ ] **Step 3: Implement main side**
+
+Export `sessionsOfWorkspace(sessions, ws)` from `src/main/store.ts` using the existing `normPath` (`store.ts:174`) — never raw string comparison. Then widen the IPC handler at `ipc.ts:990`:
+
+```ts
+ipcMain.handle("hv:remove-workspace", async (_e, ws: string, mode: "forget" | "delete") => {
+  const affected = sessionsOfWorkspace(sessions.list(), ws);
+  for (const s of affected) {
+    if (mode === "delete") await deleteSessionEntirely(s.id);   // existing confirmed-permanent path
+    else await archiveSession(s.id);                            // existing archive path
+  }
+  workspaces.remove(ws);
+  return { sessions: affected.length };
+});
+```
+
+Reuse the functions the session UI already calls — do not write a second delete path.
+
+- [ ] **Step 4: Implement the UI**
+
+Delete the `×` button at `Sidebar.tsx:522-529` and its `onRemoveWorkspace` prop threading. Add a danger-zone `<Section>` at the **bottom** of `WorkspaceSettingsView.tsx` (after Workspace MCP at `:147-149`), with a confirm dialog copied from the session-delete dialog at `Sidebar.tsx:609-640` (the "same warm dialog pattern as CompactDialog" the file already names). The dialog must state the session count and which outcome:
+
+- **Forget workspace** — "Removes *Foo* from HappyVibe and archives its N sessions. Nothing on disk is touched, and re-adding the folder brings them back."
+- **Delete permanently** — "Removes *Foo* and permanently deletes its N sessions and their history. This cannot be undone." (berry/destructive button.)
+
+- [ ] **Step 5: Run tests + build**
+
+Run: `L=/tmp/v.log; npx vitest run tests/workspace-model.test.ts tests/session-manager.test.ts > $L 2>&1; echo "EXIT=$?"; tail -25 $L` then `npm run build`
+Expected: both green.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add tests/workspace-model.test.ts src/main/store.ts src/main/ipc.ts src/preload/index.ts src/renderer/src/components/Sidebar.tsx src/renderer/src/components/WorkspaceSettingsView.tsx
+git commit -m "feat(workspaces): confirmed removal with archive-or-delete, no orphaned sessions"
+```
+
+---
+
+## Task 9: Open files in the agent's context
+
+Fixes item 10. Rides the **per-prompt** seam (`ipc.ts:1215`) where `@`-mention blocks already go — the renderer already passes an array through `promptSession` (`preload/index.ts:26-32`). Paths only, never contents. Sent **only when the list changed** since that session's previous prompt.
+
+**Files:**
+- Modify: `src/main/files.ts` (block builder, beside `buildMentionBlocks` at `:177`)
+- Modify: `src/main/ipc.ts:1168-1250` (`hv:prompt-session` takes `openFiles`), plus the global setting handlers
+- Modify: `src/main/config.ts` (the boolean, beside `longCache`)
+- Modify: `src/renderer/src/App.tsx:1078` (`send` passes `allFiles(wsTabs)`)
+- Modify: `src/renderer/src/components/SystemPromptView.tsx` (the toggle, below "Your additions" at `:119`)
+- Modify: the render-time stripper used for mention blocks, so `<open-files>` never shows in a bubble
+- Test: `tests/open-files-context.test.ts` (new)
+
+**Interfaces:**
+- Produces: `buildOpenFilesBlock(paths: string[]): string` in `src/main/files.ts`; `openFilesChanged(prev: string[] | undefined, next: string[]): boolean` in the same module.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/open-files-context.test.ts
+import { expect, test } from "vitest";
+import { buildOpenFilesBlock, openFilesChanged } from "../src/main/files";
+
+test("the block lists workspace-relative paths and no content", () => {
+  const b = buildOpenFilesBlock(["src/a.ts", "docs/b.md"]);
+  expect(b).toContain("src/a.ts");
+  expect(b).toContain("docs/b.md");
+  expect(b).toMatch(/^<open-files>/);
+  expect(b).not.toContain("<file ");   // never the mention block's content form
+});
+
+test("no open files → no block at all", () => {
+  expect(buildOpenFilesBlock([])).toBe("");
+});
+
+test("paths are sorted so an unchanged set never looks changed", () => {
+  expect(buildOpenFilesBlock(["b", "a"])).toBe(buildOpenFilesBlock(["a", "b"]));
+});
+
+test("change detection ignores order and is true on first send", () => {
+  expect(openFilesChanged(undefined, ["a"])).toBe(true);
+  expect(openFilesChanged(["a", "b"], ["b", "a"])).toBe(false);
+  expect(openFilesChanged(["a"], ["a", "b"])).toBe(true);
+  expect(openFilesChanged(["a"], [])).toBe(true);
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `L=/tmp/v.log; npx vitest run tests/open-files-context.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: FAIL — not exported.
+
+- [ ] **Step 3: Implement**
+
+```ts
+/**
+ * The files the user has open in the built-in editor — PATHS ONLY, never
+ * contents (round 11). Rides the prompt like a mention block and is counted
+ * under Conversation in the context breakdown.
+ */
+export function buildOpenFilesBlock(paths: string[]): string {
+  if (!paths.length) return "";
+  return `<open-files>\n${[...paths].sort().join("\n")}\n</open-files>`;
+}
+
+/** True when the set differs, order-insensitively. Undefined prev = first send. */
+export function openFilesChanged(prev: string[] | undefined, next: string[]): boolean {
+  if (!prev) return true;
+  if (prev.length !== next.length) return true;
+  const a = [...prev].sort();
+  const b = [...next].sort();
+  return a.some((v, i) => v !== b[i]);
+}
+```
+
+In `ipc.ts`, keep a per-session `lastOpenFiles: Map<string, string[]>`, and in `hv:prompt-session` append the block to `outgoing` **after** the mention blocks, only when the global setting is on and `openFilesChanged` is true; then record the new list. Clear the map entry when a session ends.
+
+Add the global boolean to `config.ts` beside the long-cache one (`config.ts:276-285`) defaulting to **true**, and a toggle in `SystemPromptView.tsx` copied from `LongCacheToggle` (`ModelsView.tsx:53-77`) — the simplest global boolean in the codebase, 25 lines, no tri-state.
+
+Strip `<open-files>…</open-files>` at render time wherever mention blocks are already stripped, so the user's own bubble reads as typed.
+
+- [ ] **Step 4: Run the tests**
+
+Run: `L=/tmp/v.log; npx vitest run tests/open-files-context.test.ts tests/files.test.ts tests/mentions.test.ts > $L 2>&1; echo "EXIT=$?"; tail -25 $L`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/open-files-context.test.ts src/main/files.ts src/main/ipc.ts src/main/config.ts src/preload/index.ts src/renderer/src/App.tsx src/renderer/src/components/SystemPromptView.tsx
+git commit -m "feat(context): tell the agent which files are open, paths only, on change"
+```
+
+---
+
+## Task 10: `tabs.ts` — per-session chat tabs, 2×2 grid, pane sizes
+
+The structural task. Fixes items 4, 5, 6 in the pure module, with `tests/tabs.test.ts` rewritten alongside. **No `App.tsx` changes in this task** — keep the model landing green on its own.
+
+**Files:**
+- Modify: `src/renderer/src/tabs.ts` (154 lines → the new model)
+- Modify: `tests/tabs.test.ts` (the 2-pane ceiling assertions at `:11`, `:50`, `:57-58` change by design)
+- Modify: `tests/watch-targets.test.ts` (builds `WorkspaceTabs` fixtures through these helpers)
+
+**Interfaces:**
+- Produces:
+  ```ts
+  export const CHAT_PREFIX = ":chat:";
+  export const chatTab = (sessionId: string): TabId => `${CHAT_PREFIX}${sessionId}`;
+  export const isChatTab = (id: TabId): boolean => id.startsWith(CHAT_PREFIX);
+  export const sessionOf = (id: TabId): string | null => (isChatTab(id) ? id.slice(CHAT_PREFIX.length) : null);
+
+  export interface WorkspaceTabs {
+    /** Up to 4 panes: [A, B, C, D]. A/B are the primary halves; C splits A, D splits B. */
+    panes: Pane[];
+    split: "h" | "v" | null;      // primary axis, null = single pane
+    subSplit: [boolean, boolean]; // is half 0 / half 1 split on the cross axis
+    focused: number;              // 0..3
+    sizes: { main: number; sub: [number, number] }; // 0..1 ratios, default 0.5
+  }
+  export function openChat(t: WorkspaceTabs, sessionId: string): WorkspaceTabs;
+  export function splitPane(t: WorkspaceTabs, dir: "h" | "v"): WorkspaceTabs;
+  export function splitHalf(t: WorkspaceTabs, half: 0 | 1): WorkspaceTabs;
+  export function setSize(t: WorkspaceTabs, which: "main" | "sub0" | "sub1", ratio: number): WorkspaceTabs;
+  ```
+  `openFile`, `closeTab`, `activateTab`, `unsplit`, `moveTab`, `allFiles`, `bufferKey`, `basename`, `resolveCardPath` keep their names and behaviour.
+
+- [ ] **Step 1: Write the failing tests**
+
+```ts
+// tests/tabs.test.ts — replacing the 2-pane ceiling tests
+test("a chat tab is per session; opening a second session adds a tab", () => {
+  let t = openChat(emptyTabs, "s1");
+  t = openChat(t, "s2");
+  expect(t.panes[0].tabs).toEqual([chatTab("s1"), chatTab("s2")]);
+  expect(t.panes[0].active).toBe(chatTab("s2"));
+});
+
+test("reopening an already-open session focuses its tab instead of adding one", () => {
+  let t = openChat(openChat(emptyTabs, "s1"), "s2");
+  t = openChat(t, "s1");
+  expect(t.panes[0].tabs).toHaveLength(2);
+  expect(t.panes[0].active).toBe(chatTab("s1"));
+});
+
+test("sessionOf round-trips and rejects file paths", () => {
+  expect(sessionOf(chatTab("abc"))).toBe("abc");
+  expect(sessionOf("src/a.ts")).toBeNull();
+});
+
+test("splitting a half gives a third pane; splitting both gives four", () => {
+  let t = splitPane(openChat(emptyTabs, "s1"), "v");
+  t = splitHalf(t, 0);
+  expect(t.panes).toHaveLength(3);
+  expect(t.subSplit).toEqual([true, false]);
+  t = splitHalf(t, 1);
+  expect(t.panes).toHaveLength(4);
+  expect(t.subSplit).toEqual([true, true]);
+});
+
+test("a half cannot be split twice — 2x2 is the ceiling", () => {
+  let t = splitHalf(splitPane(openChat(emptyTabs, "s1"), "v"), 0);
+  expect(splitHalf(t, 0)).toBe(t);
+});
+
+test("splitHalf without a primary split is a no-op", () => {
+  const t = openChat(emptyTabs, "s1");
+  expect(splitHalf(t, 0)).toBe(t);
+});
+
+test("sizes default to 0.5 and clamp to a visible range", () => {
+  const t = splitPane(openChat(emptyTabs, "s1"), "v");
+  expect(t.sizes.main).toBe(0.5);
+  expect(setSize(t, "main", 0.94).sizes.main).toBeLessThanOrEqual(0.9);
+  expect(setSize(t, "main", 0.02).sizes.main).toBeGreaterThanOrEqual(0.1);
+});
+
+test("emptying a sub-pane collapses that half back, keeping the other half's split", () => {
+  let t = splitHalf(splitPane(openChat(emptyTabs, "s1"), "v"), 0);
+  t = openFile(t, "a.ts");                 // lands in the new focused sub-pane
+  t = closeTab(t, t.focused, "a.ts");
+  expect(t.subSplit).toEqual([false, false]);
+  expect(t.panes).toHaveLength(2);
+});
+
+test("allFiles still lists file paths across every pane, excluding chats", () => {
+  let t = openFile(openChat(emptyTabs, "s1"), "a");
+  t = splitPane(t, "v");
+  t = openFile(t, "b");
+  t = splitHalf(t, 1);
+  t = openFile(t, "c");
+  expect(allFiles(t).sort()).toEqual(["a", "b", "c"]);
+});
+```
+
+Keep every existing test that is not about the 2-pane ceiling (close-tab neighbour focus, `moveTab`, `unsplit`, `bufferKey`, all of `resolveCardPath`) — they must still pass unchanged.
+
+- [ ] **Step 2: Run and confirm failure**
+
+Run: `L=/tmp/v.log; npx vitest run tests/tabs.test.ts > $L 2>&1; echo "EXIT=$?"; tail -30 $L`
+Expected: FAIL — new exports missing.
+
+- [ ] **Step 3: Implement the model**
+
+Rewrite `tabs.ts` to the interface above. Rules to hold:
+- `emptyTabs` = one pane, no tabs, `split: null`, `subSplit: [false,false]`, `sizes: {main:0.5, sub:[0.5,0.5]}`. There is **no** always-present chat sentinel any more — a workspace with no open session has an empty pane, and `App` opens a chat tab when a session is selected.
+- Pane order is fixed `[A, B, C, D]` where C is A's cross-axis partner and D is B's. Derive the grid slot from `(split, subSplit)`; never store slot names.
+- `normalize` drops empty panes and clears the corresponding `subSplit` flag, collapsing to a single pane when only one survives (today's behaviour, extended to 4).
+- `setSize` clamps to `[0.1, 0.9]`.
+- Keep the module's header comment, updating the mount-once note — it is still true and still load-bearing.
+
+- [ ] **Step 4: Run the tests**
+
+Run: `L=/tmp/v.log; npx vitest run tests/tabs.test.ts tests/watch-targets.test.ts > $L 2>&1; echo "EXIT=$?"; tail -30 $L`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/renderer/src/tabs.ts tests/tabs.test.ts tests/watch-targets.test.ts
+git commit -m "feat(tabs): per-session chat tabs, 2x2 splits and pane size ratios"
+```
+
+---
+
+## Task 11: `App.tsx` — render the 2×2 grid with N live chats and a `+` per strip
+
+Consumes Task 10. This is the largest diff; the invariant from `tabs.ts:9-11` must survive — **content is mounted once and placed by CSS grid area**.
+
+**Files:**
+- Modify: `src/renderer/src/App.tsx` — `:90` (`selectedId`), `:150` (`tabsByWs`), `:976`/`:991` (new/select session), `:1236` (`wsId`), `:1270-1300` (grid), `:1417`/`:1444` (strips), `:1466` (the single ChatView), `:1542` (flat FileTab map)
+- Modify: `src/renderer/src/components/TabStrip.tsx` — `paneIndex: number`, `onMoveTab(tab, to: number)`, per-tab titles, trailing `+`
+- Modify: `src/renderer/src/components/Sidebar.tsx:344,553` — selection becomes a set
+- Test: `tests/tabs.test.ts` covers the model; this task is verified by build + the GUI pass
+
+- [ ] **Step 1: Grid areas from the model**
+
+Replace the hardcoded `gridTemplateAreas` (`:1283-1300`) with a function derived from `(split, subSplit, sizes)`, producing four content areas plus four strip rows. Use `gridTemplateColumns`/`Rows` from `sizes` as `fr` pairs (`${sizes.main}fr ${1 - sizes.main}fr`).
+
+- [ ] **Step 2: One `ChatView` per open chat tab, mounted flat**
+
+Collect every chat tab across panes, render each as a flat grid child keyed by session id with `gridArea={areaFor(paneOf(tab))}`, exactly as `FileTab`s already are at `:1542-1557`. Per-session props currently looked up by `selectedId` (`:1470-1479`) become per-instance lookups by that tab's session id. `selectedId` becomes **derived**: the active tab of the focused pane, when it is a chat tab.
+
+Keep the perf invariants: transcripts still live in `App` state keyed by session id, streaming still in `streamRef`. N mounted ChatViews is exactly what makes two sessions streamable at once.
+
+- [ ] **Step 3: Dividers become draggable**
+
+Add a divider element per active split (main, sub0, sub1) that on drag calls `setSize`. Reuse the pointer bookkeeping written in Task 7 rather than inventing a second one — if it is worth sharing, extract `useDragRatio` into `src/renderer/src/useDragRatio.ts` and have Task 7's sidebar handle use it too.
+
+- [ ] **Step 4: `+` at the end of each strip**
+
+In `TabStrip.tsx`, add a trailing `+` button that opens a two-item menu: **New session** (calls the existing `newSession` for this workspace, then `openChat` into *this* pane) and **Open file…** (opens the file drawer with this pane as the target). Follow the existing hover-icon styling on the workspace row.
+
+- [ ] **Step 5: Sidebar selection becomes a set**
+
+`Sidebar.tsx:344` takes `openSessionIds: Set<string>` plus `focusedSessionId: string | null`; `:553` highlights any open session and marks the focused one distinctly. Clicking a session that is already open **focuses its tab** rather than adding a second.
+
+- [ ] **Step 6: Build + full non-live suite**
+
+Run: `npm run gate > /tmp/gate.log 2>&1; echo "EXIT=$?"; tail -40 /tmp/gate.log`
+Expected: EXIT=0.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/renderer/src/App.tsx src/renderer/src/components/TabStrip.tsx src/renderer/src/components/Sidebar.tsx
+git commit -m "feat(layout): 2x2 resizable panes with a live chat tab per session"
+```
+
+---
+
+## Task 12: Editor — send the selection to the chat
+
+Fixes item 11. Scoped to the **selection**; `@file` already covers whole files.
+
+**Files:**
+- Modify: `src/renderer/src/components/EditorPane.tsx` (read the CodeMirror selection, expose the action)
+- Modify: `src/renderer/src/components/FileTab.tsx` (the button/keybinding host)
+- Modify: `src/renderer/src/components/ChatView.tsx:152` (accept an external insert)
+- Modify: `src/renderer/src/App.tsx` (route the insert to the focused chat)
+- Create: `src/renderer/src/sendToChat.ts` (pure formatter)
+- Test: `tests/send-to-chat.test.ts` (new)
+
+**Interfaces:**
+- Produces: `formatSelection(relPath: string, startLine: number, endLine: number, text: string): string`; `ChatView` prop `composerInsert?: {text: string; nonce: number}`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/send-to-chat.test.ts
+import { expect, test } from "vitest";
+import { formatSelection } from "../src/renderer/src/sendToChat";
+
+test("a multi-line selection is fenced and headed with path and range", () => {
+  const out = formatSelection("src/a.ts", 10, 12, "const a = 1;\nconst b = 2;");
+  expect(out).toContain("src/a.ts:10-12");
+  expect(out).toContain("```");
+  expect(out).toContain("const a = 1;");
+});
+
+test("a single-line selection names one line, not a range", () => {
+  expect(formatSelection("src/a.ts", 7, 7, "x")).toContain("src/a.ts:7");
+  expect(formatSelection("src/a.ts", 7, 7, "x")).not.toContain("7-7");
+});
+
+test("the fence language comes from the extension", () => {
+  expect(formatSelection("a.py", 1, 1, "pass")).toMatch(/```py(thon)?/);
+  expect(formatSelection("a.unknownext", 1, 1, "x")).toContain("```\n");
+});
+
+test("a fence inside the selection does not break out of the block", () => {
+  const out = formatSelection("a.md", 1, 3, "```\ncode\n```");
+  expect(out).toMatch(/````/);   // longer fence chosen
+});
+```
+
+- [ ] **Step 2: Run and confirm failure**
+
+Run: `L=/tmp/v.log; npx vitest run tests/send-to-chat.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement the formatter**
+
+```ts
+const LANG: Record<string, string> = {
+  ts: "ts", tsx: "tsx", js: "js", jsx: "jsx", py: "py", rs: "rs", go: "go",
+  json: "json", md: "md", css: "css", html: "html", sh: "bash", yml: "yaml", yaml: "yaml",
+};
+
+/** A selection, ready to drop into the composer. */
+export function formatSelection(relPath: string, startLine: number, endLine: number, text: string): string {
+  const where = startLine === endLine ? `${relPath}:${startLine}` : `${relPath}:${startLine}-${endLine}`;
+  const ext = relPath.split(".").pop()?.toLowerCase() ?? "";
+  const lang = LANG[ext] ?? "";
+  // A selection can itself contain a fence; outrun the longest run of backticks.
+  const longest = Math.max(2, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
+  const fence = "`".repeat(longest + 1);
+  return `${where}\n${fence}${lang}\n${text}\n${fence}\n`;
+}
+```
+
+- [ ] **Step 4: Wire the action**
+
+`EditorPane` exposes the current selection (CodeMirror `state.selection.main` + `doc.lineAt`) upward. `FileTab` shows a **Send to chat** icon button that is **disabled/absent when the selection is empty**, and calls `onSendToChat(formatSelection(...))`. `App` holds `composerInsert` state and bumps a nonce; `ChatView` appends on nonce change:
+
+```tsx
+useEffect(() => {
+  if (!composerInsert?.nonce) return;
+  setInput((prev) => (prev ? prev + "\n" : "") + composerInsert.text);
+  taRef.current?.focus();
+}, [composerInsert?.nonce]);
+```
+
+This is the same external-write shape the rewind path already uses (`ChatView.tsx:684`) — no store, no event bus. Route the insert to the **focused** chat tab.
+
+- [ ] **Step 5: Run the tests**
+
+Run: `L=/tmp/v.log; npx vitest run tests/send-to-chat.test.ts tests/composer.test.ts > $L 2>&1; echo "EXIT=$?"; tail -25 $L`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add tests/send-to-chat.test.ts src/renderer/src/sendToChat.ts src/renderer/src/components/EditorPane.tsx src/renderer/src/components/FileTab.tsx src/renderer/src/components/ChatView.tsx src/renderer/src/App.tsx
+git commit -m "feat(editor): send the current selection to the chat composer"
+```
+
+---
+
+## Task 13: Skills — "New skill" renders, creates a session, and navigates
+
+Fixes item 13. The chain works; it did not render where §14 put it, and its output landed on an unseen surface.
+
+**Files:**
+- Modify: `src/renderer/src/components/SkillsSection.tsx:56,64-79,100-104`
+- Modify: `src/renderer/src/components/WorkspaceSettingsView.tsx:225` (pass a session, or allow creation)
+- Modify: `src/renderer/src/App.tsx` (expose "create a session then open its chat tab")
+- Test: `tests/skills-view.test.ts` (extend)
+
+**Interfaces:**
+- Consumes: from Task 11, `openChat(tabs, sessionId)` and the `newSession` helper.
+- Produces: `SkillsSection` prop `onNewSkillSession: () => Promise<string>` — creates (or returns) a session, opens its chat tab, and navigates to it.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// append to tests/skills-view.test.ts
+test("the New skill button is offered even with no session — it creates one", () => {
+  expect(canStartSkillCreator({ sessionId: null })).toBe(true);
+});
+
+test("it is still offered with a session selected", () => {
+  expect(canStartSkillCreator({ sessionId: "s1" })).toBe(true);
+});
+```
+
+- [ ] **Step 2: Run and confirm failure**
+
+Run: `L=/tmp/v.log; npx vitest run tests/skills-view.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L`
+Expected: FAIL — `canStartSkillCreator` not exported.
+
+- [ ] **Step 3: Implement**
+
+Export the predicate from `SkillsSection.tsx` (it is trivially true now, which is the point — it documents that the button no longer depends on a session and gives the change a regression guard). Change `newSkill()` to:
+
+`onNewSkillSession()` does one job: return a session id **and** leave the user on that session's chat tab (creating the session if none is selected, focusing its tab if it exists). So `newSkill` is:
+
+```tsx
+const newSkill = async (): Promise<void> => {
+  const sid = await onNewSkillSession();   // creates if needed, opens the tab, navigates
+  const r = await window.hv.skillsNewSkill(sid);
+  if (!r.ok) { setError(r.error ?? "Could not start the skill creator."); return; }
+  await window.hv.promptSession(sid, "/skill:skill-creator");
+};
+```
+
+Also **echo `/skill:skill-creator` as a user message** in that session's transcript: `hv:prompt-session` emits no echo, and the invisible prompt is half of why this read as doing nothing.
+
+Render the button in `WorkspaceSettingsView.tsx` too, by passing the new prop through `ImportControls` at `:225`.
+
+Note the latent race at `ipc.ts:2419`: `sessionHasSkill` reads the manifest written at spawn, and `reloadSession` is awaited — if the manifest is not yet rewritten, `/skill:skill-creator` reaches the model as literal text. Verify after the fix that the command is registered (check `get_commands` in the live bridge test, or assert the transcript shows a skill card rather than the model answering the text).
+
+- [ ] **Step 4: Run the tests**
+
+Run: `L=/tmp/v.log; npx vitest run tests/skills-view.test.ts tests/skills-registry.test.ts > $L 2>&1; echo "EXIT=$?"; tail -25 $L`
+Expected: PASS. Then `npm run live:why`; if it prints anything, `npm run test:live`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/skills-view.test.ts src/renderer/src/components/SkillsSection.tsx src/renderer/src/components/WorkspaceSettingsView.tsx src/renderer/src/App.tsx
+git commit -m "fix(skills): New skill creates a session and takes the user to it"
+```
+
+---
+
+## Verification
+
+`npm run gate` must be EXIT=0 before the GUI pass. `npm run live:why` decides whether `npm run test:live` is required — if it prints nothing, say so rather than silently omitting it.
+
+### Observable GUI assertions
+
+Each line is what must be **TRUE on screen**, and **where it is observed** — the surface that owns a thing is usually not the surface that changed it.
+
+**Chat pane (a session mid-response)**
+- While text streams, scrolling up **stays** up — the view does not snap back on the next frame. Scroll back to the bottom and following resumes.
+- Press **Stop** mid-sentence: the message ends as **one** bubble. **Absence assertion: there is no second "AGENT" header** below it, and no bubble whose first characters are a sentence fragment.
+- A failing tool call (`ls /nope`) shows **one line** of red. **Absence assertion: no stack trace and no multi-line output are visible until the details toggle is opened** — and `security-guidance`-style walls of text never appear on first render.
+- A **provider error** still shows expanded **with its Retry button** — this is the thing that must NOT get collapsed by the same change.
+
+**MCP page (Settings → MCP)**
+- A connected server's `N tools` badge has a caret and opens to a scrollable list of tool **names with descriptions**. **Absence assertion: a server with `tools` undefined (e.g. one in `failed` or `needs-auth`) shows a plain badge with no caret** — no empty disclosure.
+
+**Stats page (Settings → Stats) — observed here, changed in `src/main/analytics.ts`**
+- With a `openai-codex` session in history, the Cost card **excludes** its dollars. **Absence assertion: the several-dollar figure that ChatGPT-subscription session used to contribute is absent**, and the session's own cost pill still reads `plan`. Cross-check on the **chat tab strip**, not on Stats: the two must now tell the same story.
+- A currently-**open** session contributes its spend (previously `$0`). Verified by opening a session, spending a turn, and reading Stats **without** closing it.
+- When any call has an unknown price, the card reads `$X+?` and the sub-label says prices are unknown.
+
+**Models page (Settings → Models)**
+- Sign in with ChatGPT, and **while the browser tab is open, navigate to another Settings page**. Come back: the provider shows as **signed in**. **Absence assertion: the "Sign in" button is absent for that provider** — this is the exact regression, since the old code lost the notify when the page unmounted.
+- A session opened **before** the sign-in can select the new provider's models without being restarted.
+
+**Left sidebar**
+- Each workspace row shows an emoji before its name; collapse the sidebar (⌘B) and the rail shows **emoji**. **Absence assertion: the two-letter initials (`HA`, `FL`) are absent from the rail.**
+- Drag the line between the workspace tree and Settings: both resize, and the position **survives a restart**. With Settings expanded and the split left alone, the tree keeps usable height and the **Settings list scrolls itself** rather than crushing the tree.
+
+**Workspace settings page (sidebar gear) — observed here, removed from the sidebar**
+- A **danger zone at the bottom**, after Workspace MCP, with both outcomes. Each confirm names the **workspace** and the **session count**.
+- **Absence assertion: the hover-revealed `×` next to the workspace's `+` is gone from the sidebar** — check by hovering a workspace row.
+- After **Forget**, the workspace is absent from the sidebar and its sessions are **absent from the active list but present in the archive**; re-add the folder and they come back. After **Delete permanently**, they are absent from the archive too.
+
+**Center area (layout)**
+- Selecting a second session **adds a tab**; the first tab is still there with its conversation. Both stream at once — start a turn in one, switch to the other, start a turn there, switch back: **both are still producing output**.
+- Split vertically, then split the left half horizontally → **three panes**; split the right half → **four**. Every divider drags. **Absence assertion: a third split of the same half does nothing** — 2×2 is the ceiling, and no fifth pane can appear.
+- The `+` at the end of a strip offers **New session** and **Open file…**, and the new tab lands in **that** pane.
+- Drag an editor tab with **unsaved changes** to another pane: the dirty dot and the unsaved text **survive** (this is the mount-once invariant).
+
+**System prompt page (Settings → System prompt)**
+- An "open files in context" toggle, **on** by default. With it on and two files open, the context panel's **Conversation** row grows after a prompt. **Absence assertion: the `<open-files>` block is absent from the user's message bubble in the transcript** — observed in the **chat**, not on the settings page.
+- Send two prompts without changing which files are open: the block appears **once**, not twice. Open a third file, send again: a new block appears.
+
+**Editor (a file tab with a selection)**
+- Select lines → **Send to chat** puts a fenced block headed `path:10-12` into the composer of the **focused chat tab**. **Absence assertion: with nothing selected, the action is unavailable** (it must not silently send the whole file — `@file` is for that).
+
+**Skills page + workspace settings**
+- **New skill** is present on **both** the Skills page and the workspace settings page, **including with no session selected**. Clicking it lands you **in a chat** with `/skill:skill-creator` visible as a user message and the creator's first question streaming. **Absence assertion: you are no longer left on the Skills page with nothing happening** — that is the whole bug.
+
+### The one regression each design risks, as a sequence to perform
+
+1. **Layout / mount-once:** open two sessions and a dirty file → split vertically → split the left half horizontally → drag the dirty file tab into the bottom-right pane → drag it back → close one chat tab → unsplit. The file must still be dirty with the same text, and no pane may be left blank.
+2. **Stop:** send a long prompt → press Stop mid-word → immediately send another prompt. The aborted turn stays one bubble and the new turn is a separate one; nothing merges across the boundary.
+3. **Scroll:** during a long response, scroll to the top and stay for ten seconds, then scroll to the bottom. No jump while up; following resumes at the bottom.
+4. **Errors collapsed:** trigger a tool error → open its details → let the agent retry and fail again. The second card is collapsed (the first card's opened state must not become the default).
+5. **Open files:** enable the toggle → prompt → disable it → prompt again. The second prompt carries no block, and the first prompt's block is not re-sent.
+6. **Workspace removal:** add a folder → run a session → Forget → re-add the folder. The session is back from the archive, not duplicated.
+
+---
+
+## Notes on order
+
+Tasks 1–9 are independent of the layout refactor and can land in any order. Task 10 (pure model) must precede Task 11 (render). Tasks 12 and 13 depend on Task 11 for "the focused chat tab". Run `npm run gate` after Task 11 and again at the end.
