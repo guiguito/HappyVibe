@@ -254,6 +254,26 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   and §9's open-files block injected into the agent's context. When it meant merely "not a chat", a
   `:term:` tab reached all three and the model was told a file named `:term:t1` was open. Pinned by
   `tests/tabs.test.ts`. Any FOURTH tab prefix must be excluded here in the same commit that adds it.
+- **Agent terminals (§26 part 2): three tools over ONE blocking envelope, and main owns every rule.**
+  `terminal_run`/`terminal_read`/`terminal_kill` are thin shells over `ctx.ui.input`
+  (`hv.terminal-*`, payload in **`title`**); `agentTerminals.ts` holds the session→terminal claims,
+  the soft cap of 3, the busy-reuse refusal and the interleave hold. `TerminalManager` stays
+  session-ignorant, which is why ending a session releases a claim rather than killing a PTY.
+  Three things bite in order: a **notify** carries its payload in `message`, not `title` (get this
+  wrong and the card silently never appears); `tool_execution_start` fires **before** tool_call
+  handlers, so it can NEVER prove a call was blocked — assert on the `hv.audit`
+  `source:"terminal"` envelope instead, or the test passes either way; and all three tools must be
+  **named** in `SAFE_TOOLS`/`gatePlanCall` (`terminal_read` in `PLAN_PASS_TOOLS`, because the
+  `floor-ask` default clamps allow→ask and would prompt on every poll). Wire shapes: d1.md.
+- **Registering a tool GROUP measurably dilutes a small model's tool choice — measure, don't reword.**
+  Adding §26's three terminal tools took deepseek-v4-flash from 3/5 to 0/5 `bash` calls on an
+  unrelated `touch` prompt, and it was not choosing `terminal_run` instead — it stopped calling
+  tools at all. Isolated: tools-with-no-steer-line already cost most of it (1/5), and two different
+  steer-line wordings both scored 0/5, so the tool list is the dominant term and prompt-tuning the
+  system message does not recover it. `tests/bridge.test.ts` and `tests/rules-bridge.test.ts` had to
+  name `bash` and rule out `terminal_run` in their prompts (5/5 after). If a live test starts failing
+  with "model never called X" right after you add tools, this is why — run the 5-trial comparison
+  (full table in d1.md) before blaming the prompt or widening a timeout.
 - The centre tab layout is **persisted** (`config.json` `layout`, validated + pruned on restore by
   `layoutPersist.ts` — main never learns what a tab is, same division of labour as `shortcuts`).
   `activeWs` persists in localStorage beside `hv:sidebar-collapsed`: without it the layout restores
