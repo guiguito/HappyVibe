@@ -60,6 +60,7 @@
     "node-pty": "^1.1.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "sherpa-onnx-node": "1.13.4",
     "simple-icons-font": "^16.26.0",
     "tailwindcss": "^4.3.2",
     "tar": "^7.5.21",
