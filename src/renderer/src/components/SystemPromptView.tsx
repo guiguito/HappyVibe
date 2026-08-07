@@ -119,11 +119,13 @@ export function SystemPromptView({ sessionId }: { sessionId: string | null }): R
         </Section>
 
         {/* Round 11: this page is "what the agent is told before every message",
-            which is exactly what the open-file list is. */}
+            which is exactly what the open-file list is. §26 part 2 put the
+            agent's own terminals on the same seam under the same toggle, so the
+            heading names both rather than quietly widening. */}
         <Section
           icon="sysprompt"
-          title="Open files"
-          subtitle="Let the agent see which files you have open."
+          title="Open files and terminals"
+          subtitle="Let the agent see which files you have open, and which terminals it has running."
         >
           <OpenFilesToggle />
         </Section>
@@ -139,6 +141,11 @@ export function SystemPromptView({ sessionId }: { sessionId: string | null }): R
  * per-workspace (§9): which files you have open is a habit, not a project
  * setting. Applies immediately, because it rides the prompt rather than the
  * spawn — worth saying, since every other toggle on this page does not.
+ *
+ * §26 part 2 rides the SAME seam and the SAME switch for the terminals the
+ * agent started. One setting, one answer — but the second half has a real cost
+ * the first does not, so the copy states it: with this off, an agent can start
+ * a dev server and then lose track of it after a compaction.
  */
 function OpenFilesToggle(): React.JSX.Element {
   const [on, setOn] = useState(true);
@@ -146,11 +153,16 @@ function OpenFilesToggle(): React.JSX.Element {
   return (
     <div className="rounded-xl border-2 border-line bg-card p-4 flex items-start justify-between gap-4">
       <div>
-        <div className="font-bold">Include open files</div>
+        <div className="font-bold">Include open files and terminals</div>
         <p className="text-sm text-ink-soft mt-0.5">
           Tells the agent which files you currently have open, as a list of paths — never their contents. It helps the
           agent answer &ldquo;this file&rdquo; without you spelling it out. Sent only when the list changes, and it
           takes effect on your next message.
+        </p>
+        <p className="text-sm text-ink-soft mt-1.5">
+          It also lists the terminals the agent itself started, so it can still find a dev server it opened earlier in
+          a long conversation. Turning this off takes that away too — the terminal keeps running and you keep seeing
+          it, but the agent may lose track of it.
         </p>
       </div>
       <button
