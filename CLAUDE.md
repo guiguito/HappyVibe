@@ -265,15 +265,18 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `source:"terminal"` envelope instead, or the test passes either way; and all three tools must be
   **named** in `SAFE_TOOLS`/`gatePlanCall` (`terminal_read` in `PLAN_PASS_TOOLS`, because the
   `floor-ask` default clamps allow→ask and would prompt on every poll). Wire shapes: d1.md.
-- **Registering a tool GROUP measurably dilutes a small model's tool choice — measure, don't reword.**
-  Adding §26's three terminal tools took deepseek-v4-flash from 3/5 to 0/5 `bash` calls on an
-  unrelated `touch` prompt, and it was not choosing `terminal_run` instead — it stopped calling
-  tools at all. Isolated: tools-with-no-steer-line already cost most of it (1/5), and two different
-  steer-line wordings both scored 0/5, so the tool list is the dominant term and prompt-tuning the
-  system message does not recover it. `tests/bridge.test.ts` and `tests/rules-bridge.test.ts` had to
-  name `bash` and rule out `terminal_run` in their prompts (5/5 after). If a live test starts failing
-  with "model never called X" right after you add tools, this is why — run the 5-trial comparison
-  (full table in d1.md) before blaming the prompt or widening a timeout.
+- **A live test failing "model never called X" is usually NOISE, not your change — and 5 trials
+  cannot tell you which.** This entry used to claim §26's three terminal tools made the model stop
+  calling `bash` (3/5 → 0/5). That was wrong. The comparison was five trials per cell run
+  sequentially in differing app states; **3/5 vs 0/5 is p = 0.167**, never significant, and the
+  tidy monotone table was binomial noise sorted by the story. Two interleaved re-runs killed it:
+  with only a probe extension varying the tool list (n=8), 0 tools gave 1/8 `bash` and the three
+  real tools gave **7/8** — the one significant result (p = 0.010) and it runs the OPPOSITE way;
+  in the shipped config with just `builtins.terminal` toggled (n=12), off 4/12 vs on 6/12
+  (p = 0.68, no effect). The model calls `bash` on roughly half of attempts at baseline, which is
+  the whole reason `askUntil` exists. So: before recording any behavioural claim about a model,
+  **interleave the arms and compute a p-value** — both are cheap and neither was done the first
+  time. Full retraction, tables and method in docs/validation/d1.md.
 - The centre tab layout is **persisted** (`config.json` `layout`, validated + pruned on restore by
   `layoutPersist.ts` — main never learns what a tab is, same division of labour as `shortcuts`).
   `activeWs` persists in localStorage beside `hv:sidebar-collapsed`: without it the layout restores
