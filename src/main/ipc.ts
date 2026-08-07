@@ -2036,6 +2036,16 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:term-close", (_e, id: string) => terminals.kill(id));
   ipcMain.handle("hv:term-list", (_e, ws?: string) => terminals.list(ws));
   ipcMain.handle("hv:term-snapshot", (_e, id: string) => terminals.snapshot(id));
+  // §26 part 2: the RENDERED grid as plain text — the agent-terminal card's
+  // collapsed tail. It exists because the first version accumulated raw PTY
+  // bytes in the renderer and stripped CSI escapes with a regex, which left
+  // control characters behind: zsh's line editor writes `s`, a backspace, then
+  // rewrites, so `sleep 600` was displayed as `ssleep 600`. That is precisely
+  // the failure §26 built the headless mirror to avoid — one buffer, more
+  // readers, never a second parser.
+  ipcMain.handle("hv:term-text", (_e, id: string, lines?: number) =>
+    terminals.readText(id, Math.min(Math.max(1, Math.floor(lines ?? 3)), 200)),
+  );
   ipcMain.handle("hv:term-foreground", (_e, id: string) => terminals.foreground(id));
   ipcMain.handle("hv:get-terminal-settings", () => getTerminalSettings());
   ipcMain.handle("hv:set-terminal-settings", (_e, s: Record<string, unknown>) =>

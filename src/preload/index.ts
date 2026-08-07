@@ -215,6 +215,7 @@ contextBridge.exposeInMainWorld("hv", {
   termList: (workspaceId?: string) => ipcRenderer.invoke("hv:term-list", workspaceId),
   /** addon-serialize output: what repaints a tab after a reload. */
   termSnapshot: (id: string) => ipcRenderer.invoke("hv:term-snapshot", id),
+  termText: (id: string, lines?: number) => ipcRenderer.invoke("hv:term-text", id, lines),
   /** The foreground command, or null at an idle prompt — the close confirm. */
   termForeground: (id: string) => ipcRenderer.invoke("hv:term-foreground", id),
   onTermData: (cb: (p: { id: string; data: string }) => void): (() => void) => {

@@ -147,26 +147,36 @@ function TerminalRunCard({
     return () => clearInterval(t);
   }, []);
 
-  // Collapsed: a cheap three-line DOM tail, the same treatment tool-card output
+  // Collapsed: a cheap three-line tail, the same treatment tool-card output
   // gets. Never an emulator — three of those in a sticky stack is three live
   // terminals rendering a firehose nobody is looking at.
+  //
+  // It reads MAIN's rendered grid rather than accumulating raw PTY bytes here,
+  // and that is not fastidiousness. The first version did accumulate bytes and
+  // stripped CSI escapes with a regex, which leaves CONTROL characters behind:
+  // zsh's line editor writes `s`, then a backspace, then rewrites the line, so
+  // `sleep 600` rendered as `ssleep 600` in the card while the terminal itself
+  // was perfectly fine. §26's whole reason for a headless mirror is that a
+  // second parser over raw bytes gets this wrong — so there is not one.
+  //
+  // ponytail: polled at 1s while collapsed. The push channel could trigger it
+  // instead, but a firehose would then re-read on every chunk; upgrade to a
+  // debounced push if a 1s tail ever feels stale.
   useEffect(() => {
     if (open) return;
-    let buf = "";
-    const off = window.hv.onTermData(({ id, data }) => {
-      if (id !== run.terminalId) return;
-      buf += data;
-      const lines = buf.replace(/\r(?!\n)/g, "\n").split("\n");
-      buf = lines.slice(-4).join("\n");
-      setTail(
-        lines
-          // eslint-disable-next-line no-control-regex
-          .map((l) => l.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "").trimEnd())
-          .filter((l) => l.length > 0)
-          .slice(-3),
-      );
-    });
-    return off;
+    let alive = true;
+    const pull = (): void => {
+      void window.hv.termText(run.terminalId, 3).then((text) => {
+        if (!alive) return;
+        setTail((text ?? "").split("\n").filter((l) => l.trim().length > 0).slice(-3));
+      });
+    };
+    pull();
+    const t = setInterval(pull, 1000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
   }, [open, run.terminalId]);
 
   return (

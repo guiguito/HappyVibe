@@ -569,6 +569,8 @@ interface HvApi {
   termList(workspaceId?: string): Promise<HvTerminalInfo[]>;
   /** addon-serialize output from main's headless mirror: repaints after ⌘R. */
   termSnapshot(id: string): Promise<string | null>;
+  /** §26 part 2: the rendered grid as plain text (the card's collapsed tail). */
+  termText(id: string, lines?: number): Promise<string | null>;
   /** The foreground command, or null at an idle prompt. Drives the close confirm. */
   termForeground(id: string): Promise<string | null>;
   /** Raw PTY bytes. Goes straight to term.write() — never through React state. */

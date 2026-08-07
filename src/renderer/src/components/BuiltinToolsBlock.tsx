@@ -348,7 +348,8 @@ export function BuiltinToolsBlock({
     <Section
       icon="tools"
       title="Built-in Custom Tools"
-      subtitle="App-provided tools implemented as ordinary tool calls, not part of Pi core. Both are on by default — turn either off if you don't want the agent to have it."
+      // "Both" was written when there were two entries; §26 made it three.
+      subtitle="App-provided tools implemented as ordinary tool calls, not part of Pi core. All are on by default — turn any of them off if you don't want the agent to have it."
     >
       <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
         <PlanModeRow builtins={builtins} onChange={patch} />
