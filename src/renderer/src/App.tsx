@@ -49,6 +49,7 @@ import {
 import { TabStrip } from "./components/TabStrip";
 import { TerminalTab } from "./components/TerminalTab";
 import { TerminalView } from "./components/TerminalView";
+import { VoiceView } from "./components/VoiceView";
 import { restoreLayout } from "./layoutPersist";
 import { buildGridStyle, paneEdges } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
@@ -1787,6 +1788,8 @@ export default function App(): React.JSX.Element {
         {activeView === "mcp" && <McpView />}
         {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
         {activeView === "terminal" && <TerminalView settings={termSettings} onChange={setTermSettings} />}
+        {/* §27: settings are global, so the page needs no props. */}
+        {activeView === "voice" && <VoiceView />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
           <AllToolsView
@@ -2043,6 +2046,7 @@ export default function App(): React.JSX.Element {
                 onOpenFolder={addWorkspace}
                 onOpenFile={openFileFromCard}
                 onOpenMcp={() => setView("mcp")}
+                onOpenVoice={() => setView("voice")}
                 onRewind={rewindTo}
                 onLoadEarlier={() => void loadEarlier(sid)}
                 activePlan={activePlan[sid] ?? null}

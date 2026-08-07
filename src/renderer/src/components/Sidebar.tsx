@@ -11,6 +11,8 @@ export type View =
   // Round 8: the settings scroll exploded into pages, each its own destination.
   | "models" | "permissions" | "sysprompt" | "stats" | "audit" | "shortcuts"
   | "terminal"
+  // §27.
+  | "voice"
   | "workspace";
 
 function basename(p: string): string {
@@ -137,6 +139,16 @@ function TerminalIcon(): React.JSX.Element {
   );
 }
 
+function VoiceIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
+  );
+}
+
 function KeyboardIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -165,6 +177,8 @@ const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> =
   { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
   // §26.
   { view: "terminal", label: "Terminal", Icon: TerminalIcon },
+  // §27. "Voice" means voice INPUT — there is no text-to-speech in V1.
+  { view: "voice", label: "Voice", Icon: VoiceIcon },
 ];
 
 /** Round 8: the collapse affordance — an actual chevron rather than a 10px

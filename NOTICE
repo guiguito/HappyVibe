@@ -1,0 +1,42 @@
+HappyVibe
+Third-party notices
+
+------------------------------------------------------------------------
+Speech recognition model (§27, voice input)
+------------------------------------------------------------------------
+
+HappyVibe's voice input feature downloads and uses:
+
+  nvidia/parakeet-tdt-0.6b-v3
+  https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+  Copyright (c) NVIDIA Corporation
+  Licensed under the Creative Commons Attribution 4.0 International
+  License (CC-BY-4.0): https://creativecommons.org/licenses/by/4.0/
+
+The model weights are used UNMODIFIED, in a quantized ONNX export
+redistributed by a third party as:
+
+  csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+  revision 2bda32ec70b097a55adaa07d9a7173915b43cc78
+
+HappyVibe has made no changes to the model architecture or to the
+trained weights. The int8 quantization is a property of that export,
+not a modification made by this project.
+
+The weights are not bundled with HappyVibe. They are downloaded by the
+user, on request, directly from Hugging Face, and are verified against
+a pinned SHA-256 per file before use.
+
+------------------------------------------------------------------------
+Inference runtime
+------------------------------------------------------------------------
+
+  sherpa-onnx (sherpa-onnx-node)
+  https://github.com/k2-fsa/sherpa-onnx
+  Licensed under the Apache License, Version 2.0
+  https://www.apache.org/licenses/LICENSE-2.0
+
+  ONNX Runtime
+  https://github.com/microsoft/onnxruntime
+  Copyright (c) Microsoft Corporation
+  Licensed under the MIT License
