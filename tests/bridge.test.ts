@@ -49,10 +49,22 @@ test.skipIf(!KEY)("bridge intercepts bash; deny blocks and agent continues", asy
 
   // The prompt is strongly worded, and a small model still sometimes answers in
   // prose instead of calling bash — so re-ask rather than fail on the model.
+  //
+  // It names `bash` and rules out terminal_run explicitly, and that is measured
+  // rather than defensive. §26 part 2 added three terminal tools, and a bigger
+  // tool list dilutes a small model's tool choice: over 5 trials of the older,
+  // shorter prompt, bash was called 3/5 times before those tools existed, 1/5
+  // with them registered and 0/5 with the system-prompt steer line as well. The
+  // model was not picking terminal_run instead — it stopped calling tools at
+  // all. With the wording below it is 5/5 with the whole feature enabled.
+  // The assertions are untouched; this only insists on getting the call the
+  // test is about.
   const asked = await askUntil(
     () => client.send({
       type: "prompt",
-      message: "You MUST immediately run exactly this shell command using the bash tool: touch forbidden.txt. Do not explain, do not ask questions — just call the bash tool with that command right now.",
+      message: "Call the `bash` tool right now with command exactly: touch forbidden.txt\n\nUse the "
+      + "`bash` tool specifically — this is a one-off command that finishes immediately, so it is NOT a "
+      + "terminal_run. Do not explain, do not ask questions, do not reply in prose: make the tool call.",
     }),
     () => reqs.some((r) => r.method === "select"),
   );
