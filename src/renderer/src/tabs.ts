@@ -35,16 +35,24 @@
  * between panes must not remount it (FileTab edit buffers would be lost).
  */
 
-/** A tab is a workspace-relative file path, or `:chat:<sessionId>`. */
+/** A tab is a workspace-relative file path, `:chat:<sessionId>`, or `:term:<id>`. */
 export type TabId = string;
 
 /** Paths never start with ":", so this cannot collide with one. */
 export const CHAT_PREFIX = ":chat:";
 export const chatTab = (sessionId: string): TabId => `${CHAT_PREFIX}${sessionId}`;
 export const isChatTab = (id: TabId): boolean => id.startsWith(CHAT_PREFIX);
-/** The session a chat tab belongs to, or null for a file tab. */
+/** The session a chat tab belongs to, or null for any other tab. */
 export const sessionOf = (id: TabId): string | null =>
   isChatTab(id) ? id.slice(CHAT_PREFIX.length) : null;
+
+/** §26's third tab type. Same prefix trick, same reason it cannot collide. */
+export const TERM_PREFIX = ":term:";
+export const termTab = (terminalId: string): TabId => `${TERM_PREFIX}${terminalId}`;
+export const isTermTab = (id: TabId): boolean => id.startsWith(TERM_PREFIX);
+/** The terminal a term tab belongs to, or null for any other tab. */
+export const terminalOf = (id: TabId): string | null =>
+  isTermTab(id) ? id.slice(TERM_PREFIX.length) : null;
 
 export interface Pane {
   tabs: TabId[];
@@ -99,10 +107,32 @@ export function liveSlots(t: WorkspaceTabs): Slot[] {
   return ([0, 1, 2, 3] as Slot[]).filter((i) => t.panes[i] != null);
 }
 
-/** Every open file path across every pane (for the flat mounted FileTab list). */
+/**
+ * Every open file path across every pane.
+ *
+ * A tab is a file only if it is neither a chat NOR a terminal. The negative
+ * test matters more than it looks: this one function feeds THREE consumers —
+ * the flat mounted FileTab list, the filesystem watch targets
+ * (watchTargets.ts), and §9's open-files block injected into the agent's
+ * context. When it meant merely "not a chat", a `:term:` tab reached all three
+ * and the model was told a file named `:term:t1` was open.
+ */
 export function allFiles(t: WorkspaceTabs): string[] {
   const out: string[] = [];
-  for (const i of liveSlots(t)) for (const id of t.panes[i]!.tabs) if (!isChatTab(id)) out.push(id);
+  for (const i of liveSlots(t))
+    for (const id of t.panes[i]!.tabs) if (!isChatTab(id) && !isTermTab(id)) out.push(id);
+  return out;
+}
+
+/** Every terminal with an open tab (App mounts one TerminalTab per entry). */
+export function allTerminals(t: WorkspaceTabs): string[] {
+  const out: string[] = [];
+  for (const i of liveSlots(t)) {
+    for (const id of t.panes[i]!.tabs) {
+      const tid = terminalOf(id);
+      if (tid) out.push(tid);
+    }
+  }
   return out;
 }
 
@@ -241,6 +271,11 @@ export function openFile(t: WorkspaceTabs, relPath: string): WorkspaceTabs {
  */
 export function openChat(t: WorkspaceTabs, sessionId: string): WorkspaceTabs {
   return addOrFocus(t, chatTab(sessionId));
+}
+
+/** Open (or focus) a terminal. §26: ⌘T and the pane `+` menu land here. */
+export function openTerminal(t: WorkspaceTabs, terminalId: string): WorkspaceTabs {
+  return addOrFocus(t, termTab(terminalId));
 }
 
 /** Close a tab in a specific pane; focus a neighbour, then collapse if empty. */

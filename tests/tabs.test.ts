@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import {
-  activateTab, activeTabOf, allChats, allFiles, bufferKey, chatTab, closeTab, emptyTabs, isChatTab,
-  closePane, closeSessionTabs, liveSlots, moveTab, openChat, openFile, splitAt, splitOptions, resolveCardPath, sessionOf, setSize, splitHalf, splitPane,
+  activateTab, activeTabOf, allChats, allFiles, allTerminals, bufferKey, chatTab, closeTab, emptyTabs, isChatTab,
+  closePane, closeSessionTabs, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, splitAt, splitOptions, resolveCardPath, sessionOf, setSize, splitHalf, splitPane, termTab, terminalOf,
 } from "../src/renderer/src/tabs";
 
 // ── tab identity: a chat is per SESSION (round 11) ───────────────────────────
@@ -401,4 +401,96 @@ test("closePane keeps the remaining split when four panes become three", () => {
 test("closePane refuses on the last pane — there is nowhere to move the tabs", () => {
   const t = openFile(emptyTabs, "a");
   expect(closePane(t, 0)).toBe(t);
+});
+
+// ── §26: the terminal is a third tab type ────────────────────────────────────
+
+test("a terminal tab round-trips its id and collides with nothing", () => {
+  expect(terminalOf(termTab("t1"))).toBe("t1");
+  expect(isTermTab(termTab("t1"))).toBe(true);
+  expect(isTermTab(chatTab("s1"))).toBe(false);
+  expect(isTermTab("src/App.tsx")).toBe(false);
+  expect(isChatTab(termTab("t1"))).toBe(false);
+  expect(terminalOf("src/App.tsx")).toBeNull();
+  expect(terminalOf(chatTab("s1"))).toBeNull();
+  expect(sessionOf(termTab("t1"))).toBeNull();
+});
+
+// The reason the :term: prefix needed a change beyond adding helpers. allFiles
+// meant "every tab that is not a chat", and it feeds THREE consumers: the
+// mounted FileTab list, the fs watch targets, and §9's open-files block sent to
+// the agent. A leak here reaches the model as a file named ":term:t1".
+test("allFiles excludes terminals as well as chats", () => {
+  let t = openFile(emptyTabs, "src/a.ts");
+  t = openChat(t, "s1");
+  t = openTerminal(t, "t1");
+  expect(allFiles(t)).toEqual(["src/a.ts"]);
+  expect(allChats(t)).toEqual(["s1"]);
+  expect(allTerminals(t)).toEqual(["t1"]);
+});
+
+test("allFiles stays clean across every pane of a 2x2", () => {
+  let t = openFile(emptyTabs, "a.ts");
+  t = splitAt(t, 0, "v");
+  t = openTerminal(t, "t1");
+  t = splitHalf(t, 0);
+  t = openTerminal(t, "t2");
+  t = openChat(t, "s1");
+  expect(allFiles(t)).toEqual(["a.ts"]);
+  expect(allTerminals(t).sort()).toEqual(["t1", "t2"]);
+});
+
+test("openTerminal adds, then focuses rather than duplicating", () => {
+  let t = openTerminal(emptyTabs, "t1");
+  t = openTerminal(t, "t2");
+  expect(t.panes[0]!.tabs).toEqual([termTab("t1"), termTab("t2")]);
+  t = splitAt(t, 0, "v");
+  expect(t.focused).toBe(1);
+  t = openTerminal(t, "t1");
+  expect(paneOf(t, termTab("t1"))).toBe(0);
+  expect(t.focused).toBe(0);
+  expect(allTerminals(t)).toEqual(["t1", "t2"]);
+});
+
+test("a terminal moves between panes like any other tab", () => {
+  let t = openTerminal(emptyTabs, "t1");
+  t = openFile(t, "src/a.ts");
+  t = splitAt(t, 0, "v");
+  t = moveTab(t, termTab("t1"), 1);
+  expect(paneOf(t, termTab("t1"))).toBe(1);
+  expect(allTerminals(t)).toEqual(["t1"]);
+  expect(allFiles(t)).toEqual(["src/a.ts"]);
+});
+
+test("closing the last tab of a pane collapses it, terminal or not", () => {
+  let t = openFile(emptyTabs, "a.ts");
+  t = splitAt(t, 0, "v");
+  t = openTerminal(t, "t1");
+  expect(liveSlots(t)).toEqual([0, 1]);
+  t = closeTab(t, 1, termTab("t1"));
+  expect(liveSlots(t)).toEqual([0]);
+  expect(t.split).toBeNull();
+  expect(allTerminals(t)).toEqual([]);
+});
+
+// The §26 regression sequence: a tab changes pane WITHOUT a drag, which is the
+// one path where closePane's merge and normalize's collapse run together.
+test("closePane merges a terminal into a sibling without losing it", () => {
+  let t = openTerminal(emptyTabs, "t1");
+  t = openChat(t, "s1");
+  t = splitAt(t, 0, "v");
+  t = openTerminal(t, "t2");
+  expect(paneOf(t, termTab("t2"))).toBe(1);
+  t = closePane(t, 1);
+  expect(liveSlots(t)).toEqual([0]);
+  expect(allTerminals(t).sort()).toEqual(["t1", "t2"]);
+  expect(allChats(t)).toEqual(["s1"]);
+});
+
+test("deleting a session drops its chat tab and leaves terminals alone", () => {
+  let t = openChat(emptyTabs, "s1");
+  t = openTerminal(t, "t1");
+  t = closeSessionTabs(t, "s1");
+  expect(allChats(t)).toEqual([]);
+  expect(allTerminals(t)).toEqual(["t1"]);
 });

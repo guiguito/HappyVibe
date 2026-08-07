@@ -220,6 +220,44 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   and the drift shows up as a refusal in front of the user. Read its run summary: the reject-reason
   histogram is what surfaced both bugs above, and a benign new manifest key shows up there as
   `declares "x", which HappyVibe does not recognise` rather than as a silently missing plugin.
+- **`node-pty`'s `spawn-helper` arrives from npm WITHOUT its executable bit**, and every `pty.spawn`
+  then fails with the entirely unhelpful `posix_spawnp failed.` — in DEV, before packaging, and on
+  every fresh clone. `scripts/fix-pty-helper.mjs` chmods it from `postinstall`; the first test in
+  `tests/terminals.test.ts` pins it so nobody deletes the script as mysterious. Corollary worth
+  knowing: node-pty 1.1.0 ships **N-API prebuilds**, so the same binary serves vitest's Node and
+  Electron — there is no `electron-rebuild` step, and tests CAN spawn a real PTY.
+- Terminals (§26, `src/main/terminals.ts` + `TerminalTab.tsx`): PTYs are owned by MAIN, so they
+  outlive a renderer reload. The scrollback buffer is an **`@xterm/headless` mirror**, not a byte
+  ring — one buffer, three readers: the live renderer (raw bytes), a re-attaching renderer
+  (`addon-serialize`, correct even mid-TUI), and part 2's agent read (`readText`, the rendered grid
+  as plain text). The tab title MUST be polled (`TITLE_POLL_MS`): `pty.process` changes with **no
+  data event**, so `sleep 30` — which prints nothing — leaves an onData-driven title reading `zsh`
+  forever. And a bad shell path does **not** throw from `pty.spawn`: node-pty's helper spawns fine
+  and the exec fails inside it, arriving as an immediate non-zero exit, so both routes land on one
+  inert state via `fail()`.
+- **The terminal font field is a measured picker (`monospaceFonts.ts`), and `SF Mono` is the reason.**
+  `queryLocalFonts()` works in Electron with no permission prompt but **throws `SecurityError:
+  Page needs to be visible` on a backgrounded window** — hence the probed `PROBE_FAMILIES` fallback,
+  and why enumeration runs from the settings page rather than at boot. It reports style but NOT
+  advance width, so monospace-ness is measured (`i`/`l`/`W`), and presence is measured by comparing
+  a family against TWO fallbacks. Measured on a stock Mac: 180 families → 7 monospace. `SF Mono`
+  does **not** resolve from a web context at all (Apple restricts it), which is what made the old
+  free-text field fail silently. Metrics cannot exclude `Wingdings 2` (genuinely fixed-width, ASCII
+  as pictograms) — that is what `SYMBOL_FAMILIES` is for, and relying on the per-row preview to make
+  it "obviously wrong on sight" was tried first and rejected by the user. The preview itself stays:
+  it is how you choose among the fonts that DO belong, so never "simplify" the picker to a plain
+  list. `fontFamily` stores a family NAME; `normalizeFamily` in the merge is the whole migration
+  from the old CSS-stack value, and `fontStack` appends `ui-monospace, monospace` so an uninstalled
+  font degrades to a monospace rather than to a proportional one.
+- **`allFiles` (tabs.ts) means "not a chat AND not a terminal" — never loosen it to "not a chat".**
+  It feeds THREE consumers: the mounted `FileTab` list, the fs watch targets (`watchTargets.ts`),
+  and §9's open-files block injected into the agent's context. When it meant merely "not a chat", a
+  `:term:` tab reached all three and the model was told a file named `:term:t1` was open. Pinned by
+  `tests/tabs.test.ts`. Any FOURTH tab prefix must be excluded here in the same commit that adds it.
+- The centre tab layout is **persisted** (`config.json` `layout`, validated + pruned on restore by
+  `layoutPersist.ts` — main never learns what a tab is, same division of labour as `shortcuts`).
+  `activeWs` persists in localStorage beside `hv:sidebar-collapsed`: without it the layout restores
+  into state and the app still renders the WELCOME screen, because `wsId` resolves through `activeWs`.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array

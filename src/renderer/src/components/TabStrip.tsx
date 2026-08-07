@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { basename, sessionOf, type Pane, type TabId } from "../tabs";
+import { basename, sessionOf, terminalOf, type Pane, type TabId } from "../tabs";
 
 /**
  * WS6 — center tab strip for ONE pane: one tab per open chat (session title) and
@@ -10,6 +10,11 @@ import { basename, sessionOf, type Pane, type TabId } from "../tabs";
  * own title and its own working dot; and a trailing `+` fills the pane without
  * leaving it. Chat tabs ARE closable now (closing hides the session, it does not
  * end it), which is why the close button is no longer file-only.
+ *
+ * §26: a TERMINAL is the third kind. Its label is the foreground command rather
+ * than a static name, because terminals sitting at a prompt should not all read
+ * the same — and unlike a chat, closing one KILLS its process, which is why its
+ * × routes through the same confirm ⌘W uses.
  *
  * Every LAYOUT control lives here too — split, file drawer, close pane — because
  * the global toolbar they replaced sat in the top strip row and pushed that one
@@ -22,12 +27,17 @@ export function TabStrip({
   pane,
   paneIndex,
   sessionTitleFor,
+  terminalTitleFor,
+  terminalExited,
   dirty,
   busyFor,
   onSelect,
   onClose,
   onMoveTab,
   onNewSession,
+  newSessionKey,
+  onNewTerminal,
+  newTerminalKey,
   onOpenFilePanel,
   splitOptions,
   onSplit,
@@ -40,6 +50,10 @@ export function TabStrip({
   paneIndex: number;
   /** A chat tab's label — per tab now, since a strip can hold several sessions. */
   sessionTitleFor: (sessionId: string) => string;
+  /** §26: a terminal tab's label — the foreground command, else the shell. */
+  terminalTitleFor: (terminalId: string) => string;
+  /** §26: a terminal whose process has exited renders muted, not gone. */
+  terminalExited: (terminalId: string) => boolean;
   /** relPath → has unsaved edits. */
   dirty: Record<string, boolean>;
   /** WS7: pulse dot while that session's agent works. Per session (round 11). */
@@ -49,6 +63,12 @@ export function TabStrip({
   onMoveTab: (tab: TabId, toPane: number) => void;
   /** Round 11: the trailing `+` — fill this pane without leaving it. */
   onNewSession: () => void;
+  /** Shown beside "New session" in the `+` menu, as ⌘T is beside New terminal. */
+  newSessionKey: string;
+  /** §26: opens a terminal in THIS pane. Same action ⌘T dispatches. */
+  onNewTerminal: () => void;
+  /** Shown beside "New terminal" so the menu teaches the binding. */
+  newTerminalKey: string;
   onOpenFilePanel: () => void;
   /**
    * Which split directions this pane can offer (tabs.ts splitOptions). Per pane
@@ -103,8 +123,11 @@ export function TabStrip({
         {pane.tabs.map((id) => {
           const active = pane.active === id;
           const sid = sessionOf(id);
+          const tid = terminalOf(id);
           const isChat = sid !== null;
-          const label = isChat ? sessionTitleFor(sid) : basename(id);
+          const isTerm = tid !== null;
+          const label = isChat ? sessionTitleFor(sid) : isTerm ? terminalTitleFor(tid) : basename(id);
+          const exited = isTerm && terminalExited(tid);
           return (
             <span
               key={id}
@@ -117,12 +140,13 @@ export function TabStrip({
               onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(id)}
               onAuxClick={(e) => e.button === 1 && onClose(id)}
               className={tab(active)}
-              title={isChat ? label : id}
+              title={isChat || isTerm ? label : id}
             >
               {isChat && <ChatGlyph />}
-              <span className="truncate">{label}</span>
+              {isTerm && <TerminalGlyph />}
+              <span className={`truncate ${exited ? "line-through opacity-60" : ""}`}>{label}</span>
               {isChat && busyFor(sid) && <span className="size-1.5 rounded-full bg-tangerine animate-pulse shrink-0" title="Working…" />}
-              {!isChat && dirty[id] && <span className="size-1.5 rounded-full bg-tangerine shrink-0" title="Unsaved changes" />}
+              {!isChat && !isTerm && dirty[id] && <span className="size-1.5 rounded-full bg-tangerine shrink-0" title="Unsaved changes" />}
               {(
                 <button
                   type="button"
@@ -140,8 +164,14 @@ export function TabStrip({
           );
         })}
       </div>
-      {/* Round 11: fill THIS pane — a new session, or the file panel to pick from. */}
-      <NewTabButton onNewSession={onNewSession} onOpenFilePanel={onOpenFilePanel} />
+      {/* Round 11: fill THIS pane — a session, a terminal (§26), or a file. */}
+      <NewTabButton
+        onNewSession={onNewSession}
+        newSessionKey={newSessionKey}
+        onNewTerminal={onNewTerminal}
+        newTerminalKey={newTerminalKey}
+        onOpenFilePanel={onOpenFilePanel}
+      />
       {/* Absorbs the leftover width so the strip remains a drop target end to end. */}
       <span className="flex-1 min-w-0" />
       {/* This pane's own layout controls. Only what is legal for THIS pane is
@@ -214,17 +244,56 @@ function PaneButton({
   );
 }
 
-/** The trailing `+`: a two-item menu, closed on blur so there is no backdrop. */
+/**
+ * The trailing `+`: a three-item menu, closed on blur so there is no backdrop.
+ *
+ * Every row that HAS a keyboard binding shows it, in one shared renderer — the
+ * menu is where a binding gets taught, and a row that omits its own shortcut
+ * while the row beneath it shows one reads as an oversight. "Open file…" stays
+ * bare on purpose: ⌘⇧E TOGGLES the file drawer, so printing it next to an
+ * action that only ever opens it would be wrong half the time.
+ */
 function NewTabButton({
   onNewSession,
+  newSessionKey,
+  onNewTerminal,
+  newTerminalKey,
   onOpenFilePanel,
 }: {
   onNewSession: () => void;
+  /** Shown beside "New session" — the same binding ⌘N dispatches. */
+  newSessionKey: string;
+  /** §26: opens a terminal in THIS pane. Same action ⌘T dispatches. */
+  onNewTerminal: () => void;
+  /** Shown beside "New terminal" so the menu teaches the binding. */
+  newTerminalKey: string;
   onOpenFilePanel: () => void;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
-  const item =
-    "block w-full text-left px-3 py-2 text-[13px] hover:bg-paper-deep/60 cursor-pointer whitespace-nowrap";
+
+  /** One row. `hint` is the shortcut, omitted where there is no exact one. */
+  const Item = ({
+    label,
+    hint,
+    onPick,
+  }: {
+    label: string;
+    hint?: string;
+    onPick: () => void;
+  }): React.JSX.Element => (
+    <button
+      type="button"
+      className="flex w-full items-center justify-between gap-6 px-3 py-2 text-left text-[13px] whitespace-nowrap hover:bg-paper-deep/60 cursor-pointer"
+      onClick={() => {
+        setOpen(false);
+        onPick();
+      }}
+    >
+      <span>{label}</span>
+      {hint && <span className="text-[11px] text-ink-soft font-mono">{hint}</span>}
+    </button>
+  );
+
   return (
     <div className="relative shrink-0 flex items-stretch" onBlur={(e) => {
       if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
@@ -243,15 +312,23 @@ function NewTabButton({
           a right-aligned menu would extend leftward off the pane. */}
       {open && (
         <div className="absolute left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
-          <button type="button" className={item} onClick={() => { setOpen(false); onNewSession(); }}>
-            New session
-          </button>
-          <button type="button" className={item} onClick={() => { setOpen(false); onOpenFilePanel(); }}>
-            Open file…
-          </button>
+          <Item label="New session" hint={newSessionKey} onPick={onNewSession} />
+          <Item label="New terminal" hint={newTerminalKey} onPick={onNewTerminal} />
+          <Item label="Open file…" onPick={onOpenFilePanel} />
         </div>
       )}
     </div>
+  );
+}
+
+/** §26: the same glyph toolLabel.ts already uses for bash — a terminal reads
+    as "a running command", which is what it is. */
+function TerminalGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 17l6-5-6-5" />
+      <path d="M12 19h8" />
+    </svg>
   );
 }
 

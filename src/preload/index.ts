@@ -200,6 +200,40 @@ contextBridge.exposeInMainWorld("hv", {
   getShortcuts: () => ipcRenderer.invoke("hv:get-shortcuts"),
   setShortcuts: (map: Record<string, string>) => ipcRenderer.invoke("hv:set-shortcuts", map),
 
+  // ── §26 Terminals (additive) ─────────────────────────────────────
+  // PTYs live in main; this is the whole surface a view needs. termData is a
+  // raw byte stream and goes straight into xterm — never through React state.
+  termCreate: (workspaceId: string, cols?: number, rows?: number) =>
+    ipcRenderer.invoke("hv:term-create", workspaceId, cols, rows),
+  termInput: (id: string, data: string) => ipcRenderer.invoke("hv:term-input", id, data),
+  termResize: (id: string, cols: number, rows: number) =>
+    ipcRenderer.invoke("hv:term-resize", id, cols, rows),
+  termClose: (id: string) => ipcRenderer.invoke("hv:term-close", id),
+  termList: (workspaceId?: string) => ipcRenderer.invoke("hv:term-list", workspaceId),
+  /** addon-serialize output: what repaints a tab after a reload. */
+  termSnapshot: (id: string) => ipcRenderer.invoke("hv:term-snapshot", id),
+  /** The foreground command, or null at an idle prompt — the close confirm. */
+  termForeground: (id: string) => ipcRenderer.invoke("hv:term-foreground", id),
+  onTermData: (cb: (p: { id: string; data: string }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { id: string; data: string });
+    ipcRenderer.on("hv:term-data", h);
+    return () => ipcRenderer.removeListener("hv:term-data", h);
+  },
+  onTermExit: (cb: (p: { id: string; code: number }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { id: string; code: number });
+    ipcRenderer.on("hv:term-exit", h);
+    return () => ipcRenderer.removeListener("hv:term-exit", h);
+  },
+  onTermTitle: (cb: (p: { id: string; title: string }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { id: string; title: string });
+    ipcRenderer.on("hv:term-title", h);
+    return () => ipcRenderer.removeListener("hv:term-title", h);
+  },
+  getTerminalSettings: () => ipcRenderer.invoke("hv:get-terminal-settings"),
+  setTerminalSettings: (s: Record<string, unknown>) => ipcRenderer.invoke("hv:set-terminal-settings", s),
+  getLayout: () => ipcRenderer.invoke("hv:get-layout"),
+  setLayout: (l: Record<string, unknown>) => ipcRenderer.invoke("hv:set-layout", l),
+
   // ── §14 Skills (additive) ────────────────────────────────────────
   // list returns {global, workspace}; approve/enable/activate apply live via
   // respawn-resume. Invocation cards arrive as hv.skill notifies through
