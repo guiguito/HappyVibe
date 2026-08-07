@@ -8,6 +8,26 @@ interface HvTerminalInfo {
   running: boolean;
   exitCode: number | null;
 }
+/** §27. Mirrors VoiceStatus in src/main/voice/index.ts. */
+interface HvVoiceStatus {
+  state: "unactivated" | "downloading" | "ready" | "error";
+  bytesDone: number;
+  bytesTotal: number;
+  error?: string;
+  /** What Remove would free. 0 when nothing is on disk. */
+  sizeOnDisk: number;
+}
+/** §27. Mirrors VoiceSettings in src/main/voice/settings.ts. */
+interface HvVoiceSettings {
+  language: string;
+  /** "" means the system default input device. */
+  inputDeviceId: string;
+  echoCancellation: boolean;
+  noiseSuppression: boolean;
+  autoGainControl: boolean;
+  holdThresholdMs: number;
+  maxRecordingMs: number;
+}
 /** §26. Mirrors TerminalSettings in src/main/terminalSettings.ts. */
 interface HvTerminalSettings {
   style: "workshop" | "paper" | "carbon";
@@ -583,6 +603,23 @@ interface HvApi {
       and prunes it on restore (layoutPersist.ts). */
   getLayout(): Promise<Record<string, unknown>>;
   setLayout(l: Record<string, unknown>): Promise<void>;
+
+  // ── §27 Voice input ──────────────────────────────────────────────
+  voiceStatus(): Promise<HvVoiceStatus>;
+  /** Starts the download and returns immediately — it must not block the app. */
+  voiceDownload(): Promise<HvVoiceStatus>;
+  voiceCancelDownload(): Promise<HvVoiceStatus>;
+  voiceRemoveModel(): Promise<HvVoiceStatus>;
+  getVoiceSettings(): Promise<HvVoiceSettings>;
+  setVoiceSettings(s: Partial<HvVoiceSettings>): Promise<HvVoiceSettings>;
+  /** §8.3: check this BEFORE getUserMedia. A denied mic on macOS still hands
+      back a "live" track that produces nothing but zeros. */
+  voiceMicStatus(): Promise<"not-determined" | "granted" | "denied" | "restricted" | "unknown">;
+  voiceAskMic(): Promise<boolean>;
+  voiceOpenMicSettings(): Promise<void>;
+  /** Int16 PCM at 16 kHz mono in, transcript out. Nothing is logged (§11). */
+  voiceTranscribe(pcm: Int16Array): Promise<string>;
+  onVoiceStatusChanged(cb: (s: HvVoiceStatus) => void): () => void;
 
   // §14 Skills (additive)
   skillsList(workspaceId?: string): Promise<HvSkillsList>;

@@ -8,5 +8,11 @@
     <true/>
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>
     <true/>
+    <!-- §27: voice input. Chromium captures audio in a HELPER process, which is
+         signed from entitlementsInherit — so this plist must be BOTH the
+         entitlements and the entitlementsInherit target, and afterPack.mjs must
+         pass it to its ad-hoc re-sign or that re-sign strips this key back off. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
   </dict>
 </plist>
