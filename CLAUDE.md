@@ -242,8 +242,10 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   advance width, so monospace-ness is measured (`i`/`l`/`W`), and presence is measured by comparing
   a family against TWO fallbacks. Measured on a stock Mac: 180 families → 7 monospace. `SF Mono`
   does **not** resolve from a web context at all (Apple restricts it), which is what made the old
-  free-text field fail silently. Metrics cannot exclude `Wingdings 2` (genuinely fixed-width) —
-  **rendering each row in its own font is the filter**, so never "simplify" the picker to a plain
+  free-text field fail silently. Metrics cannot exclude `Wingdings 2` (genuinely fixed-width, ASCII
+  as pictograms) — that is what `SYMBOL_FAMILIES` is for, and relying on the per-row preview to make
+  it "obviously wrong on sight" was tried first and rejected by the user. The preview itself stays:
+  it is how you choose among the fonts that DO belong, so never "simplify" the picker to a plain
   list. `fontFamily` stores a family NAME; `normalizeFamily` in the merge is the whole migration
   from the old CSS-stack value, and `fontStack` appends `ui-monospace, monospace` so an uninstalled
   font degrades to a monospace rather than to a proportional one.

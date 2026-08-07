@@ -1753,6 +1753,7 @@ export default function App(): React.JSX.Element {
                     }}
                     onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
                     onNewSession={() => void newSession(wsId)}
+                    newSessionKey={formatBinding(bindings.newSession)}
                     onNewTerminal={() => {
                       // Focus first, so the terminal lands in the pane whose
                       // `+` was clicked rather than in whatever was focused.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUNDLED_MONO,
   PROBE_FAMILIES,
+  SYMBOL_FAMILIES,
   isMonospace,
   resolves,
   selectMonospace,
@@ -88,10 +89,10 @@ describe("isMonospace", () => {
     expect(isMonospace(BOOK, "Georgia")).toBe(false);
   });
 
-  it("cannot exclude a fixed-width SYMBOL font — the UI preview does that", () => {
+  it("cannot exclude a fixed-width SYMBOL font — that is SYMBOL_FAMILIES' job", () => {
     // Documented rather than pretended away: Wingdings 2 is genuinely
-    // fixed-width. The picker renders every option in its own font, which is
-    // what makes it obviously wrong on sight.
+    // fixed-width and passes every measurement. Nothing metric-based can
+    // reject it, which is exactly why the name denylist exists.
     expect(isMonospace(BOOK, "Wingdings 2")).toBe(true);
   });
 });
@@ -145,5 +146,37 @@ describe("PROBE_FAMILIES", () => {
 
   it("has no duplicates", () => {
     expect(new Set(PROBE_FAMILIES).size).toBe(PROBE_FAMILIES.length);
+  });
+});
+
+describe("SYMBOL_FAMILIES", () => {
+  it("excludes dingbat and symbol families that pass every measurement", () => {
+    for (const bad of [
+      "Wingdings", "Wingdings 2", "Wingdings 3", "Webdings",
+      "Zapf Dingbats", "ZapfDingbats", "Dingbats", "Symbol",
+      "Apple Symbols", "Bodoni Ornaments", "Marlett",
+    ]) {
+      expect(SYMBOL_FAMILIES.test(bad), bad).toBe(true);
+    }
+  });
+
+  it("is case-insensitive, since family names arrive from the OS", () => {
+    expect(SYMBOL_FAMILIES.test("WINGDINGS 2")).toBe(true);
+    expect(SYMBOL_FAMILIES.test("webdings")).toBe(true);
+  });
+
+  it("does not swallow real coding fonts whose names merely start similarly", () => {
+    // The \\b is what stops this: "Symbola" and "Symbol Mono" are not "Symbol".
+    for (const good of [
+      "Menlo", "Monaco", "Fira Code", "Symbola", "SymbolMono",
+      "IBM Plex Mono", "Source Code Pro", "JetBrains Mono Variable",
+    ]) {
+      expect(SYMBOL_FAMILIES.test(good), good).toBe(false);
+    }
+  });
+
+  it("keeps them out of selectMonospace even though the metrics say monospace", () => {
+    const out = selectMonospace(BOOK, ["Menlo", "Wingdings 2"]);
+    expect(out).toEqual([BUNDLED_MONO, "Menlo"]);
   });
 });

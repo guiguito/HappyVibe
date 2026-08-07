@@ -35,6 +35,7 @@ export function TabStrip({
   onClose,
   onMoveTab,
   onNewSession,
+  newSessionKey,
   onNewTerminal,
   newTerminalKey,
   onOpenFilePanel,
@@ -62,6 +63,8 @@ export function TabStrip({
   onMoveTab: (tab: TabId, toPane: number) => void;
   /** Round 11: the trailing `+` — fill this pane without leaving it. */
   onNewSession: () => void;
+  /** Shown beside "New session" in the `+` menu, as ⌘T is beside New terminal. */
+  newSessionKey: string;
   /** §26: opens a terminal in THIS pane. Same action ⌘T dispatches. */
   onNewTerminal: () => void;
   /** Shown beside "New terminal" so the menu teaches the binding. */
@@ -164,6 +167,7 @@ export function TabStrip({
       {/* Round 11: fill THIS pane — a session, a terminal (§26), or a file. */}
       <NewTabButton
         onNewSession={onNewSession}
+        newSessionKey={newSessionKey}
         onNewTerminal={onNewTerminal}
         newTerminalKey={newTerminalKey}
         onOpenFilePanel={onOpenFilePanel}
@@ -240,14 +244,25 @@ function PaneButton({
   );
 }
 
-/** The trailing `+`: a three-item menu, closed on blur so there is no backdrop. */
+/**
+ * The trailing `+`: a three-item menu, closed on blur so there is no backdrop.
+ *
+ * Every row that HAS a keyboard binding shows it, in one shared renderer — the
+ * menu is where a binding gets taught, and a row that omits its own shortcut
+ * while the row beneath it shows one reads as an oversight. "Open file…" stays
+ * bare on purpose: ⌘⇧E TOGGLES the file drawer, so printing it next to an
+ * action that only ever opens it would be wrong half the time.
+ */
 function NewTabButton({
   onNewSession,
+  newSessionKey,
   onNewTerminal,
   newTerminalKey,
   onOpenFilePanel,
 }: {
   onNewSession: () => void;
+  /** Shown beside "New session" — the same binding ⌘N dispatches. */
+  newSessionKey: string;
   /** §26: opens a terminal in THIS pane. Same action ⌘T dispatches. */
   onNewTerminal: () => void;
   /** Shown beside "New terminal" so the menu teaches the binding. */
@@ -255,8 +270,30 @@ function NewTabButton({
   onOpenFilePanel: () => void;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
-  const item =
-    "block w-full text-left px-3 py-2 text-[13px] hover:bg-paper-deep/60 cursor-pointer whitespace-nowrap";
+
+  /** One row. `hint` is the shortcut, omitted where there is no exact one. */
+  const Item = ({
+    label,
+    hint,
+    onPick,
+  }: {
+    label: string;
+    hint?: string;
+    onPick: () => void;
+  }): React.JSX.Element => (
+    <button
+      type="button"
+      className="flex w-full items-center justify-between gap-6 px-3 py-2 text-left text-[13px] whitespace-nowrap hover:bg-paper-deep/60 cursor-pointer"
+      onClick={() => {
+        setOpen(false);
+        onPick();
+      }}
+    >
+      <span>{label}</span>
+      {hint && <span className="text-[11px] text-ink-soft font-mono">{hint}</span>}
+    </button>
+  );
+
   return (
     <div className="relative shrink-0 flex items-stretch" onBlur={(e) => {
       if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
@@ -275,21 +312,9 @@ function NewTabButton({
           a right-aligned menu would extend leftward off the pane. */}
       {open && (
         <div className="absolute left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
-          <button type="button" className={item} onClick={() => { setOpen(false); onNewSession(); }}>
-            New session
-          </button>
-          <button
-            type="button"
-            className={`${item} flex items-center justify-between gap-6`}
-            onClick={() => { setOpen(false); onNewTerminal(); }}
-          >
-            <span>New terminal</span>
-            {/* The menu is where the binding gets taught — §26 asks for it here. */}
-            <span className="text-[11px] text-ink-soft font-mono">{newTerminalKey}</span>
-          </button>
-          <button type="button" className={item} onClick={() => { setOpen(false); onOpenFilePanel(); }}>
-            Open file…
-          </button>
+          <Item label="New session" hint={newSessionKey} onPick={onNewSession} />
+          <Item label="New terminal" hint={newTerminalKey} onPick={onNewTerminal} />
+          <Item label="Open file…" onPick={onOpenFilePanel} />
         </div>
       )}
     </div>

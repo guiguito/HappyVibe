@@ -22,14 +22,25 @@
  * Both take a `FontProbe` rather than touching canvas directly, so the logic is
  * unit-testable without a DOM (`tests/monospace-fonts.test.ts`).
  *
- * KNOWN LIMIT, handled in the UI rather than here: metrics cannot tell a coding
- * font from a symbol font. `Wingdings 2` is genuinely fixed-width and passes
- * every check. The picker renders each option IN ITS OWN FONT, which is what
- * excludes it — the same reason the palette page shows real swatches.
+ * Metrics cannot tell a coding font from a SYMBOL font — `Wingdings 2` is
+ * genuinely fixed-width and passes every measurement — so those are excluded by
+ * name (SYMBOL_FAMILIES). Rendering each row in its own font was the first
+ * answer and it is not good enough on its own: a list you have to visually
+ * discard entries from is still a list with garbage in it. The preview stays,
+ * because it is how you choose between the fonts that DO belong.
  */
 
 /** Ships with the app, so it is always offered and is the default. */
 export const BUNDLED_MONO = "JetBrains Mono Variable";
+
+/**
+ * Dingbat and symbol families, excluded by NAME because no measurement can
+ * catch them: they are fixed-width and pass every check, while rendering ASCII
+ * as pictograms. A denylist is acceptable here where it would not be for, say,
+ * a security filter — the set is small, stable, and decades old, and the cost
+ * of missing one is a visibly silly row rather than a broken terminal.
+ */
+export const SYMBOL_FAMILIES = /^(wingdings|webdings|zapf\s?dingbats|dingbats|symbol|apple symbols|bodoni ornaments|marlett|ornaments)\b/i;
 
 /**
  * Probed by name when enumeration is unavailable — `queryLocalFonts` throws
@@ -99,6 +110,7 @@ export function selectMonospace(probe: FontProbe, families: Iterable<string>): s
     if (!family || seen.has(family)) continue;
     seen.add(family);
     if (family === BUNDLED_MONO) continue; // pinned below, never filtered out
+    if (SYMBOL_FAMILIES.test(family)) continue; // fixed-width, but not text
     if (resolves(probe, family) && isMonospace(probe, family)) out.push(family);
   }
   out.sort((a, b) => a.localeCompare(b));
