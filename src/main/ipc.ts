@@ -3479,6 +3479,47 @@ export function registerIpc(win: BrowserWindow): void {
    * Remove everything a plugin installed, found by its provenance/origin link
    * rather than from a plugin registry we would have to keep in sync with disk.
    */
+  /**
+   * §25 round 12 — enable everything this plugin installed, in place.
+   *
+   * The install banner used to be a checklist naming three other pages. It now
+   * acts, and this is what it calls.
+   *
+   * Why a handler rather than ids in the banner: hv:plugins-install returns
+   * skill NAMES, while skillsSetEnabled takes a skill's ID (its directory).
+   * Rather than plumb a second identifier over the wire, this reuses the exact
+   * provenance link hv:plugins-remove scans — so what gets enabled cannot
+   * disagree with what got installed.
+   *
+   * It does NOT reverse the 2026-08-04 rule that an install activates nothing:
+   * the click is still the user's gesture, it has just stopped being a hunt.
+   */
+  ipcMain.handle("hv:plugins-enable-installed", (_e, plugin: string) => {
+    const id = String(plugin);
+    const now = new Date().toISOString();
+    let skills = 0;
+    let commands = 0;
+    try {
+      for (const sk of scanSkillsDir(managedSkillsDir(agentDir()), "managed")) {
+        if (skillRegistry.record(sk.id)?.provenance?.plugin !== id) continue;
+        skillRegistry.setEnabled(sk.id, true, now);
+        skills++;
+      }
+      for (const c of scanPromptTemplatesDir(managedPromptTemplatesDir(agentDir()), "managed")) {
+        if (promptTemplateRegistry.record(c.id)?.provenance?.plugin !== id) continue;
+        promptTemplateRegistry.setEnabled(c.id, true, now);
+        commands++;
+      }
+      // Same follow-through as the install path, or the session keeps the old set.
+      if (skills > 0) { skillsChanged(); scheduleSkillReload("global", null); }
+      if (commands > 0) { promptTemplatesChanged(); schedulePromptTemplateReload("global", null); }
+      void log.append({ type: "plugin.enabled", data: { plugin: id, skills, commands } });
+      return { ok: true as const, skills, commands };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
   ipcMain.handle("hv:plugins-remove", (_e, plugin: string) => {
     const id = String(plugin);
     const now = new Date().toISOString();

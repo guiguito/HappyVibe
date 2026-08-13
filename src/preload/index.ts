@@ -341,6 +341,7 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:plugins-install", token, sel),
   pluginInstalled: () => ipcRenderer.invoke("hv:plugins-installed"),
   pluginRemove: (plugin: string) => ipcRenderer.invoke("hv:plugins-remove", plugin),
+  pluginEnableInstalled: (plugin: string) => ipcRenderer.invoke("hv:plugins-enable-installed", plugin),
   promptTemplatesPromote: (id: string) => ipcRenderer.invoke("hv:prompt-templates-promote", id),
   /** Does ~/.claude/commands exist? Drives the one-click link suggestion. */
   onPromptTemplatesChanged: (cb: () => void): (() => void) => {

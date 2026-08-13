@@ -727,6 +727,10 @@ interface HvApi {
     | { ok: true; skills: string[]; commands: string[]; servers: string[] }
     | { ok: false; error: string }
   >;
+  /** §25 round 12: enable this plugin's installed skills and prompts in place. */
+  pluginEnableInstalled(
+    plugin: string,
+  ): Promise<{ ok: true; skills: number; commands: number } | { ok: false; error: string }>;
 
   // MCP server config (additive). Changes apply to new sessions.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;

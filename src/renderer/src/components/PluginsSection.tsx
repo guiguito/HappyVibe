@@ -25,6 +25,24 @@ interface Chosen {
 
 const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? "" : "s"}`;
 
+/** §25 round 12: how many cards a page shows. */
+export const PAGE = 24;
+
+/**
+ * §25 round 12 — recognised brands first, then alphabetical inside each group.
+ *
+ * "Recognised" means the generator resolved a brand icon for it (83 of 179
+ * today), which inherits BrandMark's existing guarantee that a class is only
+ * emitted if it actually renders. A hand-picked "featured" list was rejected
+ * for re-introducing the per-release curation tax the generated catalog exists
+ * to remove.
+ */
+export function sortCards<T extends { name: string; brand?: string }>(cards: T[]): T[] {
+  return [...cards].sort(
+    (a, b) => (a.brand ? 0 : 1) - (b.brand ? 0 : 1) || a.name.localeCompare(b.name),
+  );
+}
+
 export function PluginsSection(): React.JSX.Element {
   const [cards, setCards] = useState<Card[]>([]);
   const [generatedAt, setGeneratedAt] = useState("");
@@ -37,7 +55,12 @@ export function PluginsSection(): React.JSX.Element {
   const [scanning, setScanning] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Chosen>({ skills: new Set(), commands: new Set(), servers: new Set() });
   const [installing, setInstalling] = useState(false);
-  const [done, setDone] = useState<{ skills: string[]; commands: string[]; servers: string[]; substituted: number } | null>(null);
+  const [done, setDone] = useState<{ plugin: string; skills: string[]; commands: string[]; servers: string[]; substituted: number } | null>(null);
+  // §25 round 12: the banner acts, so it holds the outcome of acting.
+  const [enabling, setEnabling] = useState(false);
+  const [enabled, setEnabled] = useState<{ skills: number; commands: number } | null>(null);
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [connected, setConnected] = useState<Set<string>>(new Set());
   const [installed, setInstalled] = useState<
     Array<{ plugin: string; marketplace?: string; skills: string[]; commands: string[]; servers: string[] }>
   >([]);
@@ -65,12 +88,22 @@ export function PluginsSection(): React.JSX.Element {
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return cards.filter((c) => {
-      if (category && c.category !== category) return false;
-      if (!q) return true;
-      return c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q);
-    });
+    return sortCards(
+      cards.filter((c) => {
+        if (category && c.category !== category) return false;
+        if (!q) return true;
+        return c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q);
+      }),
+    );
   }, [cards, query, category]);
+
+  // §25 round 12: a first page plus Show more, rather than 179 cards at once.
+  // Numbered pagination would need a cursor kept in sync with BOTH the search
+  // box and the category chips, to buy nothing this does not.
+  const [limit, setLimit] = useState(PAGE);
+  // A new filter starts a new list — inheriting a scrolled-open limit would make
+  // "Show more (N left)" describe the previous search.
+  useEffect(() => setLimit(PAGE), [query, category]);
 
   const openPlugin = (card: Card): void => {
     setScanning(card.name);
@@ -103,6 +136,8 @@ export function PluginsSection(): React.JSX.Element {
     if (!scan) return;
     setInstalling(true);
     setError(null);
+    setEnabled(null);
+    setConnected(new Set());
     void window.hv
       .pluginInstall(scan.token, {
         skillDirs: [...chosen.skills],
@@ -115,7 +150,7 @@ export function PluginsSection(): React.JSX.Element {
           setError(res.error);
           return;
         }
-        setDone({ skills: res.skills, commands: res.commands, servers: res.servers, substituted: res.substituted });
+        setDone({ plugin: scan.name, skills: res.skills, commands: res.commands, servers: res.servers, substituted: res.substituted });
         setScan(null);
         refreshInstalled();
       });
@@ -215,17 +250,60 @@ export function PluginsSection(): React.JSX.Element {
             ].filter(Boolean).join(" · ") || "nothing"}
             . <strong>Nothing from it is active yet — that part is yours:</strong>
           </p>
-          <ul className="mt-1 ml-4 list-disc space-y-0.5">
-            {done.skills.length > 0 && (
-              <li>enable {done.skills.length === 1 ? "the skill" : `each of the ${done.skills.length} skills`} on the <strong>Skills</strong> page</li>
+          {/* §25 round 12: the handover ACTS here instead of naming three other
+              pages. The install still activates nothing on its own — this click
+              is the user's gesture, it has just stopped being a page hunt. */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {(done.skills.length > 0 || done.commands.length > 0) && (
+              <button
+                disabled={enabling || enabled !== null}
+                onClick={() => {
+                  if (!done.plugin) return;
+                  setEnabling(true);
+                  void window.hv.pluginEnableInstalled(done.plugin).then((res) => {
+                    setEnabling(false);
+                    if (res.ok) setEnabled({ skills: res.skills, commands: res.commands });
+                    else setError(res.error);
+                  });
+                }}
+                className="rounded-lg border border-green-700/40 bg-white px-2.5 py-1 font-semibold hover:bg-green-100 disabled:opacity-50"
+              >
+                {enabling
+                  ? "Enabling…"
+                  : enabled
+                    ? "Enabled"
+                    : `Enable ${[
+                        done.skills.length ? plural(done.skills.length, "skill") : null,
+                        done.commands.length ? plural(done.commands.length, "prompt") : null,
+                      ].filter(Boolean).join(" · ")}`}
+              </button>
             )}
-            {done.commands.length > 0 && (
-              <li>enable {done.commands.length === 1 ? "the prompt" : `each of the ${done.commands.length} prompts`} on the <strong>Prompts</strong> page</li>
-            )}
-            {done.servers.length > 0 && (
-              <li>connect {done.servers.length === 1 ? "the server" : `each of the ${done.servers.length} servers`} on the <strong>MCP</strong> page — most need signing in before the agent can use them</li>
-            )}
-          </ul>
+            {done.servers.map((name) => (
+              <button
+                key={name}
+                disabled={connecting === name || connected.has(name)}
+                onClick={() => {
+                  setConnecting(name);
+                  // The same flow the MCP page runs: probe, escalate to browser
+                  // OAuth only on a genuine 401, then report the tools found.
+                  void window.hv.mcpConnectFlow("global", null, name).then((res) => {
+                    setConnecting(null);
+                    if (res.ok) setConnected((p) => new Set(p).add(name));
+                    else setError(`${name}: ${res.error}`);
+                  });
+                }}
+                className="rounded-lg border border-green-700/40 bg-white px-2.5 py-1 font-semibold hover:bg-green-100 disabled:opacity-50"
+              >
+                {connecting === name ? `Connecting ${name}…` : connected.has(name) ? `${name} connected` : `Connect ${name}`}
+              </button>
+            ))}
+          </div>
+          {enabled && (
+            <p className="mt-1.5">
+              {plural(enabled.skills, "skill")} and {plural(enabled.commands, "prompt")} are on. Fine-tune them on the{" "}
+              <strong>Skills</strong> and <strong>Prompts</strong> pages.
+            </p>
+          )}
           {done.substituted > 0 && (
             <p className="mt-1">{plural(done.substituted, "plugin-root path")} rewritten to the install location.</p>
           )}
@@ -234,7 +312,7 @@ export function PluginsSection(): React.JSX.Element {
 
       {/* ── cards ───────────────────────────────────────────────────────── */}
       <div className="grid gap-2 sm:grid-cols-2">
-        {shown.map((c) => (
+        {shown.slice(0, limit).map((c) => (
           <button
             key={c.name}
             disabled={scanning !== null}
@@ -261,6 +339,14 @@ export function PluginsSection(): React.JSX.Element {
           </button>
         ))}
       </div>
+      {shown.length > limit && (
+        <button
+          onClick={() => setLimit((n) => n + PAGE)}
+          className="w-full rounded-lg border border-line bg-paper py-2 text-sm font-semibold hover:bg-paper-soft"
+        >
+          Show more ({shown.length - limit} left)
+        </button>
+      )}
       {!loading && shown.length === 0 && <p className="text-sm text-ink-soft">Nothing matches that search.</p>}
 
       {/* ── confirm dialog ──────────────────────────────────────────────── */}
