@@ -15,6 +15,30 @@ export function rewindActions(scope: RewindScope): RewindActions {
   };
 }
 
+/** What `hv:rewind-preview` answers with. `null` = no snapshot at this message. */
+export interface RewindPreview {
+  willRestore: string[];
+  willDelete: string[];
+  stale: string[];
+}
+
+/**
+ * §9 round 12 — is there anything for a file rewind to DO?
+ *
+ * Three states have to read as "no", and only the first was handled before (and
+ * only by greying one option, which still asks the user to reason about a
+ * control that cannot act):
+ *   - `undefined` — the preview is still loading. The file scopes stay hidden
+ *     until the answer arrives; revealing then hiding would make options vanish
+ *     from under the cursor, which is worse than one that was never offered.
+ *   - `null` — no snapshot anchored here (a steer, or a capture that failed).
+ *   - a snapshot whose diff is empty — the turn only READ files.
+ */
+export function hasRestorable(preview: RewindPreview | null | undefined): boolean {
+  if (!preview) return false;
+  return preview.willRestore.length + preview.willDelete.length > 0;
+}
+
 /**
  * The tool calls being undone by a rewind anchored at `idx`. `toolCallId` is
  * the only identifier durable across a reload (renderer ids renumber on every

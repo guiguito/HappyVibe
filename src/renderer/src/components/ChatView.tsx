@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
-import { tailToolCallIds, type RewindScope } from "../rewind";
+import { hasRestorable, tailToolCallIds, type RewindScope } from "../rewind";
 import { matchesBinding } from "../shortcuts";
 import { ModelSelect } from "./ModelSelect";
 import { ContextBubble } from "./ContextBubble";
@@ -693,11 +693,20 @@ export function ChatView({
               message moves back into the composer so you can edit and resend it.
             </p>
             <div className="flex flex-col gap-1.5 mb-3">
-              {([
-                ["conversation", "Conversation only", "Files on disk are left exactly as they are."],
-                ["both", "Conversation and files", "Also roll the workspace back to before this message."],
-                ["files", "Files only", "Roll the workspace back, keep the conversation."],
-              ] as const).map(([value, label, hint]) => (
+              {((): Array<[RewindScope, string, string]> => {
+                const opts: Array<[RewindScope, string, string]> = [
+                  ["conversation", "Conversation only", "Files on disk are left exactly as they are."],
+                ];
+                // §9 round 12: the file scopes exist only when a rewind here
+                // would actually restore something. Hidden, not greyed — and
+                // hidden while the preview loads, so they appear once and never
+                // vanish from under the cursor.
+                if (hasRestorable(rewindPreview)) {
+                  opts.push(["both", "Conversation and files", "Also roll the workspace back to before this message."]);
+                  opts.push(["files", "Files only", "Roll the workspace back, keep the conversation."]);
+                }
+                return opts;
+              })().map(([value, label, hint]) => (
                 <label
                   key={value}
                   className="flex gap-2 items-start cursor-pointer rounded-xl border-2 border-line p-2 hover:bg-paper-deep"
@@ -716,28 +725,21 @@ export function ChatView({
                 </label>
               ))}
             </div>
-            {rewindScope !== "conversation" && (
+            {/* §9 round 12: the loading and no-snapshot branches this block used
+                to carry are gone with the options that led here — a file scope
+                cannot be selected unless the preview already said yes. */}
+            {rewindScope !== "conversation" && rewindPreview && (
               <div className="text-xs text-ink-soft mb-4 rounded-xl bg-paper-deep p-2">
-                {rewindPreview === undefined ? (
-                  "Checking which files would change…"
-                ) : rewindPreview === null ? (
-                  rewindScope === "files"
-                    ? "No snapshot for this message, and the conversation is being kept — this would do nothing."
-                    : "No snapshot for this message — no files will change."
-                ) : (
-                  <>
-                    <div>
-                      <strong>{rewindPreview.willRestore.length}</strong> restored,{" "}
-                      <strong>{rewindPreview.willDelete.length}</strong> removed.
-                    </div>
-                    {rewindPreview.stale.length > 0 && (
-                      <div className="mt-1">
-                        {rewindPreview.stale.length} changed since and will be left alone:{" "}
-                        {rewindPreview.stale.slice(0, 3).join(", ")}
-                        {rewindPreview.stale.length > 3 ? "…" : ""}
-                      </div>
-                    )}
-                  </>
+                <div>
+                  <strong>{rewindPreview.willRestore.length}</strong> restored,{" "}
+                  <strong>{rewindPreview.willDelete.length}</strong> removed.
+                </div>
+                {rewindPreview.stale.length > 0 && (
+                  <div className="mt-1">
+                    {rewindPreview.stale.length} changed since and will be left alone:{" "}
+                    {rewindPreview.stale.slice(0, 3).join(", ")}
+                    {rewindPreview.stale.length > 3 ? "…" : ""}
+                  </div>
                 )}
               </div>
             )}
@@ -757,7 +759,9 @@ export function ChatView({
                 // still truncate the conversation, so they stay live. This also
                 // covers turns whose capture failed, not just steers (a steer
                 // has no snapshot of its own — see hv:prompt-session).
-                disabled={rewindScope === "files" && rewindPreview === null}
+                // The "files with no anchor" combination is now unreachable —
+                // that scope is not rendered unless there is something to
+                // restore — so there is nothing left to disable.
                 onClick={() => {
                   const it = pendingRewind;
                   onRewind?.(it, rewindScope);
