@@ -171,13 +171,71 @@ say, not instead of what the error said.
 samples and called nothing**. That is the gate working, not failing: silence
 never reaches the model.
 
+## Feedback round 2 (2026-08-13) — what the app measured
+
+Five items came back. **One needed no work:** the dictation shortcut was already on
+the Keyboard shortcuts page (`shortcuts.ts` → `FIXED_SHORTCUTS`, rendered by
+`ShortcutsView`), reading *"Hold right ⌘"*. It was missed because the **Built-in**
+section sits below the editable list *and* below "Reset all to defaults", so the
+binding is now also named on the Voice page's Behaviour row, where someone looking
+for voice actually goes.
+
+**Two defects were found by looking, not by reasoning.**
+
+**1. The overlay was invisible off the chat tab.** Rendering it from `ChatView`
+with `position: fixed` looked sufficient. It is not: App gives each pane
+`display: none` when the active view is not `"chat"`, and a `display:none`
+ancestor collapses a fixed child. Measured — the overlay was present in the DOM at
+**0×0**, hidden by `div.min-h-0.min-w-0.flex-col.hidden`. So starting a recording
+and opening a settings page hid the only indicator there was, and with the chip
+hidden there would have been none at all: a hot microphone with no feedback, which
+is the exact failure the meter exists to prevent. Fixed by portalling to
+`document.body`. After: **218×64 on the chat tab AND on the Models page**, with
+`parent: BODY`.
+
+**2. Two composers could hold the microphone at once.** `ChatView` is mapped per
+chat tab and two panes can be visible simultaneously, each with its own
+`useDictation`. Nothing stopped clicking one chip then the other — two
+`getUserMedia` streams, and now two stacked overlays. A module-level token makes
+"one microphone, one recording" true rather than lucky.
+
+**A third trap cost time and is worth writing down.** After changing
+`src/main/voice/settings.ts`, the renderer reported `enabled: undefined` — and the
+built artifact *did* contain the change, newer than the source. The running main
+was stale, and worse, the restarted instance had failed to take the debug port:
+`bind() failed: Address already in use (48) / Cannot start http server for
+devtools`. Every probe was hitting a **zombie** process, which is why evaluate
+calls hung rather than failing. Check that line in the dev log before believing
+anything a debug session tells you after a restart.
+
+### Verified on screen
+
+- The chip renders **no level bars** and still carries **no HTML `disabled`
+  attribute**.
+- `showInComposer: false` ⇒ the chip is **absent from the DOM** (0 matches), and
+  visibly gone from the composer row — while the gesture and overlay still work.
+- Flipping **Show mic in the chat bar** on the Voice page changes the **chat tab**
+  with **no reload** — the App-owned settings propagate, which a hook-local fetch
+  would not have done.
+- Recording shows **exactly one** overlay despite multiple mounted `ChatView`s,
+  reading *"Listening… Click to stop · Esc to cancel"*.
+- The glow is genuinely level-driven: **10 of 10 samples over 1.5 s were distinct**.
+  A CSS animation would look the same and mean nothing.
+- Clicking the overlay stops the recording; state settles back to `Dictate` with no
+  hot microphone left behind.
+- Both toggles appear as `role="switch"`, and the `Ready` status is **not** inside a
+  button.
+
 ## Not verified, and why
 
 **Anything requiring actual speech.** Permission is now granted and capture is
 proven (above), but nothing has spoken into the microphone, so these are still
 open:
 
-- a transcript of real speech appending to the composer, blank-line separated;
+- a transcript of real speech landing AT THE CARET with single-space padding
+  (round 2). `insertAtComposer` is thoroughly unit-tested and the wiring builds,
+  but no voice has traversed it — in particular the caret-restore effect, which
+  has to run after React commits or the caret snaps to the end;
 - the level meter visibly tracking a voice rather than room tone — the numbers say
   it updates at 35 Hz, but "moves when you speak" is a human observation;
 - the **full** Escape sequence (dropdown open *and* recording live: first Escape

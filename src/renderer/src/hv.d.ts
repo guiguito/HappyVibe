@@ -19,6 +19,10 @@ interface HvVoiceStatus {
 }
 /** §27. Mirrors VoiceSettings in src/main/voice/settings.ts. */
 interface HvVoiceSettings {
+  /** Round 2: functional activation, separate from model readiness. */
+  enabled: boolean;
+  /** Round 2: whether the chip takes space in the composer row. */
+  showInComposer: boolean;
   language: string;
   /** "" means the system default input device. */
   inputDeviceId: string;

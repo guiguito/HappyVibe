@@ -12,8 +12,6 @@ interface Props {
   state: MicState;
   /** 0..1, only meaningful while downloading. */
   progress?: number;
-  /** 0..1 RMS, only meaningful while recording. */
-  level?: number;
   onClick: () => void;
   /** Shown in the tooltip so the gesture is discoverable without the docs. */
   hint?: string;
@@ -54,7 +52,7 @@ const LABEL: Record<MicState, string> = {
   transcribing: "Transcribing…",
 };
 
-export function MicButton({ state, progress = 0, level = 0, onClick, hint }: Props): React.JSX.Element {
+export function MicButton({ state, progress = 0, onClick, hint }: Props): React.JSX.Element {
   const base = "shrink-0 flex items-center gap-1 text-[11px] font-bold rounded-full px-2.5 py-1.5 transition-colors";
 
   const tone =
@@ -96,20 +94,10 @@ export function MicButton({ state, progress = 0, level = 0, onClick, hint }: Pro
         <MicGlyph />
       )}
 
-      {state === "recording" && (
-        // A real level meter, driven by the worklet's RMS. Without it a user
-        // cannot tell a dead microphone from a slow model — the largest
-        // reported support burden across shipping dictation products.
-        <span aria-hidden className="flex items-end gap-[2px] h-3 w-6">
-          {[0.35, 0.7, 1, 0.7, 0.35].map((w, i) => (
-            <span
-              key={i}
-              className="flex-1 rounded-full bg-current"
-              style={{ height: `${Math.max(12, Math.min(100, level * w * 320))}%` }}
-            />
-          ))}
-        </span>
-      )}
+      {/* Round 2: the level meter moved to VoiceOverlay. It was hard to read at
+          this size and it taxed the width of the control row permanently — the
+          two complaints behind this change. The chip keeps its red tint so it
+          is still the click target that stops the recording. */}
     </button>
   );
 }

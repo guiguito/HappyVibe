@@ -8,6 +8,19 @@
 import { isSupported, DEFAULT_LANGUAGE } from "./languages";
 
 export interface VoiceSettings {
+  /**
+   * Feedback round 2: FUNCTIONAL activation, deliberately separate from whether
+   * the model happens to be downloaded. A status pill that doubles as a toggle
+   * is overloaded, and "disable voice" must never read as "delete 671 MB".
+   * Off means: no chip, an inert gesture, and the microphone is never opened.
+   */
+  enabled: boolean;
+  /**
+   * Whether the mic chip occupies space in the composer control row. Off still
+   * leaves the keyboard gesture and the recording overlay working — that is why
+   * it is its own setting rather than a mode of `enabled`.
+   */
+  showInComposer: boolean;
   language: string;
   /** "" means the system default input device. */
   inputDeviceId: string;
@@ -19,6 +32,8 @@ export interface VoiceSettings {
 }
 
 export const VOICE_DEFAULTS: VoiceSettings = {
+  enabled: true,
+  showInComposer: true,
   language: DEFAULT_LANGUAGE,
   inputDeviceId: "",
   // On by default, which is right for most people. Off is the calibration knob
@@ -43,6 +58,8 @@ function bool(v: unknown, dflt: boolean): boolean {
 
 export function mergeVoiceSettings(p: Partial<VoiceSettings> | undefined | null): VoiceSettings {
   return {
+    enabled: bool(p?.enabled, VOICE_DEFAULTS.enabled),
+    showInComposer: bool(p?.showInComposer, VOICE_DEFAULTS.showInComposer),
     // An unsupported language never survives a read — §9's whole point is that
     // out-of-set input produces confident garbage rather than a bad transcript.
     language:

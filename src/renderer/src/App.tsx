@@ -155,6 +155,16 @@ export default function App(): React.JSX.Element {
     resolve: (d: "stop" | "keep" | null) => void;
   } | null>(null);
   const [termSettings, setTermSettings] = useState<HvTerminalSettings | null>(null);
+  /**
+   * §27 round 2: voice settings live HERE, not inside useDictation.
+   *
+   * Same ownership as termSettings and for the same reason: several ChatViews
+   * are mounted at once, and a hook-local fetch happens once at mount — so a
+   * toggle on the Voice page would never reach a composer that was already
+   * open. App owning it makes both toggles apply instantly, with no new
+   * broadcast channel to keep in sync.
+   */
+  const [voiceSettings, setVoiceSettings] = useState<HvVoiceSettings | null>(null);
   // Gate the layout WRITER until the stored layout has been read back, or the
   // first render's empty {} would overwrite it before it ever loaded.
   const [layoutLoaded, setLayoutLoaded] = useState(false);
@@ -193,6 +203,7 @@ export default function App(): React.JSX.Element {
   // Settings are global, so they load once and every mounted emulator reads
   // the same object.
   useEffect(() => { void window.hv.getTerminalSettings().then(setTermSettings); }, []);
+  useEffect(() => { void window.hv.getVoiceSettings().then(setVoiceSettings); }, []);
   // Lifecycle pushes. A terminal that exits stays in the map with running:false
   // — §26 refuses to close a tab out from under someone, so the tab must be
   // able to keep rendering an inert one.
@@ -1847,7 +1858,7 @@ export default function App(): React.JSX.Element {
         {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
         {activeView === "terminal" && <TerminalView settings={termSettings} onChange={setTermSettings} />}
         {/* §27: settings are global, so the page needs no props. */}
-        {activeView === "voice" && <VoiceView />}
+        {activeView === "voice" && <VoiceView settings={voiceSettings} onChange={setVoiceSettings} />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
           <AllToolsView
@@ -2105,6 +2116,7 @@ export default function App(): React.JSX.Element {
                 onOpenFile={openFileFromCard}
                 onOpenMcp={() => setView("mcp")}
                 onOpenVoice={() => setView("voice")}
+                voiceSettings={voiceSettings}
                 onRewind={rewindTo}
                 onLoadEarlier={() => void loadEarlier(sid)}
                 activePlan={activePlan[sid] ?? null}

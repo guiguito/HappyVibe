@@ -48,6 +48,31 @@ describe("voice languages", () => {
 });
 
 describe("voice settings merge", () => {
+  it("ships enabled and visible by default — voice is opt-out, not opt-in", () => {
+    // Feedback round 2: functional activation is separate from whether the
+    // model is downloaded, so these two say nothing about readiness.
+    const s = mergeVoiceSettings(undefined);
+    expect(s.enabled).toBe(true);
+    expect(s.showInComposer).toBe(true);
+  });
+
+  it("keeps the two round-2 toggles independent", () => {
+    // Hiding the chip must NOT disable the feature: the gesture and the overlay
+    // keep working, which is the whole reason there are two settings.
+    const hidden = mergeVoiceSettings({ showInComposer: false });
+    expect(hidden.showInComposer).toBe(false);
+    expect(hidden.enabled).toBe(true);
+
+    const off = mergeVoiceSettings({ enabled: false });
+    expect(off.enabled).toBe(false);
+    expect(off.showInComposer).toBe(true);
+  });
+
+  it("ignores wrong-typed round-2 toggles rather than coercing them", () => {
+    expect(mergeVoiceSettings({ enabled: "no" as unknown as boolean }).enabled).toBe(true);
+    expect(mergeVoiceSettings({ showInComposer: 0 as unknown as boolean }).showInComposer).toBe(true);
+  });
+
   it("supplies defaults, with the processing toggles ON", () => {
     const s = mergeVoiceSettings(undefined);
     expect(s).toEqual(VOICE_DEFAULTS);

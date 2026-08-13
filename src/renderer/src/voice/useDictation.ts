@@ -16,6 +16,12 @@ import type { MicState } from "../components/MicButton";
  * pure gates (gates.ts); this hook is the wiring that owns the effects.
  */
 interface Options {
+  /**
+   * App-owned voice settings, passed down like termSettings. NOT fetched here:
+   * a hook-local fetch happens once at mount, so toggling a setting on the
+   * Voice page would not reach an already-mounted composer.
+   */
+  settings: HvVoiceSettings | null;
   /** Called with the transcript. Empty strings never reach it. */
   onText: (text: string) => void;
   /** Surfaced as a transient composer notice. */
@@ -36,43 +42,75 @@ export interface Dictation {
       Returns true only when a recording was actually cancelled. */
   cancelOnEscape: () => boolean;
   hint: string;
+  /** Overlay visibility — true from start until stop. */
+  recording: boolean;
+  /** Overlay spinner — true from stop until the transcript lands. */
+  transcribing: boolean;
+  /**
+   * Whether the composer should render the chip at all. False when voice is
+   * disabled OR when the user has hidden it to reclaim the row's width; in the
+   * hidden case the gesture and the overlay still work.
+   */
+  showChip: boolean;
+  /** Stop and transcribe — the overlay's click target. */
+  stop: () => void;
 }
+
+/**
+ * Which hook instance currently holds the microphone, app-wide.
+ *
+ * Round 2. ChatView is mounted per chat tab and two composers can be visible at
+ * once (App.tsx says so where it focuses a pane), so each visible chat owns its
+ * own useDictation. Nothing stopped two of them recording at the same time:
+ * clicking one chip then the other opened two getUserMedia streams and, now,
+ * would stack two overlays. Module scope is the right scope for "the microphone"
+ * because there is exactly one microphone.
+ */
+let micHolder: symbol | null = null;
 
 const isMac = navigator.platform.toLowerCase().includes("mac");
 const TRIGGER = triggerCode(isMac ? "darwin" : "other");
 const HINT = isMac ? "hold right ⌘" : "hold right Ctrl";
 
-export function useDictation({ onText, onError, onNeedsActivation }: Options): Dictation {
+export function useDictation({ settings, onText, onError, onNeedsActivation }: Options): Dictation {
   const [status, setStatus] = useState<HvVoiceStatus | null>(null);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [level, setLevel] = useState(0);
 
+  /** Identity for the module-level microphone token. */
+  const instanceRef = useRef<symbol | null>(null);
+  if (instanceRef.current === null) instanceRef.current = Symbol("dictation");
+  const instanceId = instanceRef.current;
+
   const gesture = useRef<GestureState>(initialGesture());
   const session = useRef<CaptureSession | null>(null);
-  const settings = useRef<HvVoiceSettings | null>(null);
   /** Guards against a stop() landing after a cancel() for the same recording. */
   const runId = useRef(0);
 
   useEffect(() => {
     void window.hv.voiceStatus().then(setStatus);
-    void window.hv.getVoiceSettings().then((s) => {
-      settings.current = s;
-    });
     return window.hv.onVoiceStatusChanged(setStatus);
   }, []);
 
-  const ready = status?.state === "ready";
+  // Round 2: functional activation gates everything. `enabled: false` means the
+  // gesture is inert and the microphone is never opened — not merely hidden.
+  const on = settings?.enabled !== false;
+  const ready = on && status?.state === "ready";
 
   const begin = useCallback(async () => {
     if (session.current) return;
+    // Another composer already holds the microphone. Refuse rather than open a
+    // second stream — one microphone, one recording, one overlay.
+    if (micHolder !== null && micHolder !== instanceId) return;
+    micHolder = instanceId;
     const id = ++runId.current;
     try {
       const s = await startCapture({
-        deviceId: settings.current?.inputDeviceId || undefined,
-        echoCancellation: settings.current?.echoCancellation ?? true,
-        noiseSuppression: settings.current?.noiseSuppression ?? true,
-        autoGainControl: settings.current?.autoGainControl ?? true,
+        deviceId: settings?.inputDeviceId || undefined,
+        echoCancellation: settings?.echoCancellation ?? true,
+        noiseSuppression: settings?.noiseSuppression ?? true,
+        autoGainControl: settings?.autoGainControl ?? true,
         onLevel: (rms) => {
           if (runId.current === id) setLevel(rms);
         },
@@ -80,11 +118,13 @@ export function useDictation({ onText, onError, onNeedsActivation }: Options): D
       // Cancelled while getUserMedia was still resolving.
       if (runId.current !== id) {
         s.cancel();
+        if (micHolder === instanceId) micHolder = null;
         return;
       }
       session.current = s;
       setRecording(true);
     } catch (err) {
+      if (micHolder === instanceId) micHolder = null;
       gesture.current = initialGesture();
       setRecording(false);
       // ALWAYS surface the underlying message. The first version collapsed
@@ -104,6 +144,7 @@ export function useDictation({ onText, onError, onNeedsActivation }: Options): D
     const s = session.current;
     if (!s) return;
     session.current = null;
+    if (micHolder === instanceId) micHolder = null;
     setRecording(false);
     setLevel(0);
     const id = runId.current;
@@ -129,6 +170,7 @@ export function useDictation({ onText, onError, onNeedsActivation }: Options): D
     runId.current++;
     session.current?.cancel();
     session.current = null;
+    if (micHolder === instanceId) micHolder = null;
     setRecording(false);
     setLevel(0);
   }, []);
@@ -137,8 +179,8 @@ export function useDictation({ onText, onError, onNeedsActivation }: Options): D
     (e: GestureEvent) => {
       const r = gestureReducer(gesture.current, e, {
         code: TRIGGER,
-        holdMs: settings.current?.holdThresholdMs,
-        maxMs: settings.current?.maxRecordingMs,
+        holdMs: settings?.holdThresholdMs,
+        maxMs: settings?.maxRecordingMs,
       });
       gesture.current = r.state;
       if (r.action === "start") void begin();
@@ -151,7 +193,7 @@ export function useDictation({ onText, onError, onNeedsActivation }: Options): D
   // The toggle-mode cap. One timer while recording, rather than a global tick.
   useEffect(() => {
     if (!recording) return;
-    const max = settings.current?.maxRecordingMs ?? 300_000;
+    const max = settings?.maxRecordingMs ?? 300_000;
     const t = setTimeout(() => dispatch({ type: "tick", at: Date.now() + max + 1 }), max);
     return () => clearTimeout(t);
   }, [recording, dispatch]);
@@ -164,7 +206,8 @@ export function useDictation({ onText, onError, onNeedsActivation }: Options): D
       // the reducer can ABANDON the gesture (right-⌘+S must not dictate).
       if (code !== TRIGGER && !gesture.current.recording) return;
       if (code === TRIGGER && !ready) {
-        if (kind === "down") onNeedsActivation();
+        // Disabled means inert: no modal, no mic status query, nothing.
+        if (kind === "down" && on) onNeedsActivation();
         return;
       }
       dispatch({ type: kind === "down" ? "keydown" : "keyup", code, at: Date.now() });
@@ -174,7 +217,7 @@ export function useDictation({ onText, onError, onNeedsActivation }: Options): D
 
   const toggle = useCallback(() => {
     if (!ready) {
-      onNeedsActivation();
+      if (on) onNeedsActivation();
       return;
     }
     if (recording) void finish();
@@ -212,5 +255,9 @@ export function useDictation({ onText, onError, onNeedsActivation }: Options): D
     handleKey,
     cancelOnEscape,
     hint: HINT,
+    recording,
+    transcribing,
+    showChip: on && settings?.showInComposer !== false,
+    stop: () => void finish(),
   };
 }

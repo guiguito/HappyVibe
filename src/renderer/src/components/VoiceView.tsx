@@ -74,9 +74,20 @@ function Toggle({
   );
 }
 
-export function VoiceView(): React.JSX.Element {
+/**
+ * Round 2: settings are OWNED BY APP and passed in, mirroring TerminalView's
+ * `settings`/`onChange` pair. A page-local copy would leave already-mounted
+ * composers on a stale value, which is exactly what the two new toggles must
+ * not do — flipping "Show mic in the chat bar" has to change the chat tab now.
+ */
+export function VoiceView({
+  settings,
+  onChange,
+}: {
+  settings: HvVoiceSettings | null;
+  onChange: (s: HvVoiceSettings) => void;
+}): React.JSX.Element {
   const [status, setStatus] = useState<HvVoiceStatus | null>(null);
-  const [settings, setSettings] = useState<HvVoiceSettings | null>(null);
   const [mic, setMic] = useState<string>("unknown");
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [level, setLevel] = useState(0);
@@ -85,7 +96,6 @@ export function VoiceView(): React.JSX.Element {
 
   useEffect(() => {
     void window.hv.voiceStatus().then(setStatus);
-    void window.hv.getVoiceSettings().then(setSettings);
     void window.hv.voiceMicStatus().then(setMic);
     return window.hv.onVoiceStatusChanged(setStatus);
   }, []);
@@ -99,9 +109,12 @@ export function VoiceView(): React.JSX.Element {
       .then((d) => setDevices(d.filter((x) => x.kind === "audioinput")));
   }, [mic]);
 
-  const patch = useCallback(async (p: Partial<HvVoiceSettings>) => {
-    setSettings(await window.hv.setVoiceSettings(p as Record<string, unknown>));
-  }, []);
+  const patch = useCallback(
+    async (p: Partial<HvVoiceSettings>) => {
+      onChange(await window.hv.setVoiceSettings(p as Record<string, unknown>));
+    },
+    [onChange],
+  );
 
   // A live meter for testing the chosen input — the same signal the composer
   // chip shows, so "is my microphone working" is answerable here.
@@ -153,6 +166,37 @@ export function VoiceView(): React.JSX.Element {
           Dictate into the composer. Speech is transcribed on this machine — your audio is never
           written to disk, never leaves this computer, and no transcript is ever logged.
         </p>
+
+        <Section
+          icon="voice"
+          title="Voice input"
+          subtitle="Whether dictation is available at all, and whether it takes up room in the chat bar."
+        >
+          <Row
+            label="Enable voice input"
+            hint={
+              settings?.enabled === false
+                ? "Off — the microphone is never opened and the keyboard shortcut does nothing. The downloaded model is kept."
+                : "Hold the right-hand modifier to dictate. Turning this off does not delete the model."
+            }
+          >
+            <Toggle
+              on={settings?.enabled !== false}
+              onChange={(v) => void patch({ enabled: v })}
+              label="Enable voice input"
+            />
+          </Row>
+          <Row
+            label="Show mic in the chat bar"
+            hint="Off reclaims the space but keeps dictation working — the keyboard shortcut and the recording overlay are unaffected."
+          >
+            <Toggle
+              on={settings?.showInComposer !== false}
+              onChange={(v) => void patch({ showInComposer: v })}
+              label="Show mic in the chat bar"
+            />
+          </Row>
+        </Section>
 
         <Section
           icon="voice"
@@ -315,7 +359,7 @@ export function VoiceView(): React.JSX.Element {
         <Section
           icon="voice"
           title="Behaviour"
-          subtitle="Hold the right-hand modifier to dictate while held; tap it to keep recording until you tap again."
+          subtitle="Hold right \u2318 (right Ctrl on Windows and Linux) to dictate while held; tap it to keep recording until you tap again. It is listed under Built-in on the Keyboard shortcuts page."
         >
           <Row
             label="Hold threshold"

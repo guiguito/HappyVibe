@@ -6,7 +6,6 @@ import {
   type GestureEvent,
   type GestureAction,
 } from "../src/renderer/src/voice/gesture";
-import { appendToComposer } from "../src/renderer/src/composerText";
 
 const KEY = "MetaRight";
 
@@ -138,29 +137,5 @@ describe("dictation gesture", () => {
       { type: "tick", at: 300_001 },
     ]);
     expect(actions).toEqual(["start", null, null, "stop"]);
-  });
-});
-
-describe("appendToComposer", () => {
-  it("is the identity on an empty composer", () => {
-    expect(appendToComposer("", "hello")).toBe("hello");
-    expect(appendToComposer("   ", "hello")).toBe("hello");
-  });
-
-  it("separates existing text with exactly one blank line", () => {
-    expect(appendToComposer("first", "second")).toBe("first\n\nsecond");
-  });
-
-  it("does not stack blank lines on trailing whitespace", () => {
-    expect(appendToComposer("first\n\n", "second")).toBe("first\n\nsecond");
-    expect(appendToComposer("first   ", "second")).toBe("first\n\nsecond");
-  });
-
-  it("matches what ChatView already did, so Send-to-chat is unchanged", () => {
-    const legacy = (prev: string, text: string): string =>
-      (prev.trim() ? `${prev.replace(/\s*$/, "")}\n\n` : "") + text;
-    for (const prev of ["", "  ", "a", "a\n", "a\n\n", "a  ", "line1\nline2"]) {
-      expect(appendToComposer(prev, "X")).toBe(legacy(prev, "X"));
-    }
   });
 });

@@ -13,9 +13,10 @@ import { computeGauge, type ContextSnapshot, type SessionStats } from "../contex
 import { delegationHint, formatElapsed, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
-import { appendToComposer } from "../composerText";
+import { insertAtComposer } from "../composerText";
 import { MicButton } from "./MicButton";
 import { VoiceActivateModal } from "./VoiceActivateModal";
+import { VoiceOverlay } from "./VoiceOverlay";
 import { useDictation } from "../voice/useDictation";
 // Electron-free main module, imported rather than restated — the same pattern
 // TerminalView uses for DEFAULT_TERMINAL_SETTINGS. A hand-copied size is
@@ -105,6 +106,7 @@ export function ChatView({
   onOpenFile,
   onOpenMcp,
   onOpenVoice,
+  voiceSettings,
   onRewind,
   onLoadEarlier,
   activePlan,
@@ -171,6 +173,9 @@ export function ChatView({
   onOpenMcp?: () => void;
   /** §27: navigate to the Voice page (the activation modal's "More options"). */
   onOpenVoice?: () => void;
+  /** §27 round 2: App-owned voice settings, same shape as terminalSettings.
+      Passed rather than fetched so a Voice-page toggle applies immediately. */
+  voiceSettings?: HvVoiceSettings | null;
   /** Round 3 #11: truncate the conversation at a user message (App-side). */
   onRewind?: (it: TranscriptItem, scope: RewindScope) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
@@ -184,6 +189,14 @@ export function ChatView({
   const [multiline, setMultiline] = useState(false);
   // F4: auto-growing textarea — reset to auto then clamp to scrollHeight (~8 lines).
   const taRef = useRef<HTMLTextAreaElement>(null);
+  /**
+   * Round 2: where the caret must land after a programmatic insert.
+   *
+   * Setting selectionRange inside the setInput updater would be undone — React
+   * has not written the new value to the DOM yet, so the browser puts the caret
+   * at the end. It has to happen in an effect, after the commit.
+   */
+  const nextCaret = useRef<number | null>(null);
   const autoGrow = useCallback(() => {
     const el = taRef.current;
     if (!el) return;
@@ -193,6 +206,15 @@ export function ChatView({
     setMultiline(sh > 44); // one line ≈ 36px; > 44 means it wrapped
   }, []);
   useEffect(() => { autoGrow(); }, [input, autoGrow]);
+  // Restore the caret after a programmatic insert (dictation, Send to chat).
+  useEffect(() => {
+    const at = nextCaret.current;
+    if (at === null) return;
+    nextCaret.current = null;
+    const el = taRef.current;
+    if (!el) return;
+    el.setSelectionRange(at, at);
+  }, [input]);
   // Round 11: external composer insert (the editor's "Send to chat"). Keyed on
   // the NONCE, so sending the same selection twice still appends; the text itself
   // is deliberately not a dependency.
@@ -200,11 +222,25 @@ export function ChatView({
   // helper as the editor's Send-to-chat, so the two cannot drift.
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const [voiceActivateOpen, setVoiceActivateOpen] = useState(false);
+  // Round 2: ONE caret-aware insert, shared by dictation and the editor's
+  // "Send to chat". Reads the live caret off the textarea, then restores it
+  // after React commits — otherwise the caret jumps to the end and the next
+  // keystroke lands in the wrong place.
+  const insertText = useCallback((text: string) => {
+    const el = taRef.current;
+    setInput((prev) => {
+      const start = el?.selectionStart ?? prev.length;
+      const end = el?.selectionEnd ?? start;
+      const r = insertAtComposer(prev, text, start, end);
+      nextCaret.current = r.caret;
+      return r.value;
+    });
+    el?.focus();
+  }, []);
+
   const dictation = useDictation({
-    onText: (text) => {
-      setInput((prev) => appendToComposer(prev, text));
-      taRef.current?.focus();
-    },
+    settings: voiceSettings ?? null,
+    onText: insertText,
     onError: setVoiceNotice,
     onNeedsActivation: () => setVoiceActivateOpen(true),
   });
@@ -221,8 +257,7 @@ export function ChatView({
     const n = composerInsert?.nonce ?? 0;
     if (!n || n === lastInsert.current) return;
     lastInsert.current = n;
-    setInput((prev) => appendToComposer(prev, composerInsert!.text));
-    taRef.current?.focus();
+    insertText(composerInsert!.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerInsert?.nonce]);
   // F3: @file mentions — label→relPath map for the composed text, a recursive
@@ -730,6 +765,14 @@ export function ChatView({
           </div>
         </div>
       )}
+      {/* Round 2: the recording indicator. Bottom-centre and viewport-fixed, so
+          it is legible and costs the composer row nothing. */}
+      <VoiceOverlay
+        open={dictation.recording}
+        transcribing={dictation.transcribing}
+        level={dictation.level}
+        onStop={dictation.stop}
+      />
       {/* §27: first-use activation. Never names the model (§12). */}
       <VoiceActivateModal
         open={voiceActivateOpen}
@@ -1062,14 +1105,17 @@ export function ChatView({
               <span>Plan</span>
             </button>
           )}
-          {/* §27: the mic sits between the Plan chip and the text area. */}
-          <MicButton
-            state={dictation.micState}
-            progress={dictation.progress}
-            level={dictation.level}
-            hint={dictation.hint}
-            onClick={dictation.toggle}
-          />
+          {/* §27: the mic sits between the Plan chip and the text area. Round 2:
+              hidden entirely when voice is off, or when the user reclaimed the
+              row's width — in the latter case the gesture still works. */}
+          {dictation.showChip && (
+            <MicButton
+              state={dictation.micState}
+              progress={dictation.progress}
+              hint={dictation.hint}
+              onClick={dictation.toggle}
+            />
+          )}
           <div className="relative flex-1 min-w-0">
             {/* F3: @file autocomplete — opens above the composer, styled like the attach menu. */}
             {mention && mention.items.length > 0 && (

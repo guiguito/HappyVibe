@@ -10,6 +10,10 @@ interface VoiceStatusDTO {
   sizeOnDisk: number;
 }
 interface VoiceSettingsDTO {
+  /** Round 2: functional activation, separate from model readiness. */
+  enabled: boolean;
+  /** Round 2: whether the chip takes space in the composer row. */
+  showInComposer: boolean;
   language: string;
   inputDeviceId: string;
   echoCancellation: boolean;
