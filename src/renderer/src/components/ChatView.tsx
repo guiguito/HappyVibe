@@ -539,8 +539,54 @@ export function ChatView({
       <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
         {/* §23: compact plan-mode indicator (left) — read-only badge with a
             wrap-up nudge and one-click exit. Replaces the full-width banner. */}
-        {((sessionSkills?.length ?? 0) > 0 || planEnabled || showPlanPill) && (
+        {/* §7 round 12: the session's own controls live here, left of the
+            metrics. The group is unconditional now — the model chip is always
+            present, where it used to be one more thing crowding the composer. */}
         <div className="mr-auto flex items-center gap-1.5">
+          {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global).
+              WS1: shared ModelSelect (controlled open so a session switch force-closes it). */}
+          <div className="shrink-0">
+            <ModelSelect
+              models={models ?? []}
+              loading={models === null}
+              value={resolved ? { provider: resolved.provider, modelId: resolved.modelId } : null}
+              onPick={(m) => void pickModel(m)}
+              open={modelMenuOpen}
+              onOpenChange={(o) => { setModelMenuOpen(o); if (o) setAttachMenuOpen(false); }}
+              // §7 round 12: the chip moved to the top bar, so the menu opens
+              // DOWNWARD — upward from there would open outside the pane.
+              direction="down"
+              renderTrigger={({ toggle }) => (
+                <button
+                  type="button"
+                  aria-label="Change model for this session"
+                  aria-expanded={modelMenuOpen}
+                  onClick={toggle}
+                  title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
+                  className="max-w-44 text-left font-mono text-[11px] rounded-full px-2.5 py-1.5 text-ink-soft hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
+                >
+                  <span className="block truncate">{modelLabel ?? "model…"}</span>
+                </button>
+              )}
+            />
+          </div>
+          {/* §23: plan-mode toggle — read-only "think first" for this session. */}
+          {onTogglePlan && (
+            <button
+              type="button"
+              aria-pressed={planEnabled}
+              onClick={() => onTogglePlan(!planEnabled)}
+              title={planEnabled ? "Plan mode on — read-only. Click to exit." : "Plan mode — explore and draft a plan before changing anything"}
+              className={`shrink-0 flex items-center gap-1 text-[11px] font-bold rounded-full px-2.5 py-1.5 cursor-pointer transition-colors ${
+                planEnabled
+                  ? "bg-sky-soft text-sky"
+                  : "text-ink-soft hover:bg-paper-deep/40 hover:text-sky"
+              }`}
+            >
+              <span aria-hidden>🧭</span>
+              <span>Plan</span>
+            </button>
+          )}
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
         {/* §23 round 9: the active-plan pill. A plan card lives at its
             plan_complete position in history, so a compaction that ate that
@@ -595,7 +641,6 @@ export function ChatView({
           </div>
         )}
         </div>
-        )}
         <button
           type="button"
           onClick={() => onSearchOpenChange(!searchOpen)}
@@ -1091,59 +1136,6 @@ export function ChatView({
               </>
             )}
           </div>
-          {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global).
-              WS1: shared ModelSelect (controlled open so a session switch force-closes it). */}
-          <div className="shrink-0">
-            <ModelSelect
-              models={models ?? []}
-              loading={models === null}
-              value={resolved ? { provider: resolved.provider, modelId: resolved.modelId } : null}
-              onPick={(m) => void pickModel(m)}
-              open={modelMenuOpen}
-              onOpenChange={(o) => { setModelMenuOpen(o); if (o) setAttachMenuOpen(false); }}
-              direction="up"
-              renderTrigger={({ toggle }) => (
-                <button
-                  type="button"
-                  aria-label="Change model for this session"
-                  aria-expanded={modelMenuOpen}
-                  onClick={toggle}
-                  title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
-                  className="max-w-44 text-left font-mono text-[11px] rounded-full px-2.5 py-1.5 text-ink-soft hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
-                >
-                  <span className="block truncate">{modelLabel ?? "model…"}</span>
-                </button>
-              )}
-            />
-          </div>
-          {/* §23: plan-mode toggle — read-only "think first" for this session. */}
-          {onTogglePlan && (
-            <button
-              type="button"
-              aria-pressed={planEnabled}
-              onClick={() => onTogglePlan(!planEnabled)}
-              title={planEnabled ? "Plan mode on — read-only. Click to exit." : "Plan mode — explore and draft a plan before changing anything"}
-              className={`shrink-0 flex items-center gap-1 text-[11px] font-bold rounded-full px-2.5 py-1.5 cursor-pointer transition-colors ${
-                planEnabled
-                  ? "bg-sky-soft text-sky"
-                  : "text-ink-soft hover:bg-paper-deep/40 hover:text-sky"
-              }`}
-            >
-              <span aria-hidden>🧭</span>
-              <span>Plan</span>
-            </button>
-          )}
-          {/* §27: the mic sits between the Plan chip and the text area. Round 2:
-              hidden entirely when voice is off, or when the user reclaimed the
-              row's width — in the latter case the gesture still works. */}
-          {dictation.showChip && (
-            <MicButton
-              state={dictation.micState}
-              progress={dictation.progress}
-              hint={dictation.hint}
-              onClick={dictation.toggle}
-            />
-          )}
           <div className="relative flex-1 min-w-0">
             {/* F3: @file autocomplete — opens above the composer, styled like the attach menu. */}
             {mention && mention.items.length > 0 && (
@@ -1257,6 +1249,18 @@ export function ChatView({
               className="w-full resize-none bg-transparent px-2 py-1.5 text-[0.95rem] leading-relaxed focus:outline-none placeholder:text-ink-soft/60"
             />
           </div>
+          {/* §27 round 12: the mic sits with the OTHER input controls — beside
+              Stop and Send — rather than before the textarea. Placement only;
+              the chip's semantics (red while recording, click to stop, hidden
+              when voice is off) are unchanged. */}
+          {dictation.showChip && (
+            <MicButton
+              state={dictation.micState}
+              progress={dictation.progress}
+              hint={dictation.hint}
+              onClick={dictation.toggle}
+            />
+          )}
           {/* V2.A: no separate Queue button — send/Enter steers while busy
               (App keeps the followUp behavior plumbing; it just has no UI). */}
           {busy && (

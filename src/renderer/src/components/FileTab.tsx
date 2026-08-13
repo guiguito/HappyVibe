@@ -184,6 +184,72 @@ export function FileTab({
 
       {buf.kind === "text" && (
         <>
+          {/* §21 round 12: the bar moved to the TOP, level with the tab strip, so
+              a file tab and a chat tab have the same anatomy — the controls used
+              to sit along the bottom and the eye had to find them twice. */}
+          <div className="flex items-center gap-3 px-3 py-1.5 border-b-2 border-line bg-paper text-xs">
+            {/* The switcher LEADS, as a two-icon pill with the current view lit.
+                A single button whose label was the OTHER state ("Source" while
+                showing source) is a riddle; a switch is not. */}
+            {previewable && (
+              <div className="flex items-center rounded-lg border-2 border-line-strong overflow-hidden shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setView("rendered")}
+                  aria-pressed={showPreview}
+                  aria-label="Preview rendered"
+                  title="Preview rendered"
+                  className={`flex items-center px-2 py-1 cursor-pointer ${
+                    showPreview ? "bg-tangerine text-paper" : "text-ink-soft hover:bg-paper-deep/40"
+                  }`}
+                >
+                  <EyeGlyph />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("raw")}
+                  aria-pressed={!showPreview}
+                  aria-label="Edit source"
+                  title="Edit source"
+                  className={`flex items-center px-2 py-1 cursor-pointer ${
+                    !showPreview ? "bg-tangerine text-paper" : "text-ink-soft hover:bg-paper-deep/40"
+                  }`}
+                >
+                  <CodeGlyph />
+                </button>
+              </div>
+            )}
+            <span className="font-mono text-ink-soft truncate flex-1" title={relPath}>{relPath}</span>
+            {/* Round 11: only with a selection — `@file` already covers whole files,
+                so silently sending everything would be the wrong thing. */}
+            {onSendToChat && selection && !showPreview && (
+              <button
+                type="button"
+                onClick={() => onSendToChat(formatSelection(relPath, selection.startLine, selection.endLine, selection.text))}
+                title={`Send lines ${selection.startLine}–${selection.endLine} to the chat`}
+                aria-label={`Send lines ${selection.startLine}–${selection.endLine} to the chat`}
+                className="flex items-center rounded-lg border-2 border-line-strong px-2 py-1 text-ink-soft hover:bg-paper-deep/40 hover:text-ink cursor-pointer shrink-0"
+              >
+                <SendToChatGlyph />
+              </button>
+            )}
+            {/* Save keeps its unsaved state VISIBLE rather than behind a hover —
+                an icon that only announces "there is something to save" when
+                pointed at is the one case where a tooltip arrives too late. */}
+            <button
+              type="button"
+              disabled={!dirty || saving}
+              onClick={() => void save()}
+              title={dirty ? "Save (⌘S) — unsaved changes" : "Save (⌘S)"}
+              aria-label="Save (⌘S)"
+              data-dirty={dirty ? "true" : "false"}
+              className="flex items-center gap-1.5 rounded-lg bg-tangerine text-paper font-bold px-2.5 py-1 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40 transition-all shrink-0"
+            >
+              <SaveGlyph />
+              {dirty && <span className="size-1.5 rounded-full bg-paper" title="Unsaved changes" />}
+              {saving && <span>Saving…</span>}
+            </button>
+          </div>
           <div className="flex-1 min-h-0">
             {showPreview ? (
               isHtml ? (
@@ -204,44 +270,6 @@ export function FileTab({
                 <CodeEditor path={relPath} doc={content} docVersion={docVersion} onChange={setContent} onSave={() => void save()} onSelectionChange={setSelection} saveKey={saveKey} searchKey={searchKey} />
               </Suspense>
             )}
-          </div>
-          <div className="flex items-center gap-3 px-4 py-1.5 border-t-2 border-line bg-paper text-xs">
-            <span className="font-mono text-ink-soft truncate flex-1" title={relPath}>{relPath}</span>
-            {previewable && (
-              <button
-                type="button"
-                onClick={() => setView((v) => (v === "rendered" ? "raw" : "rendered"))}
-                aria-pressed={showPreview}
-                title={showPreview ? "Edit source" : "Preview rendered"}
-                aria-label={showPreview ? "Edit source" : "Preview rendered"}
-                className="flex items-center gap-1.5 rounded-lg border-2 border-line-strong font-bold px-2 py-1 hover:bg-paper-deep/40 cursor-pointer"
-              >
-                {showPreview ? <CodeGlyph /> : <EyeGlyph />}
-                {showPreview ? "Source" : "Preview"}
-              </button>
-            )}
-            {/* Round 11: only with a selection — `@file` already covers whole files,
-                so silently sending everything would be the wrong thing. */}
-            {onSendToChat && selection && !showPreview && (
-              <button
-                type="button"
-                onClick={() => onSendToChat(formatSelection(relPath, selection.startLine, selection.endLine, selection.text))}
-                title={`Send lines ${selection.startLine}–${selection.endLine} to the chat`}
-                className="flex items-center gap-1.5 rounded-lg border-2 border-line-strong font-bold px-2 py-1 hover:bg-paper-deep/40 cursor-pointer shrink-0"
-              >
-                Send to chat
-              </button>
-            )}
-            {dirty && <span className="font-bold text-tangerine-deep shrink-0">unsaved changes</span>}
-            <button
-              type="button"
-              disabled={!dirty || saving}
-              onClick={() => void save()}
-              title="Save (⌘S)"
-              className="rounded-lg bg-tangerine text-paper font-bold px-3 py-1 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40 transition-all"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
           </div>
         </>
       )}
@@ -290,6 +318,23 @@ function EyeGlyph(): React.JSX.Element {
     <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
       <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+/** §21 round 12: the bar became icons — these are the two new ones. */
+function SaveGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <path d="M17 21v-8H7v8M7 3v5h8" />
+    </svg>
+  );
+}
+function SendToChatGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <path d="M8 10h8M8 13h5" />
     </svg>
   );
 }
