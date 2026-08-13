@@ -2051,6 +2051,8 @@ export function registerIpc(win: BrowserWindow): void {
     terminals.resize(id, cols, rows),
   );
   ipcMain.handle("hv:term-close", (_e, id: string) => terminals.kill(id));
+  // §7 round 12: a user title beats the foreground poll; "" restores it.
+  ipcMain.handle("hv:term-rename", (_e, id: string, title: string) => terminals.rename(id, title));
   ipcMain.handle("hv:term-list", (_e, ws?: string) => terminals.list(ws));
   ipcMain.handle("hv:term-snapshot", (_e, id: string) => terminals.snapshot(id));
   // §26 part 2: the RENDERED grid as plain text — the agent-terminal card's

@@ -607,6 +607,8 @@ interface HvApi {
   termResize(id: string, cols: number, rows: number): Promise<void>;
   /** Closing a terminal tab kills its PTY — a terminal tab IS its terminal. */
   termClose(id: string): Promise<void>;
+  /** §7 round 12: rename a terminal tab. "" returns it to following its process. */
+  termRename(id: string, title: string): Promise<void>;
   termList(workspaceId?: string): Promise<HvTerminalInfo[]>;
   /** addon-serialize output from main's headless mirror: repaints after ⌘R. */
   termSnapshot(id: string): Promise<string | null>;

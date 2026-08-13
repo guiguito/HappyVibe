@@ -235,6 +235,7 @@ contextBridge.exposeInMainWorld("hv", {
   termResize: (id: string, cols: number, rows: number) =>
     ipcRenderer.invoke("hv:term-resize", id, cols, rows),
   termClose: (id: string) => ipcRenderer.invoke("hv:term-close", id),
+  termRename: (id: string, title: string) => ipcRenderer.invoke("hv:term-rename", id, title),
   termList: (workspaceId?: string) => ipcRenderer.invoke("hv:term-list", workspaceId),
   /** addon-serialize output: what repaints a tab after a reload. */
   termSnapshot: (id: string) => ipcRenderer.invoke("hv:term-snapshot", id),

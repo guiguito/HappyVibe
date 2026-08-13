@@ -1920,6 +1920,22 @@ export default function App(): React.JSX.Element {
                       else if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
                       else closeFileTab(wsId, slot, tab);
                     }}
+                    onRename={(tab, title) => {
+                      // §7 round 12: a chat tab renames the SESSION — the
+                      // sidebar row changes with it, because it is the
+                      // session's name and not a per-tab alias.
+                      const sid = sessionOf(tab);
+                      if (sid) {
+                        void window.hv
+                          .renameSession(sid, title)
+                          .then(() => window.hv.listSessions())
+                          .then(setSessions)
+                          .catch(surface);
+                        return;
+                      }
+                      const tid = terminalOf(tab);
+                      if (tid) void window.hv.termRename(tid, title).catch(surface);
+                    }}
                     onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
                     onNewSession={() => void newSession(wsId)}
                     newSessionKey={formatBinding(bindings.newSession)}

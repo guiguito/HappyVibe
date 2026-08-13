@@ -56,6 +56,10 @@ interface Entry {
   file: string;
   /** Did this terminal ever emit a byte? Distinguishes "died" from "ran". */
   sawData: boolean;
+  /** §7 round 12: a name the user typed. Beats the foreground-process poll;
+   *  cleared by renaming to "", which returns the tab to following the command.
+   *  Not on TerminalInfo — the renderer reads one `title`, whoever won it. */
+  userTitle?: string;
 }
 
 let seq = 0;
@@ -199,8 +203,25 @@ export class TerminalManager {
   }
 
   private titleOf(entry: Entry): string {
+    // §7 round 12: a name the user typed OUTRANKS the poller. Without this the
+    // 500 ms tick above would take the tab's name back on the next command.
+    if (entry.userTitle) return entry.userTitle;
     const fg = entry.pty?.process;
     return typeof fg === "string" && fg.length > 0 ? fg : entry.shellName;
+  }
+
+  /**
+   * Rename a terminal tab. An empty name RETURNS it to following its foreground
+   * process, so the rename is undoable without a second control.
+   */
+  rename(id: string, title: string): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    entry.userTitle = title.trim() || undefined;
+    const next = this.titleOf(entry);
+    if (next === entry.info.title) return;
+    entry.info.title = next;
+    this.onTitle(id, next);
   }
 
   write(id: string, data: string): void {
