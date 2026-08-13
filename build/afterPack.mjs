@@ -29,9 +29,20 @@ export default async function afterPack(context) {
   // ponytail: ad-hoc (--sign -) only; swap for a Developer ID identity when notarizing.
   if (electronPlatformName === "darwin") {
     console.log("[afterPack] Ad-hoc re-signing bundle…");
-    execFileSync("codesign", ["--force", "--deep", "--sign", "-", appPath], {
-      stdio: "inherit",
-    });
+    // §27/§8.4: --entitlements is LOAD-BEARING, not tidiness. This re-sign runs
+    // AFTER electron-builder has applied the entitlements, and codesign writes
+    // only the entitlements it is handed — so without this argument it replaces
+    // every signature it touches, including the Helper that actually captures
+    // audio, with an entitlement-free one. The microphone then yields a live
+    // track of pure zeros and the app-level config looks perfectly correct
+    // while you debug it. Verify with:
+    //   codesign -d --entitlements - "<app>/Contents/Frameworks/HappyVibe Helper.app"
+    const entitlements = path.join(__dirname, "entitlements.mac.plist");
+    execFileSync(
+      "codesign",
+      ["--force", "--deep", "--sign", "-", "--entitlements", entitlements, appPath],
+      { stdio: "inherit" },
+    );
   }
   console.log("[afterPack] Done.");
 }

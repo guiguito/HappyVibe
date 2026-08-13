@@ -148,6 +148,35 @@ export function allChats(t: WorkspaceTabs): string[] {
   return out;
 }
 
+/**
+ * The sessions a user can actually SEE right now: the active tab of each live
+ * pane, chats only. A pane shows exactly one tab at a time, so this is at most
+ * four and usually one or two.
+ *
+ * This is the set App hydrates. It exists because `selectedId` could be set
+ * WITHOUT the session's history ever being fetched — the layout restore and the
+ * tab strip both set it directly, and only the sidebar path called
+ * `openSession`. After a restart that meant restored chat tabs rendered the
+ * empty "Ready when you are." state while their transcripts sat on disk (146
+ * messages, in the case that surfaced it) and the cost pill cheerfully showed
+ * the money they had already spent.
+ *
+ * Deliberately NOT `allChats`: hydrating every open tab would spawn a Pi
+ * process per restored chat at boot — six, in that same case — which is the
+ * opposite of what hibernation is for. Off-screen tabs hydrate when they are
+ * brought on screen.
+ */
+export function visibleChats(t: WorkspaceTabs): string[] {
+  const out: string[] = [];
+  for (const i of liveSlots(t)) {
+    const active = t.panes[i]!.active;
+    if (!active) continue;
+    const sid = sessionOf(active);
+    if (sid) out.push(sid);
+  }
+  return out;
+}
+
 /** Which slot holds `tab`, or -1. */
 export function paneOf(t: WorkspaceTabs, tab: TabId): number {
   for (const i of liveSlots(t)) if (t.panes[i]!.tabs.includes(tab)) return i;

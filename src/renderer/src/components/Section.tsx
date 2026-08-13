@@ -47,6 +47,13 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
     </>
   ),
   stats: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  voice: (
+    <>
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <path d="M12 19v3" />
+    </>
+  ),
   keyboard: (
     <>
       <rect x="2" y="6" width="20" height="12" rx="2" />

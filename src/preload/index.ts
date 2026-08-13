@@ -1,5 +1,28 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
+/** §27. Structural mirrors of src/main/voice — preload sits in the NODE
+    tsconfig, which does not see the renderer's hv.d.ts globals. */
+interface VoiceStatusDTO {
+  state: "unactivated" | "downloading" | "ready" | "error";
+  bytesDone: number;
+  bytesTotal: number;
+  error?: string;
+  sizeOnDisk: number;
+}
+interface VoiceSettingsDTO {
+  /** Round 2: functional activation, separate from model readiness. */
+  enabled: boolean;
+  /** Round 2: whether the chip takes space in the composer row. */
+  showInComposer: boolean;
+  language: string;
+  inputDeviceId: string;
+  echoCancellation: boolean;
+  noiseSuppression: boolean;
+  autoGainControl: boolean;
+  holdThresholdMs: number;
+  maxRecordingMs: number;
+}
+
 contextBridge.exposeInMainWorld("hv", {
   // WS8: absolute OS path of a dragged File (Electron ≥32; replaces File.path).
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
@@ -237,6 +260,29 @@ contextBridge.exposeInMainWorld("hv", {
   setTerminalSettings: (s: Record<string, unknown>) => ipcRenderer.invoke("hv:set-terminal-settings", s),
   getLayout: () => ipcRenderer.invoke("hv:get-layout"),
   setLayout: (l: Record<string, unknown>) => ipcRenderer.invoke("hv:set-layout", l),
+
+  // ── §27 Voice input ──────────────────────────────────────────────
+  // The model download and inference both live in main; the renderer only
+  // captures audio and receives text. No transcript is ever logged (§11).
+  voiceStatus: () => ipcRenderer.invoke("hv:voice-status") as Promise<VoiceStatusDTO>,
+  voiceDownload: () => ipcRenderer.invoke("hv:voice-download") as Promise<VoiceStatusDTO>,
+  voiceCancelDownload: () => ipcRenderer.invoke("hv:voice-cancel-download") as Promise<VoiceStatusDTO>,
+  voiceRemoveModel: () => ipcRenderer.invoke("hv:voice-remove-model") as Promise<VoiceStatusDTO>,
+  getVoiceSettings: () => ipcRenderer.invoke("hv:get-voice-settings") as Promise<VoiceSettingsDTO>,
+  setVoiceSettings: (s: Record<string, unknown>) =>
+    ipcRenderer.invoke("hv:set-voice-settings", s) as Promise<VoiceSettingsDTO>,
+  // §8.3: ALWAYS check this before getUserMedia — on macOS a denied mic still
+  // yields a "live" track that produces nothing but zeros.
+  voiceMicStatus: () => ipcRenderer.invoke("hv:voice-mic-status") as Promise<string>,
+  voiceAskMic: () => ipcRenderer.invoke("hv:voice-ask-mic") as Promise<boolean>,
+  voiceOpenMicSettings: () => ipcRenderer.invoke("hv:voice-open-mic-settings") as Promise<void>,
+  voiceTranscribe: (pcm: Int16Array) =>
+    ipcRenderer.invoke("hv:voice-transcribe", pcm) as Promise<string>,
+  onVoiceStatusChanged: (cb: (s: VoiceStatusDTO) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, s: unknown): void => cb(s as VoiceStatusDTO);
+    ipcRenderer.on("hv:voice-status-changed", h);
+    return () => ipcRenderer.removeListener("hv:voice-status-changed", h);
+  },
 
   // ── §14 Skills (additive) ────────────────────────────────────────
   // list returns {global, workspace}; approve/enable/activate apply live via

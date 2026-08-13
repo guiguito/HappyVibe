@@ -8,6 +8,7 @@ import { mcpSecretEnvVar } from "./mcpSecretName";
 import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
+import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -61,6 +62,12 @@ interface ConfigFile {
       rest, because this file is hand-editable and a fontSize of 0 would
       otherwise reach xterm's constructor. */
   terminal?: Partial<TerminalSettings>;
+  /** §27: voice input settings. GLOBAL only, same reasoning as `terminal` —
+      every field is a personal habit or a property of this machine's
+      microphone. Stored as a partial; mergeVoiceSettings supplies and
+      range-checks the rest, and in particular refuses an unsupported
+      language, because out-of-set input produces confident garbage. */
+  voice?: Partial<VoiceSettings>;
   /** §26: the centre-area tab layout, per workspace. Persisted so a renderer
       reload restores chats, files, terminals and pane sizes alike — which is
       also what makes a terminal survive ⌘R, since main never stopped owning
@@ -348,6 +355,18 @@ export function setTerminalSettings(settings: Partial<TerminalSettings>): Termin
   return cfg.terminal as TerminalSettings;
 }
 
+/** §27: voice settings, always complete and always in range — same contract. */
+export function getVoiceSettings(): VoiceSettings {
+  return mergeVoiceSettings(load().voice);
+}
+
+export function setVoiceSettings(settings: Partial<VoiceSettings>): VoiceSettings {
+  const cfg = load();
+  cfg.voice = mergeVoiceSettings(settings);
+  save(cfg);
+  return cfg.voice as VoiceSettings;
+}
+
 /** §26: the tab layout, stored opaquely. The renderer validates and prunes it
     on restore (layoutPersist.ts), so main never has to know what a tab is —
     the same division of labour as getShortcuts above. */
@@ -407,6 +426,13 @@ export function sessionDir(): string {
 /** §9 rewind file rollback — content-addressed snapshot store, one dir per session. */
 export function snapshotDir(): string {
   const d = path.join(app.getPath("userData"), "snapshots");
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
+
+/** §27 — downloaded model weights (voice today, anything heavy later). */
+export function modelCacheDir(): string {
+  const d = path.join(app.getPath("userData"), "models");
   fs.mkdirSync(d, { recursive: true });
   return d;
 }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell, systemPreferences } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,8 +14,13 @@ import {
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
+  getVoiceSettings, setVoiceSettings,
 } from "./config";
 import { TerminalManager } from "./terminals";
+import {
+  voiceStatus, startVoiceDownload, cancelVoiceDownload, removeVoiceModel, onVoiceStatus,
+} from "./voice";
+import { voiceHost } from "./voice/host";
 import { AgentTerminals } from "./agentTerminals";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
@@ -232,6 +237,10 @@ export function registerIpc(win: BrowserWindow): void {
     if (win.isDestroyed() || win.webContents.isDestroyed()) return;
     win.webContents.send(channel, payload);
   };
+  // §27: whole-state voice snapshots, same broadcast shape as
+  // hv:mcp-status-changed. The facade already throttles to ~4 Hz — a 652 MB
+  // body fires `data` thousands of times a second.
+  onVoiceStatus((s) => send("hv:voice-status-changed", s));
   const userData = app.getPath("userData");
   const index = new SessionIndex(path.join(userData, "session-index.json"));
   // Heal stale absolute piSessionFile paths after a userData move (the
@@ -2051,6 +2060,60 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:set-terminal-settings", (_e, s: Record<string, unknown>) =>
     setTerminalSettings(s ?? {}),
   );
+
+  // §27: voice input. The model download and the inference child both live in
+  // main — the renderer's CSP is `default-src 'self'` with no `connect-src`,
+  // so downloading here sidesteps it rather than weakening it.
+  ipcMain.handle("hv:voice-status", () => voiceStatus());
+  ipcMain.handle("hv:voice-download", () => {
+    // Deliberately not awaited: §3.2's download must not block the app — the
+    // user keeps typing, and the mic activates when it finishes.
+    void startVoiceDownload();
+    return voiceStatus();
+  });
+  ipcMain.handle("hv:voice-cancel-download", () => {
+    cancelVoiceDownload();
+    return voiceStatus();
+  });
+  ipcMain.handle("hv:voice-remove-model", () => {
+    removeVoiceModel();
+    return voiceStatus();
+  });
+  ipcMain.handle("hv:get-voice-settings", () => getVoiceSettings());
+  ipcMain.handle("hv:set-voice-settings", (_e, s: Record<string, unknown>) =>
+    setVoiceSettings(s ?? {}),
+  );
+  /**
+   * §8.3. The renderer must NEVER call getUserMedia without asking this first.
+   * Chromium on macOS resolves getUserMedia with a live track that produces
+   * nothing but zeros when TCC has not granted access — for dictation that is
+   * the worst failure available: not an error the user can act on, but a
+   * silent empty transcript.
+   */
+  ipcMain.handle("hv:voice-mic-status", () =>
+    process.platform === "darwin" ? systemPreferences.getMediaAccessStatus("microphone") : "granted",
+  );
+  ipcMain.handle("hv:voice-ask-mic", async () => {
+    if (process.platform !== "darwin") return true;
+    if (systemPreferences.getMediaAccessStatus("microphone") !== "not-determined") {
+      return systemPreferences.getMediaAccessStatus("microphone") === "granted";
+    }
+    return systemPreferences.askForMediaAccess("microphone");
+  });
+  ipcMain.handle("hv:voice-open-mic-settings", () => {
+    if (process.platform !== "darwin") return;
+    void shell.openExternal(
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+    );
+  });
+  ipcMain.handle("hv:voice-transcribe", async (_e, pcm: Int16Array) => {
+    // The transcript is returned and nothing else: §11 forbids it reaching the
+    // EventLog, the audit log or any analytics surface. A dictated prompt is
+    // recorded exactly as a typed one is, and there is no separate voice trail.
+    const samples = pcm instanceof Int16Array ? pcm : new Int16Array(pcm ?? []);
+    if (samples.length === 0) return "";
+    return voiceHost.transcribe(samples);
+  });
 
   // §26: the tab layout, stored opaquely — the renderer validates and prunes
   // it on restore (layoutPersist.ts), so main never learns what a tab is.

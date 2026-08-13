@@ -51,6 +51,11 @@ export const FIXED_SHORTCUTS: { keys: string; label: string }[] = [
   { keys: "⇧Enter", label: "New line in the composer" },
   { keys: "@", label: "Reference a file or folder in the composer" },
   { keys: "Esc", label: "Close a dialog or search" },
+  // §27. NOT a SHORTCUT_ACTIONS entry, and it cannot become one: eventToBinding
+  // returns null for a modifier key and again when no modifier accompanies it,
+  // the canonical form carries no left/right (e.key is "Meta" for both ⌘s), and
+  // one dispatch site is a CodeMirror keymap, which has no press-and-hold.
+  { keys: "Hold right ⌘", label: "Dictate into the composer (tap to keep recording)" },
 ];
 
 type KeyEventish = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">;

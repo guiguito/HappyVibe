@@ -13,6 +13,15 @@ import { computeGauge, type ContextSnapshot, type SessionStats } from "../contex
 import { delegationHint, formatElapsed, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
+import { insertAtComposer } from "../composerText";
+import { MicButton } from "./MicButton";
+import { VoiceActivateModal } from "./VoiceActivateModal";
+import { VoiceOverlay } from "./VoiceOverlay";
+import { useDictation } from "../voice/useDictation";
+// Electron-free main module, imported rather than restated — the same pattern
+// TerminalView uses for DEFAULT_TERMINAL_SETTINGS. A hand-copied size is
+// exactly the kind of thing that drifts from what actually downloads.
+import { VOICE_MODEL_SIZE_LABEL } from "../../../main/voice/manifest";
 import {
   attachmentUrl, dropUnknownProvider, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
@@ -96,6 +105,8 @@ export function ChatView({
   onCompact,
   onOpenFile,
   onOpenMcp,
+  onOpenVoice,
+  voiceSettings,
   onRewind,
   onLoadEarlier,
   activePlan,
@@ -160,6 +171,11 @@ export function ChatView({
   onOpenFile?: (relPath: string) => void;
   /** v5: navigate to the MCP page (from the composer "+" menu). */
   onOpenMcp?: () => void;
+  /** §27: navigate to the Voice page (the activation modal's "More options"). */
+  onOpenVoice?: () => void;
+  /** §27 round 2: App-owned voice settings, same shape as terminalSettings.
+      Passed rather than fetched so a Voice-page toggle applies immediately. */
+  voiceSettings?: HvVoiceSettings | null;
   /** Round 3 #11: truncate the conversation at a user message (App-side). */
   onRewind?: (it: TranscriptItem, scope: RewindScope) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
@@ -173,6 +189,14 @@ export function ChatView({
   const [multiline, setMultiline] = useState(false);
   // F4: auto-growing textarea — reset to auto then clamp to scrollHeight (~8 lines).
   const taRef = useRef<HTMLTextAreaElement>(null);
+  /**
+   * Round 2: where the caret must land after a programmatic insert.
+   *
+   * Setting selectionRange inside the setInput updater would be undone — React
+   * has not written the new value to the DOM yet, so the browser puts the caret
+   * at the end. It has to happen in an effect, after the commit.
+   */
+  const nextCaret = useRef<number | null>(null);
   const autoGrow = useCallback(() => {
     const el = taRef.current;
     if (!el) return;
@@ -182,16 +206,58 @@ export function ChatView({
     setMultiline(sh > 44); // one line ≈ 36px; > 44 means it wrapped
   }, []);
   useEffect(() => { autoGrow(); }, [input, autoGrow]);
+  // Restore the caret after a programmatic insert (dictation, Send to chat).
+  useEffect(() => {
+    const at = nextCaret.current;
+    if (at === null) return;
+    nextCaret.current = null;
+    const el = taRef.current;
+    if (!el) return;
+    el.setSelectionRange(at, at);
+  }, [input]);
   // Round 11: external composer insert (the editor's "Send to chat"). Keyed on
   // the NONCE, so sending the same selection twice still appends; the text itself
   // is deliberately not a dependency.
+  // §27: dictation. The transcript lands through the SAME appendToComposer
+  // helper as the editor's Send-to-chat, so the two cannot drift.
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  const [voiceActivateOpen, setVoiceActivateOpen] = useState(false);
+  // Round 2: ONE caret-aware insert, shared by dictation and the editor's
+  // "Send to chat". Reads the live caret off the textarea, then restores it
+  // after React commits — otherwise the caret jumps to the end and the next
+  // keystroke lands in the wrong place.
+  const insertText = useCallback((text: string) => {
+    const el = taRef.current;
+    setInput((prev) => {
+      const start = el?.selectionStart ?? prev.length;
+      const end = el?.selectionEnd ?? start;
+      const r = insertAtComposer(prev, text, start, end);
+      nextCaret.current = r.caret;
+      return r.value;
+    });
+    el?.focus();
+  }, []);
+
+  const dictation = useDictation({
+    settings: voiceSettings ?? null,
+    onText: insertText,
+    onError: setVoiceNotice,
+    onNeedsActivation: () => setVoiceActivateOpen(true),
+  });
+  useEffect(() => {
+    if (!voiceNotice) return;
+    const t = setTimeout(() => setVoiceNotice(null), 6000);
+    return () => clearTimeout(t);
+  }, [voiceNotice]);
+
+  // §27: the append rule now lives in composerText.ts, shared with dictation so
+  // the two paths cannot land text in different places.
   const lastInsert = useRef(0);
   useEffect(() => {
     const n = composerInsert?.nonce ?? 0;
     if (!n || n === lastInsert.current) return;
     lastInsert.current = n;
-    setInput((prev) => (prev.trim() ? `${prev.replace(/\s*$/, "")}\n\n` : "") + composerInsert!.text);
-    taRef.current?.focus();
+    insertText(composerInsert!.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerInsert?.nonce]);
   // F3: @file mentions — label→relPath map for the composed text, a recursive
@@ -699,6 +765,35 @@ export function ChatView({
           </div>
         </div>
       )}
+      {/* Round 2: the recording indicator. Bottom-centre and viewport-fixed, so
+          it is legible and costs the composer row nothing. */}
+      <VoiceOverlay
+        open={dictation.recording}
+        transcribing={dictation.transcribing}
+        level={dictation.level}
+        onStop={dictation.stop}
+      />
+      {/* §27: first-use activation. Never names the model (§12). */}
+      <VoiceActivateModal
+        open={voiceActivateOpen}
+        size={VOICE_MODEL_SIZE_LABEL}
+        onDownload={() => {
+          setVoiceActivateOpen(false);
+          void window.hv.voiceDownload();
+        }}
+        onMoreOptions={() => {
+          setVoiceActivateOpen(false);
+          onOpenVoice?.();
+        }}
+        onClose={() => setVoiceActivateOpen(false)}
+      />
+      {/* §27: a transient composer notice — a denied mic, or a failed engine.
+          Deliberately not a modal: dictation failing should not seize the app. */}
+      {voiceNotice && (
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-md rounded-xl border-2 border-line-strong bg-card px-3 py-2 text-[13px] shadow-sticker-lg">
+          <span className="font-semibold">Voice input:</span> {voiceNotice}
+        </div>
+      )}
       {/* Round 3 #3: large-paste confirm. */}
       {pendingPaste !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingPaste(null)}>
@@ -1010,6 +1105,17 @@ export function ChatView({
               <span>Plan</span>
             </button>
           )}
+          {/* §27: the mic sits between the Plan chip and the text area. Round 2:
+              hidden entirely when voice is off, or when the user reclaimed the
+              row's width — in the latter case the gesture still works. */}
+          {dictation.showChip && (
+            <MicButton
+              state={dictation.micState}
+              progress={dictation.progress}
+              hint={dictation.hint}
+              onClick={dictation.toggle}
+            />
+          )}
           <div className="relative flex-1 min-w-0">
             {/* F3: @file autocomplete — opens above the composer, styled like the attach menu. */}
             {mention && mention.items.length > 0 && (
@@ -1079,6 +1185,19 @@ export function ChatView({
                   if ((e.key === "Tab" || e.key === "Enter") && n) { e.preventDefault(); pickMention(mention.items[mention.sel]); return; }
                   if (e.key === "Escape") { e.preventDefault(); setMention(null); return; }
                 }
+                // §27: dictation-cancel is LAST in the Escape chain, after the
+                // /command menu and the @-mention dropdown above — each of
+                // those returns once it has acted, so with a dropdown open the
+                // first Escape closes it and a second cancels the recording.
+                // The dropdown is the more recent, more local thing the user
+                // opened, and a recording survives one extra keypress.
+                if (e.key === "Escape" && dictation.cancelOnEscape()) {
+                  e.preventDefault();
+                  return;
+                }
+                // §27: every key goes to the gesture reducer so it can ABANDON
+                // a hold when another key joins it (right-⌘+S must not dictate).
+                dictation.handleKey(e.nativeEvent, "down");
                 // F4: Enter sends, Shift+Enter inserts a newline. Never send mid-IME
                 // composition (e.g. accented input, CJK) — that Enter commits text.
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -1086,6 +1205,7 @@ export function ChatView({
                   submit();
                 }
               }}
+              onKeyUp={(e) => dictation.handleKey(e.nativeEvent, "up")}
               onPaste={(e) => {
                 // #3: guard against accidentally pasting a huge blob.
                 const t = e.clipboardData.getData("text");

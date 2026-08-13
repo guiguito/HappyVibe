@@ -10,4 +10,17 @@ extraResources:
 mac:
   target: dmg
   identity: null
+  # §27: all three of these are required for the microphone, and the third
+  # lives in build/afterPack.mjs. Any two alone ship a bundle with no mic
+  # access, and the failure is silent — a live track that yields only zeros.
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: >-
+      HappyVibe transcribes your speech on this device to type into
+      the composer. Your audio never leaves your computer.
+asarUnpack:
+  # Native ONNX runtime — cannot be loaded from inside an asar archive.
+  - "**/node_modules/sherpa-onnx-*/**"
 afterPack: build/afterPack.mjs
