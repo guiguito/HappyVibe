@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import {
   activateTab, activeTabOf, allChats, allFiles, allTerminals, bufferKey, chatTab, closeTab, emptyTabs, isChatTab,
+  visibleChats,
   closePane, closeSessionTabs, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, splitAt, splitOptions, resolveCardPath, sessionOf, setSize, splitHalf, splitPane, termTab, terminalOf,
 } from "../src/renderer/src/tabs";
 
@@ -493,4 +494,54 @@ test("deleting a session drops its chat tab and leaves terminals alone", () => {
   t = closeSessionTabs(t, "s1");
   expect(allChats(t)).toEqual([]);
   expect(allTerminals(t)).toEqual(["t1"]);
+});
+
+// ── visibleChats: what App hydrates (the empty-transcript-after-restart bug) ──
+
+test("visibleChats returns only the ACTIVE chat of each pane, not every tab", () => {
+  // Two chats stacked in one pane: only the active one is on screen.
+  let t = openChat(openChat(emptyTabs, "s1"), "s2");
+  expect(allChats(t).sort()).toEqual(["s1", "s2"]);
+  expect(visibleChats(t)).toEqual(["s2"]);
+  t = activateTab(t, 0, chatTab("s1"));
+  expect(visibleChats(t)).toEqual(["s1"]);
+});
+
+test("visibleChats spans panes — a split shows one chat per pane", () => {
+  let t = openChat(emptyTabs, "s1");
+  t = splitPane(t, 0, "v");
+  t = openChat(t, "s2");
+  expect(visibleChats(t).sort()).toEqual(["s1", "s2"]);
+});
+
+test("visibleChats never reports a file or a terminal as a session", () => {
+  let t = openFile(emptyTabs, "src/a.ts");
+  expect(visibleChats(t)).toEqual([]);
+  t = openTerminal(t, "t1");
+  expect(visibleChats(t)).toEqual([]);
+  // A chat behind an active file tab is NOT visible, so it is not hydrated.
+  t = openChat(t, "s1");
+  t = activateTab(t, 0, "src/a.ts");
+  expect(visibleChats(t)).toEqual([]);
+  expect(allChats(t)).toEqual(["s1"]);
+});
+
+test("visibleChats is empty on a fresh layout, and never contains null", () => {
+  expect(visibleChats(emptyTabs)).toEqual([]);
+  for (const sid of visibleChats(openChat(emptyTabs, "s1"))) {
+    expect(typeof sid).toBe("string");
+    expect(sid.length).toBeGreaterThan(0);
+  }
+});
+
+test("visibleChats is a SUBSET of allChats — hydrating it can never spawn more than allChats", () => {
+  // The cost guard: restoring six chats must not mean six Pi processes.
+  let t = openChat(openChat(openChat(emptyTabs, "s1"), "s2"), "s3");
+  t = splitPane(t, 0, "v");
+  t = openChat(t, "s4");
+  const all = new Set(allChats(t));
+  const vis = visibleChats(t);
+  for (const sid of vis) expect(all.has(sid)).toBe(true);
+  expect(vis.length).toBeLessThanOrEqual(all.size);
+  expect(vis.length).toBeLessThanOrEqual(4); // at most one per pane
 });

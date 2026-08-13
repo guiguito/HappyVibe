@@ -42,7 +42,7 @@ import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgen
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
-  activateTab, allChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
+  activateTab, allChats, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
   isChatTab, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, sessionOf, setSize, splitAt, splitOptions, termTab, terminalOf,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
@@ -262,6 +262,8 @@ export default function App(): React.JSX.Element {
   // Perf: toolCallId → position in transcripts[sid], so tool_execution_update/
   // _end update the card in O(1) instead of mapping the whole array.
   const toolIndex = useRef<Record<string, Map<string, number>>>({});
+  /** Sessions with an openSession in flight — see hydrateSession. */
+  const hydrating = useRef<Set<string>>(new Set());
   // Id of the in-progress "Compacting context…" notice per session, so
   // compaction_end resolves it in place ("Compaction complete") instead of
   // leaving a stale ongoing line + appending a second item.
@@ -1275,6 +1277,33 @@ export default function App(): React.JSX.Element {
     void window.hv.setOnboardingSeen(true);
   };
 
+  /**
+   * Load a session's history (and start/resume its Pi process), once.
+   *
+   * Extracted from selectSession because SELECTING a session and SHOWING one
+   * are different events, and only the first used to hydrate. The layout
+   * restore and the tab strip both set `selectedId` directly, so after a
+   * restart a restored chat tab rendered the empty "Ready when you are." state
+   * while its transcript sat on disk and the cost pill happily showed what the
+   * conversation had already cost. Hydration now hangs off "is this chat on
+   * screen", which every one of those paths routes through.
+   *
+   * Idempotent twice over: the status guard covers the settled cases, and the
+   * ref guard covers the unsettled one — an effect can fire again before
+   * setStatuses has committed, and two concurrent openSession calls for one
+   * session would race two Pi spawns.
+   */
+  const hydrateSession = async (id: string): Promise<void> => {
+    if (statuses[id] === "running" || statuses[id] === "waking") return;
+    if (hydrating.current.has(id)) return;
+    hydrating.current.add(id);
+    try {
+      await hydrateSessionInner(id);
+    } finally {
+      hydrating.current.delete(id);
+    }
+  };
+
   const selectSession = async (id: string): Promise<void> => {
     setSelectedId(id);
     setView("chat");
@@ -1285,7 +1314,36 @@ export default function App(): React.JSX.Element {
       setActiveWs(ws);
       setTabsByWs((p) => ({ ...p, [ws]: openChat(p[ws] ?? emptyTabs, id) }));
     }
-    if (statuses[id] === "running") return;
+    await hydrateSession(id);
+  };
+
+  /**
+   * Hydrate whatever chats are ON SCREEN.
+   *
+   * This is the seam that fixes "restarted the app and my sessions are empty".
+   * Three different paths put a chat on screen — the layout restore at boot,
+   * clicking a tab in the strip, and switching workspace — and all three set
+   * `selectedId` without loading anything; only the sidebar's selectSession
+   * ever called openSession. Rather than patch each caller (and miss the
+   * fourth), hydration is a consequence of visibility.
+   *
+   * `visibleChats` and not `allChats` on purpose: the active tab of each pane,
+   * so a restored layout costs one Pi process per visible pane instead of one
+   * per restored tab. Off-screen tabs hydrate when they are brought forward.
+   */
+  const visibleKey = activeWs ? visibleChats(tabsByWs[activeWs] ?? emptyTabs).sort().join(",") : "";
+  useEffect(() => {
+    if (!layoutLoaded || !visibleKey) return;
+    for (const sid of visibleKey.split(",")) {
+      if (sid) void hydrateSession(sid);
+    }
+    // hydrateSession is re-created every render and is idempotent; keying on
+    // the visible-session list is what makes this fire exactly when the set
+    // of on-screen chats changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutLoaded, visibleKey]);
+
+  const hydrateSessionInner = async (id: string): Promise<void> => {
     // Show a loader while the Pi process starts / the session file loads — for
     // ANY not-yet-running open, not only hibernated resumes (round-4 follow-up:
     // a fresh open showed a static empty state with no loader).
