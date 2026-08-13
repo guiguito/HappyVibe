@@ -437,7 +437,7 @@ export function Transcript({
     // Round 11: re-center only when the QUERY or the active match changed. This
     // effect also re-runs on every stream frame (`streaming` is in the deps), and
     // re-centering per frame fought the user's own scrolling.
-    const matchKey = `${q} ${active}`;
+    const matchKey = `${q}\0${active}`;
     if (lastMatch.current !== matchKey) {
       lastMatch.current = matchKey;
       ranges[active].startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
