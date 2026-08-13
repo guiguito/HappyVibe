@@ -14,8 +14,25 @@ import { createHash } from "node:crypto";
 export type RestoreItem =
   // §24: `command` is present when this user message was a prompt-template
   // expansion — the renderer then draws the command card instead of the bubble.
-  | { kind: "user" | "assistant"; text: string; promptTemplate?: { typed: string } }
-  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
+  // §7 round 12: `images` are data URLs rebuilt from the file's image blocks;
+  // `imagesDropped` marks a message whose images exceeded the payload budget.
+  | {
+      kind: "user" | "assistant";
+      text: string;
+      promptTemplate?: { typed: string };
+      images?: string[];
+      imagesDropped?: boolean;
+    }
+  | {
+      kind: "tool";
+      toolCallId: string;
+      toolName: string;
+      args: unknown;
+      result?: string;
+      error?: boolean;
+      images?: string[];
+      imagesDropped?: boolean;
+    }
   // §23: the plan card, emitted at its plan_complete position (not the bottom).
   // planPath comes from the plan_complete tool RESULT; status/done/total are
   // filled by main (readPlan) so a reopened card shows its real state (e.g.
@@ -45,6 +62,44 @@ export function messageText(content: unknown): string {
     .map((b) => ((b as { type?: string; text?: string }).type === "text" ? (b as { text?: string }).text ?? "" : ""))
     .filter(Boolean)
     .join("\n");
+}
+
+/**
+ * §7 round 12 — the image blocks of a message's content, as data URLs.
+ *
+ * Pi persists `{type:"image", data:<base64>, mimeType}` (measured across 61 real
+ * session files), which is the same shape the composer's `attachmentUrl` builds,
+ * so one renderer component displays live and restored images alike.
+ *
+ * ponytail: the budget is inline and per-restore. Reopening is a 1–5 ms file
+ * read (§17 round 10) and the whole point is that the transcript paints before
+ * the child spawns — so a session full of screenshots must not turn that into a
+ * multi-megabyte IPC payload. Worst real session measured: 1.80 MB of image in
+ * a 1.86 MB file, comfortably under. Upgrade path if this cap is ever hit in
+ * practice: emit a locator and fetch the bytes lazily instead of inlining them.
+ */
+export const RESTORE_IMAGE_BUDGET = 8_000_000; // chars of base64 per restore
+
+export function imagesOf(
+  content: unknown,
+  budget: { left: number },
+): { images?: string[]; imagesDropped?: boolean } {
+  if (!Array.isArray(content)) return {};
+  const images: string[] = [];
+  let dropped = false;
+  for (const b of content) {
+    const blk = b as { type?: string; data?: string; mimeType?: string };
+    if (blk.type !== "image" || !blk.data) continue;
+    if (blk.data.length > budget.left) {
+      dropped = true;
+      continue;
+    }
+    budget.left -= blk.data.length;
+    images.push(`data:${blk.mimeType ?? "image/png"};base64,${blk.data}`);
+  }
+  // Undefined rather than [] so a session with no images restores to exactly
+  // the object shape it did before this existed.
+  return { ...(images.length ? { images } : {}), ...(dropped ? { imagesDropped: true } : {}) };
 }
 
 /** plan_complete's result text is `Plan saved to <relPath>. It is ready…`. */
@@ -82,6 +137,8 @@ export function pairPromptTemplateItems(items: RestoreItem[], typedByHash: Map<s
 
 export function restoreItems(raw: RawMessage[]): RestoreItem[] {
   const items: RestoreItem[] = [];
+  // §7 round 12: one budget for the whole restore — see imagesOf.
+  const budget = { left: RESTORE_IMAGE_BUDGET };
   const byCallId = new Map<string, Extract<RestoreItem, { kind: "tool" }>>();
   // §23: plan_complete calls tracked by callId so the RESULT can fill planPath.
   const planByCallId = new Map<string, Extract<RestoreItem, { kind: "plan" }>>();
@@ -97,13 +154,19 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
       if (tool) {
         tool.result = messageText(m.content);
         tool.error = m.isError === true;
+        // §7 round 12: a screenshot comes back HERE — 7 of the 8 image blocks
+        // found in real session files were tool results.
+        Object.assign(tool, imagesOf(m.content, budget));
       }
       continue;
     }
     if (m.role !== "user" && m.role !== "assistant") continue;
     if (m.role === "user") {
       const text = messageText(m.content).trim();
-      if (text) items.push({ kind: "user", text });
+      const pics = imagesOf(m.content, budget);
+      // A message that is JUST a picture is not empty — the old text-only guard
+      // reconstructed it as nothing at all.
+      if (text || pics.images || pics.imagesDropped) items.push({ kind: "user", text, ...pics });
       continue;
     }
     // Assistant: emit text bubbles and tool cards in document order (skip thinking).

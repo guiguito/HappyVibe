@@ -60,3 +60,41 @@ describe("toTranscriptItems", () => {
     expect(seen.every((n) => typeof n === "number")).toBe(true);
   });
 });
+
+/**
+ * §7 round 12 — the seam this module's header is about. `images` is a field
+ * main sends; if it is not NAMED in toTranscriptItems it is dropped silently
+ * and the transcript renders as though the feature never shipped. That is
+ * exactly how §24's `command` was lost, and how the attachment was lost here.
+ */
+describe("images cross the seam", () => {
+  it("a user attachment reaches the transcript item", () => {
+    let n = 0;
+    const [it] = toTranscriptItems(
+      [{ kind: "user", text: "hi", images: ["data:image/png;base64,AAAA"] }],
+      { sessionId: "s", workspaceId: null },
+      () => ++n,
+    );
+    expect(it).toMatchObject({ kind: "user", images: ["data:image/png;base64,AAAA"] });
+  });
+
+  it("a tool result's screenshot reaches its card", () => {
+    let n = 0;
+    const [it] = toTranscriptItems(
+      [{ kind: "tool", toolCallId: "t1", toolName: "mcp", args: {}, images: ["data:image/png;base64,BBBB"] }],
+      { sessionId: "s", workspaceId: null },
+      () => ++n,
+    );
+    expect(it).toMatchObject({ kind: "tool", card: { images: ["data:image/png;base64,BBBB"] } });
+  });
+
+  it("the dropped marker crosses too — a capped image must not read as no image", () => {
+    let n = 0;
+    const [it] = toTranscriptItems(
+      [{ kind: "user", text: "big", imagesDropped: true }],
+      { sessionId: "s", workspaceId: null },
+      () => ++n,
+    );
+    expect(it).toMatchObject({ imagesDropped: true });
+  });
+});

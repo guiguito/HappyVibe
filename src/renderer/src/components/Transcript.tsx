@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
 import { PlanCard, type PlanCardData } from "./PlanCard";
 import { splitMentionSegments, stripInjectedBlocks } from "../mentions";
+import { ZoomableImage } from "./ZoomableImage";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -44,39 +45,6 @@ function RewindButton({ onClick }: { onClick: () => void }): React.JSX.Element {
   );
 }
 
-/** Click-to-zoom image + lightbox overlay (feedback round 3 #6). */
-function ZoomableImage({ src }: { src: string }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-  return (
-    <>
-      <img
-        src={src}
-        alt="attached image"
-        onClick={() => setOpen(true)}
-        className="max-h-24 max-w-40 rounded-lg border-2 border-paper/60 object-cover cursor-zoom-in"
-      />
-      {open && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-8 cursor-zoom-out"
-        >
-          <img src={src} alt="attached image (zoomed)" className="max-h-full max-w-full rounded-xl shadow-2xl" />
-        </div>
-      )}
-    </>
-  );
-}
-
 // Perf: `id` is a stable key assigned at append time (see App.appendItem). Keying
 // on it instead of the array index lets React.memo skip re-parsing committed
 // markdown when new items arrive or the live streaming bubble updates.
@@ -94,6 +62,8 @@ export type TranscriptItem = { id?: number } & (
       kind: "user" | "assistant";
       text: string;
       images?: string[];
+      /** §7 round 12: images existed but exceeded the restore payload budget. */
+      imagesDropped?: boolean;
       outOfContext?: boolean;
       promptTemplate?: { typed: string };
     }
@@ -252,6 +222,11 @@ function UserBubble({
               <ZoomableImage key={i} src={src} />
             ))}
           </div>
+        )}
+        {/* §7 round 12: the restore budget is a NAMED ceiling, not a silent
+            truncation — a picture the user sent must not just be missing. */}
+        {"imagesDropped" in it && it.imagesDropped && (
+          <div className="mb-2 text-[11px] font-semibold text-paper/70">image not shown (too large to restore)</div>
         )}
         {/* §24: the promptTemplate header. Monospace because it is something the user
             typed verbatim, and it stays visible whether or not the expansion is. */}

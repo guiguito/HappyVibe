@@ -19,8 +19,23 @@ import type { TranscriptItem } from "./components/Transcript";
 
 /** The restored-message shape main sends (mirrors `RestoreItem` in hv.d.ts). */
 export type RestoredMessage =
-  | { kind: "user" | "assistant"; text: string; promptTemplate?: { typed: string } }
-  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
+  | {
+      kind: "user" | "assistant";
+      text: string;
+      promptTemplate?: { typed: string };
+      images?: string[];
+      imagesDropped?: boolean;
+    }
+  | {
+      kind: "tool";
+      toolCallId: string;
+      toolName: string;
+      args: unknown;
+      result?: string;
+      error?: boolean;
+      images?: string[];
+      imagesDropped?: boolean;
+    }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
 /**
@@ -45,6 +60,11 @@ export function toTranscriptItems(
           args: m.args,
           status: m.error ? ("error" as const) : ("done" as const),
           result: m.result,
+          // §7 round 12: a screenshot in a tool result. Named here for the
+          // reason in this module's header — a field main sends that is not
+          // listed is dropped silently, which is how it was lost to begin with.
+          images: m.images,
+          imagesDropped: m.imagesDropped,
         },
       };
     }
@@ -66,6 +86,14 @@ export function toTranscriptItems(
     }
     // §24: `promptTemplate` rides along so a reopened session redraws the card
     // instead of the raw expansion. See the module comment before removing it.
-    return { kind: m.kind, text: m.text, promptTemplate: m.promptTemplate, id: nextId() };
+    return {
+      kind: m.kind,
+      text: m.text,
+      promptTemplate: m.promptTemplate,
+      // §7 round 12: the attachment that vanished on reopen. Same rule as above.
+      images: m.images,
+      imagesDropped: m.imagesDropped,
+      id: nextId(),
+    };
   }) as TranscriptItem[];
 }

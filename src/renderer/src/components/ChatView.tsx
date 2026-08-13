@@ -23,7 +23,8 @@ import { useDictation } from "../voice/useDictation";
 // exactly the kind of thing that drifts from what actually downloads.
 import { VOICE_MODEL_SIZE_LABEL } from "../../../main/voice/manifest";
 import {
-  attachmentUrl, dropUnknownProvider, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
+  attachmentUrl, dropUnknownProvider, filesToAttachments, isAttachableImage, resolveModelTier, supportsVision,
+  type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
 import {
   activeCommandQuery, activeMentionQuery, commandSubtitle, completeCommand, completeMention, composerCommands, extractMentions, filterCommands,
@@ -31,6 +32,9 @@ import {
 } from "../mentions";
 
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
+/** §21: the file tree drags this — a tab/file gesture, not an image. */
+const FILETREE_DRAG_MIME = "application/x-hv-relpath";
+
 const PASTE_CONFIRM_CHARS = 100_000;
 
 /** Stable empty ledger so the pill renders before the first fetch lands. */
@@ -463,6 +467,13 @@ export function ChatView({
     setAttachMenuOpen(false);
     const img = await window.hv.pickImage();
     if (img) setAttachments((p) => [...p, img]);
+  };
+
+  /** §7 round 12: shared by paste and drop — the picker's own path is the only
+   *  one that needs a trip through main. */
+  const addFiles = async (files: ArrayLike<File>): Promise<void> => {
+    const added = await filesToAttachments(files);
+    if (added.length) setAttachments((p) => [...p, ...added]);
   };
   // #8: ⌘F / Ctrl-F opens in-conversation search; Escape closes it. searchOpen
   // is lifted to App (WS7 — the toggle lives in the tab strip).
@@ -916,6 +927,19 @@ export function ChatView({
           ev.preventDefault();
           submit();
         }}
+        // §7 round 12: drop an image anywhere on the composer to attach it.
+        // The file TREE drags its own mime (a "open this file" gesture, which
+        // @file already covers) — never treat that as an image drop.
+        onDragOver={(ev) => {
+          if (ev.dataTransfer.types.includes(FILETREE_DRAG_MIME)) return;
+          if (ev.dataTransfer.types.includes("Files")) ev.preventDefault();
+        }}
+        onDrop={(ev) => {
+          if (ev.dataTransfer.types.includes(FILETREE_DRAG_MIME)) return;
+          if (!ev.dataTransfer.files.length) return;
+          ev.preventDefault();
+          void addFiles(ev.dataTransfer.files);
+        }}
         className="px-6 pb-5 pt-2"
       >
         {/* Queued messages (Pi queue_update). Abort preserves the queue — chips stay after Stop. */}
@@ -1207,6 +1231,17 @@ export function ChatView({
               }}
               onKeyUp={(e) => dictation.handleKey(e.nativeEvent, "up")}
               onPaste={(e) => {
+                // §7 round 12: an image on the clipboard attaches. Checked
+                // BEFORE the large-text guard — a screenshot paste carries no
+                // text, and letting the guard run first swallowed it.
+                if (e.clipboardData.files.length > 0) {
+                  const imgs = Array.from(e.clipboardData.files).filter(isAttachableImage);
+                  if (imgs.length) {
+                    e.preventDefault();
+                    void addFiles(e.clipboardData.files);
+                    return;
+                  }
+                }
                 // #3: guard against accidentally pasting a huge blob.
                 const t = e.clipboardData.getData("text");
                 if (t.length > PASTE_CONFIRM_CHARS) {

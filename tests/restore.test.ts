@@ -117,3 +117,59 @@ describe("restoreItems", () => {
     expect(restoreItems(raw)).toEqual([]);
   });
 });
+
+/**
+ * §7 round 12 — images.
+ *
+ * Measured against 61 real session files before writing any of this: Pi DOES
+ * persist images, as `{type:"image", data:<base64>, mimeType}` blocks inside
+ * `message.content` — 7 of the 8 found were on `role:"toolResult"` (agent
+ * screenshots), 1 on a user message (an attachment). `messageText` keeps only
+ * text blocks, so both were dropped on reopen: the user's attachment vanished
+ * from its bubble, and a screenshot was never rebuildable at all.
+ */
+describe("restore carries images", () => {
+  const png = (data: string): { type: string; data: string; mimeType: string } => ({
+    type: "image", data, mimeType: "image/png",
+  });
+
+  test("a user attachment survives as a data URL", () => {
+    const items = restoreItems([
+      { role: "user", content: [{ type: "text", text: "look at this" }, png("AAAA")] },
+    ]);
+    expect(items[0]).toMatchObject({ kind: "user", text: "look at this" });
+    expect((items[0] as { images?: string[] }).images).toEqual(["data:image/png;base64,AAAA"]);
+  });
+
+  test("an image-only message is not dropped as 'empty'", () => {
+    // The old `if (text)` guard meant a prompt that was JUST a picture
+    // reconstructed as nothing at all.
+    const items = restoreItems([{ role: "user", content: [png("BBBB")] }]);
+    expect(items).toHaveLength(1);
+    expect((items[0] as { images?: string[] }).images).toEqual(["data:image/png;base64,BBBB"]);
+  });
+
+  test("a tool result's screenshot rides its card", () => {
+    const items = restoreItems([
+      { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "mcp", arguments: {} }] },
+      { role: "toolResult", toolCallId: "t1", toolName: "mcp", content: [{ type: "text", text: "captured" }, png("CCCC")] },
+    ]);
+    const tool = items.find((i) => i.kind === "tool") as { result?: string; images?: string[] };
+    expect(tool.result).toBe("captured");
+    expect(tool.images).toEqual(["data:image/png;base64,CCCC"]);
+  });
+
+  test("the payload budget is a cap that SAYS it capped, not a silent truncation", () => {
+    const big = "x".repeat(3_000_000); // 3 MB of base64 each
+    const raw = Array.from({ length: 4 }, () => ({ role: "user", content: [png(big)] }));
+    const items = restoreItems(raw);
+    const carried = items.flatMap((i) => (i as { images?: string[] }).images ?? []);
+    expect(carried.length).toBeLessThan(4);
+    expect(items.some((i) => (i as { imagesDropped?: boolean }).imagesDropped)).toBe(true);
+  });
+
+  test("a session with no images is byte-for-byte what it was", () => {
+    const items = restoreItems([{ role: "user", content: [{ type: "text", text: "hi" }] }]);
+    expect(items).toEqual([{ kind: "user", text: "hi" }]); // no empty images:[] noise
+  });
+});

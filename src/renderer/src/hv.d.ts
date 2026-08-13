@@ -75,8 +75,25 @@ type RestoreItem =
   // §24: `command` is set by main when this user message was a prompt-template
   // expansion (paired by hash against the logged command.invoked event), so a
   // reopened session redraws the card instead of a wall of expanded prompt.
-  | { kind: "user" | "assistant"; text: string; promptTemplate?: { typed: string } }
-  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
+  // §7 round 12: `images` are data URLs rebuilt from the session file's image
+  // blocks; `imagesDropped` marks one that exceeded the restore payload budget.
+  | {
+      kind: "user" | "assistant";
+      text: string;
+      promptTemplate?: { typed: string };
+      images?: string[];
+      imagesDropped?: boolean;
+    }
+  | {
+      kind: "tool";
+      toolCallId: string;
+      toolName: string;
+      args: unknown;
+      result?: string;
+      error?: boolean;
+      images?: string[];
+      imagesDropped?: boolean;
+    }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
 interface HvByokProvider {
