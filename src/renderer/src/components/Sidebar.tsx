@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
+import { BrandLogo } from "./BrandLogo";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
 // §13 round 6: the old combined "agents" page split into four peer destinations.
@@ -474,9 +475,9 @@ export function Sidebar({
           onClick={onToggleCollapsed}
           title="Expand sidebar (⌘B)"
           aria-label="Expand sidebar"
-          className="size-9 rounded-xl bg-tangerine border-2 border-ink/80 shadow-sticker rotate-3 flex items-center justify-center hover:rotate-6 transition-transform cursor-pointer"
+          className="cursor-pointer hover:brightness-105 transition-all"
         >
-          <span className="text-paper font-black text-sm -rotate-3">hv</span>
+          <BrandLogo size="sm" className="hover:rotate-6 transition-transform" />
         </button>
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1.5 w-full pt-2">
           {workspaces.map((ws) => (
@@ -511,9 +512,7 @@ export function Sidebar({
           onClick={() => onNavigate("chat")}
           className="flex items-center gap-2.5 cursor-pointer group min-w-0"
         >
-          <div className="size-9 rounded-xl bg-tangerine border-2 border-ink/80 shadow-sticker rotate-3 flex items-center justify-center group-hover:rotate-6 transition-transform shrink-0">
-            <span className="text-paper font-black text-sm -rotate-3">hv</span>
-          </div>
+          <BrandLogo size="sm" className="group-hover:rotate-6 transition-transform" />
           <div className="font-black text-lg tracking-tight leading-none truncate">
             Happy<span className="text-tangerine">Vibe</span>
           </div>
