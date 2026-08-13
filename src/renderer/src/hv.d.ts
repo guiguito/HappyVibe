@@ -583,8 +583,8 @@ interface HvApi {
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
   // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
-  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean }>;
-  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean }): Promise<void>;
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
 

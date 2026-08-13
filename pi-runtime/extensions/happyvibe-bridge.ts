@@ -127,7 +127,17 @@ const OPTIONAL_INTENT_PARAM = {
     "Optional but recommended. One short customer-facing sentence describing this delegation (shown as the headline; falls back to the task text if omitted).",
 };
 type MutableParams = { properties?: Record<string, unknown>; required?: string[] };
-function requireIntent(pi: ExtensionAPI): void {
+/**
+ * §13 round 12 — `enabled` gates the whole injection.
+ *
+ * The switch lives HERE rather than at the two call sites so there is one
+ * place to be wrong about, and so a test can cover exactly what ships. Off
+ * changes LABELS only: tool cards already fall back to a factual derived label
+ * when the model omits an intent, and the permission prompt has always shown
+ * the factual action rather than the model's sentence.
+ */
+export function requireIntent(pi: ExtensionAPI, enabled = true): void {
+  if (!enabled) return;
   for (const name of INTENT_TOOLS) {
     const params = pi.getAllTools().find((t) => t.name === name)?.parameters as MutableParams | undefined;
     if (!params?.properties || params.properties.intent) continue; // tool absent or already wired
@@ -343,10 +353,13 @@ export default function (pi: ExtensionAPI) {
   // costs nothing — requireIntent early-continues on every already-wired tool —
   // and re-wires whatever the adapter replaced since the last turn.
   // Regression-tested by tests/mcp-bridge.test.ts (live).
-  pi.on("turn_start", () => requireIntent(pi));
+  // §13 round 12: the headline is bought with tokens, so it has a switch. In
+  // proxy mode that is five tools; with a server exposing tools DIRECTLY it is
+  // every tool that server publishes, which is where the cost actually scales.
+  pi.on("turn_start", () => requireIntent(pi, builtins.intent));
 
   pi.on("session_start", async (_event, ctx) => {
-    requireIntent(pi); // all extensions have registered by now (idempotent across reloads)
+    requireIntent(pi, builtins.intent); // all extensions have registered by now (idempotent across reloads)
     skillManifest = loadManifest(); // §14: reflect this session's loaded skills
     const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
     restoreMarks(entries);

@@ -214,7 +214,7 @@ contextBridge.exposeInMainWorld("hv", {
 
   // ── §13 round 6: configurable built-in custom tools (additive) ────
   builtinsGet: () => ipcRenderer.invoke("hv:builtins-get"),
-  builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string }) =>
+  builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }) =>
     ipcRenderer.invoke("hv:builtins-set", t),
   builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
 

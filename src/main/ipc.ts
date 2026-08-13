@@ -2005,7 +2005,7 @@ export function registerIpc(win: BrowserWindow): void {
   // Takes effect at next spawn only — reuse the existing debounced, idle-only,
   // resume-preserving reload path (same mechanism as MCP/skills config changes).
   ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
-  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string }) => {
+  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }) => {
     setBuiltinTools(t);
     scheduleRuntimeReload("skills", "global", null);
   });
