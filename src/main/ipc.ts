@@ -1451,7 +1451,12 @@ export function registerIpc(win: BrowserWindow): void {
     sessionsChanged();
   });
 
-  ipcMain.handle("hv:archive-session", (_e, sessionId: string, archived: boolean) => {
+  ipcMain.handle("hv:archive-session", async (_e, sessionId: string, archived: boolean) => {
+    // §17 round 12: archiving used to flip a flag and leave the child running —
+    // a defect rather than a design, and half of why "how do I stop a session?"
+    // had no answer. endSession also captures the final stats the §19 ledger
+    // reads, so an archived session's spend is recorded rather than lost.
+    if (archived && manager.get(sessionId)) await endSession(sessionId);
     index.update(sessionId, { archived });
     sessionsChanged();
   });

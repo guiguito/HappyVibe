@@ -42,7 +42,7 @@ import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgen
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
-  activateTab, allChats, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
+  activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
   isChatTab, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, sessionOf, setSize, splitAt, splitOptions, termTab, terminalOf,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
@@ -1233,8 +1233,25 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  const closeChatTab = (ws: string, paneIdx: number, tab: TabId): void => {
+  const closeChatTab = async (ws: string, paneIdx: number, tab: TabId): Promise<void> => {
     const sid = sessionOf(tab);
+    // §17 round 12: closing the LAST tab of a session ENDS its process. Until
+    // now a chat tab was a pure view, which left the child running with no way
+    // to stop it short of deleting the conversation. Counted across panes: the
+    // same session open twice must survive one of them closing.
+    if (sid && chatTabCount(tabsByWs[ws] ?? emptyTabs, sid) === 1) {
+      if (
+        busy[sid] &&
+        !window.confirm("This session is still working. Close it and stop the agent?")
+      ) {
+        return;
+      }
+      // §26's existing confirm — a session with live terminals names them and
+      // offers stop/keep. Undefined means it had none, so nothing is asked.
+      const terms = await askAboutTerminals(sid);
+      if (terms === null) return; // cancelled
+      await window.hv.closeSession(sid, terms).catch(surface);
+    }
     const next = closeTab(tabsByWs[ws] ?? emptyTabs, paneIdx, tab);
     setTabsByWs((p) => ({ ...p, [ws]: next }));
     if (sid && selectedId === sid) {
@@ -1654,9 +1671,11 @@ export default function App(): React.JSX.Element {
       // Close the FOCUSED pane's active tab if it is a file or a TERMINAL (§26);
       // window close is ⌘⇧W. Round 11: prefer the focused pane rather than "the
       // first pane with a closable tab" — with four panes that was arbitrary.
-      // A CHAT stays exempt: closing one only hides a session that keeps
-      // running, so it needs no keyboard route. A terminal is the opposite —
-      // closing it kills a process — which is why it routes through a confirm.
+      // A CHAT stays exempt, and since round 12 the reason is the opposite of
+      // what it was: closing a session's last tab now ENDS its process, so it
+      // is precisely the thing that should not sit under a reflex keystroke.
+      // The tab's own × asks first; ⌘W would not. A terminal is closable here
+      // because its confirm names the running process before anything dies.
       if (!wsId) return;
       const close = (slot: number, tab: TabId): void => {
         if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
@@ -1916,7 +1935,7 @@ export default function App(): React.JSX.Element {
                       // Three tab kinds, three lifecycles: a chat keeps its
                       // session running, a file may hold unsaved edits, and a
                       // terminal DIES with its tab (§26) — so it confirms.
-                      if (isChatTab(tab)) closeChatTab(wsId, slot, tab);
+                      if (isChatTab(tab)) void closeChatTab(wsId, slot, tab);
                       else if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
                       else closeFileTab(wsId, slot, tab);
                     }}

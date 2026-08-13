@@ -3,6 +3,7 @@ import {
   activateTab, activeTabOf, allChats, allFiles, allTerminals, bufferKey, chatTab, closeTab, emptyTabs, isChatTab,
   visibleChats,
   closePane, closeSessionTabs, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, splitAt, splitOptions, resolveCardPath, sessionOf, setSize, splitHalf, splitPane, termTab, terminalOf,
+  chatTabCount,
 } from "../src/renderer/src/tabs";
 
 // ── tab identity: a chat is per SESSION (round 11) ───────────────────────────
@@ -544,4 +545,33 @@ test("visibleChats is a SUBSET of allChats — hydrating it can never spawn more
   for (const sid of vis) expect(all.has(sid)).toBe(true);
   expect(vis.length).toBeLessThanOrEqual(all.size);
   expect(vis.length).toBeLessThanOrEqual(4); // at most one per pane
+});
+
+/**
+ * §17 round 12 — closing the LAST tab of a session ends its process, so
+ * "last" has to be counted across every pane. The same session can sit in two
+ * panes (drag a tab, or open it from the sidebar into the other half), and
+ * closing one of those two must leave the child running.
+ */
+test("chatTabCount counts a session's tabs across panes, not per pane", () => {
+  let t = openChat(emptyTabs, "s1");
+  expect(chatTabCount(t, "s1")).toBe(1);
+
+  t = splitAt(t, 0, "v");
+  t = moveTab(openChat(t, "s1"), chatTab("s1"), 1);
+  // openChat focuses an already-open tab rather than duplicating it, so the
+  // count stays 1 — this is the guard that it is counted globally, not per pane.
+  expect(chatTabCount(t, "s1")).toBe(1);
+});
+
+test("chatTabCount is zero for a session with nothing open", () => {
+  expect(chatTabCount(emptyTabs, "ghost")).toBe(0);
+  expect(chatTabCount(openChat(emptyTabs, "s1"), "s2")).toBe(0);
+});
+
+test("chatTabCount ignores file and terminal tabs", () => {
+  let t = openChat(emptyTabs, "s1");
+  t = openFile(t, "src/a.ts");
+  t = openTerminal(t, "term1");
+  expect(chatTabCount(t, "s1")).toBe(1);
 });
