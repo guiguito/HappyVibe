@@ -77,7 +77,7 @@ import { compactionInfo, compactionReason, contextItems, earlierItems } from "./
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { deleteAuthEntry } from "./mcpAuthStore";
-import { probe } from "./mcpClient";
+import { mapLimit, probe } from "./mcpClient";
 import { resolveMcpConfig } from "./mcpResolve";
 import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
@@ -694,18 +694,26 @@ export function registerIpc(win: BrowserWindow): void {
 
   // Startup connectivity sweep — fire-and-forget, never blocks boot.
   // ponytail: stdio probes briefly spawn each server process; upgrade = persistent handles if startup time bites
+  //
+  // §13 round 12: CAPPED. This used to fire every configured server at once, so
+  // N TLS handshakes, N silent token refreshes and N `npx` cold starts raced
+  // each other at the busiest moment the app has — which is most of why servers
+  // reported `failed` at boot and connected instantly on a click. The sweep is a
+  // badge, not a race; four at a time is plenty.
+  const SWEEP_CONCURRENCY = 4;
   void (async () => {
     const globalServers = Object.keys(readMcpFile(path.join(agentDir(), "mcp.json")).mcpServers);
     const wsPaths = workspaces.list();
-    const allChecks: Promise<void>[] = [
-      ...globalServers.map((n) => checkServer("global", null, n)),
+    const checks: Array<() => Promise<void>> = [
+      ...globalServers.map((n) => () => checkServer("global", null, n)),
       ...wsPaths.flatMap((ws) =>
-        Object.keys(readMcpFile(path.join(ws, ".mcp.json")).mcpServers).map((n) =>
-          checkServer("workspace", ws, n),
+        Object.keys(readMcpFile(path.join(ws, ".mcp.json")).mcpServers).map(
+          (n) => () => checkServer("workspace", ws, n),
         ),
       ),
     ];
-    await Promise.allSettled(allChecks);
+    const allChecks = checks; // named for the log line below
+    await mapLimit(checks, SWEEP_CONCURRENCY, (run) => run());
     const byState: Record<string, number> = {};
     for (const s of mcpStatusMap.values()) byState[s.state] = (byState[s.state] ?? 0) + 1;
     void log.append({ type: "mcp.startup_check", data: { total: allChecks.length, byState } });
