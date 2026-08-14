@@ -539,9 +539,11 @@ export function ChatView({
       <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
         {/* §23: compact plan-mode indicator (left) — read-only badge with a
             wrap-up nudge and one-click exit. Replaces the full-width banner. */}
-        {/* §7 round 12: the session's own controls live here, left of the
-            metrics. The group is unconditional now — the model chip is always
-            present, where it used to be one more thing crowding the composer. */}
+        {/* §7 round 12: the MODEL chip lives here, left of the metrics, and the
+            existing session badges stack after it. The group is unconditional
+            now, because the chip is always present. The Plan toggle deliberately
+            stayed in the composer: it is something you flip before typing, not a
+            property of the session you read. */}
         <div className="mr-auto flex items-center gap-1.5">
           {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global).
               WS1: shared ModelSelect (controlled open so a session switch force-closes it). */}
@@ -570,23 +572,6 @@ export function ChatView({
               )}
             />
           </div>
-          {/* §23: plan-mode toggle — read-only "think first" for this session. */}
-          {onTogglePlan && (
-            <button
-              type="button"
-              aria-pressed={planEnabled}
-              onClick={() => onTogglePlan(!planEnabled)}
-              title={planEnabled ? "Plan mode on — read-only. Click to exit." : "Plan mode — explore and draft a plan before changing anything"}
-              className={`shrink-0 flex items-center gap-1 text-[11px] font-bold rounded-full px-2.5 py-1.5 cursor-pointer transition-colors ${
-                planEnabled
-                  ? "bg-sky-soft text-sky"
-                  : "text-ink-soft hover:bg-paper-deep/40 hover:text-sky"
-              }`}
-            >
-              <span aria-hidden>🧭</span>
-              <span>Plan</span>
-            </button>
-          )}
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
         {/* §23 round 9: the active-plan pill. A plan card lives at its
             plan_complete position in history, so a compaction that ate that
@@ -1136,6 +1121,23 @@ export function ChatView({
               </>
             )}
           </div>
+          {/* §23: plan-mode toggle — read-only "think first" for this session. */}
+          {onTogglePlan && (
+            <button
+              type="button"
+              aria-pressed={planEnabled}
+              onClick={() => onTogglePlan(!planEnabled)}
+              title={planEnabled ? "Plan mode on — read-only. Click to exit." : "Plan mode — explore and draft a plan before changing anything"}
+              className={`shrink-0 flex items-center gap-1 text-[11px] font-bold rounded-full px-2.5 py-1.5 cursor-pointer transition-colors ${
+                planEnabled
+                  ? "bg-sky-soft text-sky"
+                  : "text-ink-soft hover:bg-paper-deep/40 hover:text-sky"
+              }`}
+            >
+              <span aria-hidden>🧭</span>
+              <span>Plan</span>
+            </button>
+          )}
           <div className="relative flex-1 min-w-0">
             {/* F3: @file autocomplete — opens above the composer, styled like the attach menu. */}
             {mention && mention.items.length > 0 && (
