@@ -40,12 +40,13 @@ export interface AdapterStoredClientInfo {
  * is the defect this module replaces, so callers must handle the third case.
  */
 export type AdapterEntry =
-  | { status: "present"; tokens: AdapterStoredTokens }
+  | { status: "present"; tokens?: AdapterStoredTokens; clientInfo?: AdapterStoredClientInfo }
   | { status: "absent" }
   | { status: "unavailable"; message: string };
 
 type Op =
   | { op: "inspect"; name: string; url: string }
+  | { op: "migrate"; name: string }
   | { op: "writeTokens"; name: string; url: string; tokens: AdapterStoredTokens }
   | { op: "writeClientInfo"; name: string; url: string; clientInfo: AdapterStoredClientInfo }
   | { op: "remove"; name: string };
@@ -55,10 +56,13 @@ interface OpResult {
   status: string;
   message?: string;
   tokens?: AdapterStoredTokens;
+  clientInfo?: AdapterStoredClientInfo;
 }
 
 export interface AdapterStore {
   read(servers: readonly { name: string; url: string }[]): Promise<Record<string, AdapterEntry>>;
+  /** Migrating read: imports a legacy plaintext file into the keychain and deletes it. */
+  migrate(names: readonly string[]): Promise<void>;
   writeTokens(name: string, url: string, tokens: AdapterStoredTokens): Promise<void>;
   writeClientInfo(name: string, url: string, info: AdapterStoredClientInfo): Promise<void>;
   remove(name: string): Promise<void>;
@@ -128,13 +132,17 @@ export function createAdapterStore(opts: {
           !r
             // A missing result is NOT "absent" — we do not know, so say so.
             ? { status: "unavailable", message: "no result from credential sidecar" }
-            : r.status === "present" && r.tokens
-              ? { status: "present", tokens: r.tokens }
+            : r.status === "present"
+              ? { status: "present", tokens: r.tokens, clientInfo: r.clientInfo }
               : r.status === "unavailable"
                 ? { status: "unavailable", message: r.message ?? "credential store unavailable" }
                 : { status: "absent" };
       }
       return out;
+    },
+    async migrate(names) {
+      if (!names.length) return;
+      await run(names.map((name) => ({ op: "migrate", name })));
     },
     async writeTokens(name, url, tokens) {
       await run([{ op: "writeTokens", name, url, tokens }]);

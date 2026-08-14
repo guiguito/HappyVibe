@@ -9,6 +9,7 @@ import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 
 import type { McpServerConfig } from "./mcp.js";
 import { probeAuthProvider } from "./mcpOAuth.js";
+import type { AdapterStore, AdapterEntry } from "./mcpAdapterStore.js";
 
 export type ProbeResult = {
   state: "connected" | "needs-auth" | "failed";
@@ -25,6 +26,13 @@ export interface ProbeOpts {
   retries?: number;
   /** @deprecated round 12 — one budget for both phases was the bug. */
   timeoutMs?: number;
+  /** Credentials live in the adapter's store; http probes need a way to read it. */
+  store?: AdapterStore;
+  /**
+   * Pre-read credential, so the startup sweep pays ONE sidecar spawn for every
+   * server rather than one per probe. When omitted, an http probe reads its own.
+   */
+  authEntry?: AdapterEntry;
 }
 
 /**
@@ -104,6 +112,30 @@ async function probeOnce(
 ): Promise<ProbeResult> {
   const { connectMs, listMs } = probeDeadlines(opts);
 
+  /**
+   * Resolve the credential BEFORE connecting, and treat "unavailable" as a hard
+   * failure with its reason rather than as needs-auth. Saying needs-auth here
+   * would be the old badge's bug in a new costume: a confident signed-out claim
+   * about a server nobody actually checked.
+   */
+  let authEntry: AdapterEntry | undefined = opts?.authEntry;
+  if (cfg.url && !authEntry && opts?.store) {
+    try {
+      authEntry = (await opts.store.read([{ name, url: cfg.url }]))[name];
+    } catch (err) {
+      return { state: "failed", error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+  if (cfg.url && authEntry?.status === "unavailable") {
+    return { state: "failed", error: authEntry.message };
+  }
+  if (cfg.url && !opts?.store) {
+    // Programming error, not a user-facing state: an http probe with no way to
+    // reach the credential store would silently report every authenticated
+    // server as needs-auth. Fail loudly instead of guessing.
+    return { state: "failed", error: "internal: http probe requires an adapter credential store" };
+  }
+
   const transport = cfg.command
     ? new StdioClientTransport({
         command: cfg.command,
@@ -115,7 +147,7 @@ async function probeOnce(
         // Non-interactive provider: attaches stored tokens (and refreshes them
         // silently if possible) so an authenticated server connects; it never
         // opens a browser during a background probe.
-        authProvider: probeAuthProvider(name, cfg.url!, agentDir),
+        authProvider: probeAuthProvider(name, cfg.url!, agentDir, opts!.store!, authEntry),
         requestInit: { headers: cfg.headers },
       });
 

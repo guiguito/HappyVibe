@@ -25,19 +25,20 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 import type { McpServerConfig } from "./mcp.js";
-import {
-  readAuthEntry,
-  writeAuthEntry,
-  deleteAuthEntry,
-  type AuthEntry,
-  type StoredTokens,
-  type StoredClientInfo,
-} from "./mcpAuthStore.js";
+import { readFlowState, writeFlowState, clearFlowState } from "./mcpAuthStore.js";
+import type {
+  AdapterStore,
+  AdapterEntry,
+  AdapterStoredTokens,
+  AdapterStoredClientInfo,
+} from "./mcpAdapterStore.js";
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // matches adapter MANUAL_AUTH_TIMEOUT_MS
 
 export interface AuthDeps {
   openExternal: (url: string) => void;
+  /** Where credentials actually live — the adapter's store, via the sidecar. */
+  store: AdapterStore;
   signal?: AbortSignal;
   timeoutMs?: number;
 }
@@ -47,9 +48,12 @@ export type AuthResult =
   | { ok: false; error: string };
 
 /**
- * OAuthClientProvider backed by mcpAuthStore. Mirrors adapter's
- * McpOAuthProvider mapping. EVERY persist writes serverUrl = cfg.url so the
- * adapter's getAuthForUrl (which invalidates on serverUrl mismatch) accepts it.
+ * OAuthClientProvider whose credentials live in the ADAPTER's store, reached
+ * through the sidecar. Every persist passes serverUrl = cfg.url, which the
+ * adapter binds the entry to and invalidates on mismatch.
+ *
+ * The SDK allows these accessors to return promises, which is what makes an
+ * out-of-process store usable here at all.
  */
 class HvOAuthProvider implements OAuthClientProvider {
   constructor(
@@ -59,22 +63,16 @@ class HvOAuthProvider implements OAuthClientProvider {
     private readonly deps: AuthDeps,
     private readonly redirectUrlValue: string,
     // Probe mode (background startup/reconnect sweep): supply stored tokens and
-    // allow silent refresh, but NEVER open a browser or mutate on-disk auth
+    // allow silent refresh, but NEVER open a browser or mutate stored auth
     // artifacts (DCR client, oauthState, codeVerifier). Only saveTokens persists
-    // (a legitimate non-interactive refresh should update disk).
+    // (a legitimate non-interactive refresh should update the store).
     private readonly probeMode = false,
+    // Pre-read entry: the startup sweep reads every server in ONE sidecar spawn
+    // and hands each provider its own answer, rather than paying a spawn per
+    // provider callback.
+    private readonly prefetched?: AdapterEntry,
+    private readonly prefetchedClientInfo?: AdapterStoredClientInfo,
   ) {}
-
-  private read(): AuthEntry {
-    return readAuthEntry(this.agentDir, this.name) ?? {};
-  }
-  private write(patch: Partial<AuthEntry>): void {
-    writeAuthEntry(this.agentDir, this.name, {
-      ...this.read(),
-      ...patch,
-      serverUrl: this.serverUrl, // load-bearing: adapter invalidates on mismatch
-    });
-  }
 
   get redirectUrl(): string {
     return this.redirectUrlValue;
@@ -90,14 +88,36 @@ class HvOAuthProvider implements OAuthClientProvider {
     };
   }
 
+  /** The adapter's entry, read once per provider (the sweep pre-reads it). */
+  private entry: AdapterEntry | undefined;
+  private async load(): Promise<AdapterEntry> {
+    if (this.prefetched) return this.prefetched;
+    if (!this.entry) {
+      this.entry = (await this.deps.store.read([{ name: this.name, url: this.serverUrl }]))[this.name];
+    }
+    return this.entry ?? { status: "absent" };
+  }
+  /** Invalidate after a write so a later read in the same flow sees it. */
+  private forget(): void {
+    this.entry = undefined;
+  }
+
   state(): string {
     const state = randomBytes(32).toString("hex");
-    if (!this.probeMode) this.write({ oauthState: state });
+    // PKCE/CSRF state is OURS and stays on disk — see mcpAuthStore's header for
+    // why it must not go anywhere the adapter's legacy import can reach it.
+    if (!this.probeMode) {
+      writeFlowState(this.agentDir, this.name, {
+        ...readFlowState(this.agentDir, this.name),
+        oauthState: state,
+      });
+    }
     return state;
   }
 
-  clientInformation(): OAuthClientInformation | undefined {
-    const ci = this.read().clientInfo;
+  async clientInformation(): Promise<OAuthClientInformation | undefined> {
+    const e = await this.load();
+    const ci = this.prefetchedClientInfo ?? (e.status === "present" ? e.clientInfo : undefined);
     if (!ci) return undefined;
     // Probe mode reuses the stored client unconditionally (to enable silent
     // refresh without triggering DCR); it never completes an interactive
@@ -114,20 +134,22 @@ class HvOAuthProvider implements OAuthClientProvider {
     return { client_id: ci.clientId, client_secret: ci.clientSecret };
   }
 
-  saveClientInformation(info: OAuthClientInformationFull): void {
+  async saveClientInformation(info: OAuthClientInformationFull): Promise<void> {
     if (this.probeMode) return; // never persist a DCR client during a background probe
-    const clientInfo: StoredClientInfo = {
+    const clientInfo: AdapterStoredClientInfo = {
       clientId: info.client_id,
       clientSecret: info.client_secret,
       clientIdIssuedAt: info.client_id_issued_at,
       clientSecretExpiresAt: info.client_secret_expires_at,
       redirectUris: info.redirect_uris ?? [this.redirectUrlValue],
     };
-    this.write({ clientInfo });
+    await this.deps.store.writeClientInfo(this.name, this.serverUrl, clientInfo);
+    this.forget();
   }
 
-  tokens(): OAuthTokens | undefined {
-    const t = this.read().tokens;
+  async tokens(): Promise<OAuthTokens | undefined> {
+    const e = await this.load();
+    const t = e.status === "present" ? e.tokens : undefined;
     if (!t) return undefined;
     return {
       access_token: t.accessToken,
@@ -138,23 +160,27 @@ class HvOAuthProvider implements OAuthClientProvider {
     };
   }
 
-  saveTokens(tokens: OAuthTokens): void {
-    const stored: StoredTokens = {
+  async saveTokens(tokens: OAuthTokens): Promise<void> {
+    const stored: AdapterStoredTokens = {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: tokens.expires_in ? Date.now() / 1000 + tokens.expires_in : undefined,
       scope: tokens.scope,
     };
-    this.write({ tokens: stored });
+    await this.deps.store.writeTokens(this.name, this.serverUrl, stored);
+    this.forget();
   }
 
   saveCodeVerifier(codeVerifier: string): void {
     if (this.probeMode) return; // never persist PKCE verifier during a background probe
-    this.write({ codeVerifier });
+    writeFlowState(this.agentDir, this.name, {
+      ...readFlowState(this.agentDir, this.name),
+      codeVerifier,
+    });
   }
 
   codeVerifier(): string {
-    const v = this.read().codeVerifier;
+    const v = readFlowState(this.agentDir, this.name)?.codeVerifier;
     if (!v) throw new Error(`No code verifier saved for MCP server: ${this.name}`);
     return v;
   }
@@ -172,14 +198,23 @@ class HvOAuthProvider implements OAuthClientProvider {
  * If interactive authorization is genuinely required, the connect surfaces an
  * UnauthorizedError, which the probe maps to "needs-auth".
  */
-export function probeAuthProvider(name: string, serverUrl: string, agentDir: string): OAuthClientProvider {
+export function probeAuthProvider(
+  name: string,
+  serverUrl: string,
+  agentDir: string,
+  store: AdapterStore,
+  /** Pre-read entry, so the startup sweep costs one sidecar spawn for all servers. */
+  prefetched?: AdapterEntry,
+): OAuthClientProvider {
   return new HvOAuthProvider(
     name,
     serverUrl,
     agentDir,
-    { openExternal: () => undefined },
+    { openExternal: () => undefined, store },
     "http://127.0.0.1/mcp-probe", // unused: a probe never completes an interactive redirect
     true,
+    prefetched,
+    prefetched?.status === "present" ? prefetched.clientInfo : undefined,
   );
 }
 
@@ -283,7 +318,7 @@ export async function authenticate(
 
   try {
     let provider!: HvOAuthProvider;
-    callback = await startCallbackServer(() => readAuthEntry(agentDir, name)?.oauthState);
+    callback = await startCallbackServer(() => readFlowState(agentDir, name)?.oauthState);
 
     // Refresh tokens are client-bound. Our loopback port is fresh per flow, so
     // when the stored DCR client can't be reused for this redirect URL the SDK
@@ -293,14 +328,21 @@ export async function authenticate(
     // (auth.js authInternal: OAuthError !== ServerError). Drop the doomed
     // refresh_token; keep a still-fresh access token (connect succeeds with it
     // directly, no OAuth dance), drop expired tokens entirely.
-    const prior = readAuthEntry(agentDir, name);
-    if (prior?.tokens && !prior.clientInfo?.redirectUris?.includes(callback.redirectUrl)) {
+    //
+    // Unchanged in substance by the move to the adapter's store — only where it
+    // reads and writes. Getting this wrong shows up as a re-auth that fails with
+    // "Client ID mismatch" on a server that worked yesterday.
+    const prior = (await deps.store.read([{ name, url: serverUrl }]))[name];
+    const priorTokens = prior?.status === "present" ? prior.tokens : undefined;
+    const priorClient = prior?.status === "present" ? prior.clientInfo : undefined;
+    if (priorTokens && !priorClient?.redirectUris?.includes(callback.redirectUrl)) {
       const fresh =
-        prior.tokens.expiresAt !== undefined && prior.tokens.expiresAt - 60 > Date.now() / 1000;
-      writeAuthEntry(agentDir, name, {
-        ...prior,
-        tokens: fresh ? { ...prior.tokens, refreshToken: undefined } : undefined,
-      });
+        priorTokens.expiresAt !== undefined && priorTokens.expiresAt - 60 > Date.now() / 1000;
+      if (fresh) {
+        await deps.store.writeTokens(name, serverUrl, { ...priorTokens, refreshToken: undefined });
+      } else {
+        await deps.store.remove(name);
+      }
     }
 
     provider = new HvOAuthProvider(name, serverUrl, agentDir, deps, callback.redirectUrl);
@@ -336,7 +378,16 @@ export async function authenticate(
   }
 }
 
-/** Remove all stored OAuth credentials for a server (blank-then-rm via store). */
-export function logout(name: string, agentDir: string): void {
-  deleteAuthEntry(agentDir, name);
+/**
+ * Remove all stored OAuth credentials for a server.
+ *
+ * This is the fix for the worst of the three defects: the old version deleted
+ * only main's plaintext file while the adapter's keychain entry survived, so
+ * clicking Log out left the running session perfectly signed in. It now removes
+ * the credential where the agent actually reads it, and clears our own PKCE/CSRF
+ * leftovers as well.
+ */
+export async function logout(name: string, agentDir: string, store: AdapterStore): Promise<void> {
+  await store.remove(name);
+  clearFlowState(agentDir, name);
 }

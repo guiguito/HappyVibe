@@ -76,7 +76,8 @@ import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
-import { deleteAuthEntry } from "./mcpAuthStore";
+import { sweepLegacyCredentials } from "./mcpAuthStore";
+import { createAdapterStore, type AdapterEntry } from "./mcpAdapterStore";
 import { mapLimit, probe } from "./mcpClient";
 import { resolveMcpConfig } from "./mcpResolve";
 import { authenticate, logout } from "./mcpOAuth";
@@ -648,6 +649,12 @@ export function registerIpc(win: BrowserWindow): void {
     lastChecked: number;
   }
   const mcpStatusMap = new Map<string, McpServerStatus>();
+  /**
+   * MCP credentials live in the OS keychain from pi-mcp-adapter 2.17.0, reached
+   * through a one-shot sidecar running the adapter's own code. One instance for
+   * the process; each call is its own spawn.
+   */
+  const adapterStore = createAdapterStore({ agentDir: agentDir(), runtimeDir: piRuntimeDir() });
   const mcpStatusChanged = (): void =>
     send("hv:mcp-status-changed", Array.from(mcpStatusMap.values()));
 
@@ -655,6 +662,8 @@ export function registerIpc(win: BrowserWindow): void {
     scope: "global" | "workspace",
     workspaceId: string | null,
     name: string,
+    /** Pre-read by the sweep so N servers cost ONE sidecar spawn, not N. */
+    authEntry?: AdapterEntry,
   ): Promise<void> => {
     const file =
       scope === "global"
@@ -680,7 +689,10 @@ export function registerIpc(win: BrowserWindow): void {
     // holds only a ${HV_MCP_…} placeholder. The Pi runtime interpolates it at
     // spawn; this process does not, so resolve before probing or every
     // key-based server reports needs-auth with a literal placeholder as its key.
-    const result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir());
+    const result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir(), {
+      store: adapterStore,
+      authEntry,
+    });
     mcpStatusMap.set(statusKey(scope, workspaceId, name), {
       name, scope, workspaceId,
       state: result.state,
@@ -702,14 +714,54 @@ export function registerIpc(win: BrowserWindow): void {
   // badge, not a race; four at a time is plenty.
   const SWEEP_CONCURRENCY = 4;
   void (async () => {
-    const globalServers = Object.keys(readMcpFile(path.join(agentDir(), "mcp.json")).mcpServers);
+    const globalFile = readMcpFile(path.join(agentDir(), "mcp.json")).mcpServers;
+    const globalServers = Object.keys(globalFile);
     const wsPaths = workspaces.list();
+    const wsFiles = wsPaths.map((ws) => [ws, readMcpFile(path.join(ws, ".mcp.json")).mcpServers] as const);
+
+    /**
+     * ONE sidecar spawn for the whole sweep. Every http server's credential is
+     * read up front and handed to its probe, instead of each probe paying its
+     * own spawn — the boot sweep is the busiest moment the app has (§13 round
+     * 12), and this is the same reasoning that capped its concurrency.
+     *
+     * Credentials are keyed by server NAME only (the adapter hashes the name,
+     * not the tier), so a global and a workspace server sharing a name share a
+     * credential. Deduplicating by name here is therefore correct, not a
+     * shortcut.
+     */
+    const httpByName = new Map<string, { name: string; url: string }>();
+    for (const [n, cfg] of Object.entries(globalFile)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
+    for (const [, servers] of wsFiles) {
+      for (const [n, cfg] of Object.entries(servers)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
+    }
+    const wanted = [...httpByName.values()];
+
+    // One-time: hand the adapter anything main wrote before it stopped owning
+    // this store, then delete the orphans nobody will ever migrate.
+    try {
+      const swept = await sweepLegacyCredentials(agentDir(), wanted, adapterStore);
+      if (swept.migrated || swept.deleted) {
+        void log.append({ type: "mcp.legacy_sweep", data: swept });
+      }
+    } catch (e) {
+      console.warn("[hv] mcp legacy credential sweep failed:", e);
+    }
+
+    let prefetched: Record<string, AdapterEntry> = {};
+    try {
+      prefetched = await adapterStore.read(wanted);
+    } catch (e) {
+      // Leave it empty: each probe then reads its own, and a store that is
+      // genuinely down surfaces as `failed` per server rather than as a
+      // silent sweep-wide "everything needs auth".
+      console.warn("[hv] mcp credential prefetch failed:", e);
+    }
+
     const checks: Array<() => Promise<void>> = [
-      ...globalServers.map((n) => () => checkServer("global", null, n)),
-      ...wsPaths.flatMap((ws) =>
-        Object.keys(readMcpFile(path.join(ws, ".mcp.json")).mcpServers).map(
-          (n) => () => checkServer("workspace", ws, n),
-        ),
+      ...globalServers.map((n) => () => checkServer("global", null, n, prefetched[n])),
+      ...wsFiles.flatMap(([ws, servers]) =>
+        Object.keys(servers).map((n) => () => checkServer("workspace", ws, n, prefetched[n])),
       ),
     ];
     const allChecks = checks; // named for the log line below
@@ -2444,7 +2496,9 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle(
     "hv:mcp-set-server",
-    (_e, scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: McpServerConfig | null) => {
+    // async since round 13: revoking a removed server's credential now reaches
+    // the OS keychain through the sidecar, which is a round-trip.
+    async (_e, scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: McpServerConfig | null) => {
       const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
       writeMcpServer(file, name, cfg);
       void log.append({ type: "mcp.config", workspaceId: workspaceId ?? undefined,
@@ -2461,7 +2515,10 @@ export function registerIpc(win: BrowserWindow): void {
           ...workspaces.list().map((w) => path.join(w, ".mcp.json")),
         ];
         if (!serverNameInFiles(name, files)) {
-          deleteAuthEntry(agentDir(), name);
+          // Same fix as Log out, and for the same reason: deleting main's file
+          // left the adapter's keychain entry alive, so a "removed" server's
+          // credential survived — and a re-add would silently reuse it.
+          await logout(name, agentDir(), adapterStore);
           // §13 round 8: catalog-installed API keys are keyed by server name
           // too — drop them on the same condition, or a re-add would silently
           // reuse a key the user thought they had removed.
@@ -2542,11 +2599,14 @@ export function registerIpc(win: BrowserWindow): void {
       };
 
       setStatus("checking");
-      let result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir());
+      let result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir(), {
+        store: adapterStore,
+      });
 
       if (result.state === "needs-auth" && cfg.url) {
         const auth = await authenticate(name, cfg, agentDir(), {
           openExternal: (url) => shell.openExternal(url),
+          store: adapterStore,
         });
         void log.append({ type: "mcp.auth", workspaceId: workspaceId ?? undefined,
           data: { name, action: auth.ok ? "authenticated" : "auth-failed", via: "connect-flow" } });
@@ -2602,6 +2662,7 @@ export function registerIpc(win: BrowserWindow): void {
 
       const result = await authenticate(name, cfg, agentDir(), {
         openExternal: (url) => shell.openExternal(url),
+        store: adapterStore,
       });
 
       mcpStatusMap.set(statusKey(scope, workspaceId, name), {
@@ -2619,7 +2680,10 @@ export function registerIpc(win: BrowserWindow): void {
   );
 
   ipcMain.handle("hv:mcp-logout", async (_e, name: string) => {
-    logout(name, agentDir());
+    // Awaited: this is the call that actually revokes the agent's access. The
+    // old synchronous version deleted a file the adapter had stopped reading,
+    // which is why Log out used to leave the session signed in.
+    await logout(name, agentDir(), adapterStore);
     // Best-effort: drop any live runtime connection via the utility client.
     try {
       const c = await ensureUtility();

@@ -1,103 +1,141 @@
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
-import { join } from "node:path";
+/**
+ * mcpAuthStore holds PKCE/CSRF state ONLY since 2026-08-14. Credentials live in
+ * the OS keychain, reached through mcpAdapterStore — see docs/validation/m1.md
+ * §Phase 3. What these cases guard is that nothing credential-shaped comes back,
+ * and that the file main used to write gets cleaned up rather than left on disk.
+ */
+import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-// Module under test (not yet created — tests fail until Step 4)
 import {
-  authEntryPath,
   serverDir,
-  readAuthEntry,
-  writeAuthEntry,
-  deleteAuthEntry,
-  authState,
-  type AuthEntry,
+  flowPath,
+  legacyAuthEntryPath,
+  readFlowState,
+  writeFlowState,
+  clearFlowState,
+  sweepLegacyCredentials,
 } from "../src/main/mcpAuthStore";
+import type { AdapterStore } from "../src/main/mcpAdapterStore";
 
 let tmp: string;
 beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), "mcp-auth-test-")); });
 afterEach(() => { rmSync(tmp, { recursive: true, force: true }); });
 
-describe("mcpAuthStore", () => {
-  // (a) path-equality: our path must match the adapter's path byte-for-byte
-  it("authEntryPath matches adapter getAuthEntryFilePath", async () => {
+/** Writes the plaintext file main used to produce, so the sweep has something to find. */
+function writeLegacyEntry(agentDir: string, name: string, entry: unknown): void {
+  const p = legacyAuthEntryPath(agentDir, name);
+  mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
+  writeFileSync(p, JSON.stringify(entry), { mode: 0o600 });
+}
+
+const noopStore = (over: Partial<AdapterStore> = {}): AdapterStore => ({
+  read: async () => ({}),
+  migrate: async () => undefined,
+  writeTokens: async () => undefined,
+  writeClientInfo: async () => undefined,
+  remove: async () => undefined,
+  ...over,
+});
+
+describe("mcpAuthStore flow state", () => {
+  it("legacyAuthEntryPath still matches the adapter's own path", async () => {
+    // The sweep has to find exactly the file the adapter would import, so this
+    // path equality outlives the credentials that used to live at it.
     const { getAuthEntryFilePath } = await import(
       "../pi-runtime/node_modules/pi-mcp-adapter/mcp-auth.ts"
     );
-    // Harden: capture env state to prevent MCP_OAUTH_DIR leakage from other tests
     const priorPiDir = process.env.PI_CODING_AGENT_DIR;
     const priorMcpDir = process.env.MCP_OAUTH_DIR;
     try {
       process.env.PI_CODING_AGENT_DIR = tmp;
-      delete process.env.MCP_OAUTH_DIR; // Ensure adapter checks PI_CODING_AGENT_DIR
-      const adapterPath = getAuthEntryFilePath("notion");
-      expect(authEntryPath(tmp, "notion")).toBe(adapterPath);
+      delete process.env.MCP_OAUTH_DIR;
+      expect(legacyAuthEntryPath(tmp, "notion")).toBe(getAuthEntryFilePath("notion"));
     } finally {
-      // Restore prior env state
-      if (priorPiDir !== undefined) {
-        process.env.PI_CODING_AGENT_DIR = priorPiDir;
-      } else {
-        delete process.env.PI_CODING_AGENT_DIR;
-      }
-      if (priorMcpDir !== undefined) {
-        process.env.MCP_OAUTH_DIR = priorMcpDir;
-      } else {
-        delete process.env.MCP_OAUTH_DIR;
-      }
+      if (priorPiDir !== undefined) process.env.PI_CODING_AGENT_DIR = priorPiDir;
+      else delete process.env.PI_CODING_AGENT_DIR;
+      if (priorMcpDir !== undefined) process.env.MCP_OAUTH_DIR = priorMcpDir;
+      else delete process.env.MCP_OAUTH_DIR;
     }
   });
 
-  // (b) write → read round-trip
-  it("write then read returns the same AuthEntry", () => {
-    const entry: AuthEntry = {
-      tokens: { accessToken: "tok-abc", expiresAt: 9999999999 },
-      serverUrl: "https://api.notion.com",
-    };
-    writeAuthEntry(tmp, "notion", entry);
-    expect(readAuthEntry(tmp, "notion")).toEqual(entry);
+  it("flow state is NOT written where the adapter would import it", () => {
+    // Load-bearing, not cosmetic: the adapter's legacy path looks for
+    // tokens.json specifically. Flow state living there would be imported and
+    // DELETED mid-authorization, turning every re-auth into "No code verifier
+    // saved for MCP server".
+    expect(flowPath(tmp, "notion").endsWith("flow.json")).toBe(true);
+    expect(flowPath(tmp, "notion")).not.toBe(legacyAuthEntryPath(tmp, "notion"));
   });
 
-  // (c) needs-auth on url mismatch
-  it("authState returns needs-auth when url does not match stored serverUrl", () => {
-    const entry: AuthEntry = {
-      tokens: { accessToken: "tok-abc", expiresAt: 9999999999 },
-      serverUrl: "https://api.notion.com",
-    };
-    writeAuthEntry(tmp, "notion", entry);
-    expect(authState(tmp, "notion", "https://other.example.com")).toBe("needs-auth");
+  it("round-trips flow state", () => {
+    writeFlowState(tmp, "notion", { codeVerifier: "v-1", oauthState: "s-1" });
+    expect(readFlowState(tmp, "notion")).toEqual({ codeVerifier: "v-1", oauthState: "s-1" });
   });
 
-  // (d) authenticated when url matches and token not expired
-  it("authState returns authenticated when url matches and token is valid", () => {
-    const entry: AuthEntry = {
-      tokens: { accessToken: "tok-abc", expiresAt: 9999999999 },
-      serverUrl: "https://api.notion.com",
-    };
-    writeAuthEntry(tmp, "notion", entry);
-    expect(authState(tmp, "notion", "https://api.notion.com")).toBe("authenticated");
+  it("returns undefined for an unknown server and for malformed json", () => {
+    expect(readFlowState(tmp, "never-seen")).toBeUndefined();
+    mkdirSync(serverDir(tmp, "broken"), { recursive: true });
+    writeFileSync(flowPath(tmp, "broken"), "{not json");
+    expect(readFlowState(tmp, "broken")).toBeUndefined();
   });
 
-  // (e2) deleteAuthEntry blanks then removes the server dir (no readable secrets left)
-  it("deleteAuthEntry removes the server directory", () => {
-    const entry: AuthEntry = {
-      tokens: { accessToken: "secret-tok" },
-      serverUrl: "https://api.notion.com",
-    };
-    writeAuthEntry(tmp, "notion", entry);
-    expect(existsSync(serverDir(tmp, "notion"))).toBe(true);
-    deleteAuthEntry(tmp, "notion");
+  it("clearFlowState leaves no readable file", () => {
+    writeFlowState(tmp, "notion", { codeVerifier: "v-1" });
+    clearFlowState(tmp, "notion");
+    expect(readFlowState(tmp, "notion")).toBeUndefined();
     expect(existsSync(serverDir(tmp, "notion"))).toBe(false);
-    expect(readAuthEntry(tmp, "notion")).toBeUndefined();
   });
 
-  // (e) authenticated when entry lacks tokens (phase-2 mid-OAuth-handshake contract)
-  it("authState returns authenticated when entry lacks tokens field (phase-2 contract)", () => {
-    const entry: AuthEntry = {
-      clientInfo: { clientId: "x" },
-      codeVerifier: "v",
-      serverUrl: "https://ex.com/mcp",
-    };
-    writeAuthEntry(tmp, "notion", entry);
-    expect(authState(tmp, "notion", "https://ex.com/mcp")).toBe("authenticated");
+  it("never writes a token or client secret to disk", () => {
+    // The point of the split: with nothing credential-shaped left on disk there
+    // is nothing for the adapter's legacy-import path to consume.
+    writeFlowState(tmp, "notion", { codeVerifier: "v-1", oauthState: "s-1" });
+    expect(readFileSync(flowPath(tmp, "notion"), "utf-8")).not.toMatch(
+      /accessToken|refreshToken|clientSecret/,
+    );
+  });
+});
+
+describe("sweepLegacyCredentials", () => {
+  it("deletes an orphan's plaintext credential", async () => {
+    writeLegacyEntry(tmp, "gone-server", { tokens: { accessToken: "orphan-tok" } });
+    const res = await sweepLegacyCredentials(tmp, [], noopStore());
+    expect(res.deleted).toBe(1);
+    expect(existsSync(serverDir(tmp, "gone-server"))).toBe(false);
+  });
+
+  it("hands a CONFIGURED server to the adapter instead of deleting it", async () => {
+    writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "live-tok" } });
+    const migrated: string[] = [];
+    const res = await sweepLegacyCredentials(
+      tmp,
+      [{ name: "notion", url: "https://mcp.notion.com/mcp" }],
+      // A real migrate consumes the file; mimic that so `migrated` is counted.
+      noopStore({ migrate: async (names) => { migrated.push(...names); rmSync(serverDir(tmp, "notion"), { recursive: true, force: true }); } }),
+    );
+    expect(migrated).toEqual(["notion"]);
+    expect(res.migrated).toBe(1);
+    expect(res.deleted).toBe(0);
+  });
+
+  it("deletes nothing when the credential store is unavailable", async () => {
+    // A store that cannot answer is not a licence to start removing the only
+    // copy of someone's credentials.
+    writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "live-tok" } });
+    writeLegacyEntry(tmp, "gone-server", { tokens: { accessToken: "orphan-tok" } });
+    const res = await sweepLegacyCredentials(
+      tmp,
+      [{ name: "notion", url: "https://mcp.notion.com/mcp" }],
+      noopStore({ migrate: async () => { throw new Error("keyring locked"); } }),
+    );
+    expect(res).toEqual({ migrated: 0, deleted: 0 });
+    expect(existsSync(legacyAuthEntryPath(tmp, "gone-server"))).toBe(true);
+  });
+
+  it("is a no-op when there is no mcp-oauth directory at all", async () => {
+    expect(await sweepLegacyCredentials(tmp, [], noopStore())).toEqual({ migrated: 0, deleted: 0 });
   });
 });

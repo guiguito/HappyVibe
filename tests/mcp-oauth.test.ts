@@ -17,7 +17,49 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 import { authenticate } from "../src/main/mcpOAuth";
 import { probe } from "../src/main/mcpClient";
-import { readAuthEntry, writeAuthEntry } from "../src/main/mcpAuthStore";
+import type {
+  AdapterStore,
+  AdapterEntry,
+  AdapterStoredTokens,
+  AdapterStoredClientInfo,
+} from "../src/main/mcpAdapterStore";
+
+/**
+ * In-memory stand-in for the adapter's credential store, mirroring the two
+ * behaviours the flow actually depends on: an entry is BOUND to its serverUrl
+ * (a read at a different URL is `absent`), and writing tokens or client info at
+ * a different URL clears the other field. Everything here used to be assertions
+ * against a plaintext file main owned; it now owns none.
+ */
+interface FakeEntry { tokens?: AdapterStoredTokens; clientInfo?: AdapterStoredClientInfo; serverUrl?: string }
+function makeStore(): AdapterStore & { seed(name: string, e: FakeEntry): void; peek(name: string): FakeEntry | undefined } {
+  const m = new Map<string, FakeEntry>();
+  const bind = (name: string, url: string, patch: FakeEntry): void => {
+    const prev = m.get(name);
+    const base: FakeEntry = prev?.serverUrl === url ? { ...prev } : {};
+    m.set(name, { ...base, ...patch, serverUrl: url });
+  };
+  return {
+    seed: (name, e) => m.set(name, e),
+    peek: (name) => m.get(name),
+    read: async (servers) => {
+      const out: Record<string, AdapterEntry> = {};
+      for (const s of servers) {
+        const e = m.get(s.name);
+        out[s.name] = e && e.serverUrl === s.url
+          ? { status: "present", tokens: e.tokens, clientInfo: e.clientInfo }
+          : { status: "absent" };
+      }
+      return out;
+    },
+    migrate: async () => undefined,
+    writeTokens: async (name, url, tokens) => bind(name, url, { tokens }),
+    writeClientInfo: async (name, url, clientInfo) => bind(name, url, { clientInfo }),
+    remove: async (name) => { m.delete(name); },
+  };
+}
+
+let store: ReturnType<typeof makeStore>;
 
 let server: Server;
 let base: string; // http://127.0.0.1:<port>
@@ -159,6 +201,7 @@ beforeEach(async () => {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const addr = server.address();
   if (typeof addr === "object" && addr) base = `http://127.0.0.1:${addr.port}`;
+  store = makeStore();
 });
 
 afterEach(async () => {
@@ -171,6 +214,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     const cfg = { url: `${base}/mcp` };
     const result = await authenticate("mock", cfg, tmp, {
       // Simulate the user approving: GET the authorize URL, follow the 302 to /callback.
+      store,
       openExternal: (u: string) => {
         void fetch(u, { redirect: "follow" }).catch(() => undefined);
       },
@@ -182,7 +226,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
       expect(result.tools.map((t) => t.name)).toContain("echo");
     }
 
-    const entry = readAuthEntry(tmp, "mock");
+    const entry = store.peek("mock");
     expect(entry?.serverUrl).toBe(`${base}/mcp`);
     expect(entry?.tokens?.accessToken).toBe("mock-access-token");
     expect(entry?.clientInfo?.clientId).toBe("mock-client-id");
@@ -194,6 +238,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
       // Replace the real state param with a bogus one before fetching the authorize URL.
       // The mock server echoes back whatever state it receives, so the callback will
       // arrive with the bogus state while oauthState on disk holds the real one → mismatch.
+      store,
       openExternal: (u: string) => {
         const tampered = new URL(u);
         tampered.searchParams.set("state", "bogus-csrf-state");
@@ -205,7 +250,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     expect(result.ok).toBe(false);
     expect((result as { ok: false; error: string }).error).toMatch(/csrf|state/i);
     // No tokens must be persisted — the handshake must not complete.
-    const entry = readAuthEntry(tmp, "csrf-test");
+    const entry = store.peek("csrf-test");
     expect(entry?.tokens).toBeUndefined();
   });
 
@@ -213,6 +258,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     const cfg = { url: `${base}/mcp` };
     const start = Date.now();
     const result = await authenticate("timeout-test", cfg, tmp, {
+      store,
       openExternal: () => { /* deliberately do nothing — callback never fires */ },
       timeoutMs: 500,
     });
@@ -228,13 +274,14 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     // Seed a stale DCR client from a prior attempt: its redirect_uris point at a
     // port that won't match this flow's OS-assigned callback port. Reusing it
     // would make /authorize reject the new redirect_uri ("Invalid redirect_uri").
-    writeAuthEntry(tmp, "stale-client", {
+    store.seed("stale-client", {
       clientInfo: { clientId: "stale-old-id", redirectUris: ["http://127.0.0.1:9/callback"] },
       serverUrl: `${base}/mcp`,
     });
 
     const cfg = { url: `${base}/mcp` };
     const result = await authenticate("stale-client", cfg, tmp, {
+      store,
       openExternal: (u: string) => {
         void fetch(u, { redirect: "follow" }).catch(() => undefined);
       },
@@ -245,7 +292,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     // the current port, /authorize accepts it, and auth completes.
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.tools.map((t) => t.name)).toContain("echo");
-    const entry = readAuthEntry(tmp, "stale-client");
+    const entry = store.peek("stale-client");
     expect(entry?.clientInfo?.clientId).toBe("mock-client-id"); // re-registered, not the stale id
     expect(entry?.tokens?.accessToken).toBe("mock-access-token");
   });
@@ -258,7 +305,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
   // drops the doomed tokens before connecting, so the flow goes straight to a
   // fresh authorize and completes.
   it("re-authenticates cleanly when stored tokens are bound to a stale client (Notion 'Client ID mismatch')", async () => {
-    writeAuthEntry(tmp, "stale-tokens", {
+    store.seed("stale-tokens", {
       tokens: {
         accessToken: "expired-access-token",
         refreshToken: "stale-refresh-token",
@@ -269,6 +316,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     });
 
     const result = await authenticate("stale-tokens", { url: `${base}/mcp` }, tmp, {
+      store,
       openExternal: (u: string) => {
         void fetch(u, { redirect: "follow" }).catch(() => undefined);
       },
@@ -277,13 +325,13 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.tools.map((t) => t.name)).toContain("echo");
-    const entry = readAuthEntry(tmp, "stale-tokens");
+    const entry = store.peek("stale-tokens");
     expect(entry?.clientInfo?.clientId).toBe("mock-client-id");
     expect(entry?.tokens?.accessToken).toBe("mock-access-token");
   });
 
   it("keeps a still-fresh access token but drops the stale client's refresh_token", async () => {
-    writeAuthEntry(tmp, "fresh-access", {
+    store.seed("fresh-access", {
       tokens: {
         accessToken: "mock-access-token", // the mock MCP endpoint accepts this
         refreshToken: "stale-refresh-token",
@@ -295,6 +343,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
 
     let browserOpened = false;
     const result = await authenticate("fresh-access", { url: `${base}/mcp` }, tmp, {
+      store,
       openExternal: () => {
         browserOpened = true;
       },
@@ -304,7 +353,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
     // Connects directly with the valid bearer — no OAuth dance, no browser.
     expect(result.ok).toBe(true);
     expect(browserOpened).toBe(false);
-    const entry = readAuthEntry(tmp, "fresh-access");
+    const entry = store.peek("fresh-access");
     expect(entry?.tokens?.accessToken).toBe("mock-access-token");
     expect(entry?.tokens?.refreshToken).toBeUndefined(); // unusable with any new client
   });
@@ -313,7 +362,7 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
   // "failed". Before the fix the probe attached no token, so the server 401'd
   // and (tokens present ⇒ not needs-auth) was misclassified as failed.
   it("probe reports connected for a server with a valid stored token (no browser)", async () => {
-    writeAuthEntry(tmp, "seeded", {
+    store.seed("seeded", {
       tokens: {
         accessToken: "mock-access-token",
         refreshToken: "mock-refresh-token",
@@ -323,16 +372,16 @@ describe("mcpOAuth.authenticate (hermetic)", () => {
       serverUrl: `${base}/mcp`,
     });
 
-    const result = await probe("seeded", { url: `${base}/mcp` }, tmp, { timeoutMs: 10_000 });
+    const result = await probe("seeded", { url: `${base}/mcp` }, tmp, { timeoutMs: 10_000, store });
 
     expect(result.state).toBe("connected");
     expect(result.tools?.some((t) => t.name === "echo")).toBe(true);
     // A probe must never mutate on-disk auth artifacts for a valid token.
-    expect(readAuthEntry(tmp, "seeded")?.tokens?.accessToken).toBe("mock-access-token");
+    expect(store.peek("seeded")?.tokens?.accessToken).toBe("mock-access-token");
   });
 
   it("probe reports needs-auth (not failed) for an unauthenticated OAuth server", async () => {
-    const result = await probe("unauthed", { url: `${base}/mcp` }, tmp, { timeoutMs: 10_000 });
+    const result = await probe("unauthed", { url: `${base}/mcp` }, tmp, { timeoutMs: 10_000, store });
     expect(result.state).toBe("needs-auth");
   });
 });
