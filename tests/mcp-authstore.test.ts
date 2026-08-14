@@ -106,7 +106,7 @@ describe("sweepLegacyCredentials", () => {
 
   it("deletes an orphan's plaintext credential", async () => {
     writeLegacyEntry(tmp, "gone-server", { tokens: { accessToken: "orphan-tok" } });
-    const res = await sweepLegacyCredentials(tmp, [], noopStore());
+    const res = await sweepLegacyCredentials(tmp, [], noopStore(), {});
     expect(res.deleted).toBe(1);
     expect(existsSync(serverDir(tmp, "gone-server"))).toBe(false);
   });
@@ -118,9 +118,8 @@ describe("sweepLegacyCredentials", () => {
     writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "fresh-tok", expiresAt: soon } });
     const writes: { name: string; url: string; tokens: { accessToken?: string } }[] = [];
     const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
-      read: async () => ({ notion: { status: "present", tokens: { accessToken: "stale-tok", expiresAt: past } } }),
       writeTokens: async (name, url, tokens) => { writes.push({ name, url, tokens }); },
-    }));
+    }), { notion: { status: "present", tokens: { accessToken: "stale-tok", expiresAt: past } } });
     expect(writes).toHaveLength(1);
     expect(writes[0].tokens.accessToken).toBe("fresh-tok");
     expect(res.adopted).toBe(1);
@@ -129,9 +128,7 @@ describe("sweepLegacyCredentials", () => {
 
   it("adopts ours when the adapter has nothing at all", async () => {
     writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "only-copy", expiresAt: soon } });
-    const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
-      read: async () => ({ notion: { status: "absent" } }),
-    }));
+    const res = await sweepLegacyCredentials(tmp, NOTION, noopStore(), { notion: { status: "absent" } });
     expect(res.adopted).toBe(1);
   });
 
@@ -139,9 +136,8 @@ describe("sweepLegacyCredentials", () => {
     writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "old-tok", expiresAt: past } });
     const writes: unknown[] = [];
     const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
-      read: async () => ({ notion: { status: "present", tokens: { accessToken: "newer-tok", expiresAt: soon } } }),
       writeTokens: async (...a) => { writes.push(a); },
-    }));
+    }), { notion: { status: "present", tokens: { accessToken: "newer-tok", expiresAt: soon } } });
     expect(writes).toHaveLength(0);
     expect(res).toMatchObject({ adopted: 0, discarded: 1 });
     expect(existsSync(legacyAuthEntryPath(tmp, "notion"))).toBe(false);
@@ -152,9 +148,8 @@ describe("sweepLegacyCredentials", () => {
     // copy of someone's credentials.
     writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "live-tok" } });
     writeLegacyEntry(tmp, "gone-server", { tokens: { accessToken: "orphan-tok" } });
-    const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
-      read: async () => { throw new Error("keyring locked"); },
-    }));
+    const res = await sweepLegacyCredentials(tmp, NOTION, noopStore(),
+      { notion: { status: "unavailable", message: "keyring locked" } });
     expect(res).toEqual({ adopted: 0, discarded: 0, deleted: 0 });
     expect(existsSync(legacyAuthEntryPath(tmp, "notion"))).toBe(true);
     expect(existsSync(legacyAuthEntryPath(tmp, "gone-server"))).toBe(true);
@@ -163,15 +158,14 @@ describe("sweepLegacyCredentials", () => {
   it("keeps the file when adopting it fails, rather than losing it", async () => {
     writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "only-copy", expiresAt: soon } });
     const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
-      read: async () => ({ notion: { status: "absent" } }),
       writeTokens: async () => { throw new Error("keyring write failed"); },
-    }));
+    }), { notion: { status: "absent" } });
     expect(res.adopted).toBe(0);
     expect(existsSync(legacyAuthEntryPath(tmp, "notion"))).toBe(true);
   });
 
   it("is a no-op when there is no mcp-oauth directory at all", async () => {
-    expect(await sweepLegacyCredentials(tmp, [], noopStore()))
+    expect(await sweepLegacyCredentials(tmp, [], noopStore(), {}))
       .toEqual({ adopted: 0, discarded: 0, deleted: 0 });
   });
 });

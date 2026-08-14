@@ -113,6 +113,12 @@ export async function sweepLegacyCredentials(
   agentDir: string,
   configured: readonly { name: string; url: string }[],
   store: AdapterStore,
+  /**
+   * What the adapter currently holds. Passed in rather than read here, because
+   * every sidecar call is another OS keychain dialog for the user — the caller
+   * has already paid for one.
+   */
+  current: Record<string, AdapterEntry>,
 ): Promise<{ adopted: number; discarded: number; deleted: number }> {
   const root = join(agentDir, "mcp-oauth");
   if (!existsSync(root)) return { adopted: 0, discarded: 0, deleted: 0 };
@@ -122,11 +128,8 @@ export async function sweepLegacyCredentials(
   let discarded = 0;
 
   if (withFile.length) {
-    let current: Record<string, AdapterEntry>;
-    try {
-      current = await store.read(withFile);
-    } catch {
-      // A store that cannot answer is not a licence to delete the only copy.
+    // A store that could not answer is not a licence to delete the only copy.
+    if (withFile.some((s) => (current[s.name]?.status ?? "unavailable") === "unavailable")) {
       return { adopted: 0, discarded: 0, deleted: 0 };
     }
 

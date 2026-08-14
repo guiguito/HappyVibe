@@ -16,7 +16,30 @@
 // Protocol: ONE JSON request on stdin, ONE JSON response line on stdout.
 // Batching ops per invocation is load-bearing — the startup sweep reads every
 // configured server in a single spawn rather than one spawn per server.
-import { readFileSync } from "node:fs";
+/**
+ * Read stdin as a STREAM, not with readFileSync(0).
+ *
+ * readFileSync(0) works under plain `node` and hangs forever under the bundled
+ * Electron helper (ELECTRON_RUN_AS_NODE), which is the runtime this actually
+ * gets in the app — the unit tests passed while the real app timed out on every
+ * spawn and left orphaned helper processes behind. pi-mcp-adapter's own
+ * mcp-keyring-helper.cjs reads stdin exactly this way, for the same reason.
+ */
+function readStdin() {
+  return new Promise((resolve, reject) => {
+    let input = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => {
+      input += chunk;
+      if (input.length > 1024 * 1024) {
+        reject(new Error("request too large"));
+        process.stdin.destroy();
+      }
+    });
+    process.stdin.on("error", reject);
+    process.stdin.on("end", () => resolve(input));
+  });
+}
 
 // The `/oauth` subpath (adapter >=2.22.0) is the supported surface, and it is
 // used for the token write. It does NOT cover everything an OAuth host needs,
@@ -40,7 +63,7 @@ import {
   removeAuthEntry,
 } from "../node_modules/pi-mcp-adapter/mcp-auth.ts";
 
-const req = JSON.parse(readFileSync(0, "utf-8"));
+const req = JSON.parse(await readStdin());
 
 // getAuthBaseDir() reads PI_CODING_AGENT_DIR on every call, so setting it here
 // is in time — agent-dir.ts does not cache it (verified, and it was one of the

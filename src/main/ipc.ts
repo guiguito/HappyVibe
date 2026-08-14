@@ -737,25 +737,38 @@ export function registerIpc(win: BrowserWindow): void {
     }
     const wanted = [...httpByName.values()];
 
-    // One-time: hand the adapter anything main wrote before it stopped owning
-    // this store, then delete the orphans nobody will ever migrate.
-    try {
-      const swept = await sweepLegacyCredentials(agentDir(), wanted, adapterStore);
-      if (swept.adopted || swept.discarded || swept.deleted) {
-        void log.append({ type: "mcp.legacy_sweep", data: swept });
-      }
-    } catch (e) {
-      console.warn("[hv] mcp legacy credential sweep failed:", e);
-    }
-
     let prefetched: Record<string, AdapterEntry> = {};
     try {
       prefetched = await adapterStore.read(wanted);
+
+      // One-time: hand the adapter anything main wrote before it stopped owning
+      // this store, then delete the orphans nobody will ever migrate. It reuses
+      // the read above rather than taking its own — every extra sidecar call is
+      // another keychain dialog for the user.
+      try {
+        const swept = await sweepLegacyCredentials(agentDir(), wanted, adapterStore, prefetched);
+        if (swept.adopted || swept.discarded || swept.deleted) {
+          void log.append({ type: "mcp.legacy_sweep", data: swept });
+          // Adoption changed what the adapter holds, so the prefetch above is
+          // stale for those servers. Cheaper and quieter than re-reading: an
+          // adopted credential is by definition the one we just wrote.
+          if (swept.adopted) prefetched = await adapterStore.read(wanted);
+        }
+      } catch (e) {
+        console.warn("[hv] mcp legacy credential sweep failed:", e);
+      }
     } catch (e) {
-      // Leave it empty: each probe then reads its own, and a store that is
-      // genuinely down surfaces as `failed` per server rather than as a
-      // silent sweep-wide "everything needs auth".
-      console.warn("[hv] mcp credential prefetch failed:", e);
+      // Do NOT leave this empty and let each probe read its own. Reading the OS
+      // keychain raises an auth dialog per process, so N fallback reads means N
+      // stacked dialogs — observed, four at once, from exactly this path. If the
+      // one batched read could not answer, nothing else will either: mark every
+      // server unavailable so each reports `failed` WITH the reason, and the
+      // user is asked at most once.
+      const message = e instanceof Error ? e.message : String(e);
+      console.warn("[hv] mcp credential prefetch failed:", message);
+      prefetched = Object.fromEntries(
+        wanted.map((s) => [s.name, { status: "unavailable", message } as AdapterEntry]),
+      );
     }
 
     const checks: Array<() => Promise<void>> = [

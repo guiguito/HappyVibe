@@ -68,6 +68,37 @@ describe("mcpAdapterStore", () => {
   });
 });
 
+describe("mcp-oauth-bridge runtime", () => {
+  /**
+   * The app spawns this through the bundled ELECTRON helper
+   * (ELECTRON_RUN_AS_NODE), not through plain node — and the two are not
+   * interchangeable. The first version read stdin with `readFileSync(0)`, which
+   * works under node and hangs FOREVER under the Electron helper: every sweep
+   * timed out and left orphaned helper processes behind, while this file's other
+   * cases stayed green because they spawn node. So this one pays ~1s to run the
+   * real thing through the real binary.
+   */
+  it("answers when spawned the way the app spawns it (electron-as-node)", async () => {
+    const electron = (await import("electron")) as unknown as string | { default: string };
+    const bin = typeof electron === "string" ? electron : (electron.default as string);
+    const out = await new Promise<string>((res, rej) => {
+      const child = spawn(bin, [join(RUNTIME, MCP_OAUTH_BRIDGE_RELPATH)], {
+        cwd: RUNTIME,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", PI_MCP_ADAPTER_TEST_AUTH_STORE: "memory" },
+      });
+      let buf = "";
+      child.stdout.on("data", (d) => { buf += String(d); });
+      child.on("error", rej);
+      child.on("close", () => res(buf));
+      child.stdin.end(JSON.stringify({ agentDir: tmp, ops: [{ op: "inspect", name: "zz", url: URL_A }] }));
+    });
+    expect(JSON.parse(out.trim().split("\n").pop()!)).toMatchObject({
+      ok: true,
+      results: [{ name: "zz", status: "absent" }],
+    });
+  }, 30_000);
+});
+
 describe("mcp-oauth-bridge protocol", () => {
   // The memory store lives in the sidecar PROCESS, so a write in one spawn is
   // invisible to a read in the next. Round-trips are therefore asserted as one

@@ -68,8 +68,19 @@ export interface AdapterStore {
   remove(name: string): Promise<void>;
 }
 
-/** Generous: a cold keychain unlock prompt on macOS can take a few seconds. */
-const SIDECAR_TIMEOUT_MS = 10_000;
+/**
+ * Long on purpose. Reading the OS keychain from a process macOS has not been
+ * told to trust raises a "wants to use your confidential information" dialog,
+ * and the call blocks until the user answers it. A short deadline does not
+ * protect anything here — it just kills the child mid-prompt, which leaves the
+ * dialog orphaned and makes the NEXT call raise another one. That is what a
+ * 10-second timeout produced: a loop of stacked password dialogs.
+ *
+ * Every caller is either a background sweep (fire-and-forget) or an explicit
+ * user action, so waiting is safe. The user answers once — "Always Allow" puts
+ * this binary on the item's ACL — and subsequent calls return immediately.
+ */
+const SIDECAR_TIMEOUT_MS = 120_000;
 
 export function createAdapterStore(opts: {
   agentDir: string;
@@ -79,16 +90,33 @@ export function createAdapterStore(opts: {
 }): AdapterStore {
   const script = path.join(opts.runtimeDir, MCP_OAUTH_BRIDGE_RELPATH);
 
-  const run = (ops: Op[]): Promise<OpResult[]> =>
+  /**
+   * Sidecar calls are SERIALIZED, and that is a UX requirement rather than a
+   * tidiness one. Reading the OS keychain from a process macOS does not already
+   * trust raises a "wants to use your confidential information" dialog per
+   * process. Two concurrent spawns means two stacked dialogs; a failed prefetch
+   * that let every probe retry on its own meant four. One at a time, so the
+   * user is asked once and can answer once.
+   */
+  let queue: Promise<unknown> = Promise.resolve();
+  const serialize = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = queue.then(fn, fn);
+    queue = next.catch(() => undefined);
+    return next;
+  };
+
+  const runOnce = (ops: Op[]): Promise<OpResult[]> =>
     new Promise((resolve, reject) => {
       const child = spawn(opts.execPath ?? nodeExecPath(), [script], {
         cwd: opts.runtimeDir,
-        // ponytail: adapter chatter on stderr is not ours to relay
-        stdio: ["pipe", "pipe", "ignore"],
+        // stderr is CAPTURED, not ignored: a sidecar that dies silently is how
+        // the first version's every-spawn hang went undiagnosed.
+        stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(opts.env ?? {}) },
       });
 
       let out = "";
+      let err = "";
       let settled = false;
       const finish = (fn: () => void): void => {
         if (settled) return;
@@ -97,16 +125,27 @@ export function createAdapterStore(opts: {
         fn();
       };
       const timer = setTimeout(() => {
-        child.kill();
-        finish(() => reject(new Error("mcp-oauth-bridge timed out")));
+        // SIGKILL, not SIGTERM: a child blocked inside a native keychain call
+        // (e.g. behind an unanswered auth dialog) ignores a polite signal, and
+        // a lingering one holds that dialog open.
+        child.kill("SIGKILL");
+        finish(() =>
+          reject(new Error("mcp-oauth-bridge timed out (an unanswered keychain prompt does this)")),
+        );
       }, SIDECAR_TIMEOUT_MS);
 
       child.stdout.on("data", (d) => { out += String(d); });
+      child.stderr.on("data", (d) => { err += String(d); });
       child.on("error", (e) => finish(() => reject(e)));
       child.on("close", (code) =>
         finish(() => {
           const line = out.trim().split("\n").pop() ?? "";
-          if (!line) return reject(new Error(`mcp-oauth-bridge exited ${code} with no output`));
+          if (!line) {
+            const tail = err.trim().split("\n").slice(-3).join(" | ").slice(0, 300);
+            return reject(
+              new Error(`mcp-oauth-bridge exited ${code} with no output${tail ? `: ${tail}` : ""}`),
+            );
+          }
           let parsed: { ok?: boolean; error?: string; results?: OpResult[] };
           try {
             parsed = JSON.parse(line) as typeof parsed;
@@ -120,6 +159,8 @@ export function createAdapterStore(opts: {
 
       child.stdin.end(JSON.stringify({ agentDir: opts.agentDir, ops }));
     });
+
+  const run = (ops: Op[]): Promise<OpResult[]> => serialize(() => runOnce(ops));
 
   return {
     async read(servers) {
