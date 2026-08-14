@@ -406,7 +406,7 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:ui-request", listener);
     return () => ipcRenderer.removeListener("hv:ui-request", listener);
   },
-  onPiExit: (cb: (i: { sessionId: string; code: number | null; intentional: boolean }) => void): (() => void) => {
+  onPiExit: (cb: (i: { sessionId: string; code: number | null; intentional: boolean; stderr?: string }) => void): (() => void) => {
     const listener = (_e: Electron.IpcRendererEvent, p: unknown): void =>
       cb(p as { sessionId: string; code: number | null; intentional: boolean });
     ipcRenderer.on("hv:pi-exit", listener);

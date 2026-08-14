@@ -751,7 +751,7 @@ export default function App(): React.JSX.Element {
       });
     });
 
-    const offPiExit = window.hv.onPiExit(({ sessionId, code, intentional }) => {
+    const offPiExit = window.hv.onPiExit(({ sessionId, code, intentional, stderr }) => {
       // Dead Pi: its prompts are unanswerable and dangerous mode never survives a respawn.
       setUiQueue((q) => dropSession(q, sessionId));
       setDangerous((p) => ({ ...p, [sessionId]: false }));
@@ -768,10 +768,15 @@ export default function App(): React.JSX.Element {
       if (!intentional) {
         setCrashCodes((p) => ({ ...p, [sessionId]: code ?? -1 }));
         // B2: crash lands in the transcript too, with a retriable action.
+        // Round 12: and with the child's stderr tail, when there is one. A bare
+        // exit code sent people to a terminal to find out what the app already
+        // knew — the launcher/Node mismatch that motivated this printed a
+        // perfectly clear SyntaxError that never reached the window.
         appendItem(sessionId, {
           kind: "error",
           text: `The session crashed (code ${code ?? -1}).`,
           retriable: true,
+          detail: stderr || undefined,
         });
       }
       setStatuses((p) => {

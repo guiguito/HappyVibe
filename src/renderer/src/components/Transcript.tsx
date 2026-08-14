@@ -71,7 +71,9 @@ export type TranscriptItem = { id?: number } & (
   // §23: the plan-ready card (read from the workspace plan file).
   | { kind: "plan"; card: PlanCardData }
   // B2: provider errors / session crashes as first-class transcript items.
-  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string }
+  // `detail` is verbatim machine output (a dead child's stderr tail) — shown
+  // monospace with its newlines, where `hint` is prose we wrote.
+  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string }
   // A neutral, warm status line (not an error). `pending` shows an ongoing
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
   | { kind: "notice"; text: string; pending?: boolean }
@@ -149,6 +151,14 @@ const MessageItem = memo(function MessageItem({
           {/* The hint says what to DO; the raw provider text stays visible above
               it so a bug report is still actionable. */}
           {it.hint && <div className="text-xs text-berry/80 mt-0.5 break-words">{it.hint}</div>}
+          {/* Round 12: the child's own last words. A code-1 banner with the
+              explanation sitting in a console nobody is watching is the same
+              class of dishonesty as an unlabelled token estimate. */}
+          {it.detail && (
+            <pre className="mt-1.5 max-h-40 overflow-auto rounded-lg bg-berry/10 px-2 py-1.5 text-[11px] leading-snug font-mono text-berry/90 whitespace-pre-wrap break-words">
+              {it.detail}
+            </pre>
+          )}
         </div>
         {it.retriable && onRetry && (
           <button

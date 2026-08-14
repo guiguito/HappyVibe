@@ -501,7 +501,7 @@ interface HvApi {
   onUiRequest(
     cb: (r: { id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[] }) => void
   ): () => void;
-  onPiExit(cb: (info: { sessionId: string; code: number | null; intentional: boolean }) => void): () => void;
+  onPiExit(cb: (info: { sessionId: string; code: number | null; intentional: boolean; stderr?: string }) => void): () => void;
   /** V2.A: provider/model config changed — refetch model lists/tiers. */
   onProvidersChanged(cb: () => void): () => void;
   onSessionsChanged(cb: (sessions: SessionMeta[]) => void): () => void;

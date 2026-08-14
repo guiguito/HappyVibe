@@ -1057,7 +1057,7 @@ export function registerIpc(win: BrowserWindow): void {
     for (const r of runs) startSubagentPoll(sessionId, r.runId, r.asyncDir);
   };
 
-  manager.on("session-exit", ({ sessionId, code, intentional }: SessionExit) => {
+  manager.on("session-exit", ({ sessionId, code, intentional, stderr }: SessionExit) => {
     activity.remove(sessionId);
     pendingMcpReload.delete(sessionId); // don't reload a session that's gone
     // Stop this session's status pollers. The detached runners survive (they're
@@ -1065,9 +1065,18 @@ export function registerIpc(win: BrowserWindow): void {
     for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId) stopSubagentPoll(runId);
     const meta = index.get(sessionId);
     if (!intentional) {
-      void log.append({ type: "session.crash", sessionId, workspaceId: meta?.workspaceId, data: { code } });
+      // The stderr tail is recorded too: a crash entry without its cause is the
+      // exact gap this exists to close, and a crash is often not reproducible.
+      // No more sensitive than the commands and MCP arguments already logged,
+      // and the EventLog is local-only.
+      void log.append({
+        type: "session.crash",
+        sessionId,
+        workspaceId: meta?.workspaceId,
+        data: { code, ...(stderr ? { stderr } : {}) },
+      });
     }
-    send("hv:pi-exit", { sessionId, code, intentional });
+    send("hv:pi-exit", { sessionId, code, intentional, stderr });
   });
 
   const startClient = async (meta: SessionMeta, resume: boolean): Promise<PiClient> => {
