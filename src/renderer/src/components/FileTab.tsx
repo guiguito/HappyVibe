@@ -187,7 +187,11 @@ export function FileTab({
           {/* §21 round 12: the bar moved to the TOP, level with the tab strip, so
               a file tab and a chat tab have the same anatomy — the controls used
               to sit along the bottom and the eye had to find them twice. */}
-          <div className="flex items-center gap-3 px-3 py-1.5 border-b-2 border-line bg-paper text-xs">
+          {/* The filename is NOT repeated here: the tab above already carries it,
+              and its own tooltip carries the full relative path. Every control
+              sits left in one evenly spaced cluster — Save included, which used
+              to be pushed to the far edge by the path acting as a spacer. */}
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b-2 border-line bg-paper text-xs">
             {/* The switcher LEADS, as a two-icon pill with the current view lit.
                 A single button whose label was the OTHER state ("Source" while
                 showing source) is a riddle; a switch is not. */}
@@ -219,7 +223,6 @@ export function FileTab({
                 </button>
               </div>
             )}
-            <span className="font-mono text-ink-soft truncate flex-1" title={relPath}>{relPath}</span>
             {/* Round 11: only with a selection — `@file` already covers whole files,
                 so silently sending everything would be the wrong thing. */}
             {onSendToChat && selection && !showPreview && (
