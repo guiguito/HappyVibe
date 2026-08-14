@@ -1078,6 +1078,29 @@ git commit -m "docs(mcp): the shared token file is gone, and Log out was the wor
 
 ---
 
+## Task 8 status (2026-08-14)
+
+**Verified.** Gate green — 161 files, 1600 tests. Live-Pi batch green — 15 files, 27 tests, at the
+shipped pin set. Boot raises **no** keychain access (measured: zero sidecar spawns at launch).
+The agent path works: a real MCP call through a Pi child completes in ~1 s once granted.
+
+**Three bugs the 1600-test suite could not have caught, all found by running the real app** — the
+reason this task exists rather than trusting the suite: the sidecar hung forever under the Electron
+helper (`readFileSync(0)`; tests spawned plain `node`, so they passed while the app timed out on
+every spawn), a 10 s deadline killed the child mid-prompt so the next call re-prompted, and a failed
+prefetch fanned out to four concurrent spawns and four stacked dialogs. A test now spawns the
+sidecar through the real Electron binary so the first class cannot recur.
+
+**Outstanding, and why.** The steps below that exercise **Log out → re-auth** go through main's
+sidecar, which in dev runs as the ad-hoc-signed Electron helper and therefore raises a keychain
+dialog on *every* access (see m1.md). Each assertion would cost a password prompt, which is not a
+sensible way to verify and not representative of a signed build. They are deferred to the first
+signed build, where the same run also answers the open question — whether one grant is enough.
+Everything they cover is unit-tested (`mcp-authstore`, `mcp-oauth`, `mcp-adapter-store`,
+`mcp-adapter-authformat`); what is missing is the end-to-end observation, not the logic.
+
+---
+
 ## Task 8: Verification — what must be TRUE on screen
 
 `npm run gate` and `npm run test:live` are necessary and not sufficient: every defect this branch fixes is invisible to the suite, because the suite has no keychain and no running agent. These are the observable claims. Each names the surface it is observed on, because **the surface that owns the credential (a chat session) is not the surface that changes it (the MCP page)** — that split is the entire bug.
