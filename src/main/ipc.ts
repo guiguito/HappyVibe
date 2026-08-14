@@ -713,22 +713,65 @@ export function registerIpc(win: BrowserWindow): void {
   // reported `failed` at boot and connected instantly on a click. The sweep is a
   // badge, not a race; four at a time is plenty.
   const SWEEP_CONCURRENCY = 4;
+
+  /** Config across both tiers, read fresh — the sweep runs at two different times now. */
+  const mcpTiers = (): {
+    globalFile: Record<string, McpServerConfig>;
+    wsFiles: (readonly [string, Record<string, McpServerConfig>])[];
+  } => ({
+    globalFile: readMcpFile(path.join(agentDir(), "mcp.json")).mcpServers,
+    wsFiles: workspaces
+      .list()
+      .map((ws) => [ws, readMcpFile(path.join(ws, ".mcp.json")).mcpServers] as const),
+  });
+
+  /**
+   * Boot sweep — STDIO SERVERS ONLY, and that restriction is the point.
+   *
+   * A remote server's badge needs its OAuth credential, and from pi-mcp-adapter
+   * 2.17.0 that lives in the OS keychain. Reading it raises a macOS "wants to
+   * use your confidential information" dialog for any binary not on the item's
+   * ACL — and measured on a dev build, EVERY access prompts, even from the
+   * binary that created the item, because an ad-hoc signature gives macOS no
+   * stable identity to record ("Always Allow" cannot stick). Doing that at
+   * launch means the app opens with a password dialog in front of it.
+   *
+   * So remote servers are swept when the user opens the MCP page instead
+   * (hv:mcp-sweep-remote): the prompt then answers a question they just asked,
+   * once per run, on the surface that is about MCP servers. Stdio servers need
+   * no credential and keep their boot badge.
+   */
   void (async () => {
-    const globalFile = readMcpFile(path.join(agentDir(), "mcp.json")).mcpServers;
-    const globalServers = Object.keys(globalFile);
-    const wsPaths = workspaces.list();
-    const wsFiles = wsPaths.map((ws) => [ws, readMcpFile(path.join(ws, ".mcp.json")).mcpServers] as const);
+    const { globalFile, wsFiles } = mcpTiers();
+    const checks: Array<() => Promise<void>> = [
+      ...Object.entries(globalFile).filter(([, c]) => !c.url).map(([n]) => () => checkServer("global", null, n)),
+      ...wsFiles.flatMap(([ws, servers]) =>
+        Object.entries(servers).filter(([, c]) => !c.url).map(([n]) => () => checkServer("workspace", ws, n)),
+      ),
+    ];
+    if (!checks.length) return;
+    await mapLimit(checks, SWEEP_CONCURRENCY, (run) => run());
+    const byState: Record<string, number> = {};
+    for (const st of mcpStatusMap.values()) byState[st.state] = (byState[st.state] ?? 0) + 1;
+    void log.append({ type: "mcp.startup_check", data: { total: checks.length, byState, tier: "stdio" } });
+  })().catch((e) => console.warn("[hv] mcp startup sweep failed:", e));
+
+  /**
+   * Remote sweep — one credential read for every remote server, then their
+   * probes. Latched: at most once per app run unless forced, because each run
+   * can cost the user a keychain prompt.
+   */
+  let remoteSweepDone = false;
+  const sweepRemote = async (force = false): Promise<void> => {
+    if (remoteSweepDone && !force) return;
+    remoteSweepDone = true;
+    const { globalFile, wsFiles } = mcpTiers();
 
     /**
-     * ONE sidecar spawn for the whole sweep. Every http server's credential is
-     * read up front and handed to its probe, instead of each probe paying its
-     * own spawn — the boot sweep is the busiest moment the app has (§13 round
-     * 12), and this is the same reasoning that capped its concurrency.
-     *
-     * Credentials are keyed by server NAME only (the adapter hashes the name,
-     * not the tier), so a global and a workspace server sharing a name share a
-     * credential. Deduplicating by name here is therefore correct, not a
-     * shortcut.
+     * ONE sidecar spawn for the whole sweep. Credentials are keyed by server
+     * NAME only (the adapter hashes the name, not the tier), so a global and a
+     * workspace server sharing a name share a credential — deduplicating by
+     * name here is correct, not a shortcut.
      */
     const httpByName = new Map<string, { name: string; url: string }>();
     for (const [n, cfg] of Object.entries(globalFile)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
@@ -736,6 +779,7 @@ export function registerIpc(win: BrowserWindow): void {
       for (const [n, cfg] of Object.entries(servers)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
     }
     const wanted = [...httpByName.values()];
+    if (!wanted.length) return;
 
     let prefetched: Record<string, AdapterEntry> = {};
     try {
@@ -749,21 +793,17 @@ export function registerIpc(win: BrowserWindow): void {
         const swept = await sweepLegacyCredentials(agentDir(), wanted, adapterStore, prefetched);
         if (swept.adopted || swept.discarded || swept.deleted) {
           void log.append({ type: "mcp.legacy_sweep", data: swept });
-          // Adoption changed what the adapter holds, so the prefetch above is
-          // stale for those servers. Cheaper and quieter than re-reading: an
-          // adopted credential is by definition the one we just wrote.
           if (swept.adopted) prefetched = await adapterStore.read(wanted);
         }
       } catch (e) {
         console.warn("[hv] mcp legacy credential sweep failed:", e);
       }
     } catch (e) {
-      // Do NOT leave this empty and let each probe read its own. Reading the OS
-      // keychain raises an auth dialog per process, so N fallback reads means N
-      // stacked dialogs — observed, four at once, from exactly this path. If the
-      // one batched read could not answer, nothing else will either: mark every
-      // server unavailable so each reports `failed` WITH the reason, and the
-      // user is asked at most once.
+      // Do NOT leave this empty and let each probe read its own. Each read can
+      // raise its own dialog, so N fallbacks means N stacked ones — observed,
+      // four at once, from exactly this path. If the one batched read could not
+      // answer, nothing else will: mark every server unavailable so each reports
+      // `failed` WITH the reason, and the user is asked at most once.
       const message = e instanceof Error ? e.message : String(e);
       console.warn("[hv] mcp credential prefetch failed:", message);
       prefetched = Object.fromEntries(
@@ -772,17 +812,22 @@ export function registerIpc(win: BrowserWindow): void {
     }
 
     const checks: Array<() => Promise<void>> = [
-      ...globalServers.map((n) => () => checkServer("global", null, n, prefetched[n])),
+      ...Object.entries(globalFile).filter(([, c]) => c.url).map(([n]) => () => checkServer("global", null, n, prefetched[n])),
       ...wsFiles.flatMap(([ws, servers]) =>
-        Object.keys(servers).map((n) => () => checkServer("workspace", ws, n, prefetched[n])),
+        Object.entries(servers).filter(([, c]) => c.url).map(([n]) => () => checkServer("workspace", ws, n, prefetched[n])),
       ),
     ];
-    const allChecks = checks; // named for the log line below
     await mapLimit(checks, SWEEP_CONCURRENCY, (run) => run());
     const byState: Record<string, number> = {};
-    for (const s of mcpStatusMap.values()) byState[s.state] = (byState[s.state] ?? 0) + 1;
-    void log.append({ type: "mcp.startup_check", data: { total: allChecks.length, byState } });
-  })().catch((e) => console.warn("[hv] mcp startup sweep failed:", e));
+    for (const st of mcpStatusMap.values()) byState[st.state] = (byState[st.state] ?? 0) + 1;
+    void log.append({ type: "mcp.startup_check", data: { total: checks.length, byState, tier: "remote" } });
+  };
+
+  // Called by the MCP page on mount. `force` is the Reconnect-all affordance.
+  ipcMain.handle("hv:mcp-sweep-remote", async (_e, force?: boolean) => {
+    await sweepRemote(force === true).catch((e) => console.warn("[hv] mcp remote sweep failed:", e));
+    return Array.from(mcpStatusMap.values());
+  });
 
   const maybeTitle = (sessionId: string): void => {
     const meta = index.get(sessionId);
