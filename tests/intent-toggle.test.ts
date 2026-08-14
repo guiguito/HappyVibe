@@ -6,13 +6,15 @@
  * that never injects at all.
  */
 import { describe, expect, test } from "vitest";
-import { requireIntent } from "../pi-runtime/extensions/happyvibe-bridge";
+import { requireIntent, stripIntent } from "../pi-runtime/extensions/happyvibe-bridge";
 import { parseBuiltins } from "../pi-runtime/extensions/hv-builtins";
 
 type Tool = { name: string; parameters: { properties: Record<string, unknown>; required?: string[] }; sourceInfo?: { path?: string } };
 
 /** The slice of ExtensionAPI requireIntent touches. */
 const fakePi = (tools: Tool[]): { getAllTools: () => Tool[] } => ({ getAllTools: () => tools });
+
+const BRIDGE = "/x/pi-runtime/extensions/happyvibe-bridge.ts";
 
 const tool = (name: string, sourcePath?: string): Tool => ({
   name,
@@ -90,5 +92,64 @@ describe("requireIntent OFF", () => {
     requireIntent(fakePi([mcp]) as never, false);
     requireIntent(fakePi([mcp]) as never, false);
     expect(mcp.parameters.properties.intent).toBeUndefined();
+  });
+});
+
+
+/**
+ * The half the first version of this switch missed.
+ *
+ * requireIntent skips a tool whose schema already carries `intent` ("already
+ * wired") — and every tool the BRIDGE registers declares it directly. So with
+ * the switch off, the MCP proxy and subagent lost their intent while ask_user,
+ * use_skill, terminal_run/kill and the three plan tools kept theirs. Measured
+ * on a real Pi child: 7 tools still carried it. Off has to mean off.
+ */
+describe("stripIntent", () => {
+  const own = (name: string): Tool => {
+    const t = tool(name, BRIDGE);
+    t.parameters.properties.intent = { type: "string" };
+    t.parameters.required = ["intent", "name"];
+    return t;
+  };
+
+  test("removes intent from the bridge's own tools when the switch is off", () => {
+    const tools = ["ask_user", "use_skill", "terminal_run", "terminal_kill", "plan_complete"].map(own);
+    stripIntent(fakePi(tools) as never, false);
+    for (const t of tools) {
+      expect(t.parameters.properties.intent, `${t.name} should have lost intent`).toBeUndefined();
+      expect(t.parameters.required ?? []).not.toContain("intent");
+    }
+  });
+
+  test("leaves them alone when the switch is ON", () => {
+    const t = own("use_skill");
+    stripIntent(fakePi([t]) as never, true);
+    expect(t.parameters.properties.intent).toBeDefined();
+    expect(t.parameters.required).toContain("intent");
+  });
+
+  test("never touches an MCP SERVER tool that declares its own intent", () => {
+    // The direct-mode rule deliberately leaves those alone — stripping one
+    // would change the arguments a third-party server receives.
+    const server = tool("weird_tool", "/x/node_modules/pi-mcp-adapter/index.ts");
+    server.parameters.properties.intent = { type: "string", description: "theirs" };
+    server.parameters.required = ["intent"];
+    stripIntent(fakePi([server]) as never, false);
+    expect(server.parameters.properties.intent).toEqual({ type: "string", description: "theirs" });
+    expect(server.parameters.required).toContain("intent");
+  });
+
+  test("selects by OWNER, so a tool added to the bridge later is covered with no list to update", () => {
+    const brandNew = own("some_future_bridge_tool");
+    stripIntent(fakePi([brandNew]) as never, false);
+    expect(brandNew.parameters.properties.intent).toBeUndefined();
+  });
+
+  test("is idempotent and harmless on a tool that never had intent", () => {
+    const plain = tool("plan_status_update", BRIDGE);
+    stripIntent(fakePi([plain]) as never, false);
+    stripIntent(fakePi([plain]) as never, false);
+    expect(plain.parameters.properties.intent).toBeUndefined();
   });
 });

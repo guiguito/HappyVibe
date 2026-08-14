@@ -136,6 +136,37 @@ type MutableParams = { properties?: Record<string, unknown>; required?: string[]
  * when the model omits an intent, and the permission prompt has always shown
  * the factual action rather than the model's sentence.
  */
+/**
+ * §13 round 12 — the switch has to reach the bridge's OWN tools too.
+ *
+ * requireIntent skips any tool whose schema ALREADY has `intent` ("already
+ * wired"), and every tool this file registers declares it directly in its
+ * Type.Object. So gating requireIntent alone removed intent from the MCP proxy,
+ * the adapter's direct tools and subagent — and left it on ask_user, use_skill,
+ * terminal_run/terminal_kill and the three plan tools. Reported as "intent is
+ * turned off and it is still being injected", and correctly: off has to mean off.
+ *
+ * Selected by OWNER rather than by a name list. A hardcoded list drifts the
+ * moment a tool is added, and matching this file's own path cannot touch an MCP
+ * server tool that legitimately declares its own `intent` parameter — which the
+ * direct-mode rule above deliberately leaves alone.
+ *
+ * Schema only: a tool's prose description may still mention intent. Pi does not
+ * hard-validate registered-tool args (W1.1), so a model that passes one anyway
+ * is harmless, and the saving that matters — the sentence it would compose per
+ * call — comes from the parameter being absent.
+ */
+export function stripIntent(pi: ExtensionAPI, enabled = true): void {
+  if (enabled) return;
+  for (const t of pi.getAllTools()) {
+    if (!t.sourceInfo?.path?.includes("happyvibe-bridge")) continue;
+    const params = t.parameters as MutableParams | undefined;
+    if (!params?.properties?.intent) continue;
+    delete params.properties.intent;
+    params.required = (params.required ?? []).filter((r) => r !== "intent");
+  }
+}
+
 export function requireIntent(pi: ExtensionAPI, enabled = true): void {
   if (!enabled) return;
   for (const name of INTENT_TOOLS) {
@@ -356,10 +387,11 @@ export default function (pi: ExtensionAPI) {
   // §13 round 12: the headline is bought with tokens, so it has a switch. In
   // proxy mode that is five tools; with a server exposing tools DIRECTLY it is
   // every tool that server publishes, which is where the cost actually scales.
-  pi.on("turn_start", () => requireIntent(pi, builtins.intent));
+  pi.on("turn_start", () => { requireIntent(pi, builtins.intent); stripIntent(pi, builtins.intent); });
 
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi, builtins.intent); // all extensions have registered by now (idempotent across reloads)
+    stripIntent(pi, builtins.intent); // …and take it off the bridge's own tools, which declare it themselves
     skillManifest = loadManifest(); // §14: reflect this session's loaded skills
     const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
     restoreMarks(entries);
@@ -993,7 +1025,9 @@ export default function (pi: ExtensionAPI) {
 
   // ── §14 Skills: use_skill tool (docs/validation/sk1.md §hv.skill) ─────────
   // Loading a skill = calling use_skill(name), which returns the SKILL.md body.
-  // It's in INTENT_TOOLS (requireIntent injects a required `intent`), so a skill
+  // It declares `intent` in its own schema below (so requireIntent's "already
+  // wired" guard skips it, and stripIntent is what removes it when the §13
+  // round-12 switch is off), so a skill
   // load surfaces as a transcript card with a model-authored "why", and each
   // invocation is auditable (hv.skill notify). Prompting is steered here via the
   // <happyvibe-skills> system block; a raw read is caught by the fallback above.
