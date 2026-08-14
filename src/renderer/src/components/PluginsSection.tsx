@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BrandMark } from "./BrandMark";
+import { BrandMark, hasBrandMark } from "./BrandMark";
 
 /**
  * §25 plugin store.
@@ -31,15 +31,17 @@ export const PAGE = 24;
 /**
  * §25 round 12 — recognised brands first, then alphabetical inside each group.
  *
- * "Recognised" means the generator resolved a brand icon for it (83 of 179
- * today), which inherits BrandMark's existing guarantee that a class is only
- * emitted if it actually renders. A hand-picked "featured" list was rejected
- * for re-introducing the per-release curation tax the generated catalog exists
- * to remove.
+ * "Recognised" means BrandMark will draw a real logo — asked through
+ * `hasBrandMark`, the same predicate the card itself renders from, so the two
+ * cannot disagree. Testing `brand` alone was not the same question: `firecrawl`
+ * has no simple-icons class but does have an inline vendor glyph, so it drew a
+ * flame while sorting among the monograms. A hand-picked "featured" list was
+ * rejected for re-introducing the per-release curation tax the generated
+ * catalog exists to remove.
  */
 export function sortCards<T extends { name: string; brand?: string }>(cards: T[]): T[] {
   return [...cards].sort(
-    (a, b) => (a.brand ? 0 : 1) - (b.brand ? 0 : 1) || a.name.localeCompare(b.name),
+    (a, b) => Number(!hasBrandMark(a)) - Number(!hasBrandMark(b)) || a.name.localeCompare(b.name),
   );
 }
 
