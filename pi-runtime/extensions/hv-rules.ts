@@ -55,7 +55,14 @@ export interface Verdict {
 // is to read the buffer repeatedly, so a prompt here would fire on every poll,
 // forever — friction that would push the model back to `npm run dev &> /tmp/log &`,
 // the thing the feature exists to replace. terminal_run/terminal_kill are NOT here.
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read"]);
+// §28: reading a page the user can see costs them nothing, and get_text is the
+// primitive the model is supposed to prefer over a screenshot — prompting for it
+// would push the model towards `bash curl`, which no egress gate can see.
+// browser_close removes power. The ACTING tools (open/navigate/click/type/
+// evaluate) are deliberately NOT here: navigation gates per host as
+// `browser:<host>`, and evaluate is the one call that turns "the page can reach
+// X" into "the agent can exfiltrate through X".
+export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close"]);
 
 /**
  * pi-subagents' parent-blocking wait tool, under EVERY name it has shipped under.

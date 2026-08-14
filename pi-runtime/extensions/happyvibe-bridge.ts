@@ -45,7 +45,22 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
   if ((toolName === "bash" || toolName === "terminal_run") && typeof input.command === "string") {
     return input.command.slice(0, 300);
   }
-  return JSON.stringify(input).slice(0, 300);
+  // §28: a navigation's factual action IS its URL — same rule, same shape.
+  if ((toolName === "browser_navigate" || toolName === "browser_open") && typeof input.url === "string") {
+    return input.url.slice(0, 300);
+  }
+  // …and for EVERYTHING else, strip `intent` rather than special-casing the
+  // tools that happen to carry one.
+  //
+  // The two arms above are the readable cases; this line is the invariant. A
+  // per-tool allowlist leaked twice: `terminal_kill` and `subagent` declare
+  // `intent` in their own schemas, so their summary was JSON containing it, the
+  // modal re-parsed that JSON (PermissionModal argsFromSummary) and toolLabel
+  // preferred `intent` — meaning the headline a user approved against was the
+  // model's own sentence. §13's rule is stated absolutely, so it is enforced
+  // absolutely, in one place, for every tool that exists now or later.
+  const { intent: _modelWords, ...factual } = input;
+  return JSON.stringify(factual).slice(0, 300);
 }
 
 /**
