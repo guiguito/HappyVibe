@@ -3,6 +3,7 @@ import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
 import { asyncResultInfo, delegationLabel, type SubagentResult, type SubagentTrace } from "../agents";
 import { resolveCardPath } from "../tabs";
+import { ZoomableImage } from "./ZoomableImage";
 
 export interface ToolCardData {
   toolCallId: string;
@@ -10,6 +11,11 @@ export interface ToolCardData {
   args: unknown;
   status: "running" | "done" | "error" | "denied" | "skipped";
   result?: unknown;
+  /** §7 round 12: data URLs for a RESTORED result's images (live results carry
+   *  the raw blocks on `result` instead — resultImages handles both). */
+  images?: string[];
+  /** Restored images that exceeded the payload budget — named, never silent. */
+  imagesDropped?: boolean;
   /** Set when the permission modal granted this call. */
   approval?: "Allow" | "Allow for session";
   /** B6: subagent delegation trace (toolName "subagent" only) — live + final. */
@@ -138,14 +144,48 @@ export function errorSummary(result: unknown, max = 120): string {
   return line.length > max ? line.slice(0, max) + "…" : line;
 }
 
+/**
+ * §7 round 12 — the image blocks of a tool result, as data URLs.
+ *
+ * An MCP browser screenshot comes back as `{content:[{type:"image", data, …}]}`
+ * (7 of the 8 image blocks found in real session files were tool results). The
+ * card used to hand the whole result to JSON.stringify, so the picture arrived
+ * as a megabyte of base64 inside the details block — worse than missing, since
+ * it also buried the text that came with it.
+ *
+ * `restored` covers the reopen path, where main has already turned the blocks
+ * into data URLs (restore.ts imagesOf) and the result is a plain string.
+ */
+export function resultImages(result: unknown, restored?: string[]): string[] {
+  if (restored?.length) return restored;
+  const content = (result as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((b) => {
+    const blk = b as { type?: string; data?: string; mimeType?: string };
+    return blk.type === "image" && blk.data
+      ? [`data:${blk.mimeType ?? "image/png"};base64,${blk.data}`]
+      : [];
+  });
+}
+
+/** The same result with its image blocks removed — what the details dump shows. */
+export function stripImages(result: unknown): unknown {
+  const content = (result as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return result;
+  const kept = content.filter((b) => (b as { type?: string }).type !== "image");
+  return { ...(result as object), content: kept };
+}
+
 /** W1.1: raw tool name + args + result — always behind the "details" toggle. */
 function TechnicalDetails({ card }: { card: ToolCardData }): React.JSX.Element {
+  // Images are rendered as pictures above; never dumped as base64 here.
+  const shown = stripImages(card.result);
   const result =
     card.result === undefined
       ? null
-      : typeof card.result === "string"
-        ? card.result
-        : JSON.stringify(card.result, null, 2);
+      : typeof shown === "string"
+        ? shown
+        : JSON.stringify(shown, null, 2);
   return (
     <pre className="font-mono text-xs bg-paper-deep/60 border-t-2 border-line px-3.5 py-2.5 overflow-x-auto max-h-64 whitespace-pre-wrap">
       <span className="font-bold">{card.toolName}</span>
@@ -379,6 +419,9 @@ export function ToolCard({
   const diff = card.toolName === "edit" || card.toolName === "write" ? toolDiff(card.toolName, card.args) : null;
   const [openDiff, setOpenDiff] = useState(diff?.kind === "edit");
   const [details, setDetails] = useState(false);
+  // §7 round 12: live results carry raw image blocks; restored ones arrive as
+  // data URLs main already built (restore.ts imagesOf). One call covers both.
+  const cardImages = resultImages(card.result, card.images);
   const s = STATUS[card.status];
   const denied = card.status === "denied";
   const { icon, label, path: filePath, destructive, brand } = toolLabel(card.toolName, card.args);
@@ -438,6 +481,21 @@ export function ToolCard({
         <DetailsToggle open={details} onClick={() => setDetails(!details)} />
       </div>
       {diff && openDiff && <DiffView lines={diff.lines} />}
+      {/* §7 round 12: a screenshot is a picture, not a base64 wall. Shown on the
+          card itself rather than behind `details` — the agent took it TO be
+          looked at, and hiding it is what made the feature read as missing. */}
+      {cardImages.length > 0 && (
+        <div className="flex flex-wrap gap-2 border-t-2 border-line px-3.5 py-2.5">
+          {cardImages.map((src, i) => (
+            <ZoomableImage key={i} src={src} />
+          ))}
+        </div>
+      )}
+      {card.imagesDropped && (
+        <div className="border-t-2 border-line px-3.5 py-2 text-[11px] font-semibold text-ink-soft">
+          image not shown (too large to restore)
+        </div>
+      )}
       {details && <TechnicalDetails card={card} />}
       {/* Round 11: collapsed to one line — the agent usually recovers by itself, so
           an expanded error per attempt is noise. Click (or the details toggle) for

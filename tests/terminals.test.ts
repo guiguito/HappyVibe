@@ -101,6 +101,45 @@ describe("TerminalManager", () => {
     }
   }, 25_000);
 
+  /**
+   * §7 round 12 — renaming a tab. The rule needs a REAL pty because the thing a
+   * user title has to beat is the 500 ms foreground poll: without precedence,
+   * the next command silently takes the tab's name back.
+   */
+  it("a user title outranks the foreground poll", async () => {
+    const titles: string[] = [];
+    const m = new TerminalManager(() => {}, () => {}, (_id, t) => titles.push(t));
+    const t = m.create("ws1", process.cwd(), FAST, 80, 24);
+    try {
+      await settle(800);
+      m.rename(t.id, "build watcher");
+      expect(m.get(t.id)!.title).toBe("build watcher");
+
+      // Run something that WOULD retitle the tab, and let several polls pass.
+      m.write(t.id, "sleep 4\n");
+      await settle(1500);
+      expect(m.get(t.id)!.title).toBe("build watcher");
+      expect(titles).not.toContain("sleep");
+    } finally {
+      m.killAll();
+    }
+  }, 25_000);
+
+  it("renaming to empty returns the tab to following its process", async () => {
+    const m = new TerminalManager(() => {}, () => {}, () => {});
+    const t = m.create("ws1", process.cwd(), FAST, 80, 24);
+    try {
+      await settle(800);
+      m.rename(t.id, "pinned");
+      m.rename(t.id, "   ");
+      m.write(t.id, "sleep 4\n");
+      await settle(1500);
+      expect(m.get(t.id)!.title).toBe("sleep");
+    } finally {
+      m.killAll();
+    }
+  }, 25_000);
+
   it("scopes list and kill by workspace, and killAll leaves nothing", async () => {
     const m = new TerminalManager(() => {}, () => {}, () => {});
     try {

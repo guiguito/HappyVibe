@@ -16,13 +16,93 @@ export type ProbeResult = {
   error?: string;
 };
 
+export interface ProbeOpts {
+  /** Deadline for opening the connection (TLS + handshake + token refresh). */
+  connectMs?: number;
+  /** Deadline for listing tools, measured AFTER the connection is open. */
+  listMs?: number;
+  /** Extra attempts after a genuine failure. */
+  retries?: number;
+  /** @deprecated round 12 — one budget for both phases was the bug. */
+  timeoutMs?: number;
+}
+
+/**
+ * §13 round 12 — the defaults, and why they are not one number.
+ *
+ * The old probe raced ONE 5 s timer against `connect` and then against
+ * `listTools`, so a slow handshake spent the budget the listing still needed
+ * and the whole probe failed. Two phases, two clocks. 15 s covers a cold remote
+ * server plus a silent token refresh; `npx` stdio servers are the slow ones and
+ * they mostly fail in the connect phase.
+ */
+export function probeDeadlines(opts: ProbeOpts = {}): Required<Pick<ProbeOpts, "connectMs" | "listMs" | "retries">> {
+  return {
+    connectMs: opts.connectMs ?? opts.timeoutMs ?? 15_000,
+    listMs: opts.listMs ?? opts.timeoutMs ?? 10_000,
+    retries: opts.retries ?? 1,
+  };
+}
+
+/**
+ * Retry a genuine failure once — the reported symptom was literally "clicking
+ * reconnect worked right away". NEVER retry `needs-auth`: that is a real answer
+ * (the user has to sign in), and retrying it doubles startup for nothing.
+ */
+export function shouldRetry(result: ProbeResult, left: number): boolean {
+  return left > 0 && result.state === "failed";
+}
+
+/**
+ * Run at most `limit` tasks at once, preserving input order. A rejected task
+ * lands as `undefined` rather than sinking the batch.
+ *
+ * ponytail: eight lines beats a dependency for the one place that needs it —
+ * the startup sweep, which used to fire every configured server concurrently.
+ */
+export async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<(R | undefined)[]> {
+  const out = new Array<R | undefined>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      try {
+        out[i] = await fn(items[i], i);
+      } catch {
+        out[i] = undefined;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return out;
+}
+
 export async function probe(
   name: string,
   cfg: McpServerConfig,
   agentDir: string,
-  opts?: { timeoutMs?: number },
+  opts?: ProbeOpts,
 ): Promise<ProbeResult> {
-  const timeoutMs = opts?.timeoutMs ?? 5_000;
+  const { retries } = probeDeadlines(opts);
+  let result = await probeOnce(name, cfg, agentDir, opts);
+  for (let left = retries; shouldRetry(result, left); left--) {
+    result = await probeOnce(name, cfg, agentDir, opts);
+  }
+  return result;
+}
+
+async function probeOnce(
+  name: string,
+  cfg: McpServerConfig,
+  agentDir: string,
+  opts?: ProbeOpts,
+): Promise<ProbeResult> {
+  const { connectMs, listMs } = probeDeadlines(opts);
 
   const transport = cfg.command
     ? new StdioClientTransport({
@@ -42,21 +122,33 @@ export async function probe(
   const client = new Client({ name: "happyvibe", version: "1.0.0" }, { capabilities: {} });
 
   let settled = false;
-  const timer = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`probe timed out after ${timeoutMs}ms`)), timeoutMs),
-  );
+
+  /**
+   * A deadline created AT the phase it guards. The old code built one timer up
+   * front and raced it twice, so `listTools` inherited whatever `connect` had
+   * left of a 5 s budget — which is why a server that was merely slow to
+   * handshake reported "failed" and then connected instantly on a click.
+   * The handle is cleared so a resolved phase does not keep the event loop warm.
+   */
+  const deadline = <T>(task: Promise<T>, ms: number, phase: string): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout>;
+    const bomb = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${phase} timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([task, bomb]).finally(() => clearTimeout(timer)) as Promise<T>;
+  };
 
   try {
     const connectTask = (async () => {
       await client.connect(transport);
       settled = true; // connection opened — close is now client's responsibility
     })();
-    connectTask.catch(() => undefined); // suppress orphaned rejection if timer wins the race
-    await Promise.race([connectTask, timer]);
+    connectTask.catch(() => undefined); // suppress orphaned rejection if the deadline wins
+    await deadline(connectTask, connectMs, "connect");
 
     const listToolsTask = client.listTools();
-    listToolsTask.catch(() => undefined); // suppress orphaned rejection if timer wins the race
-    const { tools } = await Promise.race([listToolsTask, timer]);
+    listToolsTask.catch(() => undefined); // suppress orphaned rejection if the deadline wins
+    const { tools } = await deadline(listToolsTask, listMs, "listTools");
 
     return {
       state: "connected",

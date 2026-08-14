@@ -75,8 +75,25 @@ type RestoreItem =
   // §24: `command` is set by main when this user message was a prompt-template
   // expansion (paired by hash against the logged command.invoked event), so a
   // reopened session redraws the card instead of a wall of expanded prompt.
-  | { kind: "user" | "assistant"; text: string; promptTemplate?: { typed: string } }
-  | { kind: "tool"; toolCallId: string; toolName: string; args: unknown; result?: string; error?: boolean }
+  // §7 round 12: `images` are data URLs rebuilt from the session file's image
+  // blocks; `imagesDropped` marks one that exceeded the restore payload budget.
+  | {
+      kind: "user" | "assistant";
+      text: string;
+      promptTemplate?: { typed: string };
+      images?: string[];
+      imagesDropped?: boolean;
+    }
+  | {
+      kind: "tool";
+      toolCallId: string;
+      toolName: string;
+      args: unknown;
+      result?: string;
+      error?: boolean;
+      images?: string[];
+      imagesDropped?: boolean;
+    }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
 interface HvByokProvider {
@@ -484,7 +501,7 @@ interface HvApi {
   onUiRequest(
     cb: (r: { id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[] }) => void
   ): () => void;
-  onPiExit(cb: (info: { sessionId: string; code: number | null; intentional: boolean }) => void): () => void;
+  onPiExit(cb: (info: { sessionId: string; code: number | null; intentional: boolean; stderr?: string }) => void): () => void;
   /** V2.A: provider/model config changed — refetch model lists/tiers. */
   onProvidersChanged(cb: () => void): () => void;
   onSessionsChanged(cb: (sessions: SessionMeta[]) => void): () => void;
@@ -566,8 +583,8 @@ interface HvApi {
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
   // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
-  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean }>;
-  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean }): Promise<void>;
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
 
@@ -590,6 +607,8 @@ interface HvApi {
   termResize(id: string, cols: number, rows: number): Promise<void>;
   /** Closing a terminal tab kills its PTY — a terminal tab IS its terminal. */
   termClose(id: string): Promise<void>;
+  /** §7 round 12: rename a terminal tab. "" returns it to following its process. */
+  termRename(id: string, title: string): Promise<void>;
   termList(workspaceId?: string): Promise<HvTerminalInfo[]>;
   /** addon-serialize output from main's headless mirror: repaints after ⌘R. */
   termSnapshot(id: string): Promise<string | null>;
@@ -708,6 +727,10 @@ interface HvApi {
     | { ok: true; skills: string[]; commands: string[]; servers: string[] }
     | { ok: false; error: string }
   >;
+  /** §25 round 12: enable this plugin's installed skills and prompts in place. */
+  pluginEnableInstalled(
+    plugin: string,
+  ): Promise<{ ok: true; skills: number; commands: number } | { ok: false; error: string }>;
 
   // MCP server config (additive). Changes apply to new sessions.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;

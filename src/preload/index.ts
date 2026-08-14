@@ -214,7 +214,7 @@ contextBridge.exposeInMainWorld("hv", {
 
   // ── §13 round 6: configurable built-in custom tools (additive) ────
   builtinsGet: () => ipcRenderer.invoke("hv:builtins-get"),
-  builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string }) =>
+  builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }) =>
     ipcRenderer.invoke("hv:builtins-set", t),
   builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
 
@@ -235,6 +235,7 @@ contextBridge.exposeInMainWorld("hv", {
   termResize: (id: string, cols: number, rows: number) =>
     ipcRenderer.invoke("hv:term-resize", id, cols, rows),
   termClose: (id: string) => ipcRenderer.invoke("hv:term-close", id),
+  termRename: (id: string, title: string) => ipcRenderer.invoke("hv:term-rename", id, title),
   termList: (workspaceId?: string) => ipcRenderer.invoke("hv:term-list", workspaceId),
   /** addon-serialize output: what repaints a tab after a reload. */
   termSnapshot: (id: string) => ipcRenderer.invoke("hv:term-snapshot", id),
@@ -340,6 +341,7 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:plugins-install", token, sel),
   pluginInstalled: () => ipcRenderer.invoke("hv:plugins-installed"),
   pluginRemove: (plugin: string) => ipcRenderer.invoke("hv:plugins-remove", plugin),
+  pluginEnableInstalled: (plugin: string) => ipcRenderer.invoke("hv:plugins-enable-installed", plugin),
   promptTemplatesPromote: (id: string) => ipcRenderer.invoke("hv:prompt-templates-promote", id),
   /** Does ~/.claude/commands exist? Drives the one-click link suggestion. */
   onPromptTemplatesChanged: (cb: () => void): (() => void) => {
@@ -404,7 +406,7 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:ui-request", listener);
     return () => ipcRenderer.removeListener("hv:ui-request", listener);
   },
-  onPiExit: (cb: (i: { sessionId: string; code: number | null; intentional: boolean }) => void): (() => void) => {
+  onPiExit: (cb: (i: { sessionId: string; code: number | null; intentional: boolean; stderr?: string }) => void): (() => void) => {
     const listener = (_e: Electron.IpcRendererEvent, p: unknown): void =>
       cb(p as { sessionId: string; code: number | null; intentional: boolean });
     ipcRenderer.on("hv:pi-exit", listener);

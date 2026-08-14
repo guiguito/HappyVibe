@@ -28,13 +28,15 @@ export interface ManagedClient {
   start(): Promise<void>;
   stop(): void;
   readonly pid: number | undefined;
-  on(event: "exit", cb: (info: { code: number | null }) => void): unknown;
+  on(event: "exit", cb: (info: { code: number | null; stderr?: string }) => void): unknown;
 }
 
 export interface SessionExit {
   sessionId: string;
   code: number | null;
   intentional: boolean;
+  /** Tail of the child's stderr — why it died, when it died unexpectedly. */
+  stderr?: string;
 }
 
 type PidFile = Record<string, string>; // pid -> sessionId
@@ -151,11 +153,11 @@ export class SessionManager extends EventEmitter {
 
         const client = this.opts.spawn(workspace, resumeFile, sessionId);
         rec.client = client;
-        client.on("exit", ({ code }) => {
+        client.on("exit", ({ code, stderr }) => {
           if (this.records.get(sessionId) !== rec) return; // superseded by a restart
           this.records.delete(sessionId);
           this.untrackPid(client.pid);
-          this.emit("session-exit", { sessionId, code, intentional: rec.stopping } satisfies SessionExit);
+          this.emit("session-exit", { sessionId, code, intentional: rec.stopping, stderr } satisfies SessionExit);
         });
         await client.start();
         this.trackPid(client.pid, sessionId);

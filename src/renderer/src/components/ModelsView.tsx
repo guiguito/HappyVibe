@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { isSignedIn, parseAuth, type AuthEvent, type AuthProviderStatus } from "../auth";
 import { AuthFlowModal } from "./AuthFlowModal";
+import { BrandLogo } from "./BrandLogo";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
 
@@ -253,9 +254,7 @@ export function ModelsView({
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         {firstRun ? (
           <>
-            <div className="size-14 rounded-2xl bg-tangerine border-2 border-ink/80 shadow-pop rotate-3 flex items-center justify-center mb-5">
-              <span className="text-paper font-black text-xl -rotate-3">hv</span>
-            </div>
+            <BrandLogo size="lg" className="mb-5" />
             <h1 className="font-black text-3xl tracking-tight">
               Welcome to Happy<span className="text-tangerine">Vibe</span>
             </h1>

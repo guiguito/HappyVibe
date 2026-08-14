@@ -16,6 +16,20 @@
  */
 import { INLINE_GLYPHS, glyphKey } from "./BrandGlyphs";
 
+/**
+ * True when BrandMark will render a real LOGO rather than a monogram.
+ *
+ * It lives beside the component, and reads the same INLINE_GLYPHS table, because
+ * the §25 store sorts "recognised brands first" and that sort must ask exactly
+ * the question the card answers. It did not: it tested only the simple-icons
+ * class, so `firecrawl` — which has no simple-icons entry but DOES have an
+ * inline vendor glyph (tier 2 below) — drew a flame while sorting among the
+ * monograms.
+ */
+export function hasBrandMark(card: { name: string; brand?: string }): boolean {
+  return !!card.brand || !!INLINE_GLYPHS[glyphKey(card.name)];
+}
+
 /** First alphanumeric character, uppercased — "chrome_devtools" → "C". */
 export function monogram(name: string): string {
   return (name.match(/[a-z0-9]/i)?.[0] ?? "?").toUpperCase();

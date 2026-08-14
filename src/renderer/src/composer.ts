@@ -89,3 +89,35 @@ export function buildImages(attachments: ImageAttachment[]): ImageContent[] {
 export function attachmentUrl(a: { data: string; mimeType: string }): string {
   return `data:${a.mimeType};base64,${a.data}`;
 }
+
+/** True for the file types the composer will attach. Non-images are ignored
+ *  rather than refused: pasting a screenshot alongside text is normal, and the
+ *  text half must still land. */
+export function isAttachableImage(file: { type?: string }): boolean {
+  return typeof file.type === "string" && file.type.startsWith("image/");
+}
+
+/**
+ * §7 round 12 — a pasted or dropped image becomes an ordinary attachment.
+ *
+ * Attaching used to be the "+" file picker only, which is the one path that
+ * needs a trip through main; a File already in the renderer just needs its
+ * bytes. Returns null for anything that is not an image, so callers can map
+ * over a whole DataTransfer without filtering twice.
+ */
+export async function fileToAttachment(file: File): Promise<ImageAttachment | null> {
+  if (!isAttachableImage(file)) return null;
+  const buf = new Uint8Array(await file.arrayBuffer());
+  // btoa over a big string blows the argument limit, so chunk it.
+  let binary = "";
+  for (let i = 0; i < buf.length; i += 0x8000) {
+    binary += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  }
+  return { data: btoa(binary), mimeType: file.type, name: file.name || "pasted image" };
+}
+
+/** Every image in a paste/drop, in order. Non-images are skipped. */
+export async function filesToAttachments(files: ArrayLike<File>): Promise<ImageAttachment[]> {
+  const out = await Promise.all(Array.from(files).map(fileToAttachment));
+  return out.filter((a): a is ImageAttachment => a !== null);
+}

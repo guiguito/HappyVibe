@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Transcript, type TranscriptItem } from "./Transcript";
-import { tailToolCallIds, type RewindScope } from "../rewind";
+import { hasRestorable, tailToolCallIds, type RewindScope } from "../rewind";
 import { matchesBinding } from "../shortcuts";
 import { ModelSelect } from "./ModelSelect";
 import { ContextBubble } from "./ContextBubble";
@@ -23,7 +23,8 @@ import { useDictation } from "../voice/useDictation";
 // exactly the kind of thing that drifts from what actually downloads.
 import { VOICE_MODEL_SIZE_LABEL } from "../../../main/voice/manifest";
 import {
-  attachmentUrl, dropUnknownProvider, resolveModelTier, supportsVision, type ImageAttachment, type ModelRef, type ModelTier,
+  attachmentUrl, dropUnknownProvider, filesToAttachments, isAttachableImage, resolveModelTier, supportsVision,
+  type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
 import {
   activeCommandQuery, activeMentionQuery, commandSubtitle, completeCommand, completeMention, composerCommands, extractMentions, filterCommands,
@@ -31,6 +32,9 @@ import {
 } from "../mentions";
 
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
+/** §21: the file tree drags this — a tab/file gesture, not an image. */
+const FILETREE_DRAG_MIME = "application/x-hv-relpath";
+
 const PASTE_CONFIRM_CHARS = 100_000;
 
 /** Stable empty ledger so the pill renders before the first fetch lands. */
@@ -464,6 +468,13 @@ export function ChatView({
     const img = await window.hv.pickImage();
     if (img) setAttachments((p) => [...p, img]);
   };
+
+  /** §7 round 12: shared by paste and drop — the picker's own path is the only
+   *  one that needs a trip through main. */
+  const addFiles = async (files: ArrayLike<File>): Promise<void> => {
+    const added = await filesToAttachments(files);
+    if (added.length) setAttachments((p) => [...p, ...added]);
+  };
   // #8: ⌘F / Ctrl-F opens in-conversation search; Escape closes it. searchOpen
   // is lifted to App (WS7 — the toggle lives in the tab strip).
   useEffect(() => {
@@ -528,8 +539,39 @@ export function ChatView({
       <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
         {/* §23: compact plan-mode indicator (left) — read-only badge with a
             wrap-up nudge and one-click exit. Replaces the full-width banner. */}
-        {((sessionSkills?.length ?? 0) > 0 || planEnabled || showPlanPill) && (
+        {/* §7 round 12: the MODEL chip lives here, left of the metrics, and the
+            existing session badges stack after it. The group is unconditional
+            now, because the chip is always present. The Plan toggle deliberately
+            stayed in the composer: it is something you flip before typing, not a
+            property of the session you read. */}
         <div className="mr-auto flex items-center gap-1.5">
+          {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global).
+              WS1: shared ModelSelect (controlled open so a session switch force-closes it). */}
+          <div className="shrink-0">
+            <ModelSelect
+              models={models ?? []}
+              loading={models === null}
+              value={resolved ? { provider: resolved.provider, modelId: resolved.modelId } : null}
+              onPick={(m) => void pickModel(m)}
+              open={modelMenuOpen}
+              onOpenChange={(o) => { setModelMenuOpen(o); if (o) setAttachMenuOpen(false); }}
+              // §7 round 12: the chip moved to the top bar, so the menu opens
+              // DOWNWARD — upward from there would open outside the pane.
+              direction="down"
+              renderTrigger={({ toggle }) => (
+                <button
+                  type="button"
+                  aria-label="Change model for this session"
+                  aria-expanded={modelMenuOpen}
+                  onClick={toggle}
+                  title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
+                  className="max-w-44 text-left font-mono text-[11px] rounded-full px-2.5 py-1.5 text-ink-soft hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
+                >
+                  <span className="block truncate">{modelLabel ?? "model…"}</span>
+                </button>
+              )}
+            />
+          </div>
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
         {/* §23 round 9: the active-plan pill. A plan card lives at its
             plan_complete position in history, so a compaction that ate that
@@ -584,7 +626,6 @@ export function ChatView({
           </div>
         )}
         </div>
-        )}
         <button
           type="button"
           onClick={() => onSearchOpenChange(!searchOpen)}
@@ -682,11 +723,20 @@ export function ChatView({
               message moves back into the composer so you can edit and resend it.
             </p>
             <div className="flex flex-col gap-1.5 mb-3">
-              {([
-                ["conversation", "Conversation only", "Files on disk are left exactly as they are."],
-                ["both", "Conversation and files", "Also roll the workspace back to before this message."],
-                ["files", "Files only", "Roll the workspace back, keep the conversation."],
-              ] as const).map(([value, label, hint]) => (
+              {((): Array<[RewindScope, string, string]> => {
+                const opts: Array<[RewindScope, string, string]> = [
+                  ["conversation", "Conversation only", "Files on disk are left exactly as they are."],
+                ];
+                // §9 round 12: the file scopes exist only when a rewind here
+                // would actually restore something. Hidden, not greyed — and
+                // hidden while the preview loads, so they appear once and never
+                // vanish from under the cursor.
+                if (hasRestorable(rewindPreview)) {
+                  opts.push(["both", "Conversation and files", "Also roll the workspace back to before this message."]);
+                  opts.push(["files", "Files only", "Roll the workspace back, keep the conversation."]);
+                }
+                return opts;
+              })().map(([value, label, hint]) => (
                 <label
                   key={value}
                   className="flex gap-2 items-start cursor-pointer rounded-xl border-2 border-line p-2 hover:bg-paper-deep"
@@ -705,28 +755,21 @@ export function ChatView({
                 </label>
               ))}
             </div>
-            {rewindScope !== "conversation" && (
+            {/* §9 round 12: the loading and no-snapshot branches this block used
+                to carry are gone with the options that led here — a file scope
+                cannot be selected unless the preview already said yes. */}
+            {rewindScope !== "conversation" && rewindPreview && (
               <div className="text-xs text-ink-soft mb-4 rounded-xl bg-paper-deep p-2">
-                {rewindPreview === undefined ? (
-                  "Checking which files would change…"
-                ) : rewindPreview === null ? (
-                  rewindScope === "files"
-                    ? "No snapshot for this message, and the conversation is being kept — this would do nothing."
-                    : "No snapshot for this message — no files will change."
-                ) : (
-                  <>
-                    <div>
-                      <strong>{rewindPreview.willRestore.length}</strong> restored,{" "}
-                      <strong>{rewindPreview.willDelete.length}</strong> removed.
-                    </div>
-                    {rewindPreview.stale.length > 0 && (
-                      <div className="mt-1">
-                        {rewindPreview.stale.length} changed since and will be left alone:{" "}
-                        {rewindPreview.stale.slice(0, 3).join(", ")}
-                        {rewindPreview.stale.length > 3 ? "…" : ""}
-                      </div>
-                    )}
-                  </>
+                <div>
+                  <strong>{rewindPreview.willRestore.length}</strong> restored,{" "}
+                  <strong>{rewindPreview.willDelete.length}</strong> removed.
+                </div>
+                {rewindPreview.stale.length > 0 && (
+                  <div className="mt-1">
+                    {rewindPreview.stale.length} changed since and will be left alone:{" "}
+                    {rewindPreview.stale.slice(0, 3).join(", ")}
+                    {rewindPreview.stale.length > 3 ? "…" : ""}
+                  </div>
                 )}
               </div>
             )}
@@ -746,7 +789,9 @@ export function ChatView({
                 // still truncate the conversation, so they stay live. This also
                 // covers turns whose capture failed, not just steers (a steer
                 // has no snapshot of its own — see hv:prompt-session).
-                disabled={rewindScope === "files" && rewindPreview === null}
+                // The "files with no anchor" combination is now unreachable —
+                // that scope is not rendered unless there is something to
+                // restore — so there is nothing left to disable.
                 onClick={() => {
                   const it = pendingRewind;
                   onRewind?.(it, rewindScope);
@@ -916,6 +961,19 @@ export function ChatView({
           ev.preventDefault();
           submit();
         }}
+        // §7 round 12: drop an image anywhere on the composer to attach it.
+        // The file TREE drags its own mime (a "open this file" gesture, which
+        // @file already covers) — never treat that as an image drop.
+        onDragOver={(ev) => {
+          if (ev.dataTransfer.types.includes(FILETREE_DRAG_MIME)) return;
+          if (ev.dataTransfer.types.includes("Files")) ev.preventDefault();
+        }}
+        onDrop={(ev) => {
+          if (ev.dataTransfer.types.includes(FILETREE_DRAG_MIME)) return;
+          if (!ev.dataTransfer.files.length) return;
+          ev.preventDefault();
+          void addFiles(ev.dataTransfer.files);
+        }}
         className="px-6 pb-5 pt-2"
       >
         {/* Queued messages (Pi queue_update). Abort preserves the queue — chips stay after Stop. */}
@@ -1063,31 +1121,6 @@ export function ChatView({
               </>
             )}
           </div>
-          {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global).
-              WS1: shared ModelSelect (controlled open so a session switch force-closes it). */}
-          <div className="shrink-0">
-            <ModelSelect
-              models={models ?? []}
-              loading={models === null}
-              value={resolved ? { provider: resolved.provider, modelId: resolved.modelId } : null}
-              onPick={(m) => void pickModel(m)}
-              open={modelMenuOpen}
-              onOpenChange={(o) => { setModelMenuOpen(o); if (o) setAttachMenuOpen(false); }}
-              direction="up"
-              renderTrigger={({ toggle }) => (
-                <button
-                  type="button"
-                  aria-label="Change model for this session"
-                  aria-expanded={modelMenuOpen}
-                  onClick={toggle}
-                  title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
-                  className="max-w-44 text-left font-mono text-[11px] rounded-full px-2.5 py-1.5 text-ink-soft hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
-                >
-                  <span className="block truncate">{modelLabel ?? "model…"}</span>
-                </button>
-              )}
-            />
-          </div>
           {/* §23: plan-mode toggle — read-only "think first" for this session. */}
           {onTogglePlan && (
             <button
@@ -1104,17 +1137,6 @@ export function ChatView({
               <span aria-hidden>🧭</span>
               <span>Plan</span>
             </button>
-          )}
-          {/* §27: the mic sits between the Plan chip and the text area. Round 2:
-              hidden entirely when voice is off, or when the user reclaimed the
-              row's width — in the latter case the gesture still works. */}
-          {dictation.showChip && (
-            <MicButton
-              state={dictation.micState}
-              progress={dictation.progress}
-              hint={dictation.hint}
-              onClick={dictation.toggle}
-            />
           )}
           <div className="relative flex-1 min-w-0">
             {/* F3: @file autocomplete — opens above the composer, styled like the attach menu. */}
@@ -1207,6 +1229,17 @@ export function ChatView({
               }}
               onKeyUp={(e) => dictation.handleKey(e.nativeEvent, "up")}
               onPaste={(e) => {
+                // §7 round 12: an image on the clipboard attaches. Checked
+                // BEFORE the large-text guard — a screenshot paste carries no
+                // text, and letting the guard run first swallowed it.
+                if (e.clipboardData.files.length > 0) {
+                  const imgs = Array.from(e.clipboardData.files).filter(isAttachableImage);
+                  if (imgs.length) {
+                    e.preventDefault();
+                    void addFiles(e.clipboardData.files);
+                    return;
+                  }
+                }
                 // #3: guard against accidentally pasting a huge blob.
                 const t = e.clipboardData.getData("text");
                 if (t.length > PASTE_CONFIRM_CHARS) {
@@ -1218,6 +1251,18 @@ export function ChatView({
               className="w-full resize-none bg-transparent px-2 py-1.5 text-[0.95rem] leading-relaxed focus:outline-none placeholder:text-ink-soft/60"
             />
           </div>
+          {/* §27 round 12: the mic sits with the OTHER input controls — beside
+              Stop and Send — rather than before the textarea. Placement only;
+              the chip's semantics (red while recording, click to stop, hidden
+              when voice is off) are unchanged. */}
+          {dictation.showChip && (
+            <MicButton
+              state={dictation.micState}
+              progress={dictation.progress}
+              hint={dictation.hint}
+              onClick={dictation.toggle}
+            />
+          )}
           {/* V2.A: no separate Queue button — send/Enter steers while busy
               (App keeps the followUp behavior plumbing; it just has no UI). */}
           {busy && (

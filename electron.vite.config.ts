@@ -34,9 +34,29 @@ export default defineConfig({
       // ONLY in the built app, because dev serves it as a real file URL. That
       // is the "works in dev, broken in release" shape, so it is pinned by
       // tests/voice-worklet-csp.test.ts against the built bundle.
+      //
+      // Round 12: FONTS are the same trap, and one was already caught by it.
+      // The CSP sets no `font-src`, so fonts fall back to `default-src 'self'`,
+      // which does not cover `data:` — an inlined font is refused outright:
+      //
+      //   Refused to load the font 'data:font/woff2;base64,…' because it
+      //   violates the following Content Security Policy directive:
+      //   "default-src 'self'".
+      //
+      // Only ONE subset was small enough to trigger it (jetbrains-mono
+      // cyrillic-ext, 2,028 B); every other subset is ≥7.5 kB and was emitted
+      // as a file, which is exactly why this looked fine. Excluding fonts by
+      // EXTENSION rather than by that one filename is the same size of change
+      // and cannot regress when the next small subset appears.
+      //
+      // The alternative — widening the CSP with `font-src 'self' data:` — is
+      // refused on the §27 rule: the CSP is not loosened to make an asset load.
+      //
       // `false` = never inline; `undefined` = Vite's normal behaviour.
       assetsInlineLimit: (filePath: string) =>
-        filePath.includes('voice-worklet') ? false : undefined
+        filePath.includes('voice-worklet') || /\.(woff2?|ttf|otf|eot)$/i.test(filePath)
+          ? false
+          : undefined
     },
     plugins: [react(), tailwindcss()]
   }

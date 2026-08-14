@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
+import { AUTO, fractionFor, readSplit, writeSplit } from "../sidebarSplit";
+import { BrandLogo } from "./BrandLogo";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
 // §13 round 6: the old combined "agents" page split into four peer destinations.
@@ -161,24 +163,41 @@ function KeyboardIcon(): React.JSX.Element {
 /** Round 8: every configuration destination lives under ONE collapsible group —
     the flat footer had grown to seven entries. The four round-6 pages keep
     their order at the top; the exploded settings pages sit below a divider. */
-const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
-  // §25 first: it is the source the three below get their contents from.
+/**
+ * §16 round 12 — ordered by how often it is REACHED, not by where it came from.
+ *
+ * Round 8 ordered this by history (the round-6 four, then the ex-Settings
+ * scroll), and §26/§27 then appended Terminal and Voice after Keyboard
+ * shortcuts — which put two live features below a reference table. Models
+ * leads because a beginner can do nothing before it and ⌘, already lands
+ * there; the capability pages follow; configuration after them; and the three
+ * you consult rather than change sit at the bottom.
+ *
+ * Still ONE flat group with no sub-headings — round 8's shape was right, only
+ * its sequence was an artefact.
+ */
+export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
+  { view: "models", label: "Models", Icon: ModelsIcon },
+  // The capability pages. §25 first among them: it is the source the three
+  // below it get their contents from.
   { view: "plugins", label: "Plugins", Icon: PluginsIcon },
   { view: "skills", label: "Skills", Icon: SkillsIcon },
   { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon },
   { view: "mcp", label: "MCP", Icon: McpIcon },
   { view: "agents", label: "Agents", Icon: AgentsIcon },
   { view: "tools", label: "All Tools", Icon: ToolsIcon },
-  { view: "models", label: "Models", Icon: ModelsIcon },
+  // Configuration.
   { view: "permissions", label: "Permissions", Icon: PermissionsIcon },
   { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon },
+  { view: "terminal", label: "Terminal", Icon: TerminalIcon },
+  { view: "voice", label: "Voice", Icon: VoiceIcon },
+  // Shortcuts closes the configuration block rather than trailing the reports:
+  // since round 8 the bindings are EDITABLE, so it is a settings page, not a
+  // reference table.
+  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
+  // Consulted, not changed.
   { view: "stats", label: "Stats", Icon: StatsIcon },
   { view: "audit", label: "Audit log", Icon: AuditIcon },
-  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
-  // §26.
-  { view: "terminal", label: "Terminal", Icon: TerminalIcon },
-  // §27. "Voice" means voice INPUT — there is no text-to-speech in V1.
-  { view: "voice", label: "Voice", Icon: VoiceIcon },
 ];
 
 /** Round 8: the collapse affordance — an actual chevron rather than a 10px
@@ -418,25 +437,29 @@ export function Sidebar({
   }, [collapsed]);
 
   // Round 11: the workspace-tree / Settings split, dragged by the handle below.
-  // 0 = "auto", i.e. the original flex-1 behaviour; double-clicking the handle
-  // returns to it. Persisted like the other sidebar state (no IPC — this is a
-  // renderer-local preference).
+  // §7 round 12: stored as a FRACTION of the sidebar, not a pixel height — a px
+  // value means something different at a different window size, so the split
+  // the user chose was not the split they got back. `AUTO` (0) is the original
+  // flex behaviour, which double-clicking the handle restores. Persisted like
+  // the other sidebar state (no IPC — a renderer-local preference).
+  const asideRef = useRef<HTMLElement>(null);
   const treeRef = useRef<HTMLDivElement>(null);
-  const [treePx, setTreePx] = useState(() => {
-    const v = Number(localStorage.getItem("hv:sidebar-split"));
-    return Number.isFinite(v) && v > 0 ? v : 0;
-  });
+  const [treeFrac, setTreeFrac] = useState(() => readSplit(localStorage.getItem("hv:sidebar-split")));
   useEffect(() => {
-    localStorage.setItem("hv:sidebar-split", String(treePx));
-  }, [treePx]);
+    localStorage.setItem("hv:sidebar-split", writeSplit(treeFrac));
+  }, [treeFrac]);
+
+  // The split only exists while the group is open: a dragged height with the
+  // group collapsed is a division of nothing.
+  const sized = settingsOpen && treeFrac !== AUTO;
 
   const startResize = (e: React.MouseEvent): void => {
     e.preventDefault(); // else the drag selects sidebar text
     const startY = e.clientY;
     const startH = treeRef.current?.getBoundingClientRect().height ?? 0;
+    const sidebarPx = asideRef.current?.getBoundingClientRect().height ?? window.innerHeight;
     const onMove = (ev: MouseEvent): void => {
-      // Floor keeps a usable tree; ceiling always leaves room for the Settings row.
-      setTreePx(Math.max(96, Math.min(startH + ev.clientY - startY, window.innerHeight - 160)));
+      setTreeFrac(fractionFor(startH + ev.clientY - startY, sidebarPx));
     };
     const onUp = (): void => {
       document.removeEventListener("mousemove", onMove);
@@ -474,9 +497,9 @@ export function Sidebar({
           onClick={onToggleCollapsed}
           title="Expand sidebar (⌘B)"
           aria-label="Expand sidebar"
-          className="size-9 rounded-xl bg-tangerine border-2 border-ink/80 shadow-sticker rotate-3 flex items-center justify-center hover:rotate-6 transition-transform cursor-pointer"
+          className="cursor-pointer hover:brightness-105 transition-all"
         >
-          <span className="text-paper font-black text-sm -rotate-3">hv</span>
+          <BrandLogo size="sm" className="hover:rotate-6 transition-transform" />
         </button>
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1.5 w-full pt-2">
           {workspaces.map((ws) => (
@@ -503,7 +526,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="w-64 shrink-0 bg-paper-deep pegboard border-r-2 border-line flex flex-col">
+    <aside ref={asideRef} className="w-64 shrink-0 bg-paper-deep pegboard border-r-2 border-line flex flex-col">
       {/* Brand */}
       <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-2">
         <button
@@ -511,9 +534,7 @@ export function Sidebar({
           onClick={() => onNavigate("chat")}
           className="flex items-center gap-2.5 cursor-pointer group min-w-0"
         >
-          <div className="size-9 rounded-xl bg-tangerine border-2 border-ink/80 shadow-sticker rotate-3 flex items-center justify-center group-hover:rotate-6 transition-transform shrink-0">
-            <span className="text-paper font-black text-sm -rotate-3">hv</span>
-          </div>
+          <BrandLogo size="sm" className="group-hover:rotate-6 transition-transform" />
           <div className="font-black text-lg tracking-tight leading-none truncate">
             Happy<span className="text-tangerine">Vibe</span>
           </div>
@@ -539,11 +560,14 @@ export function Sidebar({
         />
       </div>
 
-      {/* Workspace tree. Round 11: an explicit height when the user has dragged
-          the handle, otherwise `flex-1` as before. */}
+      {/* Workspace tree. An explicit height ONLY while the Settings group is open
+          and the user has dragged the handle. Collapsed, the split has nothing to
+          divide — keeping the dragged height there left the session list clipped
+          mid-row with dead pegboard beneath it, which is the whole reason to
+          collapse the group in the first place. */}
       <div
         ref={treeRef}
-        style={treePx ? { flex: "0 0 auto", height: treePx } : undefined}
+        style={sized ? { flex: "0 0 auto", height: `${treeFrac * 100}%` } : undefined}
         className="flex-1 min-h-32 overflow-y-auto px-4 pb-2"
       >
         <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
@@ -648,20 +672,33 @@ export function Sidebar({
       </div>
 
       {/* Round 11: the drag handle. It sits ON the border the user pointed at, and
-          it is the only resizer in the app — hence hand-rolled rather than a dep. */}
-      <div
-        role="separator"
-        aria-orientation="horizontal"
-        title="Drag to resize"
-        onMouseDown={startResize}
-        onDoubleClick={() => setTreePx(0)}
-        className="h-1.5 shrink-0 cursor-row-resize hover:bg-tangerine/40 transition-colors"
-      />
+          it is the only resizer in the app — hence hand-rolled rather than a dep.
+          §7 round 12: only while the group is OPEN. Collapsed, there is nothing
+          to size — a resize cursor on the edge of a single row is a control that
+          promises something it cannot do. */}
+      {settingsOpen && (
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          title="Drag to resize"
+          onMouseDown={startResize}
+          onDoubleClick={() => setTreeFrac(AUTO)}
+          className="mt-auto h-1.5 shrink-0 cursor-row-resize hover:bg-tangerine/40 transition-colors"
+        />
+      )}
 
-      {/* Round 11: max-h is the actual defect fix — the footer was content-sized
-          with no bound, so its own overflow never engaged and ten nav rows
-          squeezed the tree to its 128px floor. */}
-      <div className="px-4 pt-4 pb-1 border-t-2 border-line min-h-0 max-h-[60%] flex flex-col">
+      {/* Round 11 bounded this so ten nav rows could not squeeze the tree to its
+          floor. §7 round 12: it now TAKES the leftover space (flex-1) instead of
+          being content-sized. That is the reported "weird margin at the bottom":
+          once the handle gave the tree an explicit height, nothing claimed the
+          remainder, so the footer floated up and left dead space beneath it.
+          The same rule is what pins the collapsed `Settings ›` row to the very
+          bottom, with no extra case. */}
+      <div
+        className={`px-4 py-4 border-t-2 border-line min-h-0 flex flex-col ${
+          sized ? "flex-1" : "max-h-[60%] mt-auto"
+        }`}
+      >
         <button
           type="button"
           onClick={onToggleSettingsOpen}

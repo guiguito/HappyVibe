@@ -149,6 +149,18 @@ export function allChats(t: WorkspaceTabs): string[] {
 }
 
 /**
+ * §17 round 12 — is this the ONLY tab open for that session?
+ *
+ * Closing it ends the session's process, so the question has to be asked across
+ * every pane rather than per pane: the same session can be open in two panes
+ * (drag a tab, or open it from the sidebar into another half), and closing one
+ * of those two must leave the child running.
+ */
+export function chatTabCount(t: WorkspaceTabs, sessionId: string): number {
+  return allChats(t).filter((s) => s === sessionId).length;
+}
+
+/**
  * The sessions a user can actually SEE right now: the active tab of each live
  * pane, chats only. A pane shows exactly one tab at a time, so this is at most
  * four and usually one or two.

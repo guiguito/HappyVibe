@@ -44,6 +44,7 @@ export function TabStrip({
   onClosePane,
   filesOpen,
   onToggleFiles,
+  onRename,
 }: {
   pane: Pane;
   /** Slot index in the 2×2 grid (0–3). */
@@ -60,6 +61,14 @@ export function TabStrip({
   busyFor: (sessionId: string) => boolean;
   onSelect: (tab: TabId) => void;
   onClose: (tab: TabId) => void;
+  /**
+   * §7 round 12: right-click → Rename. A chat tab renames the SESSION (the
+   * sidebar row changes with it — it is the session's name, not a tab alias);
+   * a terminal tab renames the terminal, which then stops following its
+   * foreground process. A file tab is not renameable: its title is its
+   * filename, and renaming the file is the tree's job.
+   */
+  onRename: (tab: TabId, title: string) => void;
   onMoveTab: (tab: TabId, toPane: number) => void;
   /** Round 11: the trailing `+` — fill this pane without leaving it. */
   onNewSession: () => void;
@@ -103,6 +112,19 @@ export function TabStrip({
   };
 
   const [dropHover, setDropHover] = useState(false);
+  // §7 round 12: right-click → Rename. Same shape as the file tree's menu (the
+  // app's only other one): coords + a full-screen catcher that closes on click
+  // AND on a second right-click, so the menu can never be orphaned.
+  const [menu, setMenu] = useState<{ tab: TabId; x: number; y: number } | null>(null);
+  const [editing, setEditing] = useState<{ tab: TabId; draft: string } | null>(null);
+
+  const commitRename = (): void => {
+    if (!editing) return;
+    const t = editing.draft.trim();
+    setEditing(null);
+    if (t) onRename(editing.tab, t);
+  };
+
   return (
     <div
       className={`flex items-stretch border-b-2 border-line shrink-0 h-full ${dropHover ? "bg-honey-soft" : "bg-paper"}`}
@@ -139,12 +161,35 @@ export function TabStrip({
               onClick={() => onSelect(id)}
               onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(id)}
               onAuxClick={(e) => e.button === 1 && onClose(id)}
+              onContextMenu={(e) => {
+                // Only chat and terminal tabs are renameable — a file tab's
+                // title IS its filename.
+                if (!isChat && !isTerm) return;
+                e.preventDefault();
+                setMenu({ tab: id, x: e.clientX, y: e.clientY });
+              }}
               className={tab(active)}
               title={isChat || isTerm ? label : id}
             >
               {isChat && <ChatGlyph />}
               {isTerm && <TerminalGlyph />}
-              <span className={`truncate ${exited ? "line-through opacity-60" : ""}`}>{label}</span>
+              {editing?.tab === id ? (
+                <input
+                  autoFocus
+                  value={editing.draft}
+                  onChange={(e) => setEditing({ tab: id, draft: e.target.value })}
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") commitRename();
+                    if (e.key === "Escape") setEditing(null);
+                  }}
+                  className="w-28 min-w-0 bg-paper border border-tangerine rounded px-1 text-[13px] focus:outline-none"
+                />
+              ) : (
+                <span className={`truncate ${exited ? "line-through opacity-60" : ""}`}>{label}</span>
+              )}
               {isChat && busyFor(sid) && <span className="size-1.5 rounded-full bg-tangerine animate-pulse shrink-0" title="Working…" />}
               {!isChat && !isTerm && dirty[id] && <span className="size-1.5 rounded-full bg-tangerine shrink-0" title="Unsaved changes" />}
               {(
@@ -209,6 +254,40 @@ export function TabStrip({
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
         </PaneButton>
+      )}
+      {/* §7 round 12: the rename menu. Catcher first so a click anywhere —
+          including a second right-click — dismisses it. */}
+      {menu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div
+            className="fixed z-50 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold"
+            style={{ left: menu.x, top: menu.y }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                const sid = sessionOf(menu.tab);
+                const tid = terminalOf(menu.tab);
+                setEditing({
+                  tab: menu.tab,
+                  draft: sid ? sessionTitleFor(sid) : tid ? terminalTitleFor(tid) : "",
+                });
+                setMenu(null);
+              }}
+              className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
+            >
+              Rename…
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

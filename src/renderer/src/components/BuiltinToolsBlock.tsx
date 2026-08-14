@@ -16,6 +16,8 @@ interface Builtins {
   planAppend: string;
   /** §26 part 2: the grouped Terminal entry — all three tools or none. */
   terminal: boolean;
+  /** §13 round 12: the model-authored `intent` on registered tools. */
+  intent: boolean;
 }
 
 const HINT =
@@ -243,6 +245,42 @@ function AskUserRow({
 }
 
 /**
+ * §13 round 12 — the `intent` parameter, as a cost switch.
+ *
+ * Sized honestly on the row itself, because it decides what the switch is
+ * worth: in the default PROXY mode one `mcp` tool stands in front of every
+ * server, so intent is injected into five tools and the resting cost is small
+ * — what it really costs is the sentence the model writes per call. With a
+ * server set to expose tools directly it is injected into every tool that
+ * server publishes, and the cost scales with the catalogue.
+ *
+ * It is not a safety control and the row says so: the permission prompt has
+ * always shown the FACTUAL action rather than the model's sentence.
+ */
+function IntentRow({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (on: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <span className="font-bold block">Tool intent</span>
+        <span className="text-xs text-ink-soft">
+          The one-line &ldquo;why&rdquo; the model writes for each tool card. Turning it off saves the tokens it
+          costs to write; cards fall back to a factual label built from the call itself. Permission prompts are
+          unaffected — they always show the factual action, never this sentence.
+        </span>
+        <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
+      </div>
+      <TogglePill on={on} onClick={() => onChange(!on)} />
+    </div>
+  );
+}
+
+/**
  * §26 part 2 — ONE entry for three tools, following Plan mode's precedent.
  *
  * A per-tool switch would be actively harmful: an agent that can terminal_run
@@ -371,6 +409,16 @@ export function BuiltinToolsBlock({
             setAskUserError(null);
             void window.hv.builtinsSet({ terminal: on }).then(
               () => patch({ terminal: on }),
+              (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
+            );
+          }}
+        />
+        <IntentRow
+          on={builtins.intent}
+          onChange={(on) => {
+            setAskUserError(null);
+            void window.hv.builtinsSet({ intent: on }).then(
+              () => patch({ intent: on }),
               (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
             );
           }}

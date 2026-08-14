@@ -4,6 +4,8 @@ import remarkGfm from "remark-gfm";
 import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
 import { PlanCard, type PlanCardData } from "./PlanCard";
 import { splitMentionSegments, stripInjectedBlocks } from "../mentions";
+import { ZoomableImage } from "./ZoomableImage";
+import { BrandLogo } from "./BrandLogo";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -44,39 +46,6 @@ function RewindButton({ onClick }: { onClick: () => void }): React.JSX.Element {
   );
 }
 
-/** Click-to-zoom image + lightbox overlay (feedback round 3 #6). */
-function ZoomableImage({ src }: { src: string }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-  return (
-    <>
-      <img
-        src={src}
-        alt="attached image"
-        onClick={() => setOpen(true)}
-        className="max-h-24 max-w-40 rounded-lg border-2 border-paper/60 object-cover cursor-zoom-in"
-      />
-      {open && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-8 cursor-zoom-out"
-        >
-          <img src={src} alt="attached image (zoomed)" className="max-h-full max-w-full rounded-xl shadow-2xl" />
-        </div>
-      )}
-    </>
-  );
-}
-
 // Perf: `id` is a stable key assigned at append time (see App.appendItem). Keying
 // on it instead of the array index lets React.memo skip re-parsing committed
 // markdown when new items arrive or the live streaming bubble updates.
@@ -94,6 +63,8 @@ export type TranscriptItem = { id?: number } & (
       kind: "user" | "assistant";
       text: string;
       images?: string[];
+      /** §7 round 12: images existed but exceeded the restore payload budget. */
+      imagesDropped?: boolean;
       outOfContext?: boolean;
       promptTemplate?: { typed: string };
     }
@@ -101,7 +72,9 @@ export type TranscriptItem = { id?: number } & (
   // §23: the plan-ready card (read from the workspace plan file).
   | { kind: "plan"; card: PlanCardData }
   // B2: provider errors / session crashes as first-class transcript items.
-  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string }
+  // `detail` is verbatim machine output (a dead child's stderr tail) — shown
+  // monospace with its newlines, where `hint` is prose we wrote.
+  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string }
   // A neutral, warm status line (not an error). `pending` shows an ongoing
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
   | { kind: "notice"; text: string; pending?: boolean }
@@ -179,6 +152,14 @@ const MessageItem = memo(function MessageItem({
           {/* The hint says what to DO; the raw provider text stays visible above
               it so a bug report is still actionable. */}
           {it.hint && <div className="text-xs text-berry/80 mt-0.5 break-words">{it.hint}</div>}
+          {/* Round 12: the child's own last words. A code-1 banner with the
+              explanation sitting in a console nobody is watching is the same
+              class of dishonesty as an unlabelled token estimate. */}
+          {it.detail && (
+            <pre className="mt-1.5 max-h-40 overflow-auto rounded-lg bg-berry/10 px-2 py-1.5 text-[11px] leading-snug font-mono text-berry/90 whitespace-pre-wrap break-words">
+              {it.detail}
+            </pre>
+          )}
         </div>
         {it.retriable && onRetry && (
           <button
@@ -252,6 +233,11 @@ function UserBubble({
               <ZoomableImage key={i} src={src} />
             ))}
           </div>
+        )}
+        {/* §7 round 12: the restore budget is a NAMED ceiling, not a silent
+            truncation — a picture the user sent must not just be missing. */}
+        {"imagesDropped" in it && it.imagesDropped && (
+          <div className="mb-2 text-[11px] font-semibold text-paper/70">image not shown (too large to restore)</div>
         )}
         {/* §24: the promptTemplate header. Monospace because it is something the user
             typed verbatim, and it stays visible whether or not the expansion is. */}
@@ -437,7 +423,7 @@ export function Transcript({
     // Round 11: re-center only when the QUERY or the active match changed. This
     // effect also re-runs on every stream frame (`streaming` is in the deps), and
     // re-centering per frame fought the user's own scrolling.
-    const matchKey = `${q} ${active}`;
+    const matchKey = `${q}\0${active}`;
     if (lastMatch.current !== matchKey) {
       lastMatch.current = matchKey;
       ranges[active].startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -452,9 +438,8 @@ export function Transcript({
     return (
       <div className="flex-1 flex items-center justify-center px-8">
         <div className="text-center max-w-sm">
-          <div className="mx-auto mb-4 size-14 rounded-2xl bg-honey border-2 border-ink/80 shadow-pop rotate-3 flex items-center justify-center">
-            <span className="text-2xl font-black text-ink -rotate-3">hv</span>
-          </div>
+          {/* §20 round 12: the mark, not an `hv` stand-in. */}
+          <BrandLogo size="lg" className="mx-auto mb-4" />
           <p className="font-bold text-lg">Ready when you are.</p>
           <p className="text-sm text-ink-soft mt-1">
             Ask for a change and the agent gets to work. Anything risky knocks first.

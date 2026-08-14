@@ -47,7 +47,7 @@ export interface PiSpawnOptions {
       and §26's grouped Terminal entry), resolved at spawn → HV_BUILTINS (same
       pattern as HV_BYPASS). The keys are listed EXPLICITLY below, so a new
       toggle that is not added there never reaches the bridge. */
-  builtinTools?: { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean };
+  builtinTools?: { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean };
   /** §14 Skills: absolute skill-dir paths this session is allowed to load
       (approved ∩ enabled ∩ active-for-workspace). Enforced with `--no-skills`
       (kills Pi's own discovery — Pi never sees an unapproved skill) plus one
@@ -182,6 +182,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
             askUser: opts.builtinTools.askUser,
             planAppend: opts.builtinTools.planAppend,
             terminal: opts.builtinTools.terminal,
+            intent: opts.builtinTools.intent,
           }) }
         : {}),
       ...(opts.skillsFile ? { HV_SKILLS_FILE: opts.skillsFile } : {}),

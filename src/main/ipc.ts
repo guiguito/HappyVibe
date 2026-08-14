@@ -77,7 +77,7 @@ import { compactionInfo, compactionReason, contextItems, earlierItems } from "./
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { deleteAuthEntry } from "./mcpAuthStore";
-import { probe } from "./mcpClient";
+import { mapLimit, probe } from "./mcpClient";
 import { resolveMcpConfig } from "./mcpResolve";
 import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
@@ -694,18 +694,26 @@ export function registerIpc(win: BrowserWindow): void {
 
   // Startup connectivity sweep — fire-and-forget, never blocks boot.
   // ponytail: stdio probes briefly spawn each server process; upgrade = persistent handles if startup time bites
+  //
+  // §13 round 12: CAPPED. This used to fire every configured server at once, so
+  // N TLS handshakes, N silent token refreshes and N `npx` cold starts raced
+  // each other at the busiest moment the app has — which is most of why servers
+  // reported `failed` at boot and connected instantly on a click. The sweep is a
+  // badge, not a race; four at a time is plenty.
+  const SWEEP_CONCURRENCY = 4;
   void (async () => {
     const globalServers = Object.keys(readMcpFile(path.join(agentDir(), "mcp.json")).mcpServers);
     const wsPaths = workspaces.list();
-    const allChecks: Promise<void>[] = [
-      ...globalServers.map((n) => checkServer("global", null, n)),
+    const checks: Array<() => Promise<void>> = [
+      ...globalServers.map((n) => () => checkServer("global", null, n)),
       ...wsPaths.flatMap((ws) =>
-        Object.keys(readMcpFile(path.join(ws, ".mcp.json")).mcpServers).map((n) =>
-          checkServer("workspace", ws, n),
+        Object.keys(readMcpFile(path.join(ws, ".mcp.json")).mcpServers).map(
+          (n) => () => checkServer("workspace", ws, n),
         ),
       ),
     ];
-    await Promise.allSettled(allChecks);
+    const allChecks = checks; // named for the log line below
+    await mapLimit(checks, SWEEP_CONCURRENCY, (run) => run());
     const byState: Record<string, number> = {};
     for (const s of mcpStatusMap.values()) byState[s.state] = (byState[s.state] ?? 0) + 1;
     void log.append({ type: "mcp.startup_check", data: { total: allChecks.length, byState } });
@@ -1049,7 +1057,7 @@ export function registerIpc(win: BrowserWindow): void {
     for (const r of runs) startSubagentPoll(sessionId, r.runId, r.asyncDir);
   };
 
-  manager.on("session-exit", ({ sessionId, code, intentional }: SessionExit) => {
+  manager.on("session-exit", ({ sessionId, code, intentional, stderr }: SessionExit) => {
     activity.remove(sessionId);
     pendingMcpReload.delete(sessionId); // don't reload a session that's gone
     // Stop this session's status pollers. The detached runners survive (they're
@@ -1057,9 +1065,18 @@ export function registerIpc(win: BrowserWindow): void {
     for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId) stopSubagentPoll(runId);
     const meta = index.get(sessionId);
     if (!intentional) {
-      void log.append({ type: "session.crash", sessionId, workspaceId: meta?.workspaceId, data: { code } });
+      // The stderr tail is recorded too: a crash entry without its cause is the
+      // exact gap this exists to close, and a crash is often not reproducible.
+      // No more sensitive than the commands and MCP arguments already logged,
+      // and the EventLog is local-only.
+      void log.append({
+        type: "session.crash",
+        sessionId,
+        workspaceId: meta?.workspaceId,
+        data: { code, ...(stderr ? { stderr } : {}) },
+      });
     }
-    send("hv:pi-exit", { sessionId, code, intentional });
+    send("hv:pi-exit", { sessionId, code, intentional, stderr });
   });
 
   const startClient = async (meta: SessionMeta, resume: boolean): Promise<PiClient> => {
@@ -1443,7 +1460,12 @@ export function registerIpc(win: BrowserWindow): void {
     sessionsChanged();
   });
 
-  ipcMain.handle("hv:archive-session", (_e, sessionId: string, archived: boolean) => {
+  ipcMain.handle("hv:archive-session", async (_e, sessionId: string, archived: boolean) => {
+    // §17 round 12: archiving used to flip a flag and leave the child running —
+    // a defect rather than a design, and half of why "how do I stop a session?"
+    // had no answer. endSession also captures the final stats the §19 ledger
+    // reads, so an archived session's spend is recorded rather than lost.
+    if (archived && manager.get(sessionId)) await endSession(sessionId);
     index.update(sessionId, { archived });
     sessionsChanged();
   });
@@ -1992,7 +2014,7 @@ export function registerIpc(win: BrowserWindow): void {
   // Takes effect at next spawn only — reuse the existing debounced, idle-only,
   // resume-preserving reload path (same mechanism as MCP/skills config changes).
   ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
-  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string }) => {
+  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }) => {
     setBuiltinTools(t);
     scheduleRuntimeReload("skills", "global", null);
   });
@@ -2043,6 +2065,8 @@ export function registerIpc(win: BrowserWindow): void {
     terminals.resize(id, cols, rows),
   );
   ipcMain.handle("hv:term-close", (_e, id: string) => terminals.kill(id));
+  // §7 round 12: a user title beats the foreground poll; "" restores it.
+  ipcMain.handle("hv:term-rename", (_e, id: string, title: string) => terminals.rename(id, title));
   ipcMain.handle("hv:term-list", (_e, ws?: string) => terminals.list(ws));
   ipcMain.handle("hv:term-snapshot", (_e, id: string) => terminals.snapshot(id));
   // §26 part 2: the RENDERED grid as plain text — the agent-terminal card's
@@ -3464,6 +3488,47 @@ export function registerIpc(win: BrowserWindow): void {
    * Remove everything a plugin installed, found by its provenance/origin link
    * rather than from a plugin registry we would have to keep in sync with disk.
    */
+  /**
+   * §25 round 12 — enable everything this plugin installed, in place.
+   *
+   * The install banner used to be a checklist naming three other pages. It now
+   * acts, and this is what it calls.
+   *
+   * Why a handler rather than ids in the banner: hv:plugins-install returns
+   * skill NAMES, while skillsSetEnabled takes a skill's ID (its directory).
+   * Rather than plumb a second identifier over the wire, this reuses the exact
+   * provenance link hv:plugins-remove scans — so what gets enabled cannot
+   * disagree with what got installed.
+   *
+   * It does NOT reverse the 2026-08-04 rule that an install activates nothing:
+   * the click is still the user's gesture, it has just stopped being a hunt.
+   */
+  ipcMain.handle("hv:plugins-enable-installed", (_e, plugin: string) => {
+    const id = String(plugin);
+    const now = new Date().toISOString();
+    let skills = 0;
+    let commands = 0;
+    try {
+      for (const sk of scanSkillsDir(managedSkillsDir(agentDir()), "managed")) {
+        if (skillRegistry.record(sk.id)?.provenance?.plugin !== id) continue;
+        skillRegistry.setEnabled(sk.id, true, now);
+        skills++;
+      }
+      for (const c of scanPromptTemplatesDir(managedPromptTemplatesDir(agentDir()), "managed")) {
+        if (promptTemplateRegistry.record(c.id)?.provenance?.plugin !== id) continue;
+        promptTemplateRegistry.setEnabled(c.id, true, now);
+        commands++;
+      }
+      // Same follow-through as the install path, or the session keeps the old set.
+      if (skills > 0) { skillsChanged(); scheduleSkillReload("global", null); }
+      if (commands > 0) { promptTemplatesChanged(); schedulePromptTemplateReload("global", null); }
+      void log.append({ type: "plugin.enabled", data: { plugin: id, skills, commands } });
+      return { ok: true as const, skills, commands };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
   ipcMain.handle("hv:plugins-remove", (_e, plugin: string) => {
     const id = String(plugin);
     const now = new Date().toISOString();
