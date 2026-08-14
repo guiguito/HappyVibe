@@ -741,7 +741,7 @@ export function registerIpc(win: BrowserWindow): void {
     // this store, then delete the orphans nobody will ever migrate.
     try {
       const swept = await sweepLegacyCredentials(agentDir(), wanted, adapterStore);
-      if (swept.migrated || swept.deleted) {
+      if (swept.adopted || swept.discarded || swept.deleted) {
         void log.append({ type: "mcp.legacy_sweep", data: swept });
       }
     } catch (e) {

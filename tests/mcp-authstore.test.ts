@@ -100,6 +100,10 @@ describe("mcpAuthStore flow state", () => {
 });
 
 describe("sweepLegacyCredentials", () => {
+  const NOTION = [{ name: "notion", url: "https://mcp.notion.com/mcp" }];
+  const soon = Math.floor(Date.now() / 1000) + 3600;
+  const past = Math.floor(Date.now() / 1000) - 3600;
+
   it("deletes an orphan's plaintext credential", async () => {
     writeLegacyEntry(tmp, "gone-server", { tokens: { accessToken: "orphan-tok" } });
     const res = await sweepLegacyCredentials(tmp, [], noopStore());
@@ -107,35 +111,67 @@ describe("sweepLegacyCredentials", () => {
     expect(existsSync(serverDir(tmp, "gone-server"))).toBe(false);
   });
 
-  it("hands a CONFIGURED server to the adapter instead of deleting it", async () => {
-    writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "live-tok" } });
-    const migrated: string[] = [];
-    const res = await sweepLegacyCredentials(
-      tmp,
-      [{ name: "notion", url: "https://mcp.notion.com/mcp" }],
-      // A real migrate consumes the file; mimic that so `migrated` is counted.
-      noopStore({ migrate: async (names) => { migrated.push(...names); rmSync(serverDir(tmp, "notion"), { recursive: true, force: true }); } }),
-    );
-    expect(migrated).toEqual(["notion"]);
-    expect(res.migrated).toBe(1);
-    expect(res.deleted).toBe(0);
+  it("ADOPTS our copy when the adapter's is older — the case that loses a live credential", async () => {
+    // This is the real `miro`: an expired keychain copy beside a file main had
+    // just rewritten. Letting the adapter "migrate" would keep the dead one and
+    // silently delete the good one, so main decides instead.
+    writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "fresh-tok", expiresAt: soon } });
+    const writes: { name: string; url: string; tokens: { accessToken?: string } }[] = [];
+    const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
+      read: async () => ({ notion: { status: "present", tokens: { accessToken: "stale-tok", expiresAt: past } } }),
+      writeTokens: async (name, url, tokens) => { writes.push({ name, url, tokens }); },
+    }));
+    expect(writes).toHaveLength(1);
+    expect(writes[0].tokens.accessToken).toBe("fresh-tok");
+    expect(res.adopted).toBe(1);
+    expect(existsSync(legacyAuthEntryPath(tmp, "notion"))).toBe(false);
   });
 
-  it("deletes nothing when the credential store is unavailable", async () => {
+  it("adopts ours when the adapter has nothing at all", async () => {
+    writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "only-copy", expiresAt: soon } });
+    const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
+      read: async () => ({ notion: { status: "absent" } }),
+    }));
+    expect(res.adopted).toBe(1);
+  });
+
+  it("DISCARDS ours when the adapter's outlives it — it may have refreshed since", async () => {
+    writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "old-tok", expiresAt: past } });
+    const writes: unknown[] = [];
+    const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
+      read: async () => ({ notion: { status: "present", tokens: { accessToken: "newer-tok", expiresAt: soon } } }),
+      writeTokens: async (...a) => { writes.push(a); },
+    }));
+    expect(writes).toHaveLength(0);
+    expect(res).toMatchObject({ adopted: 0, discarded: 1 });
+    expect(existsSync(legacyAuthEntryPath(tmp, "notion"))).toBe(false);
+  });
+
+  it("touches nothing when the credential store is unavailable", async () => {
     // A store that cannot answer is not a licence to start removing the only
     // copy of someone's credentials.
     writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "live-tok" } });
     writeLegacyEntry(tmp, "gone-server", { tokens: { accessToken: "orphan-tok" } });
-    const res = await sweepLegacyCredentials(
-      tmp,
-      [{ name: "notion", url: "https://mcp.notion.com/mcp" }],
-      noopStore({ migrate: async () => { throw new Error("keyring locked"); } }),
-    );
-    expect(res).toEqual({ migrated: 0, deleted: 0 });
+    const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
+      read: async () => { throw new Error("keyring locked"); },
+    }));
+    expect(res).toEqual({ adopted: 0, discarded: 0, deleted: 0 });
+    expect(existsSync(legacyAuthEntryPath(tmp, "notion"))).toBe(true);
     expect(existsSync(legacyAuthEntryPath(tmp, "gone-server"))).toBe(true);
   });
 
+  it("keeps the file when adopting it fails, rather than losing it", async () => {
+    writeLegacyEntry(tmp, "notion", { tokens: { accessToken: "only-copy", expiresAt: soon } });
+    const res = await sweepLegacyCredentials(tmp, NOTION, noopStore({
+      read: async () => ({ notion: { status: "absent" } }),
+      writeTokens: async () => { throw new Error("keyring write failed"); },
+    }));
+    expect(res.adopted).toBe(0);
+    expect(existsSync(legacyAuthEntryPath(tmp, "notion"))).toBe(true);
+  });
+
   it("is a no-op when there is no mcp-oauth directory at all", async () => {
-    expect(await sweepLegacyCredentials(tmp, [], noopStore())).toEqual({ migrated: 0, deleted: 0 });
+    expect(await sweepLegacyCredentials(tmp, [], noopStore()))
+      .toEqual({ adopted: 0, discarded: 0, deleted: 0 });
   });
 });

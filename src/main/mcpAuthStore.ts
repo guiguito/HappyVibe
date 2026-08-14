@@ -19,7 +19,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import type { AdapterStore } from "./mcpAdapterStore.js";
+import type { AdapterStore, AdapterEntry } from "./mcpAdapterStore.js";
 
 /** Transient per-flow state. Deliberately NOT credential-shaped. */
 export interface FlowState {
@@ -75,49 +75,110 @@ export function clearFlowState(agentDir: string, name: string): void {
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
 }
 
+/** The legacy shape main used to write. Read only by the sweep below. */
+interface LegacyEntry {
+  tokens?: { accessToken?: string; refreshToken?: string; expiresAt?: number; scope?: string };
+  clientInfo?: { clientId: string; clientSecret?: string; redirectUris?: string[] };
+  serverUrl?: string;
+}
+
+function readLegacyEntry(agentDir: string, name: string): LegacyEntry | undefined {
+  try {
+    return JSON.parse(readFileSync(legacyAuthEntryPath(agentDir, name), "utf-8")) as LegacyEntry;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * One-time migration of the credentials main wrote before it stopped owning
  * this store.
  *
- * A CONFIGURED server is handed to the adapter first: a migrating read imports
- * its file into the keychain and deletes it, so no live credential is lost. An
- * ORPHAN — a server no longer in any mcp.json — is deleted outright: we cannot
- * know its URL, nothing reads it, and nobody will ever migrate it, so leaving a
- * plaintext credential on disk for a server the user believes they removed is
- * the worse of the two outcomes. (Found on a real install: a `canva` entry from
- * a server that had long since been deconfigured.)
+ * The obvious implementation — "ask the adapter to migrate, it knows how" — is
+ * WRONG, and destructively so. The adapter's migrating read returns the KEYCHAIN
+ * entry whenever one exists and deletes the legacy file **unread**
+ * (`readAuthEntryFromStore`: `if (payload !== undefined) { … removeLegacyAuthEntry(); return entry }`).
+ * On a real install that is exactly backwards: `miro` had an expired keychain
+ * copy from 4 August beside a file main had rewritten that morning, so migrating
+ * would have discarded the only usable credential and kept the dead one.
+ *
+ * So main compares the two itself and adopts its own only when it is strictly
+ * better, then removes the file either way. An ORPHAN — a server no longer in
+ * any mcp.json — is deleted outright: we cannot know its URL, nothing reads it,
+ * and nobody will ever migrate it, so leaving a plaintext credential on disk for
+ * a server the user believes they removed is the worse of the two outcomes.
+ * (Also real: a `canva` entry for a server deconfigured ten days earlier.)
  */
 export async function sweepLegacyCredentials(
   agentDir: string,
   configured: readonly { name: string; url: string }[],
   store: AdapterStore,
-): Promise<{ migrated: number; deleted: number }> {
+): Promise<{ adopted: number; discarded: number; deleted: number }> {
   const root = join(agentDir, "mcp-oauth");
-  if (!existsSync(root)) return { migrated: 0, deleted: 0 };
+  if (!existsSync(root)) return { adopted: 0, discarded: 0, deleted: 0 };
 
-  // Ask the adapter to MIGRATE every configured server that still has a file.
-  // A plain read would not do it — the read path is deliberately non-migrating,
-  // so that a status probe never consumes anything.
-  const before = configured.filter((s) => existsSync(legacyAuthEntryPath(agentDir, s.name)));
-  if (before.length) {
+  const withFile = configured.filter((s) => existsSync(legacyAuthEntryPath(agentDir, s.name)));
+  let adopted = 0;
+  let discarded = 0;
+
+  if (withFile.length) {
+    let current: Record<string, AdapterEntry>;
     try {
-      await store.migrate(before.map((s) => s.name));
+      current = await store.read(withFile);
     } catch {
-      // The store being unavailable is not a reason to start deleting files.
-      return { migrated: 0, deleted: 0 };
+      // A store that cannot answer is not a licence to delete the only copy.
+      return { adopted: 0, discarded: 0, deleted: 0 };
+    }
+
+    for (const s of withFile) {
+      const mine = readLegacyEntry(agentDir, s.name);
+      const entry = current[s.name];
+      const theirs = entry?.status === "present" ? entry.tokens : undefined;
+      // Adopt only when ours is genuinely better: they have nothing, or ours
+      // outlives theirs. A missing expiry on either side is not evidence, so it
+      // loses — the adapter may have refreshed silently and we would not know.
+      const better =
+        !!mine?.tokens?.accessToken &&
+        (!theirs?.accessToken ||
+          (mine.tokens.expiresAt !== undefined &&
+            theirs.expiresAt !== undefined &&
+            mine.tokens.expiresAt > theirs.expiresAt));
+      if (better && mine?.tokens?.accessToken) {
+        try {
+          if (mine.clientInfo) await store.writeClientInfo(s.name, s.url, mine.clientInfo);
+          await store.writeTokens(s.name, s.url, {
+            accessToken: mine.tokens.accessToken,
+            refreshToken: mine.tokens.refreshToken,
+            expiresAt: mine.tokens.expiresAt,
+            scope: mine.tokens.scope,
+          });
+          adopted++;
+        } catch {
+          continue; // leave the file rather than lose it to a failed write
+        }
+      } else if (mine?.tokens?.accessToken) {
+        discarded++;
+      }
+      clearLegacyFile(agentDir, s.name);
     }
   }
-  const migrated = before.filter((s) => !existsSync(legacyAuthEntryPath(agentDir, s.name))).length;
 
   const keep = new Set(configured.map((s) => serverDir(agentDir, s.name)));
   let deleted = 0;
   for (const entry of readdirSync(root)) {
     const dir = join(root, entry);
-    const legacy = join(dir, "tokens.json");
-    if (keep.has(dir) || !existsSync(legacy)) continue;
-    writeFileSync(legacy, "{}", { mode: 0o600 });
+    if (keep.has(dir) || !existsSync(join(dir, "tokens.json"))) continue;
+    writeFileSync(join(dir, "tokens.json"), "{}", { mode: 0o600 });
     rmSync(dir, { recursive: true, force: true });
     deleted++;
   }
-  return { migrated, deleted };
+  return { adopted, discarded, deleted };
+}
+
+/** Blank then unlink — never leave a readable credential behind on a partial failure. */
+function clearLegacyFile(agentDir: string, name: string): void {
+  const p = legacyAuthEntryPath(agentDir, name);
+  if (!existsSync(p)) return;
+  writeFileSync(p, "{}", { mode: 0o600 });
+  rmSync(p, { force: true });
 }
