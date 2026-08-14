@@ -554,6 +554,44 @@ view.webContents.setWindowOpenHandler(({ url }) => { this.navigate(id, url, "pag
 - [ ] **Step 4: GUI verification — the observable claims below, each on its named surface.**
 - [ ] **Step 5: Commit docs** `git commit -am "docs(browser): wire shapes and the gotchas that will bite"` — then stop for `/land`.
 
+## Implementation status (2026-08-15)
+
+**Built and green.** Tasks 1-9 landed in three commits; `npm run typecheck` clean
+(node + web), non-live suite **1626 passed / 20 skipped**, and the live-Pi
+`browser-bridge` file **3/3 against real DeepSeek** — localhost opens with no
+prompt, `example.com` prompts as `browser:example.com` with the URL as its
+summary, and the group toggle removes all ten tools.
+
+**Two decisions taken during the build, both recorded rather than assumed:**
+
+1. **The screenshot vision gate is real, not deferred.** Task 8 said to fact-check
+   whether an extension tool result can carry an image before building either
+   branch. It can: `AgentToolResult.content` is `(TextContent | ImageContent)[]`
+   (`pi-agent-core/dist/types.d.ts:316-320`). So `browser_screenshot` attaches the
+   PNG for a vision model and falls back to a text pointer otherwise — the user
+   sees it either way.
+2. **No `HV_MODEL_VISION` env var.** The plan proposed mirroring the capability
+   check into `spawn.ts`. Main already has the one function that knows which model
+   a session runs (`resolveSpawnModel`) and Pi's registry already reports `input`,
+   so the check resolves lazily in `ipc.ts` off the cached model list. A second
+   capability table would have been a second thing to be wrong — the exact failure
+   the model-resolution mirror comment warns about.
+
+**One pre-existing bug fixed on the way through** (it was in the way of §28's
+"prompts show the factual action" requirement, so it could not be left): the
+bridge's `summarize()` special-cased `bash`/`terminal_run` and JSON-stringified
+everything else *including* `intent`, so the permission modal's headline for
+`terminal_kill` and `subagent` was the model's own sentence. It now strips
+`intent` for every tool. Root cause, one place.
+
+**Deliberately not built** (recorded so nobody "fixes" them silently):
+a11y-tree `get_text` (innerText is enough and needs no CDP) · `webContents.debugger`
+for response bodies (attaching shows Chromium's warning banner and conflicts with
+DevTools) · a subresource-blocking egress tier (§28 records the limit it leaves) ·
+an element-screenshot picker payload (outerHTML + selector ships).
+
+---
+
 ## GUI verification — what must be TRUE on screen
 
 Every claim names its surface. Run with the dev server RESTARTED (main changed) and verify the built artifact first: `grep -c 'hv.browser-open' out/main/index.js` ≥ 1.

@@ -263,11 +263,12 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   list. `fontFamily` stores a family NAME; `normalizeFamily` in the merge is the whole migration
   from the old CSS-stack value, and `fontStack` appends `ui-monospace, monospace` so an uninstalled
   font degrades to a monospace rather than to a proportional one.
-- **`allFiles` (tabs.ts) means "not a chat AND not a terminal" — never loosen it to "not a chat".**
+- **`allFiles` (tabs.ts) means "not a chat, not a terminal AND not a browser" — never loosen it.**
   It feeds THREE consumers: the mounted `FileTab` list, the fs watch targets (`watchTargets.ts`),
   and §9's open-files block injected into the agent's context. When it meant merely "not a chat", a
   `:term:` tab reached all three and the model was told a file named `:term:t1` was open. Pinned by
-  `tests/tabs.test.ts`. Any FOURTH tab prefix must be excluded here in the same commit that adds it.
+  `tests/tabs.test.ts`. §28's `:browser:` was excluded in the commit that added it — do the same for
+  any FIFTH prefix, in the same commit, or all three consumers inherit the bug.
 - **Agent terminals (§26 part 2): three tools over ONE blocking envelope, and main owns every rule.**
   `terminal_run`/`terminal_read`/`terminal_kill` are thin shells over `ctx.ui.input`
   (`hv.terminal-*`, payload in **`title`**); `agentTerminals.ts` holds the session→terminal claims,
@@ -279,6 +280,36 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `source:"terminal"` envelope instead, or the test passes either way; and all three tools must be
   **named** in `SAFE_TOOLS`/`gatePlanCall` (`terminal_read` in `PLAN_PASS_TOOLS`, because the
   `floor-ask` default clamps allow→ask and would prompt on every poll). Wire shapes: d1.md.
+- **Embedded browser (§28): the egress gate is on the PARTITION, not on the tool call.**
+  `browser_navigate` gating alone is bypassable by the page — one `location.href` from injected JS
+  and the gated tool never ran. The enforcement point is
+  `session.fromPartition("persist:hv-browser").webRequest.onBeforeRequest` (`browsers.ts`), deciding
+  through the pure `EgressState` (`browserEgress.ts`). Main-frame navigations gate as the virtual
+  rule name **`browser:<host>`** (the `mcp:<server>_<tool>` trick, so it needs no new rule
+  machinery); subresources of an allowed page run silently but are all recorded for
+  `browser_read_network`; redirects inherit the approval that started them, or every IdP bounce
+  breaks. Three things bite: Electron **replaces** `onBeforeRequest` rather than stacking it, so it
+  is installed ONCE per partition with a `webContents.id → pane` map (per-pane installation silently
+  disarms every pane but the newest); `localhost` is an exact-hostname safe-default, because
+  `localhost.evil.com` is a real remote host; and `did-fail-load` reports **-3 (ERR_ABORTED)** for
+  every navigation the gate cancels, so painting "failed" on it would replace the actionable
+  `blocked` state (which offers Allow) with a generic one. Honest limit, stated in §28 and not to be
+  over-claimed: in-page `fetch` still reaches anything the page can — the headline is "only
+  NAVIGATES where you allow", which is why `browser_evaluate` carries its own stricter rule.
+- **A `WebContentsView` has no z-index relative to the DOM — hiding it IS the z-order.**
+  It composites over the whole renderer, so the permission modal would otherwise be asked for
+  *underneath* the page it is about. `BrowserTab.tsx` hides the view whenever
+  `document.querySelector(".hv-overlay")` matches (one MutationObserver on `document.body`) — every
+  Radix overlay in the app already carries that class, so a dialog added later inherits it for free.
+  Bounds are pushed from a measured placeholder; the guest has **no preload at all** (the agent
+  drives from main, outside the sandbox), which is also why the element picker is *injected* via
+  `executeJavaScript` rather than preloaded.
+- **A tool result CAN carry an image — measured, not assumed.** `AgentToolResult.content` is
+  `(TextContent | ImageContent)[]` (`pi-agent-core/dist/types.d.ts:316`), so `browser_screenshot`
+  hands a vision model the actual PNG. It is gated on the session model advertising
+  `input: ["image"]` in Pi's registry (resolved in `ipc.ts` off `resolveSpawnModel`, never a second
+  capability table); a non-vision session still gets a useful text result pointing at
+  `browser_get_text`, and **the user sees the screenshot either way** via the `hv.browser` notify.
 - **A live test failing "model never called X" is usually NOISE, not your change — and 5 trials
   cannot tell you which.** This entry used to claim §26's three terminal tools made the model stop
   calling `bash` (3/5 → 0/5). That was wrong. The comparison was five trials per cell run
