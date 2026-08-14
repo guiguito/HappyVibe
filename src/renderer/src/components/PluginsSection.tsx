@@ -441,26 +441,29 @@ export function PluginsSection(): React.JSX.Element {
             />
             <PickList
               title="Prompts"
-              note="Arrive switched OFF — enable them on the Prompts page, then type /name."
+              note="Arrive switched OFF — you can switch them on here once installed, then type /name."
               rows={scan.commands.map((c) => ({ id: c.file, label: `/${c.name}`, sub: c.description }))}
               chosen={chosen.commands}
               onToggle={(id) => toggle("commands", id)}
             />
             <PickList
               title="MCP servers"
-              note="Added to your global mcp.json but NOT connected — sign in on the MCP page. Removed with the plugin."
+              note="Added to your global mcp.json but NOT connected — you can connect (and sign in) here once installed. Removed with the plugin."
               rows={scan.mcpServers.map((k) => ({ id: k, label: k }))}
               chosen={chosen.servers}
               onToggle={(id) => toggle("servers", id)}
             />
 
-            {/* Said BEFORE the click, not only after: installing is not enabling,
-                and the follow-up is the user's. The success banner repeats it with
-                real counts. */}
+            {/* Said BEFORE the click, not only after: installing is not enabling.
+                The DISCLOSURE is load-bearing and stays (§25, 2026-08-04) — an
+                install must never be mistaken for activation. What changed in
+                round 12 is the second half: switching on is no longer a chore
+                on three other pages, it is the next thing this dialog offers,
+                so the sentence says that instead of handing the user a to-do. */}
             <p className="mt-4 rounded-lg border border-line bg-paper-soft/60 px-3 py-2 text-xs">
-              Installing copies these in and nothing more — <strong>skills and prompts arrive switched
-              off, and MCP servers arrive unconnected</strong>. Turning each one on, and signing in to
-              any server, is your move — offered here as soon as the install finishes.
+              Installing only copies things in — <strong>skills and prompts arrive switched off, and
+              MCP servers arrive unconnected</strong> — so nothing the agent can do changes yet. Then
+              this dialog offers to switch them on, in one click, without leaving the page.
             </p>
 
             <p className="mt-3 text-[11px] text-ink-soft">
