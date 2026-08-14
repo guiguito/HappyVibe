@@ -45,6 +45,61 @@ export function sortCards<T extends { name: string; brand?: string }>(cards: T[]
   );
 }
 
+/**
+ * §25 round 12 — the handover controls.
+ *
+ * Rendered in TWO places on purpose, and the reason is a defect I shipped
+ * first: the banner alone sits above the card grid, so after installing from a
+ * dialog it landed BELOW the fold (measured: banner 576→652 in a 638px
+ * viewport) — and further off-screen for anyone who had scrolled through 179
+ * cards to find the plugin. The actions were there and unseeable, which is
+ * §14 round 11's lesson exactly: a feature whose only output lands somewhere
+ * the user is not looking has not shipped.
+ *
+ * So the primary surface is now the dialog the click happened in; the banner
+ * keeps them for after it closes. One component, so the two cannot disagree.
+ */
+function Handover({
+  done,
+  enabling,
+  enabled,
+  connecting,
+  connected,
+  onEnable,
+  onConnect,
+}: {
+  done: { plugin: string; skills: string[]; commands: string[]; servers: string[] };
+  enabling: boolean;
+  enabled: { skills: number; commands: number } | null;
+  connecting: string | null;
+  connected: Set<string>;
+  onEnable: () => void;
+  onConnect: (name: string) => void;
+}): React.JSX.Element {
+  const btn = "rounded-lg border border-green-700/40 bg-white px-2.5 py-1 font-semibold hover:bg-green-100 disabled:opacity-50";
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {(done.skills.length > 0 || done.commands.length > 0) && (
+        <button disabled={enabling || enabled !== null} onClick={onEnable} className={btn}>
+          {enabling
+            ? "Enabling…"
+            : enabled
+              ? "Enabled"
+              : `Enable ${[
+                  done.skills.length ? plural(done.skills.length, "skill") : null,
+                  done.commands.length ? plural(done.commands.length, "prompt") : null,
+                ].filter(Boolean).join(" · ")}`}
+        </button>
+      )}
+      {done.servers.map((name) => (
+        <button key={name} disabled={connecting === name || connected.has(name)} onClick={() => onConnect(name)} className={btn}>
+          {connecting === name ? `Connecting ${name}…` : connected.has(name) ? `${name} connected` : `Connect ${name}`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function PluginsSection(): React.JSX.Element {
   const [cards, setCards] = useState<Card[]>([]);
   const [generatedAt, setGeneratedAt] = useState("");
@@ -153,7 +208,9 @@ export function PluginsSection(): React.JSX.Element {
           return;
         }
         setDone({ plugin: scan.name, skills: res.skills, commands: res.commands, servers: res.servers, substituted: res.substituted });
-        setScan(null);
+        // The dialog deliberately STAYS OPEN and turns into the handover: the
+        // banner alone rendered below the fold, so the actions existed and could
+        // not be seen. Closing is now the user's move, after enabling.
         refreshInstalled();
       });
   };
@@ -164,6 +221,27 @@ export function PluginsSection(): React.JSX.Element {
       setRemoving(null);
       refreshInstalled();
       if (!res.ok) setError(res.error);
+    });
+  };
+
+  const enableInstalled = (): void => {
+    if (!done?.plugin) return;
+    setEnabling(true);
+    void window.hv.pluginEnableInstalled(done.plugin).then((res) => {
+      setEnabling(false);
+      if (res.ok) setEnabled({ skills: res.skills, commands: res.commands });
+      else setError(res.error);
+    });
+  };
+
+  const connectServer = (name: string): void => {
+    setConnecting(name);
+    // The same flow the MCP page runs: probe, escalate to browser OAuth only on
+    // a genuine 401, then report the tools found.
+    void window.hv.mcpConnectFlow("global", null, name).then((res) => {
+      setConnecting(null);
+      if (res.ok) setConnected((p) => new Set(p).add(name));
+      else setError(`${name}: ${res.error}`);
     });
   };
 
@@ -250,55 +328,23 @@ export function PluginsSection(): React.JSX.Element {
               done.commands.length ? plural(done.commands.length, "prompt") : null,
               done.servers.length ? plural(done.servers.length, "MCP server") : null,
             ].filter(Boolean).join(" · ") || "nothing"}
-            . <strong>Nothing from it is active yet — that part is yours:</strong>
-          </p>
-          {/* §25 round 12: the handover ACTS here instead of naming three other
-              pages. The install still activates nothing on its own — this click
-              is the user's gesture, it has just stopped being a page hunt. */}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {(done.skills.length > 0 || done.commands.length > 0) && (
-              <button
-                disabled={enabling || enabled !== null}
-                onClick={() => {
-                  if (!done.plugin) return;
-                  setEnabling(true);
-                  void window.hv.pluginEnableInstalled(done.plugin).then((res) => {
-                    setEnabling(false);
-                    if (res.ok) setEnabled({ skills: res.skills, commands: res.commands });
-                    else setError(res.error);
-                  });
-                }}
-                className="rounded-lg border border-green-700/40 bg-white px-2.5 py-1 font-semibold hover:bg-green-100 disabled:opacity-50"
-              >
-                {enabling
-                  ? "Enabling…"
-                  : enabled
-                    ? "Enabled"
-                    : `Enable ${[
-                        done.skills.length ? plural(done.skills.length, "skill") : null,
-                        done.commands.length ? plural(done.commands.length, "prompt") : null,
-                      ].filter(Boolean).join(" · ")}`}
-              </button>
+            .{" "}
+            {enabled ? (
+              <strong>Active now.</strong>
+            ) : (
+              <strong>Nothing from it is active yet — that part is yours:</strong>
             )}
-            {done.servers.map((name) => (
-              <button
-                key={name}
-                disabled={connecting === name || connected.has(name)}
-                onClick={() => {
-                  setConnecting(name);
-                  // The same flow the MCP page runs: probe, escalate to browser
-                  // OAuth only on a genuine 401, then report the tools found.
-                  void window.hv.mcpConnectFlow("global", null, name).then((res) => {
-                    setConnecting(null);
-                    if (res.ok) setConnected((p) => new Set(p).add(name));
-                    else setError(`${name}: ${res.error}`);
-                  });
-                }}
-                className="rounded-lg border border-green-700/40 bg-white px-2.5 py-1 font-semibold hover:bg-green-100 disabled:opacity-50"
-              >
-                {connecting === name ? `Connecting ${name}…` : connected.has(name) ? `${name} connected` : `Connect ${name}`}
-              </button>
-            ))}
+          </p>
+          <div className="mt-2">
+            <Handover
+              done={done}
+              enabling={enabling}
+              enabled={enabled}
+              connecting={connecting}
+              connected={connected}
+              onEnable={enableInstalled}
+              onConnect={connectServer}
+            />
           </div>
           {enabled && (
             <p className="mt-1.5">
@@ -376,7 +422,7 @@ export function PluginsSection(): React.JSX.Element {
 
             <PickList
               title="Skills"
-              note="Arrive switched OFF — enable them on the Skills page."
+              note="Arrive switched OFF — you can switch them on here, right after installing."
               rows={scan.skills.map((s) => ({
                 id: s.dir,
                 label: s.name,
@@ -414,7 +460,7 @@ export function PluginsSection(): React.JSX.Element {
             <p className="mt-4 rounded-lg border border-line bg-paper-soft/60 px-3 py-2 text-xs">
               Installing copies these in and nothing more — <strong>skills and prompts arrive switched
               off, and MCP servers arrive unconnected</strong>. Turning each one on, and signing in to
-              any server, is up to you afterwards.
+              any server, is your move — offered here as soon as the install finishes.
             </p>
 
             <p className="mt-3 text-[11px] text-ink-soft">
@@ -427,21 +473,61 @@ export function PluginsSection(): React.JSX.Element {
               <p className="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
             )}
 
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={() => { setScan(null); setError(null); }}
-                className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold hover:bg-paper-soft"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={installing || totalChosen === 0}
-                onClick={install}
-                className="rounded-lg bg-ink px-3 py-1.5 text-sm font-semibold text-paper disabled:opacity-50"
-              >
-                {installing ? "Installing…" : `Install ${plural(totalChosen, "item")}`}
-              </button>
-            </div>
+            {/* Installed: this dialog BECOMES the handover rather than closing and
+                leaving a banner the user has to find. Same controls, same calls. */}
+            {done?.plugin === scan.name ? (
+              <div className="mt-5 rounded-lg border border-green-300 bg-green-50 px-3 py-2.5 text-sm text-green-900">
+                <p>
+                  Installed{" "}
+                  {[
+                    done.skills.length ? plural(done.skills.length, "skill") : null,
+                    done.commands.length ? plural(done.commands.length, "prompt") : null,
+                    done.servers.length ? plural(done.servers.length, "MCP server") : null,
+                  ].filter(Boolean).join(" · ") || "nothing"}
+                  .{" "}
+                  {enabled ? (
+                    <strong>Active now.</strong>
+                  ) : (
+                    <strong>Nothing from it is active yet — one click does it:</strong>
+                  )}
+                </p>
+                <div className="mt-2">
+                  <Handover
+                    done={done}
+                    enabling={enabling}
+                    enabled={enabled}
+                    connecting={connecting}
+                    connected={connected}
+                    onEnable={enableInstalled}
+                    onConnect={connectServer}
+                  />
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <button
+                    onClick={() => { setScan(null); setError(null); }}
+                    className="rounded-lg border border-green-700/40 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-green-100"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  onClick={() => { setScan(null); setError(null); }}
+                  className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold hover:bg-paper-soft"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={installing || totalChosen === 0}
+                  onClick={install}
+                  className="rounded-lg bg-ink px-3 py-1.5 text-sm font-semibold text-paper disabled:opacity-50"
+                >
+                  {installing ? "Installing…" : `Install ${plural(totalChosen, "item")}`}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
