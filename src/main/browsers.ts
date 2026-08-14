@@ -166,10 +166,18 @@ export class BrowserManager {
     });
     wc.on("page-title-updated", (_e, title) => this.patch(id, { title }));
     wc.on("did-fail-load", (_e, code, desc, url, isMainFrame) => {
-      // -3 is ERR_ABORTED: what a cancelled navigation reports, including every
-      // one the egress gate refuses. Painting "failed" over "blocked" would
-      // replace the actionable state with a generic one.
-      if (!isMainFrame || code === -3) return;
+      // A navigation the egress gate cancelled arrives here too, and painting
+      // "failed" over "blocked" would swap the one actionable state (which
+      // offers "Allow <host>") for a dead end that says "Try again" about a
+      // page we will refuse again.
+      //
+      // MEASURED, because guessing cost a round of this: a webRequest-cancelled
+      // MAIN FRAME reports ERR_BLOCKED_BY_CLIENT (**-20**), not ERR_ABORTED
+      // (-3). -3 is what an ordinary interrupted navigation gives. Both are
+      // skipped, and the state check is the real guard — it holds whatever code
+      // a future Chromium picks.
+      if (!isMainFrame || code === -3 || code === -20) return;
+      if (entry.info.state === "blocked") return;
       this.patch(id, { state: "failed", error: `${desc} (${code})`, url });
     });
     wc.on("render-process-gone", () => this.patch(id, { state: "crashed" }));

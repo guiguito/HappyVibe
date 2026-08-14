@@ -291,9 +291,11 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   breaks. Three things bite: Electron **replaces** `onBeforeRequest` rather than stacking it, so it
   is installed ONCE per partition with a `webContents.id → pane` map (per-pane installation silently
   disarms every pane but the newest); `localhost` is an exact-hostname safe-default, because
-  `localhost.evil.com` is a real remote host; and `did-fail-load` reports **-3 (ERR_ABORTED)** for
-  every navigation the gate cancels, so painting "failed" on it would replace the actionable
-  `blocked` state (which offers Allow) with a generic one. Honest limit, stated in §28 and not to be
+  `localhost.evil.com` is a real remote host; and a gate-cancelled main frame reports
+  **ERR_BLOCKED_BY_CLIENT (-20)**, NOT ERR_ABORTED (-3) — measured in the running app, after
+  guessing -3 shipped a pane that said "Try again" where it should have said "Allow example.org".
+  `did-fail-load` skips both codes AND re-checks `state === "blocked"`, because the state is the
+  guard that survives whatever code a future Chromium picks. Honest limit, stated in §28 and not to be
   over-claimed: in-page `fetch` still reaches anything the page can — the headline is "only
   NAVIGATES where you allow", which is why `browser_evaluate` carries its own stricter rule.
 - **A `WebContentsView` has no z-index relative to the DOM — hiding it IS the z-order.**
