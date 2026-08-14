@@ -95,13 +95,6 @@ describe("pi-subagents active-run inventory contract", () => {
       steps: [{ index: 0, agent: "researcher", status: "pending" }],
     }));
 
-    // 0.49.0 stopped scanning the runs directory for active-state queries and
-    // reads an INDEX instead: marker files under `<root>/.active-runs/<runId>`,
-    // maintained by pi-subagents as runs start and finish. The fixture must
-    // therefore register itself, exactly as a real run does.
-    mkdirSync(path.join(root, ".active-runs"), { recursive: true });
-    writeFileSync(path.join(root, ".active-runs", runId), "");
-
     // Called exactly as the bridge calls it (happyvibe-bridge.ts /hv-subagent-list).
     const runs = listAsyncRuns(root, { states: ["queued", "running"], sessionId: "session-under-test" });
     expect(runs).toHaveLength(1);
@@ -114,14 +107,13 @@ describe("pi-subagents active-run inventory contract", () => {
     expect(listAsyncRuns(root, { states: ["complete"], sessionId: "session-under-test" })).toHaveLength(0);
   });
 
-  it("an active run with NO index marker is invisible — the 0.40→0.49 upgrade hole", () => {
-    // Documented in code rather than only in prose, because it is the one place
-    // the index change can still bite a user. `readActiveRunIndex` returns
-    // undefined when `.active-runs/` is absent and listAsyncRuns coalesces that
-    // to [] with NO fallback to scanning — so a detached run started under
-    // 0.40.0 (which wrote no marker) and surviving a parent respawn into 0.49.0
-    // keeps running while /hv-subagent-list reports nothing and its card
-    // disappears. One-time, and it self-heals for every run started afterwards.
+  it("finds an active run WITHOUT any index — pins the 0.40 scan that 0.49 replaces", () => {
+    // pi-subagents 0.49.0 stops scanning for active-state queries (the exact
+    // shape /hv-subagent-list uses) and reads `.active-runs/<runId>` markers
+    // instead, with NO fallback when that index is absent. We are deliberately
+    // held at 0.40.0 — see the caveats page — and this case is what will go red
+    // when the pin finally moves, which is the reminder that a detached run
+    // started before the upgrade keeps running with its card gone.
     const root = mkdtempSync(path.join(os.tmpdir(), "hv-async-noindex-"));
     const runId = "run-without-marker";
     const dir = path.join(root, runId);
@@ -130,13 +122,7 @@ describe("pi-subagents active-run inventory contract", () => {
       runId, sessionId: "s", state: "running", mode: "single",
       startedAt: 1, lastUpdate: 1, steps: [{ index: 0, agent: "researcher", status: "running" }],
     }));
-
-    // Active-state query: index path, run invisible.
-    expect(listAsyncRuns(root, { states: ["queued", "running"], sessionId: "s" })).toHaveLength(0);
-    // A query that is NOT active-only still scans, which is how it can be found
-    // at all — if this ever also returns 0, the run is unreachable and the
-    // upgrade hole stops being one-time.
-    expect(listAsyncRuns(root, { states: ["running", "complete"], sessionId: "s" })).toHaveLength(1);
+    expect(listAsyncRuns(root, { states: ["queued", "running"], sessionId: "s" })).toHaveLength(1);
   });
 
   it("returns empty rather than throwing when the runs root does not exist", () => {

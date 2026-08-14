@@ -31,7 +31,11 @@
 - the bundle exports all three subpath functions, and a token written at one URL reads back `present` there and `absent` at another — the URL binding main's status answer rests on;
 - **esbuild dedupes the two import routes into one module instance.** The entry imports `mcp-auth.ts` twice — once transitively via the bare `pi-mcp-adapter/oauth` specifier, once by relative path for `updateClientInfo` / `removeAuthEntry`. Proven shared: a write through the subpath is visible to the relative import's store accessor, and a `removeAuthEntry` through the relative import makes the subpath's `inspect` report `absent`. Had they split, the memory store would have split with them and every sidecar test would have lied.
 
-**Worktree state.** Neither `node_modules` existed here; both trees installed at the pre-bump pins so Task 0 could be measured on today's build.
+**Worktree state.** Neither `node_modules` existed here; both trees installed at the pre-bump pins so Task 0 could be measured on today's build. `.env` copied from the primary checkout (gitignored) — without it all 14 live tests skip silently.
+
+**Task 2 — done, with one pin dropped from the bump.** Shipped: `pi-coding-agent` **0.84.2**, `pi-mcp-adapter` **2.25.0**, root `yaml` **2.9.0**; `typebox` stays 1.3.7 (what Pi 0.84.2 declares). **`pi-subagents` is HELD at 0.40.0**: 0.49.0 replaces delegation with a supervisor/"mission" model and took four live tests red in 4–8 s — the child's answer stops reaching main context (`Run fan-out: 0/64 used, 64 remaining…`), `partialResult.details.results[]` is empty, the foreground stops streaming the child transcript, and the bridge's relayed lifecycle events lose their `runId`. Its peer is `pi-ai >=0.80.0`, so holding it costs nothing and keeps the subagent rework as its own pass. Re-running the four files with only that pin reverted: **all green**. Caveats page: "Pi runtime bump 0.83 → 0.84.2 — caveats" (`3bcd33dfffca818a8c82f69d74700910`).
+
+Two further findings from Task 2, both fixed here: the contract test pinned the *spelling* of pi-subagents' `agent_end` drain guard and went red on a pure rewrite (it now asserts the semantics, so it survives both pins); and **`npm run live:why` never fired for the pin bump at all** — it watched `pi-runtime/extensions/` but not the manifest, so the one change that swaps the Pi binary under every live test claimed no live run was needed. It watches `pi-runtime/package(-lock)?.json` now.
 
 ---
 
