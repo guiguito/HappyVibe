@@ -95,6 +95,13 @@ describe("pi-subagents active-run inventory contract", () => {
       steps: [{ index: 0, agent: "researcher", status: "pending" }],
     }));
 
+    // 0.49.0 stopped scanning the runs directory for active-state queries and
+    // reads an INDEX instead: marker files under `<root>/.active-runs/<runId>`,
+    // maintained by pi-subagents as runs start and finish. The fixture must
+    // therefore register itself, exactly as a real run does.
+    mkdirSync(path.join(root, ".active-runs"), { recursive: true });
+    writeFileSync(path.join(root, ".active-runs", runId), "");
+
     // Called exactly as the bridge calls it (happyvibe-bridge.ts /hv-subagent-list).
     const runs = listAsyncRuns(root, { states: ["queued", "running"], sessionId: "session-under-test" });
     expect(runs).toHaveLength(1);
@@ -105,6 +112,31 @@ describe("pi-subagents active-run inventory contract", () => {
     // The filters the bridge relies on must actually filter.
     expect(listAsyncRuns(root, { states: ["queued"], sessionId: "another-session" })).toHaveLength(0);
     expect(listAsyncRuns(root, { states: ["complete"], sessionId: "session-under-test" })).toHaveLength(0);
+  });
+
+  it("an active run with NO index marker is invisible — the 0.40→0.49 upgrade hole", () => {
+    // Documented in code rather than only in prose, because it is the one place
+    // the index change can still bite a user. `readActiveRunIndex` returns
+    // undefined when `.active-runs/` is absent and listAsyncRuns coalesces that
+    // to [] with NO fallback to scanning — so a detached run started under
+    // 0.40.0 (which wrote no marker) and surviving a parent respawn into 0.49.0
+    // keeps running while /hv-subagent-list reports nothing and its card
+    // disappears. One-time, and it self-heals for every run started afterwards.
+    const root = mkdtempSync(path.join(os.tmpdir(), "hv-async-noindex-"));
+    const runId = "run-without-marker";
+    const dir = path.join(root, runId);
+    mkdirSync(dir);
+    writeFileSync(path.join(dir, "status.json"), JSON.stringify({
+      runId, sessionId: "s", state: "running", mode: "single",
+      startedAt: 1, lastUpdate: 1, steps: [{ index: 0, agent: "researcher", status: "running" }],
+    }));
+
+    // Active-state query: index path, run invisible.
+    expect(listAsyncRuns(root, { states: ["queued", "running"], sessionId: "s" })).toHaveLength(0);
+    // A query that is NOT active-only still scans, which is how it can be found
+    // at all — if this ever also returns 0, the run is unreachable and the
+    // upgrade hole stops being one-time.
+    expect(listAsyncRuns(root, { states: ["running", "complete"], sessionId: "s" })).toHaveLength(1);
   });
 
   it("returns empty rather than throwing when the runs root does not exist", () => {
@@ -275,9 +307,21 @@ describe("RPC mode is UI-ful, which is what disarms the headless auto-drain", ()
 
   it("pi-subagents still gates its drain on hasUI (rather than on the mode)", () => {
     const src = readVendored("pi-subagents", "src", "extension", "index.ts");
-    // Anchor on the drain call site: the guard must remain a hasUI early-return.
-    const hook = /pi\.on\("agent_end",[\s\S]{0,200}?if \(ctx\.hasUI\) return;[\s\S]{0,120}?drainOutstandingWork/;
-    expect(src).toMatch(hook);
+    const handler = src.match(/pi\.on\("agent_end",[\s\S]{0,600}/)?.[0] ?? "";
+    expect(handler).toContain("drainOutstandingWork");
+
+    // Assert the SEMANTICS, not one spelling. This test previously pinned
+    // 0.40's `if (ctx.hasUI) return; … drain(…)` literally and went red on the
+    // 0.49 bump, which had merely rewritten it as `if (!ctx.hasUI) await
+    // drain(…)` — identical meaning. A guard that must be matched by shape is
+    // a guard that cries wolf; what must not change is that the drain is
+    // reachable ONLY when there is no UI (in RPC, hasUI is TRUE, which is the
+    // whole reason PRD §12's "never block on a delegation" survives).
+    const guarded =
+      /if \(ctx\.hasUI\) return;[\s\S]{0,160}?drainOutstandingWork/.test(handler) ||
+      /if \(!ctx\.hasUI\)[\s\S]{0,60}?drainOutstandingWork/.test(handler);
+    expect(guarded).toBe(true);
+
     // And the function is genuinely blocking, so the guard is load-bearing.
     expect(typeof drainOutstandingWork).toBe("function");
   });
