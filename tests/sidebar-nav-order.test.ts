@@ -23,9 +23,11 @@ describe("settings nav order", () => {
       "sysprompt",
       "terminal",
       "voice",
+      // Editable bindings are configuration, so this closes that block rather
+      // than trailing the read-only reports.
+      "shortcuts",
       "stats",
       "audit",
-      "shortcuts",
     ]);
   });
 

@@ -191,10 +191,13 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon },
   { view: "terminal", label: "Terminal", Icon: TerminalIcon },
   { view: "voice", label: "Voice", Icon: VoiceIcon },
+  // Shortcuts closes the configuration block rather than trailing the reports:
+  // since round 8 the bindings are EDITABLE, so it is a settings page, not a
+  // reference table.
+  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
   // Consulted, not changed.
   { view: "stats", label: "Stats", Icon: StatsIcon },
   { view: "audit", label: "Audit log", Icon: AuditIcon },
-  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
 ];
 
 /** Round 8: the collapse affordance — an actual chevron rather than a 10px
@@ -446,6 +449,10 @@ export function Sidebar({
     localStorage.setItem("hv:sidebar-split", writeSplit(treeFrac));
   }, [treeFrac]);
 
+  // The split only exists while the group is open: a dragged height with the
+  // group collapsed is a division of nothing.
+  const sized = settingsOpen && treeFrac !== AUTO;
+
   const startResize = (e: React.MouseEvent): void => {
     e.preventDefault(); // else the drag selects sidebar text
     const startY = e.clientY;
@@ -553,11 +560,14 @@ export function Sidebar({
         />
       </div>
 
-      {/* Workspace tree. Round 11: an explicit height when the user has dragged
-          the handle, otherwise `flex-1` as before. */}
+      {/* Workspace tree. An explicit height ONLY while the Settings group is open
+          and the user has dragged the handle. Collapsed, the split has nothing to
+          divide — keeping the dragged height there left the session list clipped
+          mid-row with dead pegboard beneath it, which is the whole reason to
+          collapse the group in the first place. */}
       <div
         ref={treeRef}
-        style={treeFrac !== AUTO ? { flex: "0 0 auto", height: `${treeFrac * 100}%` } : undefined}
+        style={sized ? { flex: "0 0 auto", height: `${treeFrac * 100}%` } : undefined}
         className="flex-1 min-h-32 overflow-y-auto px-4 pb-2"
       >
         <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
@@ -685,8 +695,8 @@ export function Sidebar({
           The same rule is what pins the collapsed `Settings ›` row to the very
           bottom, with no extra case. */}
       <div
-        className={`px-4 pt-4 border-t-2 border-line min-h-0 max-h-[60%] flex flex-col ${
-          settingsOpen ? "" : "mt-auto"
+        className={`px-4 py-4 border-t-2 border-line min-h-0 flex flex-col ${
+          sized ? "flex-1" : "max-h-[60%] mt-auto"
         }`}
       >
         <button
