@@ -8,7 +8,7 @@
  * guard — a placeholder that comes back somewhere new is exactly the failure
  * this round existed to fix, and it cannot be caught by rendering one component.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
@@ -16,13 +16,15 @@ const raw = (rel: string): string => readFileSync(join(__dirname, "..", rel), "u
 
 /** Comments explain the traps ("an <img> would be blank"), so asserting over
  *  them makes a file fail for describing the thing it avoids. Assert on code. */
-const src = (rel: string): string =>
-  raw(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const strip = (text: string): string =>
+  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const src = (rel: string): string => strip(raw(rel));
 
 const LOGO = "src/renderer/src/components/BrandLogo.tsx";
 const SITES = [
   "src/renderer/src/components/Sidebar.tsx", // header AND collapsed rail
   "src/renderer/src/components/ModelsView.tsx", // first run
+  "src/renderer/src/components/Transcript.tsx", // the empty-chat state
 ];
 
 describe("brand mark", () => {
@@ -53,12 +55,22 @@ describe("brand mark", () => {
     }
   });
 
-  test("no `hv` wordmark survives anywhere in the renderer", () => {
-    // The collapsed rail is the one people forget — it needs ⌘B to even see.
-    const offenders: string[] = [];
-    for (const site of SITES) {
-      if (/>\s*hv\s*</i.test(src(site))) offenders.push(site);
-    }
-    expect(offenders).toEqual([]);
+  test("no `hv` wordmark survives ANYWHERE in the renderer", () => {
+    // This test used to walk only the files already fixed, and a FOURTH
+    // placeholder survived it — the empty-chat state ("Ready when you are."),
+    // reported from a screenshot after the round shipped. An absence assertion
+    // scoped to the places you already looked cannot find the place you didn't,
+    // so this walks the whole renderer tree instead.
+    const dir = join(__dirname, "..", "src/renderer/src");
+    const walk = (d: string, out: string[] = []): string[] => {
+      for (const name of readdirSync(d)) {
+        const p = join(d, name);
+        if (statSync(p).isDirectory()) walk(p, out);
+        else if (/\.tsx?$/.test(name)) out.push(p);
+      }
+      return out;
+    };
+    const offenders = walk(dir).filter((f) => />\s*hv\s*</i.test(strip(readFileSync(f, "utf8"))));
+    expect(offenders.map((f) => f.split("/src/renderer/src/")[1])).toEqual([]);
   });
 });

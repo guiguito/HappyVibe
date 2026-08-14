@@ -5,6 +5,7 @@ import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
 import { PlanCard, type PlanCardData } from "./PlanCard";
 import { splitMentionSegments, stripInjectedBlocks } from "../mentions";
 import { ZoomableImage } from "./ZoomableImage";
+import { BrandLogo } from "./BrandLogo";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -437,9 +438,8 @@ export function Transcript({
     return (
       <div className="flex-1 flex items-center justify-center px-8">
         <div className="text-center max-w-sm">
-          <div className="mx-auto mb-4 size-14 rounded-2xl bg-honey border-2 border-ink/80 shadow-pop rotate-3 flex items-center justify-center">
-            <span className="text-2xl font-black text-ink -rotate-3">hv</span>
-          </div>
+          {/* §20 round 12: the mark, not an `hv` stand-in. */}
+          <BrandLogo size="lg" className="mx-auto mb-4" />
           <p className="font-bold text-lg">Ready when you are.</p>
           <p className="text-sm text-ink-soft mt-1">
             Ask for a change and the agent gets to work. Anything risky knocks first.
