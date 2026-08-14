@@ -34,6 +34,17 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   (use `xargs` — zsh does NOT word-split `$(…)`, so `npx vitest run $files` passes all 14
   paths as ONE argument and vitest reports "No test files found" while echoing the filter list.)
   (`skills-contract`/`builtins-contract` also spawn Pi but with a dummy key — key-free, they stay in the non-live run.)
+- **Background the live batch, not the fast one.** `test:live` is ~6 min and blocks, so run it
+  with Bash `run_in_background: true` and keep working — the harness re-invokes on exit with the
+  raw output. **Only alongside work that does not touch the tree**: docs, docs/prd.md, Notion,
+  reading, review. `vitest run` collects files as it goes and the live files spawn real Pi
+  children against `pi-runtime/`, so a mid-run edit to `pi-runtime/` or `src/` yields a result for
+  a tree that never existed — wait, or discard and re-run. `npm test` (~25-40 s) is NOT worth
+  backgrounding; the context switch costs more than the wait. Do NOT delegate a test run to a
+  subagent: measured across 153 sessions / 781 runs, the median run returns 244 chars (~61 tokens)
+  and 1.27% of all tool output, so there is no context to save — and one agent spawn costs ~45k
+  tokens, i.e. 67% of what every test run in this repo's history cost combined, to hand back a
+  paraphrase of the stack trace you needed verbatim.
 - Non-live suite = `npm test` (= `DEEPSEEK_API_KEY=sk-REPLACE vitest run`). No exclude list:
   every live file computes `KEY` as undefined when the key starts `sk-REPLACE`, and their inline
   `.env` loader only fills vars that are UNSET — so the shell value wins and all 14 skip
@@ -46,7 +57,10 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
 - **NEVER pipe a test run to `tail`/`grep`.** Two bugs in one habit: `| tail` returns *tail's*
   exit code, so a red suite reads green; and the output is gone, so looking at a different slice
-  costs a whole re-run. This was the single largest time sink in this repo's history —
+  costs a whole re-run. Those two are the WHOLE case — redirecting saves no tokens, measured:
+  across 153 sessions the 95 redirected runs median 242 chars vs 244 for straight-to-stdout.
+  Redirect for the exit code and the free re-grep, never to trim output. This was the single
+  largest time sink in this repo's history —
   `rules-bridge.test.ts` was run 5× in one session at ~137 s each, differing only in
   `| grep -E` vs `| sed -n` vs `--reporter=verbose | tail -40`. Redirect once, then grep for free:
   ```
