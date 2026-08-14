@@ -2126,8 +2126,18 @@ export function registerIpc(win: BrowserWindow): void {
   });
   ipcMain.handle("hv:voice-open-mic-settings", () => {
     if (process.platform !== "darwin") return;
+    // The pane identifier changed with System Settings (macOS 13+), and the old
+    // one FAILS SOFTLY: `com.apple.preference.security` still launches Settings
+    // but the ?Privacy_Microphone anchor is dropped, so you land on the Privacy
+    // & Security overview — a page with no app list on it at all. The user reads
+    // that as "the app is not in the list" and there is nothing to grant.
+    // The ExtensionKit id is the one that actually scrolls to Microphone:
+    //   /System/Library/ExtensionKit/Extensions/SecurityPrivacyExtension.appex
+    const modern = Number(process.getSystemVersion().split(".")[0]) >= 13;
     void shell.openExternal(
-      "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+      modern
+        ? "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone"
+        : "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
     );
   });
   ipcMain.handle("hv:voice-transcribe", async (_e, pcm: Int16Array) => {
