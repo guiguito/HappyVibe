@@ -255,6 +255,31 @@ export function parseTerminalEvent(r: { method?: string; message?: string }): Te
   }
 }
 
+/** §28: the agent opened, navigated, acted in or closed its browser pane. */
+export interface BrowserEvent {
+  stage: "opened" | "navigated" | "acted" | "screenshot" | "closed";
+  browserId?: string;
+  url?: string;
+  intent?: string;
+  workspaceId?: string;
+  /** stage "acted": which of click/type/evaluate, and on what. */
+  action?: "click" | "type" | "evaluate";
+  detail?: string;
+  /** stage "screenshot": the PNG the USER sees, whatever the model can read. */
+  dataUrl?: string;
+}
+
+export function parseBrowserEvent(r: { method?: string; message?: string }): BrowserEvent | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "") as { kind?: string; stage?: string };
+    if (p.kind !== "hv.browser" || typeof p.stage !== "string") return null;
+    return p as unknown as BrowserEvent;
+  } catch {
+    return null;
+  }
+}
+
 export function parseSubagentEvent(r: { method?: string; message?: string }): SubagentEvent | null {
   if (r.method !== "notify") return null;
   try {

@@ -32,6 +32,20 @@ interface HvVoiceSettings {
   holdThresholdMs: number;
   maxRecordingMs: number;
 }
+/** §28. Mirrors BrowserInfo in src/main/browsers.ts (separate tsconfig roots). */
+interface HvBrowserInfo {
+  id: string;
+  workspaceId: string;
+  url: string;
+  title: string;
+  /** "blocked" carries blockedHost; "failed" carries error. Never a blank pane. */
+  state: "loading" | "ready" | "failed" | "blocked" | "crashed";
+  blockedHost?: string;
+  error?: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+}
+
 /** §26. Mirrors TerminalSettings in src/main/terminalSettings.ts. */
 interface HvTerminalSettings {
   style: "workshop" | "paper" | "carbon";
@@ -583,8 +597,8 @@ interface HvApi {
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
   // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
-  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean }>;
-  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }): Promise<void>;
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
 
@@ -620,6 +634,29 @@ interface HvApi {
   onTermData(cb: (p: { id: string; data: string }) => void): () => void;
   onTermExit(cb: (p: { id: string; code: number }) => void): () => void;
   onTermTitle(cb: (p: { id: string; title: string }) => void): () => void;
+  // §28 Embedded browser. Panes are owned by main (they outlive a reload); the
+  // renderer measures a placeholder and main moves the composited view.
+  browserCreate(workspaceId: string): Promise<HvBrowserInfo>;
+  browserBounds(id: string, b: { x: number; y: number; width: number; height: number }): Promise<void>;
+  /** Hiding is how the permission modal wins z-order over a composited view. */
+  browserVisible(id: string, visible: boolean): Promise<void>;
+  /** User-initiated: typing a URL IS consent (§28), so this never prompts. */
+  browserNavigate(id: string, url: string): Promise<void>;
+  /** The Allow button on a pane the egress gate refused. */
+  browserAllowBlocked(id: string): Promise<void>;
+  browserBack(id: string): Promise<void>;
+  browserForward(id: string): Promise<void>;
+  browserReload(id: string): Promise<void>;
+  browserClose(id: string): Promise<void>;
+  browserList(workspaceId?: string): Promise<HvBrowserInfo[]>;
+  browserGet(id: string): Promise<HvBrowserInfo | null>;
+  /** What makes the persistent partition reversible (All Tools → Browser). */
+  browserClearData(): Promise<void>;
+  /** §28 picker: resolves with the element the user clicked, or null if cancelled. */
+  browserPick(id: string): Promise<{ selector: string; outerHTML: string; label: string } | null>;
+  browserPickCancel(id: string): Promise<void>;
+  onBrowserState(cb: (info: HvBrowserInfo) => void): () => void;
+  onBrowserClosed(cb: (p: { id: string }) => void): () => void;
   getTerminalSettings(): Promise<HvTerminalSettings>;
   setTerminalSettings(s: Partial<HvTerminalSettings>): Promise<HvTerminalSettings>;
   /** §26: the centre-area tab layout, stored opaquely — the renderer validates

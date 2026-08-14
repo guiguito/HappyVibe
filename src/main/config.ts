@@ -39,7 +39,7 @@ interface ConfigFile {
   /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user,
       and §26's grouped Terminal entry). Global only — no per-workspace tier.
       Absent key = on (fail-open default). */
-  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean };
+  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean };
   /** Extended prompt-cache retention (PI_CACHE_RETENTION=long). Global only,
       absent = off — the default is cheaper for short-gap sessions, see
       getLongCache. */
@@ -273,7 +273,7 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
 
 // §13 round 6: global on/off for built-in custom tools. Both default true
 // (fail-open — same convention as HV_BYPASS's persistent setting).
-export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean } {
+export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean } {
   const t = load().builtinTools;
   const plan = t?.plan ?? true;
   // Plan mode's prompt and its applyPlanTools required-list both depend on
@@ -285,10 +285,12 @@ export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend
   // §13 round 12: `intent` is a cost/taste switch with no coupling — the
   // permission prompt never showed the model's sentence, so nothing safety-
   // bearing depends on it.
-  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true };
+  // §28's browser group has no coupling either — ten tools that depend on each
+  // other and on nothing else, which is why they are one entry.
+  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true };
 }
 
-export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }): void {
+export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean }): void {
   const cfg = load();
   cfg.builtinTools = { ...cfg.builtinTools, ...t };
   save(cfg);

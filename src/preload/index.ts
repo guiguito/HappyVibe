@@ -257,6 +257,33 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:term-title", h);
     return () => ipcRenderer.removeListener("hv:term-title", h);
   },
+  // §28 Embedded browser. Bounds/visibility are the price of WebContentsView:
+  // the view composites over the DOM, so the renderer measures and main moves.
+  browserCreate: (workspaceId: string) => ipcRenderer.invoke("hv:browser-create", workspaceId),
+  browserBounds: (id: string, b: { x: number; y: number; width: number; height: number }) =>
+    ipcRenderer.invoke("hv:browser-bounds", id, b),
+  browserVisible: (id: string, visible: boolean) => ipcRenderer.invoke("hv:browser-visible", id, visible),
+  browserNavigate: (id: string, url: string) => ipcRenderer.invoke("hv:browser-navigate", id, url),
+  browserAllowBlocked: (id: string) => ipcRenderer.invoke("hv:browser-allow-blocked", id),
+  browserBack: (id: string) => ipcRenderer.invoke("hv:browser-back", id),
+  browserForward: (id: string) => ipcRenderer.invoke("hv:browser-forward", id),
+  browserReload: (id: string) => ipcRenderer.invoke("hv:browser-reload", id),
+  browserClose: (id: string) => ipcRenderer.invoke("hv:browser-close", id),
+  browserList: (workspaceId?: string) => ipcRenderer.invoke("hv:browser-list", workspaceId),
+  browserGet: (id: string) => ipcRenderer.invoke("hv:browser-get", id),
+  browserClearData: () => ipcRenderer.invoke("hv:browser-clear-data"),
+  browserPick: (id: string) => ipcRenderer.invoke("hv:browser-pick", id),
+  browserPickCancel: (id: string) => ipcRenderer.invoke("hv:browser-pick-cancel", id),
+  onBrowserState: (cb: (info: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p);
+    ipcRenderer.on("hv:browser-state", h);
+    return () => ipcRenderer.removeListener("hv:browser-state", h);
+  },
+  onBrowserClosed: (cb: (p: { id: string }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { id: string });
+    ipcRenderer.on("hv:browser-closed", h);
+    return () => ipcRenderer.removeListener("hv:browser-closed", h);
+  },
   getTerminalSettings: () => ipcRenderer.invoke("hv:get-terminal-settings"),
   setTerminalSettings: (s: Record<string, unknown>) => ipcRenderer.invoke("hv:set-terminal-settings", s),
   getLayout: () => ipcRenderer.invoke("hv:get-layout"),

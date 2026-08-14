@@ -25,7 +25,8 @@ export type IconKind =
   | "copy"
   | "rewind"
   | "check"
-  | "book";
+  | "book"
+  | "globe";
 
 export interface ToolLabel {
   icon: IconKind;
@@ -126,6 +127,20 @@ const truncate = (s: string, n = 60): string => {
 };
 
 /** "fetch_url-fast" → "Fetch url fast" */
+/**
+ * §28: a URL for a card headline — host + a short path. The whole URL is in the
+ * permission prompt and the audit log; a card is a headline, not a record.
+ */
+const prettyUrl = (raw: string): string => {
+  try {
+    const u = new URL(raw);
+    const tail = u.pathname === "/" ? "" : u.pathname;
+    return truncate(`${u.host}${tail}`, 48);
+  } catch {
+    return truncate(raw, 48);
+  }
+};
+
 const prettify = (name: string): string => {
   const words = name.replace(/[_-]+/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -160,6 +175,36 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       return { icon: "terminal", label: intent ?? "Stopping a terminal" };
     case "terminal_read":
       return { icon: "terminal", label: "Reading terminal output" };
+    // §28: the browser's ten. navigate/open lead with the URL even when an
+    // intent exists — where the agent went is the fact worth reading, and the
+    // permission modal shows the same string (summarize), so card and prompt
+    // agree instead of telling two stories about one call.
+    case "browser_open":
+    case "browser_navigate": {
+      const url = str("url");
+      if (url) return { icon: "globe", label: `${toolName === "browser_open" ? "Opening" : "Going to"} ${prettyUrl(url)}` };
+      return { icon: "globe", label: intent ?? "Opening a page" };
+    }
+    case "browser_screenshot":
+      return { icon: "globe", label: intent ?? "Taking a screenshot of the page" };
+    case "browser_get_text":
+      return { icon: "globe", label: intent ?? "Reading the page" };
+    case "browser_read_console":
+      return { icon: "globe", label: intent ?? "Reading the page console" };
+    case "browser_read_network":
+      return { icon: "globe", label: intent ?? "Reading the page network log" };
+    case "browser_click": {
+      const sel = str("selector");
+      return { icon: "globe", label: intent ?? (sel ? `Clicking ${truncate(sel)}` : "Clicking in the page") };
+    }
+    case "browser_type": {
+      const sel = str("selector");
+      return { icon: "globe", label: intent ?? (sel ? `Typing into ${truncate(sel)}` : "Typing in the page") };
+    }
+    case "browser_evaluate":
+      return { icon: "globe", label: intent ?? "Running JavaScript in the page" };
+    case "browser_close":
+      return { icon: "globe", label: intent ?? "Closing the browser" };
     case "edit": {
       const p = str("path");
       // W2.2: the path itself moved out of the label into the card's

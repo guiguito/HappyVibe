@@ -102,6 +102,9 @@ export function ChatView({
   onTogglePlan,
   onOpenAgentsMd,
   onSend,
+  pageRefs,
+  onDropPageRef,
+  onClearPageRefs,
   onAbort,
   onRestart,
   onRetry,
@@ -166,6 +169,15 @@ export function ChatView({
    */
   composerInsert?: { text: string; nonce: number };
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[]) => void;
+  /**
+   * §28: page-element comments the user picked in the embedded browser. They
+   * STACK here and are folded into the next message on send — the user decides
+   * when, which is why they live in App (one browser, many chats) and are
+   * cleared through a callback rather than owned locally.
+   */
+  pageRefs?: Array<{ selector: string; label: string; outerHTML: string; comment: string }>;
+  onDropPageRef?: (index: number) => void;
+  onClearPageRefs?: () => void;
   onAbort: () => void;
   onRestart: () => void;
   onRetry: () => void;
@@ -524,7 +536,20 @@ export function ChatView({
   const submit = (behavior?: "followUp"): void => {
     if (!input.trim()) return;
     const mentions = extractMentions(input, mentionMap.current);
-    onSend(input, behavior, attachments.length ? attachments : undefined, mentions.length ? mentions : undefined);
+    // §28: picked elements ride along as fenced blocks — the user's comment
+    // first (it is what they mean), the markup after (it is how the agent finds
+    // the thing). Page-controlled text needs no untrusted banner here: the human
+    // wrote this turn, which is exactly the line §28 draws against tool results.
+    const withRefs = (pageRefs?.length ?? 0)
+      ? [
+          input,
+          ...pageRefs!.map((r) =>
+            `\n\n${r.comment ? `${r.comment}\n` : ""}Element \`${r.selector}\` (${r.label}):\n\n\`\`\`html\n${r.outerHTML}\n\`\`\``,
+          ),
+        ].join("")
+      : input;
+    onSend(withRefs, behavior, attachments.length ? attachments : undefined, mentions.length ? mentions : undefined);
+    onClearPageRefs?.();
     setInput("");
     setAttachments([]);
     mentionMap.current = new Map();
@@ -1020,6 +1045,34 @@ export function ChatView({
                   type="button"
                   aria-label={`Remove ${a.name}`}
                   onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}
+                  className="text-ink-soft hover:text-berry font-bold text-sm leading-none cursor-pointer"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {/* §28: picked-element chips. Same shelf as the image attachments and the
+            same promise — nothing is sent until the user sends it. */}
+        {(pageRefs?.length ?? 0) > 0 && (
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
+            {pageRefs!.map((ref, i) => (
+              <span
+                key={i}
+                className="flex items-center gap-1.5 rounded-xl border-2 border-line-strong bg-card px-2 py-1 shadow-sticker"
+                title={`${ref.label}\n${ref.comment}`}
+              >
+                <svg viewBox="0 0 24 24" className="size-3.5 shrink-0 text-ink-soft" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18" />
+                  <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+                </svg>
+                <span className="max-w-48 truncate text-xs font-semibold">{ref.comment || ref.label}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove comment on ${ref.label}`}
+                  onClick={() => onDropPageRef?.(i)}
                   className="text-ink-soft hover:text-berry font-bold text-sm leading-none cursor-pointer"
                 >
                   ×

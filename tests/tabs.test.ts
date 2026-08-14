@@ -1,9 +1,10 @@
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
   activateTab, activeTabOf, allChats, allFiles, allTerminals, bufferKey, chatTab, closeTab, emptyTabs, isChatTab,
   visibleChats,
   closePane, closeSessionTabs, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, splitAt, splitOptions, resolveCardPath, sessionOf, setSize, splitHalf, splitPane, termTab, terminalOf,
   chatTabCount,
+  allBrowsers, browserOf, browserTab, isBrowserTab, openBrowserTab,
 } from "../src/renderer/src/tabs";
 
 // ── tab identity: a chat is per SESSION (round 11) ───────────────────────────
@@ -574,4 +575,50 @@ test("chatTabCount ignores file and terminal tabs", () => {
   t = openFile(t, "src/a.ts");
   t = openTerminal(t, "term1");
   expect(chatTabCount(t, "s1")).toBe(1);
+});
+
+// ── §28: the fourth tab kind ────────────────────────────────────────────────
+describe("§28 browser tabs", () => {
+  it("a browser tab is NOT a file — the three-consumer invariant", () => {
+    let t = openFile(emptyTabs, "src/a.ts");
+    t = openBrowserTab(t, "b1", null);
+    expect(allFiles(t)).toEqual(["src/a.ts"]);
+    expect(allBrowsers(t)).toEqual(["b1"]);
+    expect(isBrowserTab(browserTab("b1"))).toBe(true);
+    expect(browserOf(browserTab("b1"))).toBe("b1");
+    expect(browserOf("src/a.ts")).toBeNull();
+  });
+
+  it("opening a browser splits an unsplit layout instead of covering the chat", () => {
+    const chat = chatTab("s1");
+    let t = openChat(emptyTabs, "s1");
+    t = openBrowserTab(t, "b1", chat);
+    expect(t.split).not.toBeNull();
+    // The chat is still the active tab of its own pane — nothing covered it.
+    const chatSlot = paneOf(t, chat);
+    expect(t.panes[chatSlot]!.active).toBe(chat);
+    // …and the browser is in a DIFFERENT pane.
+    expect(paneOf(t, browserTab("b1"))).not.toBe(chatSlot);
+  });
+
+  it("with a split already open, the browser joins the pane that is not the chat", () => {
+    const chat = chatTab("s1");
+    let t = openChat(emptyTabs, "s1");
+    t = splitPane(t, "v");
+    t = openFile(t, "src/a.ts"); // lands in the new half
+    const before = t.split;
+    t = openBrowserTab(t, "b1", chat);
+    expect(t.split).toBe(before); // no new split — the 2×2 ceiling is respected
+    expect(paneOf(t, browserTab("b1"))).toBe(paneOf(t, "src/a.ts"));
+    expect(paneOf(t, browserTab("b1"))).not.toBe(paneOf(t, chat));
+  });
+
+  it("re-opening an already-open browser focuses it rather than splitting again", () => {
+    let t = openChat(emptyTabs, "s1");
+    t = openBrowserTab(t, "b1", chatTab("s1"));
+    const split = t.split;
+    t = openBrowserTab(t, "b1", chatTab("s1"));
+    expect(t.split).toBe(split);
+    expect(allBrowsers(t)).toEqual(["b1"]);
+  });
 });

@@ -22,6 +22,8 @@ import {
 } from "./voice";
 import { voiceHost } from "./voice/host";
 import { AgentTerminals } from "./agentTerminals";
+import { BrowserManager } from "./browsers";
+import { AgentBrowsers } from "./agentBrowsers";
 import {
   bundledSkillsDir, buildManifest, discoverGlobal, discoverWorkspace, downloadAndExtract, installBundledSkills,
   findLinkedRoot, managedSkillsDir, parseForgeUrl, planSkillRemoval, readSkillDir, removeSkillDir, resolveActiveSkills, scanSkillsDir,
@@ -219,6 +221,66 @@ function parseTerminalReq(r: { method?: string; title?: string }):
   }
 }
 
+/**
+ * §28: the blocking agent-browser inputs. Main ALWAYS answers one, exactly like
+ * hv.terminal-* — a bridge left waiting on ctx.ui.input hangs the turn.
+ *
+ * The payload rides `title` because these are blocking INPUTS. (A notify carries
+ * its payload in `message`; getting that backwards is why a card can silently
+ * never appear — §26 records the same trap.)
+ */
+type BrowserReq =
+  | { kind: "open"; url: string; intent?: string }
+  | { kind: "navigate"; url: string; intent?: string }
+  | { kind: "screenshot"; intent?: string }
+  | { kind: "get-text" }
+  | { kind: "read-console"; lines?: number }
+  | { kind: "read-network"; limit?: number }
+  | { kind: "click"; selector: string; intent?: string }
+  | { kind: "type"; selector: string; text: string; intent?: string }
+  | { kind: "evaluate"; code: string; intent?: string }
+  | { kind: "close"; intent?: string };
+
+function parseBrowserReq(r: { method?: string; title?: string }): BrowserReq | null {
+  if (r.method !== "input") return null;
+  try {
+    const p = JSON.parse(r.title ?? "") as Record<string, unknown>;
+    const kind = typeof p.kind === "string" ? p.kind : "";
+    if (!kind.startsWith("hv.browser-")) return null;
+    const str = (k: string): string | undefined => (typeof p[k] === "string" ? (p[k] as string) : undefined);
+    const num = (k: string): number | undefined => (typeof p[k] === "number" ? (p[k] as number) : undefined);
+    const intent = str("intent");
+    switch (kind) {
+      case "hv.browser-open":
+        return str("url") ? { kind: "open", url: str("url")!, intent } : null;
+      case "hv.browser-navigate":
+        return str("url") ? { kind: "navigate", url: str("url")!, intent } : null;
+      case "hv.browser-screenshot":
+        return { kind: "screenshot", intent };
+      case "hv.browser-get-text":
+        return { kind: "get-text" };
+      case "hv.browser-read-console":
+        return { kind: "read-console", lines: num("lines") };
+      case "hv.browser-read-network":
+        return { kind: "read-network", limit: num("limit") };
+      case "hv.browser-click":
+        return str("selector") ? { kind: "click", selector: str("selector")!, intent } : null;
+      case "hv.browser-type":
+        return str("selector") !== undefined && str("text") !== undefined
+          ? { kind: "type", selector: str("selector")!, text: str("text")!, intent }
+          : null;
+      case "hv.browser-evaluate":
+        return str("code") ? { kind: "evaluate", code: str("code")!, intent } : null;
+      case "hv.browser-close":
+        return { kind: "close", intent };
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
 /** §23: the blocking plan-write input payload (main writes the file, answers with the path), else null. */
 function parsePlanWrite(r: { method?: string; title?: string }): { plan: string } | null {
   if (r.method !== "input") return null;
@@ -280,6 +342,27 @@ export function registerIpc(win: BrowserWindow): void {
   // A PTY is a child of main, not of a Pi session, so nothing else tears them
   // down. Without this a quit leaks every running shell.
   app.on("before-quit", () => terminals.killAll());
+
+  // ── §28 Embedded browser ───────────────────────────────────────────────────
+  // Panes are owned by MAIN for the same reason PTYs are: they outlive a
+  // renderer reload and a Pi respawn. Every request the guest makes is logged
+  // here — the egress gate lives on the partition (browsers.ts), not on the
+  // tool call, because JS inside the page can navigate without any tool.
+  const browsers = new BrowserManager(
+    win,
+    (info) => send("hv:browser-state", info),
+    (id, req) => {
+      // Deliberately NOT one EventLog entry per subresource: a single page load
+      // is dozens, and drowning the audit trail is how it stops being read. The
+      // ring buffer holds them all for browser_read_network; the LOG records
+      // main-frame navigations, which is what a human audits.
+      if (req.resourceType === "mainFrame") {
+        void log.append({ type: "browser.nav", data: { browserId: id, url: req.url, method: req.method } });
+      }
+    },
+  );
+  const agentBrowsers = new AgentBrowsers(browsers);
+  app.on("before-quit", () => browsers.destroyAll());
 
   /**
    * §26: resolve when the terminal has produced no bytes for ~400ms, or when
@@ -397,6 +480,8 @@ export function registerIpc(win: BrowserWindow): void {
    * openFilesChanged twin.
    */
   const lastOpenTerminals = new Map<string, string>();
+  /** §28: the same trick for the one-line open-browser block. */
+  const lastOpenBrowser = new Map<string, string>();
   /**
    * §24: the typed form of every command invocation logged for a session, keyed
    * by sha256(expanded). Restore hashes each user message against this map, so a
@@ -495,6 +580,35 @@ export function registerIpc(win: BrowserWindow): void {
       // manifest counterpart — the bridge reads nothing about commands.
       promptTemplates: workspace && sessionId ? activePromptTemplateEntries(workspace) : [],
     };
+  };
+
+  /**
+   * §28: can THIS session's model read an image?
+   *
+   * Pi's registry is the only thing that knows (`input` includes "image"), and
+   * it answers over the utility client, so the list is fetched once and cached.
+   * Deliberately resolved here rather than mirrored into a second capability
+   * table: `resolveSpawnModel` is already the one place that knows which model a
+   * session runs, and a second list is a second thing to be wrong.
+   * Unknown model, or no list yet ⇒ FALSE — the honest default is text, exactly
+   * as the composer's attach button defaults to disabled (composer.ts
+   * supportsVision, same rule).
+   */
+  let visionModels: Array<{ provider: string; id: string; input?: string[] }> | null = null;
+  const sessionCanSeeImages = async (workspace?: string, sessionId?: string): Promise<boolean> => {
+    try {
+      const ref = resolveSpawnModel(workspace, sessionId);
+      if (!ref) return false;
+      if (!visionModels) {
+        const c = await ensureUtility();
+        const res = await c.send({ type: "get_available_models" });
+        visionModels = (res.data as { models?: Array<{ provider: string; id: string; input?: string[] }> })?.models ?? [];
+      }
+      const m = visionModels.find((x) => x.provider === ref.provider && x.id === ref.modelId);
+      return m?.input?.includes("image") ?? false;
+    } catch {
+      return false;
+    }
   };
 
   const manager = new SessionManager({
@@ -1039,6 +1153,120 @@ export function registerIpc(win: BrowserWindow): void {
         })();
         return;
       }
+      // §28: the blocking browser inputs. Same contract as the terminal block
+      // above — main ALWAYS respondUi, an error is a JSON {ok:false,reason},
+      // never a dropped response.
+      const br = parseBrowserReq(r as { method?: string; title?: string });
+      if (br) {
+        void (async () => {
+          const rid = r.id;
+          const reply = (v: unknown): void => client.respondUi(rid, { value: JSON.stringify(v) });
+          const notify = (payload: Record<string, unknown>): void =>
+            send("hv:ui-request", {
+              id: `hv-browser-${Date.now()}`,
+              method: "notify",
+              // A notify's payload rides `message` (a blocking input uses
+              // `title`). Every renderer parser reads `message`, so this must.
+              message: JSON.stringify({ kind: "hv.browser", ...payload }),
+              sessionId,
+            });
+          try {
+            const wsId = meta?.workspaceId;
+            if (!wsId) throw new Error("No workspace for this session");
+            if (br.kind === "open") {
+              const res = agentBrowsers.open(sessionId, wsId, br.url);
+              if (res.ok) {
+                void log.append({
+                  type: "browser.open",
+                  sessionId,
+                  workspaceId: wsId,
+                  data: { browserId: res.browserId, url: br.url, reused: res.reused },
+                });
+                notify({ stage: "opened", browserId: res.browserId, url: br.url, intent: br.intent, workspaceId: wsId });
+                reply({ ok: true, browserId: res.browserId, text: `The browser is open at ${br.url}. Use browser_get_text to read it.` });
+              } else {
+                reply(res);
+              }
+              return;
+            }
+            // Everything else acts on the pane this session already owns.
+            const owned = agentBrowsers.require(sessionId);
+            if (!owned.ok) return reply(owned);
+            const bid = owned.browserId;
+            switch (br.kind) {
+              case "navigate": {
+                browsers.navigate(bid, br.url, "agent");
+                void log.append({ type: "browser.nav", sessionId, workspaceId: wsId, data: { browserId: bid, url: br.url, origin: "agent" } });
+                notify({ stage: "navigated", browserId: bid, url: br.url, intent: br.intent, workspaceId: wsId });
+                reply({ ok: true, text: `Navigating to ${br.url}. Read it with browser_get_text once it settles.` });
+                return;
+              }
+              case "screenshot": {
+                const png = await browsers.screenshot(bid);
+                if (!png) return reply({ ok: false, reason: "The page could not be captured." });
+                const b64 = png.toString("base64");
+                notify({ stage: "screenshot", browserId: bid, intent: br.intent, dataUrl: `data:image/png;base64,${b64}` });
+                // §28: the IMAGE reaches the model only when the model can read
+                // one. The user always sees it either way (the notify above) —
+                // which is why a non-vision session still gets a useful result
+                // instead of a refusal.
+                const canSee = await sessionCanSeeImages(wsId, sessionId);
+                reply(
+                  canSee
+                    ? { ok: true, imageBase64: b64, text: "Screenshot captured and shown to the user." }
+                    : { ok: true, text: "Screenshot captured and shown to the user. This session's model cannot read images — call browser_get_text to find out what is on the page." },
+                );
+                return;
+              }
+              case "get-text": {
+                const text = await browsers.getText(bid);
+                reply(text === null ? { ok: false, reason: "That browser is gone." } : { ok: true, text, untrusted: true });
+                return;
+              }
+              case "read-console": {
+                const text = browsers.readConsole(bid, br.lines);
+                reply(text === null ? { ok: false, reason: "That browser is gone." } : { ok: true, text, untrusted: true });
+                return;
+              }
+              case "read-network": {
+                const text = browsers.readNetwork(bid, br.limit);
+                reply(text === null ? { ok: false, reason: "That browser is gone." } : { ok: true, text, untrusted: true });
+                return;
+              }
+              case "click": {
+                const text = await browsers.click(bid, br.selector);
+                notify({ stage: "acted", browserId: bid, action: "click", detail: br.selector, intent: br.intent });
+                reply(text === null ? { ok: false, reason: "That browser is gone." } : { ok: true, text, untrusted: true });
+                return;
+              }
+              case "type": {
+                const text = await browsers.type(bid, br.selector, br.text);
+                notify({ stage: "acted", browserId: bid, action: "type", detail: br.selector, intent: br.intent });
+                reply(text === null ? { ok: false, reason: "That browser is gone." } : { ok: true, text, untrusted: true });
+                return;
+              }
+              case "evaluate": {
+                const text = await browsers.evaluate(bid, br.code);
+                void log.append({ type: "browser.evaluate", sessionId, workspaceId: wsId, data: { browserId: bid, code: br.code.slice(0, 500) } });
+                notify({ stage: "acted", browserId: bid, action: "evaluate", detail: br.code.slice(0, 200), intent: br.intent });
+                reply(text === null ? { ok: false, reason: "That browser is gone." } : { ok: true, text, untrusted: true });
+                return;
+              }
+              case "close": {
+                browsers.destroy(bid);
+                agentBrowsers.forgetBrowser(bid);
+                send("hv:browser-closed", { id: bid });
+                notify({ stage: "closed", browserId: bid });
+                reply({ ok: true, text: "The browser pane is closed." });
+                return;
+              }
+            }
+          } catch (e) {
+            reply({ ok: false, reason: e instanceof Error ? e.message : String(e) });
+          }
+        })();
+        return;
+      }
       // §23 Plan Mode. plan-write is a BLOCKING input: main writes the workspace
       // file and answers with its path (never forwards to the renderer, never
       // leaves the bridge hanging — an error still resolves with a message).
@@ -1516,6 +1744,11 @@ export function registerIpc(win: BrowserWindow): void {
   const endSession = async (sessionId: string, terminals_?: "stop" | "keep"): Promise<void> => {
     const owned = agentTerminals.releaseSession(sessionId);
     if (terminals_ === "stop") for (const id of owned) terminals.kill(id);
+    // §28: the browser pane is NOT killed with the session, and there is no
+    // "stop them?" question for it either — a page is not a running process, and
+    // the tab the user is looking at should not vanish because a chat ended. The
+    // claim is released; the pane becomes an ordinary browser tab.
+    agentBrowsers.releaseSession(sessionId);
     const client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
     let stats: unknown = null;
@@ -1561,6 +1794,7 @@ export function registerIpc(win: BrowserWindow): void {
     deleteSessionSnapshots(snapshotDir(), sessionId); // §9: snapshots die with the session
     lastOpenFiles.delete(sessionId); // round 11: no stale set for a dead session
     lastOpenTerminals.delete(sessionId); // §26: same, for the terminals block
+    lastOpenBrowser.delete(sessionId); // §28: …and for the browser block
     void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId });
     sessionsChanged();
   });
@@ -1670,6 +1904,14 @@ export function registerIpc(win: BrowserWindow): void {
       if (terms && terms !== lastOpenTerminals.get(sessionId)) {
         outgoing = `${outgoing}\n\n${terms}`;
         lastOpenTerminals.set(sessionId, terms);
+      }
+      // §28: the same seam, one line, for the browser pane this session owns —
+      // the URL and its state, never page content. Content is what get_text is
+      // for, on request; injecting it every turn would be a page-sized tax.
+      const browserBlock = agentBrowsers.buildOpenBrowserBlock(sessionId);
+      if (browserBlock && browserBlock !== lastOpenBrowser.get(sessionId)) {
+        outgoing = `${outgoing}\n\n${browserBlock}`;
+        lastOpenBrowser.set(sessionId, browserBlock);
       }
     }
     // §9 rewind: the snapshot a rewind to THIS message restores to. A capture
@@ -2094,6 +2336,47 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:eval-rules", (_e, workspaceId: string, tool: string, input: Record<string, unknown>) =>
     evaluate(readRules(), { tool, input, workspace: workspaceId }));
 
+  // ── §28 Embedded browser: the renderer's half ──────────────────────────────
+  // Bounds and visibility are the whole cost of choosing WebContentsView: the
+  // view composites OVER the DOM, so the renderer measures its placeholder and
+  // main moves the view. `hv:browser-visible false` is also what makes the
+  // permission modal win — BrowserTab hides the view whenever an overlay is up.
+  ipcMain.handle("hv:browser-create", (_e, workspaceId: string) => browsers.create(workspaceId));
+  ipcMain.handle("hv:browser-bounds", (_e, id: string, b: { x: number; y: number; width: number; height: number }) => {
+    // Round to whole device pixels: a fractional bound leaves a hairline of the
+    // renderer showing through at the seam.
+    browsers.setBounds(id, {
+      x: Math.round(b.x), y: Math.round(b.y),
+      width: Math.max(0, Math.round(b.width)), height: Math.max(0, Math.round(b.height)),
+    });
+  });
+  ipcMain.handle("hv:browser-visible", (_e, id: string, visible: boolean) => browsers.setVisible(id, visible));
+  // origin "user": typing a URL IS consent (§28) — no prompt, still logged.
+  ipcMain.handle("hv:browser-navigate", (_e, id: string, url: string) => {
+    const target = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    browsers.navigate(id, target, "user");
+    void log.append({ type: "browser.nav", data: { browserId: id, url: target, origin: "user" } });
+  });
+  ipcMain.handle("hv:browser-allow-blocked", (_e, id: string) => {
+    const info = browsers.get(id);
+    void log.append({ type: "browser.allow", data: { browserId: id, host: info?.blockedHost } });
+    browsers.allowBlocked(id);
+  });
+  ipcMain.handle("hv:browser-back", (_e, id: string) => browsers.goBack(id));
+  ipcMain.handle("hv:browser-forward", (_e, id: string) => browsers.goForward(id));
+  ipcMain.handle("hv:browser-reload", (_e, id: string) => browsers.reload(id));
+  ipcMain.handle("hv:browser-close", (_e, id: string) => {
+    browsers.destroy(id);
+    agentBrowsers.forgetBrowser(id);
+  });
+  // §28 picker: blocking by design — it resolves when the user clicks or cancels.
+  ipcMain.handle("hv:browser-pick", (_e, id: string) => browsers.pick(id));
+  ipcMain.handle("hv:browser-pick-cancel", (_e, id: string) => browsers.cancelPick(id));
+  ipcMain.handle("hv:browser-list", (_e, workspaceId?: string) => browsers.list(workspaceId));
+  ipcMain.handle("hv:browser-get", (_e, id: string) => browsers.get(id));
+  // §28: what makes the persistent partition reversible (All Tools → Browser).
+  ipcMain.handle("hv:browser-clear-data", () => browsers.clearData());
+
   // Round 3 #14: persistent "bypass all permissions". Resolved bypass is applied
   // live to affected sessions via /hv-dangerous (idempotent) and re-applied on
   // every respawn through HV_BYPASS (spawnOpts). Changing a persistent setting
@@ -2124,7 +2407,7 @@ export function registerIpc(win: BrowserWindow): void {
   // Takes effect at next spawn only — reuse the existing debounced, idle-only,
   // resume-preserving reload path (same mechanism as MCP/skills config changes).
   ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
-  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }) => {
+  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean }) => {
     setBuiltinTools(t);
     scheduleRuntimeReload("skills", "global", null);
   });

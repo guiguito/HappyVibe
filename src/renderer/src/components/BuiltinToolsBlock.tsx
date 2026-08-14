@@ -18,6 +18,8 @@ interface Builtins {
   terminal: boolean;
   /** §13 round 12: the model-authored `intent` on registered tools. */
   intent: boolean;
+  /** §28: the grouped Browser entry — all ten tools or none. */
+  browser: boolean;
 }
 
 const HINT =
@@ -289,11 +291,14 @@ function IntentRow({
  * configurations anyone wants, so they are not reachable.
  *
  * There is deliberately no promotion path on turning it off. HV_BUILTINS
- * resolves at SPAWN and this write respawns nothing, so the toggle cannot take
- * tools away from a session that is currently running. On a later unrelated
- * respawn the tools simply do not register, the card stops being fed, and the
- * PTY keeps running as an ordinary workspace terminal — still in the terminal
- * list, still openable as a tab. Do not build one.
+ * resolves at SPAWN, and `hv:builtins-set` schedules the same debounced,
+ * idle-only, resume-preserving reload the MCP/skills settings use — so live
+ * sessions DO respawn to apply it (that is what RESPAWN_NOTE discloses; an
+ * earlier version of this comment claimed the write respawned nothing, which
+ * was wrong for every key on this page). After the respawn the tools simply do
+ * not register, the card stops being fed, and the PTY keeps running as an
+ * ordinary workspace terminal — still in the terminal list, still openable as a
+ * tab. Nothing is killed, so no promotion path is needed. Do not build one.
  */
 function TerminalRow({
   on,
@@ -359,6 +364,51 @@ function TerminalRow({
   );
 }
 
+/**
+ * §28 — ONE entry for ten tools, following Plan mode's and the terminal's
+ * precedent, and for the same reason: an agent that can navigate but not read
+ * opens pages nobody can use, and one that can read but not close leaves a pane
+ * behind. There is no configuration in between that anyone wants.
+ *
+ * The Clear-browsing-data button lives here because this is where the browser is
+ * DISCUSSED. §28 made the partition persistent so logins survive a restart, and
+ * a persistent profile that cannot be emptied is a promise with no way back.
+ */
+function BrowserRow({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (on: boolean) => void;
+}): React.JSX.Element {
+  const [cleared, setCleared] = useState(false);
+  return (
+    <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <span className="font-bold block">Browser — 10 tools</span>
+        <span className="text-xs text-ink-soft">
+          Lets the agent open a page in a sandboxed browser tab, read it, screenshot it, click and type in it, and
+          watch its console and network traffic. It can reach localhost freely; every other site asks you first,
+          and that gate is enforced on the network itself, not on the agent&apos;s good behaviour.
+        </span>
+        <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
+        <button
+          type="button"
+          onClick={() => {
+            setCleared(false);
+            void window.hv.browserClearData().then(() => setCleared(true));
+          }}
+          className="mt-2 rounded-lg border-2 border-line bg-paper px-2 py-1 text-xs font-bold cursor-pointer hover:bg-paper-deep"
+        >
+          Clear browsing data
+        </button>
+        {cleared && <span className="ml-2 text-xs font-semibold text-leaf">Cleared.</span>}
+      </div>
+      <TogglePill on={on} onClick={() => onChange(!on)} />
+    </div>
+  );
+}
+
 export function BuiltinToolsBlock({
   onPlanChange,
 }: {
@@ -409,6 +459,16 @@ export function BuiltinToolsBlock({
             setAskUserError(null);
             void window.hv.builtinsSet({ terminal: on }).then(
               () => patch({ terminal: on }),
+              (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
+            );
+          }}
+        />
+        <BrowserRow
+          on={builtins.browser}
+          onChange={(on) => {
+            setAskUserError(null);
+            void window.hv.builtinsSet({ browser: on }).then(
+              () => patch({ browser: on }),
               (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
             );
           }}

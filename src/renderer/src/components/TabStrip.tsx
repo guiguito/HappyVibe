@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { basename, sessionOf, terminalOf, type Pane, type TabId } from "../tabs";
+import { basename, browserOf, sessionOf, terminalOf, type Pane, type TabId } from "../tabs";
 
 /**
  * WS6 — center tab strip for ONE pane: one tab per open chat (session title) and
@@ -28,6 +28,7 @@ export function TabStrip({
   paneIndex,
   sessionTitleFor,
   terminalTitleFor,
+  browserTitleFor,
   terminalExited,
   dirty,
   busyFor,
@@ -53,6 +54,8 @@ export function TabStrip({
   sessionTitleFor: (sessionId: string) => string;
   /** §26: a terminal tab's label — the foreground command, else the shell. */
   terminalTitleFor: (terminalId: string) => string;
+  /** §28: a browser tab shows the page title, falling back to its host. */
+  browserTitleFor: (browserId: string) => string;
   /** §26: a terminal whose process has exited renders muted, not gone. */
   terminalExited: (terminalId: string) => boolean;
   /** relPath → has unsaved edits. */
@@ -146,9 +149,17 @@ export function TabStrip({
           const active = pane.active === id;
           const sid = sessionOf(id);
           const tid = terminalOf(id);
+          const bid = browserOf(id);
           const isChat = sid !== null;
           const isTerm = tid !== null;
-          const label = isChat ? sessionTitleFor(sid) : isTerm ? terminalTitleFor(tid) : basename(id);
+          const isBrowser = bid !== null;
+          const label = isChat
+            ? sessionTitleFor(sid)
+            : isTerm
+              ? terminalTitleFor(tid)
+              : isBrowser
+                ? browserTitleFor(bid)
+                : basename(id);
           const exited = isTerm && terminalExited(tid);
           return (
             <span
@@ -169,10 +180,11 @@ export function TabStrip({
                 setMenu({ tab: id, x: e.clientX, y: e.clientY });
               }}
               className={tab(active)}
-              title={isChat || isTerm ? label : id}
+              title={isChat || isTerm || isBrowser ? label : id}
             >
               {isChat && <ChatGlyph />}
               {isTerm && <TerminalGlyph />}
+              {isBrowser && <BrowserGlyph />}
               {editing?.tab === id ? (
                 <input
                   autoFocus
@@ -191,7 +203,7 @@ export function TabStrip({
                 <span className={`truncate ${exited ? "line-through opacity-60" : ""}`}>{label}</span>
               )}
               {isChat && busyFor(sid) && <span className="size-1.5 rounded-full bg-tangerine animate-pulse shrink-0" title="Working…" />}
-              {!isChat && !isTerm && dirty[id] && <span className="size-1.5 rounded-full bg-tangerine shrink-0" title="Unsaved changes" />}
+              {!isChat && !isTerm && !isBrowser && dirty[id] && <span className="size-1.5 rounded-full bg-tangerine shrink-0" title="Unsaved changes" />}
               {(
                 <button
                   type="button"
@@ -407,6 +419,17 @@ function TerminalGlyph(): React.JSX.Element {
     <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M4 17l6-5-6-5" />
       <path d="M12 19h8" />
+    </svg>
+  );
+}
+
+/** §28: a globe — the one glyph nobody has to be taught. */
+function BrowserGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
     </svg>
   );
 }
