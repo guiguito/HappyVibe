@@ -107,6 +107,24 @@ describe("pi-subagents active-run inventory contract", () => {
     expect(listAsyncRuns(root, { states: ["complete"], sessionId: "session-under-test" })).toHaveLength(0);
   });
 
+  it("finds an active run WITHOUT any index — pins the 0.40 scan that 0.49 replaces", () => {
+    // pi-subagents 0.49.0 stops scanning for active-state queries (the exact
+    // shape /hv-subagent-list uses) and reads `.active-runs/<runId>` markers
+    // instead, with NO fallback when that index is absent. We are deliberately
+    // held at 0.40.0 — see the caveats page — and this case is what will go red
+    // when the pin finally moves, which is the reminder that a detached run
+    // started before the upgrade keeps running with its card gone.
+    const root = mkdtempSync(path.join(os.tmpdir(), "hv-async-noindex-"));
+    const runId = "run-without-marker";
+    const dir = path.join(root, runId);
+    mkdirSync(dir);
+    writeFileSync(path.join(dir, "status.json"), JSON.stringify({
+      runId, sessionId: "s", state: "running", mode: "single",
+      startedAt: 1, lastUpdate: 1, steps: [{ index: 0, agent: "researcher", status: "running" }],
+    }));
+    expect(listAsyncRuns(root, { states: ["queued", "running"], sessionId: "s" })).toHaveLength(1);
+  });
+
   it("returns empty rather than throwing when the runs root does not exist", () => {
     // The bridge wraps the call in try/catch, but an absent root is the normal
     // "no delegation has ever run" case and must not be an error path.
@@ -275,9 +293,21 @@ describe("RPC mode is UI-ful, which is what disarms the headless auto-drain", ()
 
   it("pi-subagents still gates its drain on hasUI (rather than on the mode)", () => {
     const src = readVendored("pi-subagents", "src", "extension", "index.ts");
-    // Anchor on the drain call site: the guard must remain a hasUI early-return.
-    const hook = /pi\.on\("agent_end",[\s\S]{0,200}?if \(ctx\.hasUI\) return;[\s\S]{0,120}?drainOutstandingWork/;
-    expect(src).toMatch(hook);
+    const handler = src.match(/pi\.on\("agent_end",[\s\S]{0,600}/)?.[0] ?? "";
+    expect(handler).toContain("drainOutstandingWork");
+
+    // Assert the SEMANTICS, not one spelling. This test previously pinned
+    // 0.40's `if (ctx.hasUI) return; … drain(…)` literally and went red on the
+    // 0.49 bump, which had merely rewritten it as `if (!ctx.hasUI) await
+    // drain(…)` — identical meaning. A guard that must be matched by shape is
+    // a guard that cries wolf; what must not change is that the drain is
+    // reachable ONLY when there is no UI (in RPC, hasUI is TRUE, which is the
+    // whole reason PRD §12's "never block on a delegation" survives).
+    const guarded =
+      /if \(ctx\.hasUI\) return;[\s\S]{0,160}?drainOutstandingWork/.test(handler) ||
+      /if \(!ctx\.hasUI\)[\s\S]{0,60}?drainOutstandingWork/.test(handler);
+    expect(guarded).toBe(true);
+
     // And the function is genuinely blocking, so the guard is load-bearing.
     expect(typeof drainOutstandingWork).toBe("function");
   });

@@ -741,6 +741,8 @@ interface HvApi {
     cfg: Record<string, unknown> | null,
   ): Promise<McpFileLike>;
   mcpStatus(): Promise<McpServerStatusLike[]>;
+  /** Sweeps REMOTE servers (credential read + probe). Latched once per app run unless forced. */
+  mcpSweepRemote(force?: boolean): Promise<McpServerStatusLike[]>;
   mcpCheck(scope: "global" | "workspace", workspaceId: string | null, name?: string): Promise<void>;
   mcpAuthenticate(
     scope: "global" | "workspace",

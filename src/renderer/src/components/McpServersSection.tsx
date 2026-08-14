@@ -206,9 +206,15 @@ export function McpServersSection({
 
   useEffect(() => {
     void refresh().catch((e) => setError(String(e)));
-    void window.hv.mcpStatus().then((list) => {
+    const apply = (list: McpServerStatusLike[]): void => {
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
-    }).catch(() => { /* non-fatal */ });
+    };
+    void window.hv.mcpStatus().then(apply).catch(() => { /* non-fatal */ });
+    // Remote servers are NOT swept at boot: reading their OAuth credential can
+    // raise an OS keychain prompt, and an app that opens behind a password
+    // dialog is worse than a badge that resolves a moment after you open this
+    // page. Latched in main, so switching tabs does not re-prompt.
+    void window.hv.mcpSweepRemote().then(apply).catch(() => { /* non-fatal */ });
     unsubRef.current = window.hv.onMcpStatusChanged((list) => {
       setStatuses(new Map(list.map((s) => [statusKey(s.scope, s.workspaceId, s.name), s])));
     });

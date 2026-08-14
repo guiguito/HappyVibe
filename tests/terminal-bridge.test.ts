@@ -110,11 +110,20 @@ test.skipIf(!KEY)("terminal_run opens, terminal_read polls, terminal_kill stops"
   // askUntil, not a single ask: a prose turn with no tool call is this suite's
   // known failure mode, and a longer timeout does not fix a model that already
   // finished its turn.
+  // Wait for the ENVELOPE, not for tool_execution_start.
+  //
+  // start fires BEFORE the tool_call handlers and before execute, and the
+  // envelope only appears inside execute — on the far side of a permission
+  // prompt round-trip. Waiting on the start and then asserting the envelope on
+  // the next line is a race, and it is the race that made this file red in a
+  // full 15-file batch while passing in a 4-file one on the identical tree.
+  // Same reason CLAUDE.md says a start can never prove a call was blocked.
   const ranIt = await askUntil(
     () => client.send({ type: "prompt", message: "Start `sleep 20` with the terminal_run tool. Do it now, then stop." }),
-    () => has(h, "terminal_run"),
+    () => h.requests.some((r) => r.kind === "hv.terminal-run"),
   );
-  expect(ranIt, "the model never called terminal_run").toBe(true);
+  expect(has(h, "terminal_run"), "the model never called terminal_run").toBe(true);
+  expect(ranIt, "terminal_run was called but never reached main").toBe(true);
 
   const run = h.requests.find((r) => r.kind === "hv.terminal-run")!;
   expect(run.command).toBe("sleep 20");
@@ -132,18 +141,22 @@ test.skipIf(!KEY)("terminal_run opens, terminal_read polls, terminal_kill stops"
 
   const readIt = await askUntil(
     () => client.send({ type: "prompt", message: "Now read terminal t1 with terminal_read and tell me what it shows." }),
-    () => has(h, "terminal_read"),
+    () => h.requests.some((r) => r.kind === "hv.terminal-read"),
   );
-  expect(readIt, "the model never called terminal_read").toBe(true);
+  expect(has(h, "terminal_read"), "the model never called terminal_read").toBe(true);
+  expect(readIt, "terminal_read was called but never reached main").toBe(true);
   // §26: terminal_read is in SAFE_TOOLS — polling a log must never prompt.
   expect(h.prompted).not.toContain("terminal_read");
 
   const killIt = await askUntil(
     () => client.send({ type: "prompt", message: "Now stop terminal t1 with terminal_kill." }),
-    () => has(h, "terminal_kill"),
+    () => h.requests.some((r) => r.kind === "hv.terminal-kill"),
   );
-  expect(killIt, "the model never called terminal_kill").toBe(true);
-  expect(h.requests.some((r) => r.kind === "hv.terminal-kill")).toBe(true);
+  // Two distinct failures, kept distinguishable: no start at all is the known
+  // prose-turn class (re-ask), a start with no envelope means the tool_call
+  // handler blocked it — a real bug worth chasing.
+  expect(has(h, "terminal_kill"), "the model never called terminal_kill").toBe(true);
+  expect(killIt, "terminal_kill was called but never reached main").toBe(true);
 }, 300_000);
 
 /*

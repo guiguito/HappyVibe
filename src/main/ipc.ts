@@ -76,7 +76,8 @@ import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
 import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
-import { deleteAuthEntry } from "./mcpAuthStore";
+import { sweepLegacyCredentials } from "./mcpAuthStore";
+import { createAdapterStore, type AdapterEntry } from "./mcpAdapterStore";
 import { mapLimit, probe } from "./mcpClient";
 import { resolveMcpConfig } from "./mcpResolve";
 import { authenticate, logout } from "./mcpOAuth";
@@ -648,6 +649,12 @@ export function registerIpc(win: BrowserWindow): void {
     lastChecked: number;
   }
   const mcpStatusMap = new Map<string, McpServerStatus>();
+  /**
+   * MCP credentials live in the OS keychain from pi-mcp-adapter 2.17.0, reached
+   * through a one-shot sidecar running the adapter's own code. One instance for
+   * the process; each call is its own spawn.
+   */
+  const adapterStore = createAdapterStore({ agentDir: agentDir(), runtimeDir: piRuntimeDir() });
   const mcpStatusChanged = (): void =>
     send("hv:mcp-status-changed", Array.from(mcpStatusMap.values()));
 
@@ -655,6 +662,8 @@ export function registerIpc(win: BrowserWindow): void {
     scope: "global" | "workspace",
     workspaceId: string | null,
     name: string,
+    /** Pre-read by the sweep so N servers cost ONE sidecar spawn, not N. */
+    authEntry?: AdapterEntry,
   ): Promise<void> => {
     const file =
       scope === "global"
@@ -680,7 +689,10 @@ export function registerIpc(win: BrowserWindow): void {
     // holds only a ${HV_MCP_…} placeholder. The Pi runtime interpolates it at
     // spawn; this process does not, so resolve before probing or every
     // key-based server reports needs-auth with a literal placeholder as its key.
-    const result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir());
+    const result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir(), {
+      store: adapterStore,
+      authEntry,
+    });
     mcpStatusMap.set(statusKey(scope, workspaceId, name), {
       name, scope, workspaceId,
       state: result.state,
@@ -701,23 +713,121 @@ export function registerIpc(win: BrowserWindow): void {
   // reported `failed` at boot and connected instantly on a click. The sweep is a
   // badge, not a race; four at a time is plenty.
   const SWEEP_CONCURRENCY = 4;
+
+  /** Config across both tiers, read fresh — the sweep runs at two different times now. */
+  const mcpTiers = (): {
+    globalFile: Record<string, McpServerConfig>;
+    wsFiles: (readonly [string, Record<string, McpServerConfig>])[];
+  } => ({
+    globalFile: readMcpFile(path.join(agentDir(), "mcp.json")).mcpServers,
+    wsFiles: workspaces
+      .list()
+      .map((ws) => [ws, readMcpFile(path.join(ws, ".mcp.json")).mcpServers] as const),
+  });
+
+  /**
+   * Boot sweep — STDIO SERVERS ONLY, and that restriction is the point.
+   *
+   * A remote server's badge needs its OAuth credential, and from pi-mcp-adapter
+   * 2.17.0 that lives in the OS keychain. Reading it raises a macOS "wants to
+   * use your confidential information" dialog for any binary not on the item's
+   * ACL — and measured on a dev build, EVERY access prompts, even from the
+   * binary that created the item, because an ad-hoc signature gives macOS no
+   * stable identity to record ("Always Allow" cannot stick). Doing that at
+   * launch means the app opens with a password dialog in front of it.
+   *
+   * So remote servers are swept when the user opens the MCP page instead
+   * (hv:mcp-sweep-remote): the prompt then answers a question they just asked,
+   * once per run, on the surface that is about MCP servers. Stdio servers need
+   * no credential and keep their boot badge.
+   */
   void (async () => {
-    const globalServers = Object.keys(readMcpFile(path.join(agentDir(), "mcp.json")).mcpServers);
-    const wsPaths = workspaces.list();
+    const { globalFile, wsFiles } = mcpTiers();
     const checks: Array<() => Promise<void>> = [
-      ...globalServers.map((n) => () => checkServer("global", null, n)),
-      ...wsPaths.flatMap((ws) =>
-        Object.keys(readMcpFile(path.join(ws, ".mcp.json")).mcpServers).map(
-          (n) => () => checkServer("workspace", ws, n),
-        ),
+      ...Object.entries(globalFile).filter(([, c]) => !c.url).map(([n]) => () => checkServer("global", null, n)),
+      ...wsFiles.flatMap(([ws, servers]) =>
+        Object.entries(servers).filter(([, c]) => !c.url).map(([n]) => () => checkServer("workspace", ws, n)),
       ),
     ];
-    const allChecks = checks; // named for the log line below
+    if (!checks.length) return;
     await mapLimit(checks, SWEEP_CONCURRENCY, (run) => run());
     const byState: Record<string, number> = {};
-    for (const s of mcpStatusMap.values()) byState[s.state] = (byState[s.state] ?? 0) + 1;
-    void log.append({ type: "mcp.startup_check", data: { total: allChecks.length, byState } });
+    for (const st of mcpStatusMap.values()) byState[st.state] = (byState[st.state] ?? 0) + 1;
+    void log.append({ type: "mcp.startup_check", data: { total: checks.length, byState, tier: "stdio" } });
   })().catch((e) => console.warn("[hv] mcp startup sweep failed:", e));
+
+  /**
+   * Remote sweep — one credential read for every remote server, then their
+   * probes. Latched: at most once per app run unless forced, because each run
+   * can cost the user a keychain prompt.
+   */
+  let remoteSweepDone = false;
+  const sweepRemote = async (force = false): Promise<void> => {
+    if (remoteSweepDone && !force) return;
+    remoteSweepDone = true;
+    const { globalFile, wsFiles } = mcpTiers();
+
+    /**
+     * ONE sidecar spawn for the whole sweep. Credentials are keyed by server
+     * NAME only (the adapter hashes the name, not the tier), so a global and a
+     * workspace server sharing a name share a credential — deduplicating by
+     * name here is correct, not a shortcut.
+     */
+    const httpByName = new Map<string, { name: string; url: string }>();
+    for (const [n, cfg] of Object.entries(globalFile)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
+    for (const [, servers] of wsFiles) {
+      for (const [n, cfg] of Object.entries(servers)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
+    }
+    const wanted = [...httpByName.values()];
+    if (!wanted.length) return;
+
+    let prefetched: Record<string, AdapterEntry> = {};
+    try {
+      prefetched = await adapterStore.read(wanted);
+
+      // One-time: hand the adapter anything main wrote before it stopped owning
+      // this store, then delete the orphans nobody will ever migrate. It reuses
+      // the read above rather than taking its own — every extra sidecar call is
+      // another keychain dialog for the user.
+      try {
+        const swept = await sweepLegacyCredentials(agentDir(), wanted, adapterStore, prefetched);
+        if (swept.adopted || swept.discarded || swept.deleted) {
+          void log.append({ type: "mcp.legacy_sweep", data: swept });
+          if (swept.adopted) prefetched = await adapterStore.read(wanted);
+        }
+      } catch (e) {
+        console.warn("[hv] mcp legacy credential sweep failed:", e);
+      }
+    } catch (e) {
+      // Do NOT leave this empty and let each probe read its own. Each read can
+      // raise its own dialog, so N fallbacks means N stacked ones — observed,
+      // four at once, from exactly this path. If the one batched read could not
+      // answer, nothing else will: mark every server unavailable so each reports
+      // `failed` WITH the reason, and the user is asked at most once.
+      const message = e instanceof Error ? e.message : String(e);
+      console.warn("[hv] mcp credential prefetch failed:", message);
+      prefetched = Object.fromEntries(
+        wanted.map((s) => [s.name, { status: "unavailable", message } as AdapterEntry]),
+      );
+    }
+
+    const checks: Array<() => Promise<void>> = [
+      ...Object.entries(globalFile).filter(([, c]) => c.url).map(([n]) => () => checkServer("global", null, n, prefetched[n])),
+      ...wsFiles.flatMap(([ws, servers]) =>
+        Object.entries(servers).filter(([, c]) => c.url).map(([n]) => () => checkServer("workspace", ws, n, prefetched[n])),
+      ),
+    ];
+    await mapLimit(checks, SWEEP_CONCURRENCY, (run) => run());
+    const byState: Record<string, number> = {};
+    for (const st of mcpStatusMap.values()) byState[st.state] = (byState[st.state] ?? 0) + 1;
+    void log.append({ type: "mcp.startup_check", data: { total: checks.length, byState, tier: "remote" } });
+  };
+
+  // Called by the MCP page on mount. `force` is the Reconnect-all affordance.
+  ipcMain.handle("hv:mcp-sweep-remote", async (_e, force?: boolean) => {
+    await sweepRemote(force === true).catch((e) => console.warn("[hv] mcp remote sweep failed:", e));
+    return Array.from(mcpStatusMap.values());
+  });
 
   const maybeTitle = (sessionId: string): void => {
     const meta = index.get(sessionId);
@@ -2444,7 +2554,9 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle(
     "hv:mcp-set-server",
-    (_e, scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: McpServerConfig | null) => {
+    // async since round 13: revoking a removed server's credential now reaches
+    // the OS keychain through the sidecar, which is a round-trip.
+    async (_e, scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: McpServerConfig | null) => {
       const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
       writeMcpServer(file, name, cfg);
       void log.append({ type: "mcp.config", workspaceId: workspaceId ?? undefined,
@@ -2461,7 +2573,10 @@ export function registerIpc(win: BrowserWindow): void {
           ...workspaces.list().map((w) => path.join(w, ".mcp.json")),
         ];
         if (!serverNameInFiles(name, files)) {
-          deleteAuthEntry(agentDir(), name);
+          // Same fix as Log out, and for the same reason: deleting main's file
+          // left the adapter's keychain entry alive, so a "removed" server's
+          // credential survived — and a re-add would silently reuse it.
+          await logout(name, agentDir(), adapterStore);
           // §13 round 8: catalog-installed API keys are keyed by server name
           // too — drop them on the same condition, or a re-add would silently
           // reuse a key the user thought they had removed.
@@ -2542,11 +2657,14 @@ export function registerIpc(win: BrowserWindow): void {
       };
 
       setStatus("checking");
-      let result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir());
+      let result = await probe(name, resolveMcpConfig(cfg, providerEnv()), agentDir(), {
+        store: adapterStore,
+      });
 
       if (result.state === "needs-auth" && cfg.url) {
         const auth = await authenticate(name, cfg, agentDir(), {
           openExternal: (url) => shell.openExternal(url),
+          store: adapterStore,
         });
         void log.append({ type: "mcp.auth", workspaceId: workspaceId ?? undefined,
           data: { name, action: auth.ok ? "authenticated" : "auth-failed", via: "connect-flow" } });
@@ -2602,6 +2720,7 @@ export function registerIpc(win: BrowserWindow): void {
 
       const result = await authenticate(name, cfg, agentDir(), {
         openExternal: (url) => shell.openExternal(url),
+        store: adapterStore,
       });
 
       mcpStatusMap.set(statusKey(scope, workspaceId, name), {
@@ -2619,7 +2738,10 @@ export function registerIpc(win: BrowserWindow): void {
   );
 
   ipcMain.handle("hv:mcp-logout", async (_e, name: string) => {
-    logout(name, agentDir());
+    // Awaited: this is the call that actually revokes the agent's access. The
+    // old synchronous version deleted a file the adapter had stopped reading,
+    // which is why Log out used to leave the session signed in.
+    await logout(name, agentDir(), adapterStore);
     // Best-effort: drop any live runtime connection via the utility client.
     try {
       const c = await ensureUtility();
