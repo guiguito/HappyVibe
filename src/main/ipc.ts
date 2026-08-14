@@ -1205,7 +1205,12 @@ export function registerIpc(win: BrowserWindow): void {
                 const png = await browsers.screenshot(bid);
                 if (!png) return reply({ ok: false, reason: "The page could not be captured." });
                 const b64 = png.toString("base64");
-                notify({ stage: "screenshot", browserId: bid, intent: br.intent, dataUrl: `data:image/png;base64,${b64}` });
+                // Deliberately NO image on this notify. §28's "the user always
+                // sees it" means IN THE PANE — the live page is on screen right
+                // beside the transcript — so shipping a multi-megabyte data URL
+                // to a renderer that has the real thing already would be pure
+                // waste. The card's label carries the action.
+                notify({ stage: "screenshot", browserId: bid, intent: br.intent });
                 // §28: the IMAGE reaches the model only when the model can read
                 // one. The user always sees it either way (the notify above) —
                 // which is why a non-vision session still gets a useful result

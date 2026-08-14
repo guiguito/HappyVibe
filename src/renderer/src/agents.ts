@@ -265,8 +265,6 @@ export interface BrowserEvent {
   /** stage "acted": which of click/type/evaluate, and on what. */
   action?: "click" | "type" | "evaluate";
   detail?: string;
-  /** stage "screenshot": the PNG the USER sees, whatever the model can read. */
-  dataUrl?: string;
 }
 
 export function parseBrowserEvent(r: { method?: string; message?: string }): BrowserEvent | null {

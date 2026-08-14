@@ -202,18 +202,34 @@ export class BrowserManager {
         return callback({});
       }
 
-      const inherited = entry.approvedNav.has(details.url);
+      // Set by onBeforeRedirect below when this URL is a hop in a navigation we
+      // already approved. Consumed here, so it authorises exactly one request.
+      const inherited = entry.approvedNav.delete(details.url);
       const decision = entry.egress.decideMainFrame(details.url, inherited);
-      if (decision.allow) {
-        entry.approvedNav.add(details.url);
-        return callback({});
-      }
+      if (decision.allow) return callback({});
       // Refused: cancel, and put the pane into a state that OFFERS the approval
       // rather than showing a blank. The user clicking Allow is consent (§28's
       // user-initiated rule), so it needs no second prompt.
       entry.blockedUrl = details.url;
       this.patch(entry.info.id, { state: "blocked", blockedHost: decision.host });
       callback({ cancel: true });
+    });
+
+    // A redirect chain is ONE navigation, and this is the ONLY place that can
+    // say so: the hop arrives at onBeforeRequest as a fresh request with a
+    // different URL and no marker on it, so without this every vendor login
+    // that bounces through an identity provider lands on the blocked state.
+    // (`decideMainFrame`'s `isRedirectOfApproved` parameter exists for exactly
+    // this and is otherwise unreachable — a same-URL repeat is already allowed
+    // by host.)
+    ses.webRequest.onBeforeRedirect((details) => {
+      const entry = this.entryForRequest(details.webContentsId);
+      if (!entry || details.resourceType !== "mainFrame" || !details.redirectURL) return;
+      // Bounded: these are transient hand-offs, consumed by the request that
+      // follows within milliseconds. A long chain is a redirect loop, not a
+      // reason to grow a set for the life of the pane.
+      if (entry.approvedNav.size > 32) entry.approvedNav.clear();
+      entry.approvedNav.add(details.redirectURL);
     });
 
     const outcome = (details: { webContentsId?: number; url: string }, patch: { status?: number; error?: string }): void => {
