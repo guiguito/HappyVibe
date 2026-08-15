@@ -2467,7 +2467,12 @@ function PaneDividers({
   // is findable. 6px was too thin to catch on the first try, and beside a browser
   // pane only the outer half was live at all until the view learned to inset
   // itself away from the divider (BrowserTab DIVIDER_INSET).
-  const hit = "absolute z-20 hover:bg-tangerine/40 transition-colors";
+  // §28 round 1, revised: the strip you GRAB stays 10px, but it no longer paints
+  // itself — a 10px band of colour reads as a fat bar rather than a divider. The
+  // tint is a 5px child centred on the line, so the affordance is half as thick
+  // while the target is unchanged. Two different jobs, two different widths.
+  const hit = "group absolute z-20";
+  const tint = "absolute bg-transparent group-hover:bg-tangerine/40 transition-colors";
   const pct = (r: number): string => `${r * 100}%`;
   return (
     <>
@@ -2478,7 +2483,9 @@ function PaneDividers({
         onMouseDown={drag("main", vertical)}
         className={`${hit} ${vertical ? "top-0 bottom-0 w-2.5 cursor-col-resize -translate-x-1/2" : "left-0 right-0 h-2.5 cursor-row-resize -translate-y-1/2"}`}
         style={vertical ? { left: pct(tabs.sizes.main) } : { top: pct(tabs.sizes.main) }}
-      />
+      >
+        <div className={`${tint} ${vertical ? "inset-y-0 left-1/2 w-[5px] -translate-x-1/2" : "inset-x-0 top-1/2 h-[5px] -translate-y-1/2"}`} />
+      </div>
       {anyCross && (
         <div
           role="separator"
@@ -2487,7 +2494,9 @@ function PaneDividers({
           onMouseDown={drag("cross", !vertical)}
           className={`${hit} ${vertical ? "left-0 right-0 h-2.5 cursor-row-resize -translate-y-1/2" : "top-0 bottom-0 w-2.5 cursor-col-resize -translate-x-1/2"}`}
           style={vertical ? { top: pct(tabs.sizes.cross) } : { left: pct(tabs.sizes.cross) }}
-        />
+        >
+          <div className={`${tint} ${vertical ? "inset-x-0 top-1/2 h-[5px] -translate-y-1/2" : "inset-y-0 left-1/2 w-[5px] -translate-x-1/2"}`} />
+        </div>
       )}
     </>
   );
