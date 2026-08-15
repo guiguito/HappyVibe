@@ -326,6 +326,15 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   the tab context menu, FileTree) dismisses with a `fixed inset-0` click-catcher, which closes on
   CLICK and is therefore immune — this was the only blur-dismissed menu. Pinned by
   `tests/tabstrip-menu.test.ts`.
+- **Portalling a dialog to the end of `<body>` does NOT put it on top.** Among POSITIONED elements
+  an explicit z-index beats document order, so every `z-20`…`z-50` in the app painted above a Radix
+  dialog whose z-index was `auto` — `.hv-overlay`/`.hv-dialog` were animation-only classes with no
+  layer at all. Seen as the agent-terminal card (`sticky top-0 z-20`, ChatView) sitting bright and
+  clickable on top of the ask-user modal's dimming scrim. Both classes now declare `z-index: 100`,
+  clear of the app's scale, which tops out at z-50. `tests/modal-layer.test.ts` pins the rule AND
+  scans the renderer for anything climbing to 100 — that second half is the one that rots, because a
+  future `z-[200]` on some popover silently takes the crown back. Anything that must sit above a
+  dialog has to BE a dialog.
 - **Hit-testing has two blind spots, and both were real overlays.** `document.elementFromPoint`
   ignores `pointer-events: none`, so the voice recording pill (which sets it so it never swallows a
   click) was invisible to the browser's coverage check; and nine sample points have gaps, so the

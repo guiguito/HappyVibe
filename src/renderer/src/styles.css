@@ -174,10 +174,26 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+/*
+ * The modal layer. `z-index: 100` is the load-bearing part, not the animation.
+ *
+ * Radix portals a dialog to the END of <body>, and it is easy to assume that
+ * puts it on top. It does not: among POSITIONED elements an explicit z-index
+ * outranks document order, so any `z-20`…`z-50` in the app paints ABOVE a
+ * dialog whose z-index is `auto`. Observed with the agent-terminal card
+ * (`sticky top-0 z-20`, ChatView) sitting bright and clickable on top of the
+ * ask-user modal's dimming scrim.
+ *
+ * 100 is deliberately clear of the app's own scale, which tops out at z-50
+ * (pinned by tests/modal-layer.test.ts). Anything that must sit above a dialog
+ * has to be a dialog.
+ */
 .hv-overlay {
+  z-index: 100;
   animation: hv-fade-in 150ms ease-out;
 }
 .hv-dialog {
+  z-index: 100;
   animation: hv-pop-in 180ms cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
