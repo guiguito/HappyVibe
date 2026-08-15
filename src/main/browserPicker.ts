@@ -73,11 +73,26 @@ export const PICKER_SCRIPT = `(() => {
     return parts.join(" > ");
   };
 
+  // What the user CALLS the thing, never what it is made of. This used to read
+  // "<a.nav-play> PLAY" — a tag and a class name are the developer's handle on
+  // an element, and the person pointing at a button on screen means "PLAY".
+  // The selector still travels in the payload; it just stops being the label.
+  const KINDS = { a: "link", button: "button", img: "image", svg: "icon", input: "field",
+    select: "dropdown", textarea: "text box", video: "video", audio: "audio", form: "form",
+    ul: "list", ol: "list", li: "list item", table: "table", tr: "row", td: "cell",
+    nav: "navigation", header: "header", footer: "footer", aside: "sidebar", section: "section",
+    h1: "heading", h2: "heading", h3: "heading", h4: "heading", h5: "heading", h6: "heading",
+    p: "paragraph", canvas: "canvas", iframe: "embedded frame" };
   const labelFor = (el) => {
-    const id = el.id ? "#" + el.id : "";
-    const cls = (el.getAttribute("class") || "").trim().split(/\\s+/).filter(Boolean).slice(0, 2).map((c) => "." + c).join("");
     const text = (el.innerText || "").trim().replace(/\\s+/g, " ").slice(0, 40);
-    return "<" + el.tagName.toLowerCase() + id + cls + ">" + (text ? " " + text : "");
+    if (text) return text;
+    // No visible words: whatever the page tells assistive tech is the next best
+    // human name, and it is what a screen reader would say out loud.
+    const attr = ["aria-label", "alt", "placeholder", "title", "value", "name"]
+      .map((a) => (el.getAttribute(a) || "").trim())
+      .find(Boolean);
+    if (attr) return attr.slice(0, 40);
+    return KINDS[el.tagName.toLowerCase()] || "element";
   };
 
   window.__hvPickerPromise = new Promise((resolve) => {
@@ -143,7 +158,9 @@ export function parsePicked(raw: unknown): PickedElement | null {
     return {
       selector: p.selector,
       outerHTML: trimOuterHtml(p.outerHTML),
-      label: typeof p.label === "string" && p.label ? p.label.slice(0, 120) : p.selector,
+      // Falling back to the selector would reintroduce exactly what the label is
+      // for avoiding — a path means nothing to the person who clicked a button.
+      label: typeof p.label === "string" && p.label ? p.label.slice(0, 120) : "element",
       ...(rect ? { rect } : {}),
     };
   } catch {

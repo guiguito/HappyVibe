@@ -56,9 +56,12 @@ describe("parsePicked", () => {
     expect(picked!.label.length).toBe(120);
   });
 
-  it("falls back to the selector when the page gave no usable label", () => {
+  it("falls back to a plain word, never the selector", () => {
+    // Falling back to "main > div" would put the path back in front of the user,
+    // which is the whole thing the label exists to avoid.
     const picked = parsePicked(JSON.stringify({ selector: "main > div", outerHTML: "<div/>" }));
-    expect(picked!.label).toBe("main > div");
+    expect(picked!.label).toBe("element");
+    expect(picked!.label).not.toContain(">");
   });
 });
 
@@ -74,6 +77,23 @@ describe("PICKER_SCRIPT", () => {
 
   it("escapes with Escape as well as the button", () => {
     expect(PICKER_SCRIPT).toContain('e.key === "Escape"');
+  });
+
+  // §28 round 1: the chip said "<a.nav-play> PLAY". A tag and a class are the
+  // developer's handle on an element; the person who clicked it means "PLAY".
+  it("labels an element by what it SAYS, not by what it is made of", () => {
+    expect(PICKER_SCRIPT).toContain("innerText");
+    // No tag-soup assembly left in the label path.
+    expect(PICKER_SCRIPT).not.toContain('"<" + el.tagName.toLowerCase()');
+  });
+
+  it("falls back to the accessible name, then to a plain English kind", () => {
+    for (const attr of ["aria-label", "alt", "placeholder", "title"]) {
+      expect(PICKER_SCRIPT, attr).toContain(`"${attr}"`);
+    }
+    for (const word of ["link", "button", "image", "heading", "dropdown"]) {
+      expect(PICKER_SCRIPT, word).toContain(`"${word}"`);
+    }
   });
 });
 

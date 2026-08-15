@@ -410,8 +410,19 @@ export class BrowserManager {
       // only be seen with the page out of the way) and shows this still in its
       // place — which is why the capture has to happen here, before the hide,
       // rather than in the renderer a frame later against a blank pane.
-      const png = await entry.view.webContents.capturePage();
-      return { element, imageBase64: png.isEmpty() ? null : png.toPNG().toString("base64") };
+      //
+      // Its OWN try: the still is an enhancement, the picked element is the
+      // point. capturePage rejects on a view that is hidden or not yet laid out,
+      // and sharing one try meant a failed screenshot silently discarded the
+      // user's selection — the popup simply never appeared.
+      let imageBase64: string | null = null;
+      try {
+        const png = await entry.view.webContents.capturePage();
+        if (!png.isEmpty()) imageBase64 = png.toPNG().toString("base64");
+      } catch {
+        /* no still; the popup centres over a plain backdrop instead */
+      }
+      return { element, imageBase64 };
     } catch {
       return null;
     }

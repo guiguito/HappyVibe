@@ -547,7 +547,9 @@ export function ChatView({
       ? [
           input,
           ...pageRefs!.map((r) =>
-            `\n\n${r.comment ? `${r.comment}\n` : ""}Element \`${r.selector}\` (${r.label}):\n\n\`\`\`html\n${r.outerHTML}\n\`\`\``,
+            // The human name LEADS; the selector follows as data for the agent
+            // (browser_click needs one) rather than as the thing being named.
+            `\n\n${r.comment ? `${r.comment}\n` : ""}Referring to “${r.label}” on the page (selector: \`${r.selector}\`):\n\n\`\`\`html\n${r.outerHTML}\n\`\`\``,
           ),
         ].join("")
       : input;
