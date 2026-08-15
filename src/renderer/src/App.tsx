@@ -53,7 +53,7 @@ import { BrowserTab } from "./components/BrowserTab";
 import { TerminalView } from "./components/TerminalView";
 import { VoiceView } from "./components/VoiceView";
 import { restoreLayout } from "./layoutPersist";
-import { buildGridStyle, paneEdges } from "./paneGrid";
+import { buildGridStyle, paneEdges, paneNeighbours } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
@@ -477,15 +477,19 @@ export default function App(): React.JSX.Element {
      */
     void (async () => {
       try {
-        const [raw, sessionList, termList] = await Promise.all([
+        const [raw, sessionList, termList, browserList] = await Promise.all([
           window.hv.getLayout(),
           window.hv.listSessions(),
           window.hv.termList(),
+          // §28: normally empty at boot — panes do not survive the app, so their
+          // restored tabs must be pruned rather than shown as ghosts.
+          window.hv.browserList(),
         ]);
         setTerminals(Object.fromEntries(termList.map((t) => [t.id, t])));
         const layout = restoreLayout(raw, {
           sessions: new Set(sessionList.map((x) => x.id)),
           terminals: new Set(termList.map((t) => t.id)),
+          browsers: new Set(browserList.map((b) => b.id)),
         });
         setTabsByWs(layout);
         // Land on a workspace that actually has restored tabs. The remembered
@@ -1225,6 +1229,28 @@ export default function App(): React.JSX.Element {
   };
 
   /**
+   * §28: open a browser in the focused pane of `ws`. ⌘B and the `+` menu.
+   *
+   * Mirrors newTerminal exactly, with one difference that matters: the pane is
+   * created BLANK (browsers.create starts at url: "") so the URL bar takes focus
+   * and the human types where they want to go — a human-opened browser has no
+   * destination to guess, unlike the agent's, which always opens ON something.
+   */
+  const newBrowser = async (ws: string): Promise<void> => {
+    try {
+      const info = await window.hv.browserCreate(ws);
+      setBrowsers((p) => ({ ...p, [info.id]: info }));
+      // No chat tab passed: this opens where the human asked (the focused pane),
+      // where the AGENT's placement rule deliberately avoids covering the chat.
+      setTabsByWs((p) => ({ ...p, [ws]: openBrowserTab(p[ws] ?? emptyTabs, info.id, null) }));
+      setActiveWs(ws);
+      setView("chat");
+    } catch (err) {
+      surface(err);
+    }
+  };
+
+  /**
    * §26: close a terminal tab, which KILLS its PTY — a terminal tab IS its
    * terminal. That is why this confirms where closing a chat tab does not: a
    * chat tab only stops showing a session that keeps running.
@@ -1748,6 +1774,14 @@ export default function App(): React.JSX.Element {
       if (ws) void newTerminal(ws);
       return;
     }
+    // §28: ⌘B. Same shape as ⌘T — the workspace falls back to the first one so
+    // the key works before anything is focused.
+    if (is("newBrowser")) {
+      e.preventDefault();
+      const ws = wsId ?? workspaces[0];
+      if (ws) void newBrowser(ws);
+      return;
+    }
     if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
     if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
     if (is("closeTab")) {
@@ -2062,6 +2096,11 @@ export default function App(): React.JSX.Element {
                       void newTerminal(wsId);
                     }}
                     newTerminalKey={formatBinding(bindings.newTerminal)}
+                    onNewBrowser={() => {
+                      updateTabs(wsId, (t) => focusPane(t, slot));
+                      void newBrowser(wsId);
+                    }}
+                    newBrowserKey={formatBinding(bindings.newBrowser)}
                     onOpenFilePanel={() => setTreeOpen(true)}
                     splitOptions={splitOptions(wsTabs, slot)}
                     onSplit={(dir) => updateTabs(wsId, (t) => splitAt(t, slot, dir))}
@@ -2115,6 +2154,9 @@ export default function App(): React.JSX.Element {
                   info={browsers[bid]}
                   gridArea={area ?? undefined}
                   hidden={area === null || activeView !== "chat"}
+                  // Where this pane meets another: the view insets itself so the
+                  // divider's drag strip is never underneath a composited page.
+                  edges={paneNeighbours(wsTabs, paneOf(wsTabs, browserTab(bid)))}
                   onPicked={(payload) => {
                     // The comment lands in the composer of the chat the user is
                     // looking at — never sent, never auto-submitted (§28).
@@ -2421,7 +2463,10 @@ function PaneDividers({
     document.addEventListener("mouseup", onUp);
   };
 
-  // A 6px hit strip centred on the line, tinted on hover so it is findable.
+  // §28 round 1: a 10px hit strip centred on the 2px line, tinted on hover so it
+  // is findable. 6px was too thin to catch on the first try, and beside a browser
+  // pane only the outer half was live at all until the view learned to inset
+  // itself away from the divider (BrowserTab DIVIDER_INSET).
   const hit = "absolute z-20 hover:bg-tangerine/40 transition-colors";
   const pct = (r: number): string => `${r * 100}%`;
   return (
@@ -2431,7 +2476,7 @@ function PaneDividers({
         aria-orientation={vertical ? "vertical" : "horizontal"}
         title="Drag to resize"
         onMouseDown={drag("main", vertical)}
-        className={`${hit} ${vertical ? "top-0 bottom-0 w-1.5 cursor-col-resize -translate-x-1/2" : "left-0 right-0 h-1.5 cursor-row-resize -translate-y-1/2"}`}
+        className={`${hit} ${vertical ? "top-0 bottom-0 w-2.5 cursor-col-resize -translate-x-1/2" : "left-0 right-0 h-2.5 cursor-row-resize -translate-y-1/2"}`}
         style={vertical ? { left: pct(tabs.sizes.main) } : { top: pct(tabs.sizes.main) }}
       />
       {anyCross && (
@@ -2440,7 +2485,7 @@ function PaneDividers({
           aria-orientation={vertical ? "horizontal" : "vertical"}
           title="Drag to resize"
           onMouseDown={drag("cross", !vertical)}
-          className={`${hit} ${vertical ? "left-0 right-0 h-1.5 cursor-row-resize -translate-y-1/2" : "top-0 bottom-0 w-1.5 cursor-col-resize -translate-x-1/2"}`}
+          className={`${hit} ${vertical ? "left-0 right-0 h-2.5 cursor-row-resize -translate-y-1/2" : "top-0 bottom-0 w-2.5 cursor-col-resize -translate-x-1/2"}`}
           style={vertical ? { top: pct(tabs.sizes.cross) } : { left: pct(tabs.sizes.cross) }}
         />
       )}

@@ -38,7 +38,9 @@ export function TabStrip({
   onNewSession,
   newSessionKey,
   onNewTerminal,
+  onNewBrowser,
   newTerminalKey,
+  newBrowserKey,
   onOpenFilePanel,
   splitOptions,
   onSplit,
@@ -79,8 +81,11 @@ export function TabStrip({
   newSessionKey: string;
   /** §26: opens a terminal in THIS pane. Same action ⌘T dispatches. */
   onNewTerminal: () => void;
+  /** §28: ⌘B — a human opens a browser pane, like ⌘T opens a terminal. */
+  onNewBrowser: () => void;
   /** Shown beside "New terminal" so the menu teaches the binding. */
   newTerminalKey: string;
+  newBrowserKey: string;
   onOpenFilePanel: () => void;
   /**
    * Which split directions this pane can offer (tabs.ts splitOptions). Per pane
@@ -226,7 +231,9 @@ export function TabStrip({
         onNewSession={onNewSession}
         newSessionKey={newSessionKey}
         onNewTerminal={onNewTerminal}
+        onNewBrowser={onNewBrowser}
         newTerminalKey={newTerminalKey}
+        newBrowserKey={newBrowserKey}
         onOpenFilePanel={onOpenFilePanel}
       />
       {/* Absorbs the leftover width so the strip remains a drop target end to end. */}
@@ -349,6 +356,8 @@ function NewTabButton({
   newSessionKey,
   onNewTerminal,
   newTerminalKey,
+  onNewBrowser,
+  newBrowserKey,
   onOpenFilePanel,
 }: {
   onNewSession: () => void;
@@ -358,6 +367,9 @@ function NewTabButton({
   onNewTerminal: () => void;
   /** Shown beside "New terminal" so the menu teaches the binding. */
   newTerminalKey: string;
+  /** §28: opens a browser in THIS pane. Same action ⌘B dispatches. */
+  onNewBrowser: () => void;
+  newBrowserKey: string;
   onOpenFilePanel: () => void;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
@@ -405,6 +417,7 @@ function NewTabButton({
         <div className="absolute left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
           <Item label="New session" hint={newSessionKey} onPick={onNewSession} />
           <Item label="New terminal" hint={newTerminalKey} onPick={onNewTerminal} />
+          <Item label="New browser" hint={newBrowserKey} onPick={onNewBrowser} />
           <Item label="Open file…" onPick={onOpenFilePanel} />
         </div>
       )}

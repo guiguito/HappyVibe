@@ -298,14 +298,28 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   guard that survives whatever code a future Chromium picks. Honest limit, stated in §28 and not to be
   over-claimed: in-page `fetch` still reaches anything the page can — the headline is "only
   NAVIGATES where you allow", which is why `browser_evaluate` carries its own stricter rule.
-- **A `WebContentsView` has no z-index relative to the DOM — hiding it IS the z-order.**
-  It composites over the whole renderer, so the permission modal would otherwise be asked for
-  *underneath* the page it is about. `BrowserTab.tsx` hides the view whenever
-  `document.querySelector(".hv-overlay")` matches (one MutationObserver on `document.body`) — every
-  Radix overlay in the app already carries that class, so a dialog added later inherits it for free.
-  Bounds are pushed from a measured placeholder; the guest has **no preload at all** (the agent
-  drives from main, outside the sandbox), which is also why the element picker is *injected* via
-  `executeJavaScript` rather than preloaded.
+- **A `WebContentsView` has no z-index relative to the DOM — hiding it IS the z-order, and the
+  rule that decides when must be GEOMETRIC.** It composites over the whole renderer, so anything
+  drawn "above" it is really drawn under it and swallows its own clicks. The first version matched
+  `.hv-overlay`, believing every overlay carried it: **4 components do, out of ~35 floating
+  surfaces** — every dropdown, the `@file` autocomplete, the file drawer, ~20 hand-rolled confirms
+  and the pane divider were all dead, reported as "none of this menu is clickable". No selector
+  would have saved it either: the pane `+` menu shares neither the class nor the styling nor the
+  dismissal idiom of the other menus. `BrowserTab.tsx` now hit-tests a 3×3 grid inside its own rect
+  (`document.elementFromPoint`, rAF-coalesced off a body MutationObserver) and hides whenever the
+  topmost element at any sample is not itself — no marker to remember, and it hides ONLY when the
+  thing actually overlaps this pane. The view also insets itself by `DIVIDER_INSET` on every side
+  that touches another pane, which is what keeps the divider's drag strip grabbable *and* keeps
+  that transparent strip out of the samples. Bounds come from a measured placeholder; the guest has
+  **no preload at all** (the agent drives from main, outside the sandbox), which is also why the
+  element picker is *injected* via `executeJavaScript` rather than preloaded.
+- **Every tab prefix must be pruned on layout restore, or it comes back as a ghost.**
+  `layoutPersist.ts` drops a restored tab whose subject is gone, and `AliveSubjects` is the list of
+  what "gone" is checked against. `:browser:` was missing from it, so after a restart the strip
+  showed browser tabs for panes that had died with the app — two "Browser" tabs over one pane.
+  Panes never survive the app (unlike a PTY, which main keeps across a renderer reload), so that
+  set is normally empty at boot and every restored browser tab is pruned. Pinned by
+  `tests/layout-persist.test.ts`.
 - **A tool result CAN carry an image — measured, not assumed.** `AgentToolResult.content` is
   `(TextContent | ImageContent)[]` (`pi-agent-core/dist/types.d.ts:316`), so `browser_screenshot`
   hands a vision model the actual PNG. It is gated on the session model advertising

@@ -9,12 +9,20 @@ import {
   openChat,
   openFile,
   openTerminal,
+  openBrowserTab,
+  allBrowsers,
+  allChats,
   splitAt,
   splitHalf,
   type WorkspaceTabs,
 } from "../src/renderer/src/tabs";
 
-const alive = (sessions: string[], terminals: string[]): { sessions: Set<string>; terminals: Set<string> } => ({
+const alive = (
+  sessions: string[],
+  terminals: string[],
+  browsers: string[] = [],
+): { sessions: Set<string>; terminals: Set<string>; browsers: Set<string> } => ({
+  browsers: new Set(browsers),
   sessions: new Set(sessions),
   terminals: new Set(terminals),
 });
@@ -180,5 +188,27 @@ describe("restoredSessions", () => {
   it("is empty for a layout of files and terminals only", () => {
     const t = openTerminal(openFile(emptyTabs, "a.ts"), "t1");
     expect(restoredSessions({ ws1: t })).toEqual([]);
+  });
+});
+
+// ── §28 round 1: a browser tab whose pane died must not come back ───────────
+describe("restoreLayout — browser tabs", () => {
+  it("prunes a browser tab whose pane is gone (the normal case at boot)", () => {
+    const t = openBrowserTab(openChat(emptyTabs, "s1"), "b1", null);
+    // Panes do not survive the app, so the alive set is empty on a cold start.
+    const back = restoreLayout(stored({ ws1: t }), alive(["s1"], [], []))!.ws1!;
+    expect(allBrowsers(back)).toEqual([]);
+    expect(allChats(back)).toEqual(["s1"]); // the chat is untouched
+  });
+
+  it("keeps one whose pane is still alive (a renderer reload)", () => {
+    const t = openBrowserTab(openChat(emptyTabs, "s1"), "b1", null);
+    const back = restoreLayout(stored({ ws1: t }), alive(["s1"], [], ["b1"]))!.ws1!;
+    expect(allBrowsers(back)).toEqual(["b1"]);
+  });
+
+  it("drops the workspace entirely when the browser was its only tab", () => {
+    const t = openBrowserTab(emptyTabs, "b1", null);
+    expect(restoreLayout(stored({ ws1: t }), alive([], [], [])).ws1).toBeUndefined();
   });
 });

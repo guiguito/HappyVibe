@@ -42,6 +42,8 @@ interface HvBrowserInfo {
   state: "loading" | "ready" | "failed" | "blocked" | "crashed";
   blockedHost?: string;
   error?: string;
+  /** Raw Chromium net error, so the pane can offer the right way out (§28 r1). */
+  errorCode?: number;
   canGoBack: boolean;
   canGoForward: boolean;
 }
@@ -653,7 +655,11 @@ interface HvApi {
   /** What makes the persistent partition reversible (All Tools → Browser). */
   browserClearData(): Promise<void>;
   /** §28 picker: resolves with the element the user clicked, or null if cancelled. */
-  browserPick(id: string): Promise<{ selector: string; outerHTML: string; label: string } | null>;
+  /** §28 r1: the element AND a still of the page, captured before the view hides. */
+  browserPick(id: string): Promise<{
+    element: { selector: string; outerHTML: string; label: string; rect?: { x: number; y: number; width: number; height: number } };
+    imageBase64: string | null;
+  } | null>;
   browserPickCancel(id: string): Promise<void>;
   onBrowserState(cb: (info: HvBrowserInfo) => void): () => void;
   onBrowserClosed(cb: (p: { id: string }) => void): () => void;

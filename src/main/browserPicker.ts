@@ -21,6 +21,12 @@ export interface PickedElement {
   outerHTML: string;
   /** A short human label for the chip — tag + id/class, never the whole node. */
   label: string;
+  /**
+   * The element's viewport rect in CSS pixels, so the comment popup can pin
+   * itself to the thing being commented on. Optional: a page that moves the
+   * element between click and read still yields a usable comment, just centred.
+   */
+  rect?: { x: number; y: number; width: number; height: number };
 }
 
 /**
@@ -99,10 +105,12 @@ export const PICKER_SCRIPT = `(() => {
       e.preventDefault();
       e.stopPropagation();
       const el = current || e.target;
+      const box = el.getBoundingClientRect();
       finish(JSON.stringify({
         selector: selectorFor(el),
         outerHTML: (el.outerHTML || "").slice(0, ${MAX_OUTER_HTML * 2}),
         label: labelFor(el),
+        rect: { x: box.x, y: box.y, width: box.width, height: box.height },
       }));
     };
     const key = (e) => { if (e.key === "Escape") { e.preventDefault(); finish("null"); } };
@@ -124,10 +132,19 @@ export function parsePicked(raw: unknown): PickedElement | null {
   try {
     const p = JSON.parse(raw) as Partial<PickedElement>;
     if (!p || typeof p.selector !== "string" || typeof p.outerHTML !== "string") return null;
+    // The rect is page-controlled like everything else here, so it is accepted
+    // only when every field is a finite number — a NaN would place the popup
+    // somewhere unreachable rather than fall back to centred.
+    const r = p.rect as Record<string, unknown> | undefined;
+    const rect =
+      r && ["x", "y", "width", "height"].every((k) => typeof r[k] === "number" && Number.isFinite(r[k] as number))
+        ? { x: r.x as number, y: r.y as number, width: r.width as number, height: r.height as number }
+        : undefined;
     return {
       selector: p.selector,
       outerHTML: trimOuterHtml(p.outerHTML),
       label: typeof p.label === "string" && p.label ? p.label.slice(0, 120) : p.selector,
+      ...(rect ? { rect } : {}),
     };
   } catch {
     return null;

@@ -42,6 +42,8 @@ export interface BrowserInfo {
   blockedHost?: string;
   /** Set with state "failed": what Chromium said, so the pane is never a blank. */
   error?: string;
+  /** The raw Chromium net error, so the renderer can offer the right way out. */
+  errorCode?: number;
   canGoBack: boolean;
   canGoForward: boolean;
 }
@@ -55,6 +57,13 @@ interface Entry {
   blockedUrl?: string;
   /** Main-frame requests we have already cleared, so redirects can inherit. */
   approvedNav: Set<string>;
+  /**
+   * When this pane was last actually shown. The renderer only makes a pane
+   * visible when it is its pane's active tab AND nothing is drawn over it, so
+   * this is a faithful "the one the human is looking at" — which is what §28's
+   * adoption rule needs to pick between several human-opened browsers.
+   */
+  lastVisibleAt: number;
 }
 
 let seq = 0;
@@ -103,6 +112,7 @@ export class BrowserManager {
       egress: new EgressState(),
       console: [],
       approvedNav: new Set(),
+      lastVisibleAt: Date.now(),
     };
     this.entries.set(id, entry);
     this.byWebContentsId.set(view.webContents.id, entry);
@@ -178,7 +188,7 @@ export class BrowserManager {
       // a future Chromium picks.
       if (!isMainFrame || code === -3 || code === -20) return;
       if (entry.info.state === "blocked") return;
-      this.patch(id, { state: "failed", error: `${desc} (${code})`, url });
+      this.patch(id, { state: "failed", error: `${desc} (${code})`, errorCode: code, url });
     });
     wc.on("render-process-gone", () => this.patch(id, { state: "crashed" }));
   }
@@ -259,7 +269,7 @@ export class BrowserManager {
     // a stale host can never be shown beside a live page.
     const next = { ...entry.info, ...patch };
     if (patch.state && patch.state !== "blocked") next.blockedHost = undefined;
-    if (patch.state && patch.state !== "failed") next.error = undefined;
+    if (patch.state && patch.state !== "failed") { next.error = undefined; next.errorCode = undefined; }
     entry.info = next;
     this.onState(next);
   }
@@ -387,13 +397,21 @@ export class BrowserManager {
    * §28 picker. The script is injected (no preload exists to hold it) and
    * resolves when the user clicks an element or presses Escape.
    */
-  async pick(id: string): Promise<PickedElement | null> {
+  async pick(id: string): Promise<{ element: PickedElement; imageBase64: string | null } | null> {
     const entry = this.entries.get(id);
     if (!entry) return null;
     try {
       // userGesture true: the picker installs listeners, and Chromium treats a
       // gesture-less injection more suspiciously than it needs to here.
-      return parsePicked(await entry.view.webContents.executeJavaScript(PICKER_SCRIPT, true));
+      const element = parsePicked(await entry.view.webContents.executeJavaScript(PICKER_SCRIPT, true));
+      if (!element) return null;
+      // Freeze the page WHILE IT IS STILL VISIBLE. The renderer hides the view to
+      // draw the comment popup (a composited view has no z-index, so a popup can
+      // only be seen with the page out of the way) and shows this still in its
+      // place — which is why the capture has to happen here, before the hide,
+      // rather than in the renderer a frame later against a blank pane.
+      const png = await entry.view.webContents.capturePage();
+      return { element, imageBase64: png.isEmpty() ? null : png.toPNG().toString("base64") };
     } catch {
       return null;
     }
@@ -410,7 +428,18 @@ export class BrowserManager {
   }
 
   setVisible(id: string, visible: boolean): void {
-    this.entries.get(id)?.view.setVisible(visible);
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    if (visible) entry.lastVisibleAt = Date.now();
+    entry.view.setVisible(visible);
+  }
+
+  /** §28 adoption: panes in this workspace, most recently SEEN first. */
+  listByRecency(workspaceId: string): BrowserInfo[] {
+    return [...this.entries.values()]
+      .filter((e) => e.info.workspaceId === workspaceId)
+      .sort((a, b) => b.lastVisibleAt - a.lastVisibleAt)
+      .map((e) => e.info);
   }
 
   get(id: string): BrowserInfo | null {

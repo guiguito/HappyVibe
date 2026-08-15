@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
   SHORTCUT_ACTIONS, eventToBinding, matchesBinding, formatBinding,
   resolveBindings, findConflict, type ShortcutId,
@@ -49,4 +49,29 @@ test("findConflict names the action that already owns a combo", () => {
   expect(findConflict(b, "newSession" as ShortcutId, b.toggleSidebar)).toBe("toggleSidebar");
   expect(findConflict(b, "newSession" as ShortcutId, b.newSession)).toBeNull(); // itself is not a conflict
   expect(findConflict(b, "newSession" as ShortcutId, "Mod-Shift-y")).toBeNull();
+});
+
+// ── §28 feedback round 1: the browser takes ⌘B, the sidebar moves to ⌘\ ──────
+describe("newBrowser (§28)", () => {
+  it("defaults to ⌘B, and the sidebar moved out of its way", () => {
+    const b = resolveBindings(null);
+    expect(b.newBrowser).toBe("Mod-b");
+    expect(b.toggleSidebar).toBe("Mod-\\");
+  });
+
+  it("renders as ⌘B and ⌘\\ on the shortcuts page", () => {
+    expect(formatBinding("Mod-b")).toBe("⌘B");
+    expect(formatBinding("Mod-\\")).toBe("⌘\\");
+  });
+
+  it("still refuses a collision between the two", () => {
+    const b = resolveBindings(null);
+    // Trying to give the sidebar ⌘B back must report the browser as the holder.
+    expect(findConflict(b, "toggleSidebar", "Mod-b")).toBe("newBrowser");
+    expect(findConflict(b, "newBrowser", "Mod-\\")).toBe("toggleSidebar");
+  });
+
+  it("is an ordinary editable action, so the settings page picks it up for free", () => {
+    expect(SHORTCUT_ACTIONS.some((a) => a.id === "newBrowser")).toBe(true);
+  });
 });

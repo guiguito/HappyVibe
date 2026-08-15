@@ -534,7 +534,10 @@ export function ChatView({
   const hint = delegationHint(delegations);
 
   const submit = (behavior?: "followUp"): void => {
-    if (!input.trim()) return;
+    // §28 round 1: a picked element is a message on its own. The comment and the
+    // markup carry the whole intent, so requiring typed text as well would make
+    // the popup's paper-plane hand you a composer that then refuses to send.
+    if (!input.trim() && !(pageRefs?.length ?? 0)) return;
     const mentions = extractMentions(input, mentionMap.current);
     // §28: picked elements ride along as fenced blocks — the user's comment
     // first (it is what they mean), the markup after (it is how the agent finds
@@ -561,7 +564,7 @@ export function ChatView({
       {/* v5.1: search + context bubble live IN the chat (a thin right-aligned bar
           at the top of this pane) — not a floating overlay that could bleed over
           an adjacent split pane. */}
-      <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
+      <div className="flex items-center justify-end gap-1.5 px-3 h-11 border-b-2 border-line bg-paper shrink-0">
         {/* §23: compact plan-mode indicator (left) — read-only badge with a
             wrap-up nudge and one-click exit. Replaces the full-width banner. */}
         {/* §7 round 12: the MODEL chip lives here, left of the metrics, and the
@@ -1331,7 +1334,7 @@ export function ChatView({
           )}
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() && !(pageRefs?.length ?? 0)}
             aria-label={busy ? "Steer" : "Send"}
             title={busy ? "Steer — lands between tool calls" : "Send"}
             className="shrink-0 size-8 flex items-center justify-center rounded-xl text-tangerine hover:bg-paper-deep/40 transition-colors enabled:cursor-pointer disabled:opacity-40"

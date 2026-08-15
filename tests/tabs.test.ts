@@ -6,6 +6,7 @@ import {
   chatTabCount,
   allBrowsers, browserOf, browserTab, isBrowserTab, openBrowserTab,
 } from "../src/renderer/src/tabs";
+import { paneNeighbours } from "../src/renderer/src/paneGrid";
 
 // ── tab identity: a chat is per SESSION (round 11) ───────────────────────────
 
@@ -620,5 +621,30 @@ describe("§28 browser tabs", () => {
     t = openBrowserTab(t, "b1", chatTab("s1"));
     expect(t.split).toBe(split);
     expect(allBrowsers(t)).toEqual(["b1"]);
+  });
+});
+
+// ── §28 round 1: which sides of a pane touch a divider ──────────────────────
+describe("paneNeighbours", () => {
+  it("reports nothing when there is only one pane", () => {
+    expect(paneNeighbours(emptyTabs, 0)).toEqual({ left: false, top: false, right: false, bottom: false });
+  });
+
+  it("a vertical split gives the left pane a RIGHT divider and vice versa", () => {
+    const t = splitPane(openFile(emptyTabs, "a.ts"), "v");
+    expect(paneNeighbours(t, 0)).toMatchObject({ right: true, left: false });
+    expect(paneNeighbours(t, 1)).toMatchObject({ left: true, right: false });
+  });
+
+  it("a horizontal split gives the top pane a BOTTOM divider", () => {
+    const t = splitPane(openFile(emptyTabs, "a.ts"), "h");
+    expect(paneNeighbours(t, 0)).toMatchObject({ bottom: true, top: false });
+    expect(paneNeighbours(t, 1)).toMatchObject({ top: true, bottom: false });
+  });
+
+  it("ignores slots that are not live", () => {
+    const t = splitPane(openFile(emptyTabs, "a.ts"), "v");
+    // Slots 2/3 do not exist until a half is cross-split.
+    expect(paneNeighbours(t, 0).bottom).toBe(false);
   });
 });

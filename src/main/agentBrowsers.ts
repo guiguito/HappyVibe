@@ -7,6 +7,13 @@
  * Ending a session therefore never destroys a pane — it releases a claim, and
  * the browser stays as an ordinary tab the user can keep using.
  *
+ * ADOPTION (round 1). A human opens browsers with ⌘B, and "look at what I am
+ * looking at" is the whole point of having one. So a session with no browser of
+ * its own ADOPTS the pane the human most recently had on screen in this
+ * workspace, instead of opening a second one beside it. The cap below is
+ * therefore about what the agent may CREATE — human-opened panes are unlimited,
+ * exactly as §26 caps agent terminals at 3 while the human's are uncapped.
+ *
  * CAP 1, not 3. A pane is a full Chromium renderer, where a terminal is a PTY,
  * and there is no "open a second browser" workflow the agent needs: the whole
  * loop is open → read → act → re-read on ONE page. So `open` on a session that
@@ -42,10 +49,32 @@ export class AgentBrowsers {
       this.mgr.navigate(existing, url, "agent");
       return { ok: true, browserId: existing, reused: true };
     }
+    // Adopt before creating: an unclaimed pane in this workspace is one the
+    // human opened, and taking it over is what makes "why is this button dead?"
+    // work without a second tab appearing beside the one they are pointing at.
+    const adopted = this.adoptable(workspaceId);
+    if (adopted) {
+      this.claims.set(sessionId, adopted);
+      this.mgr.navigate(adopted, url, "agent");
+      return { ok: true, browserId: adopted, reused: true };
+    }
     const info = this.mgr.create(workspaceId);
     this.claims.set(sessionId, info.id);
     this.mgr.navigate(info.id, url, "agent");
     return { ok: true, browserId: info.id, reused: false };
+  }
+
+  /**
+   * The pane this session may take over: same workspace, claimed by nobody,
+   * most recently on screen. Another session's browser is never stolen — two
+   * agents fighting over one page is worse than a second tab.
+   */
+  private adoptable(workspaceId: string): string | null {
+    const claimed = new Set(this.claims.values());
+    for (const info of this.mgr.listByRecency(workspaceId)) {
+      if (!claimed.has(info.id)) return info.id;
+    }
+    return null;
   }
 
   /**

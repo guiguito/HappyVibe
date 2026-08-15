@@ -2357,10 +2357,15 @@ export function registerIpc(win: BrowserWindow): void {
   });
   ipcMain.handle("hv:browser-visible", (_e, id: string, visible: boolean) => browsers.setVisible(id, visible));
   // origin "user": typing a URL IS consent (§28) — no prompt, still logged.
+  //
+  // The SCHEME is resolved in the renderer now (browserError.resolveTypedUrl):
+  // a bare `localhost:3000` gets http, the public web gets https, and a scheme
+  // we do not open is NAMED rather than prefixed into nonsense. Main keeps the
+  // hard refusal, which is a guard and not a guess.
   ipcMain.handle("hv:browser-navigate", (_e, id: string, url: string) => {
-    const target = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-    browsers.navigate(id, target, "user");
-    void log.append({ type: "browser.nav", data: { browserId: id, url: target, origin: "user" } });
+    if (!/^https?:\/\//i.test(url)) return;
+    browsers.navigate(id, url, "user");
+    void log.append({ type: "browser.nav", data: { browserId: id, url, origin: "user" } });
   });
   ipcMain.handle("hv:browser-allow-blocked", (_e, id: string) => {
     const info = browsers.get(id);

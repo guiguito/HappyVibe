@@ -12,6 +12,7 @@
 export type ShortcutId =
   | "newSession"
   | "newTerminal"
+  | "newBrowser"
   | "closeTab"
   | "save"
   | "search"
@@ -30,6 +31,10 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "newSession", label: "New session in the current workspace", defaultKey: "Mod-n" },
   // §26. Mod-t was free — nothing in the app registered it.
   { id: "newTerminal", label: "New terminal in the current workspace", defaultKey: "Mod-t" },
+  // §28 feedback round 1. ⌘B is the browser key people expect, so the browser
+  // gets it and the sidebar moves to ⌘\ — findConflict refuses duplicates, so
+  // this is a swap, never an addition.
+  { id: "newBrowser", label: "New browser in the current workspace", defaultKey: "Mod-b" },
   // §26 widened this from files to "file or terminal". A chat is still exempt:
   // closing a chat tab only hides a session, so it needs no keyboard route,
   // whereas closing a terminal KILLS a process and therefore confirms first.
@@ -38,7 +43,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   // One action, two consumers: whichever of the chat / the editor has focus.
   // Two actions would make the default ⌘F conflict with itself on first render.
   { id: "search", label: "Search the conversation or the open file", defaultKey: "Mod-f" },
-  { id: "toggleSidebar", label: "Show or hide the workspace panel", defaultKey: "Mod-b" },
+  { id: "toggleSidebar", label: "Show or hide the workspace panel", defaultKey: "Mod-\\" },
   { id: "toggleFileDrawer", label: "Show or hide the file drawer", defaultKey: "Mod-Shift-e" },
   { id: "openSettings", label: "Open Settings", defaultKey: "Mod-," },
   { id: "openShortcuts", label: "Open keyboard shortcuts", defaultKey: "Mod-/" },

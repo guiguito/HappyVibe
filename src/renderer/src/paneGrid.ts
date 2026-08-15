@@ -52,6 +52,42 @@ export function paneEdges(t: WorkspaceTabs, slot: number): { left: boolean; top:
   return { left: col2, top: row2 };
 }
 
+/**
+ * §28 round 1 — which SIDES of a pane touch another pane, i.e. where a drag
+ * divider runs. `paneEdges` above answers only "does this pane draw a border"
+ * (left/top); the embedded browser needs all four, because it insets its
+ * composited view away from every divider so the 10px drag strip stays live.
+ *
+ * Derived from the grid cells rather than from the split rules directly: two
+ * panes are neighbours when they share a row and differ by column, or share a
+ * column and differ by row. That is the same question the user is asking with
+ * the mouse, and it cannot drift out of step with the layout.
+ */
+export function paneNeighbours(
+  t: WorkspaceTabs,
+  slot: number,
+): { left: boolean; top: boolean; right: boolean; bottom: boolean } {
+  const out = { left: false, top: false, right: false, bottom: false };
+  if (!t.split || t.panes[slot] == null) return out;
+  const cell = (i: number): { col: number; row: number } => {
+    const v = t.split === "v";
+    return {
+      col: (v ? i === 1 || i === 3 : i === 2 || i === 3) ? 1 : 0,
+      row: (v ? i === 2 || i === 3 : i === 1 || i === 3) ? 1 : 0,
+    };
+  };
+  const me = cell(slot);
+  for (let i = 0; i < 4; i++) {
+    if (i === slot || t.panes[i] == null) continue;
+    const other = cell(i);
+    if (other.row === me.row && other.col === me.col - 1) out.left = true;
+    if (other.row === me.row && other.col === me.col + 1) out.right = true;
+    if (other.col === me.col && other.row === me.row - 1) out.top = true;
+    if (other.col === me.col && other.row === me.row + 1) out.bottom = true;
+  }
+  return out;
+}
+
 export function buildGridStyle(t: WorkspaceTabs): React.CSSProperties {
   /** Two columns whose boundary lands exactly at `r` of the full width. */
   const cols = (r: number): string => `${r * 100}% minmax(0,1fr)`;

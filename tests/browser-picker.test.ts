@@ -76,3 +76,37 @@ describe("PICKER_SCRIPT", () => {
     expect(PICKER_SCRIPT).toContain('e.key === "Escape"');
   });
 });
+
+// ── §28 round 1: the rect that pins the comment popup ───────────────────────
+describe("parsePicked — rect", () => {
+  const base = { selector: "#save", outerHTML: "<button/>", label: "<button#save>" };
+
+  it("keeps a valid rect", () => {
+    const picked = parsePicked(JSON.stringify({ ...base, rect: { x: 10, y: 20, width: 30, height: 40 } }));
+    expect(picked!.rect).toEqual({ x: 10, y: 20, width: 30, height: 40 });
+  });
+
+  it("drops a rect the page made up, rather than pinning the popup off-screen", () => {
+    // The payload is page-controlled: NaN/Infinity/strings must degrade to
+    // "no rect" (the popup centres) instead of positioning at NaN.
+    for (const rect of [
+      { x: NaN, y: 0, width: 1, height: 1 },
+      { x: 0, y: Infinity, width: 1, height: 1 },
+      { x: "10", y: 0, width: 1, height: 1 },
+      { x: 0, y: 0, width: 1 },
+      "nope",
+      null,
+    ]) {
+      expect(parsePicked(JSON.stringify({ ...base, rect })).rect, JSON.stringify(rect)).toBeUndefined();
+    }
+  });
+
+  it("still parses a payload with no rect at all", () => {
+    expect(parsePicked(JSON.stringify(base))).toMatchObject({ selector: "#save" });
+  });
+
+  it("the injected script actually sends one", () => {
+    expect(PICKER_SCRIPT).toContain("getBoundingClientRect");
+    expect(PICKER_SCRIPT).toContain("rect:");
+  });
+});
