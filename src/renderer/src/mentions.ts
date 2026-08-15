@@ -100,7 +100,11 @@ export function extractMentions(text: string, map: Map<string, string>): string[
  */
 export function stripInjectedBlocks(text: string): string {
   let cut = -1;
-  for (const mk of ['\n\n<file path="', '\n\n<file-listing path="', "\n\n<open-files>"]) {
+  // §28 round 1: the page-element block joins the same list. The model needs the
+  // selector and the markup to act on what was pointed at; the person who
+  // pointed at it does not, and putting them in the bubble buried their own
+  // sentence under fifteen lines of machinery.
+  for (const mk of ['\n\n<file path="', '\n\n<file-listing path="', "\n\n<open-files>", "\n\n<page-element "]) {
     const i = text.indexOf(mk);
     if (i >= 0 && (cut < 0 || i < cut)) cut = i;
   }

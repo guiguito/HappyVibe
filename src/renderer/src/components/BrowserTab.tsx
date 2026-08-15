@@ -55,7 +55,11 @@ export function BrowserTab({
    * when there is no chat to put it in, so the popup can say so rather than
    * swallowing what they typed.
    */
-  onPicked?: (payload: { selector: string; outerHTML: string; label: string; comment: string }) => boolean;
+  onPicked?: (payload: {
+    selector: string; outerHTML: string; label: string; comment: string;
+    /** A crop of the element from the still, so the chat SHOWS what was meant. */
+    thumbnail?: string;
+  }) => boolean;
 }): React.JSX.Element {
   const host = useRef<HTMLDivElement | null>(null);
   // Read inside the bounds pusher without re-subscribing it on every render.
@@ -212,9 +216,51 @@ export function BrowserTab({
     void window.hv.browserPickCancel(browserId);
   };
 
-  const sendComment = (): void => {
+  /**
+   * Cut the element out of the still we already captured.
+   *
+   * The still is a device-pixel capture of the view and `rect` is in CSS pixels,
+   * so the scale comes from the image's natural width over the box it is drawn
+   * in — the same box the capture covered. A little padding keeps the element
+   * from looking like it was sliced out of context.
+   */
+  const cropThumbnail = async (): Promise<string | undefined> => {
+    const rect = picked?.rect;
+    if (!frozen || !rect || !host.current) return undefined;
+    try {
+      const box = host.current.getBoundingClientRect();
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("still failed to decode"));
+        img.src = frozen;
+      });
+      const scale = img.naturalWidth / (box.width || 1);
+      const PAD = 8;
+      const sx = Math.max(0, (rect.x - PAD) * scale);
+      const sy = Math.max(0, (rect.y - PAD) * scale);
+      const sw = Math.min(img.naturalWidth - sx, (rect.width + PAD * 2) * scale);
+      const sh = Math.min(img.naturalHeight - sy, (rect.height + PAD * 2) * scale);
+      if (sw < 2 || sh < 2) return undefined;
+      // Bounded: this rides the message payload, and a full-page element would
+      // otherwise ship a megabyte to say "this button".
+      const k = Math.min(1, 640 / sw, 640 / sh);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(sw * k));
+      canvas.height = Math.max(1, Math.round(sh * k));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return undefined;
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/png");
+    } catch {
+      return undefined; // a missing picture must never cost the comment
+    }
+  };
+
+  const sendComment = async (): Promise<void> => {
     if (!picked) return;
-    const delivered = onPicked?.({ ...picked, comment: comment.trim() }) ?? false;
+    const thumbnail = await cropThumbnail();
+    const delivered = onPicked?.({ ...picked, comment: comment.trim(), thumbnail }) ?? false;
     if (!delivered) {
       // Nowhere to send it. Keep the popup and the typed text; losing both
       // without a word is what this replaces.
@@ -362,7 +408,7 @@ export function BrowserTab({
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") sendComment();
+                  if (e.key === "Enter") void sendComment();
                   if (e.key === "Escape") cancelPick();
                 }}
                 placeholder="What should it do?"
@@ -371,7 +417,7 @@ export function BrowserTab({
               />
               <button
                 type="button"
-                onClick={sendComment}
+                onClick={() => void sendComment()}
                 aria-label="Add this comment to the composer"
                 title="Add to the composer"
                 className="shrink-0 size-7 flex items-center justify-center rounded-lg text-tangerine hover:bg-paper-deep/40 cursor-pointer"

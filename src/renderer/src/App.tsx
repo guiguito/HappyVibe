@@ -157,7 +157,7 @@ export default function App(): React.JSX.Element {
    * (the user picks several, then decides when to send) — the composer's
    * existing attachment pattern, applied to a different kind of attachment.
    */
-  const [pageRefs, setPageRefs] = useState<Record<string, Array<{ selector: string; label: string; outerHTML: string; comment: string }>>>({});
+  const [pageRefs, setPageRefs] = useState<Record<string, Array<{ selector: string; label: string; outerHTML: string; comment: string; thumbnail?: string }>>>({});
   /**
    * §28: which SESSION owns each browser pane, learned from the `opened` notify
    * (which main sends for an adopted pane too, not just a created one).
@@ -2185,11 +2185,14 @@ export default function App(): React.JSX.Element {
                     if (!target) return false;
                     setPageRefs((p) => ({ ...p, [target]: [...(p[target] ?? []), payload] }));
                     // A chip filed into a composer nobody can see is the same as
-                    // losing it, so bring that chat forward.
-                    if (target !== selectedId) {
-                      setSelectedId(target);
-                      if (wsId) setTabsByWs((p) => ({ ...p, [wsId]: openChat(p[wsId] ?? emptyTabs, target) }));
-                    }
+                    // losing it, so bring that chat forward — ALWAYS, not only
+                    // when it differs from the selected one. A session can be
+                    // selected with no tab open (selecting it in the sidebar
+                    // opens one; other routes do not), and then the comment
+                    // lands somewhere real but invisible. openChat is
+                    // addOrFocus, so this is a no-op when the tab is already up.
+                    setSelectedId(target);
+                    if (wsId) setTabsByWs((p) => ({ ...p, [wsId]: openChat(p[wsId] ?? emptyTabs, target) }));
                     return true;
                   }}
                 />

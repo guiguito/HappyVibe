@@ -175,7 +175,7 @@ export function ChatView({
    * when, which is why they live in App (one browser, many chats) and are
    * cleared through a callback rather than owned locally.
    */
-  pageRefs?: Array<{ selector: string; label: string; outerHTML: string; comment: string }>;
+  pageRefs?: Array<{ selector: string; label: string; outerHTML: string; comment: string; thumbnail?: string }>;
   onDropPageRef?: (index: number) => void;
   onClearPageRefs?: () => void;
   onAbort: () => void;
@@ -546,14 +546,24 @@ export function ChatView({
     const withRefs = (pageRefs?.length ?? 0)
       ? [
           input,
+          // The user's sentence stays in the bubble. The selector and the markup
+          // go into a <page-element> block, which stripInjectedBlocks cuts from
+          // the bubble exactly as it cuts @file context — the model reads them,
+          // the person who pointed at the thing never has to.
+          ...pageRefs!.map((r) => (r.comment ? `\n\n${r.comment}` : "")),
           ...pageRefs!.map((r) =>
-            // The human name LEADS; the selector follows as data for the agent
-            // (browser_click needs one) rather than as the thing being named.
-            `\n\n${r.comment ? `${r.comment}\n` : ""}Referring to “${r.label}” on the page (selector: \`${r.selector}\`):\n\n\`\`\`html\n${r.outerHTML}\n\`\`\``,
+            `\n\n<page-element label="${r.label.replace(/"/g, "'")}" selector="${r.selector.replace(/"/g, "'")}">\n${r.outerHTML}\n</page-element>`,
           ),
         ].join("")
       : input;
-    onSend(withRefs, behavior, attachments.length ? attachments : undefined, mentions.length ? mentions : undefined);
+    // §28 round 1: the element's picture rides the ORDINARY image pipeline, so
+    // the bubble shows it, it zooms, and a vision model sees the thing itself
+    // rather than a description of it.
+    const refImages = (pageRefs ?? [])
+      .flatMap((r) => (r.thumbnail ? [{ name: r.label.slice(0, 40) || "element", mimeType: "image/png", data: r.thumbnail.split(",")[1] ?? "" }] : []))
+      .filter((a) => a.data);
+    const outgoing = [...attachments, ...refImages];
+    onSend(withRefs, behavior, outgoing.length ? outgoing : undefined, mentions.length ? mentions : undefined);
     onClearPageRefs?.();
     setInput("");
     setAttachments([]);

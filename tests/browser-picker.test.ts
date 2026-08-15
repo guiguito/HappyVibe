@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { MAX_OUTER_HTML, PICKER_SCRIPT, parsePicked, trimOuterHtml } from "../src/main/browserPicker";
+import { stripInjectedBlocks } from "../src/renderer/src/mentions";
 
 describe("trimOuterHtml (§28 picker payload)", () => {
   it("leaves a small element alone", () => {
@@ -128,5 +129,32 @@ describe("parsePicked — rect", () => {
   it("the injected script actually sends one", () => {
     expect(PICKER_SCRIPT).toContain("getBoundingClientRect");
     expect(PICKER_SCRIPT).toContain("rect:");
+  });
+});
+
+// ── §28 round 1: what the bubble shows vs what the model receives ───────────
+describe("the commented-element message", () => {
+  it("hides the selector and markup from the bubble, keeps the sentence", () => {
+    // The exact shape ChatView sends.
+    const sent =
+      "It should have a glowy effect as well." +
+      '\n\n<page-element label="▶ PLAY GAME" selector="#top > a.cta">\n<a class="cta">PLAY</a>\n</page-element>';
+    const shown = stripInjectedBlocks(sent);
+    expect(shown).toBe("It should have a glowy effect as well.");
+    expect(shown).not.toContain("selector");
+    expect(shown).not.toContain("<a class");
+    // …while the model still gets everything.
+    expect(sent).toContain("#top > a.cta");
+    expect(sent).toContain('<a class="cta">PLAY</a>');
+  });
+
+  it("survives a label or selector containing a quote", () => {
+    const label = 'Say "hi"'.replace(/"/g, "'");
+    const sent = `comment\n\n<page-element label="${label}" selector="a">\n<a/>\n</page-element>`;
+    expect(stripInjectedBlocks(sent)).toBe("comment");
+  });
+
+  it("leaves an ordinary message alone", () => {
+    expect(stripInjectedBlocks("just a message")).toBe("just a message");
   });
 });
