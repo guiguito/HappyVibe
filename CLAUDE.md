@@ -313,6 +313,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   that transparent strip out of the samples. Bounds come from a measured placeholder; the guest has
   **no preload at all** (the agent drives from main, outside the sandbox), which is also why the
   element picker is *injected* via `executeJavaScript` rather than preloaded.
+- **A menu dismissed by `onBlur` loses its own clicks — act on `mousedown`.** Reported twice as
+  "none of this item menu is clickable" (the pane `+` menu, `TabStrip.tsx` `NewTabButton`). The
+  first cause was real — the composited browser view was over it — and fixing that did not fix the
+  symptom, which is the giveaway: pressing a `<button>` does not focus it, so the wrapper's blur
+  fires with `relatedTarget === null`, its `contains(relatedTarget)` guard cannot tell the pointer
+  is still inside, and the menu unmounts BETWEEN mousedown and mouseup. The click lands on nothing.
+  Measured with real CDP input: after `mousePressed` the menu was already gone and `activeElement`
+  had fallen to BODY. Note the trap for anyone debugging this — a *synthetic* `.click()` works
+  perfectly, because it never moves focus, so the handler looks fine in isolation. Items now use
+  `onMouseDown` + `preventDefault()`. Every OTHER menu in the app (composer attach, ModelSelect,
+  the tab context menu, FileTree) dismisses with a `fixed inset-0` click-catcher, which closes on
+  CLICK and is therefore immune — this was the only blur-dismissed menu. Pinned by
+  `tests/tabstrip-menu.test.ts`.
 - **Every tab prefix must be pruned on layout restore, or it comes back as a ghost.**
   `layoutPersist.ts` drops a restored tab whose subject is gone, and `AliveSubjects` is the list of
   what "gone" is checked against. `:browser:` was missing from it, so after a restart the strip

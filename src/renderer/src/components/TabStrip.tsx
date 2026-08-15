@@ -387,7 +387,16 @@ function NewTabButton({
     <button
       type="button"
       className="flex w-full items-center justify-between gap-6 px-3 py-2 text-left text-[13px] whitespace-nowrap hover:bg-paper-deep/60 cursor-pointer"
-      onClick={() => {
+      // onMouseDown, NOT onClick, and the preventDefault is the load-bearing
+      // half. Pressing a button does not focus it, so the wrapper's blur fires
+      // with relatedTarget === null, the containment guard below cannot see that
+      // the pointer is still inside, and the menu unmounted between mousedown and
+      // mouseup — the click then had nothing to land on. Measured in the running
+      // app: after mousePressed the menu was already gone and focus had fallen to
+      // BODY. Acting on the press sidesteps the race entirely, and preventDefault
+      // stops the focus shift that starts it.
+      onMouseDown={(e) => {
+        e.preventDefault();
         setOpen(false);
         onPick();
       }}
@@ -398,9 +407,14 @@ function NewTabButton({
   );
 
   return (
-    <div className="relative shrink-0 flex items-stretch" onBlur={(e) => {
-      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
-    }}>
+    <div
+      className="relative shrink-0 flex items-stretch"
+      // Keeps ⌘-tabbing away or clicking elsewhere from leaving the menu open.
+      // The items no longer depend on this firing late enough to matter.
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
       <button
         type="button"
         title="New tab in this pane"
