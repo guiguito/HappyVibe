@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { describeBrowserError, resolveTypedUrl } from "../browserError";
+import { rectsOverlap } from "../browserCoverage";
 
 /** Half the divider drag strip, so the page never sits under it. */
 const DIVIDER_INSET = 6;
@@ -136,7 +137,6 @@ export function BrowserTab({
   useEffect(() => {
     let raf = 0;
     const check = (): void => {
-      raf = 0;
       const el = host.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
@@ -151,11 +151,56 @@ export function BrowserTab({
           if (top && top !== el && !el.contains(top)) hit = true;
         }
       }
+      // Hit-testing has two blind spots, and both are real overlays:
+      //
+      //  - `pointer-events: none` is INVISIBLE to elementFromPoint. The voice
+      //    recording pill sets it on its wrapper so it never swallows a click.
+      //  - a small, edge-anchored card can fall BETWEEN nine sample points. The
+      //    onboarding card sits bottom-right inset 24px; the bottom-right sample
+      //    lands in that padding and sails past it.
+      //
+      // So overlays that announce themselves are also checked by RECTANGLE,
+      // which has no gaps and does not care about pointer-events. This is a
+      // small named set — `.hv-overlay`/`.hv-dialog` and anything portalled to
+      // the body — not a marker every future menu must remember: the hit test
+      // above still covers those, and covers ones nobody thought to mark.
+      if (!hit) {
+        const declared = [
+          ...document.querySelectorAll(".hv-overlay, .hv-dialog"),
+          ...[...document.body.children].filter((n) => n !== document.getElementById("root")),
+        ];
+        for (const node of declared) {
+          if (!(node instanceof HTMLElement) || el.contains(node)) continue;
+          const b = node.getBoundingClientRect();
+          if (b.width < 1 || b.height < 1) continue;
+          if (rectsOverlap(r, b)) {
+            hit = true;
+            break;
+          }
+        }
+      }
       setCovered(hit);
     };
-    // Coalesced: streaming text mutates the body continuously, and one hit-test
-    // per frame is the most this can ever cost.
-    const schedule = (): void => { if (!raf) raf = requestAnimationFrame(check); };
+    // Coalesced: streaming text mutates the body continuously, and one pass per
+    // frame is the most this can ever cost.
+    //
+    // rAF alone is not enough. The platform PAUSES it while the window is
+    // occluded, and this decides whether a dialog is reachable — a correctness
+    // question must not hang on a clock someone else can stop. So a timer races
+    // it and whichever fires first does the work.
+    let timer: ReturnType<typeof setTimeout> | 0 = 0;
+    const run = (): void => {
+      if (raf) cancelAnimationFrame(raf);
+      if (timer) clearTimeout(timer);
+      raf = 0;
+      timer = 0;
+      check();
+    };
+    const schedule = (): void => {
+      if (raf || timer) return;
+      raf = requestAnimationFrame(run);
+      timer = setTimeout(run, 200);
+    };
     schedule();
     const mo = new MutationObserver(schedule);
     mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
@@ -166,6 +211,7 @@ export function BrowserTab({
       window.removeEventListener("scroll", schedule, true);
       window.removeEventListener("resize", schedule);
       if (raf) cancelAnimationFrame(raf);
+      if (timer) clearTimeout(timer);
     };
   }, []);
 
@@ -332,7 +378,10 @@ export function BrowserTab({
         </div>
       )}
       {/* The page goes HERE — main puts the composited view over this box. */}
-      <div ref={host} className="relative min-h-0 flex-1">
+      {/* `data-covered` mirrors the decision that hides the view. The page is not
+          in the DOM, so without it there is no way to ask "is something on top of
+          me?" from outside — which is exactly the question that was wrong twice. */}
+      <div ref={host} data-covered={covered ? "true" : "false"} className="relative min-h-0 flex-1">
         {state === "loading" && (
           <div className="absolute inset-x-0 top-0 h-0.5 bg-tangerine animate-pulse" />
         )}

@@ -326,6 +326,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   the tab context menu, FileTree) dismisses with a `fixed inset-0` click-catcher, which closes on
   CLICK and is therefore immune — this was the only blur-dismissed menu. Pinned by
   `tests/tabstrip-menu.test.ts`.
+- **Hit-testing has two blind spots, and both were real overlays.** `document.elementFromPoint`
+  ignores `pointer-events: none`, so the voice recording pill (which sets it so it never swallows a
+  click) was invisible to the browser's coverage check; and nine sample points have gaps, so the
+  onboarding card — bottom-right, inset 24px — sat entirely between them. Both were drawn UNDER the
+  page. `BrowserTab` therefore also checks a small declared set by RECTANGLE (`.hv-overlay`,
+  `.hv-dialog`, and anything portalled to `<body>`), which has no gaps and does not care about
+  pointer-events. That set is not a marker every future menu must remember — the hit test still
+  covers those, including ones nobody thought to mark. Geometry is pinned by
+  `tests/browser-coverage.test.ts`; `data-covered` on the placeholder exposes the live decision,
+  because the page is not in the DOM and there is otherwise no way to ask from outside.
+  Related trap when measuring it: the check is coalesced, and **rAF is PAUSED while the window is
+  occluded**, so a probe can read a state one commit stale. It now races rAF with a 200 ms timer —
+  a correctness decision must not hang on a clock the platform can stop.
 - **Every tab prefix must be pruned on layout restore, or it comes back as a ghost.**
   `layoutPersist.ts` drops a restored tab whose subject is gone, and `AliveSubjects` is the list of
   what "gone" is checked against. `:browser:` was missing from it, so after a restart the strip
