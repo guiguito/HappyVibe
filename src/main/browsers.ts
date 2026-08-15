@@ -372,7 +372,17 @@ export class BrowserManager {
     const entry = this.entries.get(id);
     if (!entry) return null;
     try {
-      const result: unknown = await entry.view.webContents.executeJavaScript(code, true);
+      // Racing destruction, not just errors. `executeJavaScript` on a view that
+      // is destroyed mid-call neither resolves nor rejects — it simply never
+      // settles — which wedged a real turn: the tool card sat at RUNNING and
+      // every later prompt queued behind it. ipc.ts has a 30s backstop for the
+      // whole envelope; this makes the common case fail in milliseconds instead.
+      const result: unknown = await Promise.race([
+        entry.view.webContents.executeJavaScript(code, true),
+        new Promise((_resolve, reject) => {
+          entry.view.webContents.once("destroyed", () => reject(new Error("the browser pane was closed")));
+        }),
+      ]);
       if (result === undefined) return "undefined";
       return typeof result === "string" ? result : JSON.stringify(result);
     } catch (err) {

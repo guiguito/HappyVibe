@@ -222,6 +222,13 @@ function parseTerminalReq(r: { method?: string; title?: string }):
 }
 
 /**
+ * §28: how long one browser action may take before main answers anyway.
+ * Generous — a real page op is milliseconds — because the point is to make a
+ * wedged turn impossible, not to police slow pages.
+ */
+const BROWSER_OP_TIMEOUT_MS = 30_000;
+
+/**
  * §28: the blocking agent-browser inputs. Main ALWAYS answers one, exactly like
  * hv.terminal-* — a bridge left waiting on ctx.ui.input hangs the turn.
  *
@@ -1160,7 +1167,31 @@ export function registerIpc(win: BrowserWindow): void {
       if (br) {
         void (async () => {
           const rid = r.id;
-          const reply = (v: unknown): void => client.respondUi(rid, { value: JSON.stringify(v) });
+          // §28: main ALWAYS answers, and "always" has to survive an operation
+          // that never settles — not just one that throws.
+          //
+          // Measured, from a wedged session: `executeJavaScript` on a pane that
+          // is DESTROYED mid-call never resolves and never rejects, so the reply
+          // was never sent, the bridge sat on ctx.ui.input forever, the tool card
+          // stayed RUNNING, and every later prompt queued behind a turn that
+          // could not end. A try/catch cannot see that; only a deadline can.
+          //
+          // `answered` makes the reply idempotent so the deadline and the real
+          // result can race harmlessly.
+          let answered = false;
+          const reply = (v: unknown): void => {
+            if (answered) return;
+            answered = true;
+            client.respondUi(rid, { value: JSON.stringify(v) });
+          };
+          const deadline = setTimeout(() => {
+            reply({
+              ok: false,
+              reason:
+                "That browser action never finished — the page or the browser pane probably went away. " +
+                "Open it again with browser_open before retrying.",
+            });
+          }, BROWSER_OP_TIMEOUT_MS);
           const notify = (payload: Record<string, unknown>): void =>
             send("hv:ui-request", {
               id: `hv-browser-${Date.now()}`,
@@ -1268,6 +1299,10 @@ export function registerIpc(win: BrowserWindow): void {
             }
           } catch (e) {
             reply({ ok: false, reason: e instanceof Error ? e.message : String(e) });
+          } finally {
+            // Reached on every path that returns; a body that hangs forever never
+            // gets here, which is exactly when the deadline above must fire.
+            clearTimeout(deadline);
           }
         })();
         return;
