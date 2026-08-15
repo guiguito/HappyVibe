@@ -50,8 +50,12 @@ export function BrowserTab({
   hidden: boolean;
   /** Which sides of this pane touch a divider — the view insets away from them. */
   edges?: { left: boolean; top: boolean; right: boolean; bottom: boolean };
-  /** §28 picker: the user clicked an element and wrote a comment. */
-  onPicked?: (payload: { selector: string; outerHTML: string; label: string; comment: string }) => void;
+  /**
+   * §28 picker: the user clicked an element and wrote a comment. Returns false
+   * when there is no chat to put it in, so the popup can say so rather than
+   * swallowing what they typed.
+   */
+  onPicked?: (payload: { selector: string; outerHTML: string; label: string; comment: string }) => boolean;
 }): React.JSX.Element {
   const host = useRef<HTMLDivElement | null>(null);
   // Read inside the bounds pusher without re-subscribing it on every render.
@@ -65,6 +69,8 @@ export function BrowserTab({
   const [comment, setComment] = useState("");
   /** A scheme we refuse to open, named so the bar can say which. */
   const [schemeError, setSchemeError] = useState<string | null>(null);
+  /** There is no chat to file a comment into — said out loud, never swallowed. */
+  const [noChat, setNoChat] = useState(false);
   /** Is anything covering our rect? While true the view MUST be hidden. */
   const [covered, setCovered] = useState(false);
 
@@ -201,12 +207,21 @@ export function BrowserTab({
     setPicking(false);
     setPicked(null);
     setFrozen(null);
+    setNoChat(false);
     setComment("");
     void window.hv.browserPickCancel(browserId);
   };
 
   const sendComment = (): void => {
-    if (picked) onPicked?.({ ...picked, comment: comment.trim() });
+    if (!picked) return;
+    const delivered = onPicked?.({ ...picked, comment: comment.trim() }) ?? false;
+    if (!delivered) {
+      // Nowhere to send it. Keep the popup and the typed text; losing both
+      // without a word is what this replaces.
+      setNoChat(true);
+      return;
+    }
+    setNoChat(false);
     setPicked(null);
     setFrozen(null);
     setComment("");
@@ -364,6 +379,14 @@ export function BrowserTab({
                 <SendIcon />
               </button>
             </div>
+            {noChat && (
+              <div
+                className="absolute z-10 rounded-lg border-2 border-berry/50 bg-berry-soft px-2 py-1 text-[11px] font-semibold text-berry"
+                style={noticeStyle(picked.rect, host.current)}
+              >
+                Open a chat first — there is nowhere to send this.
+              </div>
+            )}
           </>
         )}
       </div>
@@ -389,6 +412,16 @@ function popupStyle(
   const top = below + PILL_H < box.height ? below : Math.max(GAP, rect.y - PILL_H - GAP);
   const left = Math.max(GAP, Math.min(rect.x, box.width - PILL_W - GAP));
   return { left, top };
+}
+
+/** Just under the pill, so the reason sits with the thing that refused. */
+function noticeStyle(
+  rect: { x: number; y: number; width: number; height: number } | undefined,
+  host: HTMLDivElement | null,
+): React.CSSProperties {
+  const base = popupStyle(rect, host);
+  const top = typeof base.top === "number" ? base.top + 44 : undefined;
+  return top === undefined ? { left: "50%", top: "60%", transform: "translate(-50%, 0)" } : { left: base.left, top };
 }
 
 /** The composer's paper plane (ChatView SendIcon), so "send" looks like "send". */

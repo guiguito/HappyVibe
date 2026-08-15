@@ -159,6 +159,15 @@ export default function App(): React.JSX.Element {
    */
   const [pageRefs, setPageRefs] = useState<Record<string, Array<{ selector: string; label: string; outerHTML: string; comment: string }>>>({});
   /**
+   * §28: which SESSION owns each browser pane, learned from the `opened` notify
+   * (which main sends for an adopted pane too, not just a created one).
+   *
+   * It decides where a page comment goes. Without it the comment went to
+   * whichever chat was last clicked, which is usually — but not reliably — the
+   * agent driving the page. A ⌘B pane has no owner and falls back to that chat.
+   */
+  const [browserOwners, setBrowserOwners] = useState<Record<string, string>>({});
+  /**
    * §26 part 2: ending a session that started terminals asks, with two NAMED
    * outcomes. Silently killing a dev server because a chat closed is hostile;
    * silently leaking one is worse. Held as a promise resolver so the delete
@@ -707,6 +716,7 @@ export default function App(): React.JSX.Element {
         if (browserEv?.browserId) {
           const bid = browserEv.browserId;
           if (browserEv.stage === "opened") {
+            setBrowserOwners((p) => ({ ...p, [bid]: sid }));
             const ws = browserEv.workspaceId ?? activeWs;
             if (ws) {
               setTabsByWs((p) => ({ ...p, [ws]: openBrowserTab(p[ws] ?? emptyTabs, bid, chatTab(sid)) }));
@@ -717,6 +727,11 @@ export default function App(): React.JSX.Element {
               if (info) setBrowsers((p) => ({ ...p, [bid]: info }));
             });
           } else if (browserEv.stage === "closed") {
+            setBrowserOwners((p) => {
+              const next = { ...p };
+              delete next[bid];
+              return next;
+            });
             setBrowsers((p) => {
               const next = { ...p };
               delete next[bid];
@@ -2159,11 +2174,23 @@ export default function App(): React.JSX.Element {
                   // divider's drag strip is never underneath a composited page.
                   edges={paneNeighbours(wsTabs, paneOf(wsTabs, browserTab(bid)))}
                   onPicked={(payload) => {
-                    // The comment lands in the composer of the chat the user is
-                    // looking at — never sent, never auto-submitted (§28).
-                    const target = selectedId;
-                    if (!target) return;
+                    // §28: the OWNER of the pane first — the session that opened
+                    // or adopted it is the agent actually driving this page — and
+                    // the selected chat only as a fallback, which is all a ⌘B pane
+                    // can have. Returning false (nowhere to put it) is what stops
+                    // the comment being silently dropped: the popup says so and
+                    // stays open, holding what was typed.
+                    const owner = browserOwners[bid];
+                    const target = owner && sessions.some((x) => x.id === owner) ? owner : selectedId;
+                    if (!target) return false;
                     setPageRefs((p) => ({ ...p, [target]: [...(p[target] ?? []), payload] }));
+                    // A chip filed into a composer nobody can see is the same as
+                    // losing it, so bring that chat forward.
+                    if (target !== selectedId) {
+                      setSelectedId(target);
+                      if (wsId) setTabsByWs((p) => ({ ...p, [wsId]: openChat(p[wsId] ?? emptyTabs, target) }));
+                    }
+                    return true;
                   }}
                 />
               );
