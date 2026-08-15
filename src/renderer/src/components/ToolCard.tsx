@@ -33,6 +33,13 @@ const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
 // ── W1.1 tool-kind icons (inline SVGs — no icon library) ────────────────────
 
 const ICON_PATHS: Record<IconKind, React.JSX.Element> = {
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+    </>
+  ),
   terminal: (
     <>
       <polyline points="4 17 10 11 4 5" />

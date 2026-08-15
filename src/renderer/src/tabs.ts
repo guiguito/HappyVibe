@@ -35,7 +35,7 @@
  * between panes must not remount it (FileTab edit buffers would be lost).
  */
 
-/** A tab is a workspace-relative file path, `:chat:<sessionId>`, or `:term:<id>`. */
+/** A tab is a workspace-relative file path, `:chat:<sessionId>`, `:term:<id>` or `:browser:<id>`. */
 export type TabId = string;
 
 /** Paths never start with ":", so this cannot collide with one. */
@@ -53,6 +53,14 @@ export const isTermTab = (id: TabId): boolean => id.startsWith(TERM_PREFIX);
 /** The terminal a term tab belongs to, or null for any other tab. */
 export const terminalOf = (id: TabId): string | null =>
   isTermTab(id) ? id.slice(TERM_PREFIX.length) : null;
+
+/** §28's fourth tab type. Same prefix trick, same reason it cannot collide. */
+export const BROWSER_PREFIX = ":browser:";
+export const browserTab = (browserId: string): TabId => `${BROWSER_PREFIX}${browserId}`;
+export const isBrowserTab = (id: TabId): boolean => id.startsWith(BROWSER_PREFIX);
+/** The browser a browser tab belongs to, or null for any other tab. */
+export const browserOf = (id: TabId): string | null =>
+  isBrowserTab(id) ? id.slice(BROWSER_PREFIX.length) : null;
 
 export interface Pane {
   tabs: TabId[];
@@ -110,17 +118,33 @@ export function liveSlots(t: WorkspaceTabs): Slot[] {
 /**
  * Every open file path across every pane.
  *
- * A tab is a file only if it is neither a chat NOR a terminal. The negative
- * test matters more than it looks: this one function feeds THREE consumers —
- * the flat mounted FileTab list, the filesystem watch targets
- * (watchTargets.ts), and §9's open-files block injected into the agent's
- * context. When it meant merely "not a chat", a `:term:` tab reached all three
- * and the model was told a file named `:term:t1` was open.
+ * A tab is a file only if it is none of the OTHER kinds. The negative test
+ * matters more than it looks: this one function feeds THREE consumers — the
+ * flat mounted FileTab list, the filesystem watch targets (watchTargets.ts),
+ * and §9's open-files block injected into the agent's context. When it meant
+ * merely "not a chat", a `:term:` tab reached all three and the model was told
+ * a file named `:term:t1` was open.
+ *
+ * §28's `:browser:` prefix is excluded in the SAME commit that introduced it,
+ * which is the rule for any future fourth kind: add the prefix and the
+ * exclusion together, or all three consumers inherit the bug.
  */
 export function allFiles(t: WorkspaceTabs): string[] {
   const out: string[] = [];
   for (const i of liveSlots(t))
-    for (const id of t.panes[i]!.tabs) if (!isChatTab(id) && !isTermTab(id)) out.push(id);
+    for (const id of t.panes[i]!.tabs) if (!isChatTab(id) && !isTermTab(id) && !isBrowserTab(id)) out.push(id);
+  return out;
+}
+
+/** Every browser with an open tab (App mounts one BrowserTab per entry). */
+export function allBrowsers(t: WorkspaceTabs): string[] {
+  const out: string[] = [];
+  for (const i of liveSlots(t)) {
+    for (const id of t.panes[i]!.tabs) {
+      const bid = browserOf(id);
+      if (bid) out.push(bid);
+    }
+  }
   return out;
 }
 
@@ -317,6 +341,42 @@ export function openChat(t: WorkspaceTabs, sessionId: string): WorkspaceTabs {
 /** Open (or focus) a terminal. §26: ⌘T and the pane `+` menu land here. */
 export function openTerminal(t: WorkspaceTabs, terminalId: string): WorkspaceTabs {
   return addOrFocus(t, termTab(terminalId));
+}
+
+/**
+ * §28: open a browser pane WITHOUT covering the chat the agent is talking in.
+ *
+ * "Split horizontally if needed" is the locked rule, and the interesting half is
+ * "if needed": the layout supports exactly ONE 2×2 grid, so when a split already
+ * exists there is nowhere new to put a half — the browser joins the tab strip of
+ * a pane that is not showing the active chat. Falling back to the focused pane
+ * only happens when every live pane holds that chat, where covering it is the
+ * only option left.
+ */
+export function openBrowserTab(t: WorkspaceTabs, browserId: string, avoidTab?: TabId | null): WorkspaceTabs {
+  const tab = browserTab(browserId);
+  if (paneOf(t, tab) >= 0) return addOrFocus(t, tab); // already open — just focus it
+
+  // NO tab to avoid ⇒ a HUMAN asked (⌘B, or the `+` of a specific pane), and the
+  // pane they asked in is the pane they get — `addOrFocus` uses `focused`, which
+  // the caller has already set. Exactly how openTerminal behaves, which is the
+  // point: the two commands sit next to each other in the same menu.
+  //
+  // This branch is why the placement below is not merely skipped but must not
+  // RUN: with no tab to avoid, its "find a pane that isn't showing the chat"
+  // search matched the FIRST non-empty pane, so a browser opened from the second
+  // pane's `+` landed in the first one.
+  if (avoidTab == null) return addOrFocus(t, tab);
+
+  // The AGENT opened it, and it must not cover the chat it is talking in.
+  if (!t.split) {
+    // No split yet: make one and put the browser in the new half. splitPane
+    // focuses slot 1, so addOrFocus lands it there.
+    return addOrFocus(splitPane(t, "v"), tab);
+  }
+  const free = liveSlots(t).find((s) => t.panes[s]!.active !== avoidTab && !t.panes[s]!.tabs.includes(avoidTab));
+  const target = free ?? liveSlots(t).find((s) => t.panes[s]!.active !== avoidTab);
+  return addOrFocus(target == null ? t : focusPane(t, target), tab);
 }
 
 /** Close a tab in a specific pane; focus a neighbour, then collapse if empty. */

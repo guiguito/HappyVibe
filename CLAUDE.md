@@ -263,11 +263,12 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   list. `fontFamily` stores a family NAME; `normalizeFamily` in the merge is the whole migration
   from the old CSS-stack value, and `fontStack` appends `ui-monospace, monospace` so an uninstalled
   font degrades to a monospace rather than to a proportional one.
-- **`allFiles` (tabs.ts) means "not a chat AND not a terminal" — never loosen it to "not a chat".**
+- **`allFiles` (tabs.ts) means "not a chat, not a terminal AND not a browser" — never loosen it.**
   It feeds THREE consumers: the mounted `FileTab` list, the fs watch targets (`watchTargets.ts`),
   and §9's open-files block injected into the agent's context. When it meant merely "not a chat", a
   `:term:` tab reached all three and the model was told a file named `:term:t1` was open. Pinned by
-  `tests/tabs.test.ts`. Any FOURTH tab prefix must be excluded here in the same commit that adds it.
+  `tests/tabs.test.ts`. §28's `:browser:` was excluded in the commit that added it — do the same for
+  any FIFTH prefix, in the same commit, or all three consumers inherit the bug.
 - **Agent terminals (§26 part 2): three tools over ONE blocking envelope, and main owns every rule.**
   `terminal_run`/`terminal_read`/`terminal_kill` are thin shells over `ctx.ui.input`
   (`hv.terminal-*`, payload in **`title`**); `agentTerminals.ts` holds the session→terminal claims,
@@ -279,6 +280,87 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `source:"terminal"` envelope instead, or the test passes either way; and all three tools must be
   **named** in `SAFE_TOOLS`/`gatePlanCall` (`terminal_read` in `PLAN_PASS_TOOLS`, because the
   `floor-ask` default clamps allow→ask and would prompt on every poll). Wire shapes: d1.md.
+- **Embedded browser (§28): the egress gate is on the PARTITION, not on the tool call.**
+  `browser_navigate` gating alone is bypassable by the page — one `location.href` from injected JS
+  and the gated tool never ran. The enforcement point is
+  `session.fromPartition("persist:hv-browser").webRequest.onBeforeRequest` (`browsers.ts`), deciding
+  through the pure `EgressState` (`browserEgress.ts`). Main-frame navigations gate as the virtual
+  rule name **`browser:<host>`** (the `mcp:<server>_<tool>` trick, so it needs no new rule
+  machinery); subresources of an allowed page run silently but are all recorded for
+  `browser_read_network`; redirects inherit the approval that started them, or every IdP bounce
+  breaks. Three things bite: Electron **replaces** `onBeforeRequest` rather than stacking it, so it
+  is installed ONCE per partition with a `webContents.id → pane` map (per-pane installation silently
+  disarms every pane but the newest); `localhost` is an exact-hostname safe-default, because
+  `localhost.evil.com` is a real remote host; and a gate-cancelled main frame reports
+  **ERR_BLOCKED_BY_CLIENT (-20)**, NOT ERR_ABORTED (-3) — measured in the running app, after
+  guessing -3 shipped a pane that said "Try again" where it should have said "Allow example.org".
+  `did-fail-load` skips both codes AND re-checks `state === "blocked"`, because the state is the
+  guard that survives whatever code a future Chromium picks. Honest limit, stated in §28 and not to be
+  over-claimed: in-page `fetch` still reaches anything the page can — the headline is "only
+  NAVIGATES where you allow", which is why `browser_evaluate` carries its own stricter rule.
+- **A `WebContentsView` has no z-index relative to the DOM — hiding it IS the z-order, and the
+  rule that decides when must be GEOMETRIC.** It composites over the whole renderer, so anything
+  drawn "above" it is really drawn under it and swallows its own clicks. The first version matched
+  `.hv-overlay`, believing every overlay carried it: **4 components do, out of ~35 floating
+  surfaces** — every dropdown, the `@file` autocomplete, the file drawer, ~20 hand-rolled confirms
+  and the pane divider were all dead, reported as "none of this menu is clickable". No selector
+  would have saved it either: the pane `+` menu shares neither the class nor the styling nor the
+  dismissal idiom of the other menus. `BrowserTab.tsx` now hit-tests a 3×3 grid inside its own rect
+  (`document.elementFromPoint`, rAF-coalesced off a body MutationObserver) and hides whenever the
+  topmost element at any sample is not itself — no marker to remember, and it hides ONLY when the
+  thing actually overlaps this pane. The view also insets itself by `DIVIDER_INSET` on every side
+  that touches another pane, which is what keeps the divider's drag strip grabbable *and* keeps
+  that transparent strip out of the samples. Bounds come from a measured placeholder; the guest has
+  **no preload at all** (the agent drives from main, outside the sandbox), which is also why the
+  element picker is *injected* via `executeJavaScript` rather than preloaded.
+- **A menu dismissed by `onBlur` loses its own clicks — act on `mousedown`.** Reported twice as
+  "none of this item menu is clickable" (the pane `+` menu, `TabStrip.tsx` `NewTabButton`). The
+  first cause was real — the composited browser view was over it — and fixing that did not fix the
+  symptom, which is the giveaway: pressing a `<button>` does not focus it, so the wrapper's blur
+  fires with `relatedTarget === null`, its `contains(relatedTarget)` guard cannot tell the pointer
+  is still inside, and the menu unmounts BETWEEN mousedown and mouseup. The click lands on nothing.
+  Measured with real CDP input: after `mousePressed` the menu was already gone and `activeElement`
+  had fallen to BODY. Note the trap for anyone debugging this — a *synthetic* `.click()` works
+  perfectly, because it never moves focus, so the handler looks fine in isolation. Items now use
+  `onMouseDown` + `preventDefault()`. Every OTHER menu in the app (composer attach, ModelSelect,
+  the tab context menu, FileTree) dismisses with a `fixed inset-0` click-catcher, which closes on
+  CLICK and is therefore immune — this was the only blur-dismissed menu. Pinned by
+  `tests/tabstrip-menu.test.ts`.
+- **Portalling a dialog to the end of `<body>` does NOT put it on top.** Among POSITIONED elements
+  an explicit z-index beats document order, so every `z-20`…`z-50` in the app painted above a Radix
+  dialog whose z-index was `auto` — `.hv-overlay`/`.hv-dialog` were animation-only classes with no
+  layer at all. Seen as the agent-terminal card (`sticky top-0 z-20`, ChatView) sitting bright and
+  clickable on top of the ask-user modal's dimming scrim. Both classes now declare `z-index: 100`,
+  clear of the app's scale, which tops out at z-50. `tests/modal-layer.test.ts` pins the rule AND
+  scans the renderer for anything climbing to 100 — that second half is the one that rots, because a
+  future `z-[200]` on some popover silently takes the crown back. Anything that must sit above a
+  dialog has to BE a dialog.
+- **Hit-testing has two blind spots, and both were real overlays.** `document.elementFromPoint`
+  ignores `pointer-events: none`, so the voice recording pill (which sets it so it never swallows a
+  click) was invisible to the browser's coverage check; and nine sample points have gaps, so the
+  onboarding card — bottom-right, inset 24px — sat entirely between them. Both were drawn UNDER the
+  page. `BrowserTab` therefore also checks a small declared set by RECTANGLE (`.hv-overlay`,
+  `.hv-dialog`, and anything portalled to `<body>`), which has no gaps and does not care about
+  pointer-events. That set is not a marker every future menu must remember — the hit test still
+  covers those, including ones nobody thought to mark. Geometry is pinned by
+  `tests/browser-coverage.test.ts`; `data-covered` on the placeholder exposes the live decision,
+  because the page is not in the DOM and there is otherwise no way to ask from outside.
+  Related trap when measuring it: the check is coalesced, and **rAF is PAUSED while the window is
+  occluded**, so a probe can read a state one commit stale. It now races rAF with a 200 ms timer —
+  a correctness decision must not hang on a clock the platform can stop.
+- **Every tab prefix must be pruned on layout restore, or it comes back as a ghost.**
+  `layoutPersist.ts` drops a restored tab whose subject is gone, and `AliveSubjects` is the list of
+  what "gone" is checked against. `:browser:` was missing from it, so after a restart the strip
+  showed browser tabs for panes that had died with the app — two "Browser" tabs over one pane.
+  Panes never survive the app (unlike a PTY, which main keeps across a renderer reload), so that
+  set is normally empty at boot and every restored browser tab is pruned. Pinned by
+  `tests/layout-persist.test.ts`.
+- **A tool result CAN carry an image — measured, not assumed.** `AgentToolResult.content` is
+  `(TextContent | ImageContent)[]` (`pi-agent-core/dist/types.d.ts:316`), so `browser_screenshot`
+  hands a vision model the actual PNG. It is gated on the session model advertising
+  `input: ["image"]` in Pi's registry (resolved in `ipc.ts` off `resolveSpawnModel`, never a second
+  capability table); a non-vision session still gets a useful text result pointing at
+  `browser_get_text`, and **the user sees the screenshot either way** via the `hv.browser` notify.
 - **A live test failing "model never called X" is usually NOISE, not your change — and 5 trials
   cannot tell you which.** This entry used to claim §26's three terminal tools made the model stop
   calling `bash` (3/5 → 0/5). That was wrong. The comparison was five trials per cell run

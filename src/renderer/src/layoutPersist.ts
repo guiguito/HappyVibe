@@ -16,12 +16,19 @@
  * survives its subject is a tab that renders nothing and cannot be closed.
  */
 
-import { closeTab, isChatTab, liveSlots, sessionOf, terminalOf, type Pane, type Slot, type WorkspaceTabs } from "./tabs";
+import { browserOf, closeTab, isChatTab, liveSlots, sessionOf, terminalOf, type Pane, type Slot, type WorkspaceTabs } from "./tabs";
 
 /** What is still real. A file tab needs no check — an editor handles a missing file. */
 export interface AliveSubjects {
   sessions: Set<string>;
   terminals: Set<string>;
+  /**
+   * §28: browser panes die with the app (unlike a PTY, which main keeps across a
+   * renderer reload), so at boot this is normally empty and every restored
+   * `:browser:` tab is pruned. Without it the strip came back showing tabs for
+   * panes that no longer exist — observed as two "Browser" tabs over one pane.
+   */
+  browsers: Set<string>;
 }
 
 const RATIO_MIN = 0.1;
@@ -87,6 +94,8 @@ function parseWorkspace(raw: unknown, alive: AliveSubjects): WorkspaceTabs | nul
       if (session !== null && !alive.sessions.has(session)) doomed.push([slot, id]);
       const terminal = terminalOf(id);
       if (terminal !== null && !alive.terminals.has(terminal)) doomed.push([slot, id]);
+      const browser = browserOf(id);
+      if (browser !== null && !alive.browsers.has(browser)) doomed.push([slot, id]);
     }
   }
   for (const [slot, id] of doomed) {

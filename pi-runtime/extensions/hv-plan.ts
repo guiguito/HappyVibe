@@ -167,7 +167,11 @@ export function planSlug(body: string): string {
  * §26: terminal_run must be NAMED. An unrecognised tool falls to floor-ask,
  * which prompts forever but never blocks — and plan mode is read-only, so a
  * planning agent must not be able to start a process at all. */
-const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "subagent", "terminal_run"]);
+// §28: acting on a page is a side effect, so click/type/evaluate are blocked
+// outright. `browser_open`/`browser_navigate` are deliberately NOT here — they
+// fall through to floor-ask, because opening documentation to read it is
+// legitimate planning, and a GET the user approves per-call is not a mutation.
+const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "subagent", "terminal_run", "browser_click", "browser_type", "browser_evaluate"]);
 /** Read-only tools that pass straight through the plan gate. */
 const PLAN_PASS_TOOLS = new Set([
   // use_skill only returns an ALREADY-APPROVED SKILL.md's text (spawn-time trust
@@ -179,6 +183,11 @@ const PLAN_PASS_TOOLS = new Set([
   // must be able to stop it — neither is worth a modal. floor-ask would clamp
   // allow→ask and prompt on every single poll.
   "terminal_read", "terminal_kill",
+  // §28: same two categories. Reading a page is a read (and get_text is polled
+  // while a page loads, so floor-ask would prompt repeatedly); closing the pane
+  // removes power. These must be NAMED — an unnamed tool floor-asks, which for a
+  // poll is the friction that makes a model stop using the tool at all.
+  "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close",
 ]);
 
 export type PlanGate =

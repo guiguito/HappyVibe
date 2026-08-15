@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
 import { EMPTY_RULES, evaluate, isWaitTool, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
+import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER } from "./hv-browser";
 import { unwrapMcpCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
@@ -45,7 +46,63 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
   if ((toolName === "bash" || toolName === "terminal_run") && typeof input.command === "string") {
     return input.command.slice(0, 300);
   }
-  return JSON.stringify(input).slice(0, 300);
+  // §28: a navigation's factual action IS its URL — same rule, same shape.
+  if ((toolName === "browser_navigate" || toolName === "browser_open") && typeof input.url === "string") {
+    return input.url.slice(0, 300);
+  }
+  // …and for EVERYTHING else, strip `intent` rather than special-casing the
+  // tools that happen to carry one.
+  //
+  // The two arms above are the readable cases; this line is the invariant. A
+  // per-tool allowlist leaked twice: `terminal_kill` and `subagent` declare
+  // `intent` in their own schemas, so their summary was JSON containing it, the
+  // modal re-parsed that JSON (PermissionModal argsFromSummary) and toolLabel
+  // preferred `intent` — meaning the headline a user approved against was the
+  // model's own sentence. §13's rule is stated absolutely, so it is enforced
+  // absolutely, in one place, for every tool that exists now or later.
+  const { intent: _modelWords, ...factual } = input;
+  return JSON.stringify(factual).slice(0, 300);
+}
+
+/**
+ * §28: the same contract as terminalReply, plus two things only the browser has.
+ *
+ * `untrusted` marks a payload as PAGE-DERIVED, and the banner goes on in front
+ * of it — prompt injection has no mechanical fix, so the least we do is never
+ * hand the model page bytes that look like our own words. `imageBase64` becomes
+ * a real image content block: AgentToolResult.content is (TextContent |
+ * ImageContent)[], verified in pi-agent-core's types.d.ts, so a vision model
+ * gets the screenshot itself rather than a description of one.
+ */
+function browserReply(raw: unknown): {
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
+  details: Record<string, unknown>;
+} {
+  if (typeof raw !== "string" || !raw) {
+    return {
+      content: [{ type: "text", text: "The browser request failed. Try browser_open again." }],
+      details: {},
+    };
+  }
+  try {
+    const p = JSON.parse(raw) as {
+      ok?: boolean; reason?: string; text?: string; untrusted?: boolean; imageBase64?: string;
+    } & Record<string, unknown>;
+    if (p.ok === false) {
+      return { content: [{ type: "text", text: p.reason ?? "The browser request was refused." }], details: p };
+    }
+    const text = p.text ?? JSON.stringify(p);
+    const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
+      { type: "text", text: p.untrusted ? `${UNTRUSTED_BANNER}${text}` : text },
+    ];
+    if (typeof p.imageBase64 === "string" && p.imageBase64) {
+      content.push({ type: "image", data: p.imageBase64, mimeType: "image/png" });
+    }
+    const { imageBase64: _dropped, ...details } = p;
+    return { content, details };
+  } catch {
+    return { content: [{ type: "text", text: raw }], details: {} };
+  }
 }
 
 /**
@@ -593,7 +650,15 @@ export default function (pi: ExtensionAPI) {
     // MCP proxy unwrapping: rules, grants, prompts and audit all operate on
     // the real MCP tool ("mcp:<tool>"), never the bare proxy.
     const mcp = tool === "mcp" ? unwrapMcpCall(input) : null;
-    const permTool = mcp?.ruleTool ?? tool;
+    // §28: a navigation gates per DESTINATION, not per tool — one `browser_navigate`
+    // rule would be the difference between localhost and a stranger's server
+    // being the same decision. Same virtual-name trick as mcp:<server>_<tool>,
+    // so "Allow for session" on one host says nothing about the next.
+    const browserNav =
+      (tool === "browser_open" || tool === "browser_navigate") && typeof input.url === "string"
+        ? browserRuleName(input.url)
+        : null;
+    const permTool = mcp?.ruleTool ?? browserNav ?? tool;
     const summary = mcp?.display ?? summarize(tool, input);
 
     // W2.3: nested AGENTS.md discovery — every file-tool call reveals which
@@ -683,6 +748,20 @@ export default function (pi: ExtensionAPI) {
     if (v.action === "allow" && !planFloorAsk) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: v.source === "rule" ? "rule" : "safe-default", rule: v.rule });
       return;
+    }
+
+    // §28: localhost is the dev-preview case, which is ~all of the value, and a
+    // prompt per page load would make the feature unusable — so it is a
+    // safe-DEFAULT, exactly like SAFE_TOOLS: an explicit ask/deny rule on
+    // `browser:localhost` still wins, because those are handled above. Not while
+    // planning: the floor-of-ask covers navigation too (§28's plan clamp lets
+    // open/navigate through as floor-ask precisely so it still prompts).
+    if (browserNav && v.source === "default" && !planFloorAsk) {
+      const host = hostOf(input.url as string);
+      if (host && isLocalHost(host)) {
+        audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "safe-default" });
+        return;
+      }
     }
 
     // MCP discovery (search/describe/connect) is read-only against servers the
@@ -1135,6 +1214,167 @@ export default function (pi: ExtensionAPI) {
     },
   });
   } // builtins.terminal
+
+  // ── §28: the embedded browser's ten tools ────────────────────────────────
+  // ONE group, like the terminal trio and for the same reason: an agent that can
+  // navigate but not read is a agent that opens pages nobody asked for, and one
+  // that can read but not close cannot tidy up. Every tool is a thin shell over
+  // a BLOCKING hv.browser-* input — main owns the pane, the egress gate and the
+  // cap, and browserReply guarantees the turn never hangs.
+  //
+  // Ten separate tools rather than one with an action enum: §10's rules must be
+  // able to say "deny browser_evaluate, allow browser_get_text" without the gate
+  // growing a branch that reads arguments.
+  if (builtins.browser) {
+  const browserInput = async (
+    ctx: { ui: { input(title: string, initial: string): Promise<unknown> } },
+    payload: Record<string, unknown>,
+  ): ReturnType<typeof browserReply> => browserReply(await ctx.ui.input(JSON.stringify(payload), ""));
+
+  pi.registerTool({
+    name: "browser_open",
+    label: "Open browser",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_open,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are opening and why." }),
+      url: Type.String({ description: "The URL to open. localhost needs no approval; anything else asks the user." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { url, intent } = params as { url?: string; intent?: string };
+      if (!url) return { content: [{ type: "text", text: "browser_open needs a url." }], details: {} };
+      return browserInput(ctx, { kind: "hv.browser-open", url, intent });
+    },
+  });
+
+  pi.registerTool({
+    name: "browser_navigate",
+    label: "Navigate browser",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_navigate,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: where you are going and why." }),
+      url: Type.String({ description: "The URL to navigate to." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { url, intent } = params as { url?: string; intent?: string };
+      if (!url) return { content: [{ type: "text", text: "browser_navigate needs a url." }], details: {} };
+      return browserInput(ctx, { kind: "hv.browser-navigate", url, intent });
+    },
+  });
+
+  pi.registerTool({
+    name: "browser_screenshot",
+    label: "Screenshot page",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_screenshot,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are capturing and why." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { intent } = params as { intent?: string };
+      return browserInput(ctx, { kind: "hv.browser-screenshot", intent });
+    },
+  });
+
+  pi.registerTool({
+    name: "browser_get_text",
+    label: "Read page",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_get_text,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are looking for." }),
+    }),
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      return browserInput(ctx, { kind: "hv.browser-get-text" });
+    },
+  });
+
+  pi.registerTool({
+    name: "browser_read_console",
+    label: "Read page console",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_read_console,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you expect to find." }),
+      lines: Type.Optional(Type.Number({ description: "How many trailing messages. Default 100, capped at 200." })),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { lines } = params as { lines?: number };
+      return browserInput(ctx, { kind: "hv.browser-read-console", lines });
+    },
+  });
+
+  pi.registerTool({
+    name: "browser_read_network",
+    label: "Read page network",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_read_network,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you expect to find." }),
+      limit: Type.Optional(Type.Number({ description: "How many trailing requests. Default 50, capped at 200." })),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { limit } = params as { limit?: number };
+      return browserInput(ctx, { kind: "hv.browser-read-network", limit });
+    },
+  });
+
+  pi.registerTool({
+    name: "browser_click",
+    label: "Click in page",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_click,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are clicking and why." }),
+      selector: Type.String({ description: "A CSS selector for the element to click." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { selector, intent } = params as { selector?: string; intent?: string };
+      if (!selector) return { content: [{ type: "text", text: "browser_click needs a selector." }], details: {} };
+      return browserInput(ctx, { kind: "hv.browser-click", selector, intent });
+    },
+  });
+
+  pi.registerTool({
+    name: "browser_type",
+    label: "Type in page",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_type,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are typing and why." }),
+      selector: Type.String({ description: "A CSS selector for the field to type into." }),
+      text: Type.String({ description: "The text to type." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { selector, text, intent } = params as { selector?: string; text?: string; intent?: string };
+      if (!selector || text === undefined) {
+        return { content: [{ type: "text", text: "browser_type needs a selector and text." }], details: {} };
+      }
+      return browserInput(ctx, { kind: "hv.browser-type", selector, text, intent });
+    },
+  });
+
+  pi.registerTool({
+    name: "browser_evaluate",
+    label: "Run JS in page",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_evaluate,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what this code does and why." }),
+      code: Type.String({ description: "JavaScript to evaluate in the page. The final expression is the result." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { code, intent } = params as { code?: string; intent?: string };
+      if (!code) return { content: [{ type: "text", text: "browser_evaluate needs code." }], details: {} };
+      return browserInput(ctx, { kind: "hv.browser-evaluate", code, intent });
+    },
+  });
+
+  pi.registerTool({
+    name: "browser_close",
+    label: "Close browser",
+    description: BROWSER_TOOL_DESCRIPTIONS.browser_close,
+    parameters: Type.Object({
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are closing it." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { intent } = params as { intent?: string };
+      return browserInput(ctx, { kind: "hv.browser-close", intent });
+    },
+  });
+  } // builtins.browser
 
   // ── §23 Plan Mode: registered tools ──────────────────────────────────────
   // Gated as a whole block: plan_start is the model's own entry point into Plan

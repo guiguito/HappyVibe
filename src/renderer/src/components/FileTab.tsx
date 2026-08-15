@@ -191,7 +191,7 @@ export function FileTab({
               and its own tooltip carries the full relative path. Every control
               sits left in one evenly spaced cluster — Save included, which used
               to be pushed to the far edge by the path acting as a spacer. */}
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b-2 border-line bg-paper text-xs">
+          <div className="flex items-center gap-2 px-3 h-11 border-b-2 border-line bg-paper text-xs">
             {/* The switcher LEADS, as a two-icon pill with the current view lit.
                 A single button whose label was the OTHER state ("Source" while
                 showing source) is a riddle; a switch is not. */}

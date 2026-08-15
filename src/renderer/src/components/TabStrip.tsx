@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { basename, sessionOf, terminalOf, type Pane, type TabId } from "../tabs";
+import { basename, browserOf, sessionOf, terminalOf, type Pane, type TabId } from "../tabs";
 
 /**
  * WS6 — center tab strip for ONE pane: one tab per open chat (session title) and
@@ -28,6 +28,7 @@ export function TabStrip({
   paneIndex,
   sessionTitleFor,
   terminalTitleFor,
+  browserTitleFor,
   terminalExited,
   dirty,
   busyFor,
@@ -37,7 +38,9 @@ export function TabStrip({
   onNewSession,
   newSessionKey,
   onNewTerminal,
+  onNewBrowser,
   newTerminalKey,
+  newBrowserKey,
   onOpenFilePanel,
   splitOptions,
   onSplit,
@@ -53,6 +56,8 @@ export function TabStrip({
   sessionTitleFor: (sessionId: string) => string;
   /** §26: a terminal tab's label — the foreground command, else the shell. */
   terminalTitleFor: (terminalId: string) => string;
+  /** §28: a browser tab shows the page title, falling back to its host. */
+  browserTitleFor: (browserId: string) => string;
   /** §26: a terminal whose process has exited renders muted, not gone. */
   terminalExited: (terminalId: string) => boolean;
   /** relPath → has unsaved edits. */
@@ -76,8 +81,11 @@ export function TabStrip({
   newSessionKey: string;
   /** §26: opens a terminal in THIS pane. Same action ⌘T dispatches. */
   onNewTerminal: () => void;
+  /** §28: ⌘B — a human opens a browser pane, like ⌘T opens a terminal. */
+  onNewBrowser: () => void;
   /** Shown beside "New terminal" so the menu teaches the binding. */
   newTerminalKey: string;
+  newBrowserKey: string;
   onOpenFilePanel: () => void;
   /**
    * Which split directions this pane can offer (tabs.ts splitOptions). Per pane
@@ -146,9 +154,17 @@ export function TabStrip({
           const active = pane.active === id;
           const sid = sessionOf(id);
           const tid = terminalOf(id);
+          const bid = browserOf(id);
           const isChat = sid !== null;
           const isTerm = tid !== null;
-          const label = isChat ? sessionTitleFor(sid) : isTerm ? terminalTitleFor(tid) : basename(id);
+          const isBrowser = bid !== null;
+          const label = isChat
+            ? sessionTitleFor(sid)
+            : isTerm
+              ? terminalTitleFor(tid)
+              : isBrowser
+                ? browserTitleFor(bid)
+                : basename(id);
           const exited = isTerm && terminalExited(tid);
           return (
             <span
@@ -169,10 +185,11 @@ export function TabStrip({
                 setMenu({ tab: id, x: e.clientX, y: e.clientY });
               }}
               className={tab(active)}
-              title={isChat || isTerm ? label : id}
+              title={isChat || isTerm || isBrowser ? label : id}
             >
               {isChat && <ChatGlyph />}
               {isTerm && <TerminalGlyph />}
+              {isBrowser && <BrowserGlyph />}
               {editing?.tab === id ? (
                 <input
                   autoFocus
@@ -191,7 +208,7 @@ export function TabStrip({
                 <span className={`truncate ${exited ? "line-through opacity-60" : ""}`}>{label}</span>
               )}
               {isChat && busyFor(sid) && <span className="size-1.5 rounded-full bg-tangerine animate-pulse shrink-0" title="Working…" />}
-              {!isChat && !isTerm && dirty[id] && <span className="size-1.5 rounded-full bg-tangerine shrink-0" title="Unsaved changes" />}
+              {!isChat && !isTerm && !isBrowser && dirty[id] && <span className="size-1.5 rounded-full bg-tangerine shrink-0" title="Unsaved changes" />}
               {(
                 <button
                   type="button"
@@ -214,7 +231,9 @@ export function TabStrip({
         onNewSession={onNewSession}
         newSessionKey={newSessionKey}
         onNewTerminal={onNewTerminal}
+        onNewBrowser={onNewBrowser}
         newTerminalKey={newTerminalKey}
+        newBrowserKey={newBrowserKey}
         onOpenFilePanel={onOpenFilePanel}
       />
       {/* Absorbs the leftover width so the strip remains a drop target end to end. */}
@@ -337,6 +356,8 @@ function NewTabButton({
   newSessionKey,
   onNewTerminal,
   newTerminalKey,
+  onNewBrowser,
+  newBrowserKey,
   onOpenFilePanel,
 }: {
   onNewSession: () => void;
@@ -346,6 +367,9 @@ function NewTabButton({
   onNewTerminal: () => void;
   /** Shown beside "New terminal" so the menu teaches the binding. */
   newTerminalKey: string;
+  /** §28: opens a browser in THIS pane. Same action ⌘B dispatches. */
+  onNewBrowser: () => void;
+  newBrowserKey: string;
   onOpenFilePanel: () => void;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
@@ -363,7 +387,16 @@ function NewTabButton({
     <button
       type="button"
       className="flex w-full items-center justify-between gap-6 px-3 py-2 text-left text-[13px] whitespace-nowrap hover:bg-paper-deep/60 cursor-pointer"
-      onClick={() => {
+      // onMouseDown, NOT onClick, and the preventDefault is the load-bearing
+      // half. Pressing a button does not focus it, so the wrapper's blur fires
+      // with relatedTarget === null, the containment guard below cannot see that
+      // the pointer is still inside, and the menu unmounted between mousedown and
+      // mouseup — the click then had nothing to land on. Measured in the running
+      // app: after mousePressed the menu was already gone and focus had fallen to
+      // BODY. Acting on the press sidesteps the race entirely, and preventDefault
+      // stops the focus shift that starts it.
+      onMouseDown={(e) => {
+        e.preventDefault();
         setOpen(false);
         onPick();
       }}
@@ -374,9 +407,14 @@ function NewTabButton({
   );
 
   return (
-    <div className="relative shrink-0 flex items-stretch" onBlur={(e) => {
-      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
-    }}>
+    <div
+      className="relative shrink-0 flex items-stretch"
+      // Keeps ⌘-tabbing away or clicking elsewhere from leaving the menu open.
+      // The items no longer depend on this firing late enough to matter.
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
       <button
         type="button"
         title="New tab in this pane"
@@ -393,6 +431,7 @@ function NewTabButton({
         <div className="absolute left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
           <Item label="New session" hint={newSessionKey} onPick={onNewSession} />
           <Item label="New terminal" hint={newTerminalKey} onPick={onNewTerminal} />
+          <Item label="New browser" hint={newBrowserKey} onPick={onNewBrowser} />
           <Item label="Open file…" onPick={onOpenFilePanel} />
         </div>
       )}
@@ -407,6 +446,17 @@ function TerminalGlyph(): React.JSX.Element {
     <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M4 17l6-5-6-5" />
       <path d="M12 19h8" />
+    </svg>
+  );
+}
+
+/** §28: a globe — the one glyph nobody has to be taught. */
+function BrowserGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
     </svg>
   );
 }

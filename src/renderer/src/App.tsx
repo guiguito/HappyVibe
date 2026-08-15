@@ -38,20 +38,22 @@ import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
-import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseSubagentEvent, parseTerminalEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
+import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
   activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
   isChatTab, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, sessionOf, setSize, splitAt, splitOptions, termTab, terminalOf,
+  allBrowsers, browserOf, browserTab, isBrowserTab, openBrowserTab,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
 import { TerminalTab } from "./components/TerminalTab";
+import { BrowserTab } from "./components/BrowserTab";
 import { TerminalView } from "./components/TerminalView";
 import { VoiceView } from "./components/VoiceView";
 import { restoreLayout } from "./layoutPersist";
-import { buildGridStyle, paneEdges } from "./paneGrid";
+import { buildGridStyle, paneEdges, paneNeighbours } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
@@ -145,6 +147,27 @@ export default function App(): React.JSX.Element {
    */
   const [agentTerms, setAgentTerms] = useState<Record<string, Record<string, { intent: string; startedAt: number }>>>({});
   /**
+   * §28: every live browser pane, keyed by id. Main owns the panes and pushes
+   * state (url/title/loading/blocked/crashed) — the renderer never derives it,
+   * for the same reason the terminal map is main-fed: the pane outlives us.
+   */
+  const [browsers, setBrowsers] = useState<Record<string, HvBrowserInfo>>({});
+  /**
+   * §28: page-element comments waiting in a composer, per session. They STACK
+   * (the user picks several, then decides when to send) — the composer's
+   * existing attachment pattern, applied to a different kind of attachment.
+   */
+  const [pageRefs, setPageRefs] = useState<Record<string, Array<{ selector: string; label: string; outerHTML: string; comment: string; thumbnail?: string }>>>({});
+  /**
+   * §28: which SESSION owns each browser pane, learned from the `opened` notify
+   * (which main sends for an adopted pane too, not just a created one).
+   *
+   * It decides where a page comment goes. Without it the comment went to
+   * whichever chat was last clicked, which is usually — but not reliably — the
+   * agent driving the page. A ⌘B pane has no owner and falls back to that chat.
+   */
+  const [browserOwners, setBrowserOwners] = useState<Record<string, string>>({});
+  /**
    * §26 part 2: ending a session that started terminals asks, with two NAMED
    * outcomes. Silently killing a dev server because a chat closed is hostile;
    * silently leaking one is worse. Held as a promise resolver so the delete
@@ -214,7 +237,21 @@ export default function App(): React.JSX.Element {
     const offExit = window.hv.onTermExit(({ id, code }) =>
       setTerminals((p) => (p[id] ? { ...p, [id]: { ...p[id]!, running: false, exitCode: code } } : p)),
     );
-    return () => { offTitle(); offExit(); };
+    // §28: main pushes a whole BrowserInfo on every change (url, title, load
+    // state, blocked host). Whole-state rather than deltas, like the voice
+    // status broadcast — the pane is main's, so main's snapshot is the truth.
+    const offBrowser = window.hv.onBrowserState((info) =>
+      setBrowsers((p) => ({ ...p, [info.id]: info })),
+    );
+    const offBrowserClosed = window.hv.onBrowserClosed(({ id }) =>
+      setBrowsers((p) => {
+        if (!p[id]) return p;
+        const next = { ...p };
+        delete next[id];
+        return next;
+      }),
+    );
+    return () => { offTitle(); offExit(); offBrowser(); offBrowserClosed(); };
   }, []);
   // F6: global shortcuts. The handler closure is refreshed each render (reads
   // live wsId/tabs/newSession); a single listener reads it through the ref so we
@@ -449,15 +486,19 @@ export default function App(): React.JSX.Element {
      */
     void (async () => {
       try {
-        const [raw, sessionList, termList] = await Promise.all([
+        const [raw, sessionList, termList, browserList] = await Promise.all([
           window.hv.getLayout(),
           window.hv.listSessions(),
           window.hv.termList(),
+          // §28: normally empty at boot — panes do not survive the app, so their
+          // restored tabs must be pruned rather than shown as ghosts.
+          window.hv.browserList(),
         ]);
         setTerminals(Object.fromEntries(termList.map((t) => [t.id, t])));
         const layout = restoreLayout(raw, {
           sessions: new Set(sessionList.map((x) => x.id)),
           terminals: new Set(termList.map((t) => t.id)),
+          browsers: new Set(browserList.map((b) => b.id)),
         });
         setTabsByWs(layout);
         // Land on a workspace that actually has restored tabs. The remembered
@@ -666,6 +707,44 @@ export default function App(): React.JSX.Element {
             }));
           } else if (termEv.terminalId) {
             dropAgentTerminal(sid, termEv.terminalId);
+          }
+        }
+        // §28: the agent opened/navigated/acted in its browser. The pane itself
+        // is main's; what the renderer does here is make it VISIBLE — a tab
+        // placed so it never covers the chat the agent is talking in.
+        const browserEv = parseBrowserEvent(r);
+        if (browserEv?.browserId) {
+          const bid = browserEv.browserId;
+          if (browserEv.stage === "opened") {
+            setBrowserOwners((p) => ({ ...p, [bid]: sid }));
+            const ws = browserEv.workspaceId ?? activeWs;
+            if (ws) {
+              setTabsByWs((p) => ({ ...p, [ws]: openBrowserTab(p[ws] ?? emptyTabs, bid, chatTab(sid)) }));
+              setActiveWs(ws);
+              setView("chat");
+            }
+            void window.hv.browserGet(bid).then((info) => {
+              if (info) setBrowsers((p) => ({ ...p, [bid]: info }));
+            });
+          } else if (browserEv.stage === "closed") {
+            setBrowserOwners((p) => {
+              const next = { ...p };
+              delete next[bid];
+              return next;
+            });
+            setBrowsers((p) => {
+              const next = { ...p };
+              delete next[bid];
+              return next;
+            });
+            const ws = browserEv.workspaceId ?? activeWs;
+            if (ws) {
+              setTabsByWs((p) => {
+                const t = p[ws] ?? emptyTabs;
+                const slot = paneOf(t, browserTab(bid));
+                return slot < 0 ? p : { ...p, [ws]: closeTab(t, slot, browserTab(bid)) };
+              });
+            }
           }
         }
         // §14: raw-read fallback — the model loaded a skill by reading SKILL.md
@@ -1165,6 +1244,29 @@ export default function App(): React.JSX.Element {
   };
 
   /**
+   * §28: open a browser in the focused pane of `ws`. ⌘B and the `+` menu.
+   *
+   * Mirrors newTerminal exactly, with one difference that matters: the pane is
+   * created BLANK (browsers.create starts at url: "") so the URL bar takes focus
+   * and the human types where they want to go — a human-opened browser has no
+   * destination to guess, unlike the agent's, which always opens ON something.
+   */
+  const newBrowser = async (ws: string): Promise<void> => {
+    try {
+      const info = await window.hv.browserCreate(ws);
+      setBrowsers((p) => ({ ...p, [info.id]: info }));
+      // No tab to avoid: this opens where the human asked — the focused pane,
+      // which the caller (⌘B or a specific pane's `+`) has just set. The AGENT's
+      // call passes the chat tab instead, and only that path does placement.
+      setTabsByWs((p) => ({ ...p, [ws]: openBrowserTab(p[ws] ?? emptyTabs, info.id) }));
+      setActiveWs(ws);
+      setView("chat");
+    } catch (err) {
+      surface(err);
+    }
+  };
+
+  /**
    * §26: close a terminal tab, which KILLS its PTY — a terminal tab IS its
    * terminal. That is why this confirms where closing a chat tab does not: a
    * chat tab only stops showing a session that keeps running.
@@ -1188,10 +1290,28 @@ export default function App(): React.JSX.Element {
     setTabsByWs((p) => ({ ...p, [ws]: closeTab(p[ws] ?? emptyTabs, paneIdx, tab) }));
   };
 
+  /**
+   * §28: closing a browser tab DESTROYS its pane — a browser tab IS its browser,
+   * exactly like a terminal tab. No confirm: nothing is running, nothing is
+   * unsaved, and the page is one navigation away from coming back.
+   */
+  const closeBrowserTab = (ws: string, paneIdx: number, tab: TabId): void => {
+    const id = browserOf(tab);
+    if (!id) return;
+    void window.hv.browserClose(id).catch(() => {});
+    setBrowsers((p) => {
+      const next = { ...p };
+      delete next[id];
+      return next;
+    });
+    setTabsByWs((p) => ({ ...p, [ws]: closeTab(p[ws] ?? emptyTabs, paneIdx, tab) }));
+  };
+
   const closeFileTab = (wsId: string, paneIdx: number, tab: TabId): void => {
-    // A chat closes via closeChatTab and a terminal via closeTerminalTab —
-    // each has different semantics (a chat keeps running, a terminal dies).
-    if (isChatTab(tab) || isTermTab(tab)) return;
+    // A chat closes via closeChatTab, a terminal via closeTerminalTab and a
+    // browser via closeBrowserTab — each has different semantics (a chat keeps
+    // running, a terminal dies, a browser pane is destroyed).
+    if (isChatTab(tab) || isTermTab(tab) || isBrowserTab(tab)) return;
     const key = bufferKey(wsId, tab);
     if (dirtyMap[key] && !window.confirm(`Close ${tab}? Unsaved changes will be lost.`)) return;
     setTabsByWs((p) => ({ ...p, [wsId]: closeTab(p[wsId] ?? emptyTabs, paneIdx, tab) }));
@@ -1670,6 +1790,14 @@ export default function App(): React.JSX.Element {
       if (ws) void newTerminal(ws);
       return;
     }
+    // §28: ⌘B. Same shape as ⌘T — the workspace falls back to the first one so
+    // the key works before anything is focused.
+    if (is("newBrowser")) {
+      e.preventDefault();
+      const ws = wsId ?? workspaces[0];
+      if (ws) void newBrowser(ws);
+      return;
+    }
     if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
     if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
     if (is("closeTab")) {
@@ -1684,6 +1812,7 @@ export default function App(): React.JSX.Element {
       if (!wsId) return;
       const close = (slot: number, tab: TabId): void => {
         if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
+        else if (isBrowserTab(tab)) closeBrowserTab(wsId, slot, tab);
         else closeFileTab(wsId, slot, tab);
       };
       const focusedActive = wsTabs.panes[wsTabs.focused]?.active;
@@ -1718,6 +1847,7 @@ export default function App(): React.JSX.Element {
    * so an off-workspace terminal can be unmounted and repainted on return.
    */
   const terminalIds = wsId ? allTerminals(wsTabs) : [];
+  const browserIds = wsId ? allBrowsers(wsTabs) : [];
   // WS6 / round 11: which pane's content cell a tab occupies when it's that
   // pane's active tab. Content is mounted flat and placed via CSS grid-area
   // (NEVER reparented — see the invariant in tabs.ts).
@@ -1926,6 +2056,15 @@ export default function App(): React.JSX.Element {
                     paneIndex={slot}
                     sessionTitleFor={(sid) => sessions.find((x) => x.id === sid)?.title ?? "Session"}
                     terminalTitleFor={(tid) => terminals[tid]?.title ?? "Terminal"}
+                    browserTitleFor={(bid) => {
+                      const info = browsers[bid];
+                      if (info?.title) return info.title;
+                      try {
+                        return info?.url ? new URL(info.url).hostname : "Browser";
+                      } catch {
+                        return "Browser";
+                      }
+                    }}
                     terminalExited={(tid) => terminals[tid]?.running === false}
                     dirty={dirtyForWs}
                     busyFor={(sid) => !!busy[sid]}
@@ -1937,11 +2076,14 @@ export default function App(): React.JSX.Element {
                       if (sid) { setSelectedId(sid); setView("chat"); }
                     }}
                     onClose={(tab) => {
-                      // Three tab kinds, three lifecycles: a chat keeps its
-                      // session running, a file may hold unsaved edits, and a
-                      // terminal DIES with its tab (§26) — so it confirms.
+                      // Four tab kinds, four lifecycles: a chat keeps its
+                      // session running, a file may hold unsaved edits, a
+                      // terminal DIES with its tab (§26) — so it confirms — and
+                      // a browser pane is destroyed with no confirm (§28:
+                      // nothing is running and nothing is unsaved).
                       if (isChatTab(tab)) void closeChatTab(wsId, slot, tab);
                       else if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
+                      else if (isBrowserTab(tab)) closeBrowserTab(wsId, slot, tab);
                       else closeFileTab(wsId, slot, tab);
                     }}
                     onRename={(tab, title) => {
@@ -1970,6 +2112,11 @@ export default function App(): React.JSX.Element {
                       void newTerminal(wsId);
                     }}
                     newTerminalKey={formatBinding(bindings.newTerminal)}
+                    onNewBrowser={() => {
+                      updateTabs(wsId, (t) => focusPane(t, slot));
+                      void newBrowser(wsId);
+                    }}
+                    newBrowserKey={formatBinding(bindings.newBrowser)}
                     onOpenFilePanel={() => setTreeOpen(true)}
                     splitOptions={splitOptions(wsTabs, slot)}
                     onSplit={(dir) => updateTabs(wsId, (t) => splitAt(t, slot, dir))}
@@ -2009,6 +2156,48 @@ export default function App(): React.JSX.Element {
                   />
                 );
               })}
+            {/* §28: one mounted BrowserTab per open pane, a FLAT grid child like
+                every other tab. It renders only the CHROME — main composites the
+                real page over the placeholder inside it — so the mount-once rule
+                matters for a second reason here: a remount would re-measure from
+                zero and flash the page across the window. */}
+            {browserIds.map((bid) => {
+              const area = areaFor(browserTab(bid));
+              return (
+                <BrowserTab
+                  key={bid}
+                  browserId={bid}
+                  info={browsers[bid]}
+                  gridArea={area ?? undefined}
+                  hidden={area === null || activeView !== "chat"}
+                  // Where this pane meets another: the view insets itself so the
+                  // divider's drag strip is never underneath a composited page.
+                  edges={paneNeighbours(wsTabs, paneOf(wsTabs, browserTab(bid)))}
+                  onPicked={(payload) => {
+                    // §28: the OWNER of the pane first — the session that opened
+                    // or adopted it is the agent actually driving this page — and
+                    // the selected chat only as a fallback, which is all a ⌘B pane
+                    // can have. Returning false (nowhere to put it) is what stops
+                    // the comment being silently dropped: the popup says so and
+                    // stays open, holding what was typed.
+                    const owner = browserOwners[bid];
+                    const target = owner && sessions.some((x) => x.id === owner) ? owner : selectedId;
+                    if (!target) return false;
+                    setPageRefs((p) => ({ ...p, [target]: [...(p[target] ?? []), payload] }));
+                    // A chip filed into a composer nobody can see is the same as
+                    // losing it, so bring that chat forward — ALWAYS, not only
+                    // when it differs from the selected one. A session can be
+                    // selected with no tab open (selecting it in the sidebar
+                    // opens one; other routes do not), and then the comment
+                    // lands somewhere real but invisible. openChat is
+                    // addOrFocus, so this is a no-op when the tab is already up.
+                    setSelectedId(target);
+                    if (wsId) setTabsByWs((p) => ({ ...p, [wsId]: openChat(p[wsId] ?? emptyTabs, target) }));
+                    return true;
+                  }}
+                />
+              );
+            })}
             {/* v5.1: persistent top-right toolbar — split + file-panel controls,
                 always visible regardless of split state. */}
             {/* Round 11: draggable dividers. Absolutely positioned over the grid
@@ -2130,6 +2319,11 @@ export default function App(): React.JSX.Element {
             composerInsert={composerInsert?.sid === sid ? composerInsert : undefined}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={(msg, behavior, images, mentions) => void send(sid, msg, behavior, images, mentions)}
+            pageRefs={pageRefs[sid]}
+            onDropPageRef={(i) =>
+              setPageRefs((p) => ({ ...p, [sid]: (p[sid] ?? []).filter((_, j) => j !== i) }))
+            }
+            onClearPageRefs={() => setPageRefs((p) => ({ ...p, [sid]: [] }))}
             onRetry={() => void retryCrash(sid)}
             onCompact={() => void window.hv.compactSession(sid)}
             onAbort={() => {
@@ -2300,8 +2494,16 @@ function PaneDividers({
     document.addEventListener("mouseup", onUp);
   };
 
-  // A 6px hit strip centred on the line, tinted on hover so it is findable.
-  const hit = "absolute z-20 hover:bg-tangerine/40 transition-colors";
+  // §28 round 1: a 10px hit strip centred on the 2px line, tinted on hover so it
+  // is findable. 6px was too thin to catch on the first try, and beside a browser
+  // pane only the outer half was live at all until the view learned to inset
+  // itself away from the divider (BrowserTab DIVIDER_INSET).
+  // §28 round 1, revised: the strip you GRAB stays 10px, but it no longer paints
+  // itself — a 10px band of colour reads as a fat bar rather than a divider. The
+  // tint is a 5px child centred on the line, so the affordance is half as thick
+  // while the target is unchanged. Two different jobs, two different widths.
+  const hit = "group absolute z-20";
+  const tint = "absolute bg-transparent group-hover:bg-tangerine/40 transition-colors";
   const pct = (r: number): string => `${r * 100}%`;
   return (
     <>
@@ -2310,18 +2512,22 @@ function PaneDividers({
         aria-orientation={vertical ? "vertical" : "horizontal"}
         title="Drag to resize"
         onMouseDown={drag("main", vertical)}
-        className={`${hit} ${vertical ? "top-0 bottom-0 w-1.5 cursor-col-resize -translate-x-1/2" : "left-0 right-0 h-1.5 cursor-row-resize -translate-y-1/2"}`}
+        className={`${hit} ${vertical ? "top-0 bottom-0 w-2.5 cursor-col-resize -translate-x-1/2" : "left-0 right-0 h-2.5 cursor-row-resize -translate-y-1/2"}`}
         style={vertical ? { left: pct(tabs.sizes.main) } : { top: pct(tabs.sizes.main) }}
-      />
+      >
+        <div className={`${tint} ${vertical ? "inset-y-0 left-1/2 w-[5px] -translate-x-1/2" : "inset-x-0 top-1/2 h-[5px] -translate-y-1/2"}`} />
+      </div>
       {anyCross && (
         <div
           role="separator"
           aria-orientation={vertical ? "horizontal" : "vertical"}
           title="Drag to resize"
           onMouseDown={drag("cross", !vertical)}
-          className={`${hit} ${vertical ? "left-0 right-0 h-1.5 cursor-row-resize -translate-y-1/2" : "top-0 bottom-0 w-1.5 cursor-col-resize -translate-x-1/2"}`}
+          className={`${hit} ${vertical ? "left-0 right-0 h-2.5 cursor-row-resize -translate-y-1/2" : "top-0 bottom-0 w-2.5 cursor-col-resize -translate-x-1/2"}`}
           style={vertical ? { top: pct(tabs.sizes.cross) } : { left: pct(tabs.sizes.cross) }}
-        />
+        >
+          <div className={`${tint} ${vertical ? "inset-x-0 top-1/2 h-[5px] -translate-y-1/2" : "inset-y-0 left-1/2 w-[5px] -translate-x-1/2"}`} />
+        </div>
       )}
     </>
   );

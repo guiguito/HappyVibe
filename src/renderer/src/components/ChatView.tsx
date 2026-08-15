@@ -102,6 +102,9 @@ export function ChatView({
   onTogglePlan,
   onOpenAgentsMd,
   onSend,
+  pageRefs,
+  onDropPageRef,
+  onClearPageRefs,
   onAbort,
   onRestart,
   onRetry,
@@ -166,6 +169,15 @@ export function ChatView({
    */
   composerInsert?: { text: string; nonce: number };
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[]) => void;
+  /**
+   * §28: page-element comments the user picked in the embedded browser. They
+   * STACK here and are folded into the next message on send — the user decides
+   * when, which is why they live in App (one browser, many chats) and are
+   * cleared through a callback rather than owned locally.
+   */
+  pageRefs?: Array<{ selector: string; label: string; outerHTML: string; comment: string; thumbnail?: string }>;
+  onDropPageRef?: (index: number) => void;
+  onClearPageRefs?: () => void;
   onAbort: () => void;
   onRestart: () => void;
   onRetry: () => void;
@@ -522,9 +534,37 @@ export function ChatView({
   const hint = delegationHint(delegations);
 
   const submit = (behavior?: "followUp"): void => {
-    if (!input.trim()) return;
+    // §28 round 1: a picked element is a message on its own. The comment and the
+    // markup carry the whole intent, so requiring typed text as well would make
+    // the popup's paper-plane hand you a composer that then refuses to send.
+    if (!input.trim() && !(pageRefs?.length ?? 0)) return;
     const mentions = extractMentions(input, mentionMap.current);
-    onSend(input, behavior, attachments.length ? attachments : undefined, mentions.length ? mentions : undefined);
+    // §28: picked elements ride along as fenced blocks — the user's comment
+    // first (it is what they mean), the markup after (it is how the agent finds
+    // the thing). Page-controlled text needs no untrusted banner here: the human
+    // wrote this turn, which is exactly the line §28 draws against tool results.
+    const withRefs = (pageRefs?.length ?? 0)
+      ? [
+          input,
+          // The user's sentence stays in the bubble. The selector and the markup
+          // go into a <page-element> block, which stripInjectedBlocks cuts from
+          // the bubble exactly as it cuts @file context — the model reads them,
+          // the person who pointed at the thing never has to.
+          ...pageRefs!.map((r) => (r.comment ? `\n\n${r.comment}` : "")),
+          ...pageRefs!.map((r) =>
+            `\n\n<page-element label="${r.label.replace(/"/g, "'")}" selector="${r.selector.replace(/"/g, "'")}">\n${r.outerHTML}\n</page-element>`,
+          ),
+        ].join("")
+      : input;
+    // §28 round 1: the element's picture rides the ORDINARY image pipeline, so
+    // the bubble shows it, it zooms, and a vision model sees the thing itself
+    // rather than a description of it.
+    const refImages = (pageRefs ?? [])
+      .flatMap((r) => (r.thumbnail ? [{ name: r.label.slice(0, 40) || "element", mimeType: "image/png", data: r.thumbnail.split(",")[1] ?? "" }] : []))
+      .filter((a) => a.data);
+    const outgoing = [...attachments, ...refImages];
+    onSend(withRefs, behavior, outgoing.length ? outgoing : undefined, mentions.length ? mentions : undefined);
+    onClearPageRefs?.();
     setInput("");
     setAttachments([]);
     mentionMap.current = new Map();
@@ -536,7 +576,7 @@ export function ChatView({
       {/* v5.1: search + context bubble live IN the chat (a thin right-aligned bar
           at the top of this pane) — not a floating overlay that could bleed over
           an adjacent split pane. */}
-      <div className="flex items-center justify-end gap-1.5 px-3 py-1.5 border-b-2 border-line bg-paper shrink-0">
+      <div className="flex items-center justify-end gap-1.5 px-3 h-11 border-b-2 border-line bg-paper shrink-0">
         {/* §23: compact plan-mode indicator (left) — read-only badge with a
             wrap-up nudge and one-click exit. Replaces the full-width banner. */}
         {/* §7 round 12: the MODEL chip lives here, left of the metrics, and the
@@ -1028,6 +1068,34 @@ export function ChatView({
             ))}
           </div>
         )}
+        {/* §28: picked-element chips. Same shelf as the image attachments and the
+            same promise — nothing is sent until the user sends it. */}
+        {(pageRefs?.length ?? 0) > 0 && (
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
+            {pageRefs!.map((ref, i) => (
+              <span
+                key={i}
+                className="flex items-center gap-1.5 rounded-xl border-2 border-line-strong bg-card px-2 py-1 shadow-sticker"
+                title={`${ref.label}\n${ref.comment}`}
+              >
+                <svg viewBox="0 0 24 24" className="size-3.5 shrink-0 text-ink-soft" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18" />
+                  <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+                </svg>
+                <span className="max-w-48 truncate text-xs font-semibold">{ref.comment || ref.label}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove comment on ${ref.label}`}
+                  onClick={() => onDropPageRef?.(i)}
+                  className="text-ink-soft hover:text-berry font-bold text-sm leading-none cursor-pointer"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         {/* W2.1: honest fallback — live switch failed, override applies at next spawn. */}
         {restartHint && (
           <div className="max-w-3xl mx-auto px-1 pb-1.5 text-[11px] font-semibold text-ink-soft">
@@ -1278,7 +1346,7 @@ export function ChatView({
           )}
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() && !(pageRefs?.length ?? 0)}
             aria-label={busy ? "Steer" : "Send"}
             title={busy ? "Steer — lands between tool calls" : "Send"}
             className="shrink-0 size-8 flex items-center justify-center rounded-xl text-tangerine hover:bg-paper-deep/40 transition-colors enabled:cursor-pointer disabled:opacity-40"

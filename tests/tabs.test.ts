@@ -1,10 +1,13 @@
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
   activateTab, activeTabOf, allChats, allFiles, allTerminals, bufferKey, chatTab, closeTab, emptyTabs, isChatTab,
   visibleChats,
   closePane, closeSessionTabs, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, splitAt, splitOptions, resolveCardPath, sessionOf, setSize, splitHalf, splitPane, termTab, terminalOf,
   chatTabCount,
+  focusPane,
+  allBrowsers, browserOf, browserTab, isBrowserTab, openBrowserTab,
 } from "../src/renderer/src/tabs";
+import { paneNeighbours } from "../src/renderer/src/paneGrid";
 
 // ── tab identity: a chat is per SESSION (round 11) ───────────────────────────
 
@@ -574,4 +577,114 @@ test("chatTabCount ignores file and terminal tabs", () => {
   t = openFile(t, "src/a.ts");
   t = openTerminal(t, "term1");
   expect(chatTabCount(t, "s1")).toBe(1);
+});
+
+// ── §28: the fourth tab kind ────────────────────────────────────────────────
+describe("§28 browser tabs", () => {
+  it("a browser tab is NOT a file — the three-consumer invariant", () => {
+    let t = openFile(emptyTabs, "src/a.ts");
+    t = openBrowserTab(t, "b1", null);
+    expect(allFiles(t)).toEqual(["src/a.ts"]);
+    expect(allBrowsers(t)).toEqual(["b1"]);
+    expect(isBrowserTab(browserTab("b1"))).toBe(true);
+    expect(browserOf(browserTab("b1"))).toBe("b1");
+    expect(browserOf("src/a.ts")).toBeNull();
+  });
+
+  it("opening a browser splits an unsplit layout instead of covering the chat", () => {
+    const chat = chatTab("s1");
+    let t = openChat(emptyTabs, "s1");
+    t = openBrowserTab(t, "b1", chat);
+    expect(t.split).not.toBeNull();
+    // The chat is still the active tab of its own pane — nothing covered it.
+    const chatSlot = paneOf(t, chat);
+    expect(t.panes[chatSlot]!.active).toBe(chat);
+    // …and the browser is in a DIFFERENT pane.
+    expect(paneOf(t, browserTab("b1"))).not.toBe(chatSlot);
+  });
+
+  it("with a split already open, the browser joins the pane that is not the chat", () => {
+    const chat = chatTab("s1");
+    let t = openChat(emptyTabs, "s1");
+    t = splitPane(t, "v");
+    t = openFile(t, "src/a.ts"); // lands in the new half
+    const before = t.split;
+    t = openBrowserTab(t, "b1", chat);
+    expect(t.split).toBe(before); // no new split — the 2×2 ceiling is respected
+    expect(paneOf(t, browserTab("b1"))).toBe(paneOf(t, "src/a.ts"));
+    expect(paneOf(t, browserTab("b1"))).not.toBe(paneOf(t, chat));
+  });
+
+  it("re-opening an already-open browser focuses it rather than splitting again", () => {
+    let t = openChat(emptyTabs, "s1");
+    t = openBrowserTab(t, "b1", chatTab("s1"));
+    const split = t.split;
+    t = openBrowserTab(t, "b1", chatTab("s1"));
+    expect(t.split).toBe(split);
+    expect(allBrowsers(t)).toEqual(["b1"]);
+  });
+});
+
+// ── §28 round 1: which sides of a pane touch a divider ──────────────────────
+describe("paneNeighbours", () => {
+  it("reports nothing when there is only one pane", () => {
+    expect(paneNeighbours(emptyTabs, 0)).toEqual({ left: false, top: false, right: false, bottom: false });
+  });
+
+  it("a vertical split gives the left pane a RIGHT divider and vice versa", () => {
+    const t = splitPane(openFile(emptyTabs, "a.ts"), "v");
+    expect(paneNeighbours(t, 0)).toMatchObject({ right: true, left: false });
+    expect(paneNeighbours(t, 1)).toMatchObject({ left: true, right: false });
+  });
+
+  it("a horizontal split gives the top pane a BOTTOM divider", () => {
+    const t = splitPane(openFile(emptyTabs, "a.ts"), "h");
+    expect(paneNeighbours(t, 0)).toMatchObject({ bottom: true, top: false });
+    expect(paneNeighbours(t, 1)).toMatchObject({ top: true, bottom: false });
+  });
+
+  it("ignores slots that are not live", () => {
+    const t = splitPane(openFile(emptyTabs, "a.ts"), "v");
+    // Slots 2/3 do not exist until a half is cross-split.
+    expect(paneNeighbours(t, 0).bottom).toBe(false);
+  });
+});
+
+// ── §28 round 1: a human-opened browser lands where the human asked ─────────
+describe("openBrowserTab — the human path", () => {
+  it("opens in the FOCUSED pane, not the first one", () => {
+    // The reported bug: from the second pane's `+`, the browser appeared in the
+    // first pane, because the agent's avoid-the-chat search picked pane 0.
+    let t = openChat(emptyTabs, "s1");        // pane 0
+    t = splitPane(t, "v");                    // pane 1 exists, focused
+    t = openFile(t, "notes.md");              // …and holds a file
+    t = focusPane(t, 1);
+
+    t = openBrowserTab(t, "b1");              // no tab to avoid = a human asked
+    expect(paneOf(t, browserTab("b1"))).toBe(1);
+    expect(paneOf(t, chatTab("s1"))).toBe(0);
+  });
+
+  it("does not split a single pane — ⌘B behaves like ⌘T", () => {
+    let t = openChat(emptyTabs, "s1");
+    t = openBrowserTab(t, "b1");
+    expect(t.split).toBeNull();
+    expect(paneOf(t, browserTab("b1"))).toBe(0);
+  });
+
+  it("still focuses an already-open browser rather than moving it", () => {
+    let t = openChat(emptyTabs, "s1");
+    t = splitPane(t, "v");
+    t = openBrowserTab(t, "b1");              // lands in pane 1 (focused)
+    t = focusPane(t, 0);
+    t = openBrowserTab(t, "b1");              // asking again must not relocate it
+    expect(paneOf(t, browserTab("b1"))).toBe(1);
+  });
+
+  it("the AGENT path is unchanged — it still avoids the chat", () => {
+    let t = openChat(emptyTabs, "s1");
+    t = openBrowserTab(t, "b1", chatTab("s1"));
+    expect(t.split).not.toBeNull();
+    expect(paneOf(t, browserTab("b1"))).not.toBe(paneOf(t, chatTab("s1")));
+  });
 });
