@@ -338,9 +338,10 @@ export function BrowserTab({
               style={popupStyle(picked.rect, host.current)}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <span className="max-w-40 shrink-0 truncate font-mono text-[11px] text-ink-soft" title={picked.label}>
-                {picked.label}
-              </span>
+              {/* No label chip: the outline already says which element this is,
+                  and naming it again in the popup was one more thing to read for
+                  no information. The label still travels in the payload for the
+                  composer chip and the message. */}
               <input
                 autoFocus
                 value={comment}
@@ -350,7 +351,8 @@ export function BrowserTab({
                   if (e.key === "Escape") cancelPick();
                 }}
                 placeholder="What should it do?"
-                className="w-56 min-w-0 bg-transparent text-[13px] outline-none"
+                className="w-64 min-w-0 bg-transparent text-[13px] outline-none"
+                aria-label={`Comment on ${picked.label}`}
               />
               <button
                 type="button"
@@ -380,7 +382,7 @@ function popupStyle(
 ): React.CSSProperties {
   if (!rect || !host) return { left: "50%", top: "50%", transform: "translate(-50%, -50%)" };
   const box = host.getBoundingClientRect();
-  const PILL_W = 380;
+  const PILL_W = 300;
   const PILL_H = 44;
   const GAP = 8;
   const below = rect.y + rect.height + GAP;
