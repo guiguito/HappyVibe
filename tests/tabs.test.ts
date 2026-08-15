@@ -4,6 +4,7 @@ import {
   visibleChats,
   closePane, closeSessionTabs, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, splitAt, splitOptions, resolveCardPath, sessionOf, setSize, splitHalf, splitPane, termTab, terminalOf,
   chatTabCount,
+  focusPane,
   allBrowsers, browserOf, browserTab, isBrowserTab, openBrowserTab,
 } from "../src/renderer/src/tabs";
 import { paneNeighbours } from "../src/renderer/src/paneGrid";
@@ -646,5 +647,44 @@ describe("paneNeighbours", () => {
     const t = splitPane(openFile(emptyTabs, "a.ts"), "v");
     // Slots 2/3 do not exist until a half is cross-split.
     expect(paneNeighbours(t, 0).bottom).toBe(false);
+  });
+});
+
+// ── §28 round 1: a human-opened browser lands where the human asked ─────────
+describe("openBrowserTab — the human path", () => {
+  it("opens in the FOCUSED pane, not the first one", () => {
+    // The reported bug: from the second pane's `+`, the browser appeared in the
+    // first pane, because the agent's avoid-the-chat search picked pane 0.
+    let t = openChat(emptyTabs, "s1");        // pane 0
+    t = splitPane(t, "v");                    // pane 1 exists, focused
+    t = openFile(t, "notes.md");              // …and holds a file
+    t = focusPane(t, 1);
+
+    t = openBrowserTab(t, "b1");              // no tab to avoid = a human asked
+    expect(paneOf(t, browserTab("b1"))).toBe(1);
+    expect(paneOf(t, chatTab("s1"))).toBe(0);
+  });
+
+  it("does not split a single pane — ⌘B behaves like ⌘T", () => {
+    let t = openChat(emptyTabs, "s1");
+    t = openBrowserTab(t, "b1");
+    expect(t.split).toBeNull();
+    expect(paneOf(t, browserTab("b1"))).toBe(0);
+  });
+
+  it("still focuses an already-open browser rather than moving it", () => {
+    let t = openChat(emptyTabs, "s1");
+    t = splitPane(t, "v");
+    t = openBrowserTab(t, "b1");              // lands in pane 1 (focused)
+    t = focusPane(t, 0);
+    t = openBrowserTab(t, "b1");              // asking again must not relocate it
+    expect(paneOf(t, browserTab("b1"))).toBe(1);
+  });
+
+  it("the AGENT path is unchanged — it still avoids the chat", () => {
+    let t = openChat(emptyTabs, "s1");
+    t = openBrowserTab(t, "b1", chatTab("s1"));
+    expect(t.split).not.toBeNull();
+    expect(paneOf(t, browserTab("b1"))).not.toBe(paneOf(t, chatTab("s1")));
   });
 });

@@ -1240,9 +1240,10 @@ export default function App(): React.JSX.Element {
     try {
       const info = await window.hv.browserCreate(ws);
       setBrowsers((p) => ({ ...p, [info.id]: info }));
-      // No chat tab passed: this opens where the human asked (the focused pane),
-      // where the AGENT's placement rule deliberately avoids covering the chat.
-      setTabsByWs((p) => ({ ...p, [ws]: openBrowserTab(p[ws] ?? emptyTabs, info.id, null) }));
+      // No tab to avoid: this opens where the human asked — the focused pane,
+      // which the caller (⌘B or a specific pane's `+`) has just set. The AGENT's
+      // call passes the chat tab instead, and only that path does placement.
+      setTabsByWs((p) => ({ ...p, [ws]: openBrowserTab(p[ws] ?? emptyTabs, info.id) }));
       setActiveWs(ws);
       setView("chat");
     } catch (err) {

@@ -353,16 +353,29 @@ export function openTerminal(t: WorkspaceTabs, terminalId: string): WorkspaceTab
  * only happens when every live pane holds that chat, where covering it is the
  * only option left.
  */
-export function openBrowserTab(t: WorkspaceTabs, browserId: string, chatTabId?: TabId | null): WorkspaceTabs {
+export function openBrowserTab(t: WorkspaceTabs, browserId: string, avoidTab?: TabId | null): WorkspaceTabs {
   const tab = browserTab(browserId);
   if (paneOf(t, tab) >= 0) return addOrFocus(t, tab); // already open — just focus it
+
+  // NO tab to avoid ⇒ a HUMAN asked (⌘B, or the `+` of a specific pane), and the
+  // pane they asked in is the pane they get — `addOrFocus` uses `focused`, which
+  // the caller has already set. Exactly how openTerminal behaves, which is the
+  // point: the two commands sit next to each other in the same menu.
+  //
+  // This branch is why the placement below is not merely skipped but must not
+  // RUN: with no tab to avoid, its "find a pane that isn't showing the chat"
+  // search matched the FIRST non-empty pane, so a browser opened from the second
+  // pane's `+` landed in the first one.
+  if (avoidTab == null) return addOrFocus(t, tab);
+
+  // The AGENT opened it, and it must not cover the chat it is talking in.
   if (!t.split) {
     // No split yet: make one and put the browser in the new half. splitPane
     // focuses slot 1, so addOrFocus lands it there.
     return addOrFocus(splitPane(t, "v"), tab);
   }
-  const free = liveSlots(t).find((s) => t.panes[s]!.active !== chatTabId && !t.panes[s]!.tabs.includes(chatTabId ?? ""));
-  const target = free ?? liveSlots(t).find((s) => t.panes[s]!.active !== chatTabId);
+  const free = liveSlots(t).find((s) => t.panes[s]!.active !== avoidTab && !t.panes[s]!.tabs.includes(avoidTab));
+  const target = free ?? liveSlots(t).find((s) => t.panes[s]!.active !== avoidTab);
   return addOrFocus(target == null ? t : focusPane(t, target), tab);
 }
 
