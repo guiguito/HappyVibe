@@ -371,6 +371,11 @@ export class BrowserManager {
   private async evalIn(id: string, code: string): Promise<string | null> {
     const entry = this.entries.get(id);
     if (!entry) return null;
+    const wc = entry.view.webContents;
+    // `once` only detaches when the event FIRES, and the normal outcome is that
+    // the script wins the race — so every call left a listener behind and the
+    // 11th printed MaxListenersExceededWarning. Detached in `finally` instead.
+    let onDestroyed = (): void => {};
     try {
       // Racing destruction, not just errors. `executeJavaScript` on a view that
       // is destroyed mid-call neither resolves nor rejects — it simply never
@@ -378,15 +383,18 @@ export class BrowserManager {
       // every later prompt queued behind it. ipc.ts has a 30s backstop for the
       // whole envelope; this makes the common case fail in milliseconds instead.
       const result: unknown = await Promise.race([
-        entry.view.webContents.executeJavaScript(code, true),
+        wc.executeJavaScript(code, true),
         new Promise((_resolve, reject) => {
-          entry.view.webContents.once("destroyed", () => reject(new Error("the browser pane was closed")));
+          onDestroyed = (): void => reject(new Error("the browser pane was closed"));
+          wc.once("destroyed", onDestroyed);
         }),
       ]);
       if (result === undefined) return "undefined";
       return typeof result === "string" ? result : JSON.stringify(result);
     } catch (err) {
       return `The page threw: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      if (!wc.isDestroyed()) wc.off("destroyed", onDestroyed);
     }
   }
 
