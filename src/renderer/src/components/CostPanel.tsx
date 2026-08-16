@@ -74,14 +74,11 @@ export function CostPanel({
       >
         <div className="flex items-center gap-3 px-5 py-3 border-b-2 border-line">
           <h2 className="font-black text-lg flex-1">Session cost</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-ink-soft hover:text-ink text-xl leading-none cursor-pointer"
-            aria-label="Close"
-          >
-            ×
-          </button>
+          {/* Round 15: no close button. The pill in the top bar that opened
+              this is a toggle now and shows a pressed state, so a second exit
+              inside the panel is the same duplication the Files panel's ⇥ was
+              — one entry point, one exit, the same control. Clicking outside
+              still closes. */}
         </div>
 
         {/* Totals */}

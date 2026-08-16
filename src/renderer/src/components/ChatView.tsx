@@ -698,8 +698,8 @@ export function ChatView({
         >
           ⌕
         </button>
-        <CostBubble total={costTotal} onOpen={() => onCostOpenChange(true)} />
-        <ContextBubble stats={stats} fallbackWindow={fallbackWindow} onOpen={() => onContextOpenChange(true)} />
+        <CostBubble total={costTotal} open={costOpen} onToggle={() => onCostOpenChange(!costOpen)} />
+        <ContextBubble stats={stats} fallbackWindow={fallbackWindow} open={contextOpen} onToggle={() => onContextOpenChange(!contextOpen)} />
       </div>
       {/* Round 15: everything below the top bar lives in one POSITIONED region,
           so the cost and context panels can be `absolute inset-0` within it —

@@ -703,7 +703,15 @@ export function Sidebar({
           a 10px hit strip you grab, with a 5px tint centred in it that you see.
           Two jobs, two widths (App.tsx PaneDividers carries the same pair). The
           old 6px bar painted its whole height, which read as a fat bar and was
-          still fiddly to catch. */}
+          still fiddly to catch.
+
+          `-mb-1.5` is what puts it ON the line rather than above it. The strip
+          is the last child of the TREE, and the visible rule is the footer's
+          own `border-t-2` — so at rest the band ended exactly where the border
+          began, and the hover tint appeared a clear 6px high, pointing at
+          nothing. The negative margin pulls the footer up by 6px so the strip's
+          centre and the border's centre coincide; `relative z-10` keeps the
+          footer, which comes later in the DOM, from painting over it. */}
       {settingsOpen && (
         <div
           role="separator"
@@ -711,7 +719,7 @@ export function Sidebar({
           title="Drag to resize"
           onMouseDown={startResize}
           onDoubleClick={() => setTreeFrac(AUTO)}
-          className="group mt-auto h-2.5 shrink-0 cursor-row-resize flex items-center"
+          className="group relative z-10 mt-auto -mb-1.5 h-2.5 shrink-0 cursor-row-resize flex items-center"
         >
           <div className="h-[5px] w-full bg-transparent group-hover:bg-tangerine/40 transition-colors" />
         </div>
