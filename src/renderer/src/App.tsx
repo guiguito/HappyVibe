@@ -2533,13 +2533,13 @@ export default function App(): React.JSX.Element {
                 opening it never shrinks the panes. Below the ContextPanel (z-40). */}
             {DRAWER && (
               <div
-                // §7 round 13: the same pegboard the sidebar uses. Both are
-                // chrome flanking the content, so they should read as the same
-                // KIND of surface — the texture is the app's grammar for that,
-                // and a plain panel on the right made the two sides look like
-                // different apps. Opaque children (cards, group headers) still
-                // sit on top of it exactly as the sidebar's rows do.
-                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper-deep pegboard shadow-sticker-lg flex flex-col"
+                // §7 round 13: plain `bg-paper`, NOT the sidebar's pegboard.
+                // Tried and reverted: the texture is the app's mark for its own
+                // chrome — the sidebar, where you pick a workspace or open
+                // settings. This drawer is the workspace's own contents, so it
+                // belongs to the centre, and giving it the sidebar's surface
+                // said the opposite.
+                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col"
                 style={{ width: drawerWidth }}
               >
                 {/* §29: the drag strip. Absolutely placed on the drawer's own
