@@ -596,14 +596,28 @@ export function ChangesPanel({
                   setOpeningPr(true);
                   void window.hv
                     .gitPrUrl(workspace, true)
-                    .then((r) => {
+                    .then(async (r) => {
+                      // Fall back to the eligibility URL the panel already has:
+                      // the drafting call can come back null (no provider, a
+                      // model timeout) and that is not a reason to do nothing.
                       const url = r?.url ?? prUrl;
-                      if (!url) return;
+                      if (!url) {
+                        flash("Nothing to open a pull request for — publish the branch first.");
+                        return;
+                      }
                       setLastCommand(url);
-                      void window.hv.openExternal(url);
+                      // NOT fire-and-forget. shell.openExternal rejects when the
+                      // OS refuses, and swallowing that is what made this read as
+                      // "the button did something and then nothing happened".
+                      await window.hv.openExternal(url);
                       flash(r?.drafted ? "Opened a pull request draft in your browser." : "Opened your browser — described from the commits.");
                     })
-                    .catch(() => {})
+                    .catch((e: unknown) => {
+                      // Every failure says something. A silent catch here cost a
+                      // debugging round: the button spun, stopped, and left no
+                      // trace of why.
+                      flash(`Could not open the pull request: ${e instanceof Error ? e.message : String(e)}`);
+                    })
                     .finally(() => setOpeningPr(false));
                 }}
                 // It opens a FORM. HappyVibe creates nothing and stores no
