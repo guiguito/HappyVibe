@@ -48,6 +48,71 @@ interface HvBrowserInfo {
   canGoForward: boolean;
 }
 
+// ── §29 Git integration. Mirrors src/main/gitParse.ts and src/main/git.ts. ──
+
+/** The five outcomes of §5. `no-git` is an ordinary state, not an error. */
+type HvRepoState =
+  | { kind: "no-git" }
+  | { kind: "no-repo" }
+  | { kind: "repo"; root: string; subdir: string | null; unborn: boolean }
+  | { kind: "error"; message: string; fix: string | null };
+
+interface HvGitFileChange {
+  path: string;
+  origPath?: string;
+  status: "added" | "modified" | "deleted" | "renamed" | "untracked";
+  staged: boolean;
+  additions: number;
+  deletions: number;
+}
+
+interface HvGitBranchInfo {
+  branch: string | null;
+  oid: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+}
+
+interface HvDiffHunk {
+  header: string;
+  lines: string[];
+  /** Exactly what `git apply -R` gets — never rebuilt in the renderer. */
+  raw: string;
+}
+
+interface HvFileDiff {
+  path: string;
+  origPath?: string;
+  binary: boolean;
+  hunks: HvDiffHunk[];
+  fileHeader: string;
+}
+
+interface HvGitStatusPayload {
+  state: HvRepoState;
+  status?: { branch: HvGitBranchInfo; files: HvGitFileChange[] };
+  stashes?: { index: number; message: string }[];
+  lastSubject?: string;
+}
+
+interface HvLogEntry {
+  sha: string;
+  subject: string;
+  authorDate: string;
+}
+
+/** Every git write answers this shape. `busy` = main's idle gate refused. */
+interface HvGitWrite {
+  ok: boolean;
+  error?: string;
+  /** Session titles holding the working tree, when the gate refused. */
+  busy?: string[];
+}
+
+/** "Since your last save" (vs HEAD) or "Against <base branch>" (merge-base). */
+type HvGitBaseline = "head" | "base";
+
 /** §26. Mirrors TerminalSettings in src/main/terminalSettings.ts. */
 interface HvTerminalSettings {
   style: "workshop" | "paper" | "carbon";
@@ -490,6 +555,34 @@ interface HvApi {
   watchWorkspace(workspaceId: string): Promise<void>;
   unwatchWorkspace(workspaceId: string): Promise<void>;
   onFsChanged(cb: (p: { workspaceId: string; relDirs: string[] }) => void): () => void;
+
+  // ── §29 Git integration ──────────────────────────────────────────────────
+  gitState(workspaceId: string): Promise<HvRepoState & { available: boolean }>;
+  gitStatus(workspaceId: string): Promise<HvGitStatusPayload>;
+  gitDiff(workspaceId: string, baseline: HvGitBaseline, opts?: { staged?: boolean; path?: string }): Promise<HvFileDiff[]>;
+  gitHistory(workspaceId: string, limit: number): Promise<HvLogEntry[]>;
+  gitShow(workspaceId: string, sha: string): Promise<HvFileDiff[]>;
+  gitBranches(workspaceId: string): Promise<string[]>;
+  gitDefaultBranch(workspaceId: string): Promise<string | null>;
+  gitCommit(workspaceId: string, message: string, opts: { stagedOnly: boolean; amend: boolean }): Promise<HvGitWrite & { sha?: string }>;
+  gitStage(workspaceId: string, relPath: string, stage: boolean): Promise<HvGitWrite>;
+  gitSwitch(workspaceId: string, branch: string, opts: { create: boolean; mode: "take" | "stash" }): Promise<HvGitWrite & { wouldConflict?: boolean }>;
+  gitFetch(workspaceId: string): Promise<HvGitWrite>;
+  gitSync(workspaceId: string): Promise<HvGitWrite & { nonFF?: boolean }>;
+  gitPublish(workspaceId: string): Promise<HvGitWrite>;
+  gitStash(workspaceId: string, action: "save" | "pop" | "drop", index?: number): Promise<HvGitWrite>;
+  gitUndoHunk(workspaceId: string, patch: string, meta: { path: string }): Promise<HvGitWrite & { stale?: boolean }>;
+  gitUndoFile(workspaceId: string, relPath: string): Promise<HvGitWrite>;
+  gitDiscardUntracked(workspaceId: string, relPath: string): Promise<HvGitWrite>;
+  gitInitPreview(workspaceId: string): Promise<{ refused: string | null; branch: string; gitignore: string }>;
+  gitInit(workspaceId: string, gitignore: string): Promise<HvGitWrite>;
+  gitDetectJunk(workspaceId: string): Promise<string[]>;
+  gitAddGitignore(workspaceId: string, lines: string[]): Promise<{ ok: boolean }>;
+  gitDraftMessage(workspaceId: string, stagedOnly: boolean): Promise<string | null>;
+  gitMessageModel(): Promise<{ provider: string; modelId: string } | null>;
+  setGitMessageModel(m: { provider: string; modelId: string } | null): Promise<{ provider: string; modelId: string } | null>;
+  onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;
+
   // §23 Plan Mode
   planSet(sessionId: string, enabled: boolean): Promise<void>;
   planImplement(sessionId: string, relPath: string, model?: { provider: string; modelId: string } | null): Promise<void>;
