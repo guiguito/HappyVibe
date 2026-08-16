@@ -239,16 +239,27 @@ export async function gitStatus(workspace: string): Promise<GitStatusPayload> {
   }
 
   const parsed = parsePorcelainV2(statusOut.stdout);
-  const numstat = await run(state.root, [
+  /**
+   * `unborn` comes from the LIVE status, never from the cached probe. The root
+   * and subdir genuinely do not move for a workspace, so caching them is right —
+   * but a repo stops being unborn the moment the user makes their first commit,
+   * and a cached `true` would leave the panel saying "nothing here yet" forever,
+   * with History hidden and the base-branch baseline permanently absent. The
+   * porcelain already tells us: `# branch.oid (initial)` parses to a null oid.
+   */
+  const live: Extract<RepoState, { kind: "repo" }> = { ...state, unborn: parsed.branch.oid === null };
+  probeCache.set(workspace, live);
+
+  const numstat = await run(live.root, [
     "diff",
-    ...(state.unborn ? [await emptyTree(state.root)] : ["HEAD"]),
+    ...(live.unborn ? [await emptyTree(live.root)] : ["HEAD"]),
     "--numstat",
-    ...pathspec(state),
+    ...pathspec(live),
   ]);
   const files = mergeNumstat(parsed.files, parseNumstat(numstat.stdout));
 
   return {
-    state,
+    state: live,
     status: { branch: parsed.branch, files },
     stashes: parseStashList(stashOut.stdout),
     lastSubject: logOut.ok ? logOut.stdout.trim() : undefined,

@@ -409,6 +409,12 @@ export function ChangesPanel({
           <div className="p-2.5 flex flex-col gap-2 border-b-2 border-line">
             {primary.kind === "save" && (
               <>
+                {/* §5b: the on-ramp ends HERE, at a first commit the user makes
+                    themselves — so it is named rather than sharing the generic
+                    label. This is the beginner's win moment. */}
+                {state.unborn && (
+                  <div className="text-[11px] font-bold text-tangerine-deep">Save your first version ✨</div>
+                )}
                 <div className="flex items-start gap-1.5">
                   <textarea
                     value={message}
@@ -502,7 +508,12 @@ export function ChangesPanel({
           </div>
 
           {/* 3. Baseline selector */}
-          {files.length > 0 && (
+          {files.length > 0 && state.unborn && (
+            <div className="px-2.5 py-1.5 border-b-2 border-line text-[10px] text-ink-soft">
+              {stats.files} {stats.files === 1 ? "file" : "files"} · nothing saved yet
+            </div>
+          )}
+          {files.length > 0 && !state.unborn && (
             <div className="px-2.5 py-1.5 border-b-2 border-line flex items-center gap-1.5">
               <select
                 value={baseline}
@@ -511,7 +522,7 @@ export function ChangesPanel({
               >
                 <option value="head">Since your last save</option>
                 {/* Absent on an unborn HEAD — there are no branches to compare to. */}
-                {defaultBranch && !state.unborn && <option value="base">Against {defaultBranch}</option>}
+                {defaultBranch && <option value="base">Against {defaultBranch}</option>}
               </select>
               <span className="text-[10px] text-ink-soft">
                 {stats.files} {stats.files === 1 ? "file" : "files"} · +{stats.additions} −{stats.deletions}

@@ -159,6 +159,33 @@ describe.skipIf(!GIT_OK)("gitStatus", () => {
   });
 });
 
+describe.skipIf(!GIT_OK)("the unborn flag tracks reality, not the cache", () => {
+  it("stops reporting unborn once the first commit lands", async () => {
+    // Found in the GUI, not by a test: the probe caches root/subdir (which never
+    // move) and used to cache `unborn` with them — so after the on-ramp's first
+    // commit the panel still said "nothing here yet", History stayed hidden and
+    // the base-branch baseline never appeared. `unborn` now comes from the LIVE
+    // porcelain (`# branch.oid (initial)` → a null oid).
+    run(dir, ["init", "-q", "-b", "main", "."]);
+    run(dir, ["config", "user.email", "t@example.com"]);
+    run(dir, ["config", "user.name", "T"]);
+    fs.writeFileSync(path.join(dir, "a.txt"), "hello\n");
+    invalidateProbe(dir);
+
+    const before = await gitStatus(dir);
+    if (before.state.kind !== "repo") throw new Error("expected repo");
+    expect(before.state.unborn).toBe(true);
+
+    expect((await saveVersion(dir, "first", { stagedOnly: false, amend: false })).ok).toBe(true);
+
+    // NO invalidateProbe here — that is the whole point.
+    const after = await gitStatus(dir);
+    if (after.state.kind !== "repo") throw new Error("expected repo");
+    expect(after.state.unborn).toBe(false);
+    expect(await gitHistory(dir, 5)).toHaveLength(1);
+  });
+});
+
 describe.skipIf(!GIT_OK)("gitDiff", () => {
   it("diffs the working tree against HEAD", async () => {
     makeRepo(dir);
