@@ -20,6 +20,15 @@ export function badgeTint(changedLines: number): "green" | "amber" {
 
 export const AMBER_AT = 50;
 
+/** Drawer width bounds (§1a). 256 was the tree's fixed width and stays the floor. */
+export const DRAWER_MIN = 256;
+export const DRAWER_MAX = 720;
+
+export function clampDrawer(px: number): number {
+  if (!Number.isFinite(px)) return DRAWER_MIN;
+  return Math.min(DRAWER_MAX, Math.max(DRAWER_MIN, Math.round(px)));
+}
+
 export interface PanelState {
   files: HvGitFileChange[];
   stagedCount: number;

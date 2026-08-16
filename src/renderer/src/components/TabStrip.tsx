@@ -47,6 +47,8 @@ export function TabStrip({
   onClosePane,
   filesOpen,
   onToggleFiles,
+  changeCount = 0,
+  changeTint = "green",
   onRename,
 }: {
   pane: Pane;
@@ -105,6 +107,10 @@ export function TabStrip({
    */
   filesOpen: boolean;
   onToggleFiles: () => void;
+  /** §29: uncommitted files in this workspace's working tree. 0 hides the badge. */
+  changeCount?: number;
+  /** Green while small, amber once the pile has grown (gitui.badgeTint). */
+  changeTint?: "green" | "amber";
 }): React.JSX.Element {
   const tab = (active: boolean): string =>
     `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors ${
@@ -255,16 +261,39 @@ export function TabStrip({
           </svg>
         </PaneButton>
       )}
-      <PaneButton
-        title={filesOpen ? "Hide the file tree" : "Browse files into this pane"}
-        label={filesOpen ? "Hide the file tree" : "Browse files into this pane"}
-        onClick={onToggleFiles}
-        pressed={filesOpen}
-      >
-        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-      </PaneButton>
+      {/* §29: ONE entry point, upgraded — the files icon carries the working
+          tree's change count. Passive awareness: it never opens anything by
+          itself, and review stays user-initiated. */}
+      <span className="relative inline-flex">
+        <PaneButton
+          title={
+            filesOpen
+              ? "Hide the file panel"
+              : changeCount > 0
+                ? `Browse files into this pane — ${changeCount} changed`
+                : "Browse files into this pane"
+          }
+          label={filesOpen ? "Hide the file panel" : "Browse files into this pane"}
+          onClick={onToggleFiles}
+          pressed={filesOpen}
+        >
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+        </PaneButton>
+        {changeCount > 0 && (
+          <span
+            aria-hidden
+            className={`pointer-events-none absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-0.5 rounded-full text-[9px] font-bold leading-[14px] text-center border border-paper ${
+              // The context bubble already taught this vocabulary: leaf = calm,
+              // honey = filling up. Same shape of thing, same colours.
+              changeTint === "amber" ? "bg-honey text-ink" : "bg-leaf text-paper"
+            }`}
+          >
+            {changeCount > 99 ? "99+" : changeCount}
+          </span>
+        )}
+      </span>
       {onClosePane && (
         <PaneButton title="Close this pane (its tabs move to the next one)" label="Close this pane" onClick={onClosePane}>
           {/* An X, deliberately NOT another box-with-a-line: beside the two split
