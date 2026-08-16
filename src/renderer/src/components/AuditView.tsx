@@ -36,7 +36,25 @@ interface OneShot {
   ok: boolean;
 }
 
-type Row = ({ row: "decision" } & Decision) | ({ row: "oneshot" } & OneShot);
+export type Row = ({ row: "decision" } & Decision) | ({ row: "oneshot" } & OneShot);
+
+/**
+ * One EventLog row → one display row.
+ *
+ * Exported ONLY so a test can drive it with the real event shapes. It exists as
+ * a named function because the inline version discriminated on `data.kind` and
+ * misfiled every permission decision: the bridge's audit envelope carries
+ * `kind: "hv.audit"` and main stores that payload verbatim, so the field is on
+ * BOTH kinds of row. The page then read `estTokens` off a permission decision
+ * and rendered nothing at all. Discriminate on the event TYPE — the thing main
+ * actually keys rows by.
+ */
+export function toAuditRow(e: HvAuditEvent): Row {
+  const base = { ts: e.ts, sessionId: e.sessionId, workspaceId: e.workspaceId };
+  return e.type === "assistant.oneshot"
+    ? { row: "oneshot", ...(e.data as unknown as OneShot), ...base }
+    : { row: "decision", ...(e.data as unknown as Decision), ...base };
+}
 
 const ONESHOT_LABEL: Record<OneShot["kind"], string> = {
   title: "named a session",
@@ -56,10 +74,18 @@ const ONESHOT_LABEL: Record<OneShot["kind"], string> = {
  * without shouting.
  */
 const SOURCE_LABEL: Record<string, string> = { dangerous: "bypass" };
-const SOURCE_TONE: Record<string, string> = {
-  bypass: "text-tangerine-deep",
-  dangerous: "text-tangerine-deep",
-};
+/**
+ * No tone at all — every source renders in the same muted ink.
+ *
+ * The first attempt kept an amber for `bypass`, and a GUI pass killed it: with a
+ * bypass switched on EVERY row is a bypass, so a highlight colour highlights
+ * nothing and simply restates the complaint in a new hue. The signal moved to
+ * where it can actually vary — the `· rules would have asked` clause, which
+ * differs per call — and to the filters. That a bypass is active is already
+ * said, loudly and once, by the red banner in every affected session; the log
+ * does not need to say it a thousand more times.
+ */
+const SOURCE_TONE: Record<string, string> = {};
 
 /** "bypass · rules would have asked" — the sentence the column exists for. */
 function sourceText(r: Decision): string {
@@ -109,14 +135,7 @@ export function AuditView({
       if (stale) return;
       setRows(
         events
-          .map((e): Row => {
-            const base = { ts: e.ts, sessionId: e.sessionId, workspaceId: e.workspaceId };
-            // Main returns both kinds on one channel (round 15). `kind` is the
-            // discriminator the one-shot payload carries and a decision does not.
-            return (e.data as { kind?: string })?.kind
-              ? { row: "oneshot", ...(e.data as unknown as OneShot), ...base }
-              : { row: "decision", ...(e.data as unknown as Decision), ...base };
-          })
+          .map(toAuditRow)
           .reverse(), // newest first
       );
     });

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { CHARS_PER_TOKEN, estimateTokens, logOneShot } from "../src/main/oneShotLog";
 import { aggregate } from "../src/main/analytics";
+import { toAuditRow } from "../src/renderer/src/components/AuditView";
 import type { LogEvent } from "../src/main/log";
 
 /**
@@ -162,5 +163,53 @@ describe("the bridge emits bypass, and what the rules would have said", () => {
 
   it("types wouldHave as the ENGINE's action, which has an 'ask' that AuditDecision does not", () => {
     expect(BRIDGE).toContain("wouldHave?: RuleAction;");
+  });
+});
+
+describe("toAuditRow discriminates on the event TYPE, not the payload", () => {
+  /**
+   * The regression this exists for, found by a GUI pass and by nothing else:
+   * the first version tested `data.kind`, and EVERY permission decision has one
+   * — the bridge's envelope is `{kind:"hv.audit", …}` and main stores that
+   * payload verbatim. So every decision was read as a one-shot, the renderer
+   * called `.toLocaleString()` on an absent `estTokens`, and the Audit page
+   * rendered as a blank cream rectangle.
+   *
+   * Fixtures are the REAL shapes: `data` carries `kind:"hv.audit"` on a
+   * decision, because that is what is on disk.
+   */
+  const decision = {
+    ts: "2026-08-16T12:00:00.000Z",
+    type: "permission.decision",
+    sessionId: "s1",
+    workspaceId: "/ws",
+    data: { kind: "hv.audit", tool: "bash", summary: "ls", decision: "allow", source: "bypass", wouldHave: "ask" },
+  };
+  const oneshot = {
+    ts: "2026-08-16T12:00:01.000Z",
+    type: "assistant.oneshot",
+    workspaceId: "/ws",
+    data: { kind: "commit-message", model: "deepseek/deepseek-v4-flash", estTokens: 1_050, ok: true },
+  };
+
+  it("a permission decision stays a decision even though its payload has a `kind`", () => {
+    const r = toAuditRow(decision as never);
+    expect(r.row).toBe("decision");
+    expect(r).toMatchObject({ tool: "bash", decision: "allow", source: "bypass", wouldHave: "ask" });
+  });
+
+  it("a one-shot is a one-shot, with the numbers the row renders", () => {
+    const r = toAuditRow(oneshot as never);
+    expect(r.row).toBe("oneshot");
+    // The exact field whose absence blanked the page.
+    expect((r as { estTokens: number }).estTokens).toBe(1_050);
+  });
+
+  it("every row the page renders has the fields that row's branch reads", () => {
+    for (const e of [decision, oneshot]) {
+      const r = toAuditRow(e as never);
+      if (r.row === "oneshot") expect(typeof r.estTokens).toBe("number");
+      else expect(typeof r.decision).toBe("string");
+    }
   });
 });
