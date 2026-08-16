@@ -705,6 +705,11 @@ export function Sidebar({
           §7 round 12: only while the group is OPEN. Collapsed, there is nothing
           to size — a resize cursor on the edge of a single row is a control that
           promises something it cannot do. */}
+      {/* Round 15: the app's two draggable dividers are now ONE control by feel —
+          a 10px hit strip you grab, with a 5px tint centred in it that you see.
+          Two jobs, two widths (App.tsx PaneDividers carries the same pair). The
+          old 6px bar painted its whole height, which read as a fat bar and was
+          still fiddly to catch. */}
       {settingsOpen && (
         <div
           role="separator"
@@ -712,8 +717,10 @@ export function Sidebar({
           title="Drag to resize"
           onMouseDown={startResize}
           onDoubleClick={() => setTreeFrac(AUTO)}
-          className="mt-auto h-1.5 shrink-0 cursor-row-resize hover:bg-tangerine/40 transition-colors"
-        />
+          className="group mt-auto h-2.5 shrink-0 cursor-row-resize flex items-center"
+        >
+          <div className="h-[5px] w-full bg-transparent group-hover:bg-tangerine/40 transition-colors" />
+        </div>
       )}
 
       {/* Round 11 bounded this so ten nav rows could not squeeze the tree to its

@@ -182,7 +182,121 @@ function describeSegment(tokens: string[], raw: string): CommandDescription {
     return { label: script ? `Running ${basename(truncate(script, 60))}` : fallback.label };
   }
 
-  return fallback;
+  return describeCommon(cmd, t) ?? fallback;
+}
+
+/**
+ * Round 15 — the everyday verbs that used to reach "Running: <cmd>".
+ *
+ * A built-in tool cannot carry an `intent` (fixed schemas — §7 round 1), so for
+ * `bash` this table IS the headline: there is no model-authored sentence to fall
+ * back to, only the raw command. Reported as "I see some bash commands which do
+ * not have it".
+ *
+ * ponytail: a lookup plus a handful of one-line arms, deliberately not a shell
+ * grammar — anything not listed still degrades to the honest raw fallback,
+ * which is the behaviour this only narrows.
+ */
+function describeCommon(cmd: string, t: string[]): CommandDescription | null {
+  const arg = (from = 1): string | null => firstNonFlag(t, from);
+  const name = (s: string | null, n = 40): string => truncate(basename(s ?? ""), n);
+
+  switch (cmd) {
+    case "cat":
+    case "head":
+    case "tail":
+    case "less":
+    case "more": {
+      const f = arg();
+      return { label: f ? `Reading ${name(f)}` : "Reading a file" };
+    }
+    case "sed":
+    case "awk": {
+      // The script argument is not a file; take the last non-flag token, which
+      // is where the path sits in the shapes an agent actually writes.
+      const f = t.slice(1).filter((x) => !x.startsWith("-")).pop();
+      return { label: f && /[./]/.test(f) ? `Reading part of ${name(f)}` : "Transforming text" };
+    }
+    case "ls": {
+      const d = arg();
+      return { label: d ? `Listing ${name(d)}` : "Listing the current directory" };
+    }
+    case "pwd":
+      return { label: "Checking the current directory" };
+    case "which":
+    case "command":
+    case "type": {
+      const what = arg();
+      return { label: what ? `Looking for ${truncate(what, 30)}` : "Looking for a program" };
+    }
+    case "touch": {
+      const f = arg();
+      return { label: f ? `Creating ${name(f)}` : "Creating a file" };
+    }
+    case "ln": {
+      // The link is the LAST non-flag token — `ln -s <target> <link>`.
+      const last = t.slice(1).filter((x) => !x.startsWith("-")).pop();
+      return { label: last ? `Linking ${name(last)}` : "Creating a link" };
+    }
+    case "chmod":
+    case "chown": {
+      // Skip the mode/owner operand (+x, 755, me:staff) to reach the path.
+      const target = t.slice(2).find((x) => !x.startsWith("-"));
+      return { label: target ? `Changing permissions of ${name(target)}` : "Changing permissions" };
+    }
+    case "kill":
+    case "pkill":
+      return { label: "Stopping a process" };
+    case "ps":
+      return { label: "Listing processes" };
+    case "lsof":
+      return { label: "Checking what is using a port" };
+    case "wc": {
+      const f = arg();
+      return { label: f ? `Counting lines in ${name(f)}` : "Counting lines" };
+    }
+    case "diff": {
+      const [a, b] = t.slice(1).filter((x) => !x.startsWith("-"));
+      return { label: a && b ? `Comparing ${name(a, 24)} and ${name(b, 24)}` : "Comparing files" };
+    }
+    case "echo":
+    case "printf":
+      return { label: "Printing a message" };
+    case "sort":
+    case "uniq":
+      return { label: "Sorting output" };
+    case "tar":
+    case "unzip":
+    case "gunzip":
+      return { label: "Extracting an archive" };
+    case "make": {
+      const target = arg();
+      return { label: target ? `Running make ${truncate(target, 30)}` : "Running make" };
+    }
+    case "cargo": {
+      const sub = arg() ?? "";
+      if (sub === "test") return { label: "Running tests" };
+      if (sub === "build" || sub === "check") return { label: "Building the project" };
+      if (sub === "run") return { label: "Running the project" };
+      return { label: `Running cargo ${truncate(sub, 30)}` };
+    }
+    case "docker": {
+      const sub = arg() ?? "";
+      if (sub === "ps") return { label: "Listing containers" };
+      if (sub === "build") return { label: "Building a container image" };
+      if (sub === "run") return { label: "Starting a container" };
+      if (sub === "logs") return { label: "Reading container logs" };
+      return { label: `Running docker ${truncate(sub, 30)}` };
+    }
+    case "open":
+      return { label: `Opening ${name(arg())}` };
+    case "sleep":
+      return { label: "Waiting" };
+    case "date":
+      return { label: "Checking the date" };
+    default:
+      return null;
+  }
 }
 
 export function describeCommand(cmd: string): CommandDescription {

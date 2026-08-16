@@ -173,3 +173,30 @@ test("every catalog entry's brand icon exists too", () => {
   const dead = MCP_CATALOG.filter((e) => e.brand && !css.includes(`.${e.brand}:`));
   expect(dead.map((e) => `${e.key}→${e.brand}`)).toEqual([]);
 });
+
+// ── Round 15: the browser card leads with the model's intent ────────────────
+// §28 deliberately headlined the URL even when an intent existed ("where the
+// agent went is the fact worth reading"). Reversed for the CARD only: the
+// permission prompt still summarizes as the URL, which is what makes the card
+// free to be a headline. The URL rides `path`, the same slot edit/write use, so
+// ToolCard's existing chip renders it with no new machinery.
+test("browser_open leads with intent and demotes the URL to the chip", () => {
+  const l = toolLabel("browser_open", {
+    intent: "Opening the game page to test it.",
+    url: "http://localhost:8000/minesweeper.html",
+  });
+  expect(l.label).toBe("Opening the game page to test it.");
+  expect(l.path).toBe("http://localhost:8000/minesweeper.html");
+});
+
+test("browser_navigate leads with intent too", () => {
+  const l = toolLabel("browser_navigate", { intent: "Checking the docs page.", url: "https://example.org/a" });
+  expect(l.label).toBe("Checking the docs page.");
+  expect(l.path).toBe("https://example.org/a");
+});
+
+test("without an intent the browser card keeps its derived URL headline", () => {
+  const l = toolLabel("browser_open", { url: "http://localhost:8000/minesweeper.html" });
+  expect(l.label).toBe("Opening localhost:8000/minesweeper.html");
+  expect(l.path).toBeUndefined();
+});

@@ -529,6 +529,13 @@ export const basename = (p: string): string => p.replace(/\/+$/, "").split("/").
  */
 export function resolveCardPath(workspace: string, raw: string): string | null {
   const ws = workspace.replace(/\/+$/, "");
+  // Round 15: a URL is never a workspace file. Browser cards now put their URL
+  // in the same `path` slot edit/write use, and the segment walk below would
+  // otherwise turn "http://localhost:8000/x.html" into the plausible-looking
+  // relative path "http:/localhost:8000/x.html" — a card offering to open a
+  // page in the code editor. Rejected here rather than in the card, because
+  // this function is the single place that answers "is this a file of ours".
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return null;
   let rel: string;
   if (raw.startsWith("/")) {
     if (!raw.startsWith(ws + "/")) return null;

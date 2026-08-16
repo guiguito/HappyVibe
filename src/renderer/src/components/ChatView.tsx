@@ -613,7 +613,10 @@ export function ChatView({
                   aria-expanded={modelMenuOpen}
                   onClick={toggle}
                   title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
-                  className="max-w-44 text-left font-mono text-[11px] rounded-full px-2.5 py-1.5 text-ink-soft hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
+                  // Round 15: the chip had no border and muted ink, so it read
+                  // as a disabled label beside the bordered ⌕ / cost / context
+                  // controls. Same border+card treatment as those neighbours.
+                  className="max-w-44 text-left font-mono text-[11px] rounded-full border-2 border-line bg-card px-2.5 py-1 text-ink hover:border-honey cursor-pointer transition-colors"
                 >
                   <span className="block truncate">{modelLabel ?? "model…"}</span>
                 </button>

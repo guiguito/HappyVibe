@@ -105,13 +105,12 @@ function Icon({ kind, className }: { kind: FileIconKind; className?: string }): 
 export function FileTree({
   workspace,
   onOpenFile,
-  onClose,
 }: {
   workspace: string;
   onOpenFile: (relPath: string) => void;
-  /** Round 3 #1: the reduce icon CLOSES the pane completely (App unmounts it),
-      rather than minimizing to a rail. */
-  onClose: () => void;
+  /** Round 15: no `onClose`. Round 3 gave the header a reduce icon that closed
+      the pane; §7 round 13 then made the top-bar rail button the one toggle, so
+      the header button was a second exit for a panel with one entrance. */
 }): React.JSX.Element {
   // Keyed by relative dir path ("" = root). App renders this pane with
   // key={workspace}, so a workspace switch remounts with fresh state.
@@ -306,7 +305,9 @@ export function FileTree({
         <HeaderBtn onClick={() => startCreate("file")} title="New file" label="New file"><NewFileGlyph /></HeaderBtn>
         <HeaderBtn onClick={() => startCreate("dir")} title="New folder" label="New folder"><NewFolderGlyph /></HeaderBtn>
         <HeaderBtn onClick={collapseAll} title="Collapse all folders" label="Collapse all"><CollapseGlyph /></HeaderBtn>
-        <HeaderBtn onClick={onClose} title="Close the file explorer" label="Close file explorer"><span className="text-xs font-bold">⇥</span></HeaderBtn>
+        {/* Round 15: no close button. The top-bar rail icon (§7 round 13) already
+            toggles this panel, and Changes lost its own close for the same reason
+            in §29's GUI pass — one entry point, one exit, the same control. */}
       </div>
       {dropError && (
         <div className="px-3 py-1.5 text-xs text-berry bg-berry-soft border-b-2 border-berry/40 flex items-center gap-2">

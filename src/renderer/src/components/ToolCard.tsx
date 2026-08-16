@@ -30,6 +30,104 @@ const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
   skipped: { dot: "bg-honey", label: "skipped" },
 };
 
+/**
+ * Round 15 — every word on a card becomes an icon, its text on hover.
+ *
+ * A card was carrying up to four uppercase words (DONE · DETAILS · ALLOWED ·
+ * DESTRUCTIVE) beside a headline that is itself a sentence, so the row read as
+ * a form rather than a statement. The words are not deleted, they move into
+ * `title`: colour and shape carry the state at a glance, the text is one hover
+ * away, and screen readers keep the same string via aria-label.
+ *
+ * The mapping is DATA rather than JSX so tests can assert on it — the renderer
+ * suite has no DOM (`tests/**\/*.test.ts`, no jsdom), which is also why
+ * tests/tool-card-icons.test.ts pairs this with a source scan for the words.
+ */
+export type CardMarkKind = "check" | "cross" | "skip" | "warn" | "clock" | "dots";
+
+export interface CardMark {
+  kind: CardMarkKind;
+  /** Tooltip + aria-label — the word this icon replaced. */
+  title: string;
+  /** Tailwind colour classes for the glyph. */
+  tone: string;
+}
+
+/** The status shown at the end of the headline row. `running` stays a pulsing
+    dot: an animation says "still going" better than any glyph. */
+export const STATUS_MARK: Record<ToolCardData["status"], CardMark | null> = {
+  running: null,
+  done: { kind: "check", title: "Done", tone: "text-leaf" },
+  error: { kind: "cross", title: "Error", tone: "text-berry" },
+  denied: { kind: "cross", title: "Denied", tone: "text-berry" },
+  skipped: { kind: "skip", title: "Skipped", tone: "text-honey" },
+};
+
+/** The badges that used to be pill-shaped words. */
+export const BADGE_MARKS = {
+  allowed: { kind: "check", title: "Allowed by you", tone: "text-leaf" },
+  session: { kind: "clock", title: "Allowed for this session", tone: "text-tangerine-deep" },
+  denied: { kind: "cross", title: "Denied", tone: "text-berry" },
+  plan: { kind: "skip", title: "Skipped — not allowed in plan mode", tone: "text-tangerine-deep" },
+  destructive: { kind: "warn", title: "Destructive command", tone: "text-berry" },
+} as const satisfies Record<string, CardMark>;
+
+const MARK_PATHS: Record<CardMarkKind, React.JSX.Element> = {
+  check: <polyline points="20 6 9 17 4 12" />,
+  cross: (
+    <>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </>
+  ),
+  skip: (
+    <>
+      <polygon points="5 4 15 12 5 20 5 4" />
+      <line x1="19" y1="5" x2="19" y2="19" />
+    </>
+  ),
+  warn: (
+    <>
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15 14" />
+    </>
+  ),
+  dots: (
+    <>
+      <circle cx="5" cy="12" r="1.4" />
+      <circle cx="12" cy="12" r="1.4" />
+      <circle cx="19" cy="12" r="1.4" />
+    </>
+  ),
+};
+
+/** One card mark. `title` doubles as the accessible name — the word it replaced. */
+export function CardGlyph({ mark, className }: { mark: CardMark; className?: string }): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role="img"
+      aria-label={mark.title}
+      className={`shrink-0 size-4 ${mark.tone} ${className ?? ""}`}
+    >
+      <title>{mark.title}</title>
+      {MARK_PATHS[mark.kind]}
+    </svg>
+  );
+}
+
 // ── W1.1 tool-kind icons (inline SVGs — no icon library) ────────────────────
 
 const ICON_PATHS: Record<IconKind, React.JSX.Element> = {
@@ -208,14 +306,23 @@ function TechnicalDetails({ card }: { card: ToolCardData }): React.JSX.Element {
   );
 }
 
+/** Round 15: the DETAILS pill is a ⋯ button — the universal "there is more". */
 function DetailsToggle({ open, onClick }: { open: boolean; onClick: () => void }): React.JSX.Element {
+  const label = open ? "Hide details" : "Show details";
   return (
     <button
       type="button"
       onClick={onClick}
-      className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-ink-soft rounded-full px-2 py-0.5 border border-line hover:bg-paper-deep/60 cursor-pointer"
+      title={label}
+      aria-label={label}
+      aria-expanded={open}
+      className={`shrink-0 rounded-full p-1 border border-line cursor-pointer transition-colors ${
+        open ? "bg-paper-deep text-ink" : "text-ink-soft hover:bg-paper-deep/60"
+      }`}
     >
-      {open ? "hide details" : "details"}
+      <svg viewBox="0 0 24 24" className="size-4" fill="currentColor" aria-hidden>
+        {MARK_PATHS.dots}
+      </svg>
     </button>
   );
 }
@@ -315,6 +422,15 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
           .join("\n")
           .trim()
       : "";
+  const delegationStatus = running
+    ? "delegating…"
+    : denied
+      ? "denied"
+      : card.status === "error"
+        ? "failed"
+        : async
+          ? "dispatched"
+          : "done";
   const summary = async
     ? "running in the background — result arrives when it finishes"
     : errorText
@@ -329,15 +445,33 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
       >
         {/* v5: intent wraps (break-words) instead of clipping to one ellipsized line. */}
         <span className="flex items-start gap-2.5">
-          <span className={`mt-1 size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : denied || card.status === "error" ? "bg-berry" : "bg-leaf"}`} />
+          {/* Round 15: the delegation's own status word joins the icon rule —
+              same treatment as an ordinary card, so the two read alike. */}
+          <span
+            className={`mt-1 size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : denied || card.status === "error" ? "bg-berry" : "bg-leaf"}`}
+            title={delegationStatus}
+            aria-label={delegationStatus}
+            role="img"
+          />
           <ToolIcon kind={"robot" as IconKind} className="mt-0.5 size-4 shrink-0 text-sky" />
           <span className="text-sm min-w-0 break-words flex-1" title={req?.task}>
             <span className="text-ink-soft">→ asked</span> <span className="font-bold">{req?.agent ?? results[0]?.agent ?? "?"}</span>
             {label && <span className="text-ink-soft">: {label}</span>}
           </span>
-          <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-soft">
-            {running ? "delegating…" : denied ? "denied" : card.status === "error" ? "failed" : async ? "dispatched" : "done"}
-          </span>
+          {!running && (
+            <CardGlyph
+              className="mt-0.5"
+              mark={
+                denied
+                  ? BADGE_MARKS.denied
+                  : card.status === "error"
+                    ? { kind: "cross", title: "Failed", tone: "text-berry" }
+                    : async
+                      ? { kind: "clock", title: "Dispatched — running in the background", tone: "text-sky" }
+                      : { kind: "check", title: "Done", tone: "text-leaf" }
+              }
+            />
+          )}
           <span className="shrink-0 text-[11px] text-ink-soft" aria-hidden>
             {open ? "▾" : "▸"}
           </span>
@@ -444,7 +578,9 @@ export function ToolCard({
           onClick={() => (diff ? setOpenDiff(!openDiff) : setDetails(!details))}
           className="flex items-center gap-2.5 text-left cursor-pointer flex-1 min-w-0"
         >
-          <span className={`size-2.5 rounded-full shrink-0 ${s.dot}`} />
+          {/* The dot keeps the status too — `running` has no glyph on purpose
+              (a pulse says "still going" better than any shape can). */}
+          <span className={`size-2.5 rounded-full shrink-0 ${s.dot}`} title={s.label} aria-label={s.label} role="img" />
           {brand ? <i className={`si ${brand} text-[15px] shrink-0 text-ink-soft`} aria-hidden /> : <ToolIcon kind={icon} />}
           <span className="font-bold text-sm line-clamp-2 break-words flex-1 min-w-0" title={label}>
             {label}
@@ -456,35 +592,19 @@ export function ToolCard({
           </span>
         </button>
         {filePath && <PathActions raw={filePath} workspace={workspace} onOpenFile={onOpenFile} />}
+        {/* Round 15: the four badges and the status are icons now, each carrying
+            the word it replaced in `title` + aria-label. Colour still does the
+            at-a-glance work; the text is one hover away rather than permanently
+            occupying the row beside a sentence. */}
         {card.approval && (
-          <span
-            className={`shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 border ${
-              card.approval === "Allow"
-                ? "bg-leaf-soft text-leaf border-leaf/40"
-                : "bg-honey-soft text-tangerine-deep border-honey/60"
-            }`}
-          >
-            {card.approval === "Allow" ? "allowed" : "session pass"}
-          </span>
+          <CardGlyph mark={card.approval === "Allow" ? BADGE_MARKS.allowed : BADGE_MARKS.session} />
         )}
-        {denied && (
-          <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-berry-soft text-berry border border-berry/40">
-            denied
-          </span>
-        )}
+        {denied && <CardGlyph mark={BADGE_MARKS.denied} />}
         {/* §23: a tool blocked by plan mode reads as calm guidance, not an error. */}
-        {card.status === "skipped" && (
-          <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-honey-soft text-tangerine-deep border border-honey/60">
-            not in plan mode
-          </span>
-        )}
+        {card.status === "skipped" && <CardGlyph mark={BADGE_MARKS.plan} />}
         {/* V2.A: destructive bash command (rm/rmdir) — flagged next to the status. */}
-        {destructive && (
-          <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-berry-soft text-berry border border-berry/40">
-            destructive
-          </span>
-        )}
-        <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-soft">{s.label}</span>
+        {destructive && <CardGlyph mark={BADGE_MARKS.destructive} />}
+        {STATUS_MARK[card.status] && <CardGlyph mark={STATUS_MARK[card.status]!} />}
         <DetailsToggle open={details} onClick={() => setDetails(!details)} />
       </div>
       {diff && openDiff && <DiffView lines={diff.lines} />}

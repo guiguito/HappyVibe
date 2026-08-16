@@ -30,11 +30,16 @@ export function TerminalTab({
   gridArea,
   hidden,
   searchKey,
+  dividerClass,
   onExit,
 }: {
   terminalId: string;
   settings: HvTerminalSettings;
   gridArea?: string;
+  /** Round 15: App's `paneDivider(area)` — the SAME border the chat, file and
+      empty cells draw. Computed there, never re-derived here, or the five pane
+      kinds drift apart (three drew it, two did not). */
+  dividerClass?: string;
   hidden: boolean;
   /** The one `search` action, focus-scoped — a third consumer beside chat and editor. */
   searchKey: string;
@@ -239,7 +244,7 @@ export function TerminalTab({
 
   return (
     <div
-      className="relative min-h-0 min-w-0 overflow-hidden"
+      className={`relative min-h-0 min-w-0 overflow-hidden ${dividerClass ?? ""}`}
       style={{ gridArea, display: hidden ? "none" : "block", background: TERMINAL_PALETTES[settings.style].background }}
       onPaste={onPaste}
       onContextMenu={onContextMenu}

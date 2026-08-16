@@ -175,15 +175,26 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       return { icon: "terminal", label: intent ?? "Stopping a terminal" };
     case "terminal_read":
       return { icon: "terminal", label: "Reading terminal output" };
-    // §28: the browser's ten. navigate/open lead with the URL even when an
-    // intent exists — where the agent went is the fact worth reading, and the
-    // permission modal shows the same string (summarize), so card and prompt
-    // agree instead of telling two stories about one call.
+    // §28: the browser's ten.
+    //
+    // Round 15 REVERSES §28's URL-first rule, for the CARD only. §28 headlined
+    // the URL even when the model wrote an intent — "where the agent went is the
+    // fact worth reading" — which buried the customer-facing sentence in the
+    // details JSON while every other registered tool led with it. The intent is
+    // the headline now and the URL rides `path`, so ToolCard's existing chip
+    // (PathActions) renders it verbatim beside the label: nothing is hidden,
+    // it is just no longer the headline.
+    //
+    // The safety half is untouched and is what makes this safe: the permission
+    // MODAL summarizes as the URL (the bridge's `summarize()` special-case,
+    // like bash/terminal_run) and never sees `intent`, so a benign-sounding
+    // sentence still cannot mask where the agent is going at approval time.
     case "browser_open":
     case "browser_navigate": {
       const url = str("url");
+      if (intent) return { icon: "globe", label: intent, ...(url ? { path: url } : {}) };
       if (url) return { icon: "globe", label: `${toolName === "browser_open" ? "Opening" : "Going to"} ${prettyUrl(url)}` };
-      return { icon: "globe", label: intent ?? "Opening a page" };
+      return { icon: "globe", label: "Opening a page" };
     }
     case "browser_screenshot":
       return { icon: "globe", label: intent ?? "Taking a screenshot of the page" };

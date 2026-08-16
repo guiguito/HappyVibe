@@ -2291,6 +2291,7 @@ export default function App(): React.JSX.Element {
                     gridArea={area ?? undefined}
                     hidden={area === null}
                     searchKey={bindings.search}
+                    dividerClass={paneDivider(area)}
                   />
                 );
               })}
@@ -2308,6 +2309,7 @@ export default function App(): React.JSX.Element {
                   info={browsers[bid]}
                   gridArea={area ?? undefined}
                   hidden={area === null || activeView !== "chat"}
+                  dividerClass={paneDivider(area)}
                   // Where this pane meets another: the view insets itself so the
                   // divider's drag strip is never underneath a composited page.
                   edges={paneNeighbours(wsTabs, paneOf(wsTabs, browserTab(bid)))}
@@ -2580,7 +2582,7 @@ export default function App(): React.JSX.Element {
                   {DRAWER === "changes" ? (
                     <ChangesPanel key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
                   ) : (
-                    <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setDrawerPanel(null)} />
+                    <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
                   )}
                 </div>
               </div>
