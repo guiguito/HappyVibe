@@ -56,7 +56,7 @@ import {
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { ledgerTotal, parseCalls, planProvidersFor, type ApiCall } from "./calls";
-import { deleteSessionFile, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
+import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
@@ -1823,9 +1823,46 @@ export function registerIpc(win: BrowserWindow): void {
     manager.stop(sessionId);
   };
 
-  ipcMain.handle("hv:close-session", (_e, sessionId: string, terminals_?: "stop" | "keep") =>
-    endSession(sessionId, terminals_),
-  );
+  /**
+   * Round 15 — an empty session leaves nothing behind.
+   *
+   * A session whose last tab closes without a single prompt ever sent is
+   * deleted outright, with no confirm: there is nothing to confirm losing, and
+   * the sidebar filling with "New session" rows is the whole complaint. Shares
+   * the delete path below rather than reimplementing it, so snapshots, the
+   * session file and the last-open-* maps go with it.
+   *
+   * Returns whether it deleted, so the renderer knows not to keep the row.
+   */
+  const purgeIfEmpty = (sessionId: string): boolean => {
+    const meta = index.get(sessionId);
+    if (!meta || !isSessionEmpty(meta, sessionDir())) return false;
+    index.remove(sessionId);
+    deleteSessionFile(sessionDir(), meta.piSessionFile);
+    deleteSessionSnapshots(snapshotDir(), sessionId);
+    lastOpenFiles.delete(sessionId);
+    lastOpenTerminals.delete(sessionId);
+    lastOpenBrowser.delete(sessionId);
+    void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId, data: { reason: "empty" } });
+    sessionsChanged();
+    return true;
+  };
+
+  ipcMain.handle("hv:close-session", async (_e, sessionId: string, terminals_?: "stop" | "keep") => {
+    await endSession(sessionId, terminals_);
+    return { deleted: purgeIfEmpty(sessionId) };
+  });
+
+  /**
+   * Round 15: …and on quit. Deliberately NOT on a workspace switch — two
+   * projects get worked in parallel and the user comes back to them, so a
+   * switch must never be a delete. This sweeps EVERY workspace's metas rather
+   * than the live children only: an empty session whose process was never
+   * started (or was hibernated away) is exactly the row being cleaned up.
+   */
+  app.on("will-quit", () => {
+    for (const s of index.list()) purgeIfEmpty(s.id);
+  });
 
   // §26 part 2: what the close/delete confirm has to name. Empty ⇒ no confirm,
   // so a session with no terminals closes exactly as it did before.

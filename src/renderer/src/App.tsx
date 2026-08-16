@@ -1455,12 +1455,23 @@ export default function App(): React.JSX.Element {
 
   /**
    * §28: closing a browser tab DESTROYS its pane — a browser tab IS its browser,
-   * exactly like a terminal tab. No confirm: nothing is running, nothing is
-   * unsaved, and the page is one navigation away from coming back.
+   * exactly like a terminal tab.
+   *
+   * Round 15: it asks first when the session DRIVING it is mid-turn. Normally
+   * there is nothing to confirm — nothing is running, nothing is unsaved, and
+   * the page is one navigation away from coming back — but pulling the pane out
+   * from under an agent that is reading it fails its turn, and now that ⌘W
+   * reaches this tab type the close is one reflex keystroke away. A pane nobody
+   * owns (⌘B) still closes silently, which is most of them.
    */
   const closeBrowserTab = (ws: string, paneIdx: number, tab: TabId): void => {
     const id = browserOf(tab);
     if (!id) return;
+    const owner = browserOwners[id];
+    if (owner && busy[owner]) {
+      const title = sessions.find((s) => s.id === owner)?.title ?? "A session";
+      if (!window.confirm(`${title} is using this browser right now. Close it anyway?`)) return;
+    }
     void window.hv.browserClose(id).catch(() => {});
     setBrowsers((p) => {
       const next = { ...p };
@@ -1538,7 +1549,14 @@ export default function App(): React.JSX.Element {
       // offers stop/keep. Undefined means it had none, so nothing is asked.
       const terms = await askAboutTerminals(sid);
       if (terms === null) return; // cancelled
-      await window.hv.closeSession(sid, terms).catch(surface);
+      // Round 15: main deletes the session outright when no prompt was ever
+      // sent, and says so — refresh the list rather than leaving a row for a
+      // session that no longer exists.
+      const res = await window.hv.closeSession(sid, terms).catch((e) => {
+        surface(e);
+        return { deleted: false };
+      });
+      if (res?.deleted) setSessions(await window.hv.listSessions());
     }
     const next = closeTab(tabsByWs[ws] ?? emptyTabs, paneIdx, tab);
     setTabsByWs((p) => ({ ...p, [ws]: next }));
@@ -1968,30 +1986,32 @@ export default function App(): React.JSX.Element {
     if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
     if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
     if (is("closeTab")) {
-      // Close the FOCUSED pane's active tab if it is a file or a TERMINAL (§26);
-      // window close is ⌘⇧W. Round 11: prefer the focused pane rather than "the
-      // first pane with a closable tab" — with four panes that was arbitrary.
-      // A CHAT stays exempt, and since round 12 the reason is the opposite of
-      // what it was: closing a session's last tab now ENDS its process, so it
-      // is precisely the thing that should not sit under a reflex keystroke.
-      // The tab's own × asks first; ⌘W would not. A terminal is closable here
-      // because its confirm names the running process before anything dies.
+      // Round 15: ⌘W closes the focused pane's active tab, WHATEVER it is —
+      // session, terminal or browser. Window close is ⌘⇧W.
+      //
+      // This reverses round 12's chat exemption, which existed because closing
+      // a session's last tab now ends its process and "should not sit under a
+      // reflex keystroke". The guard moves rather than disappearing: it is the
+      // STATE that decides, not the input device. closeChatTab already asks
+      // before killing a working session and already runs §26's stop/keep
+      // question for live terminals — so routing ⌘W through it means the
+      // keystroke and the tab's own × cannot diverge, which is what the
+      // exemption was really protecting against.
       if (!wsId) return;
       const close = (slot: number, tab: TabId): void => {
-        if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
+        if (isChatTab(tab)) void closeChatTab(wsId, slot, tab);
+        else if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
         else if (isBrowserTab(tab)) closeBrowserTab(wsId, slot, tab);
         else closeFileTab(wsId, slot, tab);
       };
       const focusedActive = wsTabs.panes[wsTabs.focused]?.active;
-      if (focusedActive && !isChatTab(focusedActive)) {
+      if (focusedActive) {
         e.preventDefault();
         close(wsTabs.focused, focusedActive);
         return;
       }
-      const i = liveSlots(wsTabs).find((s) => {
-        const a = wsTabs.panes[s]?.active;
-        return a && !isChatTab(a);
-      });
+      // The focused pane is empty — fall back to the first pane that has a tab.
+      const i = liveSlots(wsTabs).find((s) => wsTabs.panes[s]?.active);
       if (i != null) { e.preventDefault(); close(i, wsTabs.panes[i]!.active!); }
     }
   };

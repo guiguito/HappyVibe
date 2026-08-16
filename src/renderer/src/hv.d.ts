@@ -518,7 +518,9 @@ interface HvApi {
   loadEarlier(sessionId: string): Promise<RestoreItem[]>;
   /** §26: `terminals` answers the two-named-outcomes confirm when this session
    *  started terminals that are still running. Omitted ⇒ keep (the safe way). */
-  closeSession(sessionId: string, terminals?: "stop" | "keep"): Promise<void>;
+  /** Round 15: `deleted` is true when the session had no content and was
+      purged rather than merely ended — the renderer drops the row. */
+  closeSession(sessionId: string, terminals?: "stop" | "keep"): Promise<{ deleted: boolean }>;
   deleteSession(sessionId: string, terminals?: "stop" | "keep"): Promise<void>;
   /** §26: the live agent terminals this session owns. Empty ⇒ no confirm. */
   sessionTerminals(sessionId: string): Promise<Array<{ id: string; title: string }>>;
