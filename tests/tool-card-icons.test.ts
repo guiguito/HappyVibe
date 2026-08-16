@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { BADGE_MARKS, STATUS_MARK } from "../src/renderer/src/components/ToolCard";
+import { BADGE_MARKS } from "../src/renderer/src/components/ToolCard";
 
 /**
  * Round 15 — every word on a tool card becomes an icon, its text on hover.
@@ -20,31 +20,48 @@ const SRC = fs.readFileSync(
   "utf8",
 );
 
-describe("every status and badge carries a glyph and its word", () => {
-  it("each terminal status maps to a mark with a non-empty tooltip", () => {
-    for (const status of ["done", "error", "denied", "skipped"] as const) {
-      const mark = STATUS_MARK[status];
-      expect(mark, `${status} has no mark`).toBeTruthy();
-      expect(mark!.title.length).toBeGreaterThan(0);
-      expect(mark!.tone).toMatch(/^text-/);
-    }
+describe("status is carried ONCE, by the dot", () => {
+  it("there is no status-glyph table at all", async () => {
+    // The dot and a status glyph both derived from `card.status` — the same
+    // single field — so the row said it twice. Worse for two statuses: a denied
+    // card rendered the dot plus TWO identical red crosses (the badge and the
+    // status), and a skipped one two identical skip glyphs.
+    const mod = await import("../src/renderer/src/components/ToolCard");
+    expect("STATUS_MARK" in mod).toBe(false);
   });
 
-  it("running has NO glyph — the pulsing dot is the signal", () => {
-    // A glyph for "in progress" is a worse animation than an animation.
-    expect(STATUS_MARK.running).toBeNull();
+  it("the dot is the status, and it keeps the word for hover and screen readers", () => {
+    expect(SRC).toMatch(/title=\{s\.label\}/);
+    expect(SRC).toMatch(/aria-label=\{s\.label\}/);
+  });
+
+  it("the subagent card does not re-add one either", () => {
+    // Its dot carries `delegationStatus`; the one thing colour cannot separate
+    // (dispatched vs done, both leaf) is spelled out on the summary line.
+    expect(SRC).toMatch(/title=\{delegationStatus\}/);
+    expect(SRC).not.toContain("BADGE_MARKS.denied");
+  });
+});
+
+describe("the badges that survive say what the dot cannot", () => {
+  it("keeps who approved it, why it was skipped, and whether it destroys something", () => {
+    expect(Object.keys(BADGE_MARKS).sort()).toEqual(["allowed", "destructive", "plan", "session"]);
   });
 
   it("every badge keeps the word it replaced, as its tooltip", () => {
     expect(BADGE_MARKS.allowed.title).toBe("Allowed by you");
     expect(BADGE_MARKS.session.title).toBe("Allowed for this session");
-    expect(BADGE_MARKS.denied.title).toBe("Denied");
     expect(BADGE_MARKS.plan.title).toBe("Skipped — not allowed in plan mode");
     expect(BADGE_MARKS.destructive.title).toBe("Destructive command");
   });
 
-  it("no two marks are the same shape AND the same colour", () => {
-    // Distinguishable at a glance is the whole point of dropping the words.
+  it("the plan badge earns its place by naming the REASON, which the dot does not", () => {
+    // The dot's title for that status is just "skipped".
+    expect(BADGE_MARKS.plan.title).toMatch(/plan mode/);
+    expect(SRC).toMatch(/label: "skipped"/);
+  });
+
+  it("no two badges are the same shape AND the same colour", () => {
     const seen = new Set<string>();
     for (const m of Object.values(BADGE_MARKS)) {
       const key = `${m.kind}/${m.tone}`;

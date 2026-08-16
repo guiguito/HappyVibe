@@ -53,21 +53,30 @@ export interface CardMark {
   tone: string;
 }
 
-/** The status shown at the end of the headline row. `running` stays a pulsing
-    dot: an animation says "still going" better than any glyph. */
-export const STATUS_MARK: Record<ToolCardData["status"], CardMark | null> = {
-  running: null,
-  done: { kind: "check", title: "Done", tone: "text-leaf" },
-  error: { kind: "cross", title: "Error", tone: "text-berry" },
-  denied: { kind: "cross", title: "Denied", tone: "text-berry" },
-  skipped: { kind: "skip", title: "Skipped", tone: "text-honey" },
-};
+/**
+ * There is NO status glyph. The coloured dot at the head of the row already
+ * encodes `card.status`, from the same single field, and a second mark derived
+ * from it said the same thing twice — literally so for a denied card, which
+ * rendered the dot plus TWO identical red crosses (the badge and the status),
+ * and for a skipped one, which rendered two identical skip glyphs.
+ *
+ * The dot wins because it is the only one that can show `running`: an animation
+ * says "still going" where no static shape can, so the dot has to exist anyway
+ * and a glyph beside it is pure addition.
+ *
+ * Named trade-off: status is now carried by COLOUR alone for a sighted reader
+ * (green done / red error / amber skipped). The dot keeps `title` and
+ * `aria-label`, so a screen reader is unaffected, and the two cases where
+ * confusion would cost something both carry a second, non-colour signal — a
+ * denied card has a berry BORDER, and an error card has the red summary bar
+ * under it. If a colour-blind reader ever reports the remaining ambiguity, the
+ * fix is a shape inside the dot, not a second mark beside it.
+ */
 
 /** The badges that used to be pill-shaped words. */
 export const BADGE_MARKS = {
   allowed: { kind: "check", title: "Allowed by you", tone: "text-leaf" },
   session: { kind: "clock", title: "Allowed for this session", tone: "text-tangerine-deep" },
-  denied: { kind: "cross", title: "Denied", tone: "text-berry" },
   plan: { kind: "skip", title: "Skipped — not allowed in plan mode", tone: "text-tangerine-deep" },
   destructive: { kind: "warn", title: "Destructive command", tone: "text-berry" },
 } as const satisfies Record<string, CardMark>;
@@ -462,20 +471,12 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
             <span className="text-ink-soft">→ asked</span> <span className="font-bold">{req?.agent ?? results[0]?.agent ?? "?"}</span>
             {label && <span className="text-ink-soft">: {label}</span>}
           </span>
-          {!running && (
-            <CardGlyph
-              className="mt-0.5"
-              mark={
-                denied
-                  ? BADGE_MARKS.denied
-                  : card.status === "error"
-                    ? { kind: "cross", title: "Failed", tone: "text-berry" }
-                    : async
-                      ? { kind: "clock", title: "Dispatched — running in the background", tone: "text-sky" }
-                      : { kind: "check", title: "Done", tone: "text-leaf" }
-              }
-            />
-          )}
+          {/* No status glyph here either, for the reason given above the badge
+              table: the dot beside the agent name already carries
+              `delegationStatus` in its title. The one thing the dot's COLOUR
+              cannot separate — dispatched from done, both leaf — is spelled out
+              in words on the summary line right below ("running in the
+              background — result arrives when it finishes"). */}
           <span className="shrink-0 text-[11px] text-ink-soft" aria-hidden>
             {open ? "▾" : "▸"}
           </span>
@@ -596,19 +597,18 @@ export function ToolCard({
           </span>
         </button>
         {filePath && <PathActions raw={filePath} workspace={workspace} onOpenFile={onOpenFile} />}
-        {/* Round 15: the four badges and the status are icons now, each carrying
-            the word it replaced in `title` + aria-label. Colour still does the
-            at-a-glance work; the text is one hover away rather than permanently
-            occupying the row beside a sentence. */}
+        {/* Round 15: the badges are icons, each carrying the word it replaced in
+            `title` + aria-label. Only badges that say something the status DOT
+            cannot survive here: who approved the call, why it was skipped, and
+            whether the command destroys something. "Denied" was dropped — the
+            dot and the berry border already say it, twice over. */}
         {card.approval && (
           <CardGlyph mark={card.approval === "Allow" ? BADGE_MARKS.allowed : BADGE_MARKS.session} />
         )}
-        {denied && <CardGlyph mark={BADGE_MARKS.denied} />}
         {/* §23: a tool blocked by plan mode reads as calm guidance, not an error. */}
         {card.status === "skipped" && <CardGlyph mark={BADGE_MARKS.plan} />}
         {/* V2.A: destructive bash command (rm/rmdir) — flagged next to the status. */}
         {destructive && <CardGlyph mark={BADGE_MARKS.destructive} />}
-        {STATUS_MARK[card.status] && <CardGlyph mark={STATUS_MARK[card.status]!} />}
         <DetailsToggle open={details} onClick={() => setDetails(!details)} />
       </div>
       {diff && openDiff && <DiffView lines={diff.lines} />}
