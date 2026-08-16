@@ -548,11 +548,16 @@ export async function stash(
  * §2 — the junk guard. A pre-existing repo with no .gitignore would otherwise
  * let `add -A` sweep node_modules into the very first save.
  */
-export function detectJunk(workspace: string, files: GitFileChange[]): string[] {
+export function detectJunk(files: GitFileChange[]): string[] {
   const hit = new Set<string>();
   for (const f of files) {
-    const first = f.path.split("/")[0];
-    if (JUNK_DIRS.includes(first)) hit.add(first);
+    // ANY segment, not just the first: a monorepo's junk is
+    // `packages/web/node_modules/…`, and matching only the root would wave it
+    // through in exactly the repos that have the most of it. The .gitignore line
+    // we then offer is the bare name, which ignores it at every depth anyway.
+    for (const seg of f.path.split("/")) {
+      if (JUNK_DIRS.includes(seg)) hit.add(seg);
+    }
   }
   return [...hit].sort();
 }

@@ -456,14 +456,25 @@ describe.skipIf(!GIT_OK)("detectJunk and appendGitignore", () => {
     fs.writeFileSync(path.join(dir, "src/new.ts"), "real work\n");
 
     const files = (await gitStatus(dir)).status!.files;
-    expect(detectJunk(dir, files)).toEqual(["node_modules"]);
+    expect(detectJunk(files)).toEqual(["node_modules"]);
+  });
+
+  it("catches junk nested inside a monorepo package, not just at the root", async () => {
+    makeRepo(dir);
+    invalidateProbe(dir);
+    fs.mkdirSync(path.join(dir, "packages/web/node_modules"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "packages/web/node_modules/x.js"), "junk\n");
+
+    // Matching only the first path segment would wave this through in exactly
+    // the repos that have the most of it.
+    expect(detectJunk((await gitStatus(dir)).status!.files)).toEqual(["node_modules"]);
   });
 
   it("finds nothing to complain about in a clean set", async () => {
     makeRepo(dir);
     invalidateProbe(dir);
     fs.writeFileSync(path.join(dir, "src/new.ts"), "real work\n");
-    expect(detectJunk(dir, (await gitStatus(dir)).status!.files)).toEqual([]);
+    expect(detectJunk((await gitStatus(dir)).status!.files)).toEqual([]);
   });
 
   it("appends to an existing .gitignore without dropping what was there", async () => {

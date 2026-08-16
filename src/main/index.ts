@@ -6,6 +6,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpc } from './ipc'
 import { loginShellPath, mergePath } from './shellPath'
+import { getGitRulesSeeded, rulesFile, setGitRulesSeeded } from './config'
+import { seedDefaultGitRules } from './gitRules'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
 // AND userData resolves to .../HappyVibe — in dev the process runs inside
@@ -150,6 +152,13 @@ app.whenReady().then(() => {
   // them. Mutating process.env is enough: spawn.ts and every other child site
   // spread ...process.env, so nothing needs explicit PATH plumbing.
   process.env.PATH = mergePath(process.env.PATH, loginShellPath())
+
+  // §29: write the shipped git permission rules once, as ordinary user rules.
+  // After PATH for no reason of its own, but before registerIpc so the first
+  // spawn already hands the bridge a rules file containing them.
+  if (!getGitRulesSeeded()) {
+    if (seedDefaultGitRules(rulesFile(), false)) setGitRulesSeeded(true)
+  }
 
   registerIpc(mainWindow)
 
