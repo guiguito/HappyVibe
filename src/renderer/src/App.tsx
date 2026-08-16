@@ -2311,6 +2311,12 @@ export default function App(): React.JSX.Element {
                   // Where this pane meets another: the view insets itself so the
                   // divider's drag strip is never underneath a composited page.
                   edges={paneNeighbours(wsTabs, paneOf(wsTabs, browserTab(bid)))}
+                  // §7 round 13: make ROOM for the drawer instead of vanishing
+                  // under it. A WebContentsView cannot be painted over, but it
+                  // can be made smaller — and the drawer is a stable rectangle
+                  // on the right edge, unlike the transient menus that still
+                  // (correctly) hide it.
+                  drawerWidth={DRAWER ? drawerWidth : 0}
                   onPicked={(payload) => {
                     // §28: the OWNER of the pane first — the session that opened
                     // or adopted it is the agent actually driving this page — and
@@ -2539,6 +2545,9 @@ export default function App(): React.JSX.Element {
                 // settings. This drawer is the workspace's own contents, so it
                 // belongs to the centre, and giving it the sidebar's surface
                 // said the opposite.
+                // §7 round 13: marked so BrowserTab can make ROOM for it
+                // instead of hiding under it — see its `drawerWidth` prop.
+                data-hv-drawer=""
                 className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col"
                 style={{ width: drawerWidth }}
               >

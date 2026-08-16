@@ -339,7 +339,29 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   scans the renderer for anything climbing to 100 — that second half is the one that rots, because a
   future `z-[200]` on some popover silently takes the crown back. Anything that must sit above a
   dialog has to BE a dialog.
-- **Hit-testing has two blind spots, and both were real overlays.** `document.elementFromPoint`
+- **§28 round 2 (2026-08-16): coverage is decided by RECTANGLE for EVERY floating
+  surface, and the 3×3 point sample is gone.** The gaps were not an edge case, they
+  were the common case: the onboarding card fell between the nine points, so did the
+  pane `+` menu dropping in from the top edge (reported as a menu rendering *clipped*
+  at the page's top, because the view never moved), and `elementFromPoint` is blind to
+  `pointer-events: none` outright. Candidates are found with **no marker list** —
+  this app is styled entirely with Tailwind, so every floating surface carries
+  `absolute` or `fixed` as a literal class word, and `[class~="absolute"]` finds them
+  all including the one nobody remembered to mark. `paneIsCovered` (browserCoverage.ts)
+  holds the policy; the component only gathers rects. Measured at rest on a real
+  window: **zero** candidates over a pane-sized rect, so it does not hide spuriously.
+  The hazard it accepts, recorded because it bit once: a candidate is judged by its
+  BOX, so a positioned wrapper that centres small content in a full-width box blanks
+  the page (the voice pill did exactly this — `fixed inset-x-0 … justify-center`). The
+  fix for that is to shrink the box, not to loosen the check.
+- **The drawer is the ONE overlay a browser pane makes ROOM for instead of hiding
+  under** (§7 round 13). Nothing in the DOM can ever paint above a `WebContentsView`
+  — but the view can be made SMALLER, and the drawer is a stable rectangle pinned to
+  the right edge, so `paneViewRect` insets the view to end where the drawer begins and
+  both stay on screen. Hiding stays right for menus and dialogs, which are transient
+  and land anywhere. The inset and the coverage check MUST use the same rect
+  (`effectiveRect`) or the page hides for an overlay it no longer reaches.
+- **Hit-testing's old blind spots, kept because the geometry still explains them.** `document.elementFromPoint`
   ignores `pointer-events: none`, so the voice recording pill (which sets it so it never swallows a
   click) was invisible to the browser's coverage check; and nine sample points have gaps, so the
   onboarding card — bottom-right, inset 24px — sat entirely between them. Both were drawn UNDER the

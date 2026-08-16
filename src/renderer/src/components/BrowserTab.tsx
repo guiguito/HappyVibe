@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { describeBrowserError, resolveTypedUrl } from "../browserError";
-import { rectsOverlap } from "../browserCoverage";
+import { paneIsCovered, paneViewRect, rectsOverlap, type Candidate } from "../browserCoverage";
 
 /** Half the divider drag strip, so the page never sits under it. */
 const DIVIDER_INSET = 6;
 /** How far inside our own rect the coverage samples sit. */
-const SAMPLE_INSET = 10;
 
 /** What the injected picker resolves with (mirrors PickedElement in main). */
 interface PickedElement {
@@ -43,12 +42,24 @@ export function BrowserTab({
   gridArea,
   hidden,
   edges,
+  drawerWidth = 0,
   onPicked,
 }: {
   browserId: string;
   info: HvBrowserInfo | undefined;
   gridArea?: string;
   hidden: boolean;
+  /**
+   * Width of the right-hand drawer when it is open, else 0.
+   *
+   * The drawer is the ONE overlay this pane makes room for instead of hiding
+   * under. Everything else that floats — menus, autocompletes, dialogs — is
+   * transient and arbitrarily placed, so hiding is right for them. The drawer
+   * is a persistent rectangle pinned to the right edge, and hiding the whole
+   * page to show a file tree beside it is a bad trade: you opened the drawer to
+   * work WITH the page, not instead of it.
+   */
+  drawerWidth?: number;
   /** Which sides of this pane touch a divider — the view insets away from them. */
   edges?: { left: boolean; top: boolean; right: boolean; bottom: boolean };
   /**
@@ -66,6 +77,22 @@ export function BrowserTab({
   // Read inside the bounds pusher without re-subscribing it on every render.
   const edgesRef = useRef(edges);
   edgesRef.current = edges;
+  const drawerRef = useRef(drawerWidth);
+  drawerRef.current = drawerWidth;
+
+  /**
+   * The rect the view actually occupies: the placeholder, inset away from the
+   * pane dividers and away from the drawer.
+   *
+   * ONE function on purpose. The bounds we push and the points we hit-test have
+   * to describe the same rectangle — if they drift, the page either covers
+   * something we did not sample or hides for something it no longer reaches.
+   */
+  const effectiveRect = useCallback(
+    (el: HTMLElement) =>
+      paneViewRect(el.getBoundingClientRect(), edgesRef.current, DIVIDER_INSET, drawerRef.current, window.innerWidth),
+    [],
+  );
   const [urlDraft, setUrlDraft] = useState(info?.url ?? "");
   const [editing, setEditing] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -91,20 +118,11 @@ export function BrowserTab({
     const el = host.current;
     if (!el) return;
     const push = (): void => {
-      const r = el.getBoundingClientRect();
-      // §28 round 1: keep the page off the pane dividers. The drag strip is 10px
-      // centred on the boundary, so half of it lies inside this pane — and a
-      // composited view over it makes the divider ungrabbable from this side.
-      // Insetting also keeps that transparent strip out of the hit-test below,
-      // which would otherwise read it as "something is covering us".
-      const L = edgesRef.current?.left ? DIVIDER_INSET : 0;
-      const T = edgesRef.current?.top ? DIVIDER_INSET : 0;
-      const R = edgesRef.current?.right ? DIVIDER_INSET : 0;
-      const B = edgesRef.current?.bottom ? DIVIDER_INSET : 0;
-      void window.hv.browserBounds(browserId, {
-        x: r.x + L, y: r.y + T,
-        width: Math.max(0, r.width - L - R), height: Math.max(0, r.height - T - B),
-      });
+      // §28 round 1: keep the page off the pane dividers (the drag strip is 10px
+      // centred on the boundary, so half lies inside this pane and a composited
+      // view over it makes the divider ungrabbable), and §7 round 13: keep it
+      // out from under the drawer so both can be on screen at once.
+      void window.hv.browserBounds(browserId, effectiveRect(el));
     };
     push();
     const ro = new ResizeObserver(push);
@@ -119,67 +137,62 @@ export function BrowserTab({
       mo.disconnect();
       window.removeEventListener("resize", push);
     };
-  }, [browserId, edges]);
+  }, [browserId, edges, drawerWidth, effectiveRect]);
 
   /**
-   * "Is anything on top of us?", asked geometrically.
+   * "Is anything on top of us?", asked geometrically — by RECTANGLE.
    *
-   * Sample a 3×3 grid inside our own rect and ask the DOM what is topmost at
-   * each point. Anything that is not us — a menu, an autocomplete, a drawer, a
-   * confirm, a modal — means the page must get out of the way, because a
-   * composited view swallows the clicks meant for whatever is drawn over it.
+   * A composited view swallows the clicks meant for whatever is drawn over it,
+   * so anything above the pane means the page must get out of the way.
    *
-   * Why geometry and not a marker class: a class has to be remembered on ~35
-   * components and by everyone who adds the 36th. This asks the only question
-   * that actually matters and cannot go stale. It also hides ONLY when the thing
-   * really overlaps this pane — a menu open in the other half leaves the page up.
+   * This replaces a 3×3 point sample, and the gaps were the whole problem. Nine
+   * points miss a small, edge-anchored surface: the onboarding card (bottom
+   * right, inset 24px) fell between them, and so did the pane `+` menu dropping
+   * in from the top edge — reported as a menu rendering clipped at the page's
+   * top, because the view never moved. `elementFromPoint` is also blind to
+   * `pointer-events: none`, which the voice pill sets. Rectangles have neither
+   * failure mode.
+   *
+   * Candidates are found WITHOUT a marker list, which is the property the
+   * geometric rule exists for: this app is styled entirely with Tailwind, so
+   * every floating surface carries `absolute` or `fixed` as a literal class
+   * word. That catches the dropdown nobody remembered to mark, and the one that
+   * does not exist yet. `[class~=]` matches a whole word, so `absolute` does not
+   * also match some future `absolute-something`.
    */
   useEffect(() => {
     let raf = 0;
     const check = (): void => {
       const el = host.current;
       if (!el) return;
-      const r = el.getBoundingClientRect();
-      if (r.width < 2 * SAMPLE_INSET || r.height < 2 * SAMPLE_INSET) return;
-      let hit = false;
-      for (let i = 0; i < 3 && !hit; i++) {
-        for (let j = 0; j < 3 && !hit; j++) {
-          const x = r.left + SAMPLE_INSET + (i * (r.width - 2 * SAMPLE_INSET)) / 2;
-          const y = r.top + SAMPLE_INSET + (j * (r.height - 2 * SAMPLE_INSET)) / 2;
-          const top = document.elementFromPoint(x, y);
-          // null = the point is off-screen, which is not "covered".
-          if (top && top !== el && !el.contains(top)) hit = true;
-        }
+      // The rect the view ACTUALLY occupies — it stops short of the drawer, so
+      // the drawer is not something to hide from (see paneViewRect).
+      const e = effectiveRect(el);
+      const view = { left: e.x, top: e.y, right: e.x + e.width, bottom: e.y + e.height };
+      // A drawer wider than the pane leaves nothing to show.
+      if (e.width < 1 || e.height < 1) {
+        setCovered(true);
+        return;
       }
-      // Hit-testing has two blind spots, and both are real overlays:
-      //
-      //  - `pointer-events: none` is INVISIBLE to elementFromPoint. The voice
-      //    recording pill sets it on its wrapper so it never swallows a click.
-      //  - a small, edge-anchored card can fall BETWEEN nine sample points. The
-      //    onboarding card sits bottom-right inset 24px; the bottom-right sample
-      //    lands in that padding and sails past it.
-      //
-      // So overlays that announce themselves are also checked by RECTANGLE,
-      // which has no gaps and does not care about pointer-events. This is a
-      // small named set — `.hv-overlay`/`.hv-dialog` and anything portalled to
-      // the body — not a marker every future menu must remember: the hit test
-      // above still covers those, and covers ones nobody thought to mark.
-      if (!hit) {
-        const declared = [
-          ...document.querySelectorAll(".hv-overlay, .hv-dialog"),
-          ...[...document.body.children].filter((n) => n !== document.getElementById("root")),
-        ];
-        for (const node of declared) {
-          if (!(node instanceof HTMLElement) || el.contains(node)) continue;
-          const b = node.getBoundingClientRect();
-          if (b.width < 1 || b.height < 1) continue;
-          if (rectsOverlap(r, b)) {
-            hit = true;
-            break;
-          }
-        }
+      const nodes = document.querySelectorAll<HTMLElement>('[class~="absolute"], [class~="fixed"]');
+      const candidates: Candidate[] = [];
+      for (const node of nodes) {
+        const rect = node.getBoundingClientRect();
+        // Cheap rejects first; getComputedStyle only for what actually overlaps.
+        if (rect.width < 1 || rect.height < 1) continue;
+        const isSelf = el.contains(node) || node.contains(el);
+        const isDrawer = !!node.closest("[data-hv-drawer]");
+        if (isSelf || isDrawer) continue;
+        if (!rectsOverlap(view, rect)) continue;
+        const cs = getComputedStyle(node);
+        candidates.push({
+          rect,
+          isSelf: false,
+          isDrawer: false,
+          visible: cs.visibility !== "hidden" && cs.display !== "none" && cs.opacity !== "0",
+        });
       }
-      setCovered(hit);
+      setCovered(paneIsCovered(view, candidates));
     };
     // Coalesced: streaming text mutates the body continuously, and one pass per
     // frame is the most this can ever cost.
@@ -213,7 +226,11 @@ export function BrowserTab({
       if (raf) cancelAnimationFrame(raf);
       if (timer) clearTimeout(timer);
     };
-  }, []);
+    // `drawerWidth` is a dependency because opening the drawer does not mutate
+    // anything this observer watches — the placeholder never resizes, since the
+    // drawer is an overlay — so without it the samples would keep testing the
+    // old rect.
+  }, [drawerWidth, effectiveRect]);
 
   // One place decides whether the view is on screen: hidden tab, something drawn
   // over us, or the comment popup (which shows a frozen still instead).
