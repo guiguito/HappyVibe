@@ -412,6 +412,47 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   the whole reason `askUntil` exists. So: before recording any behavioural claim about a model,
   **interleave the arms and compute a p-value** — both are cheap and neither was done the first
   time. Full retraction, tables and method in docs/validation/d1.md.
+- **A URL in a card's `path` slot is not a path, and `resolveCardPath` is where that is decided.**
+  Round 15 moved the browser URL into the same `path` field edit/write use, so ToolCard's existing
+  chip renders it. The segment walk then turned `http://localhost:8000/x.html` into
+  `http:/localhost:8000/x.html` — **non-null**, so the chip became a clickable "open this web page
+  in the code editor" link. The guard (`/^[a-z][a-z0-9+.-]*:\/\//i` → null) lives in
+  `resolveCardPath` (tabs.ts), not in the card: that function is the single place that answers "is
+  this a file of ours", and every caller routes through it. Pinned in `tests/tabs.test.ts`.
+- **The renderer suite has NO DOM — assert on exported data plus a source scan.** `vitest.config.ts`
+  includes `tests/**/*.test.ts` only (no `.tsx`), there is no jsdom environment and
+  `@testing-library/react` is not a dependency. Tests DO import from `.tsx` components
+  (`tests/plan-pill.test.ts`, `tests/brand-mark.test.ts`), but only pure exports. So a visual
+  contract is pinned in two halves: the mapping is exported as DATA (`STATUS_MARK`, `BADGE_MARKS`
+  in ToolCard.tsx) and the ABSENCE — the words that must no longer render — is a source scan, the
+  `tests/modal-layer.test.ts` pattern. This is the better shape anyway: an absence is exactly what
+  a render test does not fail on.
+- **"Scroll to the bottom on open" cannot be a mount effect.** Restore is async, so at mount `items`
+  is empty and there is nothing to scroll past; and once a long transcript paints, the stream's
+  `isNearBottom` guard is false — which is *why* reopening landed at the top. `Transcript` fires it
+  once on the first NON-EMPTY render (a `landed` ref), and separately on a `scrollNonce` the
+  composer bumps on send. Never widen the stream guard to fix this: that guard is what lets a user
+  read back during a response.
+- **A turn's duration must be measured to the last STAMPED item, not the last bubble.** Round 15
+  gave `RestoreItem` tool cards a `ts` that nothing renders, taken from the tool RESULT (when it
+  finished) rather than the call. Without it, a turn where the agent says "editing now" and then
+  edits for 30 s reports 2 s. Live path (`App.stampTurnEnd`) and restore path
+  (`restore.ts stampTurnDurations`) compute the same number two ways, because a reopened session
+  has only the file. Pinned in `tests/restore.test.ts`.
+- **`wouldHave` on an audit row is the ENGINE's `RuleAction`, not an `AuditDecision`.** The engine
+  answers allow/**ask**/deny; a decision is allow/allow-session/deny. The first implementation
+  mapped `ask` onto `allow-session` because the type had nowhere else to put it — the exact
+  misreport the field exists to prevent. Related: **old audit rows keep `source:"dangerous"`**
+  (round 15 renamed it `bypass` and nothing rewrites history), so `AuditView` maps both to one
+  label and `analytics.ts` folds them into one `bySource` bucket. Forget the fold and one fact
+  shows as two half-sized buckets either side of the rename.
+- **The app's own model calls are TOKENS, never dollars (`src/main/oneShotLog.ts`).** The four
+  one-shot `pi -p --no-session` callers (session titles, the AGENTS.md draft, the commit message,
+  the PR draft) carry no usage record at all, so a dollar figure would have to come from a price
+  table main does not have and must not grow a second copy of — §19 ruling 3's "unknown price
+  rendered as a number", one surface over. They log `assistant.oneshot` (estimated tokens), appear
+  as audit rows interleaved by timestamp, and sit BESIDE the Stats cost, never inside it. A test
+  asserts the payload has no cost key.
 - **Git (§29): the panel renders GIT's hunks, and that is not a style preference.** The tool cards
   use the js `diff` library (`diffs.ts`) and keep it — they render an edit's own before/after,
   which git never saw. But git and that library split the same change into DIFFERENT hunks, so a
