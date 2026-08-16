@@ -965,8 +965,14 @@ export function ChangesPanel({
                       the commit so it is obvious which one you opened, and
                       closable without scrolling back up. */}
                   {expanded && history.some((h) => h.sha === expanded) && (
-                    <div className="mt-2 border-t-2 border-line bg-paper-deep">
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+                    /* No background tint on this wrapper. It was `bg-paper-deep`
+                       and painted a darker rectangle that stopped wherever the
+                       content stopped — a hard horizontal edge across the middle
+                       of the panel, reading as a rendering fault rather than as
+                       a section. The rule and the header do the separating; the
+                       file cards supply their own surface. */
+                    <div className="mt-2 border-t-2 border-line">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-paper-deep border-b-2 border-line">
                         <span className="text-[10px] font-bold text-ink-soft truncate flex-1">
                           Files in <span className="font-mono">{expanded.slice(0, 7)}</span>
                         </span>
@@ -978,7 +984,7 @@ export function ChangesPanel({
                           Close
                         </button>
                       </div>
-                      <div className="px-2 pb-2">
+                      <div className="p-2">
                         {/* Collapsed: a commit touching a dozen files would
                             otherwise bury the list you were just reading. */}
                         <DiffView files={expandedDiff} defaultOpen={false} />
