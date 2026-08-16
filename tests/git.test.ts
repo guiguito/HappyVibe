@@ -17,6 +17,8 @@ import {
   listBranches,
   probeWorkspace,
   resetGitAvailability,
+  branchCommits,
+  remoteUrl,
   saveVersion,
   setGitBinaryForTest,
   stageFile,
@@ -517,5 +519,37 @@ describe.skipIf(!GIT_OK)("detectJunk and appendGitignore", () => {
     expect(JUNK_DIRS).toContain("node_modules");
     expect(JUNK_DIRS).toContain("dist");
     expect(JUNK_DIRS).toContain("__pycache__");
+  });
+});
+
+describe.skipIf(!GIT_OK)("remoteUrl and branchCommits (§29 §7)", () => {
+  it("reads origin, and answers null when there is no remote", async () => {
+    makeRepo(dir);
+    invalidateProbe(dir);
+    expect(await remoteUrl(dir)).toBeNull();
+
+    run(dir, ["remote", "add", "origin", "https://example.com/o/r.git"]);
+    expect(await remoteUrl(dir)).toBe("https://example.com/o/r.git");
+  });
+
+  it("lists only the commits this branch adds over the base", async () => {
+    makeRepo(dir);
+    invalidateProbe(dir);
+    run(dir, ["checkout", "-q", "-b", "feature"]);
+    fs.writeFileSync(path.join(dir, "one.txt"), "1\n");
+    await saveVersion(dir, "feat: the first thing", { stagedOnly: false, amend: false });
+    fs.writeFileSync(path.join(dir, "two.txt"), "2\n");
+    await saveVersion(dir, "feat: the second thing", { stagedOnly: false, amend: false });
+
+    // Newest first, and "init" (which main already has) is NOT included — a PR
+    // body listing commits the base already has would describe the wrong change.
+    expect(await branchCommits(dir, "main")).toEqual(["feat: the second thing", "feat: the first thing"]);
+  });
+
+  it("is empty on a branch that adds nothing", async () => {
+    makeRepo(dir);
+    invalidateProbe(dir);
+    run(dir, ["checkout", "-q", "-b", "idle"]);
+    expect(await branchCommits(dir, "main")).toEqual([]);
   });
 });

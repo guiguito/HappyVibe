@@ -581,6 +581,13 @@ interface HvApi {
   gitDraftMessage(workspaceId: string, stagedOnly: boolean): Promise<string | null>;
   /** §5a: asks the OS for git (macOS CLT prompt; elsewhere opens git-scm.com). */
   gitInstallPrompt(): Promise<{ ok: boolean }>;
+  /**
+   * §29 §7: the forge's prefilled PR form for this branch, or null when there is
+   * no button to show — not a repo, no origin, an unrecognised host, sitting on
+   * the default branch, or nothing pushed yet. `drafted` is false when the model
+   * was unavailable and the commit list was used instead.
+   */
+  gitPrUrl(workspaceId: string, draft?: boolean): Promise<{ url: string; drafted: boolean } | null>;
   gitMessageModel(): Promise<{ provider: string; modelId: string } | null>;
   setGitMessageModel(m: { provider: string; modelId: string } | null): Promise<{ provider: string; modelId: string } | null>;
   onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;

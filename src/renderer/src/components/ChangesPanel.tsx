@@ -52,6 +52,9 @@ export function ChangesPanel({
   const [newBranch, setNewBranch] = useState("");
   const [branchError, setBranchError] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
+  // §29 §7: null while unknown or when there is nothing to open.
+  const [prUrl, setPrUrl] = useState<string | null>(null);
+  const [openingPr, setOpeningPr] = useState(false);
   const [canDraft, setCanDraft] = useState(false);
   const [working, setWorking] = useState(false);
   const [initPreview, setInitPreview] = useState<{ refused: string | null; branch: string; gitignore: string } | null>(null);
@@ -86,6 +89,24 @@ export function ChangesPanel({
       .then((p) => setCanDraft(p.byok.some((b) => b.source !== null) || !!p.defaultModel))
       .catch(() => setCanDraft(false));
   }, [workspace]);
+
+  /**
+   * Is a pull request even possible here? Asked of MAIN, which knows the remote,
+   * the base branch and whether the forge is one we can build a link for — the
+   * renderer must not re-derive any of that.
+   *
+   * `draft: false` keeps this cheap: no model call, no diff. It re-runs on every
+   * status change because PUBLISHING a branch is what makes the button appear,
+   * and that arrives as a status push.
+   */
+  useEffect(() => {
+    let alive = true;
+    void window.hv
+      .gitPrUrl(workspace, false)
+      .then((r) => { if (alive) setPrUrl(r?.url ?? null); })
+      .catch(() => { if (alive) setPrUrl(null); });
+    return () => { alive = false; };
+  }, [workspace, payload]);
 
   useEffect(() => {
     if (!historyOpen) return;
@@ -560,6 +581,40 @@ export function ChangesPanel({
                 </div>
               </div>
             )}
+            {/* §29 §7: only when a PR is actually possible — a recognised forge,
+                a pushed branch, and not the default branch. On `main` or before
+                publishing it is simply absent, and the panel is already offering
+                Publish branch in that state. */}
+            {prUrl !== null && (
+              <button
+                type="button"
+                disabled={openingPr}
+                onClick={() => {
+                  // Guarded: the draft is a 2-4s model call, and a second press
+                  // would open a second tab.
+                  if (openingPr) return;
+                  setOpeningPr(true);
+                  void window.hv
+                    .gitPrUrl(workspace, true)
+                    .then((r) => {
+                      const url = r?.url ?? prUrl;
+                      if (!url) return;
+                      setLastCommand(url);
+                      void window.hv.openExternal(url);
+                      flash(r?.drafted ? "Opened a pull request draft in your browser." : "Opened your browser — described from the commits.");
+                    })
+                    .catch(() => {})
+                    .finally(() => setOpeningPr(false));
+                }}
+                // It opens a FORM. HappyVibe creates nothing and stores no
+                // credential — you press Create on the forge yourself.
+                title="Opens your browser at the forge's new-pull-request page, with the title and description filled in. Nothing is created until you press Create there."
+                className="flex items-center justify-center gap-1.5 rounded-xl border-2 border-line bg-card px-3 py-1.5 text-xs font-bold cursor-pointer hover:border-tangerine disabled:opacity-50"
+              >
+                <PrGlyph />
+                {openingPr ? "Writing it up…" : "Open a pull request"}
+              </button>
+            )}
             {busyNotice && <Notice text={busyNotice} />}
           </div>
 
@@ -933,6 +988,20 @@ function FloppyGlyph(): React.JSX.Element {
       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
       <path d="M17 21v-8H7v8" />
       <path d="M7 3v5h8" />
+    </svg>
+  );
+}
+
+/** §29 §7: a branch merging into another — the pull-request idiom. */
+function PrGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="6" cy="18" r="2" />
+      <circle cx="18" cy="18" r="2" />
+      <path d="M6 8v8" />
+      <path d="M18 16V9a3 3 0 0 0-3-3h-3" />
+      <path d="m13 3-2 3 2 3" />
     </svg>
   );
 }

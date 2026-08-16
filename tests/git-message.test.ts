@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildDraftPrompt, draftCommitMessage } from "../src/main/gitMessage";
+import { buildDraftPrompt, buildPrPrompt, draftCommitMessage, draftPullRequest, splitPrDraft } from "../src/main/gitMessage";
 import type { GitFileChange } from "../src/main/gitParse";
 
 /**
@@ -118,5 +118,98 @@ describe.skipIf(!KEY)("draftCommitMessage (live DeepSeek flash)", () => {
     // Quiet failure is the contract: the button is simply absent, never an error
     // surface, and never a blocked commit.
     expect(msg).toBeNull();
+  }, 90_000);
+});
+
+describe("buildPrPrompt", () => {
+  const input = { commits: ["feat: a", "fix: b"], diff: DIFF, branch: "feature/x", base: "main" };
+
+  it("names both branches and lists the commits", () => {
+    const p = buildPrPrompt(input, 10_000);
+    expect(p).toContain('"feature/x"');
+    expect(p).toContain('"main"');
+    expect(p).toContain("- feat: a");
+    expect(p).toContain("- fix: b");
+  });
+
+  it("asks for a title line then a description, and forbids fences", () => {
+    const p = buildPrPrompt(input, 10_000);
+    expect(p).toMatch(/FIRST line is the title/);
+    expect(p).toMatch(/code fences/i);
+  });
+
+  it("says so when the diff is truncated", () => {
+    const p = buildPrPrompt({ ...input, diff: "x".repeat(5_000) }, 500);
+    expect(p).toMatch(/TRUNCATED/);
+    expect(p.length).toBeLessThan(2_000);
+  });
+
+  it("copes with a branch that adds no commits", () => {
+    expect(() => buildPrPrompt({ ...input, commits: [] }, 10_000)).not.toThrow();
+  });
+});
+
+describe("splitPrDraft", () => {
+  it("takes the first line as the title and the rest as the body", () => {
+    expect(splitPrDraft("Add the git panel\n\nIt does things.\n- one\n- two")).toEqual({
+      title: "Add the git panel",
+      body: "It does things.\n- one\n- two",
+    });
+  });
+
+  it("strips a code fence wrapping the whole answer", () => {
+    expect(splitPrDraft("```markdown\nA title\n\nA body\n```")).toEqual({ title: "A title", body: "A body" });
+  });
+
+  it("strips a leading heading marker and a Title: label", () => {
+    // Otherwise the PR is literally titled "Title: ...".
+    expect(splitPrDraft("# A title\n\nbody")!.title).toBe("A title");
+    expect(splitPrDraft("Title: A title\n\nbody")!.title).toBe("A title");
+  });
+
+  it("survives a title with no body at all", () => {
+    expect(splitPrDraft("Just a title")).toEqual({ title: "Just a title", body: "" });
+  });
+
+  it("returns null for empty or whitespace output", () => {
+    expect(splitPrDraft("")).toBeNull();
+    expect(splitPrDraft("   \n\n  ")).toBeNull();
+  });
+
+  it("caps a runaway title", () => {
+    expect(splitPrDraft(`${"x".repeat(400)}\n\nbody`)!.title.length).toBeLessThanOrEqual(120);
+  });
+});
+
+describe.skipIf(!KEY)("draftPullRequest (live DeepSeek flash)", () => {
+  it("drafts a title and a description from a real diff", async () => {
+    const runtimeDir = path.join(__dirname, "..", "pi-runtime");
+    const draft = await draftPullRequest(
+      runtimeDir,
+      process.cwd(),
+      { commits: ["fix(auth): stop the retry loop"], diff: DIFF, branch: "fix/retry", base: "main" },
+      { provider: "deepseek", modelId: "deepseek-v4-flash" },
+      { DEEPSEEK_API_KEY: KEY! }
+    );
+    expect(draft, "a configured provider must produce a draft").toBeTruthy();
+    expect(draft!.title.includes("\n")).toBe(false);
+    expect(draft!.title.length).toBeGreaterThan(3);
+    expect(draft!.title.length).toBeLessThanOrEqual(120);
+    // It read the diff rather than echoing the instructions back.
+    expect(`${draft!.title} ${draft!.body}`.toLowerCase()).toMatch(/retry|auth|fetch|token/);
+    // eslint-disable-next-line no-console
+    console.log(`[live PR draft] ${draft!.title}\n${draft!.body.slice(0, 200)}`);
+  }, 120_000);
+
+  it("resolves null rather than throwing when the model is unusable", async () => {
+    const runtimeDir = path.join(__dirname, "..", "pi-runtime");
+    const draft = await draftPullRequest(
+      runtimeDir,
+      process.cwd(),
+      { commits: [], diff: DIFF, branch: "x", base: "main" },
+      { provider: "deepseek", modelId: "no-such-model-at-all" },
+      { DEEPSEEK_API_KEY: "sk-definitely-invalid" }
+    );
+    expect(draft).toBeNull();
   }, 90_000);
 });

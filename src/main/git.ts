@@ -355,6 +355,29 @@ export async function defaultBranch(workspace: string): Promise<string | null> {
   return null;
 }
 
+/** §29 §7: the `origin` URL, for building a prefilled pull-request link. */
+export async function remoteUrl(workspace: string): Promise<string | null> {
+  const state = await requireRepo(workspace);
+  if (!state) return null;
+  const r = await run(state.root, ["remote", "get-url", "origin"]);
+  return r.ok && r.stdout.trim() ? r.stdout.trim() : null;
+}
+
+/**
+ * Subjects of the commits this branch adds over `base`, newest first.
+ *
+ * `base..HEAD` is the range a pull request actually proposes, so this is both
+ * the fallback PR body and what the drafter is shown. Deliberately NOT the
+ * pathspec-scoped log: a PR is repo-wide even when the workspace is a
+ * subdirectory (§5c), and listing only part of it would misdescribe it.
+ */
+export async function branchCommits(workspace: string, base: string, limit = 50): Promise<string[]> {
+  const state = await requireRepo(workspace);
+  if (!state || state.unborn) return [];
+  const r = await run(state.root, ["log", `-${limit}`, "--format=%s", `${base}..HEAD`]);
+  return r.ok ? r.stdout.split("\n").filter(Boolean) : [];
+}
+
 export async function listBranches(workspace: string): Promise<string[]> {
   const state = await requireRepo(workspace);
   if (!state) return [];

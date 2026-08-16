@@ -69,12 +69,13 @@ import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, wri
 import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
-  appendGitignore, defaultBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
+  appendGitignore, branchCommits, defaultBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
   gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, probeWorkspace,
-  publish, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
+  publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
-import { draftCommitMessage } from "./gitMessage";
+import { draftCommitMessage, draftPullRequest } from "./gitMessage";
+import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
   captureSnapshot, deleteSessionSnapshots, findRestoreTarget, listSnapshots,
@@ -3103,6 +3104,62 @@ export function registerIpc(win: BrowserWindow): void {
     }
     void shell.openExternal("https://git-scm.com/downloads");
     return { ok: true };
+  });
+
+  /**
+   * §29 §7 — the prefilled pull-request URL, or null.
+   *
+   * Assembled in MAIN so the renderer only has a link to open. Null means "no
+   * button": not a repo, no `origin`, a forge we do not recognise, sitting on
+   * the default branch, or nothing pushed yet — all states where a PR link
+   * would 404 or propose nothing.
+   *
+   * HappyVibe creates nothing and stores no credential; the user presses Create
+   * on the forge, already signed in there. (Which is why this cannot use the
+   * §28 embedded pane: it has its own cookie jar.)
+   */
+  ipcMain.handle("hv:git-pr-url", async (_e, workspaceId: string, draft = false) => {
+    const payload = await gitStatus(workspaceId);
+    if (payload.state.kind !== "repo") return null;
+    const branch = payload.status?.branch;
+    if (!branch?.branch || !branch.upstream) return null;
+
+    const origin = await remoteUrl(workspaceId);
+    const remote = origin ? parseRemote(origin) : null;
+    if (!remote) return null;
+
+    const baseRef = await defaultBranch(workspaceId);
+    // "origin/main" names the same branch as "main" for a compare link.
+    const base = (baseRef ?? "main").replace(/^origin\//, "");
+    if (base === branch.branch) return null; // a PR from main into main proposes nothing
+
+    const commits = await branchCommits(workspaceId, base);
+
+    // `draft: false` is the ELIGIBILITY call — the renderer asks it on every
+    // status change to decide whether the button exists, so it must never run
+    // the model or read a diff. `draft: true` is the click.
+    let drafted: { title: string; body: string } | null = null;
+    if (draft) {
+      const model = getGitMessageModel() ?? resolveSpawnModel(workspaceId);
+      if (model) {
+        const diffs = await gitDiff(workspaceId, "base");
+        const diffText = diffs.map((f) => `${f.fileHeader}\n${f.hunks.map((h) => h.raw).join("")}`).join("\n");
+        drafted = await draftPullRequest(
+          piRuntimeDir(),
+          workspaceId,
+          { commits, diff: diffText, branch: branch.branch, base },
+          model,
+          { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
+        );
+      }
+    }
+    // The fallback is what the user would have typed anyway, so a missing
+    // provider costs nicer prose and nothing else.
+    const title = drafted?.title || (commits.length === 1 ? commits[0] : humaniseBranch(branch.branch));
+    const body = drafted?.body || commits.map((c) => `- ${c}`).join("\n");
+
+    const url = pullRequestUrl({ host: remote.host, path: remote.path, base, head: branch.branch, title, body });
+    return url ? { url, drafted: !!drafted } : null;
   });
 
   ipcMain.handle("hv:git-message-model", () => getGitMessageModel());
