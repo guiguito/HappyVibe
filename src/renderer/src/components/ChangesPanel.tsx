@@ -29,6 +29,13 @@ interface Confirm {
    * as-is, and forcing that into Cancel would hide one of the two answers.
    */
   secondary?: { label: string; onPick: () => void | Promise<void> };
+  /**
+   * Drop the Cancel button. Only for dialogs whose two options already cover
+   * every answer — a third button that lands in the same place as one of them
+   * is a choice the reader has to rule out before deciding. The scrim still
+   * dismisses, so there is always a way out.
+   */
+  hideCancel?: boolean;
 }
 
 export function ChangesPanel({
@@ -285,7 +292,7 @@ export function ChangesPanel({
   const groups = groupByDir(files);
   const stashes = payload?.stashes ?? [];
 
-  const doSave = async (opts: { amend?: boolean; onSaved?: () => void } = {}): Promise<void> => {
+  const doSave = async (opts: { amend?: boolean } = {}): Promise<void> => {
     const text = message.trim();
     if (!text) return;
     // §2: refuse to sweep junk SILENTLY. Declining still saves — it is their repo.
@@ -297,10 +304,6 @@ export function ChangesPanel({
         () => {
           setMessage("");
           flash(state.unborn ? "Saved your first version 🎉" : "Version saved.");
-          // Threaded through the junk-guard detour too, since that path also
-          // ends here — otherwise "save then open the PR" would silently stop
-          // whenever the guard fired.
-          opts.onSaved?.();
         }
       );
     };
@@ -643,24 +646,17 @@ export function ChangesPanel({
                             {files.length === 1 ? "1 file is" : `${files.length} files are`} not in any version yet, so
                             {" "}{files.length === 1 ? "it won’t" : "they won’t"} be part of this pull request.
                           </div>
-                          <div className="text-ink-soft">
-                            {message.trim()
-                              ? "Saving a version first includes them."
-                              : "Write a message in the box and save a version first to include them."}
-                          </div>
+                          <div className="text-ink-soft">Save a version first if you want them included.</div>
                         </>
                       ),
-                      confirmLabel: message.trim() ? "Save a version, then open" : "Let me write a message",
+                      // Two answers, and they are the two buttons. The committing
+                      // is the user's: we put the cursor in the message box
+                      // rather than inventing a message for them.
+                      hideCancel: true,
+                      confirmLabel: "Let me commit it first",
                       onConfirm: () => {
                         setConfirm(null);
-                        // No message means we cannot commit for them, and we
-                        // will not invent one — put the cursor where the answer
-                        // goes instead.
-                        if (!message.trim()) {
-                          messageRef.current?.focus();
-                          return;
-                        }
-                        void doSave({ onSaved: openPr });
+                        messageRef.current?.focus();
                       },
                       secondary: {
                         label: "Open it anyway",
@@ -994,13 +990,15 @@ function ConfirmDialog({ c, onCancel }: { c: Confirm; onCancel: () => void }): R
         <div className="font-bold mb-2">{c.title}</div>
         <div className="text-sm mb-4">{c.body}</div>
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
-          >
-            Cancel
-          </button>
+          {!c.hideCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+            >
+              Cancel
+            </button>
+          )}
           {c.secondary && (
             <button
               type="button"
