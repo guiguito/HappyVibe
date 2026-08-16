@@ -316,8 +316,12 @@ function DetailsToggle({ open, onClick }: { open: boolean; onClick: () => void }
       title={label}
       aria-label={label}
       aria-expanded={open}
-      className={`shrink-0 rounded-full p-1 border border-line cursor-pointer transition-colors ${
-        open ? "bg-paper-deep text-ink" : "text-ink-soft hover:bg-paper-deep/60"
+      // No ring. The old pill had a border, and shrinking it to fit an icon
+      // turned that border into a CIRCLE around two dots — a bullseye where the
+      // point was to make the row quieter. The dots are the affordance; the
+      // hover tint is the only chrome they need.
+      className={`shrink-0 rounded-lg p-1 cursor-pointer transition-colors ${
+        open ? "bg-paper-deep text-ink" : "text-ink-soft hover:bg-paper-deep/60 hover:text-ink"
       }`}
     >
       <svg viewBox="0 0 24 24" className="size-4" fill="currentColor" aria-hidden>

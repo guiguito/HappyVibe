@@ -316,14 +316,19 @@ function UserBubble({
           </button>
         )}
       </div>
+      {/* The stamp sits at the bubble's OUTER edge, controls inboard — so it
+          lines up with the right edge of the bubble above it rather than
+          floating in the middle of the row. The assistant side already reads
+          this way for free: its row is left-aligned, so its outer edge is the
+          left one and the stamp is already first there. */}
       <div className="flex items-center justify-end gap-1.5 mt-1">
-        {/* Same `in` narrowing the rest of this component uses — `it` is the
-            whole union here, and only the message member carries a stamp. */}
-        <Stamp ts={"ts" in it ? it.ts : undefined} tone="text-ink-soft/70" />
         <span className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <CopyButton text={text} label="Copy message" />
           {onRewind && <RewindButton onClick={() => onRewind(it)} />}
         </span>
+        {/* Same `in` narrowing the rest of this component uses — `it` is the
+            whole union here, and only the message member carries a stamp. */}
+        <Stamp ts={"ts" in it ? it.ts : undefined} tone="text-ink-soft/70" />
       </div>
     </div>
   );
