@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   JUNK_DIRS,
   appendGitignore,
+  deleteBranch,
   detectJunk,
   discardUntracked,
   gitDiff,
@@ -399,6 +400,70 @@ describe.skipIf(!GIT_OK)("switchBranch", () => {
     invalidateProbe(dir);
     expect((await switchBranch(dir, "feature/x", { create: true, mode: "take" })).ok).toBe(true);
     expect(await listBranches(dir)).toContain("feature/x");
+  });
+});
+
+describe.skipIf(!GIT_OK)("deleteBranch", () => {
+  it("deletes a merged branch", async () => {
+    makeRepo(dir);
+    invalidateProbe(dir);
+    run(dir, ["branch", "spare"]);
+
+    expect((await deleteBranch(dir, "spare")).ok).toBe(true);
+    expect(await listBranches(dir)).not.toContain("spare");
+  });
+
+  it("REFUSES a branch holding work no other branch has, and says why", async () => {
+    // The whole safety story: `-d` is git's own reachability check, which knows
+    // more than any test we could write here. Force must stay opt-in.
+    makeRepo(dir);
+    invalidateProbe(dir);
+    run(dir, ["checkout", "-q", "-b", "solo"]);
+    fs.writeFileSync(path.join(dir, "src/solo.ts"), "only here\n");
+    run(dir, ["add", "-A"]);
+    run(dir, ["commit", "-qm", "solo work"]);
+    run(dir, ["checkout", "-q", "main"]);
+
+    const r = await deleteBranch(dir, "solo");
+    expect(r.ok).toBe(false);
+    expect(r.unmerged).toBe(true);
+    expect(await listBranches(dir)).toContain("solo");
+  });
+
+  it("force deletes the same branch when explicitly asked", async () => {
+    makeRepo(dir);
+    invalidateProbe(dir);
+    run(dir, ["checkout", "-q", "-b", "solo"]);
+    fs.writeFileSync(path.join(dir, "src/solo.ts"), "only here\n");
+    run(dir, ["add", "-A"]);
+    run(dir, ["commit", "-qm", "solo work"]);
+    run(dir, ["checkout", "-q", "main"]);
+
+    expect((await deleteBranch(dir, "solo", true)).ok).toBe(true);
+    expect(await listBranches(dir)).not.toContain("solo");
+  });
+
+  it("refuses the checked-out branch without an unmerged flag", async () => {
+    // The renderer hides the control here, but the guard must not depend on
+    // that: git's refusal is a plain error, NOT the force-able kind.
+    makeRepo(dir);
+    invalidateProbe(dir);
+    const r = await deleteBranch(dir, "main");
+    expect(r.ok).toBe(false);
+    expect(r.unmerged).toBeUndefined();
+    expect(await listBranches(dir)).toContain("main");
+  });
+
+  it("leaves the working tree alone", async () => {
+    makeRepo(dir);
+    invalidateProbe(dir);
+    run(dir, ["branch", "spare"]);
+    fs.writeFileSync(path.join(dir, "src/a.ts"), "uncommitted work\n");
+
+    expect((await deleteBranch(dir, "spare")).ok).toBe(true);
+    // This is why deletion is NOT behind the idle gate: it cannot disturb a
+    // session working in the tree.
+    expect(fs.readFileSync(path.join(dir, "src/a.ts"), "utf8")).toBe("uncommitted work\n");
   });
 });
 

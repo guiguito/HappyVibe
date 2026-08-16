@@ -102,6 +102,8 @@ contextBridge.exposeInMainWorld("hv", {
   gitShow: (workspaceId: string, sha: string) => ipcRenderer.invoke("hv:git-show", workspaceId, sha),
   gitBranches: (workspaceId: string) => ipcRenderer.invoke("hv:git-branches", workspaceId),
   gitDefaultBranch: (workspaceId: string) => ipcRenderer.invoke("hv:git-default-branch", workspaceId),
+  gitDeleteBranch: (workspaceId: string, branch: string, force?: boolean) =>
+    ipcRenderer.invoke("hv:git-delete-branch", workspaceId, branch, force),
   gitCommit: (workspaceId: string, message: string, opts: { stagedOnly: boolean; amend: boolean }) =>
     ipcRenderer.invoke("hv:git-commit", workspaceId, message, opts),
   gitStage: (workspaceId: string, relPath: string, stage: boolean) =>

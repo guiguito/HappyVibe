@@ -69,7 +69,7 @@ import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, wri
 import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
-  appendGitignore, branchCommits, defaultBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
+  appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
   gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, probeWorkspace,
   publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
 } from "./git";
@@ -2941,6 +2941,8 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:git-history", (_e, workspaceId: string, limit: number) => gitHistory(workspaceId, limit));
   ipcMain.handle("hv:git-show", (_e, workspaceId: string, sha: string) => gitShow(workspaceId, sha));
   ipcMain.handle("hv:git-branches", (_e, workspaceId: string) => listBranches(workspaceId));
+  // Round 14: this outlived the baseline dropdown it was written for. It now
+  // answers "which branch must NOT offer a delete control".
   ipcMain.handle("hv:git-default-branch", (_e, workspaceId: string) => defaultBranch(workspaceId));
 
   ipcMain.handle("hv:git-commit", async (_e, workspaceId: string, message: string, opts: { stagedOnly: boolean; amend: boolean }) => {
@@ -2965,6 +2967,17 @@ export function registerIpc(win: BrowserWindow): void {
     const r = await switchBranch(workspaceId, branch, opts);
     if (r.ok) {
       auditGit(workspaceId, "switch", { branch, create: opts.create, mode: opts.mode });
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-delete-branch", async (_e, workspaceId: string, branch: string, force?: boolean) => {
+    // Not gated: deleting a ref never touches the working tree, so it sits with
+    // commit/push/fetch rather than with switch/stash/undo (§29's gate rule).
+    const r = await deleteBranch(workspaceId, branch, force === true);
+    if (r.ok) {
+      auditGit(workspaceId, "delete-branch", { branch, force: force === true });
       pushGitChanged(workspaceId, { force: true });
     }
     return r;

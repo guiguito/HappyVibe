@@ -564,6 +564,7 @@ interface HvApi {
   gitShow(workspaceId: string, sha: string): Promise<HvFileDiff[]>;
   gitBranches(workspaceId: string): Promise<string[]>;
   gitDefaultBranch(workspaceId: string): Promise<string | null>;
+  gitDeleteBranch(workspaceId: string, branch: string, force?: boolean): Promise<HvGitWrite & { unmerged?: boolean }>;
   gitCommit(workspaceId: string, message: string, opts: { stagedOnly: boolean; amend: boolean }): Promise<HvGitWrite & { sha?: string }>;
   gitStage(workspaceId: string, relPath: string, stage: boolean): Promise<HvGitWrite>;
   gitSwitch(workspaceId: string, branch: string, opts: { create: boolean; mode: "take" | "stash" }): Promise<HvGitWrite & { wouldConflict?: boolean }>;

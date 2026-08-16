@@ -385,6 +385,40 @@ export async function listBranches(workspace: string): Promise<string[]> {
   return r.ok ? r.stdout.split("\n").filter(Boolean) : [];
 }
 
+export interface DeleteBranchResult {
+  ok: boolean;
+  error?: string;
+  /** git refused because the branch holds work no other branch has. */
+  unmerged?: boolean;
+}
+
+/**
+ * §1 (round 14) — delete a local branch.
+ *
+ * `-d` by default, never `-D`: git's own refusal on an unmerged branch is the
+ * only thing standing between "tidy up the branch list" and losing work, and it
+ * is a better check than any we could write, because it knows what is reachable
+ * from every other ref. When it refuses, that comes back as `unmerged` so the
+ * panel can ask a second, sharper question — force is opt-in per deletion and
+ * never the first thing offered.
+ *
+ * The remote branch is deliberately untouched: deleting `origin/x` is a push,
+ * i.e. a change to what everyone else sees, and this control is presented as
+ * local tidying.
+ */
+export async function deleteBranch(workspace: string, branch: string, force = false): Promise<DeleteBranchResult> {
+  const state = await requireRepo(workspace);
+  if (!state) return { ok: false, error: "Not a git repository." };
+
+  const r = await run(state.root, ["branch", force ? "-D" : "-d", branch], { write: true });
+  if (r.ok) return { ok: true };
+  // git: "error: the branch 'x' is not fully merged." — the wording has been
+  // stable for years, and the fallback if it ever changes is one extra dialog
+  // showing git's own message, not a wrong delete.
+  const unmerged = /not fully merged/i.test(r.stderr);
+  return { ok: false, error: r.stderr.trim(), ...(unmerged ? { unmerged: true } : {}) };
+}
+
 export type WriteResult = { ok: true; sha?: string } | { ok: false; error: string };
 
 /**

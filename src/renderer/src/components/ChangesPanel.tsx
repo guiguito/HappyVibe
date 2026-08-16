@@ -15,8 +15,6 @@ import { groupByDir, primaryAction, summarise } from "../gitui";
  * as `{ok:false, busy:[…]}` and is shown as an inline notice, never a dialog.
  */
 
-type Baseline = "head" | "base";
-
 interface Confirm {
   title: string;
   body: React.ReactNode;
@@ -46,8 +44,6 @@ export function ChangesPanel({
   onOpenFile: (relPath: string) => void;
 }): React.JSX.Element {
   const [payload, setPayload] = useState<HvGitStatusPayload | null>(null);
-  const [baseline, setBaseline] = useState<Baseline>("head");
-  const [defaultBranch, setDefaultBranch] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [busyNotice, setBusyNotice] = useState<string | null>(null);
   const [lastCommand, setLastCommand] = useState<string | null>(null);
@@ -62,6 +58,9 @@ export function ChangesPanel({
   const [branches, setBranches] = useState<string[]>([]);
   const [newBranch, setNewBranch] = useState("");
   const [branchError, setBranchError] = useState<string | null>(null);
+  // Round 14: the one branch that never offers a delete control. Resolved by
+  // git (origin/HEAD → origin/main → …), never assumed to be called "main".
+  const [defaultBranch, setDefaultBranch] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
   // §29 §7: null while unknown or when there is nothing to open.
   const [prUrl, setPrUrl] = useState<string | null>(null);
@@ -359,11 +358,68 @@ export function ChangesPanel({
   };
 
   /**
+   * Round 14 — delete a local branch, always behind a confirm.
+   *
+   * `force` is never the first offer: main runs `branch -d`, git refuses if the
+   * branch holds commits no other branch has, and only THEN does a second,
+   * sharper dialog appear. That two-step is the whole safety story — the first
+   * dialog is a courtesy, git's refusal is the actual guard.
+   */
+  const doDeleteBranch = (target: string, force: boolean): void => {
+    void act(
+      `git branch ${force ? "-D" : "-d"} ${target}`,
+      () => window.hv.gitDeleteBranch(workspace, target, force),
+      () => {
+        void window.hv.gitBranches(workspace).then(setBranches);
+        flash(`Deleted ${target}.`);
+      }
+    ).then((r) => {
+      if (!r || r.ok) return;
+      void window.hv.gitBranches(workspace).then(setBranches);
+      if (!r.unmerged) return;
+      // The one case worth a second question: this branch has work that exists
+      // nowhere else, so deleting it loses it.
+      setConfirm({
+        title: `${target} has unsaved work`,
+        body: (
+          <>
+            <span className="font-mono">{target}</span> has commits that aren’t on any other branch. Deleting it now
+            loses that work.
+          </>
+        ),
+        confirmLabel: "Delete it anyway",
+        danger: true,
+        onConfirm: () => { setConfirm(null); doDeleteBranch(target, true); },
+      });
+    });
+  };
+
+  const askDeleteBranch = (target: string): void => {
+    setBranchMenu(false);
+    setConfirm({
+      title: `Delete ${target}?`,
+      body: (
+        <>
+          This deletes the branch <span className="font-mono">{target}</span> from this computer only. Anything already
+          pushed stays on the remote, and the files in your project don’t change.
+        </>
+      ),
+      confirmLabel: "Delete branch",
+      danger: true,
+      onConfirm: () => { setConfirm(null); doDeleteBranch(target, false); },
+    });
+  };
+
+  /**
    * The typed name already being a branch is the common case, not an error: you
    * made it a minute ago and came back. So the control switches to it instead of
    * running `switch -c` and failing — the button says "Go" rather than "Add" so
    * it is never a lie about what is about to happen.
    */
+  // `defaultBranch()` answers with a ref that is usually remote-qualified
+  // (`origin/main`); the local branch it protects is the short name.
+  const defaultShort = defaultBranch?.replace(/^origin\//, "") ?? null;
+
   const branchExists = branches.includes(newBranch.trim());
   const submitNewBranch = (): void => {
     const name = newBranch.trim();
@@ -411,7 +467,7 @@ export function ChangesPanel({
         setExpanded(null);
         return;
       }
-      const d = await window.hv.gitDiff(workspace, baseline, { path });
+      const d = await window.hv.gitDiff(workspace, "head", { path });
       setExpanded(path);
       setExpandedDiff(d);
       return;
@@ -468,16 +524,38 @@ export function ChangesPanel({
                 NOT onBlur, which loses the click that opened the item. */}
             <div className="fixed inset-0 z-40" onClick={() => setBranchMenu(false)} />
             <div className="absolute left-2 top-14 z-50 w-56 rounded-xl border-2 border-line bg-card shadow-sticker-lg p-1.5 flex flex-col gap-1 max-h-72 overflow-y-auto">
-              {branches.map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); void doSwitch(b, "take"); }}
-                  className={`text-left rounded-lg px-2 py-1 text-[11px] font-mono cursor-pointer hover:bg-paper-deep ${b === branch?.branch ? "font-bold" : ""}`}
-                >
-                  {b === branch?.branch ? "● " : "○ "}{b}
-                </button>
-              ))}
+              {branches.map((b) => {
+                // Two branches never offer delete: the one you are standing on
+                // (git refuses anyway, so the control would only ever produce an
+                // error) and the default branch — resolved by git rather than
+                // assumed to be called "main".
+                const deletable = b !== branch?.branch && b !== defaultShort;
+                return (
+                  <div key={b} className="group flex items-center rounded-lg hover:bg-paper-deep">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); void doSwitch(b, "take"); }}
+                      className={`flex-1 min-w-0 text-left truncate px-2 py-1 text-[11px] font-mono cursor-pointer ${b === branch?.branch ? "font-bold" : ""}`}
+                    >
+                      {b === branch?.branch ? "● " : "○ "}{b}
+                    </button>
+                    {deletable && (
+                      <button
+                        type="button"
+                        // Same trap as everywhere else in this menu: act on
+                        // mousedown, or the click-catcher unmounts the row
+                        // between press and release.
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); askDeleteBranch(b); }}
+                        title={`Delete ${b} from this computer`}
+                        aria-label={`Delete branch ${b}`}
+                        className="shrink-0 px-1.5 py-1 opacity-0 group-hover:opacity-100 focus:opacity-100 text-ink-soft hover:text-berry cursor-pointer"
+                      >
+                        <TrashGlyph />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
               <div className="border-t-2 border-line mt-1 pt-1 flex gap-1">
                 <input
                   value={newBranch}
@@ -681,26 +759,31 @@ export function ChangesPanel({
             {busyNotice && <Notice text={busyNotice} />}
           </div>
 
-          {/* 3. Baseline selector */}
-          {files.length > 0 && state.unborn && (
+          {/*
+           * 3. What this list is.
+           *
+           * There used to be a baseline dropdown here offering "Against
+           * <default branch>" beside "Since your last save". It was removed
+           * (2026-08-16) because it only changed the diff of a file you
+           * expanded — the list and these counts come from `git status`, which
+           * has no baseline and is always "since your last save". So the
+           * against-the-branch reading was wrong in the one place it mattered:
+           * a file also touched by an earlier commit expanded to more than the
+           * count beside it claimed, and committed files never joined the list
+           * at all. "Open a pull request" answers the same question properly,
+           * with the forge's own diff. Main keeps `gitDiff(…, "base")` — that
+           * is what drafts the PR.
+           */}
+          {files.length > 0 && (
             <div className="px-2.5 py-1.5 border-b-2 border-line text-[10px] text-ink-soft">
-              {stats.files} {stats.files === 1 ? "file" : "files"} · nothing saved yet
-            </div>
-          )}
-          {files.length > 0 && !state.unborn && (
-            <div className="px-2.5 py-1.5 border-b-2 border-line flex items-center gap-1.5">
-              <select
-                value={baseline}
-                onChange={(e) => setBaseline(e.target.value as Baseline)}
-                className="rounded-lg border-2 border-line bg-card px-1.5 py-1 text-[10px] font-bold cursor-pointer focus:outline-none focus:border-tangerine"
-              >
-                <option value="head">Since your last save</option>
-                {/* Absent on an unborn HEAD — there are no branches to compare to. */}
-                {defaultBranch && <option value="base">Against {defaultBranch}</option>}
-              </select>
-              <span className="text-[10px] text-ink-soft">
-                {stats.files} {stats.files === 1 ? "file" : "files"} · +{stats.additions} −{stats.deletions}
-              </span>
+              {state.unborn ? (
+                <>{stats.files} {stats.files === 1 ? "file" : "files"} · nothing saved yet</>
+              ) : (
+                <>
+                  Since your last save · {stats.files} {stats.files === 1 ? "file" : "files"} ·{" "}
+                  +{stats.additions} −{stats.deletions}
+                </>
+              )}
             </div>
           )}
 
@@ -1068,6 +1151,18 @@ function WandGlyph({ spinning }: { spinning: boolean }): React.JSX.Element {
  * the same gesture as publish and sync one row up; a floppy says "write to this
  * machine", which is the one thing a commit is not.
  */
+/** Delete a branch. Small — it lives inside a menu row, not on a toolbar. */
+function TrashGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 7h16" />
+      <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+      <path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
 function UploadGlyph(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
