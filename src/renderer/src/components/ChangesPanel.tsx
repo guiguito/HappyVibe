@@ -28,11 +28,9 @@ interface Confirm {
 export function ChangesPanel({
   workspace,
   onOpenFile,
-  onClose,
 }: {
   workspace: string;
   onOpenFile: (relPath: string) => void;
-  onClose: () => void;
 }): React.JSX.Element {
   const [payload, setPayload] = useState<HvGitStatusPayload | null>(null);
   const [baseline, setBaseline] = useState<Baseline>("head");
@@ -150,13 +148,13 @@ export function ChangesPanel({
   );
 
   // ── §5a/§5e: states where the panel cannot do its job ──────────────────
-  if (!state) return <Shell onClose={onClose}><div className="p-4 text-xs text-ink-soft">Reading this project…</div></Shell>;
+  if (!state) return <Shell><div className="p-4 text-xs text-ink-soft">Reading this project…</div></Shell>;
 
   if (state.kind === "no-git") {
     // Should be unreachable — App hides the tab entirely — but a panel that
     // renders nothing is worse than one that says why.
     return (
-      <Shell onClose={onClose}>
+      <Shell>
         <div className="p-4 text-xs text-ink-soft">Version control needs git, which isn’t installed. See workspace settings.</div>
       </Shell>
     );
@@ -164,7 +162,7 @@ export function ChangesPanel({
 
   if (state.kind === "error") {
     return (
-      <Shell onClose={onClose}>
+      <Shell>
         <div className="p-3 flex flex-col gap-2">
           <div className="text-xs font-bold">git couldn’t read this project.</div>
           {/* git's OWN message, verbatim: paraphrasing it would leave the user
@@ -196,7 +194,7 @@ export function ChangesPanel({
   // ── §5b: the on-ramp ───────────────────────────────────────────────────
   if (state.kind === "no-repo") {
     return (
-      <Shell onClose={onClose}>
+      <Shell>
         <div className="p-4 flex flex-col gap-3">
           <div className="text-sm font-bold">This project isn’t tracking versions yet</div>
           <div className="text-xs text-ink-soft">
@@ -379,7 +377,7 @@ export function ChangesPanel({
   };
 
   return (
-    <Shell onClose={onClose}>
+    <Shell>
       <div className="flex flex-col min-h-0 h-full">
         {/* 1. Branch bar */}
         <div className="px-2.5 py-2 border-b-2 border-line flex flex-col gap-1.5 shrink-0">
@@ -409,7 +407,7 @@ export function ChangesPanel({
               className="rounded-lg border-2 border-line bg-card px-2 py-1 text-[10px] font-bold cursor-pointer hover:border-tangerine disabled:opacity-50"
               title="Check the remote for new work, without changing your files"
             >
-              Fetch
+              <span className="flex items-center gap-1"><DownloadGlyph />Fetch</span>
             </button>
           </div>
           {/* §5c: the workspace is BELOW the repo root — say so, because branch
@@ -524,7 +522,7 @@ export function ChangesPanel({
                         aria-label={primary.label}
                         className="flex-1 min-w-0 flex items-center justify-center gap-1 rounded-xl bg-tangerine text-paper font-bold text-xs px-1.5 py-1.5 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105 disabled:opacity-50"
                       >
-                        <FloppyGlyph />
+                        <UploadGlyph />
                         {primary.count && (
                           <span className="text-[10px] tabular-nums">{primary.count[0]}/{primary.count[1]}</span>
                         )}
@@ -568,8 +566,9 @@ export function ChangesPanel({
                 }
                 // ahead/behind is git-speak: it lives here, not in the bar.
                 title={`${branch?.ahead ?? 0} to send, ${branch?.behind ?? 0} to receive`}
-                className="rounded-xl bg-tangerine text-paper font-bold text-sm px-3 py-2 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105 disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-tangerine text-paper font-bold text-sm px-3 py-2 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105 disabled:opacity-50"
               >
+                <SyncGlyph />
                 {primary.label}
               </button>
             )}
@@ -853,20 +852,14 @@ export function ChangesPanel({
   );
 }
 
-function Shell({ children, onClose }: { children: React.ReactNode; onClose: () => void }): React.JSX.Element {
+/**
+ * No close button: the rail icon that opened this panel closes it, and a second
+ * control in the corner was a duplicate of that with less to say — it could not
+ * show which panel it belonged to, where the rail icon lights up.
+ */
+function Shell({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <div className="relative h-full min-h-0 flex flex-col">
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute top-1 right-1 z-10 text-ink-soft hover:text-ink cursor-pointer p-1"
-        aria-label="Close the panel"
-        title="Close"
-      >
-        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden>
-          <path d="M6 6l12 12M18 6L6 18" />
-        </svg>
-      </button>
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
     </div>
   );
@@ -995,13 +988,42 @@ function WandGlyph({ spinning }: { spinning: boolean }): React.JSX.Element {
   );
 }
 
-/** §2: the primary save action's glyph — a floppy disk, the save idiom everyone knows. */
-function FloppyGlyph(): React.JSX.Element {
+/**
+ * §2: the primary save action — an arrow going UP out of a tray.
+ *
+ * Not a floppy disk. Saving a version SENDS work somewhere it is kept, which is
+ * the same gesture as publish and sync one row up; a floppy says "write to this
+ * machine", which is the one thing a commit is not.
+ */
+function UploadGlyph(): React.JSX.Element {
   return (
-    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-      <path d="M17 21v-8H7v8" />
-      <path d="M7 3v5h8" />
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 16V4" />
+      <path d="m7 9 5-5 5 5" />
+      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </svg>
+  );
+}
+
+/** Fetch: the same tray, arrow coming DOWN — the mirror of save. */
+function DownloadGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 4v12" />
+      <path d="m7 11 5 5 5-5" />
+      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </svg>
+  );
+}
+
+/** Sync: two arrows chasing each other round a circle — send AND receive. */
+function SyncGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.4-3.9" />
+      <path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.4 3.9" />
+      <path d="M20 3v4h-4" />
+      <path d="M4 21v-4h4" />
     </svg>
   );
 }

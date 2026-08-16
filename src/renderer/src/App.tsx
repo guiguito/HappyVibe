@@ -2578,12 +2578,7 @@ export default function App(): React.JSX.Element {
                     what gives Changes the whole width it needs. */}
                 <div className="min-h-0 flex-1">
                   {DRAWER === "changes" ? (
-                    <ChangesPanel
-                      key={wsId}
-                      workspace={wsId!}
-                      onOpenFile={(rel) => openFileTab(wsId!, rel)}
-                      onClose={() => setDrawerPanel(null)}
-                    />
+                    <ChangesPanel key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
                   ) : (
                     <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setDrawerPanel(null)} />
                   )}
