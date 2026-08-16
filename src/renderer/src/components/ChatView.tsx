@@ -701,6 +701,13 @@ export function ChatView({
         <CostBubble total={costTotal} onOpen={() => onCostOpenChange(true)} />
         <ContextBubble stats={stats} fallbackWindow={fallbackWindow} onOpen={() => onContextOpenChange(true)} />
       </div>
+      {/* Round 15: everything below the top bar lives in one POSITIONED region,
+          so the cost and context panels can be `absolute inset-0` within it —
+          i.e. bounded by this pane and starting below the bar their pills sit
+          in, the way Files and Changes sit below the top bar they open from.
+          As `fixed inset-0` they covered the whole window, dimming a second
+          chat that was streaming beside them. */}
+      <div className="relative flex-1 flex flex-col min-h-0">
       {/* §23 round 9: the plan behind the pill. PlanCard is self-contained — it
           reads the file and drives Implement / Discard / Reopen through
           window.hv — so it needs nothing here but a place to render. */}
@@ -1394,6 +1401,7 @@ export function ChatView({
       {costOpen && sessionId && (
         <CostPanel calls={costCalls} total={costTotal} onClose={() => onCostOpenChange(false)} />
       )}
+      </div>
     </div>
   );
 }

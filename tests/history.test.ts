@@ -79,9 +79,12 @@ describe("earlierItems", () => {
   ]);
 
   it("returns only what is BEFORE firstKeptEntryId", () => {
+    // Round 15: `ts` is part of an item's shape now — restore.ts reads the
+    // session file's own message timestamps. Named rather than loosened to
+    // toMatchObject, so a future field that goes missing still fails here.
     expect(earlierItems(compacted)).toEqual([
-      { kind: "user", text: "one" },
-      { kind: "assistant", text: "two" },
+      { kind: "user", text: "one", ts: 1 },
+      { kind: "assistant", text: "two", ts: 2, turnMs: 1 },
     ]);
   });
 
@@ -95,7 +98,7 @@ describe("earlierItems", () => {
       { type: "custom", id: "m1", customType: "hv-context-marks", data: { marks: ["msg:1"] } },
       { type: "compaction", id: "k1", summary: "s", firstKeptEntryId: "c" },
     ]);
-    expect(earlierItems(raw)).toEqual([{ kind: "assistant", text: "two" }]);
+    expect(earlierItems(raw)).toEqual([{ kind: "assistant", text: "two", ts: 2 }]);
   });
 
   it("takes the NEWEST marks entry (it is a full snapshot)", () => {
@@ -105,7 +108,7 @@ describe("earlierItems", () => {
       { type: "custom", id: "m2", customType: "hv-context-marks", data: { marks: ["msg:2"] } },
       { type: "compaction", id: "k1", summary: "s", firstKeptEntryId: "c" },
     ]);
-    expect(earlierItems(raw)).toEqual([{ kind: "user", text: "one" }]);
+    expect(earlierItems(raw)).toEqual([{ kind: "user", text: "one", ts: 1 }]);
   });
 
   it("drops plan cards — the pill is the route to a compacted-away plan", () => {
@@ -132,8 +135,8 @@ describe("earlierItems", () => {
 describe("contextItems", () => {
   it("is the whole transcript when the session was never compacted", () => {
     expect(contextItems(jsonl([userMsg("a", "one", 1), asstMsg("b", "two", 2)]))).toEqual([
-      { kind: "user", text: "one" },
-      { kind: "assistant", text: "two" },
+      { kind: "user", text: "one", ts: 1 },
+      { kind: "assistant", text: "two", ts: 2, turnMs: 1 },
     ]);
   });
 
@@ -144,8 +147,10 @@ describe("contextItems", () => {
       asstMsg("d", "four", 4),
     ]);
     expect(contextItems(raw)).toEqual([
-      { kind: "user", text: "three" },
-      { kind: "assistant", text: "four" },
+      { kind: "user", text: "three", ts: 3 },
+      // The turn "three" → "four" took 1 ms in these fixtures, so the last
+      // bubble of it carries a duration as well.
+      { kind: "assistant", text: "four", ts: 4, turnMs: 1 },
     ]);
     // The two halves partition the transcript exactly once.
     expect([...earlierItems(raw), ...contextItems(raw)]).toHaveLength(4);
@@ -156,7 +161,7 @@ describe("contextItems", () => {
       userMsg("a", "one", 1), asstMsg("b", "two", 2),
       { type: "custom", id: "m1", customType: "hv-context-marks", data: { marks: ["msg:1"] } },
     ]);
-    expect(contextItems(raw)).toEqual([{ kind: "assistant", text: "two" }]);
+    expect(contextItems(raw)).toEqual([{ kind: "assistant", text: "two", ts: 2 }]);
   });
 
   it("falls back to the post-compaction tail when firstKeptEntryId is off-path", () => {
@@ -165,7 +170,7 @@ describe("contextItems", () => {
       { type: "compaction", id: "k1", summary: "s", firstKeptEntryId: "gone" },
       asstMsg("b", "two", 2),
     ]);
-    expect(contextItems(raw)).toEqual([{ kind: "assistant", text: "two" }]);
+    expect(contextItems(raw)).toEqual([{ kind: "assistant", text: "two", ts: 2 }]);
     expect(earlierItems(raw)).toEqual([]); // boundary unusable — never guess
   });
 

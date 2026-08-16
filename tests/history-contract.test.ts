@@ -90,9 +90,13 @@ test.skipIf(!fs.existsSync(CLI))(
 
     // The old restore path vs the new one, same file.
     expect(contextItems(jsonl)).toEqual(restoreItems(raw));
+    // Round 15: items carry `ts`, and a turn's last bubble its duration. That
+    // the assertion above still passes is the interesting half — it says Pi's
+    // in-memory `get_messages` stamps its messages exactly as the file does, so
+    // the two restore paths agree on timestamps and not merely on text.
     expect(contextItems(jsonl)).toEqual([
-      { kind: "user", text: "three" },
-      { kind: "assistant", text: "four" },
+      { kind: "user", text: "three", ts: 3_000 },
+      { kind: "assistant", text: "four", ts: 4_000, turnMs: 1_000 },
     ]);
   },
   60_000,

@@ -74,7 +74,21 @@ export function ContextPanel({
   const redZone = gauge?.zone === "red";
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-ink/20" onMouseDown={onClose}>
+    // Round 15: an IN-PANE panel, not a full-window scrim drawer.
+    //
+    // It used to be `fixed inset-0` from the screen edge, so opening the cost of
+    // ONE session dimmed the whole app and covered every other pane — including
+    // the second chat that was streaming beside it. Cost and context are
+    // properties of a session, so the panel is bounded by the pane that owns
+    // the pill: `absolute` inside ChatView's relative content area, below the
+    // top bar the pill sits in, exactly where the Files and Changes panels sit
+    // relative to the top bar THEY are opened from.
+    //
+    // Deliberately not a right-drawer panel beside Files/Changes: the drawer is
+    // workspace-global, and in a 2x2 with two chats it would have to guess which
+    // session you meant. The scrim becomes a transparent catcher confined to the
+    // same pane, so click-outside still closes without dimming anything.
+    <div className="absolute inset-0 z-30 flex justify-end" onMouseDown={onClose}>
       <div
         className="w-[30rem] max-w-full h-full bg-paper border-l-2 border-line-strong shadow-sticker-lg flex flex-col"
         onMouseDown={(e) => e.stopPropagation()}
