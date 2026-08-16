@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChangesPanel } from "./components/ChangesPanel";
+import { RightRail, type DrawerPanel } from "./components/RightRail";
 import { badgeTint, clampDrawer, summarise } from "./gitui";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ChatView, ChatWelcome } from "./components/ChatView";
@@ -212,30 +213,49 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (activeWs) localStorage.setItem("hv:active-ws", activeWs);
   }, [activeWs]);
-  const [treeOpen, setTreeOpen] = useState(false);
-  // §29 1a: which drawer tab, remembered per workspace — the tree got away with
-  // one state because it only shows names; a branch bar and a file list are a
-  // place you were working, and losing it on every workspace switch is a tax.
-  const [drawerTabByWs, setDrawerTabByWs] = useState<Record<string, "files" | "changes">>(() => {
+  /**
+   * §7 round 13: ONE drawer, two panels, one at a time — the rail icon selects
+   * which, and pressing the lit one closes it. Which panel is open is
+   * remembered PER WORKSPACE: a branch bar and a file list are a place you were
+   * working, and losing it on every workspace switch is a tax.
+   */
+  const [drawerByWs, setDrawerByWs] = useState<Record<string, DrawerPanel>>(() => {
     try {
-      return JSON.parse(localStorage.getItem("hv:drawer-tab") ?? "{}") as Record<string, "files" | "changes">;
+      return JSON.parse(localStorage.getItem("hv:drawer-panel") ?? "{}") as Record<string, DrawerPanel>;
     } catch {
       return {};
     }
   });
-  const drawerTab = (activeWs && drawerTabByWs[activeWs]) || "files";
-  const setDrawerTab = (t: "files" | "changes"): void => {
+  const drawerPanel: DrawerPanel | null = (activeWs && drawerByWs[activeWs]) || null;
+  const setDrawerPanel = (panel: DrawerPanel | null): void => {
     if (!activeWs) return;
-    setDrawerTabByWs((m) => {
-      const next = { ...m, [activeWs]: t };
-      localStorage.setItem("hv:drawer-tab", JSON.stringify(next));
+    setDrawerByWs((m) => {
+      const next = { ...m };
+      if (panel) next[activeWs] = panel;
+      else delete next[activeWs];
+      localStorage.setItem("hv:drawer-panel", JSON.stringify(next));
       return next;
     });
   };
-  // §29 1a: the drawer is resizable now. Global rather than per workspace — it
-  // is a property of this screen, not of a project.
-  const [drawerWidth, setDrawerWidth] = useState(() => clampDrawer(Number(localStorage.getItem("hv:drawer-width")) || 256));
-  useEffect(() => { localStorage.setItem("hv:drawer-width", String(drawerWidth)); }, [drawerWidth]);
+  /** The rail's contract: press a panel to show it, press the lit one to close. */
+  const toggleDrawer = (panel: DrawerPanel): void => setDrawerPanel(drawerPanel === panel ? null : panel);
+  /**
+   * Width is per PANEL, not per workspace and not shared: a tree of filenames
+   * is comfortable at 256 while the Changes panel has a branch bar, a message
+   * box, a file list, stashes and history to fit. Sharing one number is what
+   * made Changes feel cramped when it was a tab in the file drawer.
+   */
+  const [drawerWidths, setDrawerWidths] = useState<Record<DrawerPanel, number>>(() => ({
+    files: clampDrawer(Number(localStorage.getItem("hv:drawer-width:files")) || 256),
+    changes: clampDrawer(Number(localStorage.getItem("hv:drawer-width:changes")) || 340),
+  }));
+  const drawerWidth = drawerWidths[drawerPanel ?? "files"];
+  const setDrawerWidth = (px: number): void => {
+    const panel = drawerPanel ?? "files";
+    const w = clampDrawer(px);
+    setDrawerWidths((prev) => ({ ...prev, [panel]: w }));
+    localStorage.setItem(`hv:drawer-width:${panel}`, String(w));
+  };
   // §29: the working tree's state for the ACTIVE workspace — a property of the
   // tree, deliberately not of any session, because several sessions can be
   // acting on the same files.
@@ -1877,7 +1897,8 @@ export default function App(): React.JSX.Element {
     if (!b) return;
     const is = (id: ShortcutId): boolean => bindings[id] === b;
     if (is("toggleSidebar")) { e.preventDefault(); setSidebarCollapsed((c) => !c); return; }
-    if (is("toggleFileDrawer")) { e.preventDefault(); setTreeOpen((o) => !o); return; }
+    if (is("toggleFileDrawer")) { e.preventDefault(); toggleDrawer("files"); return; }
+    if (is("toggleChangesPanel")) { e.preventDefault(); if (gitAvailable) toggleDrawer("changes"); return; }
     if (is("newSession")) {
       e.preventDefault();
       const ws = wsId ?? workspaces[0];
@@ -1969,7 +1990,7 @@ export default function App(): React.JSX.Element {
   // v5.1: a persistent `toolbar` area is pinned top-right (strip row only);
   // content spans under it. The file tree is a separate absolute overlay (below),
   // so opening it never shrinks the panes. Content stays mounted-flat (WS6).
-  const TREE = treeOpen && !!wsId;
+  const DRAWER = drawerPanel && !!wsId ? drawerPanel : null;
   const gridStyle = buildGridStyle(wsTabs);
 
   return (
@@ -1991,8 +2012,7 @@ export default function App(): React.JSX.Element {
           // The branch menu lives in the panel, where switching also gets the
           // three-choice dialog for a dirty tree — one implementation, not two.
           setActiveWs(ws);
-          setDrawerTab("changes");
-          setTreeOpen(true);
+          setDrawerPanel("changes");
         }}
         onNewSession={newSession}
         onSelectSession={selectSession}
@@ -2225,7 +2245,7 @@ export default function App(): React.JSX.Element {
                       void newBrowser(wsId);
                     }}
                     newBrowserKey={formatBinding(bindings.newBrowser)}
-                    onOpenFilePanel={() => setTreeOpen(true)}
+                    onOpenFilePanel={() => setDrawerPanel("files")}
                     splitOptions={splitOptions(wsTabs, slot)}
                     onSplit={(dir) => updateTabs(wsId, (t) => splitAt(t, slot, dir))}
                     onClosePane={
@@ -2233,23 +2253,6 @@ export default function App(): React.JSX.Element {
                         ? () => updateTabs(wsId, (t) => closePane(t, slot))
                         : undefined
                     }
-                    filesOpen={treeOpen && wsTabs.focused === slot}
-                    // §29 1a: the badge is passive awareness — the app never
-                    // pushes a review surface at the user, it just says there is
-                    // something to review. Tinted by CHANGED LINES, not files.
-                    changeCount={wsId === activeWs ? gitSummary.files : 0}
-                    changeTint={badgeTint(gitSummary.changedLines)}
-                    onToggleFiles={() => {
-                      // Focus this pane first: a file picked from the drawer opens
-                      // into the focused pane, so "browse files into THIS pane"
-                      // has to mean exactly that.
-                      updateTabs(wsId, (t) => focusPane(t, slot));
-                      const closing = treeOpen && wsTabs.focused === slot;
-                      // Opening with changes present lands on Changes; opening
-                      // with none keeps whichever tab you left it on.
-                      if (!closing && gitSummary.files > 0 && gitAvailable) setDrawerTab("changes");
-                      setTreeOpen(!closing);
-                    }}
                   />
                 </div>
               );
@@ -2510,7 +2513,7 @@ export default function App(): React.JSX.Element {
             {/* v5.1: file tree is a right-side OVERLAY drawer (top below the tab
                 bar, h-11) — it overlays the content instead of a grid column, so
                 opening it never shrinks the panes. Below the ContextPanel (z-40). */}
-            {TREE && (
+            {DRAWER && (
               <div
                 className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col"
                 style={{ width: drawerWidth }}
@@ -2537,47 +2540,43 @@ export default function App(): React.JSX.Element {
                     window.addEventListener("mouseup", up);
                   }}
                 />
-                {/* §29 1a: Files and Changes are the same mental object — this
-                    project's files, all of them versus the ones that moved — so
-                    one drawer with two tabs, never two surfaces. The Changes tab
-                    is ABSENT (not disabled) with no git: don't show what cannot
-                    work. */}
-                <div className="flex items-stretch border-b-2 border-line shrink-0">
-                  {(["files", "changes"] as const)
-                    .filter((t) => t === "files" || gitAvailable)
-                    .map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setDrawerTab(t)}
-                        className={`flex-1 px-3 py-2 text-xs font-bold cursor-pointer border-b-2 -mb-0.5 ${
-                          drawerTab === t
-                            ? "border-tangerine text-ink"
-                            : "border-transparent text-ink-soft hover:text-ink"
-                        }`}
-                      >
-                        {t === "files" ? "Files" : "Changes"}
-                        {t === "changes" && gitSummary.files > 0 && (
-                          <span className="ml-1.5 opacity-70">{gitSummary.files}</span>
-                        )}
-                      </button>
-                    ))}
-                </div>
+                {/* §7 round 13: ONE panel at a time. The rail is the switcher,
+                    so the drawer carries no tab header of its own — which is
+                    what gives Changes the whole width it needs. */}
                 <div className="min-h-0 flex-1">
-                  {drawerTab === "changes" && gitAvailable ? (
+                  {DRAWER === "changes" ? (
                     <ChangesPanel
                       key={wsId}
                       workspace={wsId!}
                       onOpenFile={(rel) => openFileTab(wsId!, rel)}
-                      onClose={() => setTreeOpen(false)}
+                      onClose={() => setDrawerPanel(null)}
                     />
                   ) : (
-                    <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setTreeOpen(false)} />
+                    <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setDrawerPanel(null)} />
                   )}
                 </div>
               </div>
             )}
           </div>
+          {/* §7 round 13: the rail is a SIBLING of the grid, never a column in
+              it and never an overlay above it. The grid simply becomes 40px
+              narrower, so every pane strip stays flush at its own right edge —
+              which is the property round 11's top-right cluster could not hold.
+              It also keeps the rail clear of a WebContentsView: a browser pane's
+              bounds come from the (narrower) grid, so the page cannot reach the
+              rail, whereas an overlay would be composited UNDER it (§28). */}
+          {wsId && (
+            <RightRail
+              open={DRAWER}
+              onToggle={toggleDrawer}
+              gitAvailable={gitAvailable}
+              branch={gitStatus?.status?.branch?.branch ?? null}
+              changeCount={gitSummary.files}
+              changeTint={badgeTint(gitSummary.changedLines)}
+              filesKey={formatBinding(bindings.toggleFileDrawer)}
+              changesKey={formatBinding(bindings.toggleChangesPanel)}
+            />
+          )}
         </div>
       </main>
       {uiReq?.kind === "permission" && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
