@@ -22,7 +22,14 @@ import { gitStatus, invalidateProbe, publish, resetGitAvailability, saveVersion,
  * network/credentials are not there, so it stays in the fast, key-free suite.
  */
 
-const FIXTURE_DIR = "/Users/guilhemduche/Documents/Github/TestHappyVibeGit";
+/**
+ * The maintainer's clone of the fixture repo. Derived from `homedir()` rather
+ * than written out: this file ships in a public repository, and a hard-coded
+ * `/Users/<name>/…` both names a person and makes the test unusable for anyone
+ * else. `HV_GIT_FIXTURE_DIR` overrides it for a clone kept somewhere else.
+ */
+const FIXTURE_DIR =
+  process.env.HV_GIT_FIXTURE_DIR ?? path.join(os.homedir(), "Documents", "Github", "TestHappyVibeGit");
 const REMOTE_URL = "https://github.com/guiguito/TestHappyVibeGit.git";
 
 function reachable(): boolean {
