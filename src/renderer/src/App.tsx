@@ -517,19 +517,23 @@ export default function App(): React.JSX.Element {
      */
     void (async () => {
       try {
-        const [raw, sessionList, termList, browserList] = await Promise.all([
+        const [raw, sessionList, termList, browserList, wsList] = await Promise.all([
           window.hv.getLayout(),
           window.hv.listSessions(),
           window.hv.termList(),
           // §28: normally empty at boot — panes do not survive the app, so their
           // restored tabs must be pruned rather than shown as ghosts.
           window.hv.browserList(),
+          // A workspace the user removed keeps its layout entry otherwise, and
+          // its file tabs remount against a workspace main no longer knows.
+          window.hv.listWorkspaces(),
         ]);
         setTerminals(Object.fromEntries(termList.map((t) => [t.id, t])));
         const layout = restoreLayout(raw, {
           sessions: new Set(sessionList.map((x) => x.id)),
           terminals: new Set(termList.map((t) => t.id)),
           browsers: new Set(browserList.map((b) => b.id)),
+          workspaces: new Set(wsList),
         });
         setTabsByWs(layout);
         // Land on a workspace that actually has restored tabs. The remembered

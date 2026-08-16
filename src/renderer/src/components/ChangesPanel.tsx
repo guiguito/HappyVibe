@@ -50,6 +50,7 @@ export function ChangesPanel({
   const [branchMenu, setBranchMenu] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
   const [newBranch, setNewBranch] = useState("");
+  const [branchError, setBranchError] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [canDraft, setCanDraft] = useState(false);
   const [working, setWorking] = useState(false);
@@ -298,18 +299,47 @@ export function ChangesPanel({
   };
 
   const doSwitch = async (target: string, mode: "take" | "stash", create = false): Promise<void> => {
+    setBranchError(null);
     const r = await act(
       `git switch ${create ? "-c " : ""}${target}`,
       () => window.hv.gitSwitch(workspace, target, { create, mode }),
       () => {
         setBranchMenu(false);
         setSwitchChoice(null);
+        // Leaving the typed name behind made the next Add re-run `switch -c` on
+        // a branch that now existed, which failed into a toast behind the open
+        // menu and read as "the button does nothing".
+        setNewBranch("");
+        void window.hv.gitBranches(workspace).then(setBranches);
         flash(create ? `Created and switched to ${target}.` : `Switched to ${target}.`);
       }
     );
+    // A failure here belongs IN the menu: it is the only surface the user is
+    // looking at, and a toast at the panel's foot sits behind it.
+    if (r && !r.ok && !r.busy?.length && !r.wouldConflict) {
+      setBranchError(r.error?.split("\n")[0] ?? "Could not switch branch.");
+      void window.hv.gitBranches(workspace).then(setBranches);
+    }
     // §1: not git's refusal — a first-class choice, because this is the most
     // common beginner state arriving at the moment of most confusion.
     if (r && !r.ok && r.wouldConflict) setSwitchChoice({ branch: target, conflict: true });
+  };
+
+  /**
+   * The typed name already being a branch is the common case, not an error: you
+   * made it a minute ago and came back. So the control switches to it instead of
+   * running `switch -c` and failing — the button says "Go" rather than "Add" so
+   * it is never a lie about what is about to happen.
+   */
+  const branchExists = branches.includes(newBranch.trim());
+  const submitNewBranch = (): void => {
+    const name = newBranch.trim();
+    if (!name) return;
+    if (name === branch?.branch) {
+      setBranchError("You are already on that branch.");
+      return;
+    }
+    void doSwitch(name, "take", !branches.includes(name));
   };
 
   const openDiff = async (path: string, status: HvGitFileChange["status"]): Promise<void> => {
@@ -337,7 +367,12 @@ export function ChangesPanel({
               type="button"
               onClick={() => {
                 setBranchMenu((o) => !o);
-                if (!branches.length) void window.hv.gitBranches(workspace).then(setBranches);
+                // Always refetch: this list goes stale the moment anyone makes
+                // a branch — including us, one row below. Guarding on
+                // `!branches.length` meant a branch you had just created was
+                // missing from the menu forever.
+                setBranchError(null);
+                void window.hv.gitBranches(workspace).then(setBranches);
               }}
               className="flex items-center gap-1 min-w-0 rounded-lg border-2 border-line bg-card px-2 py-1 text-[11px] font-bold cursor-pointer hover:border-tangerine"
               title="Switch branch, or make a new one"
@@ -384,22 +419,23 @@ export function ChangesPanel({
               <div className="border-t-2 border-line mt-1 pt-1 flex gap-1">
                 <input
                   value={newBranch}
-                  onChange={(e) => setNewBranch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newBranch.trim()) void doSwitch(newBranch.trim(), "take", true);
-                  }}
+                  onChange={(e) => { setNewBranch(e.target.value); setBranchError(null); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") submitNewBranch(); }}
                   placeholder="New branch…"
                   className="flex-1 min-w-0 rounded-lg border-2 border-line bg-paper px-2 py-1 text-[11px] focus:outline-none focus:border-tangerine"
                 />
                 <button
                   type="button"
                   disabled={!newBranch.trim()}
-                  onMouseDown={(e) => { e.preventDefault(); if (newBranch.trim()) void doSwitch(newBranch.trim(), "take", true); }}
+                  onMouseDown={(e) => { e.preventDefault(); submitNewBranch(); }}
                   className="rounded-lg border-2 border-line bg-card px-2 text-[10px] font-bold cursor-pointer hover:border-tangerine disabled:opacity-40"
                 >
-                  Add
+                  {branchExists ? "Go" : "Add"}
                 </button>
               </div>
+              {branchError && (
+                <div className="px-1 pt-1 text-[10px] text-berry">{branchError}</div>
+              )}
             </div>
           </>
         )}
@@ -435,13 +471,16 @@ export function ChangesPanel({
                           .catch(() => setCanDraft(false))
                           .finally(() => setDrafting(false));
                       }}
-                      // The tooltip carries the cost disclosure: this call is a
-                      // one-shot outside any session, so it never reaches the
-                      // cost ledger, which reads session files (§2b).
-                      title="Drafts a message from your changes using a small, cheap model (about $0.001 per draft). Not counted in session costs."
-                      className="shrink-0 rounded-xl border-2 border-line bg-card px-2 py-2 text-[10px] font-bold cursor-pointer hover:border-tangerine disabled:opacity-50"
+                      // Icon only — the label was two lines of text competing
+                      // with the message box it sits beside. The tooltip still
+                      // carries the cost disclosure, which is the load-bearing
+                      // part: this call is a one-shot outside any session, so it
+                      // never reaches the cost ledger (§2b).
+                      title="Write it for me — drafts a message from your changes using a small, cheap model (about $0.001 per draft). Not counted in session costs."
+                      aria-label="Write it for me"
+                      className="shrink-0 self-start rounded-xl border-2 border-line bg-card p-2 cursor-pointer hover:border-tangerine disabled:opacity-50"
                     >
-                      {drafting ? "…" : "Write it\nfor me"}
+                      <WandGlyph spinning={drafting} />
                     </button>
                   )}
                 </div>
@@ -450,9 +489,19 @@ export function ChangesPanel({
                     type="button"
                     disabled={!message.trim() || working}
                     onClick={() => void doSave()}
-                    className="flex-1 rounded-xl bg-tangerine text-paper font-bold text-sm px-3 py-2 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105 disabled:opacity-50"
+                    // Icon-only. The human verb moves to the tooltip and the
+                    // accessible name rather than disappearing: it is what §0's
+                    // two-altitude rule teaches, so it has to survive somewhere.
+                    // The staged count still shows, because "which files am I
+                    // about to save" is not something a floppy disk can say.
+                    title={primary.count ? `${primary.label} (staged only)` : "Save a version"}
+                    aria-label={primary.label}
+                    className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-tangerine text-paper font-bold text-sm px-3 py-2 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105 disabled:opacity-50"
                   >
-                    {primary.label}
+                    <FloppyGlyph />
+                    {primary.count && (
+                      <span className="text-xs tabular-nums">{primary.count[0]}/{primary.count[1]}</span>
+                    )}
                   </button>
                   <SaveMenu
                     disabled={working}
@@ -848,4 +897,35 @@ function shortPath(p: string): string {
   const rest = p.slice(home.length);
   const slash = rest.indexOf("/");
   return slash === -1 ? p : `~${rest.slice(slash)}`;
+}
+
+/** §2b: the draft button's glyph — a wand with a sparkle, spinning while it thinks. */
+function WandGlyph({ spinning }: { spinning: boolean }): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`size-4 ${spinning ? "animate-pulse" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m15 4-1.5 3L10 8.5 13.5 10 15 13l1.5-3L20 8.5 16.5 7z" />
+      <path d="M4 20l8-8" />
+      <path d="M6 4v3M4.5 5.5h3" />
+    </svg>
+  );
+}
+
+/** §2: the primary save action's glyph — a floppy disk, the save idiom everyone knows. */
+function FloppyGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <path d="M17 21v-8H7v8" />
+      <path d="M7 3v5h8" />
+    </svg>
+  );
 }
