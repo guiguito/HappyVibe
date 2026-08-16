@@ -172,6 +172,11 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // See docs/validation/s0.3.md "Subagent spawn cost".
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
+      // Same reason as the PTY's (terminalSettings.resolveSpawn): a dev server
+      // the agent starts with `bash` must not throw the page at the system
+      // browser. Inherited by pi-subagents children, so a delegated `npm run
+      // dev` behaves too. The agent has browser_open for the pane it wants.
+      BROWSER: "none",
       ...(opts.providerEnv ?? {}),
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),

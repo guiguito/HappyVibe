@@ -96,6 +96,16 @@ describe("resolveSpawn", () => {
     expect(r.env.BAR).toBe("3");
   });
 
+  it("defaults BROWSER=none, and lets the user take it back", () => {
+    // A dev server started in a terminal reads BROWSER (the create-react-app
+    // convention Vite honours) and otherwise throws the page at Chrome. The app
+    // has its own browser (§28), so "none" is the default — but only a default:
+    // the settings env field is how someone says they want the real thing.
+    expect(resolveSpawn(d, {}).env.BROWSER).toBe("none");
+    expect(resolveSpawn(d, { BROWSER: "firefox" }).env.BROWSER).toBe("none");
+    expect(resolveSpawn({ ...d, env: { BROWSER: "firefox" } }, {}).env.BROWSER).toBe("firefox");
+  });
+
   it("forces TERM last, so a stale inherited value cannot win", () => {
     // xterm.js IS xterm-256color. Inheriting "dumb" from a launchd env would
     // give a shell that renders none of the colours it is being sent.

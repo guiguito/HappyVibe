@@ -163,6 +163,16 @@ export function resolveSpawn(
   return {
     file: s.shellPath ?? (typeof env.SHELL === "string" && env.SHELL ? env.SHELL : "/bin/zsh"),
     args: s.shellArgs,
-    env: { ...inherited, ...s.env, TERM: "xterm-256color" },
+    // BROWSER=none stops a dev server started in here from throwing the page at
+    // the SYSTEM browser. Not a Node behaviour — it is the create-react-app
+    // convention Vite and react-scripts read (vite openBrowser: `.js` path ⇒ run
+    // it, "none" ⇒ do nothing, else an app name). §28 gives us a browser of our
+    // own, so stealing focus into Chrome is never the wanted default.
+    //
+    // Before `s.env`, not after: this is a DEFAULT, and the settings env field
+    // exists precisely so a user can say otherwise. Unlike TERM, which is forced
+    // last because xterm.js genuinely is xterm-256color and a wrong value is a
+    // broken terminal — "open my real browser" is a preference, not a defect.
+    env: { ...inherited, BROWSER: "none", ...s.env, TERM: "xterm-256color" },
   };
 }
