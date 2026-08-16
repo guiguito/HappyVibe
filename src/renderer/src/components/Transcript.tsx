@@ -6,6 +6,7 @@ import { PlanCard, type PlanCardData } from "./PlanCard";
 import { splitMentionSegments, stripInjectedBlocks } from "../mentions";
 import { ZoomableImage } from "./ZoomableImage";
 import { BrandLogo } from "./BrandLogo";
+import { formatDuration, timeago } from "../timeago";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -67,6 +68,13 @@ export type TranscriptItem = { id?: number } & (
       imagesDropped?: boolean;
       outOfContext?: boolean;
       promptTemplate?: { typed: string };
+      /** Round 15: epoch ms. Live items are stamped at commit, restored ones
+          come from the session file. Absent on pre-round-15 live items, which
+          simply render no time rather than a guess. */
+      ts?: number;
+      /** Round 15: assistant only, and only on a turn's LAST bubble — how long
+          the turn took, from the user message that started it. */
+      turnMs?: number;
     }
   | { kind: "tool"; card: ToolCardData; outOfContext?: boolean }
   // §23: the plan-ready card (read from the workspace plan file).
@@ -97,6 +105,29 @@ export function boundaryLabel(compactions: number, reason: string | null): strin
     : reason === "overflow" ? `${base} — automatically, when the context overflowed.`
     : `${base}.`;
   return compactions > 1 ? `${why} ${compactions} compactions in this session.` : why;
+}
+
+/**
+ * Round 15 — when a message was sent, and how long its turn took.
+ *
+ * Relative on the face, exact in the tooltip: "3h ago" is what you want while
+ * scanning, the wall-clock time is what you want when you are reconciling a
+ * transcript against something else. Rendered ALWAYS (not on hover) — a
+ * timestamp you have to hover for is one you cannot scan, which is the whole
+ * point of having it. It sits in the same row as the hover controls, so it
+ * costs no extra vertical space.
+ */
+function Stamp({ ts, turnMs, tone }: { ts?: number; turnMs?: number; tone: string }): React.JSX.Element | null {
+  if (ts == null && turnMs == null) return null;
+  return (
+    <span className={`text-[10px] tabular-nums ${tone}`} title={ts != null ? new Date(ts).toLocaleString() : undefined}>
+      {ts != null && `${timeago(ts)} ago`}
+      {ts != null && turnMs != null && " · "}
+      {turnMs != null && (
+        <span title={`This turn took ${formatDuration(turnMs)}`}>{formatDuration(turnMs)}</span>
+      )}
+    </span>
+  );
 }
 
 // Perf: memoized so a committed assistant message only re-parses markdown when
@@ -189,8 +220,13 @@ const MessageItem = memo(function MessageItem({
     return (
       <div className="group">
         <AssistantBubble text={it.text} />
-        <div className="flex justify-start mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <CopyButton text={it.text} label="Copy answer" />
+        <div className="flex items-center gap-2 mt-1">
+          {/* The duration lives on the turn's LAST bubble (main decides which),
+              so a multi-bubble answer shows one number, not a running total. */}
+          <Stamp turnMs={it.turnMs} tone="text-ink-soft/70" />
+          <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <CopyButton text={it.text} label="Copy answer" />
+          </span>
         </div>
       </div>
     );
@@ -280,9 +316,14 @@ function UserBubble({
           </button>
         )}
       </div>
-      <div className="flex justify-end gap-1.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <CopyButton text={text} label="Copy message" />
-        {onRewind && <RewindButton onClick={() => onRewind(it)} />}
+      <div className="flex items-center justify-end gap-1.5 mt-1">
+        {/* Same `in` narrowing the rest of this component uses — `it` is the
+            whole union here, and only the message member carries a stamp. */}
+        <Stamp ts={"ts" in it ? it.ts : undefined} tone="text-ink-soft/70" />
+        <span className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <CopyButton text={text} label="Copy message" />
+          {onRewind && <RewindButton onClick={() => onRewind(it)} />}
+        </span>
       </div>
     </div>
   );
@@ -330,6 +371,33 @@ export function isNearBottom(
   return el.scrollHeight - el.scrollTop - el.clientHeight <= slack;
 }
 
+/**
+ * Round 15 — how many trailing items a long transcript renders at rest.
+ *
+ * 50 is roughly two screens on a tall window, so the disclosure is never the
+ * first thing you see, and it is far below the ~300-item sessions that made
+ * reopening feel heavy.
+ */
+export const TAIL_SIZE = 50;
+
+/**
+ * The items to mount, plus how many are being held back.
+ *
+ * `searching` MUST win: in-conversation search walks the rendered DOM, so an
+ * unmounted item is an item search cannot find — a collapsed tail would make
+ * the `n / total` counter quietly wrong rather than merely incomplete.
+ * `expanded` is the user having asked for the rest.
+ */
+export function visibleTail(
+  items: TranscriptItem[],
+  expanded: boolean,
+  searching: boolean,
+  tail = TAIL_SIZE,
+): { shown: TranscriptItem[]; hiddenCount: number } {
+  if (expanded || searching || items.length <= tail) return { shown: items, hiddenCount: 0 };
+  return { shown: items.slice(items.length - tail), hiddenCount: items.length - tail };
+}
+
 export function AssistantBubble({ text }: { text: string }): React.JSX.Element {
   return (
     <div>
@@ -354,6 +422,7 @@ export function Transcript({
   searchActiveIndex,
   onSearchTotal,
   onLoadEarlier,
+  scrollNonce,
 }: {
   items: TranscriptItem[];
   busy: boolean;
@@ -374,6 +443,12 @@ export function Transcript({
   onSearchTotal?: (n: number) => void;
   /** §9 round 9: pull in the pre-compaction history (display only). */
   onLoadEarlier?: () => void;
+  /**
+   * Round 15: bumped by the composer on send. A send is the user SAYING they
+   * are at the end, so it scrolls unconditionally — unlike the stream, which
+   * must not yank a reader who has scrolled up.
+   */
+  scrollNonce?: number;
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -385,6 +460,35 @@ export function Transcript({
     if (box && !isNearBottom(box)) return;
     bottom.current?.scrollIntoView({ block: "end" });
   }, [items, busy, streaming]);
+
+  // Round 15: land at the bottom when a session's history first arrives.
+  //
+  // NOT on mount: restore is async, so at mount `items` is empty and there is
+  // nothing to scroll past. The effect above cannot do it either — once a long
+  // transcript paints, the view sits at scrollTop 0 and `isNearBottom` is
+  // false, which is precisely why reopening used to land at the top. So this
+  // fires once, on the first non-empty render, and then never again.
+  const landed = useRef(false);
+  useEffect(() => {
+    if (landed.current || items.length === 0) return;
+    landed.current = true;
+    bottom.current?.scrollIntoView({ block: "end" });
+  }, [items]);
+
+  // …and unconditionally whenever the composer bumps the nonce (a send). Skips
+  // its own initial run — the landing above owns that.
+  useEffect(() => {
+    if (!scrollNonce) return;
+    bottom.current?.scrollIntoView({ block: "end" });
+  }, [scrollNonce]);
+
+  // Round 15: a long conversation renders its tail. `searchQuery` forces the
+  // whole thing to mount — search walks the DOM, so hidden items are invisible
+  // to it (see visibleTail).
+  // No reset on session change: App mounts one ChatView (and so one Transcript)
+  // per chat tab and keeps it mounted, so this instance IS one session.
+  const [tailExpanded, setTailExpanded] = useState(false);
+  const { shown, hiddenCount } = visibleTail(items, tailExpanded, !!(searchQuery ?? "").trim());
 
   // Round 4 #1: highlight search matches in-place via the CSS Custom Highlight
   // API — no DOM mutation, works uniformly across user text, markdown, and code.
@@ -453,16 +557,29 @@ export function Transcript({
     <div ref={scrollRef} className="flex-1 overflow-y-auto">
       {header}
       <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
+        {/* Round 15: the held-back head of a long conversation. Same disclosure
+            shape as §9's compaction boundary, and deliberately a different
+            sentence: that one means "the agent cannot see this", this one only
+            means "not drawn yet". */}
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setTailExpanded(true)}
+            className="self-center rounded-full border-2 border-line bg-card px-3 py-1 text-[11px] font-bold text-ink-soft hover:border-honey hover:text-ink cursor-pointer"
+          >
+            Show earlier messages ({hiddenCount})
+          </button>
+        )}
         {/* §9 round 9: the loaded pre-compaction region sits at the very top and
             is labelled once, here, rather than per item. */}
-        {items[0] && "outOfContext" in items[0] && items[0].outOfContext && (
+        {shown[0] && "outOfContext" in shown[0] && shown[0].outOfContext && (
           <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wide text-ink-soft/70">
             <span className="h-px flex-1 bg-line" />
             <span>earlier — not in the agent&apos;s context</span>
             <span className="h-px flex-1 bg-line" />
           </div>
         )}
-        {items.map((it, i) => {
+        {shown.map((it, i) => {
           const item = (
             <MessageItem
               it={it}

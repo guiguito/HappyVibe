@@ -372,6 +372,10 @@ export function ChatView({
   // plans get a pill — an implemented or cancelled plan needs no CTA, and the
   // file stays in the tree either way.
   const [planOpen, setPlanOpen] = useState(false);
+  // Round 15: bumped on send; Transcript scrolls to the bottom unconditionally
+  // when it changes. Starts at 0, whose initial effect run is what makes a
+  // freshly opened session land at the bottom rather than at the top.
+  const [scrollNonce, setScrollNonce] = useState(0);
   const showPlanPill = !!activePlan && showsPlanPill(activePlan.status);
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
   const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
@@ -572,6 +576,11 @@ export function ChatView({
       .filter((a) => a.data);
     const outgoing = [...attachments, ...refImages];
     onSend(withRefs, behavior, outgoing.length ? outgoing : undefined, mentions.length ? mentions : undefined);
+    // Round 15: sending is the user saying "I am at the end now", so the view
+    // goes to the bottom whatever it was reading. The stream's own follow stays
+    // guarded by isNearBottom — that guard exists to protect a reader scrolling
+    // back mid-response, which is a different act from pressing send.
+    setScrollNonce((n) => n + 1);
     onClearPageRefs?.();
     setInput("");
     setAttachments([]);
@@ -968,6 +977,7 @@ export function ChatView({
           items={items}
           streaming={streaming}
           busy={busy}
+          scrollNonce={scrollNonce}
           header={
             delegations.length > 0 || terminalRuns.length > 0 ? (
               // §26: the terminal stack is a SIBLING of the delegation stack in

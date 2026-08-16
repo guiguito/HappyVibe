@@ -164,6 +164,10 @@ type RestoreItem =
       promptTemplate?: { typed: string };
       images?: string[];
       imagesDropped?: boolean;
+      /** Round 15: epoch ms from the session file's own message timestamps. */
+      ts?: number;
+      /** Round 15: assistant only, on a turn's last bubble — how long it took. */
+      turnMs?: number;
     }
   | {
       kind: "tool";

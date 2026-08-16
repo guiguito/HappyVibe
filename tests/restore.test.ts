@@ -173,3 +173,72 @@ describe("restore carries images", () => {
     expect(items).toEqual([{ kind: "user", text: "hi" }]); // no empty images:[] noise
   });
 });
+
+/**
+ * Round 15 — timestamps and turn durations, read from the session file.
+ *
+ * `message.timestamp` is epoch ms and `entry.timestamp` is an ISO string;
+ * measured on a real HappyVibe session file, it is the MESSAGE-level one that
+ * reaches restoreItems, which is what these fixtures use.
+ */
+describe("round 15: timestamps and turn duration", () => {
+  const T0 = 1783062700000;
+
+  test("user and assistant messages carry their stamp", () => {
+    const items = restoreItems([
+      { role: "user", content: [{ type: "text", text: "hi" }], timestamp: T0 },
+      { role: "assistant", content: [{ type: "text", text: "hello" }], timestamp: T0 + 5000 },
+    ]);
+    expect(items[0]).toMatchObject({ kind: "user", ts: T0 });
+    expect(items[1]).toMatchObject({ kind: "assistant", ts: T0 + 5000 });
+  });
+
+  test("a turn's LAST bubble carries the duration, and only it", () => {
+    const items = restoreItems([
+      { role: "user", content: [{ type: "text", text: "go" }], timestamp: T0 },
+      { role: "assistant", content: [{ type: "text", text: "first" }], timestamp: T0 + 2000 },
+      { role: "assistant", content: [{ type: "text", text: "second" }], timestamp: T0 + 9000 },
+    ]);
+    expect((items[1] as { turnMs?: number }).turnMs).toBeUndefined();
+    expect((items[2] as { turnMs?: number }).turnMs).toBe(9000);
+  });
+
+  test("a turn ending on a TOOL measures to the tool, not to the last bubble", () => {
+    // The agent says "editing now", edits for 30s, and stops. Measuring to the
+    // bubble would report a 2s turn; the tool result is when it really ended.
+    const items = restoreItems([
+      { role: "user", content: [{ type: "text", text: "edit it" }], timestamp: T0 },
+      {
+        role: "assistant",
+        timestamp: T0 + 2000,
+        content: [
+          { type: "text", text: "editing now" },
+          { type: "toolCall", id: "c1", name: "edit", arguments: { path: "a.ts" } },
+        ],
+      },
+      { role: "toolResult", toolCallId: "c1", toolName: "edit", content: "ok", timestamp: T0 + 32_000 },
+    ]);
+    const bubble = items.find((i) => i.kind === "assistant") as { turnMs?: number };
+    expect(bubble.turnMs).toBe(32_000);
+  });
+
+  test("each turn is measured from its own prompt", () => {
+    const items = restoreItems([
+      { role: "user", content: [{ type: "text", text: "one" }], timestamp: T0 },
+      { role: "assistant", content: [{ type: "text", text: "a" }], timestamp: T0 + 1000 },
+      { role: "user", content: [{ type: "text", text: "two" }], timestamp: T0 + 60_000 },
+      { role: "assistant", content: [{ type: "text", text: "b" }], timestamp: T0 + 63_000 },
+    ]);
+    const bubbles = items.filter((i) => i.kind === "assistant") as { turnMs?: number }[];
+    expect(bubbles.map((b) => b.turnMs)).toEqual([1000, 3000]);
+  });
+
+  test("an unstamped session restores with no times rather than NaN", () => {
+    const items = restoreItems([
+      { role: "user", content: [{ type: "text", text: "hi" }] },
+      { role: "assistant", content: [{ type: "text", text: "yo" }] },
+    ]);
+    expect((items[0] as { ts?: number }).ts).toBeUndefined();
+    expect((items[1] as { turnMs?: number }).turnMs).toBeUndefined();
+  });
+});

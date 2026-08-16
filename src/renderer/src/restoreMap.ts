@@ -25,6 +25,10 @@ export type RestoredMessage =
       promptTemplate?: { typed: string };
       images?: string[];
       imagesDropped?: boolean;
+      /** Round 15: epoch ms from the session file. */
+      ts?: number;
+      /** Round 15: assistant only, on a turn's last bubble. */
+      turnMs?: number;
     }
   | {
       kind: "tool";
@@ -93,6 +97,10 @@ export function toTranscriptItems(
       // §7 round 12: the attachment that vanished on reopen. Same rule as above.
       images: m.images,
       imagesDropped: m.imagesDropped,
+      // Round 15: when it was said, and how long the turn took. Same rule again
+      // — main computes both, and an unnamed field here is a dropped field.
+      ts: m.ts,
+      turnMs: m.turnMs,
       id: nextId(),
     };
   }) as TranscriptItem[];

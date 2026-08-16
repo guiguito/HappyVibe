@@ -1,0 +1,58 @@
+import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+
+/**
+ * Round 15 — the session row: one trash, a two-outcome dialog, an age at rest.
+ *
+ * Source-scanned rather than rendered: this suite has no DOM (vitest include is
+ * `tests/**\/*.test.ts`, no jsdom), and the assertions that matter here are
+ * about what is NOT in the row any more — an absence no render test would fail
+ * on either, since the archive shortcut disappearing looks like a passing test
+ * for everything else.
+ */
+const SRC = fs.readFileSync(
+  path.join(import.meta.dirname, "..", "src", "renderer", "src", "components", "Sidebar.tsx"),
+  "utf8",
+);
+
+describe("the row has one destructive affordance, not two", () => {
+  it("the one-click archive button is gone", () => {
+    // Two icons meant two one-click destinations for one decision.
+    expect(SRC).not.toContain("<ArchiveIcon");
+    expect(SRC).not.toContain("function ArchiveIcon");
+  });
+
+  it("the trash is still there and opens the chooser", () => {
+    expect(SRC).toContain("<TrashIcon />");
+    expect(SRC).toContain("Archive or delete this session");
+  });
+
+  it("the dialog offers BOTH outcomes plus cancel", () => {
+    expect(SRC).toContain("Delete permanently");
+    expect(SRC).toMatch(/Unarchive.*:.*Archive|confirmDelete\.archived \? "Unarchive" : "Archive"/s);
+    expect(SRC).toContain(">\n                Cancel\n              <");
+  });
+
+  it("archiving still routes through the existing handler, not a new one", () => {
+    // The dialog reuses onArchiveSession — no second archive path to drift.
+    expect(SRC).toContain("onArchiveSession(confirmDelete.id, !confirmDelete.archived)");
+  });
+});
+
+describe("the resting row shows an age", () => {
+  it("renders timeago from updatedAt, with the exact time on hover", () => {
+    expect(SRC).toContain("timeago(Date.parse(session.updatedAt))");
+    expect(SRC).toContain("new Date(session.updatedAt).toLocaleString()");
+  });
+
+  it("hides the age while the session is working — the pulsing dot already says so", () => {
+    // A second moving thing in one row is noise, not information.
+    expect(SRC).toMatch(/\{!status && \(/);
+  });
+
+  it("the age hides on hover and the trash appears — one slot, never both", () => {
+    expect(SRC).toContain("group-hover:hidden");
+    expect(SRC).toContain("hidden group-hover:block");
+  });
+});

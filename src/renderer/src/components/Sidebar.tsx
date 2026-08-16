@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { timeago } from "../timeago";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
 import { AUTO, fractionFor, readSplit, writeSplit } from "../sidebarSplit";
@@ -19,17 +20,6 @@ export type View =
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
-}
-
-/** Archive box (lid + arrow into it); unarchive reverses the arrow. Stroke style matches the existing icon set. */
-function ArchiveIcon({ out }: { out: boolean }): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="3" y="4" width="18" height="4" rx="1" />
-      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
-      {out ? <path d="M12 17v-5m-3 2 3-3 3 3" /> : <path d="M12 11v5m-3-2 3 3 3-3" />}
-    </svg>
-  );
 }
 
 /** F6: nav icons shared by the expanded footer and the collapsed rail. */
@@ -239,7 +229,6 @@ function SessionRow({
   open,
   onSelect,
   onRename,
-  onArchive,
   onDelete,
 }: {
   session: SessionMeta;
@@ -253,7 +242,6 @@ function SessionRow({
   open: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
-  onArchive: () => void;
   onDelete: () => void;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false);
@@ -335,28 +323,35 @@ function SessionRow({
         </span>
       )}
       {!editing && (
-        // V2.C2: reserved fixed-width slots — invisible until hover, so the
-        // row never shifts. No stop affordance: lifecycle is automatic (W1.3).
-        <span className="flex items-center gap-1 shrink-0 invisible group-hover:visible">
+        /**
+         * Round 15 — ONE trash icon on hover, the session's AGE at rest.
+         *
+         * Two icons meant two one-click destinations for one decision, and the
+         * archive/delete pair is exactly the choice §5 already makes the user
+         * make explicitly for a workspace. So the trash opens that same two-
+         * outcome dialog and the archive shortcut goes; unarchiving stays under
+         * "Show archived", where the archived sessions are.
+         *
+         * The slot is not empty the rest of the time: a resting sidebar of ten
+         * identical rows tells you nothing about which you touched this
+         * morning. A WORKING session shows nothing here — its dot is already
+         * pulsing, and a second moving thing in one row is noise.
+         */
+        <span className="flex items-center shrink-0">
+          {!status && (
+            <span className="text-[10px] tabular-nums text-ink-soft/70 group-hover:hidden" title={new Date(session.updatedAt).toLocaleString()}>
+              {timeago(Date.parse(session.updatedAt))}
+            </span>
+          )}
           <button
             type="button"
-            title={session.archived ? "Unarchive" : "Archive"}
-            onClick={(e) => {
-              e.stopPropagation();
-              onArchive();
-            }}
-            className="text-ink-soft hover:text-tangerine cursor-pointer px-0.5"
-          >
-            <ArchiveIcon out={!!session.archived} />
-          </button>
-          <button
-            type="button"
-            title="Delete session"
+            title="Archive or delete this session"
+            aria-label="Archive or delete this session"
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
             }}
-            className="text-ink-soft hover:text-berry cursor-pointer px-0.5"
+            className="hidden group-hover:block text-ink-soft hover:text-berry cursor-pointer px-0.5"
           >
             <TrashIcon />
           </button>
@@ -680,7 +675,6 @@ export function Sidebar({
                       open={openSessionIds.has(s.id)}
                       onSelect={() => onSelectSession(s.id)}
                       onRename={(title) => onRenameSession(s.id, title)}
-                      onArchive={() => onArchiveSession(s.id, !s.archived)}
                       onDelete={() => setConfirmDelete(s)}
                     />
                   ))}
@@ -766,17 +760,36 @@ export function Sidebar({
         )}
       </div>
 
-      {/* V2.C2: delete confirm — same warm dialog pattern as CompactDialog. */}
+      {/**
+        * V2.C2: same warm dialog pattern as CompactDialog.
+        *
+        * Round 15: it asks the two-outcome question rather than only the
+        * destructive one — the same shape §5 uses for removing a workspace,
+        * because "get this out of my list" and "destroy this conversation" are
+        * different wishes and the trash icon cannot tell which one you meant.
+        * Archive leads: it is the reversible one.
+        */}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
           <div
             className="w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <h2 className="font-black text-xl">Delete this session?</h2>
-            <p className="text-sm text-ink-soft mt-2">
-              &ldquo;{confirmDelete.title}&rdquo; — the conversation is permanently removed.
-            </p>
+            <h2 className="font-black text-xl">
+              {confirmDelete.archived ? "Restore or delete?" : "Archive or delete?"}
+            </h2>
+            <p className="text-sm text-ink-soft mt-2">&ldquo;{confirmDelete.title}&rdquo;</p>
+            <ul className="mt-3 text-sm text-ink-soft space-y-1.5">
+              <li>
+                <b className="text-ink">{confirmDelete.archived ? "Unarchive" : "Archive"}</b> —{" "}
+                {confirmDelete.archived
+                  ? "put it back in the list. Nothing is lost."
+                  : "hide it from the list. You can bring it back from “Show archived”."}
+              </li>
+              <li>
+                <b className="text-ink">Delete permanently</b> — the conversation and its session file are gone for good.
+              </li>
+            </ul>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
@@ -788,12 +801,22 @@ export function Sidebar({
               <button
                 type="button"
                 onClick={() => {
+                  onArchiveSession(confirmDelete.id, !confirmDelete.archived);
+                  setConfirmDelete(null);
+                }}
+                className="rounded-xl border-2 border-line-strong bg-card text-ink font-bold text-sm px-4 py-2 shadow-sticker hover:bg-paper-deep/40 cursor-pointer"
+              >
+                {confirmDelete.archived ? "Unarchive" : "Archive"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
                   onDeleteSession(confirmDelete.id);
                   setConfirmDelete(null);
                 }}
                 className="rounded-xl bg-berry text-paper font-bold text-sm px-5 py-2 border-2 border-berry shadow-sticker hover:brightness-105 cursor-pointer"
               >
-                Delete
+                Delete permanently
               </button>
             </div>
           </div>

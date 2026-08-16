@@ -22,6 +22,11 @@ export type RestoreItem =
       promptTemplate?: { typed: string };
       images?: string[];
       imagesDropped?: boolean;
+      /** Round 15: epoch ms from the session file. Absent on older entries. */
+      ts?: number;
+      /** Round 15: assistant only, and only on the LAST bubble of a turn — how
+          long the turn took, from the user message that started it. */
+      turnMs?: number;
     }
   | {
       kind: "tool";
@@ -32,6 +37,10 @@ export type RestoreItem =
       error?: boolean;
       images?: string[];
       imagesDropped?: boolean;
+      /** Round 15: epoch ms — the RESULT's stamp where there is one (when the
+          tool finished), else the call's. Not rendered on the card; it is what
+          lets a turn ending in a tool call measure its true length. */
+      ts?: number;
     }
   // §23: the plan card, emitted at its plan_complete position (not the bottom).
   // planPath comes from the plan_complete tool RESULT; status/done/total are
@@ -45,6 +54,13 @@ export interface RawMessage {
   toolName?: string;
   toolCallId?: string;
   isError?: boolean;
+  /**
+   * Round 15: epoch ms, written by Pi on every message entry. Measured on a real
+   * session file — `entry.timestamp` is an ISO string but `entry.message
+   * .timestamp` (this one) is a number, and it is the message-level one that
+   * survives into `restoreItems`.
+   */
+  timestamp?: number;
 }
 
 /**
@@ -135,6 +151,52 @@ export function pairPromptTemplateItems(items: RestoreItem[], typedByHash: Map<s
   return items;
 }
 
+/** Round 15: the message's epoch-ms stamp, as a spreadable patch. */
+const tsOf = (m: RawMessage): { ts?: number } =>
+  typeof m.timestamp === "number" && Number.isFinite(m.timestamp) ? { ts: m.timestamp } : {};
+
+/**
+ * Round 15 — stamp each turn's LAST assistant bubble with how long it took.
+ *
+ * A "turn" is one user message and everything until the next one. The duration
+ * runs to the last STAMPED item of that run — tool cards included, which is why
+ * they carry a `ts` nobody renders: a turn very often ends on a tool call (the
+ * agent edits a file and says nothing after), and stopping at the last text
+ * bubble would report a turn as shorter than it was. Only the final bubble
+ * displays it, so a five-bubble turn shows one duration, not five running
+ * totals. A turn with no trailing bubble shows none — there is nowhere to put
+ * it, and inventing a row for a number is worse than omitting the number.
+ */
+function stampTurnDurations(items: RestoreItem[]): RestoreItem[] {
+  // The union's message member is `kind: "user" | "assistant"`, so
+  // Extract<…, {kind:"assistant"}> is `never` — name the member instead.
+  type MsgItem = Extract<RestoreItem, { text: string }>;
+  const stampOf = (it: RestoreItem): number | undefined => ("ts" in it ? it.ts : undefined);
+
+  let turnStart: number | undefined;
+  let lastBubble: MsgItem | null = null;
+  let lastTs: number | undefined;
+  const close = (): void => {
+    if (lastBubble && turnStart !== undefined && lastTs !== undefined && lastTs > turnStart) {
+      lastBubble.turnMs = lastTs - turnStart;
+    }
+    lastBubble = null;
+  };
+  for (const it of items) {
+    const ts = stampOf(it);
+    if (it.kind === "user") {
+      close();
+      turnStart = ts;
+      lastTs = ts;
+      continue;
+    }
+    if (ts !== undefined) lastTs = ts;
+    if (it.kind === "assistant") lastBubble = it;
+  }
+  close();
+  return items;
+}
+
 export function restoreItems(raw: RawMessage[]): RestoreItem[] {
   const items: RestoreItem[] = [];
   // §7 round 12: one budget for the whole restore — see imagesOf.
@@ -154,6 +216,9 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
       if (tool) {
         tool.result = messageText(m.content);
         tool.error = m.isError === true;
+        // The result's stamp is when the tool FINISHED — truer than the call's
+        // for a turn that ends on a long-running command.
+        if (typeof m.timestamp === "number") tool.ts = m.timestamp;
         // §7 round 12: a screenshot comes back HERE — 7 of the 8 image blocks
         // found in real session files were tool results.
         Object.assign(tool, imagesOf(m.content, budget));
@@ -166,7 +231,7 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
       const pics = imagesOf(m.content, budget);
       // A message that is JUST a picture is not empty — the old text-only guard
       // reconstructed it as nothing at all.
-      if (text || pics.images || pics.imagesDropped) items.push({ kind: "user", text, ...pics });
+      if (text || pics.images || pics.imagesDropped) items.push({ kind: "user", text, ...pics, ...tsOf(m) });
       continue;
     }
     // Assistant: emit text bubbles and tool cards in document order (skip thinking).
@@ -174,7 +239,7 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
     for (const b of blocks) {
       const block = b as { type?: string; text?: string; id?: string; name?: string; arguments?: unknown };
       if (block.type === "text" && block.text?.trim()) {
-        items.push({ kind: "assistant", text: block.text });
+        items.push({ kind: "assistant", text: block.text, ...tsOf(m) });
       } else if (block.type === "toolCall" && block.id && block.name === "plan_complete") {
         // The plan card at the position the plan was submitted (path filled by the result).
         const plan: Extract<RestoreItem, { kind: "plan" }> = { kind: "plan", planPath: "" };
@@ -186,6 +251,7 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
           toolCallId: block.id,
           toolName: block.name,
           args: block.arguments,
+          ...tsOf(m),
         };
         items.push(tool);
         byCallId.set(block.id, tool);
@@ -196,5 +262,7 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
   // path (its final position); drop cards whose path never resolved.
   const lastPlanIdx = new Map<string, number>();
   items.forEach((it, i) => { if (it.kind === "plan" && it.planPath) lastPlanIdx.set(it.planPath, i); });
-  return items.filter((it, i) => it.kind !== "plan" || (it.planPath !== "" && lastPlanIdx.get(it.planPath) === i));
+  return stampTurnDurations(
+    items.filter((it, i) => it.kind !== "plan" || (it.planPath !== "" && lastPlanIdx.get(it.planPath) === i)),
+  );
 }

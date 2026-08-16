@@ -334,6 +334,15 @@ export default function App(): React.JSX.Element {
   // at agent_end.
   const aborted = useRef<Record<string, boolean>>({});
   /**
+   * Round 15: when the in-flight turn started, per session — set on the user's
+   * own send, read once at agent_end to stamp the duration onto the turn's last
+   * assistant bubble. A ref rather than state: nothing renders from it until
+   * the turn ends, so a re-render per turn would be pure waste. Restored
+   * sessions get the same number computed main-side (restore.ts), from the
+   * session file's own timestamps.
+   */
+  const turnStart = useRef<Record<string, number>>({});
+  /**
    * Round 11: text pushed into a composer from outside it (the editor's "Send to
    * chat"). The nonce is what makes a repeat send of the SAME text still fire —
    * ChatView appends on nonce change. Same shape as the rewind-to-composer path;
@@ -384,6 +393,36 @@ export default function App(): React.JSX.Element {
       }
       return { ...p, [sid]: [...items, withId] };
     });
+
+  /**
+   * Round 15 — stamp the finished turn's duration on its LAST assistant bubble.
+   *
+   * Called at agent_end, after commitStream has flushed the live bubble, so the
+   * item it patches already exists. It walks back only to the turn's own user
+   * message: a turn that ended on a tool card (the agent edits and says nothing)
+   * has no bubble to carry the number, and gets none rather than having it put
+   * somewhere it does not belong. Mirrors main's stampTurnDurations, which does
+   * the same job for a restored session from the file's timestamps.
+   */
+  const stampTurnEnd = (sid: string): void => {
+    const started = turnStart.current[sid];
+    delete turnStart.current[sid];
+    if (!started) return;
+    const took = Date.now() - started;
+    setTranscripts((p) => {
+      const items = p[sid];
+      if (!items) return p;
+      for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i];
+        if (it.kind === "user") return p; // reached this turn's start: no bubble
+        if (it.kind !== "assistant") continue;
+        const next = items.slice();
+        next[i] = { ...it, turnMs: took };
+        return { ...p, [sid]: next };
+      }
+      return p;
+    });
+  };
 
   // Upsert the per-session "Retrying…" notice in place (one notice spans all
   // attempts; text updates each attempt). Mirrors the compaction-notice pattern.
@@ -1045,6 +1084,7 @@ export default function App(): React.JSX.Element {
       }
       if (e.type === "agent_end") {
         commitStream(sid); // finalize the live bubble into the transcript
+        stampTurnEnd(sid); // round 15: "· 34s" on that bubble, now that it exists
         delete aborted.current[sid]; // the abort window closes with the turn
         // Flush a deferred provider error that was NOT retried (or exhausted its
         // retries) as the single hard error card for the turn.
@@ -1118,7 +1158,10 @@ export default function App(): React.JSX.Element {
         setQueues((p) => ({ ...p, [sid]: queue }));
         for (const text of delivered) {
           commitStream(sid); // flush any live bubble before the delivered user item
-          appendItem(sid, { kind: "user", text });
+          // A steer delivered mid-turn does NOT restart the clock: the turn
+          // the user is waiting on is still the one that began with their
+          // first prompt, and resetting here would report it as shorter.
+          appendItem(sid, { kind: "user", text, ts: Date.now() });
         }
       }
       // B2: provider errors (model call failed) as distinct transcript items.
@@ -1734,7 +1777,10 @@ export default function App(): React.JSX.Element {
       }
       return;
     }
-    appendItem(sid, { kind: "user", text: msg, images: attachments?.map(attachmentUrl) });
+    // Round 15: stamp when it was sent. This is also what starts the turn
+    // clock — turnStart below is read at agent_end to fill the duration.
+    appendItem(sid, { kind: "user", text: msg, ts: Date.now(), images: attachments?.map(attachmentUrl) });
+    turnStart.current[sid] = Date.now();
     streaming.current[sid] = false;
     // A fresh prompt ends any abort window: this turn's text belongs to a new
     // bubble, never merged into the one the user stopped.
@@ -1821,7 +1867,7 @@ export default function App(): React.JSX.Element {
     if (uiReq?.kind !== "askUser") return;
     window.hv.respondInput(uiReq.req.id, answers ? JSON.stringify(answers) : null);
     const sid = uiReq.req.sessionId;
-    if (sid && answers) appendItem(sid, { kind: "user", text: answersSummary(answers) });
+    if (sid && answers) appendItem(sid, { kind: "user", text: answersSummary(answers), ts: Date.now() });
     setUiQueue((q) => q.filter((e) => e.req.id !== uiReq.req.id));
   };
 
@@ -2103,7 +2149,7 @@ export default function App(): React.JSX.Element {
               const sid = await openSessionForSkillCreator(wsSettings);
               // The creator's prompt is fired by SkillsSection; echo it so the
               // transcript shows what was sent (hv:prompt-session emits none).
-              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator" });
+              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
               return sid;
             }}
             onRemoved={async () => {
@@ -2127,7 +2173,7 @@ export default function App(): React.JSX.Element {
             workspaceId={selected?.workspaceId ?? null}
             onNewSkillSession={async () => {
               const sid = await openSessionForSkillCreator();
-              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator" });
+              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
               return sid;
             }}
           />
