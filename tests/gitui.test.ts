@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { badgeTint, groupByDir, primaryAction, statusGlyph, summarise } from "../src/renderer/src/gitui";
+import { badgeTint, countDiffLines, groupByDir, primaryAction, statusGlyph, summarise } from "../src/renderer/src/gitui";
 
 /** A file change with only the fields a given assertion cares about. */
 function f(over: Partial<HvGitFileChange> & { path: string }): HvGitFileChange {
@@ -118,5 +118,31 @@ describe("summarise", () => {
 
   it("reads zero for a clean tree", () => {
     expect(summarise([])).toEqual({ files: 0, additions: 0, deletions: 0, staged: 0, changedLines: 0 });
+  });
+});
+
+/**
+ * The `+n −m` beside a collapsed file in a commit's diff. Counted from the
+ * hunks because `FileDiff` carries no totals and `gitShow` has no status behind
+ * it — see countDiffLines' own note.
+ */
+describe("countDiffLines", () => {
+  const hunk = (lines: string[]): HvDiffHunk => ({ header: "@@ -1 +1 @@", lines, raw: "" });
+
+  it("counts added and removed lines, ignoring context", () => {
+    expect(countDiffLines([hunk([" ctx", "+one", "+two", "-gone", " ctx"])])).toEqual({ additions: 2, deletions: 1 });
+  });
+
+  it("adds up across hunks", () => {
+    expect(countDiffLines([hunk(["+a"]), hunk(["-b", "-c"])])).toEqual({ additions: 1, deletions: 2 });
+  });
+
+  it("does not count git's no-newline annotation as a change", () => {
+    // `\ No newline at end of file` is a note about the file, not a line of it.
+    expect(countDiffLines([hunk(["+a", "\\ No newline at end of file"])])).toEqual({ additions: 1, deletions: 0 });
+  });
+
+  it("reads zero for a file with no hunks (a pure rename)", () => {
+    expect(countDiffLines([])).toEqual({ additions: 0, deletions: 0 });
   });
 });

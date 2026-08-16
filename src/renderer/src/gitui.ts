@@ -95,6 +95,28 @@ export function statusGlyph(status: HvGitFileChange["status"]): string {
           : "U";
 }
 
+/**
+ * `+n −m` for one file's diff, counted from the hunks themselves.
+ *
+ * `FileDiff` carries no totals — the status payload does, but a commit's diff
+ * (`gitShow`) has no status behind it, and a collapsed file with no counts is a
+ * row that says nothing at all. Counting the hunk lines is the only source that
+ * exists for both.
+ *
+ * `\ No newline at end of file` is git's own annotation, not a changed line.
+ */
+export function countDiffLines(hunks: HvDiffHunk[]): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const h of hunks) {
+    for (const l of h.lines) {
+      if (l.startsWith("+")) additions++;
+      else if (l.startsWith("-")) deletions++;
+    }
+  }
+  return { additions, deletions };
+}
+
 export interface ChangeSummary {
   files: number;
   additions: number;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { statusGlyph } from "../gitui";
+import { countDiffLines, statusGlyph } from "../gitui";
 
 /**
  * §29 — the diff renderer, shared by the Changes panel and the file tab's
@@ -22,9 +22,23 @@ export interface DiffViewProps {
   /** Untracked files are DISCARDED, not undone — the caller says which. */
   isUntracked?: (path: string) => boolean;
   emptyLabel?: string;
+  /**
+   * Start each file collapsed. History passes false: a commit routinely touches
+   * a dozen files, and expanding all of them buries the commit list you were
+   * reading a moment ago under a wall of green and red. Everywhere else the diff
+   * IS what you came for, so it stays open.
+   */
+  defaultOpen?: boolean;
 }
 
-export function DiffView({ files, onUndoHunk, onUndoFile, isUntracked, emptyLabel }: DiffViewProps): React.JSX.Element {
+export function DiffView({
+  files,
+  onUndoHunk,
+  onUndoFile,
+  isUntracked,
+  emptyLabel,
+  defaultOpen = true,
+}: DiffViewProps): React.JSX.Element {
   if (!files.length) {
     return <div className="p-4 text-xs text-ink-soft">{emptyLabel ?? "No changes to show."}</div>;
   }
@@ -37,6 +51,7 @@ export function DiffView({ files, onUndoHunk, onUndoFile, isUntracked, emptyLabe
           onUndoHunk={onUndoHunk}
           onUndoFile={onUndoFile}
           untracked={isUntracked?.(f.path) ?? false}
+          defaultOpen={defaultOpen}
         />
       ))}
     </div>
@@ -48,33 +63,47 @@ function FileDiffBlock({
   onUndoHunk,
   onUndoFile,
   untracked,
+  defaultOpen,
 }: {
   file: HvFileDiff;
   onUndoHunk?: (file: HvFileDiff, hunk: HvDiffHunk) => void;
   onUndoFile?: (file: HvFileDiff) => void;
   untracked: boolean;
+  defaultOpen: boolean;
 }): React.JSX.Element {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
+  const { additions, deletions } = countDiffLines(file.hunks);
   return (
     <div className="rounded-xl border-2 border-line bg-card overflow-hidden">
       <div className="flex items-center gap-2 px-2.5 py-1.5 border-b-2 border-line bg-paper-deep">
+        {/* Chevron AND name are one control: a collapsed row is a target you
+            aim at by its filename, and a 14px chevron is not that target. The
+            counts stay outside it so they read as data, not as a button. */}
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="text-ink-soft hover:text-ink cursor-pointer shrink-0"
-          aria-label={open ? "Collapse this file" : "Expand this file"}
+          className="flex items-center gap-2 min-w-0 flex-1 text-left text-ink-soft hover:text-ink cursor-pointer"
+          aria-expanded={open}
           title={open ? "Collapse" : "Expand"}
         >
-          <svg viewBox="0 0 24 24" className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg viewBox="0 0 24 24" className={`size-3.5 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="m9 18 6-6-6-6" />
           </svg>
+          <span className="font-mono text-[11px] font-bold truncate text-ink" title={file.path}>
+            {file.origPath && file.origPath !== file.path && (
+              <span className="text-ink-soft">{file.origPath} → </span>
+            )}
+            {file.path}
+          </span>
         </button>
-        <span className="font-mono text-[11px] font-bold truncate flex-1" title={file.path}>
-          {file.origPath && file.origPath !== file.path && (
-            <span className="text-ink-soft">{file.origPath} → </span>
-          )}
-          {file.path}
-        </span>
+        {/* Binary files have no lines to count — an honest nothing beats +0 −0. */}
+        {!file.binary && (additions > 0 || deletions > 0) && (
+          <span className="shrink-0 text-[10px] tabular-nums" title={`${additions} added, ${deletions} removed`}>
+            {additions > 0 && <span className="text-leaf">+{additions}</span>}
+            {additions > 0 && deletions > 0 && " "}
+            {deletions > 0 && <span className="text-berry">−{deletions}</span>}
+          </span>
+        )}
         {onUndoFile && (
           <button
             type="button"

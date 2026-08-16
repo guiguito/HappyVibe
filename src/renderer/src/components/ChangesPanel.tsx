@@ -525,11 +525,24 @@ export function ChangesPanel({
             <div className="fixed inset-0 z-40" onClick={() => setBranchMenu(false)} />
             <div className="absolute left-2 top-14 z-50 w-56 rounded-xl border-2 border-line bg-card shadow-sticker-lg p-1.5 flex flex-col gap-1 max-h-72 overflow-y-auto">
               {branches.map((b) => {
-                // Two branches never offer delete: the one you are standing on
-                // (git refuses anyway, so the control would only ever produce an
-                // error) and the default branch — resolved by git rather than
-                // assumed to be called "main".
-                const deletable = b !== branch?.branch && b !== defaultShort;
+                /*
+                 * Two branches cannot be deleted: the one you are standing on
+                 * (git refuses outright) and the default branch — resolved by
+                 * git, never assumed to be called "main".
+                 *
+                 * They still SHOW the control, disabled, naming the reason.
+                 * Hiding it was the first version and was reported as the
+                 * feature missing: on a two-branch repo where you are on the
+                 * feature branch, every row qualified, so the panel looked
+                 * exactly like a build without the feature. This is not the
+                 * "don't show what cannot work" rule — that one is about
+                 * capabilities this app will never have. Standing on a branch
+                 * is a state you leave by switching, and the tooltip says so.
+                 */
+                const why =
+                  b === branch?.branch ? "You’re on this branch — switch to another one first."
+                    : b === defaultShort ? "This is the project’s main branch."
+                      : null;
                 return (
                   <div key={b} className="group flex items-center rounded-lg hover:bg-paper-deep">
                     <button
@@ -539,20 +552,28 @@ export function ChangesPanel({
                     >
                       {b === branch?.branch ? "● " : "○ "}{b}
                     </button>
-                    {deletable && (
-                      <button
-                        type="button"
-                        // Same trap as everywhere else in this menu: act on
-                        // mousedown, or the click-catcher unmounts the row
-                        // between press and release.
-                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); askDeleteBranch(b); }}
-                        title={`Delete ${b} from this computer`}
-                        aria-label={`Delete branch ${b}`}
-                        className="shrink-0 px-1.5 py-1 opacity-0 group-hover:opacity-100 focus:opacity-100 text-ink-soft hover:text-berry cursor-pointer"
-                      >
-                        <TrashGlyph />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      // `aria-disabled`, NOT `disabled`: a disabled control
+                      // receives no pointer events, so its `title` never
+                      // appears — and the reason IS the point here.
+                      aria-disabled={why !== null}
+                      // Same trap as everywhere else in this menu: act on
+                      // mousedown, or the click-catcher unmounts the row
+                      // between press and release.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!why) askDeleteBranch(b);
+                      }}
+                      title={why ?? `Delete ${b} from this computer`}
+                      aria-label={`Delete branch ${b}`}
+                      className={`shrink-0 px-1.5 py-1 opacity-0 group-hover:opacity-100 focus:opacity-100 ${
+                        why ? "text-line cursor-not-allowed" : "text-ink-soft hover:text-berry cursor-pointer"
+                      }`}
+                    >
+                      <TrashGlyph />
+                    </button>
                   </div>
                 );
               })}
@@ -938,9 +959,30 @@ export function ChangesPanel({
                       <div className="text-[10px] text-ink-soft font-mono">{h.sha.slice(0, 7)} · {h.authorDate.slice(0, 10)}</div>
                     </button>
                   ))}
+                  {/* The commit's files, clearly a SEPARATE region — the list
+                      above and the files below are two different things, and
+                      without a header they read as one run of rows. Named with
+                      the commit so it is obvious which one you opened, and
+                      closable without scrolling back up. */}
                   {expanded && history.some((h) => h.sha === expanded) && (
-                    <div className="px-2 pt-2">
-                      <DiffView files={expandedDiff} />
+                    <div className="mt-2 border-t-2 border-line bg-paper-deep">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+                        <span className="text-[10px] font-bold text-ink-soft truncate flex-1">
+                          Files in <span className="font-mono">{expanded.slice(0, 7)}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => { setExpanded(null); setExpandedDiff([]); }}
+                          className="shrink-0 text-[10px] font-bold text-ink-soft hover:text-ink cursor-pointer"
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <div className="px-2 pb-2">
+                        {/* Collapsed: a commit touching a dozen files would
+                            otherwise bury the list you were just reading. */}
+                        <DiffView files={expandedDiff} defaultOpen={false} />
+                      </div>
                     </div>
                   )}
                 </div>
