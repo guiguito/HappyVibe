@@ -202,6 +202,11 @@ function pathsFromDiffGitLine(rest: string): { a: string; b: string } | null {
 export function parseUnifiedDiff(out: string): FileDiff[] {
   if (!out.trim()) return [];
   const lines = out.split("\n");
+  // The trailing newline leaves a final "" that is not a line at all. Left in, it
+  // becomes a phantom context line on the LAST hunk of every diff — and since
+  // hunkPatch feeds that hunk straight to `git apply`, the patch would no longer
+  // describe the file and every undo of a final hunk would refuse as "stale".
+  if (lines[lines.length - 1] === "") lines.pop();
   const files: FileDiff[] = [];
 
   let cur: {
