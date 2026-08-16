@@ -869,7 +869,19 @@ export function ChangesPanel({
         {/* The mono command line — every action shows what it ran (§0). */}
         {lastCommand && (
           <div className="shrink-0 border-t-2 border-line px-2.5 py-1 bg-paper-deep">
-            <code className="text-[10px] font-mono text-ink-soft break-all">$ {lastCommand}</code>
+            {/* Two lines, hard. This shows the command that ran, and most are
+                short — but a prefilled pull-request URL is ~350 characters and
+                wrapped over seventeen lines, swallowing the panel it sits in.
+                The full text stays in the tooltip, so nothing is lost. */}
+            <code
+              title={lastCommand}
+              // NO `block` here: `line-clamp-2` works by setting
+              // `display:-webkit-box`, and adding `block` overrides that and
+              // silently disables the clamp — it computed to 8 lines.
+              className="text-[10px] font-mono text-ink-soft break-all line-clamp-2"
+            >
+              $ {lastCommand}
+            </code>
           </div>
         )}
       </div>
