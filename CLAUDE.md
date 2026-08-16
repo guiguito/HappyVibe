@@ -20,9 +20,13 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   and it was ~20 of the 55 typecheck runs in this repo's history.
 
 ## Tests
-- Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated) — **14 files**:
-  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,prompt-templates-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,mcp-bridge,plan-bridge}.test.ts
-  Source of truth = `grep -rl "skipIf(!KEY" tests/` — re-derive, don't trust the list above.
+- Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated) — **17 files** as of
+  2026-08-16 (was 14; browser-bridge, terminal-bridge and git-message joined since).
+  Source of truth = `grep -rl "skipIf(!KEY" tests/` — RE-DERIVE IT, never trust a list in prose.
+  The count in this file has drifted twice; the grep has not.
+  Note git-message is the odd one out: it is the only live file that is not a BRIDGE test —
+  §29's "Write it for me" is a one-shot `pi -p` call, so it exercises the print-mode path
+  (`titles.ts`'s pattern) rather than the RPC one.
   Canonical invocation: `npm run test:live`
   (= `grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism`)
   Run it only when `npm run live:why` prints something — that prints the changed files which
@@ -373,6 +377,41 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   the whole reason `askUntil` exists. So: before recording any behavioural claim about a model,
   **interleave the arms and compute a p-value** — both are cheap and neither was done the first
   time. Full retraction, tables and method in docs/validation/d1.md.
+- **Git (§29): the panel renders GIT's hunks, and that is not a style preference.** The tool cards
+  use the js `diff` library (`diffs.ts`) and keep it — they render an edit's own before/after,
+  which git never saw. But git and that library split the same change into DIFFERENT hunks, so a
+  panel rendering js-diff hunks while undoing through `git apply -R` would undo a hunk the user
+  never saw. `gitParse.ts` parses git's unified output, `hunk.raw` is fed back verbatim, and
+  `git apply -R --check` runs first — that check IS the stale-check, not a second mechanism beside
+  it. Two parser traps, both found by tests rather than by reading: the trailing `""` from
+  `split("\n")` becomes a phantom context line on the LAST hunk of every diff (so its patch stops
+  describing the file and every last-hunk undo refuses as "stale" — a test that undoes `hunks[0]`
+  never sees it), and a porcelain-v2 rename line lists the NEW path first with the original after
+  a tab. Fixtures in `tests/git-parse.test.ts` are captured from a real git, never hand-written.
+- **The `.git` watch fingerprints; it cannot filter by filename.** Measured on macOS: writing one
+  file under `.git/objects/ab/` reports `change ".git"`, `rename "objects"` AND `rename "HEAD"` —
+  that third event is a lie, and it is exactly the one a name filter lets through, so a commit's
+  object churn would run one `git status` per object. `gitWatch.ts` therefore debounces every event
+  down to one comparison of HEAD's contents plus the index's mtime+size. The watch exists at all
+  because `watch.ts` deliberately filters `.git` (`isVisibleEntry`), so nothing else in the app can
+  see a branch switched in an outside terminal.
+- **Git's idle gate covers the WORKING TREE, not "git".** Switch, stash, sync, undo, discard and
+  init are blocked while any session in the workspace is busy (`activity.isIdle`, the gate MCP
+  live-reload already uses) because sessions share one tree; commit, push, fetch and stage are NOT
+  gated — they change history or the remote picture, never the files under the agent. A refusal
+  returns `{ok:false, busy:[titles]}`, so the renderer never decides what is safe. Turn end pushes
+  `hv:git-changed` with `force`, because the session is still marked busy at that instant and a
+  gated push would drop the one refresh the user is waiting for.
+- **The git probe caches a repo but re-asks a non-repo.** A cached "no-repo" would leave the panel
+  saying "isn't tracking versions yet" forever after the user runs `git init` in their own
+  terminal. Also realpath BOTH sides of the root comparison: macOS answers `/private/var` to a
+  `/var` question, and a string compare calls every temp-dir repo a subdirectory of itself.
+- **`tests/git-remote.test.ts` pushes to a REAL GitHub repo** (`guiguito/TestHappyVibeGit`) to
+  cover what a local temp repo cannot: `publish` setting an upstream, `sync` fast-forwarding
+  without a merge commit, and a diverged branch coming back `nonFF` having merged NOTHING. It
+  clones to a temp dir, only ever pushes `hv-test-*` branches, deletes them in `afterAll`, and
+  skips itself when that folder is absent — so CI never sees it and the user's own checkout is
+  never touched.
 - The centre tab layout is **persisted** (`config.json` `layout`, validated + pruned on restore by
   `layoutPersist.ts` — main never learns what a tab is, same division of labour as `shortcuts`).
   `activeWs` persists in localStorage beside `hv:sidebar-collapsed`: without it the layout restores

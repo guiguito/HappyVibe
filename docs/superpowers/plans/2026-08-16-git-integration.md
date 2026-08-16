@@ -379,6 +379,18 @@ Run in the HappyVibe repo itself (a real git repo, currently on `git-integration
 **Write it for me (Changes panel):**
 - With a provider configured, the button fills the message box with an editable draft whose style matches this repo's log (plain sentences, no conventional-commit prefix); the tooltip names the approximate cost and current model; the chevron opens a model picker with the default preselected.
 
+## Execution record (2026-08-16)
+
+All twelve tasks executed. What the plan did not predict, recorded because it is the part worth reading:
+
+- **T1/T2 — two parser bugs the tests caught, not the reader.** The trailing `""` from `split("\n")` became a phantom context line on the LAST hunk of every diff, which would have made every last-hunk undo refuse as "stale"; it hid because the first round-trip test undid `hunks[0]`. And the repo-root comparison needed `realpath` on both sides — macOS answers `/private/var` to a `/var` question, so every temp-dir repo classified as a subdirectory of itself. Both now have named regression tests.
+- **T2 — `detectJunk` matched only the first path segment**, surfaced by an unused-parameter typecheck error rather than a failing test. A monorepo's junk is `packages/web/node_modules/…`, so the guard would have waved it through in exactly the repos that have the most of it.
+- **T5 — the `.git` watch could not be built as designed.** Filtering events by filename does not work: macOS reports a spurious `rename "HEAD"` for a write three levels down in `.git/objects/`. Replaced with a fingerprint of HEAD's contents + the index's mtime/size. Measured, not guessed.
+- **T5 — the NUL-byte guard (`tests/no-nul-bytes.test.ts`) fired**, on two field separators written as literal NULs. Exactly the failure it exists for; both files would have been invisible to grep.
+- **New: `tests/git-remote.test.ts`** — the user asked for real-remote coverage, so the network verbs run against `guiguito/TestHappyVibeGit`. Five tests, including the one that matters most: a genuinely diverged branch returns `nonFF` and merges nothing.
+- **T3 — the live arm runs on `deepseek-v4-flash`** and is a new live-batch file (`npm run live:why` now prints it). Style-matching verified by hand: this repo's history drafts `feat(git): …`, a plain-sentence history drafts `Add pancake recipe`.
+- **Two pre-existing `describe-command` tests changed expectation** (not weakened): they assert `&&` inside a `-m` message does not split the command, which they still prove now that the label quotes the message.
+
 ## Self-review notes
 
 - Spec coverage: every §29 decision maps to a task — vocabulary/two-altitude (T8/T9 copy rules + mono line), where-it-lives (T7/T11), file-tab mode (T10), panel order (T8), staging-optional + add -A + junk guard (T2/T9), Write-it-for-me incl. cost tooltip + model dropdown (T3/T9), per-hunk undo four rules (T2/T10), idle gate + ff-only + switch dialog (T5/T9), default rules + engine honesty (T4, honesty lives in the PRD text not code), describeCommand + turn-end refresh (T11/T5), five outcomes (T2/T8/T11), worktrees-designed-for (explicit root in every T2 signature), out-of-scope respected (no conflict UI, no PR/auth, no worktrees).
