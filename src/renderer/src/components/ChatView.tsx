@@ -118,6 +118,7 @@ export function ChatView({
   onLoadEarlier,
   activePlan,
   composerInsert,
+  visible = true,
 }: {
   workspace: string | null;
   sessionId: string | null;
@@ -168,6 +169,13 @@ export function ChatView({
    * lands — the same mechanism the rewind-to-composer path uses.
    */
   composerInsert?: { text: string; nonce: number };
+  /**
+   * This pane is on screen. Every ChatView stays MOUNTED (streaming, and a live
+   * dictation, must survive switching tabs), so a component cannot infer this
+   * from its own render — App owns the same expression that hides the wrapper.
+   * Only the recording indicator reads it, to choose docked vs viewport-fixed.
+   */
+  visible?: boolean;
   onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[]) => void;
   /**
    * §28: page-element comments the user picked in the embedded browser. They
@@ -850,14 +858,6 @@ export function ChatView({
           </div>
         </div>
       )}
-      {/* Round 2: the recording indicator. Bottom-centre and viewport-fixed, so
-          it is legible and costs the composer row nothing. */}
-      <VoiceOverlay
-        open={dictation.recording}
-        transcribing={dictation.transcribing}
-        level={dictation.level}
-        onStop={dictation.stop}
-      />
       {/* §27: first-use activation. Never names the model (§12). */}
       <VoiceActivateModal
         open={voiceActivateOpen}
@@ -1014,8 +1014,20 @@ export function ChatView({
           ev.preventDefault();
           void addFiles(ev.dataTransfer.files);
         }}
-        className="px-6 pb-5 pt-2"
+        className="relative px-6 pb-5 pt-2"
       >
+        {/* Round 2: the recording indicator, docked just above the composer —
+            `bottom-full` on this relative form, so it costs the layout nothing
+            and never leaves the pane. `visible` decides: a hidden pane cannot
+            show it at all, and a hot mic must always be visible somewhere, so
+            VoiceOverlay portals itself in that case. */}
+        <VoiceOverlay
+          open={dictation.recording}
+          transcribing={dictation.transcribing}
+          level={dictation.level}
+          onStop={dictation.stop}
+          docked={visible}
+        />
         {/* Queued messages (Pi queue_update). Abort preserves the queue — chips stay after Stop. */}
         {queued > 0 && (
           <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-1.5 px-1 pb-2">

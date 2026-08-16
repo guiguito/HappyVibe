@@ -8,13 +8,25 @@ import { createPortal } from "react-dom";
  * to read and a permanent tax on the width of the control row. It moves here:
  * one glowing element, centred, big enough to see from across the room.
  *
- * Rendered from ChatView but PORTALLED TO document.body, and the portal is not
- * optional. `position: fixed` is not enough: App gives each pane
- * `display: none` when the active view is not "chat", and a display:none
- * ancestor collapses a fixed child to 0x0 — measured. Without the portal, a
- * live recording became invisible the moment you opened a settings page, and
- * with the chip hidden there would be no indicator anywhere. A hot microphone
- * with no feedback is the exact failure this component exists to prevent.
+ * TWO placements, because one cannot serve both cases.
+ *
+ * `docked` (the normal one): in flow above the composer, inside the chat pane.
+ * It has to be the default because the alternative is viewport-fixed, and a
+ * viewport-fixed overlay overlaps a browser pane in another split — which does
+ * not merely look wrong. A WebContentsView composites ABOVE the DOM, so
+ * BrowserTab hides the whole page whenever an overlay crosses it (see its
+ * coverage note). Docked, the pill lives inside this pane's box and can never
+ * cross one: a pane shows chat OR a browser, never both.
+ *
+ * Undocked: PORTALLED TO document.body, and the portal is not optional there.
+ * `position: fixed` is not enough — App gives each pane `display: none` when
+ * the active view is not "chat", and a display:none ancestor collapses a fixed
+ * child to 0x0 (measured). Without it a live recording became invisible the
+ * moment you opened a settings page, and with the chip hidden there would be no
+ * indicator anywhere. A hot microphone with no feedback is the exact failure
+ * this component exists to prevent — the mic keeps running while the pane is
+ * hidden, because ChatView stays MOUNTED. So the fallback covers exactly the
+ * case where docking cannot work, and only that case.
  *
  * Several ChatViews are mounted at once (one per chat tab) and only one can be
  * recording, which `useDictation`'s exclusivity token enforces rather than
@@ -32,9 +44,11 @@ interface Props {
   onStop: () => void;
   /** True between stop and the transcript arriving. */
   transcribing?: boolean;
+  /** This chat pane is on screen — sit above its composer instead of the viewport. */
+  docked?: boolean;
 }
 
-export function VoiceOverlay({ open, level, onStop, transcribing = false }: Props): React.JSX.Element | null {
+export function VoiceOverlay({ open, level, onStop, transcribing = false, docked = false }: Props): React.JSX.Element | null {
   if (!open && !transcribing) return null;
 
   // Speech peaks around 0.1-0.3 RMS, so scale generously and clamp. `soft` is
@@ -43,11 +57,21 @@ export function VoiceOverlay({ open, level, onStop, transcribing = false }: Prop
   const glow = 18 + soft * 46;
   const ring = 1 + soft * 0.22;
 
-  return createPortal(
+  const pill = (
     <div
       // pointer-events-none on the wrapper so the overlay never swallows a click
       // meant for the transcript underneath; the button re-enables its own.
-      className="fixed inset-x-0 bottom-10 z-50 flex justify-center pointer-events-none"
+      //
+      // Neither variant spans the width. The old one did (`inset-x-0` + a
+      // centring flex) and its BOUNDING BOX is what BrowserTab's rectangle check
+      // reads — so a pill painted in the middle of the screen "overlapped" a
+      // browser pane off in the corner and blanked it. Shrink-to-fit, so the box
+      // is the thing you can actually see.
+      className={
+        docked
+          ? "absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-40 pointer-events-none"
+          : "fixed bottom-10 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+      }
       aria-live="polite"
     >
       <button
@@ -109,7 +133,8 @@ export function VoiceOverlay({ open, level, onStop, transcribing = false }: Prop
           )}
         </span>
       </button>
-    </div>,
-    document.body,
+    </div>
   );
+
+  return docked ? pill : createPortal(pill, document.body);
 }

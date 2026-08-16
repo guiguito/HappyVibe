@@ -28,14 +28,27 @@ describe("the nine-point blind spot (§28 round 1)", () => {
     expect(anyPointInside(POINTS, card)).toBe(false);
   });
 
-  it("the voice pill overlaps the pane…", () => {
-    // fixed inset-x-0 bottom-10, ~48px tall → a band 40px off the bottom.
-    const pill: Rect = { left: 0, top: 949 - 40 - 48, right: 1512, bottom: 949 - 40 };
+  /**
+   * The voice pill used to be `fixed inset-x-0 … flex justify-center`, so its
+   * BOX spanned the viewport while its pixels sat in the middle. The rect pass
+   * reads the box, so a pill nobody could see over the browser blanked the page
+   * for the whole recording. It is shrink-to-fit now, and docked into the chat
+   * pane whenever that pane is on screen (VoiceOverlay `docked`).
+   */
+  it("the docked pill stays inside its own pane, so the browser is untouched", () => {
+    // absolute bottom-full above the composer of the LEFT pane, ~300x48.
+    const docked: Rect = { left: 420, top: 949 - 90 - 48, right: 720, bottom: 949 - 90 };
+    expect(rectsOverlap(PANE, docked)).toBe(false);
+  });
+
+  it("the undocked fallback still overlaps — which is why the rect pass stays", () => {
+    // fixed bottom-10 left-1/2 -translate-x-1/2, ~300x48 → centred on 1512.
+    const pill: Rect = { left: 606, top: 949 - 40 - 48, right: 906, bottom: 949 - 40 };
     expect(rectsOverlap(PANE, pill)).toBe(true);
   });
 
   it("…and falls between the sample rows too", () => {
-    const pill: Rect = { left: 0, top: 949 - 40 - 48, right: 1512, bottom: 949 - 40 };
+    const pill: Rect = { left: 606, top: 949 - 40 - 48, right: 906, bottom: 949 - 40 };
     expect(anyPointInside(POINTS, pill)).toBe(false);
   });
 

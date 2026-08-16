@@ -2256,6 +2256,11 @@ export default function App(): React.JSX.Element {
               className={`min-h-0 min-w-0 flex-col ${paneDivider(area)} ${activeView === "chat" && area ? "flex" : "hidden"}`}
             >
               <ChatView
+            // Same expression as the wrapper's flex/hidden above — the recording
+            // indicator docks into the pane when it can be seen, and falls back
+            // to a body portal when it cannot (a display:none ancestor collapses
+            // even a fixed child to 0x0).
+            visible={activeView === "chat" && !!area}
             workspace={sess?.workspaceId ?? null}
             sessionId={sid}
             sessionModel={sess?.model ?? null}
