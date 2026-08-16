@@ -354,6 +354,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   BOX, so a positioned wrapper that centres small content in a full-width box blanks
   the page (the voice pill did exactly this — `fixed inset-x-0 … justify-center`). The
   fix for that is to shrink the box, not to loosen the check.
+- **"Open a pull request" creates nothing, and the `draft` flag is why it is cheap.**
+  It opens the FORGE's own prefilled form in the user's EXTERNAL browser — no token, no
+  auth UI, no API call, which is the only reason it clears §5/§6's GitHub fence. It
+  cannot use the §28 embedded pane: that runs on `persist:hv-browser`, its own cookie
+  jar, so the user is not signed in there. `hv:git-pr-url(ws, draft)` serves two
+  callers and the flag is load-bearing: `false` is the ELIGIBILITY probe the renderer
+  runs on every status push to decide whether the button exists, so it must never read
+  a diff or call the model — without the split, publishing a branch would cost a model
+  call. `true` is the click. Body is capped at 4000 chars because GitHub answers
+  `414 URI Too Long` past a limit it does not document, and Bitbucket gets no
+  description param because it documents none (a key that silently does nothing is
+  worse than an absent one). Unrecognised host → `null` → no button, never a guessed
+  URL that 404s. Shapes pinned in `tests/git-forge.test.ts`.
 - **The drawer is the ONE overlay a browser pane makes ROOM for instead of hiding
   under** (§7 round 13). Nothing in the DOM can ever paint above a `WebContentsView`
   — but the view can be made SMALLER, and the drawer is a stable rectangle pinned to
