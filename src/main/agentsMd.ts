@@ -123,7 +123,12 @@ export function proposeAgentsMd(
   runtimeDir: string,
   registeredWorkspaces: string[],
   workspaceId: string,
-  opts: { model?: { provider: string; modelId: string } | null; env?: Record<string, string> } = {}
+  opts: {
+    model?: { provider: string; modelId: string } | null;
+    env?: Record<string, string>;
+    /** Round 15: report the call so main can audit it (see oneShotLog.ts). */
+    onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }) => void;
+  } = {}
 ): Promise<string | null> {
   resolveAgentsMd(registeredWorkspaces, workspaceId); // confinement gate before any spawn
   const workspace = path.resolve(workspaceId);
@@ -154,10 +159,19 @@ export function proposeAgentsMd(
     let out = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (d: string) => (out += d));
-    child.on("error", () => resolve(null));
+    const done = (ok: boolean): void =>
+      opts.onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok });
+    child.on("error", () => {
+      done(false);
+      resolve(null);
+    });
     child.on("exit", (code) => {
-      if (code !== 0) return resolve(null);
+      if (code !== 0) {
+        done(false);
+        return resolve(null);
+      }
       const draft = out.trim().replace(/^```(?:markdown|md)?\n?/, "").replace(/\n?```$/, "").trim();
+      done(!!draft);
       resolve(draft || null);
     });
   });

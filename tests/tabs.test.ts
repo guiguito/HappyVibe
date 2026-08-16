@@ -261,6 +261,11 @@ test("relative paths normalize; escapes above the root → null", () => {
   expect(resolveCardPath("/ws", "src/../b.md")).toBe("b.md");
   expect(resolveCardPath("/ws", "../outside")).toBeNull();
   expect(resolveCardPath("/ws", "src/../../x")).toBeNull();
+  // Round 15: browser cards put their URL in the same `path` slot, and the
+  // segment walk would otherwise yield "http:/localhost:8000/x.html" — a
+  // clickable offer to open a web page in the code editor.
+  expect(resolveCardPath("/ws", "http://localhost:8000/x.html")).toBeNull();
+  expect(resolveCardPath("/ws", "https://example.org/a")).toBeNull();
 });
 
 // ── round 11 regression: closing a chat tab must not strand the layout ───────

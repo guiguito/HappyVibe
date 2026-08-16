@@ -98,3 +98,42 @@ describe("images cross the seam", () => {
     expect(it).toMatchObject({ imagesDropped: true });
   });
 });
+
+/**
+ * Round 15 — the same seam, one round later. `ts` and `turnMs` are computed in
+ * main (restore.ts, from the session file's own message timestamps) and must be
+ * NAMED in restoreMap or they are dropped exactly as §24's `command` and §7's
+ * `images` were: silently, with every other test still green.
+ */
+describe("timestamps cross the seam", () => {
+  it("a restored user message keeps when it was sent", () => {
+    let n = 0;
+    const [it] = toTranscriptItems(
+      [{ kind: "user", text: "hi", ts: 1783062706614 }],
+      { sessionId: "s", workspaceId: null },
+      () => ++n,
+    );
+    expect(it).toMatchObject({ kind: "user", ts: 1783062706614 });
+  });
+
+  it("a restored assistant bubble keeps its turn duration", () => {
+    let n = 0;
+    const [it] = toTranscriptItems(
+      [{ kind: "assistant", text: "done", ts: 1783062710000, turnMs: 34_000 }],
+      { sessionId: "s", workspaceId: null },
+      () => ++n,
+    );
+    expect(it).toMatchObject({ kind: "assistant", turnMs: 34_000 });
+  });
+
+  it("an unstamped message is still restored — older sessions have no timestamps", () => {
+    let n = 0;
+    const [it] = toTranscriptItems(
+      [{ kind: "user", text: "old" }],
+      { sessionId: "s", workspaceId: null },
+      () => ++n,
+    );
+    expect(it).toMatchObject({ kind: "user", text: "old" });
+    expect((it as { ts?: number }).ts).toBeUndefined();
+  });
+});

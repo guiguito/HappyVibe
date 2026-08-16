@@ -172,7 +172,7 @@ describe("chains and pipes", () => {
   });
   it("pipes describe the first command + | …", () => {
     expect(describeCommand("grep -rn TODO src | head -5").label).toBe("Searching for TODO | …");
-    expect(describeCommand("cat file | wc -l").label).toBe("Running: cat file | …");
+    expect(describeCommand("cat file | wc -l").label).toBe("Reading file | …"); // round 15: cat is named now
   });
   it("destructive survives chaining (cd prefix and + more)", () => {
     expect(describeCommand("cd /tmp && rm -rf build")).toEqual({ label: "Deleting build", destructive: true });
@@ -190,7 +190,10 @@ describe("quoting edge cases", () => {
     // the flat "Committing changes" to one that quotes the message; the quoting
     // assertion below is unchanged and is the point.)
     expect(describeCommand('git commit -m "fix: a && b | c"').label).toBe('Saving a version: "fix: a && b | c"');
-    expect(describeCommand("echo 'a && b'").label).toBe("Running: echo 'a && b'");
+    // Round 15 named `echo` ("Printing a message"), which no longer ECHOES the
+    // argument — so it could not prove the quoted `&&` survived. Swapped for a
+    // command whose label still carries the argument, which is the assertion.
+    expect(describeCommand("cat 'a && b.txt'").label).toBe("Reading a && b.txt");
   });
   it("quoted arguments are unwrapped for the label", () => {
     expect(describeCommand('rm -rf "My Folder"')).toEqual({ label: "Deleting My Folder", destructive: true });
@@ -217,7 +220,8 @@ describe("prefixes and paths", () => {
 
 describe("unknown / garbage input", () => {
   it("unknown commands keep today's Running: <truncated>", () => {
-    expect(describeCommand("make -j8").label).toBe("Running: make -j8");
+    // `make` gained a label in round 15, so it is no longer an example of one.
+    expect(describeCommand("frobnicate -j8").label).toBe("Running: frobnicate -j8");
     const long = "x".repeat(200);
     expect(describeCommand(long).label).toBe(`Running: ${"x".repeat(60)}…`);
   });
@@ -229,5 +233,60 @@ describe("unknown / garbage input", () => {
     expect(describeCommand(";;;")).toEqual({ label: "Running a command" });
     expect(describeCommand(undefined as unknown as string)).toEqual({ label: "Running a command" });
     expect(describeCommand(42 as unknown as string)).toEqual({ label: "Running a command" });
+  });
+});
+
+// ── Round 15: fewer commands fall back to the raw "Running: <cmd>" ──────────
+// Pi's built-ins cannot carry an `intent` param (fixed schemas — §7 round 1),
+// so a bash card's headline is derived here or not at all. These are the verbs
+// a coding agent actually reaches for that had no entry.
+describe("round 15 — the common verbs that used to fall through", () => {
+  it("reading a file", () => {
+    expect(describeCommand("cat src/a.ts").label).toBe("Reading a.ts");
+    expect(describeCommand("head -50 log.txt").label).toBe("Reading log.txt");
+    expect(describeCommand("tail -f server.log").label).toBe("Reading server.log");
+  });
+
+  it("listing and locating", () => {
+    expect(describeCommand("ls -la src").label).toBe("Listing src");
+    expect(describeCommand("ls").label).toBe("Listing the current directory");
+    expect(describeCommand("which node").label).toBe("Looking for node");
+    expect(describeCommand("pwd").label).toBe("Checking the current directory");
+  });
+
+  it("creating and linking", () => {
+    expect(describeCommand("touch a.ts").label).toBe("Creating a.ts");
+    expect(describeCommand("ln -s a b").label).toBe("Linking b");
+  });
+
+  it("permissions and processes", () => {
+    expect(describeCommand("chmod +x run.sh").label).toBe("Changing permissions of run.sh");
+    expect(describeCommand("kill -9 123").label).toBe("Stopping a process");
+    expect(describeCommand("ps aux").label).toBe("Listing processes");
+    expect(describeCommand("lsof -i :3000").label).toBe("Checking what is using a port");
+  });
+
+  it("build tools", () => {
+    expect(describeCommand("make build").label).toBe("Running make build");
+    expect(describeCommand("cargo build").label).toBe("Building the project");
+    expect(describeCommand("cargo test").label).toBe("Running tests");
+    expect(describeCommand("docker ps").label).toBe("Listing containers");
+    expect(describeCommand("docker build -t x .").label).toBe("Building a container image");
+  });
+
+  it("text tools", () => {
+    expect(describeCommand("wc -l a.ts").label).toBe("Counting lines in a.ts");
+    expect(describeCommand("diff a.ts b.ts").label).toBe("Comparing a.ts and b.ts");
+    expect(describeCommand("sed -n '1,20p' a.ts").label).toBe("Reading part of a.ts");
+    expect(describeCommand("echo hello").label).toBe("Printing a message");
+  });
+
+  it("archives", () => {
+    expect(describeCommand("tar -xzf a.tgz").label).toBe("Extracting an archive");
+    expect(describeCommand("unzip a.zip").label).toBe("Extracting an archive");
+  });
+
+  it("still falls back honestly for something genuinely unknown", () => {
+    expect(describeCommand("frobnicate --hard").label).toBe("Running: frobnicate --hard");
   });
 });

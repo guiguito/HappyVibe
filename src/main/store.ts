@@ -111,6 +111,49 @@ export class SessionIndex {
 }
 
 /**
+ * Round 15 — "this session has no content", the test that decides whether
+ * closing its last tab deletes it.
+ *
+ * Content means A USER EVER SENT A PROMPT. Not "the file is small" and not
+ * "the title is still the fallback": a session that Pi has merely booted
+ * already has a file with session/model bookkeeping entries in it, and a
+ * titled session is by definition one that got a prompt. So the question is
+ * asked of the entries directly.
+ *
+ * Reads the file with the same tolerant line-by-line parse the rest of the app
+ * uses (a live file's last line can be torn mid-write), and answers EMPTY on
+ * anything it cannot read — a session with no file has certainly had no
+ * prompt, and the alternative reading, "unreadable means keep", would leave
+ * exactly the rows this exists to stop accumulating.
+ *
+ * `titleSource` is checked too, and it is the cheap half: a user-renamed
+ * session is never empty whatever the file says, because naming a thing is a
+ * statement that you want it.
+ */
+export function isSessionEmpty(meta: SessionMeta, sessionDirPath: string): boolean {
+  if (meta.titleSource === "user") return false;
+  const resolved = confinedSessionPath(sessionDirPath, meta.piSessionFile);
+  if (!resolved) return true; // never spawned, or a path we will not read
+  let raw: string;
+  try {
+    raw = fs.readFileSync(resolved, "utf8");
+  } catch {
+    return true; // no file on disk = no prompt was ever sent
+  }
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let e: { type?: string; message?: { role?: string } };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      continue; // torn tail line
+    }
+    if (e.type === "message" && e.message?.role === "user") return false;
+  }
+  return true;
+}
+
+/**
  * V2.C2 session delete: remove a session's Pi session file, confined to the
  * app-owned session dir. Never deletes outside it (piSessionFile is
  * Pi-reported — treat as untrusted); a missing file is fine.

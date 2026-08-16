@@ -43,12 +43,20 @@ export function BrowserTab({
   hidden,
   edges,
   drawerWidth = 0,
+  dividerClass,
   onPicked,
 }: {
   browserId: string;
   info: HvBrowserInfo | undefined;
   gridArea?: string;
   hidden: boolean;
+  /**
+   * Round 15: App's `paneDivider(area)` — the same border chat/file/empty cells
+   * draw. Distinct from `edges` below, which insets the composited VIEW away
+   * from the divider's drag strip: that gap is empty space, not a line, so a
+   * browser beside a session had no visible seam at all.
+   */
+  dividerClass?: string;
   /**
    * Width of the right-hand drawer when it is open, else 0.
    *
@@ -340,7 +348,7 @@ export function BrowserTab({
 
   return (
     <div
-      className="relative min-h-0 min-w-0 flex flex-col overflow-hidden bg-paper"
+      className={`relative min-h-0 min-w-0 flex flex-col overflow-hidden bg-paper ${dividerClass ?? ""}`}
       style={{ gridArea, display: hidden ? "none" : "flex" }}
     >
       {/* Top bar — the ordinary browser controls, in the ordinary order. */}

@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, evaluate, isWaitTool, parseRulesFile, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, evaluate, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER } from "./hv-browser";
 import { unwrapMcpCall } from "./hv-mcp";
@@ -364,12 +364,31 @@ type AuditDecision = "allow" | "allow-session" | "deny";
 // §26 adds "terminal": a refusal the terminal feature itself makes (a multi-line
 // command, or a bash call backgrounded with `&`). Distinct from "rule" because
 // no rule fired, and from "plan" because it applies outside Plan Mode too.
-type AuditSource = "rule" | "user" | "dangerous" | "safe-default" | "plan" | "terminal";
+// Round 15 renames "dangerous" → "bypass". With a bypass active EVERY call
+// logged the old value, in red, so the column stopped distinguishing anything —
+// it named the mode, once per row, forever. Old logs keep the old string and
+// the renderer maps both; red is now reserved for what a command DOES.
+type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "terminal";
 
 /** Every permission decision emits one hv.audit notify — main's audit channel. */
 function audit(
   ui: { notify(message: string, type?: "info" | "warning" | "error"): void },
-  o: { tool: string; summary: string; decision: AuditDecision; source: AuditSource; rule?: Verdict["rule"]; grant?: "session" },
+  o: {
+    tool: string;
+    summary: string;
+    decision: AuditDecision;
+    source: AuditSource;
+    rule?: Verdict["rule"];
+    grant?: "session";
+    /**
+     * Round 15 — what the rule engine WOULD have decided, recorded on rows the
+     * bypass decided instead. This is the teachable half and the reason the
+     * source column exists at all: "bypass · rules would have asked" tells the
+     * user what turning the bypass off would cost them, where a wall of
+     * identical "bypass" rows tells them nothing.
+     */
+    wouldHave?: RuleAction;
+  },
 ): void {
   ui.notify(JSON.stringify({ kind: "hv.audit", ts: new Date().toISOString(), ...o }), "info");
 }
@@ -732,7 +751,24 @@ export default function (pi: ExtensionAPI) {
     // each call is audit-flagged and the renderer shows a permanent banner.
     // (Skipped while planning: plan mode ignores bypass entirely.)
     if (dangerous && !plan.enabled) {
-      audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "dangerous" });
+      // Round 15: evaluate the rules ANYWAY and record the verdict the bypass
+      // overrode. It costs one pure call on an object already in hand (evaluate
+      // is the same pure engine the branch below uses), and it is what turns
+      // the audit log back into a record of decisions rather than a record of
+      // one setting being on.
+      const shadow = evaluate(rules, { tool: permTool, input, workspace: process.cwd() });
+      audit(ctx.ui, {
+        tool: permTool,
+        summary,
+        decision: "allow",
+        source: "bypass",
+        // The ENGINE's verdict verbatim (allow | ask | deny) — not an
+        // AuditDecision, which has no "ask" because a prompt is not an outcome.
+        // Mapping "ask" onto anything in that set is exactly the lie this row
+        // exists to avoid.
+        wouldHave: shadow.action,
+        rule: shadow.rule,
+      });
       return;
     }
 

@@ -334,6 +334,15 @@ export default function App(): React.JSX.Element {
   // at agent_end.
   const aborted = useRef<Record<string, boolean>>({});
   /**
+   * Round 15: when the in-flight turn started, per session — set on the user's
+   * own send, read once at agent_end to stamp the duration onto the turn's last
+   * assistant bubble. A ref rather than state: nothing renders from it until
+   * the turn ends, so a re-render per turn would be pure waste. Restored
+   * sessions get the same number computed main-side (restore.ts), from the
+   * session file's own timestamps.
+   */
+  const turnStart = useRef<Record<string, number>>({});
+  /**
    * Round 11: text pushed into a composer from outside it (the editor's "Send to
    * chat"). The nonce is what makes a repeat send of the SAME text still fire —
    * ChatView appends on nonce change. Same shape as the rewind-to-composer path;
@@ -384,6 +393,36 @@ export default function App(): React.JSX.Element {
       }
       return { ...p, [sid]: [...items, withId] };
     });
+
+  /**
+   * Round 15 — stamp the finished turn's duration on its LAST assistant bubble.
+   *
+   * Called at agent_end, after commitStream has flushed the live bubble, so the
+   * item it patches already exists. It walks back only to the turn's own user
+   * message: a turn that ended on a tool card (the agent edits and says nothing)
+   * has no bubble to carry the number, and gets none rather than having it put
+   * somewhere it does not belong. Mirrors main's stampTurnDurations, which does
+   * the same job for a restored session from the file's timestamps.
+   */
+  const stampTurnEnd = (sid: string): void => {
+    const started = turnStart.current[sid];
+    delete turnStart.current[sid];
+    if (!started) return;
+    const took = Date.now() - started;
+    setTranscripts((p) => {
+      const items = p[sid];
+      if (!items) return p;
+      for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i];
+        if (it.kind === "user") return p; // reached this turn's start: no bubble
+        if (it.kind !== "assistant") continue;
+        const next = items.slice();
+        next[i] = { ...it, turnMs: took };
+        return { ...p, [sid]: next };
+      }
+      return p;
+    });
+  };
 
   // Upsert the per-session "Retrying…" notice in place (one notice spans all
   // attempts; text updates each attempt). Mirrors the compaction-notice pattern.
@@ -1045,6 +1084,7 @@ export default function App(): React.JSX.Element {
       }
       if (e.type === "agent_end") {
         commitStream(sid); // finalize the live bubble into the transcript
+        stampTurnEnd(sid); // round 15: "· 34s" on that bubble, now that it exists
         delete aborted.current[sid]; // the abort window closes with the turn
         // Flush a deferred provider error that was NOT retried (or exhausted its
         // retries) as the single hard error card for the turn.
@@ -1118,7 +1158,10 @@ export default function App(): React.JSX.Element {
         setQueues((p) => ({ ...p, [sid]: queue }));
         for (const text of delivered) {
           commitStream(sid); // flush any live bubble before the delivered user item
-          appendItem(sid, { kind: "user", text });
+          // A steer delivered mid-turn does NOT restart the clock: the turn
+          // the user is waiting on is still the one that began with their
+          // first prompt, and resetting here would report it as shorter.
+          appendItem(sid, { kind: "user", text, ts: Date.now() });
         }
       }
       // B2: provider errors (model call failed) as distinct transcript items.
@@ -1412,12 +1455,23 @@ export default function App(): React.JSX.Element {
 
   /**
    * §28: closing a browser tab DESTROYS its pane — a browser tab IS its browser,
-   * exactly like a terminal tab. No confirm: nothing is running, nothing is
-   * unsaved, and the page is one navigation away from coming back.
+   * exactly like a terminal tab.
+   *
+   * Round 15: it asks first when the session DRIVING it is mid-turn. Normally
+   * there is nothing to confirm — nothing is running, nothing is unsaved, and
+   * the page is one navigation away from coming back — but pulling the pane out
+   * from under an agent that is reading it fails its turn, and now that ⌘W
+   * reaches this tab type the close is one reflex keystroke away. A pane nobody
+   * owns (⌘B) still closes silently, which is most of them.
    */
   const closeBrowserTab = (ws: string, paneIdx: number, tab: TabId): void => {
     const id = browserOf(tab);
     if (!id) return;
+    const owner = browserOwners[id];
+    if (owner && busy[owner]) {
+      const title = sessions.find((s) => s.id === owner)?.title ?? "A session";
+      if (!window.confirm(`${title} is using this browser right now. Close it anyway?`)) return;
+    }
     void window.hv.browserClose(id).catch(() => {});
     setBrowsers((p) => {
       const next = { ...p };
@@ -1495,7 +1549,14 @@ export default function App(): React.JSX.Element {
       // offers stop/keep. Undefined means it had none, so nothing is asked.
       const terms = await askAboutTerminals(sid);
       if (terms === null) return; // cancelled
-      await window.hv.closeSession(sid, terms).catch(surface);
+      // Round 15: main deletes the session outright when no prompt was ever
+      // sent, and says so — refresh the list rather than leaving a row for a
+      // session that no longer exists.
+      const res = await window.hv.closeSession(sid, terms).catch((e) => {
+        surface(e);
+        return { deleted: false };
+      });
+      if (res?.deleted) setSessions(await window.hv.listSessions());
     }
     const next = closeTab(tabsByWs[ws] ?? emptyTabs, paneIdx, tab);
     setTabsByWs((p) => ({ ...p, [ws]: next }));
@@ -1734,7 +1795,10 @@ export default function App(): React.JSX.Element {
       }
       return;
     }
-    appendItem(sid, { kind: "user", text: msg, images: attachments?.map(attachmentUrl) });
+    // Round 15: stamp when it was sent. This is also what starts the turn
+    // clock — turnStart below is read at agent_end to fill the duration.
+    appendItem(sid, { kind: "user", text: msg, ts: Date.now(), images: attachments?.map(attachmentUrl) });
+    turnStart.current[sid] = Date.now();
     streaming.current[sid] = false;
     // A fresh prompt ends any abort window: this turn's text belongs to a new
     // bubble, never merged into the one the user stopped.
@@ -1821,7 +1885,7 @@ export default function App(): React.JSX.Element {
     if (uiReq?.kind !== "askUser") return;
     window.hv.respondInput(uiReq.req.id, answers ? JSON.stringify(answers) : null);
     const sid = uiReq.req.sessionId;
-    if (sid && answers) appendItem(sid, { kind: "user", text: answersSummary(answers) });
+    if (sid && answers) appendItem(sid, { kind: "user", text: answersSummary(answers), ts: Date.now() });
     setUiQueue((q) => q.filter((e) => e.req.id !== uiReq.req.id));
   };
 
@@ -1922,30 +1986,32 @@ export default function App(): React.JSX.Element {
     if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
     if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
     if (is("closeTab")) {
-      // Close the FOCUSED pane's active tab if it is a file or a TERMINAL (§26);
-      // window close is ⌘⇧W. Round 11: prefer the focused pane rather than "the
-      // first pane with a closable tab" — with four panes that was arbitrary.
-      // A CHAT stays exempt, and since round 12 the reason is the opposite of
-      // what it was: closing a session's last tab now ENDS its process, so it
-      // is precisely the thing that should not sit under a reflex keystroke.
-      // The tab's own × asks first; ⌘W would not. A terminal is closable here
-      // because its confirm names the running process before anything dies.
+      // Round 15: ⌘W closes the focused pane's active tab, WHATEVER it is —
+      // session, terminal or browser. Window close is ⌘⇧W.
+      //
+      // This reverses round 12's chat exemption, which existed because closing
+      // a session's last tab now ends its process and "should not sit under a
+      // reflex keystroke". The guard moves rather than disappearing: it is the
+      // STATE that decides, not the input device. closeChatTab already asks
+      // before killing a working session and already runs §26's stop/keep
+      // question for live terminals — so routing ⌘W through it means the
+      // keystroke and the tab's own × cannot diverge, which is what the
+      // exemption was really protecting against.
       if (!wsId) return;
       const close = (slot: number, tab: TabId): void => {
-        if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
+        if (isChatTab(tab)) void closeChatTab(wsId, slot, tab);
+        else if (isTermTab(tab)) void closeTerminalTab(wsId, slot, tab);
         else if (isBrowserTab(tab)) closeBrowserTab(wsId, slot, tab);
         else closeFileTab(wsId, slot, tab);
       };
       const focusedActive = wsTabs.panes[wsTabs.focused]?.active;
-      if (focusedActive && !isChatTab(focusedActive)) {
+      if (focusedActive) {
         e.preventDefault();
         close(wsTabs.focused, focusedActive);
         return;
       }
-      const i = liveSlots(wsTabs).find((s) => {
-        const a = wsTabs.panes[s]?.active;
-        return a && !isChatTab(a);
-      });
+      // The focused pane is empty — fall back to the first pane that has a tab.
+      const i = liveSlots(wsTabs).find((s) => wsTabs.panes[s]?.active);
       if (i != null) { e.preventDefault(); close(i, wsTabs.panes[i]!.active!); }
     }
   };
@@ -2103,7 +2169,7 @@ export default function App(): React.JSX.Element {
               const sid = await openSessionForSkillCreator(wsSettings);
               // The creator's prompt is fired by SkillsSection; echo it so the
               // transcript shows what was sent (hv:prompt-session emits none).
-              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator" });
+              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
               return sid;
             }}
             onRemoved={async () => {
@@ -2127,7 +2193,7 @@ export default function App(): React.JSX.Element {
             workspaceId={selected?.workspaceId ?? null}
             onNewSkillSession={async () => {
               const sid = await openSessionForSkillCreator();
-              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator" });
+              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
               return sid;
             }}
           />
@@ -2291,6 +2357,7 @@ export default function App(): React.JSX.Element {
                     gridArea={area ?? undefined}
                     hidden={area === null}
                     searchKey={bindings.search}
+                    dividerClass={paneDivider(area)}
                   />
                 );
               })}
@@ -2308,6 +2375,7 @@ export default function App(): React.JSX.Element {
                   info={browsers[bid]}
                   gridArea={area ?? undefined}
                   hidden={area === null || activeView !== "chat"}
+                  dividerClass={paneDivider(area)}
                   // Where this pane meets another: the view insets itself so the
                   // divider's drag strip is never underneath a composited page.
                   edges={paneNeighbours(wsTabs, paneOf(wsTabs, browserTab(bid)))}
@@ -2580,7 +2648,7 @@ export default function App(): React.JSX.Element {
                   {DRAWER === "changes" ? (
                     <ChangesPanel key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
                   ) : (
-                    <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setDrawerPanel(null)} />
+                    <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
                   )}
                 </div>
               </div>

@@ -182,6 +182,22 @@ export function DashboardView({ workspaces }: { workspaces: string[] }): React.J
               />
             </div>
 
+            {/* Round 15 — the model calls the app makes on your behalf: naming a
+                session, drafting AGENTS.md, writing a commit message, drafting a
+                pull request. They run with no session, so they carry no usage
+                record and no price: tokens, estimated, stated in a sentence
+                rather than a tile, and deliberately OUTSIDE the cost above.
+                §19's rule is that the ledger means what SESSIONS cost. */}
+            {data.oneShot.count > 0 && (
+              <p className="mt-3 text-xs text-ink-soft">
+                Plus <b>{fmtNum(data.oneShot.count)}</b> model call{data.oneShot.count === 1 ? "" : "s"} the app made
+                itself (session titles, AGENTS.md, commit messages, PR drafts) — roughly{" "}
+                <b>{fmtNum(data.oneShot.estTokens)}</b> tokens, estimated, and not counted in the cost above.
+                {data.oneShot.failed > 0 && ` ${fmtNum(data.oneShot.failed)} did not complete.`}{" "}
+                <span className="text-ink-soft/70">Each one is listed in the audit log.</span>
+              </p>
+            )}
+
             <Section title="Sessions over time">
               <DayBars data={data.sessionsPerDay} />
             </Section>

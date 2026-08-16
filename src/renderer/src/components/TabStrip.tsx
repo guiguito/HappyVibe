@@ -370,14 +370,18 @@ function NewTabButton({
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
 
-  /** One row. `hint` is the shortcut, omitted where there is no exact one. */
+  /** One row. `hint` is the shortcut, omitted where there is no exact one.
+      Round 15: each row leads with the glyph of the tab kind it opens — the
+      same glyphs the tabs themselves carry, so the menu previews its result. */
   const Item = ({
     label,
     hint,
+    icon,
     onPick,
   }: {
     label: string;
     hint?: string;
+    icon: React.ReactNode;
     onPick: () => void;
   }): React.JSX.Element => (
     <button
@@ -397,7 +401,10 @@ function NewTabButton({
         onPick();
       }}
     >
-      <span>{label}</span>
+      <span className="flex items-center gap-2 text-ink-soft">
+        {icon}
+        <span className="text-ink">{label}</span>
+      </span>
       {hint && <span className="text-[11px] text-ink-soft font-mono">{hint}</span>}
     </button>
   );
@@ -425,10 +432,10 @@ function NewTabButton({
           a right-aligned menu would extend leftward off the pane. */}
       {open && (
         <div className="absolute left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
-          <Item label="New session" hint={newSessionKey} onPick={onNewSession} />
-          <Item label="New terminal" hint={newTerminalKey} onPick={onNewTerminal} />
-          <Item label="New browser" hint={newBrowserKey} onPick={onNewBrowser} />
-          <Item label="Open file…" onPick={onOpenFilePanel} />
+          <Item label="New session" hint={newSessionKey} icon={<ChatGlyph />} onPick={onNewSession} />
+          <Item label="New terminal" hint={newTerminalKey} icon={<TerminalGlyph />} onPick={onNewTerminal} />
+          <Item label="New browser" hint={newBrowserKey} icon={<BrowserGlyph />} onPick={onNewBrowser} />
+          <Item label="Open file…" icon={<FileGlyph />} onPick={onOpenFilePanel} />
         </div>
       )}
     </div>
@@ -453,6 +460,16 @@ function BrowserGlyph(): React.JSX.Element {
       <circle cx="12" cy="12" r="9" />
       <path d="M3 12h18" />
       <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+    </svg>
+  );
+}
+
+/** Round 15: the `+` menu's "Open file…" row. A page with a folded corner. */
+function FileGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
     </svg>
   );
 }

@@ -164,6 +164,10 @@ type RestoreItem =
       promptTemplate?: { typed: string };
       images?: string[];
       imagesDropped?: boolean;
+      /** Round 15: epoch ms from the session file's own message timestamps. */
+      ts?: number;
+      /** Round 15: assistant only, on a turn's last bubble — how long it took. */
+      turnMs?: number;
     }
   | {
       kind: "tool";
@@ -470,6 +474,9 @@ interface HvAnalytics {
     byDecision: Record<string, number>;
     bySource: Record<string, number>;
   };
+  /** Round 15: the app's own one-shot model calls. Tokens only — see
+      src/main/oneShotLog.ts for why there is deliberately no dollar figure. */
+  oneShot: { count: number; failed: number; estTokens: number };
 }
 
 /** MCP per-server runtime status (renderer-local; do not import from src/main). */
@@ -514,7 +521,9 @@ interface HvApi {
   loadEarlier(sessionId: string): Promise<RestoreItem[]>;
   /** §26: `terminals` answers the two-named-outcomes confirm when this session
    *  started terminals that are still running. Omitted ⇒ keep (the safe way). */
-  closeSession(sessionId: string, terminals?: "stop" | "keep"): Promise<void>;
+  /** Round 15: `deleted` is true when the session had no content and was
+      purged rather than merely ended — the renderer drops the row. */
+  closeSession(sessionId: string, terminals?: "stop" | "keep"): Promise<{ deleted: boolean }>;
   deleteSession(sessionId: string, terminals?: "stop" | "keep"): Promise<void>;
   /** §26: the live agent terminals this session owns. Empty ⇒ no confirm. */
   sessionTerminals(sessionId: string): Promise<Array<{ id: string; title: string }>>;

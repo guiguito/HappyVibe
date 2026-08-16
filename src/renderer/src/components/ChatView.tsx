@@ -372,6 +372,10 @@ export function ChatView({
   // plans get a pill — an implemented or cancelled plan needs no CTA, and the
   // file stays in the tree either way.
   const [planOpen, setPlanOpen] = useState(false);
+  // Round 15: bumped on send; Transcript scrolls to the bottom unconditionally
+  // when it changes. Starts at 0, whose initial effect run is what makes a
+  // freshly opened session land at the bottom rather than at the top.
+  const [scrollNonce, setScrollNonce] = useState(0);
   const showPlanPill = !!activePlan && showsPlanPill(activePlan.status);
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
   const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
@@ -572,6 +576,11 @@ export function ChatView({
       .filter((a) => a.data);
     const outgoing = [...attachments, ...refImages];
     onSend(withRefs, behavior, outgoing.length ? outgoing : undefined, mentions.length ? mentions : undefined);
+    // Round 15: sending is the user saying "I am at the end now", so the view
+    // goes to the bottom whatever it was reading. The stream's own follow stays
+    // guarded by isNearBottom — that guard exists to protect a reader scrolling
+    // back mid-response, which is a different act from pressing send.
+    setScrollNonce((n) => n + 1);
     onClearPageRefs?.();
     setInput("");
     setAttachments([]);
@@ -613,7 +622,10 @@ export function ChatView({
                   aria-expanded={modelMenuOpen}
                   onClick={toggle}
                   title={resolved ? `Model: ${resolved.provider}/${resolved.modelId}${resolution ? ` (${TIER_LABEL[resolution.tier]})` : ""}` : "No model configured"}
-                  className="max-w-44 text-left font-mono text-[11px] rounded-full px-2.5 py-1.5 text-ink-soft hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
+                  // Round 15: the chip had no border and muted ink, so it read
+                  // as a disabled label beside the bordered ⌕ / cost / context
+                  // controls. Same border+card treatment as those neighbours.
+                  className="max-w-44 text-left font-mono text-[11px] rounded-full border-2 border-line bg-card px-2.5 py-1 text-ink hover:border-honey cursor-pointer transition-colors"
                 >
                   <span className="block truncate">{modelLabel ?? "model…"}</span>
                 </button>
@@ -686,9 +698,16 @@ export function ChatView({
         >
           ⌕
         </button>
-        <CostBubble total={costTotal} onOpen={() => onCostOpenChange(true)} />
-        <ContextBubble stats={stats} fallbackWindow={fallbackWindow} onOpen={() => onContextOpenChange(true)} />
+        <CostBubble total={costTotal} open={costOpen} onToggle={() => onCostOpenChange(!costOpen)} />
+        <ContextBubble stats={stats} fallbackWindow={fallbackWindow} open={contextOpen} onToggle={() => onContextOpenChange(!contextOpen)} />
       </div>
+      {/* Round 15: everything below the top bar lives in one POSITIONED region,
+          so the cost and context panels can be `absolute inset-0` within it —
+          i.e. bounded by this pane and starting below the bar their pills sit
+          in, the way Files and Changes sit below the top bar they open from.
+          As `fixed inset-0` they covered the whole window, dimming a second
+          chat that was streaming beside them. */}
+      <div className="relative flex-1 flex flex-col min-h-0">
       {/* §23 round 9: the plan behind the pill. PlanCard is self-contained — it
           reads the file and drives Implement / Discard / Reopen through
           window.hv — so it needs nothing here but a place to render. */}
@@ -965,6 +984,7 @@ export function ChatView({
           items={items}
           streaming={streaming}
           busy={busy}
+          scrollNonce={scrollNonce}
           header={
             delegations.length > 0 || terminalRuns.length > 0 ? (
               // §26: the terminal stack is a SIBLING of the delegation stack in
@@ -1381,6 +1401,7 @@ export function ChatView({
       {costOpen && sessionId && (
         <CostPanel calls={costCalls} total={costTotal} onClose={() => onCostOpenChange(false)} />
       )}
+      </div>
     </div>
   );
 }
