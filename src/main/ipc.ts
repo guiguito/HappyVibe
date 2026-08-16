@@ -1366,7 +1366,17 @@ export function registerIpc(win: BrowserWindow): void {
             }
           }
           const prev = planState.get(sessionId);
-          planState.set(sessionId, { enabled: planN.enabled, planPath: (typeof planN.planPath === "string" ? planN.planPath : undefined) ?? prev?.planPath });
+          // The BRIDGE is authoritative for planPath — it sets it before every
+          // emit (plan_complete) and clears it on every entry into a NEW plan
+          // (`/hv-plan on`, plan_start both assign planPath: undefined). Falling
+          // back to the previous value resurrected the finished plan's path:
+          // plan #2's plan_complete then passed it as writePlanFile's
+          // `existingRelPath`, so the second plan OVERWROTE the first file
+          // instead of creating NNN+1 (measured 2026-08-16 — one file left on
+          // disk carrying plan 1's slug/createdAt and plan 2's body), and the
+          // renderer's ensurePlanCard deduped the repeat path away, leaving the
+          // second plan with no card and therefore no Implement button.
+          planState.set(sessionId, { enabled: planN.enabled, planPath: typeof planN.planPath === "string" ? planN.planPath : undefined });
           if (prev?.enabled !== planN.enabled) {
             void log.append({ type: planN.enabled ? "plan.enter" : "plan.exit", sessionId, workspaceId: wsId, data: {} });
           }
@@ -2211,8 +2221,15 @@ export function registerIpc(win: BrowserWindow): void {
       } catch { /* file may have been removed; proceed to hand off anyway */ }
       planCmd(sessionId, "/hv-plan off");
       const busy = !activity.isIdle(sessionId);
+      // Deliberately states no MODE. This message lives in the conversation
+      // forever, and mode is state that changes underneath it: when the user
+      // re-entered Plan Mode for a SECOND plan, the model found this turn more
+      // recent than the (correctly injected) read-only system prompt and
+      // reasoned "I'm in normal mode now, not plan mode" — verbatim, measured
+      // 2026-08-16. Describe the WORK, never the mode; the mode is enforced by
+      // gatePlanCall and re-stated in the system prompt every single turn.
       const msg =
-        `Plan mode is off, full tools restored. Execute the approved plan in ${relPath}. ` +
+        `The user approved this plan for implementation. Execute the approved plan in ${relPath}. ` +
         `Keep the plan file in sync with your progress AS YOU GO: the moment you finish a task, ` +
         `use the edit tool on ${relPath} to change that task's "- [ ]" to "- [x]" (do this immediately ` +
         `after each task, not all at the end). Keep the implementation scoped to the plan, and if reality ` +

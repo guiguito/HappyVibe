@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import fs from "node:fs";
 import {
   buildPlanFile,
   buildPlanPrompt,
@@ -242,5 +243,41 @@ describe("shouldForcePlanOff — Plan Mode disabled globally must not strand a c
   test("is a no-op for a session with no plan state either way", () => {
     expect(shouldForcePlanOff(false, { enabled: false })).toBe(false);
     expect(shouldForcePlanOff(true, { enabled: false })).toBe(false);
+  });
+});
+
+/**
+ * §23 round 16 — the "second plan in one session" regressions, measured on a live
+ * session (2026-08-16, Test3DGames). Both are ABSENCES, so they are source scans:
+ * the repo's established shape for pinning what must no longer be there
+ * (tests/modal-layer.test.ts).
+ */
+describe("re-entering Plan Mode for a SECOND plan", () => {
+  const read = (p: string): string => fs.readFileSync(p, "utf8");
+
+  test("main never falls back to the previous planPath", () => {
+    // The bridge clears planPath on every entry into a NEW plan and is
+    // authoritative. Falling back to the finished plan's path made plan #2's
+    // plan_complete pass it as writePlanFile's `existingRelPath`, so the second
+    // plan OVERWROTE the first file instead of creating NNN+1 — and the renderer
+    // deduped the repeated path away, leaving plan #2 with no card and no
+    // Implement button.
+    expect(read("src/main/ipc.ts")).not.toMatch(/\?\?\s*prev\?\.planPath/);
+  });
+
+  test("the bridge does not hide tools while planning — the gate refuses with a reason", () => {
+    // setActiveTools is real (agent-session.js:1880-1882), so hiding `edit` made
+    // the model's call die in agent-loop.js:398 as the bare `Tool edit not found`
+    // — no reason, no mention of Plan Mode. It read that as a whitespace mismatch
+    // and only learned it was planning when a bash call hit gatePlanCall's
+    // explanatory refusal.
+    expect(read("pi-runtime/extensions/happyvibe-bridge.ts")).not.toMatch(/^\s*[^/*\n].*setActiveTools/m);
+  });
+
+  test("the Implement hand-off states the work, never the mode", () => {
+    // It lives in the conversation forever; mode changes underneath it. Reading
+    // "Plan mode is off, full tools restored" one round later, the model reasoned
+    // "I'm in normal mode now, not plan mode" and started editing.
+    expect(read("src/main/ipc.ts")).not.toMatch(/Plan mode is off/);
   });
 });

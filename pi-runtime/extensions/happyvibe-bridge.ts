@@ -176,12 +176,12 @@ const strippedIntentTools = new Set<string>();
 const INTENT_PARAM = {
   type: "string",
   description:
-    "REQUIRED on every call. One short customer-facing sentence: what you are doing and why (shown to the user as the headline for this call).",
+    "REQUIRED on every call. One short customer-facing sentence, goal first: why this call serves the user's request, then what you are doing. 'Looking for the failing order in the logs' beats 'Running a log query'. Shown to the user as the headline for this call.",
 };
 const OPTIONAL_INTENT_PARAM = {
   type: "string",
   description:
-    "Optional but recommended. One short customer-facing sentence describing this delegation (shown as the headline; falls back to the task text if omitted).",
+    "Optional but recommended. One short customer-facing sentence, goal first, describing this delegation (shown as the headline; falls back to the task text if omitted).",
 };
 type MutableParams = { properties?: Record<string, unknown>; required?: string[] };
 /**
@@ -273,7 +273,6 @@ let plan: PlanState = { enabled: false };
 // Tool-call id of the last plan_complete, so /hv-plan off can mark its call/
 // result out of future model context (reuse the context-marks mechanism).
 let lastPlanCompleteCallId: string | undefined;
-let toolsBeforePlan: string[] | undefined;
 // ── B5 context visibility (docs/validation/d1.md §hv.context) ───────────────
 // The kill-set of context marks. Persisted as `hv-context-marks` custom entries
 // (pi.appendEntry — do NOT enter LLM context), restored on session_start, and
@@ -322,30 +321,17 @@ function persistPlan(pi: ExtensionAPI): void {
 function emitPlan(ui: { notify(m: string, t?: "info" | "warning" | "error"): void }, restored = false): void {
   ui.notify(JSON.stringify({ kind: "hv.plan", enabled: plan.enabled, planPath: plan.planPath ?? null, restored }), "info");
 }
-// Best-effort model-facing hygiene: hide mutating tools from the model while
-// planning. The tool_call clamp is the real enforcement; these APIs are unused
-// elsewhere in the app, so failures are swallowed.
-// ponytail: gate is enforcement; setActiveTools is cosmetic, unproven in this repo.
-function applyPlanTools(pi: ExtensionAPI): void {
-  try {
-    const get = (pi as unknown as { getActiveTools?: () => string[] }).getActiveTools;
-    const set = (pi as unknown as { setActiveTools?: (t: string[]) => void }).setActiveTools;
-    if (!get || !set) return;
-    if (plan.enabled) {
-      if (!toolsBeforePlan) toolsBeforePlan = get.call(pi);
-      // Drop mutating tools; ALWAYS keep the plan tools + ask_user offered, even
-      // if they weren't in the captured baseline (else the model can't finish).
-      const kept = toolsBeforePlan.filter((t) => !["edit", "write", "multi_edit", "subagent"].includes(t));
-      const required = ["plan_complete", "plan_status_update", "ask_user"];
-      set.call(pi, [...new Set([...kept, ...required])]);
-    } else if (toolsBeforePlan) {
-      set.call(pi, toolsBeforePlan);
-      toolsBeforePlan = undefined;
-    }
-  } catch {
-    /* best-effort */
-  }
-}
+// NOTE — there used to be an applyPlanTools() here that hid edit/write/
+// multi_edit/subagent from the model while planning ("best-effort hygiene",
+// believed inert). It was neither. `setActiveTools` is real
+// (pi-coding-agent agent-session.js:1880-1882), so the model's edit call died in
+// pi-agent-core agent-loop.js:398 as the bare string `Tool edit not found` —
+// no reason, no mention of Plan Mode. Measured on a live session (2026-08-16,
+// Test3DGames): on re-entering plan mode for a SECOND plan the model read that
+// error as a whitespace mismatch, spent a minute retrying, and only learned it
+// was planning when a `bash` call came back with gatePlanCall's explanatory
+// refusal. Hiding a tool replaces a reason with a lie — the gate IS the UX here,
+// so there is nothing to re-add: let every blocked call carry its reason.
 
 function loadRules(): void {
   rulesError = null;
@@ -486,15 +472,13 @@ export default function (pi: ExtensionAPI) {
     if (forcedPlanOff) {
       // MUST still notify: without it the renderer keeps its pre-respawn
       // enabled:true and shows a read-only banner over a session that is no
-      // longer clamped. Deliberately NOT applyPlanTools — the feature is off, so
-      // nothing should be hidden from the model.
+      // longer clamped.
       emitPlan(ctx.ui, true);
       // …and MUST persist: leaving enabled:true in the session file meant that
       // re-enabling Plan mode later restored a clamped session with no user
       // action (and main's reconcile skips it when planPath is null).
       persistPlan(pi);
     } else if (plan.enabled || plan.planPath) {
-      applyPlanTools(pi);
       emitPlan(ctx.ui, true);
     }
     busUi = ctx.ui;
@@ -1101,7 +1085,7 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       intent: Type.String({
         description:
-          "REQUIRED on every call. One short customer-facing sentence: what you are deciding and why (shown to the user as the headline).",
+          "REQUIRED on every call. One short customer-facing sentence: why you need the user's decision and what it will settle (shown to the user as the headline).",
       }),
       questions: Type.Array(
         Type.Object({
@@ -1154,7 +1138,7 @@ export default function (pi: ExtensionAPI) {
       "(as shown in the available skills) and a short `intent`. Returns the skill's SKILL.md so " +
       "you can follow its workflow. Prefer this over reading a SKILL.md file directly.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are loading this skill." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are loading this skill — the task it serves." }),
       name: Type.String({ description: "The skill name to load (from the available skills list)." }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -1197,7 +1181,7 @@ export default function (pi: ExtensionAPI) {
     // renders a second copy that can drift from what the model is told.
     description: TERMINAL_TOOL_DESCRIPTIONS.terminal_run,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are running and why." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence, goal first: why you are running this, then what it does." }),
       command: Type.String({ description: "One command line. No embedded newlines." }),
       terminalId: Type.Optional(Type.String({ description: "Reuse this terminal instead of opening a new one. It must be idle." })),
     }),
@@ -1240,7 +1224,7 @@ export default function (pi: ExtensionAPI) {
     label: "Stop terminal",
     description: TERMINAL_TOOL_DESCRIPTIONS.terminal_kill,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are stopping and why." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are stopping it, then what you are stopping." }),
       terminalId: Type.String({ description: "The terminal to stop." }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -1272,7 +1256,7 @@ export default function (pi: ExtensionAPI) {
     label: "Open browser",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_open,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are opening and why." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you need this page, then what you are opening." }),
       url: Type.String({ description: "The URL to open. localhost needs no approval; anything else asks the user." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1287,7 +1271,7 @@ export default function (pi: ExtensionAPI) {
     label: "Navigate browser",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_navigate,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: where you are going and why." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are navigating there, then where you are going." }),
       url: Type.String({ description: "The URL to navigate to." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1302,7 +1286,7 @@ export default function (pi: ExtensionAPI) {
     label: "Screenshot page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_screenshot,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are capturing and why." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are capturing this, then what it shows." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const { intent } = params as { intent?: string };
@@ -1355,7 +1339,7 @@ export default function (pi: ExtensionAPI) {
     label: "Click in page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_click,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are clicking and why." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are clicking, then what you are clicking." }),
       selector: Type.String({ description: "A CSS selector for the element to click." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1370,7 +1354,7 @@ export default function (pi: ExtensionAPI) {
     label: "Type in page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_type,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are typing and why." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are typing this, then what you are typing." }),
       selector: Type.String({ description: "A CSS selector for the field to type into." }),
       text: Type.String({ description: "The text to type." }),
     }),
@@ -1388,7 +1372,7 @@ export default function (pi: ExtensionAPI) {
     label: "Run JS in page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_evaluate,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what this code does and why." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are running this code, then what it does." }),
       code: Type.String({ description: "JavaScript to evaluate in the page. The final expression is the result." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1431,7 +1415,7 @@ export default function (pi: ExtensionAPI) {
       "Pass the complete plan as Markdown with a '# title', a '## Tasks' GFM checklist (- [ ] …), " +
       "and a '## Verification' section. On revision, pass a complete replacement plan, not a delta.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence describing the plan." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what the plan will achieve." }),
       plan: Type.String({ description: "The complete implementation plan as Markdown (title + summary + ## Tasks checklist + ## Verification)." }),
     }),
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {
@@ -1467,12 +1451,11 @@ export default function (pi: ExtensionAPI) {
       "you explore read-only and draft an implementation plan; you cannot modify anything. Leaving " +
       "Plan Mode and starting implementation are the user's choice — you cannot exit it yourself.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you will plan." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are planning first, then what you will plan." }),
     }),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       if (!plan.enabled) {
         plan = { enabled: true, planPath: undefined };
-        applyPlanTools(pi);
         persistPlan(pi);
         emitPlan(ctx.ui);
       }
@@ -1489,7 +1472,7 @@ export default function (pi: ExtensionAPI) {
       "Record the terminal status of the current plan: 'implemented' once you have completed the plan " +
       "AND its Verification passes, or 'cancelled' if the user abandons it. Only these two values.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence." }),
+      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you just completed and what remains." }),
       status: Type.Union([Type.Literal("implemented"), Type.Literal("cancelled")], { description: "'implemented' (verification passed) or 'cancelled'." }),
       note: Type.Optional(Type.String({ description: "Optional short note (e.g. what verification confirmed)." })),
     }),
@@ -1538,7 +1521,6 @@ export default function (pi: ExtensionAPI) {
           lastPlanCompleteCallId = undefined;
         }
       }
-      applyPlanTools(pi);
       persistPlan(pi);
       emitPlan(ctx.ui);
     },

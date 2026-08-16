@@ -310,8 +310,8 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
 export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean } {
   const t = load().builtinTools;
   const plan = t?.plan ?? true;
-  // Plan mode's prompt and its applyPlanTools required-list both depend on
-  // ask_user, so the bridge force-couples them (hv-builtins parseBuiltins). Apply
+  // Plan mode's prompt tells the model to resolve decisions with ask_user, so
+  // the bridge force-couples them (hv-builtins parseBuiltins). Apply
   // the SAME clamp here or the settings row would read "off" for a tool that is
   // in fact registered — the UI must not disagree with the runtime.
   // §26's terminal group has no such coupling: the three tools depend on each
