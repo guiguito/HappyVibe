@@ -23,6 +23,12 @@ interface Confirm {
   confirmLabel: string;
   danger?: boolean;
   onConfirm: () => void | Promise<void>;
+  /**
+   * A second, non-destructive way out. Some questions are not "do it or don't":
+   * a pull request from a dirty tree can reasonably be committed first OR opened
+   * as-is, and forcing that into Cancel would hide one of the two answers.
+   */
+  secondary?: { label: string; onPick: () => void | Promise<void> };
 }
 
 export function ChangesPanel({
@@ -58,6 +64,7 @@ export function ChangesPanel({
   const [initPreview, setInitPreview] = useState<{ refused: string | null; branch: string; gitignore: string } | null>(null);
   const [switchChoice, setSwitchChoice] = useState<{ branch: string; conflict: boolean } | null>(null);
   const toastTimer = useRef<number | null>(null);
+  const messageRef = useRef<HTMLTextAreaElement | null>(null);
 
   const state = payload?.state;
   const files = useMemo(() => payload?.status?.files ?? [], [payload]);
@@ -278,7 +285,7 @@ export function ChangesPanel({
   const groups = groupByDir(files);
   const stashes = payload?.stashes ?? [];
 
-  const doSave = async (opts: { amend?: boolean } = {}): Promise<void> => {
+  const doSave = async (opts: { amend?: boolean; onSaved?: () => void } = {}): Promise<void> => {
     const text = message.trim();
     if (!text) return;
     // §2: refuse to sweep junk SILENTLY. Declining still saves — it is their repo.
@@ -290,6 +297,10 @@ export function ChangesPanel({
         () => {
           setMessage("");
           flash(state.unborn ? "Saved your first version 🎉" : "Version saved.");
+          // Threaded through the junk-guard detour too, since that path also
+          // ends here — otherwise "save then open the PR" would silently stop
+          // whenever the guard fired.
+          opts.onSaved?.();
         }
       );
     };
@@ -359,6 +370,35 @@ export function ChangesPanel({
       return;
     }
     void doSwitch(name, "take", !branches.includes(name));
+  };
+
+  /** Draft and open the forge's prefilled form. Shared by the button and the
+   *  "save first, then open" path, so both behave identically. */
+  const openPr = (): void => {
+    if (openingPr) return; // the draft is a 2-4s call; a second press = a second tab
+    setOpeningPr(true);
+    void window.hv
+      .gitPrUrl(workspace, true)
+      .then(async (r) => {
+        // Fall back to the eligibility URL the panel already has: the drafting
+        // call can come back null (no provider, a model timeout) and that is not
+        // a reason to do nothing.
+        const url = r?.url ?? prUrl;
+        if (!url) {
+          flash("Nothing to open a pull request for — publish the branch first.");
+          return;
+        }
+        setLastCommand(url);
+        // NOT fire-and-forget. shell.openExternal rejects when the OS refuses,
+        // and swallowing that is what made this read as "the button did
+        // something and then nothing happened".
+        await window.hv.openExternal(url);
+        flash(r?.drafted ? "Opened a pull request draft in your browser." : "Opened your browser — described from the commits.");
+      })
+      .catch((e: unknown) => {
+        flash(`Could not open the pull request: ${e instanceof Error ? e.message : String(e)}`);
+      })
+      .finally(() => setOpeningPr(false));
   };
 
   const openDiff = async (path: string, status: HvGitFileChange["status"]): Promise<void> => {
@@ -476,6 +516,7 @@ export function ChangesPanel({
                     block rather than three floating controls. */}
                 <div className="flex items-stretch gap-1.5">
                   <textarea
+                    ref={messageRef}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder="What did you change?"
@@ -589,36 +630,49 @@ export function ChangesPanel({
                 type="button"
                 disabled={openingPr}
                 onClick={() => {
-                  // Guarded: the draft is a 2-4s model call, and a second press
-                  // would open a second tab.
                   if (openingPr) return;
-                  setOpeningPr(true);
-                  void window.hv
-                    .gitPrUrl(workspace, true)
-                    .then(async (r) => {
-                      // Fall back to the eligibility URL the panel already has:
-                      // the drafting call can come back null (no provider, a
-                      // model timeout) and that is not a reason to do nothing.
-                      const url = r?.url ?? prUrl;
-                      if (!url) {
-                        flash("Nothing to open a pull request for — publish the branch first.");
-                        return;
-                      }
-                      setLastCommand(url);
-                      // NOT fire-and-forget. shell.openExternal rejects when the
-                      // OS refuses, and swallowing that is what made this read as
-                      // "the button did something and then nothing happened".
-                      await window.hv.openExternal(url);
-                      flash(r?.drafted ? "Opened a pull request draft in your browser." : "Opened your browser — described from the commits.");
-                    })
-                    .catch((e: unknown) => {
-                      // Every failure says something. A silent catch here cost a
-                      // debugging round: the button spun, stopped, and left no
-                      // trace of why.
-                      flash(`Could not open the pull request: ${e instanceof Error ? e.message : String(e)}`);
-                    })
-                    .finally(() => setOpeningPr(false));
+                  // §29 §7: a pull request describes COMMITTED work. Opening one
+                  // from a dirty tree silently leaves those files out of it, and
+                  // the user finds out on the forge, after the fact.
+                  if (files.length > 0) {
+                    setConfirm({
+                      title: "You have changes that aren’t saved yet",
+                      body: (
+                        <>
+                          <div className="mb-2">
+                            {files.length === 1 ? "1 file is" : `${files.length} files are`} not in any version yet, so
+                            {" "}{files.length === 1 ? "it won’t" : "they won’t"} be part of this pull request.
+                          </div>
+                          <div className="text-ink-soft">
+                            {message.trim()
+                              ? "Saving a version first includes them."
+                              : "Write a message in the box and save a version first to include them."}
+                          </div>
+                        </>
+                      ),
+                      confirmLabel: message.trim() ? "Save a version, then open" : "Let me write a message",
+                      onConfirm: () => {
+                        setConfirm(null);
+                        // No message means we cannot commit for them, and we
+                        // will not invent one — put the cursor where the answer
+                        // goes instead.
+                        if (!message.trim()) {
+                          messageRef.current?.focus();
+                          return;
+                        }
+                        void doSave({ onSaved: openPr });
+                      },
+                      secondary: {
+                        label: "Open it anyway",
+                        onPick: () => { setConfirm(null); openPr(); },
+                      },
+                    });
+                    return;
+                  }
+                  openPr();
                 }}
+                // (the open itself lives in openPr, above)
+
                 // It opens a FORM. HappyVibe creates nothing and stores no
                 // credential — you press Create on the forge yourself.
                 title="Opens your browser at the forge's new-pull-request page, with the title and description filled in. Nothing is created until you press Create there."
@@ -947,6 +1001,15 @@ function ConfirmDialog({ c, onCancel }: { c: Confirm; onCancel: () => void }): R
           >
             Cancel
           </button>
+          {c.secondary && (
+            <button
+              type="button"
+              onClick={() => void c.secondary!.onPick()}
+              className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+            >
+              {c.secondary.label}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void c.onConfirm()}
