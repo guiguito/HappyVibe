@@ -81,6 +81,12 @@ export function WorkspaceSettingsView({
           <p className="text-xs text-ink-soft mt-1.5">Applies to new or restarted sessions.</p>
         </Section>
 
+        {/* §29 5a: the ONE place the missing-git capability surfaces. The
+            Changes tab is absent rather than greyed, so without this line there
+            would be nothing anywhere saying why — and a capability belongs on
+            the settings page, not as a dead control in the workspace. */}
+        <GitCapabilityLine workspace={workspace} />
+
         <Section
           icon="permissions"
           title="Permissions"
@@ -516,5 +522,40 @@ function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): Re
         />
       )}
     </>
+  );
+}
+
+/**
+ * §29 5a — "Version control: git not found · Install".
+ *
+ * Rendered ONLY when git is missing: with git present this says nothing, because
+ * a line reporting that a normal thing works is noise. `Install` runs
+ * `git --version` un-suppressed, which is what makes macOS offer the Command
+ * Line Tools installer — we never bundle or download a git ourselves (§3: git is
+ * a feature, never a runtime dependency).
+ */
+function GitCapabilityLine({ workspace }: { workspace: string }): React.JSX.Element | null {
+  const [missing, setMissing] = useState(false);
+  useEffect(() => {
+    void window.hv
+      .gitState(workspace)
+      .then((s) => setMissing(!s.available))
+      .catch(() => setMissing(false));
+  }, [workspace]);
+
+  if (!missing) return null;
+  return (
+    <Section icon="permissions" title="Version control" subtitle="Saving versions of your work needs git.">
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-ink-soft">git isn’t installed on this Mac, so the Changes panel is hidden.</span>
+        <button
+          type="button"
+          onClick={() => void window.hv.gitInstallPrompt()}
+          className="rounded-xl bg-tangerine text-paper font-bold text-xs px-3 py-1.5 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105"
+        >
+          Install
+        </button>
+      </div>
+    </Section>
   );
 }

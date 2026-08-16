@@ -29,6 +29,18 @@ export interface AliveSubjects {
    * panes that no longer exist — observed as two "Browser" tabs over one pane.
    */
   browsers: Set<string>;
+  /**
+   * The workspaces main still knows about. Pruning used to ask only whether a
+   * TAB's subject was alive and never whether its WORKSPACE still existed, so
+   * removing a workspace that had a file tab open left its tabs restoring
+   * forever — every `hv:fs-read` and `hv:watch-workspace` for them throwing
+   * "Unknown workspace", with no way to reach the tabs and close them.
+   *
+   * Optional on purpose: absent means "the caller cannot tell", and every
+   * workspace is kept. Losing a user's tab arrangement on a doubt is worse than
+   * the errors it would prevent.
+   */
+  workspaces?: Set<string>;
 }
 
 const RATIO_MIN = 0.1;
@@ -123,6 +135,7 @@ export function restoreLayout(
   if (!isRecord(raw)) return {};
   const out: Record<string, WorkspaceTabs> = {};
   for (const [workspaceId, value] of Object.entries(raw)) {
+    if (alive.workspaces && !alive.workspaces.has(workspaceId)) continue;
     let parsed: WorkspaceTabs | null = null;
     try {
       parsed = parseWorkspace(value, alive);

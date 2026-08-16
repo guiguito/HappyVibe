@@ -90,6 +90,53 @@ contextBridge.exposeInMainWorld("hv", {
     return () => ipcRenderer.removeListener("hv:fs-changed", h);
   },
 
+  // ── §29 Git integration ─────────────────────────────────────────
+  // Reads are plain invokes; every WRITE returns either its own result or
+  // `{ ok:false, busy:[titles] }` from main's idle gate — the renderer never
+  // decides whether an action is safe.
+  gitState: (workspaceId: string) => ipcRenderer.invoke("hv:git-state", workspaceId),
+  gitStatus: (workspaceId: string) => ipcRenderer.invoke("hv:git-status", workspaceId),
+  gitDiff: (workspaceId: string, baseline: "head" | "base", opts?: { staged?: boolean; path?: string }) =>
+    ipcRenderer.invoke("hv:git-diff", workspaceId, baseline, opts),
+  gitHistory: (workspaceId: string, limit: number) => ipcRenderer.invoke("hv:git-history", workspaceId, limit),
+  gitShow: (workspaceId: string, sha: string) => ipcRenderer.invoke("hv:git-show", workspaceId, sha),
+  gitBranches: (workspaceId: string) => ipcRenderer.invoke("hv:git-branches", workspaceId),
+  gitDefaultBranch: (workspaceId: string) => ipcRenderer.invoke("hv:git-default-branch", workspaceId),
+  gitDeleteBranch: (workspaceId: string, branch: string, force?: boolean) =>
+    ipcRenderer.invoke("hv:git-delete-branch", workspaceId, branch, force),
+  gitCommit: (workspaceId: string, message: string, opts: { stagedOnly: boolean; amend: boolean }) =>
+    ipcRenderer.invoke("hv:git-commit", workspaceId, message, opts),
+  gitStage: (workspaceId: string, relPath: string, stage: boolean) =>
+    ipcRenderer.invoke("hv:git-stage", workspaceId, relPath, stage),
+  gitSwitch: (workspaceId: string, branch: string, opts: { create: boolean; mode: "take" | "stash" }) =>
+    ipcRenderer.invoke("hv:git-switch", workspaceId, branch, opts),
+  gitFetch: (workspaceId: string) => ipcRenderer.invoke("hv:git-fetch", workspaceId),
+  gitSync: (workspaceId: string) => ipcRenderer.invoke("hv:git-sync", workspaceId),
+  gitPublish: (workspaceId: string) => ipcRenderer.invoke("hv:git-publish", workspaceId),
+  gitStash: (workspaceId: string, action: "save" | "pop" | "drop", index?: number) =>
+    ipcRenderer.invoke("hv:git-stash", workspaceId, action, index),
+  gitUndoHunk: (workspaceId: string, patch: string, meta: { path: string }) =>
+    ipcRenderer.invoke("hv:git-undo-hunk", workspaceId, patch, meta),
+  gitUndoFile: (workspaceId: string, relPath: string) => ipcRenderer.invoke("hv:git-undo-file", workspaceId, relPath),
+  gitDiscardUntracked: (workspaceId: string, relPath: string) =>
+    ipcRenderer.invoke("hv:git-discard-untracked", workspaceId, relPath),
+  gitInitPreview: (workspaceId: string) => ipcRenderer.invoke("hv:git-init-preview", workspaceId),
+  gitInit: (workspaceId: string, gitignore: string) => ipcRenderer.invoke("hv:git-init", workspaceId, gitignore),
+  gitDetectJunk: (workspaceId: string) => ipcRenderer.invoke("hv:git-detect-junk", workspaceId),
+  gitAddGitignore: (workspaceId: string, lines: string[]) => ipcRenderer.invoke("hv:git-add-gitignore", workspaceId, lines),
+  gitDraftMessage: (workspaceId: string, stagedOnly: boolean) =>
+    ipcRenderer.invoke("hv:git-draft-message", workspaceId, stagedOnly),
+  gitInstallPrompt: () => ipcRenderer.invoke("hv:git-install-prompt"),
+  gitPrUrl: (workspaceId: string, draft?: boolean) => ipcRenderer.invoke("hv:git-pr-url", workspaceId, draft),
+  gitMessageModel: () => ipcRenderer.invoke("hv:git-message-model"),
+  setGitMessageModel: (m: { provider: string; modelId: string } | null) =>
+    ipcRenderer.invoke("hv:set-git-message-model", m),
+  onGitChanged: (cb: (p: { workspaceId: string }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { workspaceId: string });
+    ipcRenderer.on("hv:git-changed", h);
+    return () => ipcRenderer.removeListener("hv:git-changed", h);
+  },
+
   // ── §23 Plan Mode (additive) ────────────────────────────────────
   // Enter/leave plan mode; implement / discard / status are human-only
   // transitions (the model has no way to invoke them). hv.plan mode notifies

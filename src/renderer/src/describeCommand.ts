@@ -111,6 +111,9 @@ const GIT_VERBS: Record<string, string> = {
   branch: "Managing branches",
   log: "Viewing git history",
   diff: "Viewing changes",
+  fetch: "Checking the remote",
+  init: "Starting version tracking",
+  clone: "Cloning a repository",
 };
 
 /** Describe one pipeline-free segment. `raw` is the segment text for the fallback. */
@@ -137,15 +140,7 @@ function describeSegment(tokens: string[], raw: string): CommandDescription {
     return fallback;
   }
 
-  if (cmd === "git") {
-    const sub = firstNonFlag(t) ?? "";
-    if (sub === "checkout" || sub === "switch") {
-      const target = firstNonFlag(t, t.indexOf(sub) + 1);
-      return { label: target ? `Switching to ${truncate(target, 40)}` : "Switching branches" };
-    }
-    if (GIT_VERBS[sub]) return { label: GIT_VERBS[sub] };
-    return fallback;
-  }
+  if (cmd === "git") return describeGit(t, fallback);
 
   if (TEST_RUNNERS.has(cmd)) return { label: "Running tests" };
   if (cmd === "go" && firstNonFlag(t) === "test") return { label: "Running tests" };
@@ -207,4 +202,67 @@ export function describeCommand(cmd: string): CommandDescription {
   } catch {
     return { label: "Running a command" }; // never throw on garbage input
   }
+}
+
+/**
+ * §29 — what a git card can honestly say.
+ *
+ * Built-in tools cannot carry an `intent` param (it is stripped before
+ * tool_call), so the text of the command is the ONLY source. Branch names and
+ * commit messages live in that text; file lists do not, so no label here claims
+ * to know which files moved — the Changes panel is where that belongs.
+ */
+function describeGit(t: string[], fallback: CommandDescription): CommandDescription {
+  const sub = firstNonFlag(t) ?? "";
+  const rest = t.slice(t.indexOf(sub) + 1);
+  const flags = new Set(t.filter((x) => x.startsWith("-")));
+  const args = rest.filter((x) => !x.startsWith("-"));
+
+  if (sub === "checkout" || sub === "switch") {
+    const target = firstNonFlag(t, t.indexOf(sub) + 1);
+    return { label: target ? `Switching to ${truncate(target, 40)}` : "Switching branches" };
+  }
+
+  if (sub === "commit") {
+    const msg = quotedMessage(t);
+    const amend = flags.has("--amend");
+    if (msg) return { label: `${amend ? "Amending the last version" : "Saving a version"}: "${truncate(msg, 60)}"` };
+    return { label: amend ? "Amending the last version" : "Committing changes" };
+  }
+
+  if (sub === "push" || sub === "pull") {
+    // `git push origin main` → [origin, main]; a lone remote is common too.
+    const [remote, branch] = args;
+    // A force push must never read as routine — it is the one destructive verb
+    // whose card the user has to notice.
+    const force = flags.has("--force") || flags.has("-f") || flags.has("--force-with-lease");
+    const verb = sub === "push" ? (force ? "FORCE-pushing" : "Pushing") : "Pulling";
+    const prep = sub === "push" ? "to" : "from";
+    if (branch) return { label: `${verb} ${truncate(branch, 30)} ${prep} ${truncate(remote, 20)}` };
+    if (remote) return { label: `${verb} ${prep} ${truncate(remote, 20)}` };
+    return { label: `${verb} ${prep} remote` };
+  }
+
+  if (sub === "stash") {
+    const action = args[0] ?? "push";
+    if (action === "pop" || action === "apply") return { label: "Restoring stashed changes" };
+    if (action === "drop") return { label: "Dropping a stash" };
+    if (action === "list") return { label: "Listing stashes" };
+    return { label: "Stashing changes" };
+  }
+
+  if (sub === "merge" && args[0]) return { label: `Merging ${truncate(args[0], 40)}` };
+  if (sub === "rebase" && args[0]) return { label: `Rebasing onto ${truncate(args[0], 40)}` };
+  if (sub === "tag" && args[0]) return { label: `Tagging ${truncate(args[0], 40)}` };
+  if (sub === "restore" && args[0]) return { label: `Undoing changes in ${truncate(args[0], 40)}` };
+
+  if (GIT_VERBS[sub]) return { label: GIT_VERBS[sub] };
+  return fallback;
+}
+
+/** The `-m "…"` message, with whichever quotes the caller used stripped. */
+function quotedMessage(tokens: string[]): string | null {
+  const i = tokens.findIndex((x) => x === "-m" || x === "--message");
+  if (i === -1 || i + 1 >= tokens.length) return null;
+  return tokens[i + 1] || null;
 }

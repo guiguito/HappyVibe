@@ -21,10 +21,12 @@ const alive = (
   sessions: string[],
   terminals: string[],
   browsers: string[] = [],
-): { sessions: Set<string>; terminals: Set<string>; browsers: Set<string> } => ({
+  workspaces?: string[],
+): { sessions: Set<string>; terminals: Set<string>; browsers: Set<string>; workspaces?: Set<string> } => ({
   browsers: new Set(browsers),
   sessions: new Set(sessions),
   terminals: new Set(terminals),
+  ...(workspaces ? { workspaces: new Set(workspaces) } : {}),
 });
 
 /** What actually crosses the wire: JSON, not a live object. */
@@ -210,5 +212,42 @@ describe("restoreLayout — browser tabs", () => {
   it("drops the workspace entirely when the browser was its only tab", () => {
     const t = openBrowserTab(emptyTabs, "b1", null);
     expect(restoreLayout(stored({ ws1: t }), alive([], [], [])).ws1).toBeUndefined();
+  });
+});
+
+describe("a workspace that is no longer registered", () => {
+  /**
+   * Pruning used to ask only "is this tab's SUBJECT still alive" and never "does
+   * this workspace still exist". Remove a workspace that had a file tab open,
+   * relaunch, and its tabs came back for a workspace main no longer knows —
+   * every `hv:fs-read` and `hv:watch-workspace` for them throwing
+   * "Unknown workspace", forever, with no way to reach the tabs and close them.
+   */
+  it("is dropped entirely, tabs and all", () => {
+    const gone = openFile(emptyTabs, "notes.txt");
+    const kept = openFile(emptyTabs, "src/a.ts");
+    const back = restoreLayout(stored({ removed: gone, live: kept }), alive([], [], [], ["live"]));
+    expect(Object.keys(back)).toEqual(["live"]);
+    expect(allFiles(back.live!)).toEqual(["src/a.ts"]);
+  });
+
+  it("takes its chat tabs with it, so no dead session is reopened", () => {
+    const gone = openChat(emptyTabs, "s-gone");
+    const kept = openChat(emptyTabs, "s-kept");
+    const back = restoreLayout(stored({ removed: gone, live: kept }), alive(["s-gone", "s-kept"], [], [], ["live"]));
+    expect(restoredSessions(back)).toEqual(["s-kept"]);
+  });
+
+  it("keeps every workspace when the caller does not know the list", () => {
+    // Absent `workspaces` means "cannot tell" — and losing a user's tab
+    // arrangement on a doubt is worse than the error it would prevent.
+    const t = openFile(emptyTabs, "a.ts");
+    const back = restoreLayout(stored({ ws1: t }), alive([], []));
+    expect(Object.keys(back)).toEqual(["ws1"]);
+  });
+
+  it("returns nothing when every workspace is gone", () => {
+    const t = openFile(emptyTabs, "a.ts");
+    expect(restoreLayout(stored({ ws1: t }), alive([], [], [], []))).toEqual({});
   });
 });

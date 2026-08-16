@@ -74,6 +74,15 @@ interface ConfigFile {
       the PTY. Written opaquely; the renderer owns validation and pruning
       (layoutPersist.ts), exactly as it owns the shortcut merge below. */
   layout?: Record<string, unknown>;
+  /** §29: the shipped git permission rules have been written into
+      permission-rules.json once. They are suggestions, not policy, so this flag
+      is what makes a DELETED one stay deleted — without it every launch would
+      resurrect a rule the user removed on purpose. */
+  gitRulesSeeded?: boolean;
+  /** §29 (2b): model for "Write it for me". Absent = the same cheap-flash
+      resolution the session-title generator uses. Global only — it is a cost
+      preference about a one-shot call, not a property of any workspace. */
+  gitMessageModel?: { provider: string; modelId: string } | null;
 }
 
 function load(): ConfigFile {
@@ -236,6 +245,31 @@ export function getOnboardingSeen(): boolean {
 export function setOnboardingSeen(seen: boolean): void {
   const cfg = load();
   cfg.onboardingSeen = seen;
+  save(cfg);
+}
+
+// §29: seed-once flag for the shipped git rules — see gitRules.ts for why the
+// flag rather than a marker on the rules themselves.
+export function getGitRulesSeeded(): boolean {
+  return load().gitRulesSeeded ?? false;
+}
+
+export function setGitRulesSeeded(seeded: boolean): void {
+  const cfg = load();
+  cfg.gitRulesSeeded = seeded;
+  save(cfg);
+}
+
+// §29 (2b): the model "Write it for me" uses. null = fall back to the session
+// model resolution, exactly as the title generator does.
+export function getGitMessageModel(): { provider: string; modelId: string } | null {
+  return load().gitMessageModel ?? null;
+}
+
+export function setGitMessageModel(m: { provider: string; modelId: string } | null): void {
+  const cfg = load();
+  if (m) cfg.gitMessageModel = m;
+  else delete cfg.gitMessageModel;
   save(cfg);
 }
 

@@ -19,27 +19,61 @@ export function rectsOverlap(a: Rect, b: Rect): boolean {
   return b.right > a.left && b.left < a.right && b.bottom > a.top && b.top < a.bottom;
 }
 
-/**
- * The nine points hit-testing samples inside a pane.
- *
- * Exported for the same reason the overlap test is: the gap between these points
- * IS the failure mode. A small, edge-anchored overlay — the onboarding card sits
- * bottom-right inset 24px — can sit entirely between them, which is why
- * declared overlays are additionally checked by rectangle.
- */
-export function samplePoints(pane: Rect, inset: number): Array<[number, number]> {
-  const w = pane.right - pane.left;
-  const h = pane.bottom - pane.top;
-  const pts: Array<[number, number]> = [];
-  for (let i = 0; i < 3; i++) {
-    for (let j = 0; j < 3; j++) {
-      pts.push([pane.left + inset + (i * (w - 2 * inset)) / 2, pane.top + inset + (j * (h - 2 * inset)) / 2]);
-    }
-  }
-  return pts;
+export function paneViewRect(
+  pane: Rect,
+  edges: { left: boolean; top: boolean; right: boolean; bottom: boolean } | undefined,
+  dividerInset: number,
+  drawerWidth: number,
+  viewportWidth: number,
+): { x: number; y: number; width: number; height: number } {
+  const L = edges?.left ? dividerInset : 0;
+  const T = edges?.top ? dividerInset : 0;
+  const R = edges?.right ? dividerInset : 0;
+  const B = edges?.bottom ? dividerInset : 0;
+  const drawerLeft = viewportWidth - drawerWidth;
+  const RD = drawerWidth > 0 ? Math.max(0, pane.right - drawerLeft) : 0;
+  return {
+    x: pane.left + L,
+    y: pane.top + T,
+    width: Math.max(0, pane.right - pane.left - L - R - RD),
+    height: Math.max(0, pane.bottom - pane.top - T - B),
+  };
 }
 
-/** Is `p` one of the sampled points? (Used to reason about the blind spot.) */
-export function anyPointInside(points: Array<[number, number]>, r: Rect): boolean {
-  return points.some(([x, y]) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+/**
+ * A floating element the pane might be hiding under, reduced to what the
+ * decision needs. The component gathers these from the DOM; this module decides
+ * what they mean.
+ */
+export interface Candidate {
+  rect: Rect;
+  /** Part of this pane's own chrome, or an ancestor of it — never "on top". */
+  isSelf: boolean;
+  /** The drawer (or anything inside it): the pane makes ROOM for that, see paneViewRect. */
+  isDrawer: boolean;
+  /** Painted at all. A hidden element still has a rectangle. */
+  visible: boolean;
+}
+
+/**
+ * §28 round 2 — is anything drawn over the pane, asked by RECTANGLE.
+ *
+ * The 3×3 hit test this replaces had gaps, and the gaps were the failure mode:
+ * the onboarding card fell between the nine points, and so did the pane `+`
+ * menu dropping in from the top edge — it rendered clipped at the page's top
+ * because the view never got out of its way. Rectangles cannot have gaps.
+ *
+ * The candidates are found WITHOUT a marker list: this app is styled entirely
+ * with Tailwind, so every floating surface carries `absolute` or `fixed` as a
+ * literal class. That keeps the property the geometric rule was introduced for —
+ * it catches surfaces nobody remembered to mark, including ones that do not
+ * exist yet — while fixing the part that was unsound.
+ */
+export function paneIsCovered(view: Rect, candidates: Candidate[]): boolean {
+  for (const c of candidates) {
+    if (c.isSelf || c.isDrawer || !c.visible) continue;
+    if (c.rect.right - c.rect.left < 1 || c.rect.bottom - c.rect.top < 1) continue;
+    if (rectsOverlap(view, c.rect)) return true;
+  }
+  return false;
 }

@@ -1,4 +1,7 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangesPanel } from "./components/ChangesPanel";
+import { RightRail, type DrawerPanel } from "./components/RightRail";
+import { badgeTint, clampDrawer, summarise } from "./gitui";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ChatView, ChatWelcome } from "./components/ChatView";
 import { ModelsView } from "./components/ModelsView";
@@ -53,7 +56,7 @@ import { BrowserTab } from "./components/BrowserTab";
 import { TerminalView } from "./components/TerminalView";
 import { VoiceView } from "./components/VoiceView";
 import { restoreLayout } from "./layoutPersist";
-import { buildGridStyle, paneEdges, paneNeighbours } from "./paneGrid";
+import { buildGridStyle, paneEdges, paneNeighbours, topRightSlot } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
@@ -210,7 +213,55 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (activeWs) localStorage.setItem("hv:active-ws", activeWs);
   }, [activeWs]);
-  const [treeOpen, setTreeOpen] = useState(false);
+  /**
+   * §7 round 13: ONE drawer, two panels, one at a time — the rail icon selects
+   * which, and pressing the lit one closes it. Which panel is open is
+   * remembered PER WORKSPACE: a branch bar and a file list are a place you were
+   * working, and losing it on every workspace switch is a tax.
+   */
+  const [drawerByWs, setDrawerByWs] = useState<Record<string, DrawerPanel>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("hv:drawer-panel") ?? "{}") as Record<string, DrawerPanel>;
+    } catch {
+      return {};
+    }
+  });
+  const drawerPanel: DrawerPanel | null = (activeWs && drawerByWs[activeWs]) || null;
+  const setDrawerPanel = (panel: DrawerPanel | null): void => {
+    if (!activeWs) return;
+    setDrawerByWs((m) => {
+      const next = { ...m };
+      if (panel) next[activeWs] = panel;
+      else delete next[activeWs];
+      localStorage.setItem("hv:drawer-panel", JSON.stringify(next));
+      return next;
+    });
+  };
+  /** The rail's contract: press a panel to show it, press the lit one to close. */
+  const toggleDrawer = (panel: DrawerPanel): void => setDrawerPanel(drawerPanel === panel ? null : panel);
+  /**
+   * Width is per PANEL, not per workspace and not shared: a tree of filenames
+   * is comfortable at 256 while the Changes panel has a branch bar, a message
+   * box, a file list, stashes and history to fit. Sharing one number is what
+   * made Changes feel cramped when it was a tab in the file drawer.
+   */
+  const [drawerWidths, setDrawerWidths] = useState<Record<DrawerPanel, number>>(() => ({
+    files: clampDrawer(Number(localStorage.getItem("hv:drawer-width:files")) || 256),
+    changes: clampDrawer(Number(localStorage.getItem("hv:drawer-width:changes")) || 340),
+  }));
+  const drawerWidth = drawerWidths[drawerPanel ?? "files"];
+  const setDrawerWidth = (px: number): void => {
+    const panel = drawerPanel ?? "files";
+    const w = clampDrawer(px);
+    setDrawerWidths((prev) => ({ ...prev, [panel]: w }));
+    localStorage.setItem(`hv:drawer-width:${panel}`, String(w));
+  };
+  // §29: the working tree's state for the ACTIVE workspace — a property of the
+  // tree, deliberately not of any session, because several sessions can be
+  // acting on the same files.
+  const [gitStatus, setGitStatus] = useState<HvGitStatusPayload | null>(null);
+  const [gitAvailable, setGitAvailable] = useState(true);
+  const gitSummary = useMemo(() => summarise(gitStatus?.status?.files ?? []), [gitStatus]);
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
   useEffect(() => { localStorage.setItem("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
@@ -486,19 +537,23 @@ export default function App(): React.JSX.Element {
      */
     void (async () => {
       try {
-        const [raw, sessionList, termList, browserList] = await Promise.all([
+        const [raw, sessionList, termList, browserList, wsList] = await Promise.all([
           window.hv.getLayout(),
           window.hv.listSessions(),
           window.hv.termList(),
           // §28: normally empty at boot — panes do not survive the app, so their
           // restored tabs must be pruned rather than shown as ghosts.
           window.hv.browserList(),
+          // A workspace the user removed keeps its layout entry otherwise, and
+          // its file tabs remount against a workspace main no longer knows.
+          window.hv.listWorkspaces(),
         ]);
         setTerminals(Object.fromEntries(termList.map((t) => [t.id, t])));
         const layout = restoreLayout(raw, {
           sessions: new Set(sessionList.map((x) => x.id)),
           terminals: new Set(termList.map((t) => t.id)),
           browsers: new Set(browserList.map((b) => b.id)),
+          workspaces: new Set(wsList),
         });
         setTabsByWs(layout);
         // Land on a workspace that actually has restored tabs. The remembered
@@ -1147,6 +1202,71 @@ export default function App(): React.JSX.Element {
     watchedWsRef.current = want;
   }, [tabsByWs, activePlan]);
 
+  /**
+   * §29 1b: the branch under every workspace row. Cheap by construction — one
+   * `git status` per workspace at mount, then main's `.git` watch pushes when a
+   * branch moves, including one switched in an outside terminal (the file-tree
+   * watcher filters `.git`, so nothing else would ever notice).
+   */
+  const [gitBranches, setGitBranches] = useState<Record<string, string | null>>({});
+  useEffect(() => {
+    let alive = true;
+    const load = (ws: string): void => {
+      void window.hv.gitStatus(ws).then((p) => {
+        if (!alive) return;
+        setGitBranches((m) => ({ ...m, [ws]: p.status?.branch.branch ?? null }));
+      }).catch(() => {});
+    };
+    for (const ws of workspaces) load(ws);
+    const off = window.hv.onGitChanged(({ workspaceId }) => load(workspaceId));
+    return () => { alive = false; off(); };
+  }, [workspaces]);
+
+  const gitInfo = useMemo(() => {
+    const out: Record<string, { branch: string | null; changes: number | null; tint: "green" | "amber" }> = {};
+    for (const ws of workspaces) {
+      out[ws] = {
+        branch: gitBranches[ws] ?? null,
+        changes: ws === activeWs ? gitSummary.files : null,
+        tint: ws === activeWs ? badgeTint(gitSummary.changedLines) : "green",
+      };
+    }
+    return out;
+  }, [workspaces, gitBranches, activeWs, gitSummary]);
+
+  /**
+   * §29: the working tree of the ACTIVE workspace. Refetched when the workspace
+   * changes and whenever main pushes hv:git-changed — which it fires from the fs
+   * watcher, the narrow `.git` watch and turn end, suppressing the first two
+   * while a session here is busy. The renderer therefore never polls.
+   *
+   * Only the active workspace runs a `git status`; the sidebar's other rows get
+   * a branch name only, because a status sweep of every repo at boot is a cost
+   * nobody asked for.
+   */
+  useEffect(() => {
+    if (!activeWs) {
+      setGitStatus(null);
+      return;
+    }
+    let alive = true;
+    const refresh = (): void => {
+      void window.hv.gitStatus(activeWs).then((p) => {
+        if (!alive) return;
+        setGitStatus(p);
+        setGitAvailable(p.state.kind !== "no-git");
+      }).catch(() => {});
+    };
+    refresh();
+    const off = window.hv.onGitChanged(({ workspaceId }) => {
+      if (workspaceId === activeWs) refresh();
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [activeWs]);
+
   // WS7: session context stats for the tab-strip bubble + panel, plus the cost
   // ledger for the spend pill. Both fetched once per agent_end (turns bump),
   // debounced; reset search/context/cost on session switch. Settling on
@@ -1777,7 +1897,8 @@ export default function App(): React.JSX.Element {
     if (!b) return;
     const is = (id: ShortcutId): boolean => bindings[id] === b;
     if (is("toggleSidebar")) { e.preventDefault(); setSidebarCollapsed((c) => !c); return; }
-    if (is("toggleFileDrawer")) { e.preventDefault(); setTreeOpen((o) => !o); return; }
+    if (is("toggleFileDrawer")) { e.preventDefault(); toggleDrawer("files"); return; }
+    if (is("toggleChangesPanel")) { e.preventDefault(); if (gitAvailable) toggleDrawer("changes"); return; }
     if (is("newSession")) {
       e.preventDefault();
       const ws = wsId ?? workspaces[0];
@@ -1869,7 +1990,7 @@ export default function App(): React.JSX.Element {
   // v5.1: a persistent `toolbar` area is pinned top-right (strip row only);
   // content spans under it. The file tree is a separate absolute overlay (below),
   // so opening it never shrinks the panes. Content stays mounted-flat (WS6).
-  const TREE = treeOpen && !!wsId;
+  const DRAWER = drawerPanel && !!wsId ? drawerPanel : null;
   const gridStyle = buildGridStyle(wsTabs);
 
   return (
@@ -1886,6 +2007,13 @@ export default function App(): React.JSX.Element {
         onNavigate={(v) => !needsSetup && setView(v)}
         onAddWorkspace={addWorkspace}
         onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
+        gitInfo={gitInfo}
+        onBranchMenu={(ws) => {
+          // The branch menu lives in the panel, where switching also gets the
+          // three-choice dialog for a dirty tree — one implementation, not two.
+          setActiveWs(ws);
+          setDrawerPanel("changes");
+        }}
         onNewSession={newSession}
         onSelectSession={selectSession}
         onRenameSession={(id, title) => window.hv.renameSession(id, title)}
@@ -2117,7 +2245,7 @@ export default function App(): React.JSX.Element {
                       void newBrowser(wsId);
                     }}
                     newBrowserKey={formatBinding(bindings.newBrowser)}
-                    onOpenFilePanel={() => setTreeOpen(true)}
+                    onOpenFilePanel={() => setDrawerPanel("files")}
                     splitOptions={splitOptions(wsTabs, slot)}
                     onSplit={(dir) => updateTabs(wsId, (t) => splitAt(t, slot, dir))}
                     onClosePane={
@@ -2125,14 +2253,24 @@ export default function App(): React.JSX.Element {
                         ? () => updateTabs(wsId, (t) => closePane(t, slot))
                         : undefined
                     }
-                    filesOpen={treeOpen && wsTabs.focused === slot}
-                    onToggleFiles={() => {
-                      // Focus this pane first: a file picked from the drawer opens
-                      // into the focused pane, so "browse files into THIS pane"
-                      // has to mean exactly that.
-                      updateTabs(wsId, (t) => focusPane(t, slot));
-                      setTreeOpen(!(treeOpen && wsTabs.focused === slot));
-                    }}
+                    // §7 round 13: the Files/Changes cluster is layout-wide, so
+                    // it renders in exactly ONE strip — the top-right one. In
+                    // normal flow, so there is no toolbar track for content to
+                    // span under and no overlay for a browser pane to cover.
+                    trailing={
+                      slot === topRightSlot(wsTabs) ? (
+                        <RightRail
+                          open={DRAWER}
+                          onToggle={toggleDrawer}
+                          gitAvailable={gitAvailable}
+                          branch={gitStatus?.status?.branch?.branch ?? null}
+                          changeCount={gitSummary.files}
+                          changeTint={badgeTint(gitSummary.changedLines)}
+                          filesKey={formatBinding(bindings.toggleFileDrawer)}
+                          changesKey={formatBinding(bindings.toggleChangesPanel)}
+                        />
+                      ) : undefined
+                    }
                   />
                 </div>
               );
@@ -2173,6 +2311,12 @@ export default function App(): React.JSX.Element {
                   // Where this pane meets another: the view insets itself so the
                   // divider's drag strip is never underneath a composited page.
                   edges={paneNeighbours(wsTabs, paneOf(wsTabs, browserTab(bid)))}
+                  // §7 round 13: make ROOM for the drawer instead of vanishing
+                  // under it. A WebContentsView cannot be painted over, but it
+                  // can be made smaller — and the drawer is a stable rectangle
+                  // on the right edge, unlike the transient menus that still
+                  // (correctly) hide it.
+                  drawerWidth={DRAWER ? drawerWidth : 0}
                   onPicked={(payload) => {
                     // §28: the OWNER of the pane first — the session that opened
                     // or adopted it is the agent actually driving this page — and
@@ -2393,9 +2537,52 @@ export default function App(): React.JSX.Element {
             {/* v5.1: file tree is a right-side OVERLAY drawer (top below the tab
                 bar, h-11) — it overlays the content instead of a grid column, so
                 opening it never shrinks the panes. Below the ContextPanel (z-40). */}
-            {TREE && (
-              <div className="absolute top-11 right-0 bottom-0 w-64 z-30 border-l-2 border-line bg-paper shadow-sticker-lg">
-                <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setTreeOpen(false)} />
+            {DRAWER && (
+              <div
+                // §7 round 13: plain `bg-paper`, NOT the sidebar's pegboard.
+                // Tried and reverted: the texture is the app's mark for its own
+                // chrome — the sidebar, where you pick a workspace or open
+                // settings. This drawer is the workspace's own contents, so it
+                // belongs to the centre, and giving it the sidebar's surface
+                // said the opposite.
+                // §7 round 13: marked so BrowserTab can make ROOM for it
+                // instead of hiding under it — see its `drawerWidth` prop.
+                data-hv-drawer=""
+                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col"
+                style={{ width: drawerWidth }}
+              >
+                {/* §29: the drag strip. Absolutely placed on the drawer's own
+                    left edge so it costs no layout and cannot shift the tabs. */}
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize the panel"
+                  title="Drag to resize"
+                  className="absolute left-0 top-0 bottom-0 w-2 -ml-1 cursor-col-resize z-10"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    const startX = e.clientX;
+                    const startW = drawerWidth;
+                    const move = (ev: MouseEvent): void =>
+                      setDrawerWidth(clampDrawer(startW + (startX - ev.clientX)));
+                    const up = (): void => {
+                      window.removeEventListener("mousemove", move);
+                      window.removeEventListener("mouseup", up);
+                    };
+                    window.addEventListener("mousemove", move);
+                    window.addEventListener("mouseup", up);
+                  }}
+                />
+                {/* §7 round 13: ONE panel at a time. The rail is the switcher,
+                    so the drawer carries no tab header of its own — which is
+                    what gives Changes the whole width it needs. */}
+                <div className="min-h-0 flex-1">
+                  {DRAWER === "changes" ? (
+                    <ChangesPanel key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
+                  ) : (
+                    <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} onClose={() => setDrawerPanel(null)} />
+                  )}
+                </div>
               </div>
             )}
           </div>

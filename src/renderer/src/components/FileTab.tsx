@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { basename } from "../tabs";
 import { formatSelection } from "../sendToChat";
+import { DiffView } from "./DiffView";
 
 // F6: files that get a rendered/raw preview toggle (rendered by default).
 const PREVIEWABLE = /\.(md|markdown|html|htm)$/i;
@@ -63,8 +64,47 @@ export function FileTab({
   const [selection, setSelection] = useState<{ text: string; startLine: number; endLine: number } | null>(null);
   const previewable = PREVIEWABLE.test(relPath);
   const isHtml = IS_HTML.test(relPath);
-  const [view, setView] = useState<"rendered" | "raw">(previewable ? "rendered" : "raw");
+  // §29 1c: a diff is a MODE of this tab, never a fourth tab type — `allFiles`
+  // feeds the watcher, the mounted-tab list and §9's open-files context block,
+  // so a `:diff:` kind would need excluding in all three.
+  const [view, setView] = useState<"rendered" | "raw" | "changes">(previewable ? "rendered" : "raw");
   const showPreview = previewable && view === "rendered";
+  const [diff, setDiff] = useState<HvFileDiff[] | null>(null);
+  const [changed, setChanged] = useState(false);
+  const [undoing, setUndoing] = useState<{ file: HvFileDiff; hunk: HvDiffHunk } | null>(null);
+  const [diffToast, setDiffToast] = useState<string | null>(null);
+
+  // Does this file differ from the baseline? Decides whether the Changes segment
+  // exists at all — never a greyed control for a file with nothing to show.
+  const loadDiff = useCallback((): void => {
+    void window.hv
+      .gitDiff(workspace, "head", { path: relPath })
+      .then((d) => {
+        const real = d.filter((f) => f.hunks.length > 0 || f.binary);
+        setDiff(real);
+        setChanged(real.length > 0);
+        // A mode must never vanish under the user: if the last hunk just went,
+        // snap back to Source and SAY so, rather than leaving them in a mode
+        // that no longer exists (the self-renaming-button class of riddle).
+        if (!real.length) {
+          setView((v) => {
+            if (v !== "changes") return v;
+            setDiffToast("All changes undone");
+            window.setTimeout(() => setDiffToast(null), 4_000);
+            return "raw";
+          });
+        }
+      })
+      .catch(() => { setDiff([]); setChanged(false); });
+  }, [workspace, relPath]);
+
+  useEffect(() => {
+    loadDiff();
+    const off = window.hv.onGitChanged(({ workspaceId }) => {
+      if (workspaceId === workspace) loadDiff();
+    });
+    return off;
+  }, [workspace, loadDiff]);
   // External change detected while dirty — never silently clobber either side.
   const [conflict, setConflict] = useState<"changed" | "deleted" | null>(null);
   const [saving, setSaving] = useState(false);
@@ -195,32 +235,51 @@ export function FileTab({
             {/* The switcher LEADS, as a two-icon pill with the current view lit.
                 A single button whose label was the OTHER state ("Source" while
                 showing source) is a riddle; a switch is not. */}
-            {previewable && (
+            {(previewable || changed) && (
               <div className="flex items-center rounded-lg border-2 border-line-strong overflow-hidden shrink-0">
                 <button
                   type="button"
-                  onClick={() => setView("rendered")}
-                  aria-pressed={showPreview}
-                  aria-label="Preview rendered"
-                  title="Preview rendered"
-                  className={`flex items-center px-2 py-1 cursor-pointer ${
-                    showPreview ? "bg-tangerine text-paper" : "text-ink-soft hover:bg-paper-deep/40"
-                  }`}
-                >
-                  <EyeGlyph />
-                </button>
-                <button
-                  type="button"
                   onClick={() => setView("raw")}
-                  aria-pressed={!showPreview}
+                  aria-pressed={view === "raw"}
                   aria-label="Edit source"
                   title="Edit source"
                   className={`flex items-center px-2 py-1 cursor-pointer ${
-                    !showPreview ? "bg-tangerine text-paper" : "text-ink-soft hover:bg-paper-deep/40"
+                    view === "raw" ? "bg-tangerine text-paper" : "text-ink-soft hover:bg-paper-deep/40"
                   }`}
                 >
                   <CodeGlyph />
                 </button>
+                {/* §29: present ONLY when this file differs from the baseline.
+                    An always-there segment that greys out would be a control
+                    asking the user to reason about why it cannot work. */}
+                {changed && (
+                  <button
+                    type="button"
+                    onClick={() => setView("changes")}
+                    aria-pressed={view === "changes"}
+                    aria-label="Changes"
+                    title="What changed since your last save"
+                    className={`flex items-center px-2 py-1 cursor-pointer border-l-2 border-line-strong ${
+                      view === "changes" ? "bg-tangerine text-paper" : "text-ink-soft hover:bg-paper-deep/40"
+                    }`}
+                  >
+                    <DiffGlyph />
+                  </button>
+                )}
+                {previewable && (
+                  <button
+                    type="button"
+                    onClick={() => setView("rendered")}
+                    aria-pressed={showPreview}
+                    aria-label="Preview rendered"
+                    title="Preview rendered"
+                    className={`flex items-center px-2 py-1 cursor-pointer border-l-2 border-line-strong ${
+                      showPreview ? "bg-tangerine text-paper" : "text-ink-soft hover:bg-paper-deep/40"
+                    }`}
+                  >
+                    <EyeGlyph />
+                  </button>
+                )}
               </div>
             )}
             {/* Round 11: only with a selection — `@file` already covers whole files,
@@ -254,7 +313,15 @@ export function FileTab({
             </button>
           </div>
           <div className="flex-1 min-h-0">
-            {showPreview ? (
+            {view === "changes" ? (
+              <div className="h-full overflow-y-auto p-3">
+                <DiffView
+                  files={diff ?? []}
+                  emptyLabel="No changes since your last save."
+                  onUndoHunk={(file, hunk) => setUndoing({ file, hunk })}
+                />
+              </div>
+            ) : showPreview ? (
               isHtml ? (
                 // Sandboxed: no scripts, no same-origin. Relative asset/style
                 // paths won't resolve (accepted — this is a quick visual check).
@@ -275,6 +342,58 @@ export function FileTab({
             )}
           </div>
         </>
+      )}
+
+      {/* §3: an undo asks ONCE, naming the file and the hunks — confirmed, not
+          narrated. Nothing is written into the composer: that box may hold a
+          thought in progress, and the agent re-reads before editing anyway. */}
+      {undoing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setUndoing(null)}>
+          <div className="w-full max-w-md rounded-2xl border-2 border-berry bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="font-bold mb-2">Undo this change?</div>
+            <div className="text-sm mb-4">
+              1 change in <code className="font-mono">{relPath}</code> goes back to how it was at your last save.
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setUndoing(null)}
+                className="rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { file, hunk } = undoing;
+                  setUndoing(null);
+                  void window.hv
+                    .gitUndoHunk(workspace, `${file.fileHeader}\n${hunk.raw}`, { path: file.path })
+                    .then((r) => {
+                      // Stale-checked: a file changed under us is refused and
+                      // NAMED, never overwritten.
+                      setDiffToast(
+                        r.ok ? `Undid 1 change in ${basename(file.path)}`
+                          : r.stale ? `${basename(file.path)} changed since this diff — nothing was touched`
+                            : r.busy?.length ? "A session is working in this project — try again when it finishes"
+                              : r.error || "Could not undo that change"
+                      );
+                      window.setTimeout(() => setDiffToast(null), 4_000);
+                      if (r.ok) { load(); loadDiff(); }
+                    });
+                }}
+                className="rounded-xl bg-berry text-paper font-bold text-sm px-4 py-2 border-2 border-berry shadow-sticker cursor-pointer hover:brightness-105"
+              >
+                Undo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {diffToast && (
+        <div className="absolute bottom-3 left-3 right-3 z-40 rounded-xl border-2 border-line bg-card px-3 py-2 text-xs shadow-sticker-lg">
+          {diffToast}
+        </div>
       )}
 
       {buf.kind !== "text" && (
@@ -338,6 +457,15 @@ function SendToChatGlyph(): React.JSX.Element {
     <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       <path d="M8 10h8M8 13h5" />
+    </svg>
+  );
+}
+/** §29: the Changes segment's glyph — two arrows, distinct from the code one. */
+function DiffGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 7h11M11 4l3 3-3 3" />
+      <path d="M21 17H10M13 20l-3-3 3-3" />
     </svg>
   );
 }

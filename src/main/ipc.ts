@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
 import { PiClient } from "./pi/PiClient";
+import { spawn } from "node:child_process";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
@@ -15,6 +16,7 @@ import {
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
   getVoiceSettings, setVoiceSettings,
+  getGitMessageModel, setGitMessageModel,
 } from "./config";
 import { TerminalManager } from "./terminals";
 import {
@@ -66,6 +68,14 @@ import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/comma
 import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
+import {
+  appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
+  gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, probeWorkspace,
+  publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
+} from "./git";
+import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
+import { draftCommitMessage, draftPullRequest } from "./gitMessage";
+import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
   captureSnapshot, deleteSessionSnapshots, findRestoreTarget, listSnapshots,
@@ -1028,6 +1038,10 @@ export function registerIpc(win: BrowserWindow): void {
         maybeTitle(sessionId);
         if (meta && !index.get(sessionId)?.piSessionFile) void captureSessionFile(sessionId, client);
         drainPendingReload(sessionId); // apply a deferred MCP reload now the turn is done
+        // §29: the third refresh seam, and the one that pays for suppressing the
+        // other two. Forced: the session is still marked busy at this instant,
+        // so a gated push would drop exactly the refresh the user is waiting for.
+        if (meta) pushGitChanged(meta.workspaceId, { force: true });
       }
     });
     client.on("ui-request", (r: { id: string; method?: string; title?: string; message?: string }) => {
@@ -1596,6 +1610,7 @@ export function registerIpc(win: BrowserWindow): void {
     manager.stopAll();
     utility?.stop();
     unwatchAll(); // WS8: close fs watchers
+    unwatchAllGit(); // §29: and the narrow .git ones
   });
 
   // ── config / folder picking ──────────────────────────────────────
@@ -2831,6 +2846,10 @@ export function registerIpc(win: BrowserWindow): void {
     pushPlanProgress(workspaceId);
     watchWorkspace(workspaceId, (relDirs) => {
       send("hv:fs-changed", { workspaceId, relDirs });
+      // §29: a file changed on disk means the working tree moved. Suppressed
+      // while a session here is busy (pushGitChanged's own gate) — the turn-end
+      // refresh below catches the whole turn at once.
+      pushGitChanged(workspaceId);
       // §14: a change under .agents/skills may flip an approved workspace skill
       // back to needs-review (hash mismatch) — tell the renderer to re-fetch, and
       // auto-approve skills the agent just authored via skill-creator.
@@ -2849,7 +2868,318 @@ export function registerIpc(win: BrowserWindow): void {
       }
     });
   });
-  ipcMain.handle("hv:unwatch-workspace", (_e, workspaceId: string) => unwatchWorkspace(workspaceId));
+  ipcMain.handle("hv:unwatch-workspace", (_e, workspaceId: string) => {
+    unwatchWorkspace(workspaceId);
+    unwatchGit(workspaceId);
+  });
+
+  // ── §29 Git integration ──────────────────────────────────────────────────
+  //
+  // Three refresh seams feed one push. Two of them (the fs watcher and the
+  // narrow .git watch) are SUPPRESSED while any session in the workspace is
+  // busy: an agent mid-refactor would otherwise trigger a status run per
+  // debounce tick. The third — turn end — catches everything at once.
+  const gitBusySessions = (workspaceId: string): string[] =>
+    affectedSessionIds("workspace", workspaceId, index.list().map((s) => ({ id: s.id, workspaceId: s.workspaceId })))
+      .filter((id) => manager.get(id) !== null && !activity.isIdle(id));
+
+  const pushGitChanged = (workspaceId: string, opts: { force?: boolean } = {}): void => {
+    if (!opts.force && gitBusySessions(workspaceId).length > 0) return;
+    send("hv:git-changed", { workspaceId });
+  };
+
+  /**
+   * The idle gate, in ONE place. Every verb that mutates the WORKING TREE is
+   * blocked while a session in this workspace is busy — sessions share one tree,
+   * so a stash rips the agent's own edits out from under it exactly the way a
+   * branch switch does. Commit, push and fetch are deliberately NOT gated: they
+   * change history or the remote picture, never the files under the agent.
+   */
+  const gitGate = (workspaceId: string): { busy: string[] } | null => {
+    const busy = gitBusySessions(workspaceId);
+    if (!busy.length) return null;
+    return { busy: busy.map((id) => index.get(id)?.title ?? id) };
+  };
+
+  const auditGit = (workspaceId: string, action: string, detail: Record<string, unknown>): void => {
+    // Human-only by construction — there is no git tool the model can call, so
+    // `who` is not a variable here (§29, mirroring §23 and §9).
+    void log.append({ type: "git.action", workspaceId, data: { action, ...detail, who: "human" } });
+  };
+
+  /**
+   * The probe is cached per workspace, which is right for a repo — its root does
+   * not move — but wrong for a NEGATIVE answer: someone running `git init` in
+   * their own terminal would leave the panel saying "isn't tracking versions
+   * yet" forever. So a non-repo answer is re-asked each time (one rev-parse),
+   * while a known repo stays cached.
+   */
+  const freshProbe = async (workspaceId: string): Promise<Awaited<ReturnType<typeof probeWorkspace>>> => {
+    const cached = await probeWorkspace(workspaceId);
+    if (cached.kind === "repo") return cached;
+    invalidateProbe(workspaceId);
+    return probeWorkspace(workspaceId);
+  };
+
+  ipcMain.handle("hv:git-state", async (_e, workspaceId: string) => ({
+    ...(await freshProbe(workspaceId)),
+    available: await gitAvailable(),
+  }));
+
+  ipcMain.handle("hv:git-status", async (_e, workspaceId: string) => {
+    await freshProbe(workspaceId);
+    const payload = await gitStatus(workspaceId);
+    // Start the narrow .git watch lazily, when someone first asks about this
+    // workspace's git: the sidebar wants a fresh branch name for every
+    // workspace, and the file-tree watcher filters .git so nothing else sees it.
+    if (payload.state.kind === "repo") watchGitDir(workspaceId, () => pushGitChanged(workspaceId));
+    return payload;
+  });
+
+  ipcMain.handle("hv:git-diff", (_e, workspaceId: string, baseline: "head" | "base", opts?: { staged?: boolean; path?: string }) =>
+    gitDiff(workspaceId, baseline, opts ?? {}));
+  ipcMain.handle("hv:git-history", (_e, workspaceId: string, limit: number) => gitHistory(workspaceId, limit));
+  ipcMain.handle("hv:git-show", (_e, workspaceId: string, sha: string) => gitShow(workspaceId, sha));
+  ipcMain.handle("hv:git-branches", (_e, workspaceId: string) => listBranches(workspaceId));
+  // Round 14: this outlived the baseline dropdown it was written for. It now
+  // answers "which branch must NOT offer a delete control".
+  ipcMain.handle("hv:git-default-branch", (_e, workspaceId: string) => defaultBranch(workspaceId));
+
+  ipcMain.handle("hv:git-commit", async (_e, workspaceId: string, message: string, opts: { stagedOnly: boolean; amend: boolean }) => {
+    // Not gated: a commit records what is already on disk.
+    const r = await saveVersion(workspaceId, message, opts);
+    if (r.ok) {
+      auditGit(workspaceId, opts.amend ? "amend" : "commit", { sha: r.sha, message });
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-stage", async (_e, workspaceId: string, relPath: string, stage: boolean) => {
+    const r = await stageFile(workspaceId, relPath, stage);
+    if (r.ok) pushGitChanged(workspaceId, { force: true });
+    return r;
+  });
+
+  ipcMain.handle("hv:git-switch", async (_e, workspaceId: string, branch: string, opts: { create: boolean; mode: "take" | "stash" }) => {
+    const gate = gitGate(workspaceId);
+    if (gate) return { ok: false, ...gate };
+    const r = await switchBranch(workspaceId, branch, opts);
+    if (r.ok) {
+      auditGit(workspaceId, "switch", { branch, create: opts.create, mode: opts.mode });
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-delete-branch", async (_e, workspaceId: string, branch: string, force?: boolean) => {
+    // Not gated: deleting a ref never touches the working tree, so it sits with
+    // commit/push/fetch rather than with switch/stash/undo (§29's gate rule).
+    const r = await deleteBranch(workspaceId, branch, force === true);
+    if (r.ok) {
+      auditGit(workspaceId, "delete-branch", { branch, force: force === true });
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-fetch", (_e, workspaceId: string) => fetchRemote(workspaceId));
+
+  ipcMain.handle("hv:git-sync", async (_e, workspaceId: string) => {
+    // A pull DOES touch the working tree, so sync is gated even though its
+    // fetch and push halves are harmless.
+    const gate = gitGate(workspaceId);
+    if (gate) return { ok: false, ...gate };
+    const r = await sync(workspaceId);
+    if (r.ok) {
+      auditGit(workspaceId, "sync", {});
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-publish", async (_e, workspaceId: string) => {
+    const r = await publish(workspaceId);
+    if (r.ok) {
+      auditGit(workspaceId, "publish", {});
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-stash", async (_e, workspaceId: string, action: "save" | "pop" | "drop", stashIndex?: number) => {
+    const gate = gitGate(workspaceId);
+    if (gate) return { ok: false, ...gate };
+    const r = await stash(workspaceId, action, stashIndex ?? 0);
+    if (r.ok) {
+      auditGit(workspaceId, `stash-${action}`, { index: stashIndex ?? 0 });
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-undo-hunk", async (_e, workspaceId: string, patch: string, meta: { path: string }) => {
+    const gate = gitGate(workspaceId);
+    if (gate) return { ok: false, stale: false, error: "", ...gate };
+    const r = await undoHunk(workspaceId, patch);
+    if (r.ok) {
+      auditGit(workspaceId, "undo-hunk", { path: meta?.path, hunks: 1 });
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-undo-file", async (_e, workspaceId: string, relPath: string) => {
+    const gate = gitGate(workspaceId);
+    if (gate) return { ok: false, ...gate };
+    const r = await undoFile(workspaceId, relPath);
+    if (r.ok) {
+      auditGit(workspaceId, "undo-file", { path: relPath });
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-discard-untracked", async (_e, workspaceId: string, relPath: string) => {
+    const gate = gitGate(workspaceId);
+    if (gate) return { ok: false, ...gate };
+    const r = await discardUntracked(workspaceId, relPath);
+    if (r.ok) {
+      auditGit(workspaceId, "discard-untracked", { path: relPath });
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-init-preview", (_e, workspaceId: string) => initPreview(workspaceId));
+
+  ipcMain.handle("hv:git-init", async (_e, workspaceId: string, gitignore: string) => {
+    const gate = gitGate(workspaceId);
+    if (gate) return { ok: false, ...gate };
+    const r = await initRepo(workspaceId, gitignore);
+    if (r.ok) {
+      auditGit(workspaceId, "init", {});
+      pushGitChanged(workspaceId, { force: true });
+    }
+    return r;
+  });
+
+  ipcMain.handle("hv:git-detect-junk", async (_e, workspaceId: string) => {
+    const payload = await gitStatus(workspaceId);
+    return detectJunk(payload.status?.files ?? []);
+  });
+
+  ipcMain.handle("hv:git-add-gitignore", async (_e, workspaceId: string, lines: string[]) => {
+    await appendGitignore(workspaceId, lines);
+    pushGitChanged(workspaceId, { force: true });
+    return { ok: true };
+  });
+
+  // §2b — the drafted commit message. Never the live session: this is a one-shot
+  // print-mode call, so nothing reaches a transcript or a context window.
+  ipcMain.handle("hv:git-draft-message", async (_e, workspaceId: string, stagedOnly: boolean) => {
+    const model = getGitMessageModel() ?? resolveSpawnModel(workspaceId);
+    if (!model) return null;
+    const [files, diffs, log20] = await Promise.all([
+      gitStatus(workspaceId),
+      gitDiff(workspaceId, "head", { staged: stagedOnly }),
+      gitHistory(workspaceId, 20),
+    ]);
+    const diffText = diffs
+      .map((f) => `${f.fileHeader}\n${f.hunks.map((h) => h.raw).join("")}`)
+      .join("\n");
+    if (!diffText.trim()) return null;
+    return draftCommitMessage(
+      piRuntimeDir(),
+      workspaceId,
+      {
+        diff: diffText,
+        files: (files.status?.files ?? []).filter((f) => (stagedOnly ? f.staged : true)),
+        recentSubjects: log20.map((l) => l.subject),
+      },
+      model,
+      { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
+    );
+  });
+
+  /**
+   * §5a — the ONLY thing we do about a missing git: ask the OS for it. Running
+   * `git --version` WITHOUT suppressing its output is what triggers macOS's
+   * Command Line Tools installer, because /usr/bin/git is a shim that prompts.
+   * We never download or bundle a git: §3 says git is a feature, not a runtime
+   * dependency, and installing developer tooling behind the user's back would
+   * be the opposite of that promise.
+   */
+  ipcMain.handle("hv:git-install-prompt", () => {
+    if (process.platform === "darwin") {
+      spawn("git", ["--version"], { detached: true, stdio: "ignore" }).unref();
+      return { ok: true };
+    }
+    void shell.openExternal("https://git-scm.com/downloads");
+    return { ok: true };
+  });
+
+  /**
+   * §29 §7 — the prefilled pull-request URL, or null.
+   *
+   * Assembled in MAIN so the renderer only has a link to open. Null means "no
+   * button": not a repo, no `origin`, a forge we do not recognise, sitting on
+   * the default branch, or nothing pushed yet — all states where a PR link
+   * would 404 or propose nothing.
+   *
+   * HappyVibe creates nothing and stores no credential; the user presses Create
+   * on the forge, already signed in there. (Which is why this cannot use the
+   * §28 embedded pane: it has its own cookie jar.)
+   */
+  ipcMain.handle("hv:git-pr-url", async (_e, workspaceId: string, draft = false) => {
+    const payload = await gitStatus(workspaceId);
+    if (payload.state.kind !== "repo") return null;
+    const branch = payload.status?.branch;
+    if (!branch?.branch || !branch.upstream) return null;
+
+    const origin = await remoteUrl(workspaceId);
+    const remote = origin ? parseRemote(origin) : null;
+    if (!remote) return null;
+
+    const baseRef = await defaultBranch(workspaceId);
+    // "origin/main" names the same branch as "main" for a compare link.
+    const base = (baseRef ?? "main").replace(/^origin\//, "");
+    if (base === branch.branch) return null; // a PR from main into main proposes nothing
+
+    const commits = await branchCommits(workspaceId, base);
+
+    // `draft: false` is the ELIGIBILITY call — the renderer asks it on every
+    // status change to decide whether the button exists, so it must never run
+    // the model or read a diff. `draft: true` is the click.
+    let drafted: { title: string; body: string } | null = null;
+    if (draft) {
+      const model = getGitMessageModel() ?? resolveSpawnModel(workspaceId);
+      if (model) {
+        const diffs = await gitDiff(workspaceId, "base");
+        const diffText = diffs.map((f) => `${f.fileHeader}\n${f.hunks.map((h) => h.raw).join("")}`).join("\n");
+        drafted = await draftPullRequest(
+          piRuntimeDir(),
+          workspaceId,
+          { commits, diff: diffText, branch: branch.branch, base },
+          model,
+          { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
+        );
+      }
+    }
+    // The fallback is what the user would have typed anyway, so a missing
+    // provider costs nicer prose and nothing else.
+    const title = drafted?.title || (commits.length === 1 ? commits[0] : humaniseBranch(branch.branch));
+    const body = drafted?.body || commits.map((c) => `- ${c}`).join("\n");
+
+    const url = pullRequestUrl({ host: remote.host, path: remote.path, base, head: branch.branch, title, body });
+    return url ? { url, drafted: !!drafted } : null;
+  });
+
+  ipcMain.handle("hv:git-message-model", () => getGitMessageModel());
+  ipcMain.handle("hv:set-git-message-model", (_e, m: { provider: string; modelId: string } | null) => {
+    setGitMessageModel(m && typeof m.provider === "string" && typeof m.modelId === "string" ? m : null);
+    return getGitMessageModel();
+  });
 
   // Per-workspace model override (spawn resolution: workspace → global default).
   // Applies to sessions spawned/restarted after the change.

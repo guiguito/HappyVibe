@@ -18,6 +18,7 @@ export type ShortcutId =
   | "search"
   | "toggleSidebar"
   | "toggleFileDrawer"
+  | "toggleChangesPanel"
   | "openSettings"
   | "openShortcuts";
 
@@ -44,7 +45,11 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   // Two actions would make the default ⌘F conflict with itself on first render.
   { id: "search", label: "Search the conversation or the open file", defaultKey: "Mod-f" },
   { id: "toggleSidebar", label: "Show or hide the workspace panel", defaultKey: "Mod-\\" },
-  { id: "toggleFileDrawer", label: "Show or hide the file drawer", defaultKey: "Mod-Shift-e" },
+  { id: "toggleFileDrawer", label: "Show or hide the files panel", defaultKey: "Mod-Shift-e" },
+  // §7 round 13: Changes is its own panel, so it gets its own key. Mod-Shift-g
+  // was free (Mod-Shift-e was the only Mod-Shift binding) and matches what a
+  // user arriving from another editor will reach for.
+  { id: "toggleChangesPanel", label: "Show or hide the Changes panel", defaultKey: "Mod-Shift-g" },
   { id: "openSettings", label: "Open Settings", defaultKey: "Mod-," },
   { id: "openShortcuts", label: "Open keyboard shortcuts", defaultKey: "Mod-/" },
 ];

@@ -20,9 +20,13 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   and it was ~20 of the 55 typecheck runs in this repo's history.
 
 ## Tests
-- Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated) — **14 files**:
-  tests/{bridge,rules-bridge,intent-bridge,ask-user-bridge,agents-bridge,agents-md-bridge,context-bridge,skills-bridge,prompt-templates-bridge,subagent-context,subagent-async-bridge,subagent-discovery-bridge,mcp-bridge,plan-bridge}.test.ts
-  Source of truth = `grep -rl "skipIf(!KEY" tests/` — re-derive, don't trust the list above.
+- Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated) — **17 files** as of
+  2026-08-16 (was 14; browser-bridge, terminal-bridge and git-message joined since).
+  Source of truth = `grep -rl "skipIf(!KEY" tests/` — RE-DERIVE IT, never trust a list in prose.
+  The count in this file has drifted twice; the grep has not.
+  Note git-message is the odd one out: it is the only live file that is not a BRIDGE test —
+  §29's "Write it for me" is a one-shot `pi -p` call, so it exercises the print-mode path
+  (`titles.ts`'s pattern) rather than the RPC one.
   Canonical invocation: `npm run test:live`
   (= `grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism`)
   Run it only when `npm run live:why` prints something — that prints the changed files which
@@ -335,7 +339,42 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   scans the renderer for anything climbing to 100 — that second half is the one that rots, because a
   future `z-[200]` on some popover silently takes the crown back. Anything that must sit above a
   dialog has to BE a dialog.
-- **Hit-testing has two blind spots, and both were real overlays.** `document.elementFromPoint`
+- **§28 round 2 (2026-08-16): coverage is decided by RECTANGLE for EVERY floating
+  surface, and the 3×3 point sample is gone.** The gaps were not an edge case, they
+  were the common case: the onboarding card fell between the nine points, so did the
+  pane `+` menu dropping in from the top edge (reported as a menu rendering *clipped*
+  at the page's top, because the view never moved), and `elementFromPoint` is blind to
+  `pointer-events: none` outright. Candidates are found with **no marker list** —
+  this app is styled entirely with Tailwind, so every floating surface carries
+  `absolute` or `fixed` as a literal class word, and `[class~="absolute"]` finds them
+  all including the one nobody remembered to mark. `paneIsCovered` (browserCoverage.ts)
+  holds the policy; the component only gathers rects. Measured at rest on a real
+  window: **zero** candidates over a pane-sized rect, so it does not hide spuriously.
+  The hazard it accepts, recorded because it bit once: a candidate is judged by its
+  BOX, so a positioned wrapper that centres small content in a full-width box blanks
+  the page (the voice pill did exactly this — `fixed inset-x-0 … justify-center`). The
+  fix for that is to shrink the box, not to loosen the check.
+- **"Open a pull request" creates nothing, and the `draft` flag is why it is cheap.**
+  It opens the FORGE's own prefilled form in the user's EXTERNAL browser — no token, no
+  auth UI, no API call, which is the only reason it clears §5/§6's GitHub fence. It
+  cannot use the §28 embedded pane: that runs on `persist:hv-browser`, its own cookie
+  jar, so the user is not signed in there. `hv:git-pr-url(ws, draft)` serves two
+  callers and the flag is load-bearing: `false` is the ELIGIBILITY probe the renderer
+  runs on every status push to decide whether the button exists, so it must never read
+  a diff or call the model — without the split, publishing a branch would cost a model
+  call. `true` is the click. Body is capped at 4000 chars because GitHub answers
+  `414 URI Too Long` past a limit it does not document, and Bitbucket gets no
+  description param because it documents none (a key that silently does nothing is
+  worse than an absent one). Unrecognised host → `null` → no button, never a guessed
+  URL that 404s. Shapes pinned in `tests/git-forge.test.ts`.
+- **The drawer is the ONE overlay a browser pane makes ROOM for instead of hiding
+  under** (§7 round 13). Nothing in the DOM can ever paint above a `WebContentsView`
+  — but the view can be made SMALLER, and the drawer is a stable rectangle pinned to
+  the right edge, so `paneViewRect` insets the view to end where the drawer begins and
+  both stay on screen. Hiding stays right for menus and dialogs, which are transient
+  and land anywhere. The inset and the coverage check MUST use the same rect
+  (`effectiveRect`) or the page hides for an overlay it no longer reaches.
+- **Hit-testing's old blind spots, kept because the geometry still explains them.** `document.elementFromPoint`
   ignores `pointer-events: none`, so the voice recording pill (which sets it so it never swallows a
   click) was invisible to the browser's coverage check; and nine sample points have gaps, so the
   onboarding card — bottom-right, inset 24px — sat entirely between them. Both were drawn UNDER the
@@ -373,6 +412,41 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   the whole reason `askUntil` exists. So: before recording any behavioural claim about a model,
   **interleave the arms and compute a p-value** — both are cheap and neither was done the first
   time. Full retraction, tables and method in docs/validation/d1.md.
+- **Git (§29): the panel renders GIT's hunks, and that is not a style preference.** The tool cards
+  use the js `diff` library (`diffs.ts`) and keep it — they render an edit's own before/after,
+  which git never saw. But git and that library split the same change into DIFFERENT hunks, so a
+  panel rendering js-diff hunks while undoing through `git apply -R` would undo a hunk the user
+  never saw. `gitParse.ts` parses git's unified output, `hunk.raw` is fed back verbatim, and
+  `git apply -R --check` runs first — that check IS the stale-check, not a second mechanism beside
+  it. Two parser traps, both found by tests rather than by reading: the trailing `""` from
+  `split("\n")` becomes a phantom context line on the LAST hunk of every diff (so its patch stops
+  describing the file and every last-hunk undo refuses as "stale" — a test that undoes `hunks[0]`
+  never sees it), and a porcelain-v2 rename line lists the NEW path first with the original after
+  a tab. Fixtures in `tests/git-parse.test.ts` are captured from a real git, never hand-written.
+- **The `.git` watch fingerprints; it cannot filter by filename.** Measured on macOS: writing one
+  file under `.git/objects/ab/` reports `change ".git"`, `rename "objects"` AND `rename "HEAD"` —
+  that third event is a lie, and it is exactly the one a name filter lets through, so a commit's
+  object churn would run one `git status` per object. `gitWatch.ts` therefore debounces every event
+  down to one comparison of HEAD's contents plus the index's mtime+size. The watch exists at all
+  because `watch.ts` deliberately filters `.git` (`isVisibleEntry`), so nothing else in the app can
+  see a branch switched in an outside terminal.
+- **Git's idle gate covers the WORKING TREE, not "git".** Switch, stash, sync, undo, discard and
+  init are blocked while any session in the workspace is busy (`activity.isIdle`, the gate MCP
+  live-reload already uses) because sessions share one tree; commit, push, fetch and stage are NOT
+  gated — they change history or the remote picture, never the files under the agent. A refusal
+  returns `{ok:false, busy:[titles]}`, so the renderer never decides what is safe. Turn end pushes
+  `hv:git-changed` with `force`, because the session is still marked busy at that instant and a
+  gated push would drop the one refresh the user is waiting for.
+- **The git probe caches a repo but re-asks a non-repo.** A cached "no-repo" would leave the panel
+  saying "isn't tracking versions yet" forever after the user runs `git init` in their own
+  terminal. Also realpath BOTH sides of the root comparison: macOS answers `/private/var` to a
+  `/var` question, and a string compare calls every temp-dir repo a subdirectory of itself.
+- **`tests/git-remote.test.ts` pushes to a REAL GitHub repo** (`guiguito/TestHappyVibeGit`) to
+  cover what a local temp repo cannot: `publish` setting an upstream, `sync` fast-forwarding
+  without a merge commit, and a diverged branch coming back `nonFF` having merged NOTHING. It
+  clones to a temp dir, only ever pushes `hv-test-*` branches, deletes them in `afterAll`, and
+  skips itself when that folder is absent — so CI never sees it and the user's own checkout is
+  never touched.
 - The centre tab layout is **persisted** (`config.json` `layout`, validated + pruned on restore by
   `layoutPersist.ts` — main never learns what a tab is, same division of labour as `shortcuts`).
   `activeWs` persists in localStorage beside `hv:sidebar-collapsed`: without it the layout restores

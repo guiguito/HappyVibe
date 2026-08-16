@@ -45,8 +45,7 @@ export function TabStrip({
   splitOptions,
   onSplit,
   onClosePane,
-  filesOpen,
-  onToggleFiles,
+  trailing,
   onRename,
 }: {
   pane: Pane;
@@ -97,14 +96,15 @@ export function TabStrip({
   onSplit: (dir: "h" | "v") => void;
   /** Absent on the last pane — there is nothing to close into. */
   onClosePane?: () => void;
+  /** §7 round 13: the layout-wide Files/Changes cluster, rendered in the
+   *  top-right strip only (App picks it with `topRightSlot`). */
+  trailing?: React.ReactNode;
   /**
    * The file drawer, per pane. It used to be one button in a global toolbar, whose
    * presence in the top strip row is what forced THAT pane's controls 96px inward
    * while every other pane's sat flush. Per pane it also reads better: a file
    * picked from the drawer opens into the pane you asked from.
    */
-  filesOpen: boolean;
-  onToggleFiles: () => void;
 }): React.JSX.Element {
   const tab = (active: boolean): string =>
     `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors ${
@@ -255,16 +255,11 @@ export function TabStrip({
           </svg>
         </PaneButton>
       )}
-      <PaneButton
-        title={filesOpen ? "Hide the file tree" : "Browse files into this pane"}
-        label={filesOpen ? "Hide the file tree" : "Browse files into this pane"}
-        onClick={onToggleFiles}
-        pressed={filesOpen}
-      >
-        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-      </PaneButton>
+      {/* §7 round 13: the file-panel button is GONE from here. It opened a
+          single global overlay, so a split workspace showed it once per pane —
+          four buttons for one drawer at 2×2. It now lives, with its Changes
+          sibling, in the right rail. What stays is round 11's actual finding:
+          every control in this strip acts on THIS pane. */}
       {onClosePane && (
         <PaneButton title="Close this pane (its tabs move to the next one)" label="Close this pane" onClick={onClosePane}>
           {/* An X, deliberately NOT another box-with-a-line: beside the two split
@@ -274,6 +269,7 @@ export function TabStrip({
           </svg>
         </PaneButton>
       )}
+      {trailing}
       {/* §7 round 12: the rename menu. Catcher first so a click anywhere —
           including a second right-click — dismisses it. */}
       {menu && (
