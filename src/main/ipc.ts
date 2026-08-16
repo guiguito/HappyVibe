@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
 import { PiClient } from "./pi/PiClient";
+import { spawn } from "node:child_process";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
@@ -3085,6 +3086,23 @@ export function registerIpc(win: BrowserWindow): void {
       model,
       { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
     );
+  });
+
+  /**
+   * §5a — the ONLY thing we do about a missing git: ask the OS for it. Running
+   * `git --version` WITHOUT suppressing its output is what triggers macOS's
+   * Command Line Tools installer, because /usr/bin/git is a shim that prompts.
+   * We never download or bundle a git: §3 says git is a feature, not a runtime
+   * dependency, and installing developer tooling behind the user's back would
+   * be the opposite of that promise.
+   */
+  ipcMain.handle("hv:git-install-prompt", () => {
+    if (process.platform === "darwin") {
+      spawn("git", ["--version"], { detached: true, stdio: "ignore" }).unref();
+      return { ok: true };
+    }
+    void shell.openExternal("https://git-scm.com/downloads");
+    return { ok: true };
   });
 
   ipcMain.handle("hv:git-message-model", () => getGitMessageModel());

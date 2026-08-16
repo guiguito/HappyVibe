@@ -39,14 +39,48 @@ describe("git", () => {
     ["git status", "Checking git status"],
     ["git status -sb", "Checking git status"],
     ["git add -A", "Staging changes"],
-    ["git commit -m 'fix: thing'", "Committing changes"],
-    ["git push origin main", "Pushing to remote"],
-    ["git pull --rebase", "Pulling from remote"],
     ["git branch -a", "Managing branches"],
     ["git log --oneline -5", "Viewing git history"],
     ["git diff HEAD~1", "Viewing changes"],
+    ["git fetch --prune", "Checking the remote"],
+    ["git stash push -u", "Stashing changes"],
+    ["git stash pop", "Restoring stashed changes"],
+    ["git init -b main", "Starting version tracking"],
+    ["git clone https://example.com/x.git", "Cloning a repository"],
+    ["git merge feature", "Merging feature"],
+    ["git rebase -i main", "Rebasing onto main"],
+    ["git tag v1.0.0", "Tagging v1.0.0"],
+    ["git restore src/a.ts", "Undoing changes in src/a.ts"],
   ])("%s → %s", (cmd, label) => {
     expect(describeCommand(cmd).label).toBe(label);
+  });
+
+  /**
+   * §29: a git card says more of what happened — but ONLY what the command
+   * string can tell us. Built-ins cannot carry an `intent` param, so the text of
+   * the call is all there is; branch names and commit messages are in it, file
+   * lists are not, and the card must not pretend otherwise.
+   */
+  it("commit quotes the message the user will recognise", () => {
+    expect(describeCommand("git commit -m 'fix: the retry loop'").label).toBe('Saving a version: "fix: the retry loop"');
+    expect(describeCommand('git commit -m "feat(ui): add a badge"').label).toBe('Saving a version: "feat(ui): add a badge"');
+    expect(describeCommand("git commit --amend -m 'redo'").label).toBe('Amending the last version: "redo"');
+    // No -m: git would open an editor, and we have no message to show.
+    expect(describeCommand("git commit").label).toBe("Committing changes");
+  });
+
+  it("push and pull name the branch when the string carries one", () => {
+    expect(describeCommand("git push origin main").label).toBe("Pushing main to origin");
+    expect(describeCommand("git push -u origin feature/x").label).toBe("Pushing feature/x to origin");
+    expect(describeCommand("git push").label).toBe("Pushing to remote");
+    expect(describeCommand("git pull --ff-only origin main").label).toBe("Pulling main from origin");
+    expect(describeCommand("git pull --rebase").label).toBe("Pulling from remote");
+  });
+
+  it("a force push is called what it is", () => {
+    // The one git label that must never read as routine.
+    expect(describeCommand("git push --force origin main").label).toBe("FORCE-pushing main to origin");
+    expect(describeCommand("git push -f").label).toBe("FORCE-pushing to remote");
   });
   it("checkout/switch name the target when present", () => {
     expect(describeCommand("git checkout main").label).toBe("Switching to main");
@@ -54,8 +88,9 @@ describe("git", () => {
     expect(describeCommand("git switch dev").label).toBe("Switching to dev");
     expect(describeCommand("git checkout").label).toBe("Switching branches");
   });
-  it("unknown git subcommand falls back", () => {
-    expect(describeCommand("git rebase -i HEAD~3").label).toBe("Running: git rebase -i HEAD~3");
+  it("unknown git subcommand still falls back to the raw text", () => {
+    expect(describeCommand("git bisect start").label).toBe("Running: git bisect start");
+    expect(describeCommand("git cherry-pick abc123").label).toBe("Running: git cherry-pick abc123");
   });
 });
 
@@ -150,7 +185,11 @@ describe("chains and pipes", () => {
 
 describe("quoting edge cases", () => {
   it("separators inside quotes do not split", () => {
-    expect(describeCommand('git commit -m "fix: a && b | c"').label).toBe("Committing changes");
+    // The message coming back WHOLE — `&&` and `|` intact, not chopped into
+    // segments — is exactly what this test is for. (§29 changed the label from
+    // the flat "Committing changes" to one that quotes the message; the quoting
+    // assertion below is unchanged and is the point.)
+    expect(describeCommand('git commit -m "fix: a && b | c"').label).toBe('Saving a version: "fix: a && b | c"');
     expect(describeCommand("echo 'a && b'").label).toBe("Running: echo 'a && b'");
   });
   it("quoted arguments are unwrapped for the label", () => {
@@ -161,7 +200,7 @@ describe("quoting edge cases", () => {
     expect(describeCommand("rm My\\ Folder")).toEqual({ label: "Deleting My Folder", destructive: true });
   });
   it("unterminated quote still yields a label (never throws)", () => {
-    expect(describeCommand('git commit -m "oops').label).toBe("Committing changes");
+    expect(describeCommand('git commit -m "oops').label).toBe('Saving a version: "oops"');
   });
 });
 

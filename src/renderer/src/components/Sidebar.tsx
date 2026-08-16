@@ -378,6 +378,8 @@ export function Sidebar({
   onNavigate,
   onAddWorkspace,
   onWorkspaceSettings,
+  gitInfo,
+  onBranchMenu,
   onNewSession,
   onSelectSession,
   onRenameSession,
@@ -413,6 +415,15 @@ export function Sidebar({
   onAddWorkspace: () => void;
   /** W1.4: open the workspace-settings surface (model override, rules, prompt additions). */
   onWorkspaceSettings: (ws: string) => void;
+  /**
+   * §29 1b: the branch under each workspace. A MISSING entry (or a null branch)
+   * means "not a repo" and the line is ABSENT, never greyed — don't show what
+   * cannot work. `changes` is null for every workspace but the active one: the
+   * branch name is cheap (a .git watch), a count costs a `git status`, and
+   * sweeping every repo at boot is a cost nobody asked for.
+   */
+  gitInfo?: Record<string, { branch: string | null; changes: number | null; tint: "green" | "amber" }>;
+  onBranchMenu?: (ws: string) => void;
   onNewSession: (ws: string) => void;
   onSelectSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
@@ -591,7 +602,7 @@ export function Sidebar({
           const isCollapsed = collapsed.has(ws) && !q; // filtering expands everything
           return (
             <div key={ws} className="mb-1.5">
-              <div className="group flex items-center gap-1.5 px-1.5 py-1">
+              <div className="group flex items-center gap-1.5 px-1.5 pt-1">
                 {/* Round 8: the name itself toggles the session list, and the
                     arrow moved right with the other icons — but stays VISIBLE,
                     since it reports state rather than offering an action. */}
@@ -633,6 +644,24 @@ export function Sidebar({
                   +
                 </button>
               </div>
+              {/* §29 1b: the branch, on its own line under the name. Absent —
+                  not greyed — when this folder is not a repository. */}
+              {gitInfo?.[ws]?.branch && (
+                <button
+                  type="button"
+                  onClick={() => onBranchMenu?.(ws)}
+                  className="ml-6 mb-0.5 flex items-center gap-1 text-[10px] text-ink-soft hover:text-ink cursor-pointer max-w-full"
+                  title={`On branch ${gitInfo[ws].branch}${gitInfo[ws].changes !== null ? ` · ${gitInfo[ws].changes} changed` : ""}`}
+                >
+                  <span aria-hidden>⎇</span>
+                  <span className="truncate font-mono">{gitInfo[ws].branch}</span>
+                  {gitInfo[ws].changes !== null && gitInfo[ws].changes! > 0 && (
+                    <span className={gitInfo[ws].tint === "amber" ? "text-honey font-bold" : "text-leaf font-bold"}>
+                      · {gitInfo[ws].changes} {gitInfo[ws].changes === 1 ? "change" : "changes"}
+                    </span>
+                  )}
+                </button>
+              )}
               {!isCollapsed && (
                 <div className="ml-3 flex flex-col gap-0.5">
                   {wsSessions.length === 0 && (

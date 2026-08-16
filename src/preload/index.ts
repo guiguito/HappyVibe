@@ -124,6 +124,7 @@ contextBridge.exposeInMainWorld("hv", {
   gitAddGitignore: (workspaceId: string, lines: string[]) => ipcRenderer.invoke("hv:git-add-gitignore", workspaceId, lines),
   gitDraftMessage: (workspaceId: string, stagedOnly: boolean) =>
     ipcRenderer.invoke("hv:git-draft-message", workspaceId, stagedOnly),
+  gitInstallPrompt: () => ipcRenderer.invoke("hv:git-install-prompt"),
   gitMessageModel: () => ipcRenderer.invoke("hv:git-message-model"),
   setGitMessageModel: (m: { provider: string; modelId: string } | null) =>
     ipcRenderer.invoke("hv:set-git-message-model", m),

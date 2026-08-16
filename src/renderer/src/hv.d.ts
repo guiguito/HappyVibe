@@ -579,6 +579,8 @@ interface HvApi {
   gitDetectJunk(workspaceId: string): Promise<string[]>;
   gitAddGitignore(workspaceId: string, lines: string[]): Promise<{ ok: boolean }>;
   gitDraftMessage(workspaceId: string, stagedOnly: boolean): Promise<string | null>;
+  /** §5a: asks the OS for git (macOS CLT prompt; elsewhere opens git-scm.com). */
+  gitInstallPrompt(): Promise<{ ok: boolean }>;
   gitMessageModel(): Promise<{ provider: string; modelId: string } | null>;
   setGitMessageModel(m: { provider: string; modelId: string } | null): Promise<{ provider: string; modelId: string } | null>;
   onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;

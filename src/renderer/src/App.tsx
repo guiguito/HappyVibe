@@ -1179,6 +1179,38 @@ export default function App(): React.JSX.Element {
   }, [tabsByWs, activePlan]);
 
   /**
+   * §29 1b: the branch under every workspace row. Cheap by construction — one
+   * `git status` per workspace at mount, then main's `.git` watch pushes when a
+   * branch moves, including one switched in an outside terminal (the file-tree
+   * watcher filters `.git`, so nothing else would ever notice).
+   */
+  const [gitBranches, setGitBranches] = useState<Record<string, string | null>>({});
+  useEffect(() => {
+    let alive = true;
+    const load = (ws: string): void => {
+      void window.hv.gitStatus(ws).then((p) => {
+        if (!alive) return;
+        setGitBranches((m) => ({ ...m, [ws]: p.status?.branch.branch ?? null }));
+      }).catch(() => {});
+    };
+    for (const ws of workspaces) load(ws);
+    const off = window.hv.onGitChanged(({ workspaceId }) => load(workspaceId));
+    return () => { alive = false; off(); };
+  }, [workspaces]);
+
+  const gitInfo = useMemo(() => {
+    const out: Record<string, { branch: string | null; changes: number | null; tint: "green" | "amber" }> = {};
+    for (const ws of workspaces) {
+      out[ws] = {
+        branch: gitBranches[ws] ?? null,
+        changes: ws === activeWs ? gitSummary.files : null,
+        tint: ws === activeWs ? badgeTint(gitSummary.changedLines) : "green",
+      };
+    }
+    return out;
+  }, [workspaces, gitBranches, activeWs, gitSummary]);
+
+  /**
    * §29: the working tree of the ACTIVE workspace. Refetched when the workspace
    * changes and whenever main pushes hv:git-changed — which it fires from the fs
    * watcher, the narrow `.git` watch and turn end, suppressing the first two
@@ -1950,6 +1982,14 @@ export default function App(): React.JSX.Element {
         onNavigate={(v) => !needsSetup && setView(v)}
         onAddWorkspace={addWorkspace}
         onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
+        gitInfo={gitInfo}
+        onBranchMenu={(ws) => {
+          // The branch menu lives in the panel, where switching also gets the
+          // three-choice dialog for a dirty tree — one implementation, not two.
+          setActiveWs(ws);
+          setDrawerTab("changes");
+          setTreeOpen(true);
+        }}
         onNewSession={newSession}
         onSelectSession={selectSession}
         onRenameSession={(id, title) => window.hv.renameSession(id, title)}
