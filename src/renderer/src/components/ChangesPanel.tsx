@@ -451,66 +451,73 @@ export function ChangesPanel({
                 {state.unborn && (
                   <div className="text-[11px] font-bold text-tangerine-deep">Save your first version ✨</div>
                 )}
-                <div className="flex items-start gap-1.5">
+                {/* One row: the message box, and a narrow column beside it —
+                    draft on top, save (with its git-verb dropdown) below. The
+                    box is sized to the stacked pair so the row reads as one
+                    block rather than three floating controls. */}
+                <div className="flex items-stretch gap-1.5">
                   <textarea
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder="What did you change?"
-                    rows={2}
-                    className="flex-1 min-w-0 rounded-xl border-2 border-line bg-card p-2 text-xs resize-y focus:outline-none focus:border-tangerine"
+                    className="flex-1 min-w-0 min-h-[5.25rem] rounded-xl border-2 border-line bg-card p-2 text-xs resize-y focus:outline-none focus:border-tangerine"
                   />
-                  {canDraft && (
-                    <button
-                      type="button"
-                      disabled={drafting}
-                      onClick={() => {
-                        setDrafting(true);
-                        void window.hv
-                          .gitDraftMessage(workspace, stagedOnly)
-                          .then((m) => { if (m) setMessage(m); else flash("Couldn’t draft a message this time."); })
-                          .catch(() => setCanDraft(false))
-                          .finally(() => setDrafting(false));
-                      }}
-                      // Icon only — the label was two lines of text competing
-                      // with the message box it sits beside. The tooltip still
-                      // carries the cost disclosure, which is the load-bearing
-                      // part: this call is a one-shot outside any session, so it
-                      // never reaches the cost ledger (§2b).
-                      title="Write it for me — drafts a message from your changes using a small, cheap model (about $0.001 per draft). Not counted in session costs."
-                      aria-label="Write it for me"
-                      className="shrink-0 self-start rounded-xl border-2 border-line bg-card p-2 cursor-pointer hover:border-tangerine disabled:opacity-50"
-                    >
-                      <WandGlyph spinning={drafting} />
-                    </button>
-                  )}
-                </div>
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    disabled={!message.trim() || working}
-                    onClick={() => void doSave()}
-                    // Icon-only. The human verb moves to the tooltip and the
-                    // accessible name rather than disappearing: it is what §0's
-                    // two-altitude rule teaches, so it has to survive somewhere.
-                    // The staged count still shows, because "which files am I
-                    // about to save" is not something a floppy disk can say.
-                    title={primary.count ? `${primary.label} (staged only)` : "Save a version"}
-                    aria-label={primary.label}
-                    className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-tangerine text-paper font-bold text-sm px-3 py-2 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105 disabled:opacity-50"
-                  >
-                    <FloppyGlyph />
-                    {primary.count && (
-                      <span className="text-xs tabular-nums">{primary.count[0]}/{primary.count[1]}</span>
+                  <div className="shrink-0 flex flex-col gap-1.5 w-[4.75rem]">
+                    {canDraft && (
+                      <button
+                        type="button"
+                        disabled={drafting}
+                        onClick={() => {
+                          setDrafting(true);
+                          void window.hv
+                            .gitDraftMessage(workspace, stagedOnly)
+                            .then((m) => { if (m) setMessage(m); else flash("Couldn’t draft a message this time."); })
+                            .catch(() => setCanDraft(false))
+                            .finally(() => setDrafting(false));
+                        }}
+                        // The tooltip carries the cost disclosure, which is the
+                        // load-bearing part: this call is a one-shot outside any
+                        // session, so it never reaches the cost ledger (§2b).
+                        title="Write it for me — drafts a message from your changes using a small, cheap model (about $0.001 per draft). Not counted in session costs."
+                        aria-label="Write it for me"
+                        className="flex items-center justify-center rounded-xl border-2 border-line bg-card py-1.5 cursor-pointer hover:border-tangerine disabled:opacity-50"
+                      >
+                        <WandGlyph spinning={drafting} />
+                      </button>
                     )}
-                  </button>
-                  <SaveMenu
-                    disabled={working}
-                    onAmend={() => void doSave({ amend: true })}
-                    canAmend={!!message.trim() && !state.unborn}
-                    onStash={() =>
-                      void act("git stash push -u", () => window.hv.gitStash(workspace, "save"), () => flash("Changes stashed."))
-                    }
-                  />
+                    {/* Not `flex-1`: the save button stays SMALL and the box is
+                        a little taller than the pair, rather than the button
+                        stretching to fill whatever height the box has. */}
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        disabled={!message.trim() || working}
+                        onClick={() => void doSave()}
+                        // Icon-only. The human verb moves to the tooltip and the
+                        // accessible name rather than disappearing: it is what
+                        // §0's two-altitude rule teaches, so it has to survive
+                        // somewhere. The staged count still shows, because
+                        // "which files am I about to save" is not something a
+                        // floppy disk can say.
+                        title={primary.count ? `${primary.label} (staged only)` : "Save a version"}
+                        aria-label={primary.label}
+                        className="flex-1 min-w-0 flex items-center justify-center gap-1 rounded-xl bg-tangerine text-paper font-bold text-xs px-1.5 py-1.5 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105 disabled:opacity-50"
+                      >
+                        <FloppyGlyph />
+                        {primary.count && (
+                          <span className="text-[10px] tabular-nums">{primary.count[0]}/{primary.count[1]}</span>
+                        )}
+                      </button>
+                      <SaveMenu
+                        disabled={working}
+                        onAmend={() => void doSave({ amend: true })}
+                        canAmend={!!message.trim() && !state.unborn}
+                        onStash={() =>
+                          void act("git stash push -u", () => window.hv.gitStash(workspace, "save"), () => flash("Changes stashed."))
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
               </>
             )}
