@@ -5,20 +5,22 @@
  * per-pane file button, which showed up once per pane for a single global
  * overlay: with a 2×2 layout that was four buttons opening one drawer.
  *
- * **Why a rail and not the top-right cluster round 11 deleted.** That cluster
- * failed three GUI rounds for a measured reason: as a grid column it existed
- * only in row 1 while content below spanned into it (a pane measured 628px
- * against its own 552px strip), and as an overlay it pushed the top-right
- * pane's controls 96px inward while every other pane's sat flush. This rail is
- * a flex SIBLING of the pane grid rather than a column inside it or an overlay
- * above it — the grid simply becomes narrower, so every strip stays flush at
- * its own edge and there is no top-right special case to get wrong. Being
- * outside the grid also keeps it clear of §28's z-order trap: an overlay here
- * would be drawn UNDER a `WebContentsView` browser pane, whereas a narrower
- * grid means a browser's bounds never reach the rail at all.
+ * **It lives in the top bar, in normal flow.** Two placements were tried and
+ * rejected before this one, and both are recorded in paneGrid.ts: a toolbar
+ * TRACK leaves content spanning under it (a pane measuring 628px against its
+ * own 552px strip), and a full-height column beside the grid leaves a dead
+ * empty gutter running the whole window — which is what it looked like, and it
+ * read as broken. So the cluster is simply the LAST item of the top-right
+ * strip (`topRightSlot`): no grid track, no overlay, no reserved padding, and
+ * nothing composited over a `WebContentsView`.
  *
- * Round 11's actual finding is untouched: every LAYOUT control (split, close
- * pane) still lives in its own strip and still acts on the strip it sits in.
+ * The cost, named rather than hidden: that strip's own split/close controls sit
+ * inboard of the cluster while every other strip's sit flush at its edge. Round
+ * 11 rejected exactly this asymmetry — for a 96px cluster of LAYOUT controls
+ * whose target pane was ambiguous. These two are ~44px and act on neither pane:
+ * they open a global panel, so there is nothing for the user to disambiguate.
+ * Round 11's real finding stands: every layout control still lives in its own
+ * strip and still acts on the strip it sits in.
  */
 
 export type DrawerPanel = "files" | "changes";
@@ -46,14 +48,14 @@ export function RightRail({
   changesKey: string;
 }): React.JSX.Element {
   return (
-    <div className="shrink-0 w-10 h-full border-l-2 border-line bg-paper flex flex-col items-stretch">
+    <div className="shrink-0 flex items-stretch">
       <RailButton
         title={`${open === "files" ? "Hide" : "Show"} the files panel (${filesKey})`}
         label="Files panel"
         pressed={open === "files"}
         onClick={() => onToggle("files")}
       >
-        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
         </svg>
       </RailButton>
@@ -62,7 +64,7 @@ export function RightRail({
           capability is stated once, on the workspace settings page. A greyed
           control here would ask the user to reason about why it cannot work. */}
       {gitAvailable && (
-        <div className="relative">
+        <span className="relative inline-flex">
           <RailButton
             title={
               `${open === "changes" ? "Hide" : "Show"} the Changes panel (${changesKey})` +
@@ -74,7 +76,7 @@ export function RightRail({
             onClick={() => onToggle("changes")}
           >
             {/* A branch glyph: one line forking to another. */}
-            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <circle cx="6" cy="5" r="2" />
               <circle cx="6" cy="19" r="2" />
               <circle cx="18" cy="9" r="2" />
@@ -88,7 +90,7 @@ export function RightRail({
           {changeCount > 0 && (
             <span
               aria-hidden
-              className={`pointer-events-none absolute top-0.5 right-0.5 min-w-3.5 h-3.5 px-0.5 rounded-full text-[9px] font-bold leading-[14px] text-center border border-paper ${
+              className={`pointer-events-none absolute top-0.5 right-0.5 min-w-3 h-3 px-0.5 rounded-full text-[8px] font-bold leading-[12px] text-center border border-paper ${
                 // The context bubble taught this vocabulary: leaf = calm,
                 // honey = filling up. Same shape of thing, same colours.
                 changeTint === "amber" ? "bg-honey text-ink" : "bg-leaf text-paper"
@@ -97,13 +99,14 @@ export function RightRail({
               {changeCount > 99 ? "99+" : changeCount}
             </span>
           )}
-        </div>
+        </span>
       )}
     </div>
   );
 }
 
-/** Mirrors TabStrip's PaneButton, stacked instead of in a row. */
+/** Deliberately identical to TabStrip's PaneButton: the cluster sits in that
+ *  row, so anything else would read as a foreign object. */
 function RailButton({
   title,
   label,
@@ -124,8 +127,8 @@ function RailButton({
       aria-label={label}
       aria-pressed={pressed}
       onClick={onClick}
-      className={`shrink-0 h-10 flex items-center justify-center border-b-2 border-line cursor-pointer transition-colors ${
-        pressed ? "text-tangerine-deep bg-paper-deep/60" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
+      className={`shrink-0 flex items-center border-l-2 border-line px-2 cursor-pointer transition-colors ${
+        pressed ? "text-tangerine-deep bg-paper-deep/50" : "text-ink-soft hover:text-ink hover:bg-paper-deep/40"
       }`}
     >
       {children}

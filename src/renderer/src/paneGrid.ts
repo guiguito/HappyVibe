@@ -88,6 +88,44 @@ export function paneNeighbours(
   return out;
 }
 
+/**
+ * §7 round 13 — which live pane occupies the TOP-RIGHT cell.
+ *
+ * The Files/Changes cluster is layout-wide but has to be rendered inside a
+ * strip, because the alternatives are the two this module's header already
+ * records as failures: a toolbar TRACK leaves content spanning under it (a pane
+ * measuring 628px against its own 552px strip), and an overlay leaves a dead
+ * gutter or pushes one pane's controls inward. Rendering it as the last item of
+ * the top-right strip keeps it in the normal flow — no track, no overlay, no
+ * reserved padding — and this function is the only thing that has to know which
+ * strip that is.
+ *
+ * Derived from the same cell mapping `paneNeighbours` uses, so it cannot drift
+ * out of step with the layout.
+ */
+export function topRightSlot(t: WorkspaceTabs): number {
+  const v = t.split === "v";
+  const cell = (i: number): { col: number; row: number } => ({
+    col: (v ? i === 1 || i === 3 : i === 2 || i === 3) ? 1 : 0,
+    row: (v ? i === 2 || i === 3 : i === 1 || i === 3) ? 1 : 0,
+  });
+  let best = -1;
+  let bestCol = -1;
+  for (let i = 0; i < 4; i++) {
+    if (t.panes[i] == null) continue;
+    const c = cell(i);
+    // Row 0 only: the cluster belongs in the TOP bar, never in a strip that sits
+    // halfway down the window.
+    if (c.row !== 0) continue;
+    if (c.col > bestCol) {
+      bestCol = c.col;
+      best = i;
+    }
+  }
+  // Every layout has at least one live pane in row 0, but never assume it.
+  return best === -1 ? 0 : best;
+}
+
 export function buildGridStyle(t: WorkspaceTabs): React.CSSProperties {
   /** Two columns whose boundary lands exactly at `r` of the full width. */
   const cols = (r: number): string => `${r * 100}% minmax(0,1fr)`;

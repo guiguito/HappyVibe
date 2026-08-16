@@ -45,6 +45,7 @@ export function TabStrip({
   splitOptions,
   onSplit,
   onClosePane,
+  trailing,
   onRename,
 }: {
   pane: Pane;
@@ -95,6 +96,9 @@ export function TabStrip({
   onSplit: (dir: "h" | "v") => void;
   /** Absent on the last pane — there is nothing to close into. */
   onClosePane?: () => void;
+  /** §7 round 13: the layout-wide Files/Changes cluster, rendered in the
+   *  top-right strip only (App picks it with `topRightSlot`). */
+  trailing?: React.ReactNode;
   /**
    * The file drawer, per pane. It used to be one button in a global toolbar, whose
    * presence in the top strip row is what forced THAT pane's controls 96px inward
@@ -265,6 +269,7 @@ export function TabStrip({
           </svg>
         </PaneButton>
       )}
+      {trailing}
       {/* §7 round 12: the rename menu. Catcher first so a click anywhere —
           including a second right-click — dismisses it. */}
       {menu && (

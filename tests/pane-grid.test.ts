@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { buildGridStyle, paneEdges } from "../src/renderer/src/paneGrid";
+import { buildGridStyle, paneEdges, topRightSlot } from "../src/renderer/src/paneGrid";
 import { emptyTabs, openFile, setSize, splitHalf, splitPane } from "../src/renderer/src/tabs";
 
 /**
@@ -194,4 +194,30 @@ test("a cross partner of the FIRST half draws only the cross edge", () => {
 test("the divider is continuous: every pane in column 2 draws a left edge", () => {
   const t = splitHalf(splitPane(emptyTabs, "v"), 1); // A full height, B over D
   for (const slot of [1, 3]) expect(paneEdges(t, slot).left, `slot ${slot}`).toBe(true);
+});
+
+/**
+ * §7 round 13: the Files/Changes cluster renders as the last item of ONE strip,
+ * and this is the function that picks it. Row 0 only — a cluster in a strip
+ * halfway down the window is not "the top bar".
+ */
+test("topRightSlot: the only pane when nothing is split", () => {
+  expect(topRightSlot(emptyTabs)).toBe(0);
+});
+
+test("topRightSlot: the RIGHT half of a vertical split", () => {
+  const t = splitPane(openFile(emptyTabs, "a"), "v");
+  expect(topRightSlot(t)).toBe(1);
+});
+
+test("topRightSlot: the TOP half of a horizontal split, never the lower strip", () => {
+  const t = splitPane(openFile(emptyTabs, "a"), "h");
+  expect(topRightSlot(t)).toBe(0);
+});
+
+test("topRightSlot: the top-right cell of a 2x2", () => {
+  let t = openFile(splitPane(openFile(emptyTabs, "a"), "v"), "b");
+  t = splitHalf(t, 0);
+  t = splitHalf(t, 1);
+  expect(topRightSlot(t)).toBe(1);
 });

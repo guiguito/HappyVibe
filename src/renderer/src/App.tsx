@@ -56,7 +56,7 @@ import { BrowserTab } from "./components/BrowserTab";
 import { TerminalView } from "./components/TerminalView";
 import { VoiceView } from "./components/VoiceView";
 import { restoreLayout } from "./layoutPersist";
-import { buildGridStyle, paneEdges, paneNeighbours } from "./paneGrid";
+import { buildGridStyle, paneEdges, paneNeighbours, topRightSlot } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
 import { FileTab } from "./components/FileTab";
@@ -2253,6 +2253,24 @@ export default function App(): React.JSX.Element {
                         ? () => updateTabs(wsId, (t) => closePane(t, slot))
                         : undefined
                     }
+                    // §7 round 13: the Files/Changes cluster is layout-wide, so
+                    // it renders in exactly ONE strip — the top-right one. In
+                    // normal flow, so there is no toolbar track for content to
+                    // span under and no overlay for a browser pane to cover.
+                    trailing={
+                      slot === topRightSlot(wsTabs) ? (
+                        <RightRail
+                          open={DRAWER}
+                          onToggle={toggleDrawer}
+                          gitAvailable={gitAvailable}
+                          branch={gitStatus?.status?.branch?.branch ?? null}
+                          changeCount={gitSummary.files}
+                          changeTint={badgeTint(gitSummary.changedLines)}
+                          filesKey={formatBinding(bindings.toggleFileDrawer)}
+                          changesKey={formatBinding(bindings.toggleChangesPanel)}
+                        />
+                      ) : undefined
+                    }
                   />
                 </div>
               );
@@ -2515,7 +2533,13 @@ export default function App(): React.JSX.Element {
                 opening it never shrinks the panes. Below the ContextPanel (z-40). */}
             {DRAWER && (
               <div
-                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col"
+                // §7 round 13: the same pegboard the sidebar uses. Both are
+                // chrome flanking the content, so they should read as the same
+                // KIND of surface — the texture is the app's grammar for that,
+                // and a plain panel on the right made the two sides look like
+                // different apps. Opaque children (cards, group headers) still
+                // sit on top of it exactly as the sidebar's rows do.
+                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper-deep pegboard shadow-sticker-lg flex flex-col"
                 style={{ width: drawerWidth }}
               >
                 {/* §29: the drag strip. Absolutely placed on the drawer's own
@@ -2558,25 +2582,6 @@ export default function App(): React.JSX.Element {
               </div>
             )}
           </div>
-          {/* §7 round 13: the rail is a SIBLING of the grid, never a column in
-              it and never an overlay above it. The grid simply becomes 40px
-              narrower, so every pane strip stays flush at its own right edge —
-              which is the property round 11's top-right cluster could not hold.
-              It also keeps the rail clear of a WebContentsView: a browser pane's
-              bounds come from the (narrower) grid, so the page cannot reach the
-              rail, whereas an overlay would be composited UNDER it (§28). */}
-          {wsId && (
-            <RightRail
-              open={DRAWER}
-              onToggle={toggleDrawer}
-              gitAvailable={gitAvailable}
-              branch={gitStatus?.status?.branch?.branch ?? null}
-              changeCount={gitSummary.files}
-              changeTint={badgeTint(gitSummary.changedLines)}
-              filesKey={formatBinding(bindings.toggleFileDrawer)}
-              changesKey={formatBinding(bindings.toggleChangesPanel)}
-            />
-          )}
         </div>
       </main>
       {uiReq?.kind === "permission" && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
