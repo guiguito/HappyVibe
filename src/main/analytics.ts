@@ -63,8 +63,19 @@ export interface Analytics {
   permissions: {
     total: number;
     byDecision: Record<string, number>; // allow | allow-session | deny | …
-    bySource: Record<string, number>; // rule | user | dangerous | safe-default | …
+    bySource: Record<string, number>; // rule | user | bypass | safe-default | …
   };
+  /**
+   * Round 15 — the app's own `pi -p --no-session` calls (session titles, the
+   * AGENTS.md draft, the commit message, the PR draft).
+   *
+   * Tokens only, and estimated. These calls carry no usage record at all, so a
+   * dollar figure here would be invented from a price table main does not have
+   * — which is §19 ruling 3's "unknown price rendered as a number" failure. It
+   * is reported BESIDE the cost total, never inside it: the ledger keeps
+   * meaning what SESSIONS cost.
+   */
+  oneShot: { count: number; failed: number; estTokens: number };
 }
 
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -121,6 +132,9 @@ export function aggregate(
   const bySource: Record<string, number> = {};
   let crashes = 0;
   let permTotal = 0;
+  let oneShotCount = 0;
+  let oneShotFailed = 0;
+  let oneShotTokens = 0;
 
   for (const e of events) {
     if (!matches(e)) continue;
@@ -148,7 +162,17 @@ export function aggregate(
         permTotal += 1;
         const d = e.data as { decision?: string; source?: string } | undefined;
         if (d?.decision) inc(byDecision, d.decision);
-        if (d?.source) inc(bySource, d.source);
+        // Round 15: fold the pre-rename "dangerous" rows into "bypass" so the
+        // breakdown is one bucket across the rename rather than two halves of
+        // the same fact.
+        if (d?.source) inc(bySource, d.source === "dangerous" ? "bypass" : d.source);
+        break;
+      }
+      case "assistant.oneshot": {
+        const d = e.data as { estTokens?: number; ok?: boolean } | undefined;
+        oneShotCount += 1;
+        if (d?.ok === false) oneShotFailed += 1;
+        oneShotTokens += num(d?.estTokens);
         break;
       }
     }
@@ -237,5 +261,6 @@ export function aggregate(
     perWorkspace: [...wsBuckets.values()].sort(bySessionsDesc),
     perModel: [...modelBuckets.values()].sort(bySessionsDesc),
     permissions: { total: permTotal, byDecision, bySource },
+    oneShot: { count: oneShotCount, failed: oneShotFailed, estTokens: oneShotTokens },
   };
 }

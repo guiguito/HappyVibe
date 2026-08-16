@@ -93,7 +93,9 @@ export function draftCommitMessage(
   input: DraftInput,
   model: { provider: string; modelId: string },
   env: Record<string, string> = {},
-  budgetChars: number = DEFAULT_DIFF_BUDGET
+  budgetChars: number = DEFAULT_DIFF_BUDGET,
+  /** Round 15: report the call so main can audit it (see oneShotLog.ts). */
+  onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }) => void,
 ): Promise<string | null> {
   const prompt = buildDraftPrompt(input, budgetChars);
   return new Promise((resolve) => {
@@ -117,10 +119,15 @@ export function draftCommitMessage(
     let out = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (d: string) => (out += d));
-    child.on("error", () => resolve(null));
+    const done = (ok: boolean): void => onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok });
+    child.on("error", () => {
+      done(false);
+      resolve(null);
+    });
     child.on("exit", (code) => {
-      if (code !== 0) return resolve(null);
-      resolve(cleanSubject(out));
+      const subject = code === 0 ? cleanSubject(out) : null;
+      done(!!subject);
+      resolve(subject);
     });
   });
 }
@@ -191,7 +198,9 @@ export function draftPullRequest(
   input: PrDraftInput,
   model: { provider: string; modelId: string },
   env: Record<string, string> = {},
-  budgetChars: number = DEFAULT_DIFF_BUDGET
+  budgetChars: number = DEFAULT_DIFF_BUDGET,
+  /** Round 15: report the call so main can audit it (see oneShotLog.ts). */
+  onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }) => void,
 ): Promise<PrDraft | null> {
   const prompt = buildPrPrompt(input, budgetChars);
   return new Promise((resolve) => {
@@ -214,8 +223,16 @@ export function draftPullRequest(
     let out = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (d: string) => (out += d));
-    child.on("error", () => resolve(null));
-    child.on("exit", (code) => resolve(code === 0 ? splitPrDraft(out) : null));
+    const done = (ok: boolean): void => onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok });
+    child.on("error", () => {
+      done(false);
+      resolve(null);
+    });
+    child.on("exit", (code) => {
+      const draft = code === 0 ? splitPrDraft(out) : null;
+      done(!!draft);
+      resolve(draft);
+    });
   });
 }
 

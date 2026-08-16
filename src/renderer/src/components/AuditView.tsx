@@ -8,8 +8,69 @@ interface Decision {
   tool: string;
   summary: string;
   decision: "allow" | "allow-session" | "deny";
-  source: "rule" | "user" | "dangerous" | "safe-default";
+  /** "dangerous" is the pre-round-15 name for "bypass" — old logs keep it. */
+  source: "rule" | "user" | "bypass" | "dangerous" | "safe-default" | "plan" | "terminal";
+  /** Round 15: on a bypassed row, what the rule engine would have decided. */
+  wouldHave?: "allow" | "ask" | "deny";
   rule?: HvRule & { scope: string };
+}
+
+/**
+ * Round 15 — the app's own model calls, logged beside the permission rows.
+ *
+ * These are the four `pi -p --no-session` calls no session ever sees (§19), and
+ * the reason they appear HERE rather than only in Stats is the question that
+ * asked for them: "does it appear in the audit log?" A call the app made on the
+ * user's behalf is exactly the kind of thing an audit log is for.
+ *
+ * Tokens, labelled estimated. There is no usage record for a sessionless call,
+ * so a dollar figure would be invented — see src/main/oneShotLog.ts.
+ */
+interface OneShot {
+  ts: string;
+  workspaceId?: string;
+  sessionId?: string;
+  kind: "title" | "agents-md" | "commit-message" | "pr-draft";
+  model: string;
+  estTokens: number;
+  ok: boolean;
+}
+
+type Row = ({ row: "decision" } & Decision) | ({ row: "oneshot" } & OneShot);
+
+const ONESHOT_LABEL: Record<OneShot["kind"], string> = {
+  title: "named a session",
+  "agents-md": "drafted AGENTS.md",
+  "commit-message": "wrote a commit message",
+  "pr-draft": "drafted a pull request",
+};
+
+/**
+ * Round 15 — how a source renders.
+ *
+ * The old code special-cased ONE value into red (`dangerous`), which with a
+ * bypass switched on meant every row in the log was red — the colour stopped
+ * meaning "look at this" and started meaning "the setting is on". Red now
+ * belongs to what a command DOES (the card's destructive badge), never to the
+ * mode it ran under, so bypass reads calm and amber marks it as unusual
+ * without shouting.
+ */
+const SOURCE_LABEL: Record<string, string> = { dangerous: "bypass" };
+const SOURCE_TONE: Record<string, string> = {
+  bypass: "text-tangerine-deep",
+  dangerous: "text-tangerine-deep",
+};
+
+/** "bypass · rules would have asked" — the sentence the column exists for. */
+function sourceText(r: Decision): string {
+  const base = SOURCE_LABEL[r.source] ?? r.source;
+  const would =
+    r.wouldHave === "ask" ? "rules would have asked"
+    : r.wouldHave === "deny" ? "rules would have DENIED"
+    : r.wouldHave === "allow" ? "rules would have allowed"
+    : "";
+  const rule = r.rule ? ` · ${r.rule.pattern}` : "";
+  return would ? `${base} · ${would}${rule}` : `${base}${rule}`;
 }
 
 const DECISION_TONE: Record<string, string> = {
@@ -31,7 +92,13 @@ export function AuditView({
 }): React.JSX.Element {
   const [workspaceId, setWorkspaceId] = useState("");
   const [sessionId, setSessionId] = useState("");
-  const [rows, setRows] = useState<Decision[] | null>(null);
+  // Round 15: with a bypass on, the log is thousands of allows. Filtering by
+  // decision is how you find the denies; by source, how you find the rows a
+  // RULE decided rather than the mode. Client-side over rows already in hand —
+  // the read is already scoped by workspace/session in main.
+  const [decision, setDecision] = useState("");
+  const [source, setSource] = useState("");
+  const [rows, setRows] = useState<Row[] | null>(null);
 
   useEffect(() => {
     let stale = false;
@@ -42,7 +109,14 @@ export function AuditView({
       if (stale) return;
       setRows(
         events
-          .map((e) => ({ ...(e.data as unknown as Decision), ts: e.ts, sessionId: e.sessionId, workspaceId: e.workspaceId }))
+          .map((e): Row => {
+            const base = { ts: e.ts, sessionId: e.sessionId, workspaceId: e.workspaceId };
+            // Main returns both kinds on one channel (round 15). `kind` is the
+            // discriminator the one-shot payload carries and a decision does not.
+            return (e.data as { kind?: string })?.kind
+              ? { row: "oneshot", ...(e.data as unknown as OneShot), ...base }
+              : { row: "decision", ...(e.data as unknown as Decision), ...base };
+          })
           .reverse(), // newest first
       );
     });
@@ -51,6 +125,17 @@ export function AuditView({
     };
   }, [workspaceId, sessionId]);
 
+  // "bypass" selects the old "dangerous" rows too — one name, one filter, or
+  // the log silently hides everything recorded before the rename.
+  const matches = (r: Row): boolean => {
+    // A one-shot has no decision and no rule source; it answers to the source
+    // filter under its own name so it can be isolated or excluded, and it is
+    // hidden whenever a DECISION filter is on, because it is not one.
+    if (r.row === "oneshot") return !decision && (!source || source === "assistant");
+    return (!decision || r.decision === decision) && (!source || (SOURCE_LABEL[r.source] ?? r.source) === source);
+  };
+  const shown = rows?.filter(matches) ?? null;
+
   const sessionTitle = (id?: string): string => sessions.find((s) => s.id === id)?.title ?? (id ? id.slice(0, 8) : "—");
   const wsSessions = workspaceId ? sessions.filter((s) => s.workspaceId === workspaceId) : sessions;
 
@@ -58,7 +143,7 @@ export function AuditView({
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Audit log</h1>
-        <p className="text-sm text-ink-soft mb-6">Every permission decision, per session and per workspace.</p>
+        <p className="text-sm text-ink-soft mb-6">Every permission decision — and every model call the app made on your behalf — per session and per workspace.</p>
 
         <div className="flex gap-3 mb-5">
           <select
@@ -88,43 +173,95 @@ export function AuditView({
               </option>
             ))}
           </select>
+          <select
+            value={decision}
+            onChange={(e) => setDecision(e.target.value)}
+            aria-label="Filter by decision"
+            className="rounded-lg border-2 border-line bg-card px-2.5 py-1.5 text-sm font-bold focus:outline-none focus:border-tangerine cursor-pointer"
+          >
+            <option value="">Any decision</option>
+            <option value="allow">Allowed</option>
+            <option value="allow-session">Allowed for session</option>
+            <option value="deny">Denied</option>
+          </select>
+          <select
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            aria-label="Filter by source"
+            className="rounded-lg border-2 border-line bg-card px-2.5 py-1.5 text-sm font-bold focus:outline-none focus:border-tangerine cursor-pointer"
+          >
+            <option value="">Any source</option>
+            <option value="rule">Rule</option>
+            <option value="user">You</option>
+            <option value="safe-default">Safe default</option>
+            <option value="bypass">Bypass</option>
+            <option value="plan">Plan mode</option>
+            <option value="terminal">Terminal</option>
+            <option value="assistant">The app itself</option>
+          </select>
         </div>
 
-        {rows === null ? (
+        {shown === null ? (
           <p className="text-sm text-ink-soft">Loading…</p>
-        ) : rows.length === 0 ? (
-          <p className="text-sm text-ink-soft">No permission decisions logged yet.</p>
+        ) : shown.length === 0 ? (
+          <p className="text-sm text-ink-soft">
+            {rows?.length ? "No decisions match these filters." : "No permission decisions logged yet."}
+          </p>
         ) : (
           <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden">
-            {rows.map((r, i) => (
+            {shown.map((r, i) => (
               <div key={`${r.ts}-${i}`} className="px-4 py-2.5 border-b border-line last:border-b-0 text-sm">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 ${DECISION_TONE[r.decision] ?? "bg-paper-deep text-ink-soft border-line"}`}
-                  >
-                    {r.decision}
-                  </span>
-                  <span className="font-bold shrink-0">{r.tool}</span>
-                  <span
-                    className={`text-[10px] font-bold uppercase tracking-wider shrink-0 ${r.source === "dangerous" ? "text-berry" : "text-ink-soft"}`}
-                    title={r.rule ? `${r.rule.scope} ${r.rule.layer} rule: ${r.rule.pattern}` : undefined}
-                  >
-                    {r.source}
-                    {r.rule ? ` · ${r.rule.pattern}` : ""}
-                  </span>
-                  <span className="flex-1" />
-                  <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
-                    {new Date(r.ts).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <code className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0" title={r.summary}>
-                    {r.summary}
-                  </code>
-                  <span className="text-[10px] text-ink-soft/70 shrink-0" title={r.workspaceId}>
-                    {r.workspaceId ? basename(r.workspaceId) : ""} · {sessionTitle(r.sessionId)}
-                  </span>
-                </div>
+                {r.row === "oneshot" ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block rounded-full border border-line bg-paper-deep px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 text-ink-soft">
+                        {r.ok ? "assistant" : "assistant · failed"}
+                      </span>
+                      <span className="font-bold shrink-0">{ONESHOT_LABEL[r.kind] ?? r.kind}</span>
+                      <span className="flex-1" />
+                      <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
+                        {new Date(r.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <code className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0">
+                        {r.model} · ~{r.estTokens.toLocaleString()} tok (estimated)
+                      </code>
+                      <span className="text-[10px] text-ink-soft/70 shrink-0" title={r.workspaceId}>
+                        {r.workspaceId ? basename(r.workspaceId) : ""}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 ${DECISION_TONE[r.decision] ?? "bg-paper-deep text-ink-soft border-line"}`}
+                      >
+                        {r.decision}
+                      </span>
+                      <span className="font-bold shrink-0">{r.tool}</span>
+                      <span
+                        className={`text-[10px] font-bold uppercase tracking-wider shrink-0 ${SOURCE_TONE[r.source] ?? "text-ink-soft"}`}
+                        title={r.rule ? `${r.rule.scope} ${r.rule.layer} rule: ${r.rule.pattern}` : undefined}
+                      >
+                        {sourceText(r)}
+                      </span>
+                      <span className="flex-1" />
+                      <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
+                        {new Date(r.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <code className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0" title={r.summary}>
+                        {r.summary}
+                      </code>
+                      <span className="text-[10px] text-ink-soft/70 shrink-0" title={r.workspaceId}>
+                        {r.workspaceId ? basename(r.workspaceId) : ""} · {sessionTitle(r.sessionId)}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>

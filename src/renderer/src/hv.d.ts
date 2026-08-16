@@ -474,6 +474,9 @@ interface HvAnalytics {
     byDecision: Record<string, number>;
     bySource: Record<string, number>;
   };
+  /** Round 15: the app's own one-shot model calls. Tokens only — see
+      src/main/oneShotLog.ts for why there is deliberately no dollar figure. */
+  oneShot: { count: number; failed: number; estTokens: number };
 }
 
 /** MCP per-server runtime status (renderer-local; do not import from src/main). */

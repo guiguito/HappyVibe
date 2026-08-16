@@ -20,7 +20,13 @@ export function generateTitle(
   runtimeDir: string,
   workspace: string,
   firstUserMessage: string,
-  opts: { model?: { provider: string; modelId: string } | null; env?: Record<string, string> } = {}
+  opts: {
+    model?: { provider: string; modelId: string } | null;
+    env?: Record<string, string>;
+    /** Round 15: where to record that this call happened. Optional — a caller
+        without a log still gets its title, it just goes unrecorded. */
+    onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }) => void;
+  } = {}
 ): Promise<string | null> {
   const model = opts.model ?? { provider: "deepseek", modelId: "deepseek-v4-flash" };
   const prompt =
@@ -46,11 +52,21 @@ export function generateTitle(
     let out = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (d: string) => (out += d));
-    child.on("error", () => resolve(null));
+    const done = (ok: boolean): void =>
+      opts.onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok });
+    child.on("error", () => {
+      done(false);
+      resolve(null);
+    });
     child.on("exit", (code) => {
-      if (code !== 0) return resolve(null);
+      if (code !== 0) {
+        done(false);
+        return resolve(null);
+      }
       const title = out.trim().split("\n").pop()?.trim().replace(/^["'\s]+|["'\s.]+$/g, "") ?? "";
-      resolve(title && title.length <= 80 ? title : null);
+      const ok = !!title && title.length <= 80;
+      done(ok);
+      resolve(ok ? title : null);
     });
   });
 }

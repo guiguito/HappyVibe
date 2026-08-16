@@ -56,6 +56,7 @@ import {
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { ledgerTotal, parseCalls, planProvidersFor, type ApiCall } from "./calls";
+import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
@@ -972,6 +973,7 @@ export function registerIpc(win: BrowserWindow): void {
       model: resolveSpawnModel(),
       // BYOK keys via env; OAuth creds live in auth.json under the agent dir.
       env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
+      onDone: oneShot("title", meta.workspaceId, sessionId),
     }).then((title) => {
       const cur = index.get(sessionId);
       if (title && cur && cur.titleSource === "fallback") {
@@ -1834,6 +1836,19 @@ export function registerIpc(win: BrowserWindow): void {
    *
    * Returns whether it deleted, so the renderer knows not to keep the row.
    */
+  /**
+   * Round 15 — one place the four one-shot callers report to.
+   *
+   * Each returns its own resolved model and byte counts; this binds them to the
+   * EventLog with the right kind and workspace. Tokens only, never dollars —
+   * see oneShotLog.ts for why that is a rule and not an omission.
+   */
+  const oneShot =
+    (kind: OneShotKind, workspaceId?: string, sessionId?: string) =>
+    (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }): void => {
+      logOneShot(log, { kind, workspaceId, sessionId, ...o });
+    };
+
   const purgeIfEmpty = (sessionId: string): boolean => {
     const meta = index.get(sessionId);
     if (!meta || !isSessionEmpty(meta, sessionDir())) return false;
@@ -2655,8 +2670,21 @@ export function registerIpc(win: BrowserWindow): void {
     return { text: "" };
   });
 
-  ipcMain.handle("hv:read-audit", (_e, filter?: { sessionId?: string; workspaceId?: string }) =>
-    log.read({ type: "permission.decision", ...filter }));
+  /**
+   * Round 15: the audit page reads BOTH kinds of row — permission decisions and
+   * the app's own one-shot model calls (§19: titles, the AGENTS.md draft, the
+   * commit message, the PR draft). They belong on the same page because the
+   * question the user asked is one question: "what has run, and did I see it?"
+   * Sorted by timestamp so the two interleave honestly rather than appearing as
+   * two lists that happen to share a screen.
+   */
+  ipcMain.handle("hv:read-audit", async (_e, filter?: { sessionId?: string; workspaceId?: string }) => {
+    const [decisions, oneShots] = await Promise.all([
+      log.read({ type: "permission.decision", ...filter }),
+      log.read({ type: "assistant.oneshot", ...filter }),
+    ]);
+    return [...decisions, ...oneShots].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  });
 
   // ── B7: local analytics (read + aggregate in main, never leaves the machine) ──
   ipcMain.handle("hv:get-analytics", async (_e, filter?: AnalyticsFilter) => {
@@ -2739,6 +2767,7 @@ export function registerIpc(win: BrowserWindow): void {
       // ref must not be handed to a one-shot Pi call either.
       model: resolveSpawnModel(),
       env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
+      onDone: oneShot("agents-md", workspaceId),
     }));
   // W2.3 missing-file flow: CLAUDE.md → AGENTS.md copy (same confinement).
   ipcMain.handle("hv:has-claude-md", (_e, workspaceId: string) =>
@@ -3136,6 +3165,8 @@ export function registerIpc(win: BrowserWindow): void {
       },
       model,
       { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
+      undefined,
+      oneShot("commit-message", workspaceId),
     );
   });
 
@@ -3200,6 +3231,8 @@ export function registerIpc(win: BrowserWindow): void {
           { commits, diff: diffText, branch: branch.branch, base },
           model,
           { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
+          undefined,
+          oneShot("pr-draft", workspaceId),
         );
       }
     }
