@@ -32,6 +32,9 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   Run it only when `npm run live:why` prints something — that prints the changed files which
   are Pi-facing (`pi-runtime/extensions/`, `src/main/pi/`, or a live test file). Empty output
   means the batch is not required; SAY so, don't silently omit it.
+  **It diffs `main...HEAD`, so it only sees COMMITTED work** — staging a pin bump and asking is
+  silence, not a green light, and `git add` does not change that. Check it after the commit that
+  carries the change, not before (this reads as "the gate script regressed" if you forget).
   (`--no-file-parallelism` is load-bearing: concurrent files mean concurrent DeepSeek sessions,
   and the provider degrades under that — the residual "flakes" were turns that came back with no
   tool call at all. Serial costs ~6 min and is green.)
@@ -104,7 +107,9 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   snapshot is empty) and the `status` RPC's structured `fleet` field withholds run identifiers by
   design (`rpc.ts:76` "never a run or async identifier") while `/hv-subagent-list` needs
   `{runId, agent, asyncDir}`. Gate: `tests/pi-subagents-contract.test.ts` (key-free) pins the
-  relative form, the exports map, and the three fields. Bumped 0.34.0 → 0.40.0 on 2026-08-02.
+  relative form, the exports map, and the three fields. Bumped 0.34.0 → 0.40.0 on 2026-08-02,
+  0.40.0 → 0.50.0 on 2026-08-17. At 0.50 the map lists **11** subpaths and `./shared-types`
+  looks like ASYNC_DIR's home but re-exports TYPES ONLY — re-derive, never hand-list.
 - **Two PRD §12 invariants are enforced by matching an upstream NAME or SHAPE, and 0.40.0 broke
   both silently — no test failed.** (1) The "never block on a delegation" guard matched the literal
   `"wait"`; 0.35.0 renamed the tool `subagent_wait` with no alias. Both names now live in
@@ -114,12 +119,31 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `toolCalls` (same commit as the deep-fan-out protocol-limit fix). Renderer maps `toolCalls` → the
   same rows and renders `finalOutput`. Both pinned in `tests/pi-subagents-contract.test.ts` +
   `agents-renderer.test.ts`; wire shapes in docs/validation/d1.md.
-- **A subagent's `tools:` list is a STRICT allowlist from pi-subagents 0.40 — an unknown name fails
+  (3) 0.50 **redacts the delegation `task`/`goal` to `"[prompt redacted]"` on every surface an
+  observer reads** — the lifecycle events, `status.json`'s `steps[].description`, metadata, the
+  child's input artifact — unconditionally (`statusStepDescription` ignores its own argument; no
+  config, no env). The child still gets the real task, so only DISPLAY breaks. Nothing can hand a
+  caption back, so `hv-subagent-tasks.ts` remembers it from the bridge's own `tool_call` and
+  PERSISTS it (a respawn has no args event and no on-disk task). One slot per agent,
+  last-write-wins — **not** a queue: a DENIED delegation also passes through `tool_call`, and a
+  queue would caption the next same-agent run with the refused task. `REDACTED_PROMPT` lives in
+  hv-rules.ts beside WAIT_TOOLS (the renderer cannot import a vendored package) and the contract
+  test asserts our copy still equals upstream's constant.
+- **Before believing ANY live-test failure at a new pin, check the account has balance.** 0.50's
+  bump produced four red live tests that matched the expected inventory precisely — transcript
+  gone, `asyncId` missing, no `tool_execution_update` — and all four were `402 Insufficient
+  Balance`. The tells were in the assertions (`expected 0 to be greater than 0`; `a real
+  delegation ran: expected undefined`): **no delegation ran at all**, so nothing about 0.50 was
+  being measured. All three shapes are in fact unchanged at 0.50 and are now pinned by key-free
+  source scans for exactly this reason. `curl -s -o /dev/null -w '%{http_code}'
+  https://api.deepseek.com/chat/completions -H "Authorization: Bearer $KEY" -d '{...}'` costs one
+  second and settles it. Full retraction: docs/validation/d1.md §pi-subagents 0.50.
+- **A subagent's `tools:` list is a STRICT allowlist from pi-subagents >=0.40 — an unknown name fails
   the whole run**, with `"Agent 'x' requested unavailable child tools: …"` (its new
   `src/runs/shared/tool-availability.ts`; no such check in 0.34, which ignored unknown names).
   Pi 0.83's builtins are exactly **bash, edit, find, grep, ls, read, write** — there is NO `glob`
   and NO `list`. Both bundled agents shipped asking for `glob, list` and were silently running
-  without them; at 0.40 that is fatal. Extension tools need more than a name (`subagentOnlyExtensions`
+  without them; from 0.40 that is fatal. Extension tools need more than a name (`subagentOnlyExtensions`
   / a path-like entry), so never just add one to `tools:`. Pinned by
   `tests/pi-subagents-contract.test.ts`, which derives the legal set from Pi's own registrations.
 - **`ctx.hasUI` is TRUE in `--mode rpc` — "RPC" is not "headless".** Measured, not inferred:
