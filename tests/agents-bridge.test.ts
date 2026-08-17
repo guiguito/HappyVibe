@@ -26,6 +26,9 @@ for (const name of fs.readdirSync(path.join(runtime, "agents"))) {
   fs.copyFileSync(path.join(runtime, "agents", name), path.join(agentDir, "agents", name));
 }
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-agents-cwd-"));
+// Something for a delegated child to READ, so the trace-projection test can assert
+// `toolCalls` for real instead of hoping the model chose to call a tool.
+fs.writeFileSync(path.join(workDir, "greeting.txt"), "HELLO\n");
 const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-agents-sess-"));
 // The subagent tool is a normal tool_call → the bridge gates it (asks by
 // default). Allow it up front so the delegation test never stalls on an
@@ -134,8 +137,14 @@ test.skipIf(!KEY)(
       await c.send({
         type: "prompt",
         message:
-          "Use the subagent tool right now (mode: single) to delegate to the agent named 'code-explorer' " +
-          "with the task 'reply with exactly the word HELLO and nothing else'. Do not do anything else.",
+          // async:false ON PURPOSE. This test pins the trace PROJECTION the renderer
+          // maps, and at 0.50 an async dispatch returns before any child has run, so
+          // its details.results is empty by definition (measured: length 0). The
+          // populated projection only exists on a blocking delegation — asserting it
+          // on an async one would pin "nothing yet", which is not the contract.
+          "Use the subagent tool right now with async: false to delegate to the agent named 'code-explorer' " +
+          "with the task 'use the read tool on greeting.txt, then reply with exactly the word it contains and " +
+          "nothing else'. Do not do anything else.",
       });
       await done;
 
@@ -145,31 +154,34 @@ test.skipIf(!KEY)(
       const ends = localEvents.filter((e) => e.type === "tool_execution_end" && (e as { toolName?: string }).toolName === "subagent");
       expect(ends.length, "expected a subagent tool_execution_end").toBeGreaterThan(0);
 
-      // LIVE view rides tool_execution_update.partialResult.details.results[].
+      // THERE IS NO LIVE VIEW ANY MORE, and that is the headline of the 0.50 bump.
       //
-      // pi-subagents 0.40.0 REMOVED `messages` from this projection on purpose
-      // (`snapshotStreamResult` sets it undefined and substitutes compact
-      // `toolCalls`, so one update line stays under the child-stdout protocol cap
-      // — execution.ts:259-270). Asserting its ABSENCE pins that change: if a
-      // future pin restores the transcript we want to know, because it carries the
-      // child's prose and toolCalls does not. The toolCalls→transcript-row mapping
-      // is unit-tested in tests/agents-renderer.test.ts — deliberately NOT here,
-      // since this child ("reply with exactly HELLO") may make zero tool calls and
-      // a live assertion on toolCalls would depend on the model choosing to.
-      const upd = updates[updates.length - 1] as { partialResult?: { details?: { results?: Array<{ agent?: string; messages?: unknown[] }> } } };
-      const updResults = upd?.partialResult?.details?.results ?? [];
-      expect(updResults.length, "update carries results[]").toBeGreaterThan(0);
-      expect(updResults[0].agent).toBe("code-explorer");
-      expect(updResults[0].messages, "0.40 drops the transcript from streamed updates").toBeUndefined();
+      // The live child transcript used to stream on
+      // tool_execution_update.partialResult.details.results[]. At 0.50
+      // `tool_execution_update` is not emitted AT ALL for a subagent call —
+      // measured 2026-08-17 on both a blocking and an async delegation, zero
+      // updates in each (docs/validation/d1.md §pi-subagents 0.50). So expanding a
+      // run card shows nothing until the run finishes, and `traceFromUpdate` in the
+      // renderer is now dead weight kept only for a pin that brings it back.
+      //
+      // Asserting the absence is the point: this is the assertion that will fail,
+      // loudly, on the day upstream restores streaming — which we want, because the
+      // renderer mapping is still there waiting for it.
+      expect(updates.length, "0.50 emits no tool_execution_update for a subagent").toBe(0);
 
-      // FINAL outcome rides tool_execution_end.result.details.results[] (per-agent
-      // model/usage/finalOutput; the end does NOT re-carry the transcript).
-      const end = ends[ends.length - 1] as { result?: { details?: { results?: Array<{ agent?: string; finalOutput?: string; modelAttempts?: Array<{ model?: string }> }> } } };
+      // The FINAL projection is where everything the card renders now comes from.
+      // `toolCalls` (not `messages`) is the transcript source — 0.40 substituted it
+      // and 0.50 keeps it. `messages` stays absent; asserting that pins the swap.
+      const end = ends[ends.length - 1] as { result?: { details?: { results?: Array<{ agent?: string; finalOutput?: string; messages?: unknown[]; toolCalls?: unknown[]; modelAttempts?: Array<{ model?: string }> }> } } };
       const results = end.result?.details?.results ?? [];
-      expect(results.length).toBeGreaterThan(0);
+      expect(results.length, "a blocking delegation carries its child's result").toBeGreaterThan(0);
       expect(results[0].agent).toBe("code-explorer");
       expect(typeof results[0].finalOutput).toBe("string");
       expect(typeof results[0].modelAttempts?.[0]?.model).toBe("string");
+      expect(results[0].messages, "the transcript is still not in `messages`").toBeUndefined();
+      // The child was told to read a file, so it makes at least one tool call and
+      // this is a real assertion rather than one that depends on the model's mood.
+      expect(Array.isArray(results[0].toolCalls), "`toolCalls` is the transcript source").toBe(true);
     } finally {
       c.stop();
     }

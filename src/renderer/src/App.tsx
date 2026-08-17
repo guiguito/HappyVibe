@@ -660,6 +660,9 @@ export default function App(): React.JSX.Element {
           return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, status } } } : p;
         });
         // Hand-off notice: the actual result streams in on the triggered turn.
+        // `sub.agent` is absent for a 0.50 workflow run (the bridge drops upstream's
+        // generic "workflow"), so this reads "Subagent finished" rather than naming
+        // a pipeline the user never asked for. The CARD still shows the real agent.
         appendItem(sid, { kind: "notice", text: `${sub.agent ?? "Subagent"} finished — delivering results…`, pending: false });
         setTimeout(() => {
           setDelegations((p) => {
@@ -1036,12 +1039,34 @@ export default function App(): React.JSX.Element {
         }));
         if (isSub) {
           // Async dispatch: this tool call returned immediately (details.asyncId).
-          // Drop the fg card — the async card (keyed by runId) owns the life.
-          if (asyncResultInfo(t.result)) {
+          // RE-KEY the card from toolCallId to runId rather than dropping it and
+          // waiting for the bridge's `started` notify to raise a fresh one.
+          //
+          // pi-subagents 0.50 made that notify unreliable: every top-level
+          // delegation now runs as mode:"workflow" (its legacy single/chain/parallel
+          // entry points were removed), and the workflow path emits only
+          // `subagent:async-complete` — never `subagent:async-started`. Measured
+          // twice with a probe extension: the handler never fires. Raising the card
+          // from the notify therefore showed the user NOTHING for the whole run,
+          // then dropped the result in — the opposite of PRD §12's "watch it run
+          // while you keep chatting".
+          //
+          // Everything the card needs is already here and is NOT redacted: the
+          // runId is details.asyncId, and this card already carries the real task
+          // and agent from tool_execution_start's original args. So the conversion
+          // is strictly more robust than the notify AND survives whichever path
+          // upstream takes next. The `started` handler stays as belt-and-braces
+          // (it still fires for nested/single runs) and is idempotent against this.
+          const detached = asyncResultInfo(t.result);
+          if (detached) {
             setDelegations((p) => {
-              if (!p[sid]?.[t.toolCallId]) return p;
+              const fg = p[sid]?.[t.toolCallId];
+              if (!fg) return p;
               const next = { ...p[sid] };
               delete next[t.toolCallId];
+              // Keep an already-raised async card (a `started` notify that DID
+              // arrive wins — it is the authoritative agent name for the run).
+              next[detached.asyncId] = next[detached.asyncId] ?? { ...fg, id: detached.asyncId, kind: "async", status: "running" };
               return { ...p, [sid]: next };
             });
           } else {

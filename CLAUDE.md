@@ -146,6 +146,35 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   queue would caption the next same-agent run with the refused task. `REDACTED_PROMPT` lives in
   hv-rules.ts beside WAIT_TOOLS (the renderer cannot import a vendored package) and the contract
   test asserts our copy still equals upstream's constant.
+- **Every delegation is a WORKFLOW from 0.50, and that silently removed the run card.**
+  `details.mode` is `"workflow"` with a `missionId` even for one child (0.50 deleted the legacy
+  entry points — `public-execution.ts`: *"action='single' is not supported"*). The workflow path
+  emits `subagent:async-complete` but **NEVER `subagent:async-started`** — measured twice with a
+  `console.error` inside the bridge's own handler. The sticky card was raised by that notify, so an
+  async delegation showed the user NOTHING for its whole life and then dropped a result in, the
+  inverse of PRD §12 and with no test covering it. The card is now RE-KEYED from the foreground one
+  at `tool_execution_end` (`details.asyncId`, measured `=== details.runId === the complete notify's
+  runId`), which needs no notify and survives whichever path upstream takes next. Two more from the
+  same measurement: `agent` on the completion event is the literal `"workflow"` (the bridge drops
+  it, or the hand-off notice names a pipeline the user never chose), and **async is upstream's own
+  default now** — a run with no `asyncByDefault` config still detached.
+- **`tool_execution_update` is not emitted AT ALL for a subagent at 0.50** — zero on a blocking run,
+  zero on an async one. There is no live child transcript: expanding a card shows nothing until the
+  run ends, and `traceFromUpdate` is dead weight kept against a pin that restores streaming.
+  `tests/agents-bridge.test.ts` asserts the absence so that day is loud. Related trap in the same
+  family: **`tool_execution_end` carries no `args`** — they are on `tool_execution_start` only, so a
+  delegation must be found by correlating START→END on `toolCallId`. That one had been hiding a
+  VACUOUS assertion (`undefined?.result?.details?.asyncId` is falsy, so "foreground has no asyncId"
+  passed for a delegation the test never found).
+- **A blocking delegation now costs ~5 KB of context; the async one costs 1.2 KB.** Measured
+  `toolResult.content`: 4,947–5,532 chars for `async:false` (the whole workflow return JSON inlined
+  — launch-contract digest, extension hashes, artifact paths, usage, acceptance scaffolding,
+  `childReport`) versus 1,255 for async (a `Run fan-out: n/64 used` receipt; the answer arrives on
+  the triggered turn). The child TRANSCRIPT still stays out, so isolation holds — but PRD §12's
+  "only the call and the final result enter the main context" is now ~5 KB a delegation on the
+  blocking path. `subagent-context.test.ts` branches on the path, because **the model picks `async`
+  itself and picked differently on consecutive identical runs** — never assert a bound that depends
+  on which it chose.
 - **Before believing ANY live-test failure at a new pin, check the account has balance.** 0.50's
   bump produced four red live tests that matched the expected inventory precisely — transcript
   gone, `asyncId` missing, no `tool_execution_update` — and all four were `402 Insufficient

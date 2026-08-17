@@ -50,14 +50,21 @@ function rulesAllowingSubagent(): string {
   return f;
 }
 
-const TASK = "reply with exactly the word PONGPROBE and nothing else";
+// The task makes the child use a TOOL, so the update/end projections have a real
+// transcript to carry — a one-turn "say PONGPROBE" child produces neither
+// `messages` nor `toolCalls`, which looks identical to upstream having dropped them.
+const TASK = "read the file probe-target.txt with the read tool, then reply with exactly the word it contains and nothing else";
 const prompt = mode === "fg"
-  ? `Use the subagent tool right now with async: false (mode: single) to delegate to the agent named 'code-explorer' with the task '${TASK}'. Do not do anything else.`
-  : `Use the subagent tool right now (mode: single) to delegate to the agent named 'code-explorer' with the task '${TASK}'. Do not do anything else.`;
+  ? `Use the subagent tool right now with async: false to delegate to the agent named 'code-explorer' with the task '${TASK}'. Do not do anything else.`
+  // async is the config default, but a model that is told "mode: single" tends to
+  // pass async:false as well, so demand it explicitly.
+  : `Use the subagent tool right now with async: true to delegate to the agent named 'code-explorer' with the task '${TASK}'. Do not do anything else, and do NOT wait for it.`;
 
 const agentDir = makeAgentDir(mode === "waitoff" ? false : true);
+const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "probe050-cwd-")));
+fs.writeFileSync(path.join(cwd, "probe-target.txt"), "PONGPROBE\n");
 const spec = resolvePiSpawn(
-  fs.mkdtempSync(path.join(os.tmpdir(), "probe050-cwd-")),
+  cwd,
   fs.mkdtempSync(path.join(os.tmpdir(), "probe050-sess-")),
   runtime,
   { agentDir, providerEnv: PROVIDER_ENV, rulesFile: rulesAllowingSubagent(), model: MODEL },

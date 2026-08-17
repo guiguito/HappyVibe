@@ -1049,7 +1049,14 @@ export default function (pi: ExtensionAPI) {
       const runId = d.runId ?? d.id;
       if (!runId) return;
       const status = d.success === true ? "success" : d.state === "paused" ? "interrupted" : "error";
-      relay({ stage: "complete", runId, agent: d.agent, status, summary: d.summary?.slice(0, 500) });
+      // 0.50 reports `agent:"workflow"` here for every top-level delegation, because
+      // its legacy single/chain entry points were removed and everything runs as a
+      // workflow. That is upstream's plumbing, not a name the user chose — relaying
+      // it made the hand-off notice read "workflow finished". Dropped, so the
+      // renderer falls back to a neutral word; the CARD keeps the real agent, which
+      // it took from the tool call's own args.
+      const agent = d.agent === "workflow" ? undefined : d.agent;
+      relay({ stage: "complete", runId, agent, status, summary: d.summary?.slice(0, 500) });
       // The card is gone; its caption would otherwise accumulate in the session file
       // for the life of the session.
       releaseTask(subagentTasks, runId);

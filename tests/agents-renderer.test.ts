@@ -232,6 +232,32 @@ describe("delegationLabel", () => {
     expect(runLabel(undefined)).toBe("");
   });
 
+  test("an async dispatch RE-KEYS its card to the runId instead of deleting it", () => {
+    // The 0.50 regression this guards: every top-level delegation now runs as
+    // mode:"workflow", and that path emits `subagent:async-complete` but NEVER
+    // `subagent:async-started` (measured twice with a probe extension). The card
+    // used to be raised by the `started` notify, so an async delegation showed the
+    // user nothing for its whole life and then dropped a result in — the inverse of
+    // PRD §12. tool_execution_end carries details.asyncId and the card already has
+    // the real agent and task from the call's own args, so the card is converted
+    // rather than dropped. Pinned as a source scan (the renderer suite has no DOM):
+    // the old `delete next[t.toolCallId]` with no re-key is the bug.
+    const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+    const block = app.slice(app.indexOf("const detached = asyncResultInfo(t.result)"));
+    expect(block.slice(0, 700)).toMatch(/next\[detached\.asyncId\]\s*=/);
+    // Idempotent against a `started` notify that DID arrive (nested/single runs).
+    expect(block.slice(0, 700)).toMatch(/next\[detached\.asyncId\]\s*\?\?/);
+  });
+
+  test("asyncResultInfo reads the runId the completion notify will use", () => {
+    // Measured 2026-08-17: details.asyncId === details.runId === the runId on the
+    // hv.subagent complete notify, so a card keyed by asyncId is the same card the
+    // completion and the /hv-subagent-list resync will find.
+    expect(asyncResultInfo({ details: { asyncId: "fa7d236f", runId: "fa7d236f" } })).toEqual({ asyncId: "fa7d236f" });
+    expect(asyncResultInfo({ details: {} })).toBeNull();
+    expect(asyncResultInfo(undefined)).toBeNull();
+  });
+
   test("the async card and the resync path both route through runLabel", () => {
     // Renderer tests have no DOM (vitest.config.ts collects .ts only), so the
     // contract is pinned in two halves: the mapping above as data, and the ABSENCE

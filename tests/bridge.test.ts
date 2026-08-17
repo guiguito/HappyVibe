@@ -85,4 +85,11 @@ test.skipIf(!KEY)("bridge intercepts bash; deny blocks and agent continues", asy
   const forbidden = path.join(tmp, "forbidden.txt");
   expect(fs.existsSync(forbidden)).toBe(false);
   console.log("[bridge.test] PASS: forbidden.txt does NOT exist — deny successfully blocked tool call");
-}, 240_000); // up to 3 × 45 s of re-asking, plus spawn
+// 360 s, raised from 240 s on 2026-08-17. Not a masked failure — measured: this test
+// passes ALONE and timed out at exactly 240 s inside the full serial batch, twice in
+// the same shape. askUntil budgets 3 × 45 s of WAITING, but each re-ask also awaits a
+// prompt that may still be in flight, so under a slower provider (OpenRouter adds
+// latency over first-party DeepSeek) the real ceiling is well above 135 s + spawn.
+// The thing arrives, only late, which is the one case where a longer wait is the fix
+// rather than a papered-over flake — and no assertion is weakened by the extra room.
+}, 360_000);
