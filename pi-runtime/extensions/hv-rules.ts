@@ -84,6 +84,38 @@ export function isWaitTool(tool: unknown): boolean {
   return typeof tool === "string" && WAIT_TOOLS.has(tool);
 }
 
+/**
+ * pi-subagents >=0.50's prompt redaction, as a literal we must recognise.
+ *
+ * 0.50 replaces the delegation `task`/`goal` with this string on EVERY observer
+ * surface — the `subagent:async-*` lifecycle events, `status.json`'s
+ * `steps[].description`, run metadata, and the child's own input artifact. It is
+ * unconditional (no config key, no env var; `statusStepDescription` ignores its
+ * argument outright), and the child still receives the real task via its prompt,
+ * so delegation works — only the surfaces we DISPLAY from lose the text.
+ *
+ * It lives beside WAIT_TOOLS for the same reason: an upstream literal that both
+ * the bridge and the renderer must agree on. Neither can import it from
+ * pi-subagents — the renderer has no path to a vendored runtime package — so the
+ * value is duplicated here ON PURPOSE and
+ * tests/pi-subagents-contract.test.ts asserts it still equals upstream's own
+ * exported constant. If upstream changes the wording, that test fails loudly
+ * rather than the UI quietly captioning a card "[prompt redacted]".
+ */
+export const REDACTED_PROMPT = "[prompt redacted]";
+
+/** True for a task/goal string 0.50 redacted — i.e. one we must not display. */
+export function isRedactedPrompt(text: unknown): boolean {
+  return typeof text === "string" && text.trim() === REDACTED_PROMPT;
+}
+
+/** A task/goal safe to show, or undefined when absent or redacted. */
+export function displayableTask(text: unknown): string | undefined {
+  if (typeof text !== "string") return undefined;
+  const t = text.trim();
+  return t && !isRedactedPrompt(t) ? t : undefined;
+}
+
 /** v5: Pi's built-in FILE tools — the ones whose path args we confine to the
  * workspace by default. bash is deliberately NOT here (it stays under
  * command-pattern rules; path-inspecting arbitrary shell is out of scope). */
