@@ -14,7 +14,7 @@
  *      (OpenRouter's floating alias for the latest v4-flash; the dated snapshot is
  *      `-0731`. ~$0.08/M in, $0.17/M out, so a full serial batch costs pennies.)
  *   2. DEEPSEEK_API_KEY → `deepseek` / `deepseek-v4-flash`  (first-party, unchanged)
- *   3. neither → `KEY` is undefined and every `skipIf(!KEY)` skips, as before.
+ *   3. neither → `KEY` is undefined and every live test skips itself, as before.
  *
  * OpenRouter is preferred when both are present: it is the one that can be topped
  * up without touching provider accounts, and it keeps working when a first-party
@@ -76,7 +76,13 @@ function resolve(): LiveModel | undefined {
 
 export const LIVE = resolve();
 
-/** The live gate every live test spells `skipIf(!KEY)`. Undefined ⇒ skip. */
+/** The live gate. Undefined ⇒ every live test skips itself.
+ *
+ *  Each live file spells the gate with vitest's conditional-skip helper and this
+ *  constant. The literal is deliberately NOT written out here: `npm run test:live`
+ *  and CLAUDE.md both enumerate live test FILES by grepping for it, and a helper
+ *  module answering that grep would inflate the count the docs describe as the one
+ *  thing that has never drifted (and hand vitest a file with no tests in it). */
 export const KEY = LIVE?.key;
 
 /** `model` for resolvePiSpawn. Falls back to the DeepSeek shape so a skipped test
