@@ -41,7 +41,7 @@ import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
-import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
+import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
@@ -640,7 +640,10 @@ export default function App(): React.JSX.Element {
           id: sub.runId,
           kind: "async",
           agent: sub.agent ?? "subagent",
-          label: sub.task ?? "",
+          // runLabel, not sub.task: from pi-subagents 0.50 the event's own task is
+          // redacted, and this caption must never show that. The bridge substitutes
+          // the task it remembered from the tool call (hv-subagent-tasks.ts).
+          label: runLabel(sub.task),
           startedAt: Date.now(),
           status: "running",
         };
@@ -676,7 +679,7 @@ export default function App(): React.JSX.Element {
           for (const x of runs) {
             const existing = cur[x.runId];
             async[x.runId] = existing ?? {
-              id: x.runId, kind: "async", agent: x.agent ?? "subagent", label: x.task ?? "", startedAt: Date.now(), status: "running",
+              id: x.runId, kind: "async", agent: x.agent ?? "subagent", label: runLabel(x.task), startedAt: Date.now(), status: "running",
             };
           }
           return { ...p, [sid]: { ...fg, ...async } };

@@ -1,4 +1,7 @@
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
 import {
   asyncResultInfo,
   delegationHint,
@@ -10,6 +13,7 @@ import {
   parseAgents,
   parseSubagentEvent,
   parseTools,
+  runLabel,
   traceFor,
   traceFromEnd,
   traceFromUpdate,
@@ -213,6 +217,32 @@ describe("delegationLabel", () => {
     const label = delegationLabel({ task: "x".repeat(300) });
     expect(label.length).toBe(90);
     expect(label.endsWith("…")).toBe(true);
+  });
+
+  test("never captions a card with pi-subagents 0.50's redaction", () => {
+    // 0.50 replaces task/goal with REDACTED_PROMPT on every surface the UI could
+    // read. The bridge substitutes the task it remembered at tool_call time, and
+    // this is the backstop for any path that reads upstream's value directly. An
+    // empty caption is the intended degradation — showing "[prompt redacted]" to a
+    // user who just typed the task is worse than showing nothing.
+    expect(delegationLabel({ task: REDACTED_PROMPT })).toBe("");
+    expect(delegationLabel({ intent: REDACTED_PROMPT, task: "the real task" })).toBe("the real task");
+    expect(runLabel(REDACTED_PROMPT)).toBe("");
+    expect(runLabel("map the repo")).toBe("map the repo");
+    expect(runLabel(undefined)).toBe("");
+  });
+
+  test("the async card and the resync path both route through runLabel", () => {
+    // Renderer tests have no DOM (vitest.config.ts collects .ts only), so the
+    // contract is pinned in two halves: the mapping above as data, and the ABSENCE
+    // of the raw reads here as a source scan — an absence is exactly what a render
+    // test would not fail on. Both sites used to be `sub.task ?? ""` / `x.task ?? ""`,
+    // which is how the redaction would reach the screen.
+    const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+    expect(app).not.toMatch(/label:\s*sub\.task\s*\?\?/);
+    expect(app).not.toMatch(/label:\s*x\.task\s*\?\?/);
+    expect(app).toMatch(/label:\s*runLabel\(sub\.task\)/);
+    expect(app).toMatch(/label:\s*runLabel\(x\.task\)/);
   });
 
   test("empty/garbage args → empty label (not a crash)", () => {

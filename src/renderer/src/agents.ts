@@ -4,6 +4,7 @@
  * in tests/agents-renderer.test.ts). Same "try JSON, guard on kind, null on
  * fail" discipline as context.ts / permission.ts.
  */
+import { displayableTask } from "../../../pi-runtime/extensions/hv-rules";
 
 // ── hv.agents / hv.tools notifies ────────────────────────────────────────────
 
@@ -302,12 +303,27 @@ export function asyncResultInfo(result: unknown): { asyncId: string } | null {
 
 const LABEL_MAX = 90;
 
-/** Human headline for a delegation: intent ("why") wins over the raw task. */
+/**
+ * Human headline for a delegation: intent ("why") wins over the raw task.
+ *
+ * Every caption in the delegation UI goes through here, which is what makes it the
+ * one place to screen out pi-subagents 0.50's `REDACTED_PROMPT`. The bridge already
+ * substitutes a remembered task before the notify (hv-subagent-tasks.ts), so this
+ * is the backstop for any path that reads a task straight off upstream — and the
+ * empty string it returns is the intended degradation: a card with no caption, not
+ * a card captioned "[prompt redacted]".
+ */
 export function delegationLabel(args: unknown): string {
   const a = args as { intent?: unknown; task?: unknown } | undefined;
-  const s = typeof a?.intent === "string" && a.intent.trim() ? a.intent : typeof a?.task === "string" ? a.task : "";
+  const s = displayableTask(a?.intent) ?? displayableTask(a?.task) ?? "";
   const t = s.trim().replace(/\s+/g, " ");
   return t.length > LABEL_MAX ? t.slice(0, LABEL_MAX - 1) + "…" : t;
+}
+
+/** Caption for a card raised from an hv.subagent notify (started / active resync),
+ *  where the payload carries a bare task string rather than tool args. */
+export function runLabel(task: unknown): string {
+  return delegationLabel({ task });
 }
 
 /** "42s" / "3m 07s" elapsed formatting for run timers. */
