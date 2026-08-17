@@ -614,8 +614,10 @@ export function installBuiltinAgents(bundleDir: string): void {
  * reads `<PI_CODING_AGENT_DIR>/extensions/subagent/config.json` at spawn; with
  * `asyncByDefault` a delegation returns immediately (detached runner) so the
  * user keeps chatting. `completionBatch.enabled:false` → one completion notify
- * per run, which the renderer maps 1:1 to a run card. The dir is app-owned, so
- * we merge-write (preserve any keys a future version adds). Idempotent.
+ * per run, which the renderer maps 1:1 to a run card. `waitTool.enabled:false`
+ * (>=0.50) stops upstream steering the model into a turn-blocking wait. The dir
+ * is app-owned but the file's schema is upstream's, so we merge-write (preserve
+ * any keys a future version adds). Idempotent. Pinned by tests/subagent-config.test.ts.
  */
 export function writeSubagentConfig(): void {
   const file = path.join(agentDir(), "extensions", "subagent", "config.json");
@@ -633,6 +635,12 @@ export function writeSubagentConfig(): void {
   // subagent-notify path and never acks intercom — leaving it on just logs
   // "intercom delivery was not acknowledged" on every run. Off = quiet, no loss.
   config.intercomBridge = { ...(config.intercomBridge as object | undefined), mode: "off" };
+  // PRD §12 (2026-08-17): pi-subagents >=0.50 can disable its own wait tool, and a
+  // blocking wait is never right here — results always arrive as their own turn.
+  // The WAIT_TOOLS name guard (hv-rules.ts) stays on top of this: a config key a
+  // future version renames fails SILENT, a renamed tool name fails the contract
+  // test loudly. Per-task blocking discretion lives at dispatch (`async:false`).
+  config.waitTool = { ...(config.waitTool as object | undefined), enabled: false };
   fs.writeFileSync(file, `${JSON.stringify(config, null, "\t")}\n`);
 }
 
