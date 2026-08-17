@@ -14,11 +14,7 @@ import { PiClient } from "../src/main/pi/PiClient";
  * used (not --no-session) so pi.appendEntry persistence works.
  */
 
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 
@@ -36,7 +32,7 @@ function makeClient(cwd: string, sessionDir: string, env: Record<string, string>
       "--mode", "rpc", "--session-dir", sessionDir,
       ...(resumeFile ? ["--session", resumeFile] : []),
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
-      "--provider", "deepseek", "--model", "deepseek-v4-flash",
+      "--provider", MODEL.provider, "--model", MODEL.modelId,
     ],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...env } as Record<string, string>,
     cwd,
@@ -126,7 +122,7 @@ test.skipIf(!KEY)(
   async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hv-ctx-cwd-"));
     const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-ctx-sess-"));
-    const h = makeClient(cwd, sessionDir, { DEEPSEEK_API_KEY: KEY! });
+    const h = makeClient(cwd, sessionDir, PROVIDER_ENV);
     let sessionFile: string;
     let mark: string | undefined;
     try {
@@ -164,7 +160,7 @@ test.skipIf(!KEY)(
     }
 
     // Resume from the SAME session file in a fresh Pi process.
-    const h2 = makeClient(fs.mkdtempSync(path.join(os.tmpdir(), "hv-ctx-cwd2-")), sessionDir, { DEEPSEEK_API_KEY: KEY! }, sessionFile);
+    const h2 = makeClient(fs.mkdtempSync(path.join(os.tmpdir(), "hv-ctx-cwd2-")), sessionDir, PROVIDER_ENV, sessionFile);
     try {
       await h2.client.start();
       await h2.client.send({ type: "prompt", message: "/hv-context" });

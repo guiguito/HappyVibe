@@ -22,11 +22,7 @@ import { resolvePiSpawn } from "../src/main/pi/spawn";
  * DEEPSEEK-gated (real child Pi spawn), same harness as subagent-context.test.ts.
  */
 
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 
@@ -68,7 +64,7 @@ test.skipIf(!KEY)(
       fs.mkdtempSync(path.join(os.tmpdir(), "hv-async-cwd-")),
       fs.mkdtempSync(path.join(os.tmpdir(), "hv-async-sess-")),
       runtime,
-      { agentDir: makeAgentDir(true), providerEnv: { DEEPSEEK_API_KEY: KEY! }, rulesFile: rulesAllowingSubagent(), model: { provider: "deepseek", modelId: "deepseek-v4-flash" } },
+      { agentDir: makeAgentDir(true), providerEnv: PROVIDER_ENV, rulesFile: rulesAllowingSubagent(), model: MODEL },
     );
     const client = new PiClient(spec);
     const events: Ev[] = [];
@@ -125,7 +121,7 @@ test.skipIf(!KEY)(
       fs.mkdtempSync(path.join(os.tmpdir(), "hv-async-cwd-")),
       fs.mkdtempSync(path.join(os.tmpdir(), "hv-async-sess-")),
       runtime,
-      { agentDir: makeAgentDir(true), providerEnv: { DEEPSEEK_API_KEY: KEY! }, rulesFile: rulesAllowingSubagent(), model: { provider: "deepseek", modelId: "deepseek-v4-flash" } },
+      { agentDir: makeAgentDir(true), providerEnv: PROVIDER_ENV, rulesFile: rulesAllowingSubagent(), model: MODEL },
     );
     const client = new PiClient(spec);
     const events: Ev[] = [];

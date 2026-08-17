@@ -14,11 +14,7 @@ import { resolvePiSpawn } from "../src/main/pi/spawn";
  * DEEPSEEK-gated; pattern of intent-bridge.test.ts; client killed in finally.
  */
 
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-ask-cwd-"));
@@ -31,8 +27,8 @@ test.skipIf(!KEY)(
   "ask_user round-trips: hv.ask-user input request → answered over the wire → tool result reaches the model",
   async () => {
     const spec = resolvePiSpawn(workDir, sessionDir, runtime, {
-      providerEnv: { DEEPSEEK_API_KEY: KEY! },
-      model: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+      providerEnv: PROVIDER_ENV,
+      model: MODEL,
     });
     const client = new PiClient(spec);
     const events: PiEvent[] = [];

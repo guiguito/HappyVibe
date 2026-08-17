@@ -16,11 +16,7 @@ import { PiClient } from "../src/main/pi/PiClient";
  * returns the injected prompt (systemText is set to the injected value).
  */
 
-for (const line of fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : []) {
-  const m = line.match(/^([A-Z_0-9]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 
@@ -37,7 +33,7 @@ function makeClient(cwd: string, sessionDir: string, env: Record<string, string>
       path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
       "--mode", "rpc", "--session-dir", sessionDir,
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
-      "--provider", "deepseek", "--model", "deepseek-v4-flash",
+      "--provider", MODEL.provider, "--model", MODEL.modelId,
     ],
     cwd,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...env } as Record<string, string>,
@@ -102,7 +98,7 @@ test.skipIf(!KEY)(
     fs.writeFileSync(path.join(cwd, "sub", "AGENTS.md"), "NESTED-MARKER-X9Z: always use tabs in sub/");
     fs.writeFileSync(path.join(cwd, "sub", "notes.txt"), "hello from sub");
     const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-amd-sess-"));
-    const h = makeClient(cwd, sessionDir, { DEEPSEEK_API_KEY: KEY! });
+    const h = makeClient(cwd, sessionDir, PROVIDER_ENV);
     try {
       await h.client.start();
 

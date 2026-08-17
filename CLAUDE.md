@@ -20,7 +20,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   and it was ~20 of the 55 typecheck runs in this repo's history.
 
 ## Tests
-- Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated) — **17 files** as of
+- **Which model the live tests use is decided in ONE place: `tests/liveModel.ts`.** It loads `.env`
+  and resolves, first usable key wins: `OPENROUTER_API_KEY` → `openrouter` /
+  `deepseek/deepseek-v4-flash` (the floating "latest" alias; the dated snapshot is `-0731`), else
+  `DEEPSEEK_API_KEY` → `deepseek` / `deepseek-v4-flash`, else `KEY` is undefined and everything
+  skips. Live files import `{ KEY, MODEL, PROVIDER_ENV }` from it — never re-inline a provider, a
+  model id or an `.env` loader (16 files each carried their own copy, which is how one dead account
+  produced 4 failures that read as a 0.50 regression). OpenRouter is preferred because it can be
+  topped up without touching a provider account. Measured 2026-08-17: Pi accepts
+  `--provider openrouter --model deepseek/deepseek-v4-flash` and a bogus key returns OpenRouter's
+  own `401 User not found`, so the route is proven independently of any balance. Pricing is
+  ~$0.08/M in, $0.17/M out — a full serial batch costs pennies. Resolver pinned by
+  `tests/live-model.test.ts`.
+- Live-Pi tests (real model via the resolver above, skipIf-gated) — **17 files** as of
   2026-08-16 (was 14; browser-bridge, terminal-bridge and git-message joined since).
   Source of truth = `grep -rl "skipIf(!KEY" tests/` — RE-DERIVE IT, never trust a list in prose.
   The count in this file has drifted twice; the grep has not.
@@ -52,10 +64,15 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   and 1.27% of all tool output, so there is no context to save — and one agent spawn costs ~45k
   tokens, i.e. 67% of what every test run in this repo's history cost combined, to hand back a
   paraphrase of the stack trace you needed verbatim.
-- Non-live suite = `npm test` (= `DEEPSEEK_API_KEY=sk-REPLACE vitest run`). No exclude list:
-  every live file computes `KEY` as undefined when the key starts `sk-REPLACE`, and their inline
-  `.env` loader only fills vars that are UNSET — so the shell value wins and all 14 skip
-  themselves. This is exactly what CI runs (CI has no key at all), and it is STRICTLY MORE than
+- Non-live suite = `npm test`
+  (= `DEEPSEEK_API_KEY=sk-REPLACE OPENROUTER_API_KEY=sk-REPLACE vitest run`). No exclude list:
+  the resolver treats an `sk-REPLACE` key as ABSENT for either provider, and its `.env` loader only
+  fills vars that are UNSET — so the shell value wins and every live file skips itself.
+  **BOTH vars must be neutralised.** Setting only the DeepSeek one meant that the day an
+  OpenRouter key landed in `.env`, `npm test` would silently stop being the non-live suite: 25-40 s
+  becomes ~6 min and starts spending money, with nothing in the output saying so. Verified in both
+  directions (`tests/live-model.test.ts` plus an end-to-end check that `npm test` still skips with a
+  real-looking key exported in the shell). This is exactly what CI runs (CI has no key at all), and it is STRICTLY MORE than
   the old exclude glob: 9 key-free tests live inside those 14 files (context-bridge ×2,
   rules-bridge ×3, agents-bridge ×2, agents-md-bridge, subagent-discovery-bridge) and the glob
   threw them on the floor. Measured: 139 files, 1253 tests, 15 skipped, ~25-40 s (2026-08-04).

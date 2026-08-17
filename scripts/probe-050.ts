@@ -17,13 +17,10 @@ import os from "node:os";
 import path from "node:path";
 import { PiClient } from "../src/main/pi/PiClient.ts";
 import { resolvePiSpawn } from "../src/main/pi/spawn.ts";
+import { LIVE, MODEL, PROVIDER_ENV } from "../tests/liveModel.ts";
 
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY;
-if (!KEY || KEY.startsWith("sk-REPLACE")) throw new Error("need a real DEEPSEEK_API_KEY");
+if (!LIVE) throw new Error("need OPENROUTER_API_KEY or DEEPSEEK_API_KEY in .env");
+console.error(`[probe] using ${LIVE.label}`);
 
 const mode = (process.argv[2] ?? "async") as "async" | "fg" | "waitoff";
 const runtime = path.join(process.cwd(), "pi-runtime");
@@ -63,7 +60,7 @@ const spec = resolvePiSpawn(
   fs.mkdtempSync(path.join(os.tmpdir(), "probe050-cwd-")),
   fs.mkdtempSync(path.join(os.tmpdir(), "probe050-sess-")),
   runtime,
-  { agentDir, providerEnv: { DEEPSEEK_API_KEY: KEY }, rulesFile: rulesAllowingSubagent(), model: { provider: "deepseek", modelId: "deepseek-v4-flash" } },
+  { agentDir, providerEnv: PROVIDER_ENV, rulesFile: rulesAllowingSubagent(), model: MODEL },
 );
 
 const client = new PiClient(spec);

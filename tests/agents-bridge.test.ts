@@ -16,11 +16,7 @@ import { resolvePiSpawn } from "../src/main/pi/spawn";
  * killed in a finally, and beforeAll/afterAll guard against orphans.
  */
 
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 // App-owned agent dir (PI_CODING_AGENT_DIR): install the two bundled builtins.
@@ -63,7 +59,7 @@ function makeClient(env: Record<string, string>): PiClient {
     agentDir,
     providerEnv: env,
     rulesFile,
-    model: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+    model: MODEL,
   });
   const client = new PiClient(spec);
   client.on("ui-request", (m) => {
@@ -126,7 +122,7 @@ test("/hv-tools emits a tool inventory with name/description/source", async () =
 test.skipIf(!KEY)(
   "a real subagent delegation emits the tool_execution_* trace with results[].messages",
   async () => {
-    const c = makeClient({ DEEPSEEK_API_KEY: KEY! });
+    const c = makeClient(PROVIDER_ENV);
     const localEvents: PiEvent[] = [];
     c.on("event", (e) => localEvents.push(e as PiEvent));
     try {
