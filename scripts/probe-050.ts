@@ -53,7 +53,7 @@ function rulesAllowingSubagent(): string {
 // The task makes the child use a TOOL, so the update/end projections have a real
 // transcript to carry — a one-turn "say PONGPROBE" child produces neither
 // `messages` nor `toolCalls`, which looks identical to upstream having dropped them.
-const TASK = "read the file probe-target.txt with the read tool, then reply with exactly the word it contains and nothing else";
+const TASK = "read notes.md with the read tool and write a DETAILED report: list every section heading and both of its facts verbatim. Be thorough and complete — do not summarise or omit any section.";
 const prompt = mode === "fg"
   ? `Use the subagent tool right now with async: false to delegate to the agent named 'code-explorer' with the task '${TASK}'. Do not do anything else.`
   // async is the config default, but a model that is told "mode: single" tends to
@@ -63,6 +63,14 @@ const prompt = mode === "fg"
 const agentDir = makeAgentDir(mode === "waitoff" ? false : true);
 const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "probe050-cwd-")));
 fs.writeFileSync(path.join(cwd, "probe-target.txt"), "PONGPROBE\n");
+// A file big enough that a faithful report exceeds upstream's 1,000-char
+// completion truncation — otherwise the delivery arrives whole and the very thing
+// we are probing never happens.
+fs.writeFileSync(
+  path.join(cwd, "notes.md"),
+  Array.from({ length: 40 }, (_, i) =>
+    `## Section ${i + 1}: topic-${i + 1}\n- fact ${i + 1}A: the value is ${i * 7 + 3}\n- fact ${i + 1}B: depends on topic-${Math.max(1, i)}\n`).join("\n"),
+);
 const spec = resolvePiSpawn(
   cwd,
   fs.mkdtempSync(path.join(os.tmpdir(), "probe050-sess-")),

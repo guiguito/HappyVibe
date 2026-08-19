@@ -8,6 +8,9 @@ import {
   SUBAGENT_TASKS_TYPE, claimTask, emptyTaskMap, releaseTask, restoreTaskMap, serializeTaskMap,
   stashPendingTask, taskFor, type TaskMapState,
 } from "./hv-subagent-tasks";
+import {
+  createChildOutputStore, rememberChildOutputs, substituteDeliveries, type DeliveryMessage,
+} from "./hv-subagent-delivery";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER } from "./hv-browser";
 import { unwrapMcpCall } from "./hv-mcp";
@@ -324,6 +327,13 @@ function persistPlan(pi: ExtensionAPI): void {
 // it back — see hv-subagent-tasks.ts). Persisted the same way as plan state and
 // context marks: full snapshot, newest entry wins on restore.
 let subagentTasks: TaskMapState = emptyTaskMap();
+
+// What each completed child actually said, so the delivery can carry it instead of
+// upstream's 1,000-char truncation (hv-subagent-delivery.ts). Deliberately NOT
+// persisted: a completion and its delivery turn happen together, and writing multi-KB
+// outputs through appendEntry would bloat every session file to save a round-trip
+// that only a respawn-in-between could ever need.
+const childOutputs = createChildOutputStore();
 function persistSubagentTasks(pi: ExtensionAPI): void {
   pi.appendEntry(SUBAGENT_TASKS_TYPE, serializeTaskMap(subagentTasks));
 }
@@ -589,8 +599,15 @@ export default function (pi: ExtensionAPI) {
 
   // The only place removal takes effect. Non-destructive: session file untouched.
   pi.on("context", async (event) => {
-    if (contextMarks.size === 0) return;
-    return { messages: filterMessages(event.messages as unknown as AgentMessage[], contextMarks) };
+    // Two independent rewrites of what the model is about to see. Order matters
+    // only in that both must be able to run: §9's removal marks, and the
+    // sub-agent delivery repair (hv-subagent-delivery.ts) — which would be
+    // skipped entirely when no marks exist if this handler still early-returned.
+    let messages = event.messages as unknown as AgentMessage[];
+    if (contextMarks.size > 0) messages = filterMessages(messages, contextMarks);
+    const repaired = substituteDeliveries(messages as unknown as DeliveryMessage[], childOutputs);
+    if (repaired) messages = repaired as unknown as AgentMessage[];
+    return contextMarks.size > 0 || repaired ? { messages } : undefined;
   });
 
   // Marks are persisted as custom entries; compaction rewrites history but keeps
@@ -1045,7 +1062,12 @@ export default function (pi: ExtensionAPI) {
       relay({ stage: "started", runId: d.id, agent: d.agent, task, asyncDir: d.asyncDir });
     });
     pi.events.on("subagent:async-complete", (raw) => {
-      const d = raw as { runId?: string; id?: string; agent?: string; success?: boolean; summary?: string; state?: string };
+      const d = raw as { runId?: string; id?: string; agent?: string; success?: boolean; summary?: string; state?: string; results?: unknown };
+      // Keep each child's FULL answer before anything downstream sees the truncated
+      // rendering of it. Done first, and outside the runId guard, because this is
+      // keyed by the CHILD's run id — a different id from the workflow's, and the
+      // one the delivery message actually names.
+      rememberChildOutputs(childOutputs, d.results);
       const runId = d.runId ?? d.id;
       if (!runId) return;
       const status = d.success === true ? "success" : d.state === "paused" ? "interrupted" : "error";
