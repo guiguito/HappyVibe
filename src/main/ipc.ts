@@ -592,6 +592,10 @@ export function registerIpc(win: BrowserWindow): void {
       builtinTools: getBuiltinTools(),
       // Prompt-cache retention: global, spawn-time (PI_CACHE_RETENTION).
       longCache: getLongCache(),
+      // 0.51 / #1225: pi-subagents scopes completion delivery to the launching
+      // PROCESS, so a respawn must carry the session's own identity or it is
+      // refused its detached delegations' results (hv-owner-seed.ts).
+      sessionId,
       skills: entries.map((e) => e.skill.id),
       skillsFile: sessionId ? writeSkillsManifest(sessionId, entries) : undefined,
       // §24: one --prompt-template per approved ∩ enabled ∩ active command. No

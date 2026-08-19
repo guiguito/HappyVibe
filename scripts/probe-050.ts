@@ -28,7 +28,7 @@ import { LIVE, MODEL, PROVIDER_ENV } from "../tests/liveModel.ts";
 if (!LIVE) throw new Error("need OPENROUTER_API_KEY or DEEPSEEK_API_KEY in .env");
 console.error(`[probe] using ${LIVE.label}`);
 
-const mode = (process.argv[2] ?? "async") as "async" | "fg" | "waitoff";
+const mode = (process.argv[2] ?? "async") as "async" | "fg" | "waitoff" | "respawn";
 const runtime = path.join(process.cwd(), "pi-runtime");
 
 function makeAgentDir(waitToolEnabled: boolean): string {
@@ -77,12 +77,15 @@ fs.writeFileSync(
   Array.from({ length: 40 }, (_, i) =>
     `## Section ${i + 1}: topic-${i + 1}\n- fact ${i + 1}A: the value is ${i * 7 + 3}\n- fact ${i + 1}B: depends on topic-${Math.max(1, i)}\n`).join("\n"),
 );
-const spec = resolvePiSpawn(
-  cwd,
-  fs.mkdtempSync(path.join(os.tmpdir(), "probe050-sess-")),
-  runtime,
-  { agentDir, providerEnv: PROVIDER_ENV, rulesFile: rulesAllowingSubagent(), model: MODEL },
-);
+// Hoisted: `respawn` needs to find the session file this run wrote, so it can
+// resume it in a SECOND Pi process exactly the way startClient(meta, true) does.
+const sessionsDir = fs.mkdtempSync(path.join(os.tmpdir(), "probe050-sess-"));
+const rulesFile = rulesAllowingSubagent();
+// `sessionId` is what hv-owner-seed.ts turns into HV_SUBAGENT_OWNER, so the probe
+// must pass it or it measures a Pi with no owner claim — which is how the first
+// respawn attempt came back with a raw randomUUID in status.json.
+const spawnOpts = { agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL, sessionId: "probe-session" };
+const spec = resolvePiSpawn(cwd, sessionsDir, runtime, spawnOpts);
 
 const client = new PiClient(spec);
 const events: unknown[] = [];
@@ -109,11 +112,125 @@ const dump = (): void => {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-try {
+/**
+ * Does a detached run's completion still reach a RESPAWNED parent?
+ *
+ * pi-subagents 0.51 (#1225) refuses any non-foreground completion whose
+ * `completionOwnerId` differs from the current process's, and mints that id as a
+ * `randomUUID()` per Pi process. HappyVibe respawns Pi and resumes the SAME
+ * session file on purpose (hibernation wake, MCP live-reload, app relaunch), so
+ * this is the measurement that decides whether the seed is needed at all — and,
+ * run again after it lands, whether it works. Source cannot answer it: at 0.50
+ * both `async-started` emit sites were present and unconditional and the event
+ * still never fired.
+ *
+ * The child is detached and `unref`'d, so killing the parent mid-run leaves it
+ * running — which is exactly the situation being measured.
+ */
+/** How long to let the child work before killing its parent. */
+const SETTLE_MS = 25_000;
+
+/** The run dir for an async id, found the same way dump() finds them. */
+function findRunDir(asyncId: string): string | undefined {
+  for (const d of fs.readdirSync(os.tmpdir()).filter((x) => x.startsWith("pi-subagents-uid-"))) {
+    const candidate = path.join(os.tmpdir(), d, "async-subagent-runs", asyncId);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+async function runRespawn(): Promise<void> {
   await client.start();
   await client.send({ type: "prompt", message: prompt });
-  // Long enough for dispatch + child completion + the triggered delivery turn.
-  await sleep(mode === "fg" ? 90_000 : 150_000);
+
+  // Wait for the DISPATCH only, never for the result — the point is to die first.
+  const asyncId = await new Promise<string | undefined>((done) => {
+    const timer = setTimeout(() => done(undefined), 90_000);
+    client.on("event", (e) => {
+      const id = (e as { type?: string; result?: { details?: { asyncId?: string } } });
+      if (id.type === "tool_execution_end" && id.result?.details?.asyncId) {
+        clearTimeout(timer);
+        done(id.result.details.asyncId);
+      }
+    });
+  });
+  console.error(`[probe] dispatched asyncId=${asyncId ?? "(none — the model never delegated)"}`);
+  if (!asyncId) throw new Error("no async delegation dispatched; re-ask rather than believing a negative result");
+
+  // Let the child actually get going. Killing the parent the instant the
+  // dispatch returns measures nothing useful: the first attempt did exactly that
+  // and the runner was gone inside 2.7 s ("exited or disappeared before writing a
+  // result"), so the run failed for reasons unrelated to owner scoping. The real
+  // case is a user quitting with a delegation already well under way.
+  await sleep(SETTLE_MS);
+
+  const runDir = findRunDir(asyncId);
+  const pidOf = (): number | undefined => {
+    if (!runDir) return undefined;
+    try { return JSON.parse(fs.readFileSync(path.join(runDir, "status.json"), "utf8")).pid as number; } catch { return undefined; }
+  };
+  const alive = (pid: number | undefined): boolean => {
+    if (!pid) return false;
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+  const childPid = pidOf();
+  const aliveBefore = alive(childPid);
+  console.error(`[probe] child pid=${childPid} aliveBeforeKill=${aliveBefore} runDir=${runDir ?? "(not found)"}`);
+  if (!aliveBefore) throw new Error("the child was already gone before the kill; nothing about owner scoping can be measured from this run");
+
+  const before = events.length;
+  events.push({ __probe: "kill-parent", asyncId, childPid, eventsBeforeKill: before });
+  client.stop();
+  await sleep(3_000);
+
+  // THE confound-killer. "Not delivered" only means anything if the child lived.
+  const aliveAfter = alive(childPid);
+  console.error(`[probe] child aliveAfterParentKill=${aliveAfter} (detached:true means it should survive)`);
+  events.push({ __probe: "child-survived-kill", aliveAfter });
+
+  const sessionFile = fs.readdirSync(sessionsDir)
+    .map((f) => path.join(sessionsDir, f))
+    .find((f) => f.endsWith(".jsonl"));
+  if (!sessionFile) throw new Error("no session file to resume — the probe cannot measure a respawn");
+  console.error(`[probe] respawning on ${sessionFile}`);
+
+  // The SAME session file, which is the whole point: at 0.50 that was enough.
+  const second = new PiClient(resolvePiSpawn(cwd, sessionsDir, runtime, { ...spawnOpts, resumeFile: sessionFile }));
+  events.push({ __probe: "respawn-boundary", sessionFile });
+  second.on("event", (e) => { events.push(e); const t = (e as { type?: string }).type; if (t) console.error(`[ev2] ${t} ${(e as { toolName?: string }).toolName ?? ""}`); });
+  second.on("ui-request", (u) => { uis.push(u); console.error(`[ui2] ${(u as { method?: string }).method}`); });
+  await second.start();
+  await sleep(180_000);
+  second.stop();
+
+  // The verdict, read off the events that arrived AFTER the boundary marker.
+  const boundary = events.findIndex((e) => (e as { __probe?: string }).__probe === "respawn-boundary");
+  const after = JSON.stringify(events.slice(boundary + 1));
+  const delivered = after.includes("subagent-notify")
+    || /Background task (completed|failed)/.test(after)
+    || /Detached foreground task (completed|failed)/.test(after);
+  console.error(`\n[probe] DELIVERED AFTER RESPAWN: ${delivered}`);
+  console.error(`[probe] (${events.length - boundary - 1} events after the respawn boundary)`);
+  // The run's own verdict, so "not delivered" can never be confused with "the
+  // child failed". Only state:"complete" makes a negative result meaningful.
+  const dir = findRunDir(asyncId);
+  if (dir) {
+    try {
+      const st = JSON.parse(fs.readFileSync(path.join(dir, "status.json"), "utf8")) as { state?: string; completionOwnerId?: string; steps?: Array<{ error?: string }> };
+      console.error(`[probe] run state=${st.state} ownerId=${st.completionOwnerId} err=${st.steps?.map((x) => x.error).filter(Boolean).join("; ") || "(none)"}`);
+    } catch { console.error("[probe] could not read the run's status.json"); }
+  }
+}
+
+try {
+  if (mode === "respawn") {
+    await runRespawn();
+  } else {
+    await client.start();
+    await client.send({ type: "prompt", message: prompt });
+    // Long enough for dispatch + child completion + the triggered delivery turn.
+    await sleep(mode === "fg" ? 90_000 : 150_000);
+  }
 } finally {
   dump();
   client.stop();

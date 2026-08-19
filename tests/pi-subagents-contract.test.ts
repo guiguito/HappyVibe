@@ -1,11 +1,12 @@
 /**
  * Contract tests — every pi-subagents behaviour HappyVibe is pin-coupled to
- * (the pin-bump gate). Three groups, all key-free (no Pi spawn, no model):
+ * (the pin-bump gate). Five groups, all key-free (no Pi spawn, no model):
  *
  *   1. the active-run inventory behind /hv-subagent-list       (the deep import)
  *   2. the parent-blocking wait tool                            (PRD §12 guard)
  *   3. bundled agents' `tools:` allowlist                       (delegation works)
  *   4. rpc mode is UI-ful, disarming the auto-drain              (PRD §12 guard)
+ *   5. completion delivery is scoped to a PROCESS                (PRD §12 guard)
  *
  * Groups 2-4 exist because the 0.34.0 → 0.40.0 bump broke or endangered all three
  * SILENTLY — no test failed, and each defeats the same locked decision ("delegate
@@ -47,6 +48,8 @@ import * as path from "node:path";
 import { listAsyncRuns } from "../pi-runtime/node_modules/pi-subagents/src/runs/background/async-status.ts";
 import { ASYNC_DIR } from "../pi-runtime/node_modules/pi-subagents/src/shared/types.ts";
 import { drainOutstandingWork } from "../pi-runtime/node_modules/pi-subagents/src/runs/background/auto-drain.ts";
+import registerSubagentNotify from "../pi-runtime/node_modules/pi-subagents/src/runs/background/notify.ts";
+import { currentCompletionOwnerId } from "../pi-runtime/node_modules/pi-subagents/src/shared/completion-owner.ts";
 import { REDACTED_PROMPT, WAIT_TOOLS, displayableTask, isRedactedPrompt, isWaitTool } from "../pi-runtime/extensions/hv-rules";
 
 const BRIDGE = path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts");
@@ -407,5 +410,150 @@ describe("RPC mode is UI-ful, which is what disarms the headless auto-drain", ()
 
     // And the function is genuinely blocking, so the guard is load-bearing.
     expect(typeof drainOutstandingWork).toBe("function");
+  });
+});
+
+describe("async completion delivery is scoped to a PROCESS, so HappyVibe claims the scope", () => {
+  // pi-subagents 0.51 (upstream #1225, "concurrent windows sharing one session
+  // file cannot consume each other's results") refuses any non-foreground
+  // completion whose `completionOwnerId` differs from the current process's, and
+  // mints that id as a randomUUID PER PI PROCESS.
+  //
+  // HappyVibe respawns Pi on purpose — hibernation wake, MCP live-reload, app
+  // relaunch — and resumes the SAME session file precisely so a detached run is
+  // never orphaned (PRD §12). A per-process id makes the resumed parent a
+  // stranger to its own child: the artifact lands on disk, /hv-subagent-list
+  // resyncs the card, and the answer never reaches the model. At 0.50 the guard
+  // was session-id only and this path worked.
+  //
+  // So extensions/hv-owner-seed.ts claims the registry symbol from
+  // HV_SUBAGENT_OWNER before pi-subagents can mint one. These tests measure the
+  // MECHANISM rather than scanning for it: the refusal is exercised, and so is
+  // the `??=` that makes a pre-claimed value win.
+  const OWNER_KEY = Symbol.for("pi-subagents.completion-owner-id");
+  const SESSION = "/tmp/session-under-test.jsonl";
+
+  /** Enough of an ExtensionAPI for the notifier: it sends and it subscribes. */
+  const fakePi = () => {
+    const sent: Array<{ customType?: string; content?: string }> = [];
+    return {
+      sent,
+      pi: {
+        sendMessage: (message: { customType?: string; content?: string }) => { sent.push(message); },
+        events: { on: () => () => {} },
+      },
+    };
+  };
+
+  const completion = (ownerId: string | undefined) => ({
+    id: "child-run-1",
+    runId: "child-run-1",
+    sessionId: SESSION,
+    source: "async" as const,
+    agent: "code-explorer",
+    success: true,
+    state: "complete",
+    summary: "the child's whole answer",
+    ...(ownerId === undefined ? {} : { completionOwnerId: ownerId }),
+  });
+
+  it("delivers when the owner matches — the case a claimed id restores", async () => {
+    const { pi, sent } = fakePi();
+    const notifier = registerSubagentNotify(
+      pi as never,
+      { currentSessionId: SESSION, completionOwnerId: "hv-session-42" },
+      { batchConfig: { enabled: false } },
+    );
+    const accepted = await notifier.deliver(completion("hv-session-42"));
+    expect(accepted, "same owner id ⇒ delivered").toBe(true);
+    expect(sent.map((m) => m.customType)).toEqual(["subagent-notify"]);
+    notifier.dispose();
+  });
+
+  it("REFUSES when the owner differs, which is what a respawn used to look like", async () => {
+    const { pi, sent } = fakePi();
+    const notifier = registerSubagentNotify(
+      pi as never,
+      // A respawned Pi: same session file, brand-new randomUUID owner.
+      { currentSessionId: SESSION, completionOwnerId: "a-fresh-process-uuid" },
+      { batchConfig: { enabled: false } },
+    );
+    const accepted = await notifier.deliver(completion("the-dead-process-uuid"));
+    expect(accepted, "owner mismatch ⇒ refused").toBe(false);
+    expect(sent, "and nothing whatsoever reaches the model").toHaveLength(0);
+    notifier.dispose();
+  });
+
+  it("refuses a completion carrying NO owner id at all", async () => {
+    // Belt and braces: `!state.completionOwnerId || result.completionOwnerId !==
+    // state.completionOwnerId` also rejects an absent id, so a pre-0.51 result
+    // file left on disk across the upgrade is dropped rather than mis-delivered.
+    const { pi, sent } = fakePi();
+    const notifier = registerSubagentNotify(
+      pi as never,
+      { currentSessionId: SESSION, completionOwnerId: "hv-session-42" },
+      { batchConfig: { enabled: false } },
+    );
+    expect(await notifier.deliver(completion(undefined))).toBe(false);
+    expect(sent).toHaveLength(0);
+    notifier.dispose();
+  });
+
+  it("a FOREGROUND completion is exempt, so blocking delegations never needed this", async () => {
+    // `result.source !== "foreground"` guards the check. Worth pinning: it is why
+    // an `async:false` delegation was unaffected by #1225, and why the seed only
+    // has to cover the async path.
+    const { pi, sent } = fakePi();
+    const notifier = registerSubagentNotify(
+      pi as never,
+      { currentSessionId: SESSION, completionOwnerId: "hv-session-42" },
+      { batchConfig: { enabled: false } },
+    );
+    const accepted = await notifier.deliver({ ...completion("someone-else"), source: "foreground" });
+    expect(accepted).toBe(true);
+    expect(sent).toHaveLength(1);
+    notifier.dispose();
+  });
+
+  it("a pre-claimed symbol wins — the whole mechanism the seed relies on", () => {
+    const prior = (globalThis as Record<symbol, unknown>)[OWNER_KEY];
+    try {
+      delete (globalThis as Record<symbol, unknown>)[OWNER_KEY];
+      (globalThis as Record<symbol, unknown>)[OWNER_KEY] = "hv-session-42";
+      // `??=` means upstream never overwrites a value already in the registry.
+      expect(currentCompletionOwnerId()).toBe("hv-session-42");
+      expect(currentCompletionOwnerId(), "and it stays stable on re-read").toBe("hv-session-42");
+    } finally {
+      if (prior === undefined) delete (globalThis as Record<symbol, unknown>)[OWNER_KEY];
+      else (globalThis as Record<symbol, unknown>)[OWNER_KEY] = prior;
+    }
+  });
+
+  it("upstream still mints a random id when nobody claimed it (so we must)", () => {
+    const prior = (globalThis as Record<symbol, unknown>)[OWNER_KEY];
+    try {
+      delete (globalThis as Record<symbol, unknown>)[OWNER_KEY];
+      const minted = currentCompletionOwnerId();
+      // A uuid, not anything derived from the session — which is the bug for us.
+      expect(minted).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    } finally {
+      if (prior === undefined) delete (globalThis as Record<symbol, unknown>)[OWNER_KEY];
+      else (globalThis as Record<symbol, unknown>)[OWNER_KEY] = prior;
+    }
+  });
+
+  it("the seed claims that exact symbol, and reads it from the spawn env", () => {
+    const seed = readFileSync(path.join(__dirname, "..", "pi-runtime", "extensions", "hv-owner-seed.ts"), "utf8");
+    expect(seed).toContain('Symbol.for("pi-subagents.completion-owner-id")');
+    expect(seed).toContain("HV_SUBAGENT_OWNER");
+    // ??= so we never stomp a value some future upstream set first.
+    expect(seed).toMatch(/\?\?=/);
+  });
+
+  it("there is still no config key that turns the scoping off", () => {
+    // If upstream ever adds one, prefer it and delete the seed.
+    const notify = readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", "runs", "background", "notify.ts"), "utf8");
+    expect(notify).toContain("result.completionOwnerId !== state.completionOwnerId");
+    expect(notify).not.toMatch(/completionOwnerScoping|disableCompletionOwner|ignoreCompletionOwner/);
   });
 });
