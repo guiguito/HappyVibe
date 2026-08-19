@@ -37,7 +37,7 @@ This task's deliverable is a *measurement*, not a fix: the list of what the bump
 - [ ] **Step 1: Bring `.env` into the worktree**
 
 ```bash
-cp ~/Documents/Github/HappyVibe/.env /Users/guilhemduche/.superset/worktrees/HappyVibe/subagents-051/.env
+cp ~/Documents/Github/HappyVibe/.env ./.env   # from the worktree root; .env is gitignored
 ```
 
 - [ ] **Step 2: Confirm the provider has balance BEFORE anything else**
