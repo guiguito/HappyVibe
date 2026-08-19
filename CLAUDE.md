@@ -176,15 +176,20 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   import-free, and `loadExtension` catches a throw rather than crashing the session. Fails OPEN
   (no env var ⇒ upstream's own id), which is right for the utility client. Measured: the refusal
   is real and the claim propagates (`status.json` reads `ownerId=hv-<id>` instead of a uuid).
-  **Scope, stated honestly after measuring the live app: the refusal this guards against is not
-  currently reachable.** An async run is owned by the parent Pi process itself (see the async
-  entry below), so nothing outlives a respawn to be refused — which is also why both probe
-  attempts "lost" the child on the parent's SIGTERM: killing the parent kills the run's owner, and
-  there was never a mystery. The seed stays anyway, as cheap insurance rather than a fix for a live
-  data-loss path: `notify.ts`'s refusal is real and measured, upstream's `detached: true` spawn
-  path exists in source, and the day a run does outlive its launcher the failure would be silent.
-  It costs 12 lines, fails open, and is pinned — so if the reachable set changes, the tests say so
-  rather than the user losing an answer. Pinned by `tests/pi-subagents-contract.test.ts` (a
+  **The refusal IS reachable, and a first pass at scoping it got this wrong — the path is a FILE
+  on disk, not a live process.** An async run does die with its parent Pi (see the async entry
+  below), so no *process* survives a respawn to be refused. But a child that finished and wrote
+  its result before the parent went away leaves that result behind, and the next session start
+  scans it: `index.ts` calls `primeExistingResults()`, which routes through the same
+  `scheduleResult → handleResult → notifier.deliver` path as a live completion, and therefore
+  through the same owner check. Without a claimed id the resumed process never matches, and
+  because a refused delivery is **retried rather than discarded** (`if (!accepted)
+  scheduleResult(…, RETRY_DELAY_MS)`, with the file left un-marked) no future process delivers it
+  either — every one of them mints a different random uuid. That is permanent, silent loss of a
+  completed sub-agent's answer, plus a result file that never clears. So the seed is load-bearing
+  for the quit-or-reload-in-the-delivery-window case, not speculative insurance. Pinned as a ROUTE
+  assertion in the contract test, because the behavioural test alone would keep passing if
+  upstream stopped priming on-disk results at session start. Pinned by `tests/pi-subagents-contract.test.ts` (a
   behavioural harness over upstream's real `notify.ts`, not a source scan) and
   `tests/mcp-spawn.test.ts` (load order + both env cases).
 - **0.51 fixed NONE of the four things that hurt, and made one of them permanent.** The
