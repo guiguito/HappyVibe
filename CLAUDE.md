@@ -176,12 +176,15 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   import-free, and `loadExtension` catches a throw rather than crashing the session. Fails OPEN
   (no env var ⇒ upstream's own id), which is right for the utility client. Measured: the refusal
   is real and the claim propagates (`status.json` reads `ownerId=hv-<id>` instead of a uuid).
-  **What is NOT verified: that a detached child survives its parent at all.** Two probe attempts
-  had the child die on the parent's SIGTERM — once killed before it was established, once after a
-  25 s settle with liveness confirmed first — and nothing in pi-subagents kills a runner on
-  shutdown, so the cause is unattributed. Treat "detached runs SURVIVE a parent respawn" below as
-  UNVERIFIED at 0.51 until someone measures it; the seed is necessary either way, because without
-  it delivery is refused for certain. Pinned by `tests/pi-subagents-contract.test.ts` (a
+  **Scope, stated honestly after measuring the live app: the refusal this guards against is not
+  currently reachable.** An async run is owned by the parent Pi process itself (see the async
+  entry below), so nothing outlives a respawn to be refused — which is also why both probe
+  attempts "lost" the child on the parent's SIGTERM: killing the parent kills the run's owner, and
+  there was never a mystery. The seed stays anyway, as cheap insurance rather than a fix for a live
+  data-loss path: `notify.ts`'s refusal is real and measured, upstream's `detached: true` spawn
+  path exists in source, and the day a run does outlive its launcher the failure would be silent.
+  It costs 12 lines, fails open, and is pinned — so if the reachable set changes, the tests say so
+  rather than the user losing an answer. Pinned by `tests/pi-subagents-contract.test.ts` (a
   behavioural harness over upstream's real `notify.ts`, not a source scan) and
   `tests/mcp-spawn.test.ts` (load order + both env cases).
 - **0.51 fixed NONE of the four things that hurt, and made one of them permanent.** The
@@ -323,11 +326,18 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `pi-runtime/bin/pi-node.sh`, which routes through the bundled Electron helper
   (ELECTRON_RUN_AS_NODE) when packaged and falls back to `node` in dev. No system Node required.
 - Async subagents (PRD §12): delegations are async-by-default (`writeSubagentConfig` in
-  config.ts writes `asyncByDefault` at startup). Detached runs are `unref`'d — they SURVIVE a
-  parent respawn, but pi-subagents drops their completion unless the resumed session keeps the
-  SAME Pi session id, so ALWAYS resume via the session file (`startClient(meta,true)`). An active
-  async run must keep the session non-idle (`activity.asyncRuns`, gated in `isIdle`) or
-  hibernation/MCP-reload would `manager.stop()` mid-run. Lifecycle is relayed off pi-subagents'
+  config.ts writes `asyncByDefault` at startup). **An async run does NOT survive its parent —
+  measured in the running app at 0.51, and the opposite of what this entry used to claim.** A
+  delegation's `status.json` records `pid` = **the session's own Pi process** (verified: the pid in a
+  live run's status file was a direct child of the Electron main, in the app's own process group),
+  and the child agent runs as an ordinary non-detached child of it. There was no detached process
+  group anywhere on the machine while a real delegation ran. `async-execution.ts:521` does spawn
+  with `detached: true`, so the code path exists — it is simply not the one a top-level
+  workflow-mode delegation takes. Consequence: **`activity.asyncRuns` (gated in `isIdle`) is
+  LOAD-BEARING, not belt-and-braces** — it is the only thing standing between an in-flight
+  delegation and a hibernation/MCP-reload `manager.stop()` that would destroy it outright. Still
+  resume via the session file (`startClient(meta,true)`): that is what keeps the Pi session id
+  stable, which the completion path also keys on. Lifecycle is relayed off pi-subagents'
   in-process `pi.events` bus by the bridge as `hv.subagent` notifies (never on RPC stdout);
   `/hv-subagent-list` resyncs cards after a respawn (restoreActiveJobs does NOT re-emit started).
 - `installBuiltinAgents` (config.ts) decides "did the user edit this bundled agent?" by CONTENT
