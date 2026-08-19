@@ -80,7 +80,10 @@ let client: PiClient;
 beforeAll(async () => {
   // Sanity: the spawn spec must carry the pi-subagents extension + child bin.
   const spec = resolvePiSpawn(workDir, sessionDir, runtime, { agentDir });
-  expect(spec.args.filter((a) => a === "-e")).toHaveLength(3); // bridge + pi-subagents + pi-mcp-adapter
+  // Deliberately not a COUNT of -e flags: this file cares that pi-subagents is
+  // loaded, not how many extensions exist. The exact list (and the load order the
+  // permission gate depends on) is owned by tests/mcp-spawn.test.ts, so adding an
+  // extension updates one place instead of failing an unrelated suite's beforeAll.
   expect(spec.args.some((a) => a.includes("pi-subagents"))).toBe(true);
   expect(spec.env.PI_SUBAGENT_PI_BINARY).toBe(path.join(runtime, "bin/pi-node.sh"));
   expect(fs.existsSync(spec.env.PI_SUBAGENT_PI_BINARY)).toBe(true);

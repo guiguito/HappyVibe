@@ -70,6 +70,13 @@ export interface PiSpawnOptions {
       OpenAI, instead of the 5min/in-memory default. Global setting, resolved at
       spawn — same pattern as HV_BYPASS. */
   longCache?: boolean;
+  /** HappyVibe's own session id, which becomes HV_SUBAGENT_OWNER for
+      extensions/hv-owner-seed.ts to claim pi-subagents' completion-owner id
+      (0.51 / upstream #1225). Without it a RESPAWNED parent — hibernation wake,
+      MCP live-reload, app relaunch — is refused its own detached delegation's
+      result, silently. Stable across respawn by construction, which is the whole
+      requirement. Absent for the utility client, which never delegates. */
+  sessionId?: string;
 }
 
 /**
@@ -100,6 +107,13 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // B6: pi-subagents (RPC-validated, s0.3). Loaded as an -e extension per
       // its package.json `pi.extensions` entry; the subagent tool it registers
       // is a normal tool_call, so the bridge's permission gate applies.
+      // Claims pi-subagents' completion-owner id before it can mint a random
+      // one — see extensions/hv-owner-seed.ts for why that matters. MUST precede
+      // pi-subagents, which mints the id inside its own registration, and Pi
+      // loads -e extensions strictly sequentially in argv order. It registers no
+      // tools and no tool_call handler, so it does not touch the gate-is-last
+      // invariant documented below. Pinned by tests/mcp-spawn.test.ts.
+      "-e", path.join(runtimeDir, "extensions/hv-owner-seed.ts"),
       "-e", path.join(runtimeDir, PI_SUBAGENTS_RELPATH),
       // MCP: pi-mcp-adapter registers the `mcp` proxy tool via registerTool,
       // so the bridge's permission gate applies (docs/validation/m1.md).
@@ -193,6 +207,8 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
         : {}),
       ...(opts.skillsFile ? { HV_SKILLS_FILE: opts.skillsFile } : {}),
       ...(opts.longCache ? { PI_CACHE_RETENTION: "long" } : {}),
+      // 0.51 / #1225: a respawned session must still own its detached runs.
+      ...(opts.sessionId ? { HV_SUBAGENT_OWNER: `hv-${opts.sessionId}` } : {}),
       // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
       // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).
       PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, PI_SUBAGENT_BIN_RELPATH),

@@ -641,6 +641,15 @@ export function writeSubagentConfig(): void {
   // future version renames fails SILENT, a renamed tool name fails the contract
   // test loudly. Per-task blocking discretion lives at dispatch (`async:false`).
   config.waitTool = { ...(config.waitTool as object | undefined), enabled: false };
+  // PRD §12 (2026-08-19): pi-subagents 0.51 added this, and it decides whether a
+  // child starts fresh or FORKS the parent's session. Upstream's default is
+  // already "fresh" (fork-context.ts), which is what §12's isolation contract has
+  // always assumed — so this states a value rather than changing one. Stated
+  // because a future flip to "fork" would hand every sub-agent the parent's
+  // entire transcript, with no user-visible symptom and no failing test to
+  // announce it. tests/subagent-config.test.ts pins both halves: our key, and
+  // that upstream still agrees.
+  config.defaultSubagentContext = "fresh";
   fs.writeFileSync(file, `${JSON.stringify(config, null, "\t")}\n`);
 }
 

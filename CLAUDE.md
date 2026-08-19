@@ -158,6 +158,53 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   same measurement: `agent` on the completion event is the literal `"workflow"` (the bridge drops
   it, or the hand-off notice names a pipeline the user never chose), and **async is upstream's own
   default now** — a run with no `asyncByDefault` config still detached.
+- **A respawned session is a STRANGER to its own detached runs from 0.51 — unless we claim the
+  owner id first.** #1225 scopes async completion delivery to the launching Pi PROCESS:
+  `notify.ts:279` refuses any `source !== "foreground"` completion whose `completionOwnerId`
+  differs from the current process's, with **no config off-switch** and — unlike
+  `result-watcher.ts`'s `shouldProcessResult`, which falls back to a mission-binding file when
+  deciding whether to READ a result — **no fallback on the delivery path at all**. The id is a
+  `randomUUID()` cached on `globalThis` under `Symbol.for("pi-subagents.completion-owner-id")`
+  and minted inside pi-subagents' own registration (`index.ts:422`). At 0.50 the guard was
+  session-id only, so a respawn resuming the same session file still delivered.
+  `pi-runtime/extensions/hv-owner-seed.ts` claims that symbol from `HV_SUBAGENT_OWNER`
+  (= `hv-<HappyVibe session id>`), and `??=` is what makes it work — upstream never overwrites a
+  value already in the registry. **It must be the FIRST `-e`, which is why it is its OWN
+  extension**: Pi loads extensions strictly sequentially in argv order, import + factory one at a
+  time (`core/extensions/loader.js:440`), and the bridge is pinned LAST for the gate. It registers
+  no tools and no `tool_call` handler, so being first cannot change what the gate sees; it is
+  import-free, and `loadExtension` catches a throw rather than crashing the session. Fails OPEN
+  (no env var ⇒ upstream's own id), which is right for the utility client. Measured: the refusal
+  is real and the claim propagates (`status.json` reads `ownerId=hv-<id>` instead of a uuid).
+  **Scope, stated honestly after measuring the live app: the refusal this guards against is not
+  currently reachable.** An async run is owned by the parent Pi process itself (see the async
+  entry below), so nothing outlives a respawn to be refused — which is also why both probe
+  attempts "lost" the child on the parent's SIGTERM: killing the parent kills the run's owner, and
+  there was never a mystery. The seed stays anyway, as cheap insurance rather than a fix for a live
+  data-loss path: `notify.ts`'s refusal is real and measured, upstream's `detached: true` spawn
+  path exists in source, and the day a run does outlive its launcher the failure would be silent.
+  It costs 12 lines, fails open, and is pinned — so if the reachable set changes, the tests say so
+  rather than the user losing an answer. Pinned by `tests/pi-subagents-contract.test.ts` (a
+  behavioural harness over upstream's real `notify.ts`, not a source scan) and
+  `tests/mcp-spawn.test.ts` (load order + both env cases).
+- **0.51 fixed NONE of the four things that hurt, and made one of them permanent.** The
+  1,000-char completion truncation survives (`subagent-executor.ts:4194`), so the delivery repair
+  stays load-bearing — re-measured working at 0.51 by instrumenting the bridge's own handlers
+  (`substitution fired=true`, store keyed by the child `runId`, `results[].output` 4,098 chars).
+  `PROMPT_REDACTED` is unchanged, nothing restores `subagent:async-started` for the workflow path,
+  and "async workflows do not have inline `live-card` projection" is now **documented as intended**
+  (#1229/#1230) rather than a bug awaiting a fix — the missing live child transcript is a
+  permanent property now, not a pin to wait out. Every workaround stays. Also measured at 0.51:
+  `tool_execution_update` still zero, `details.asyncId` still on the async dispatch result and
+  still absent on the foreground one, `tool_execution_start` still the only event carrying `args`.
+  **A blocking delegation now costs ~14.8 KB** (was 4,947–5,532 at 0.50), of which the child's own
+  answer was 4,569 — the envelope alone roughly doubled; `subagent-context.test.ts` watches the
+  envelope separately for exactly this reason. `defaultSubagentContext` is new and still defaults
+  to `"fresh"`, and `writeSubagentConfig` now states it explicitly. `repairScan: true` is new and
+  deliberately NOT adopted — the `.active-runs` upgrade hole and the stale markers remain the
+  accepted decision, and #1162 exists to stop scanning. 30-day retention runs in a
+  `worker_threads` worker (unref'd, 60 s after activation), so it is NOT a child process and
+  carries no Dock-icon hazard.
 - **`tool_execution_update` is not emitted AT ALL for a subagent at 0.50** — zero on a blocking run,
   zero on an async one. There is no live child transcript: expanding a card shows nothing until the
   run ends, and `traceFromUpdate` is dead weight kept against a pin that restores streaming.
@@ -218,6 +265,15 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   true, there is no opt-out, and Pi awaits handlers serially (runner.js:585). The three links are
   pinned in `tests/pi-subagents-contract.test.ts`; if that group fails, re-measure `hasUI` with a
   probe extension before believing anything else.
+  Sharpened 2026-08-19, measured in Pi's own dist: the RPC uiContext is real PER METHOD, not
+  wholesale. `input`/`select`/`setTitle`/`setEditorText` emit `extension_ui_request` (the bridge's
+  channel), but `rpc-mode.js:152` is `async custom() { return undefined; }` — so an awaited
+  `ctx.ui.custom()` panel never settles. pi-mcp-adapter 2.26.1 (#365) fixed exactly that class of
+  hang by adding its own discriminator, `ctx.hasUI && ctx.mode === "tui"` (`isTuiMode` in init.ts,
+  `canRenderPanel` in commands.ts) — i.e. upstream now agrees with this entry. That makes the
+  pi-subagents hazard sharper, not softer: its drain still gates on BARE `ctx.hasUI`
+  (`index.ts:689`), which is the only thing keeping it dormant for us, so if it ever adopts
+  `ctx.mode` the drain arms and blocks every turn on its own async delegation.
 - **`typebox` is pinned in `pi-runtime` to exactly what `pi-coding-agent` declares — move them
   together.** The bridge does `import { Type } from "typebox"` (bare), so it resolves to whatever
   `pi-runtime/node_modules` hoists. It used not to be a direct dep at all, and the pi-subagents 0.40
@@ -270,11 +326,18 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `pi-runtime/bin/pi-node.sh`, which routes through the bundled Electron helper
   (ELECTRON_RUN_AS_NODE) when packaged and falls back to `node` in dev. No system Node required.
 - Async subagents (PRD §12): delegations are async-by-default (`writeSubagentConfig` in
-  config.ts writes `asyncByDefault` at startup). Detached runs are `unref`'d — they SURVIVE a
-  parent respawn, but pi-subagents drops their completion unless the resumed session keeps the
-  SAME Pi session id, so ALWAYS resume via the session file (`startClient(meta,true)`). An active
-  async run must keep the session non-idle (`activity.asyncRuns`, gated in `isIdle`) or
-  hibernation/MCP-reload would `manager.stop()` mid-run. Lifecycle is relayed off pi-subagents'
+  config.ts writes `asyncByDefault` at startup). **An async run does NOT survive its parent —
+  measured in the running app at 0.51, and the opposite of what this entry used to claim.** A
+  delegation's `status.json` records `pid` = **the session's own Pi process** (verified: the pid in a
+  live run's status file was a direct child of the Electron main, in the app's own process group),
+  and the child agent runs as an ordinary non-detached child of it. There was no detached process
+  group anywhere on the machine while a real delegation ran. `async-execution.ts:521` does spawn
+  with `detached: true`, so the code path exists — it is simply not the one a top-level
+  workflow-mode delegation takes. Consequence: **`activity.asyncRuns` (gated in `isIdle`) is
+  LOAD-BEARING, not belt-and-braces** — it is the only thing standing between an in-flight
+  delegation and a hibernation/MCP-reload `manager.stop()` that would destroy it outright. Still
+  resume via the session file (`startClient(meta,true)`): that is what keeps the Pi session id
+  stable, which the completion path also keys on. Lifecycle is relayed off pi-subagents'
   in-process `pi.events` bus by the bridge as `hv.subagent` notifies (never on RPC stdout);
   `/hv-subagent-list` resyncs cards after a respawn (restoreActiveJobs does NOT re-emit started).
 - `installBuiltinAgents` (config.ts) decides "did the user edit this bundled agent?" by CONTENT
@@ -637,7 +700,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   once the app is signed — untested, and the first thing to check when signing lands.
 - MCP OAuth is host-driven in main (`src/main/mcpOAuth.ts`): `OAuthClientProvider` + loopback callback + `shell.openExternal` + `state` CSRF check + `transport.finishAuth` + fresh transport reconnect. Tokens written as `AuthEntry` (stamped `serverUrl`) so the adapter reads them at runtime. IPC: `hv:mcp-authenticate` / `hv:mcp-logout`. Add-time confirm-with-tools modal; per-server Authenticate / Log out; startup status sweep. Contract test `tests/mcp-adapter-authformat.test.ts` must pass on any pi-mcp-adapter pin bump. See docs/validation/m1.md.
 - MCP intent: `mcp` is in `INTENT_TOOLS` (happyvibe-bridge.ts) — `requireIntent` injects a required `intent` into the adapter's proxy schema, so the model authors a customer-facing headline per MCP call (toolLabel.ts mcp case = `intent ?? unwrapMcpCall().display`). Proxy mode: the proxy `execute` ignores the top-level intent (not forwarded to the server). DIRECT MODE: the direct executor forwards params VERBATIM, so `requireIntent` also injects intent into every adapter-registered direct tool (`sourceInfo.path` contains pi-mcp-adapter) and the bridge's `tool_call` handler STRIPS `input.intent` for those tools before anything reads input (Pi's mutable-input hook; `strippedIntentTools` set). UI still sees intent — `tool_execution_start` fires with original args BEFORE tool_call handlers. Server tools with their own `intent` param: no injection, no strip. The permission prompt uses the FACTUAL `unwrapMcpCall().display` (now enriched with a key arg like url/query), NOT the model's intent (safety). `unwrapMcpCall` is the single source for that factual display (gate + renderer). Unit contract: tests/intent-direct-tools.test.ts. **`requireIntent` also runs on `turn_start`, not only `session_start`** — pi-mcp-adapter >=2.17.0 re-registers the `mcp` proxy tool whenever its DESCRIPTION changes (`syncProxyTool` → `registerProxyTool`), and each registration builds a FRESH `Type.Object`, silently discarding the injected `intent`. Symptom when this regresses: `tool_execution_start.args.intent === undefined` and `mcp-bridge.test.ts` fails FAST (~4 s, not the ~136 s askUntil signature). Re-applying per turn is free because requireIntent early-continues on already-wired tools.
-- MCP secrets can EXECUTE: pi-mcp-adapter >=2.17.0 resolves any env/header value in mcp.json via `resolveCommandSecret` — a leading `!` means "run this as a shell command and use stdout as the secret" (`spawnSync(..., {shell:true})`), `!!` escapes to a literal `!`, and anything else is plain `${VAR}` interpolation (our catalog's path). This is a code-execution surface reachable from a WORKSPACE `.mcp.json`, i.e. from a cloned repo. Pinned by tests/mcp-adapter-interpolation.test.ts.
+- MCP secrets can EXECUTE: pi-mcp-adapter >=2.17.0 resolves any env/header value in mcp.json via `resolveCommandSecret` — a leading `!` means "run this as a shell command and use stdout as the secret" (`spawnSync(..., {shell:true})`), `!!` escapes to a literal `!`, and anything else is plain `${VAR}` interpolation (our catalog's path). This is a code-execution surface reachable from a WORKSPACE `.mcp.json`, i.e. from a cloned repo. From 2.26.0 there is a SECOND one: per-server `requestHeadersCommand` (#353) `spawn`s a command on every outbound Streamable-HTTP/SSE call and uses its output as headers. Both are pinned by tests/mcp-adapter-interpolation.test.ts, which also asserts HappyVibe never authors either key on a user's behalf.
 - MCP live-reload: Pi/the adapter read MCP config only at spawn (no live tool-reload API). So `hv:mcp-set-server`/`hv:mcp-authenticate`/`hv:mcp-logout` call `scheduleMcpReload` (debounced, coalesces add+auth) → respawn affected live sessions RESUMED (`startClient(meta,true)` — the hibernation path; conversation preserved via the session file). Scope: global change → all live sessions, workspace change → that workspace's (`affectedSessionIds`, `mcpReloadScope.ts`). Only IDLE sessions (`activity.isIdle`) reload immediately; busy ones defer via `pendingMcpReload`, drained on `agent_end` / permission-prompt close. A respawn RESETS that session's in-memory `sessionGrants` + dangerous mode to safe defaults (`hv:session-reloading` → renderer notice). After respawn, main fires `/hv-tools` to refresh the displayed tool list.
 
 - Plan Mode (§23, `hv-plan.ts` + bridge + `src/main/plans.ts`): per-session read-only mode. The
