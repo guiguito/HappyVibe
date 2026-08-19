@@ -10,7 +10,13 @@
  *   node --experimental-strip-types --import jiti/register scripts/probe-050.ts fg
  *   node --experimental-strip-types --import jiti/register scripts/probe-050.ts waitoff
  *
- * Writes /tmp/probe-050-<mode>.json. Delete this file once d1.md is written.
+ * Writes /tmp/probe-050-<mode>.json.
+ *
+ * KEEP THIS. It started as a throwaway for the 0.50 bump and earned its place twice:
+ * it found that `subagent:async-started` never fires on the workflow path (a PRD §12
+ * regression invisible in source), and it proved the delivery repair end to end
+ * (4 tool calls → 1). Every pin bump wants it again — the name says 050 only because
+ * that is the bump it was born for.
  */
 import fs from "node:fs";
 import os from "node:os";
