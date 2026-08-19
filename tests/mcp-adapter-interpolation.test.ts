@@ -86,4 +86,30 @@ describe("pi-mcp-adapter interpolation contract", () => {
     // The ordinary path our catalog relies on stays pure interpolation.
     expect(resolveCommandSecret("${HV_MCP_TEST_KEY}", "test")).toBe("secret-value");
   });
+
+  it("requestHeadersCommand is a SECOND execution surface, new in adapter 2.26.0", () => {
+    // #353 added per-server `requestHeadersCommand`: it runs a command on every
+    // outbound Streamable-HTTP/SSE request and uses the output as headers. Like
+    // the `!` prefix above, per-server config is readable from a WORKSPACE
+    // .mcp.json — which can arrive inside a cloned repo — so this is a code
+    // execution path this app can be pointed at. Named here so a pin bump that
+    // widens or relocates it fails loudly instead of being discovered later.
+    const src = readFileSync(
+      new URL("../pi-runtime/node_modules/pi-mcp-adapter/request-headers-command.ts", import.meta.url),
+      "utf8",
+    );
+    expect(src).toMatch(/from "node:child_process"/);
+    expect(src).toMatch(/\bspawn\(/);
+  });
+
+  it("HappyVibe never writes requestHeadersCommand on a user's behalf", () => {
+    // The curated catalog and the plugin importer are the only two places that
+    // author mcp.json entries for the user. Neither may hand the adapter a
+    // command to run: our own secrets go through `${VAR}` interpolation, pinned
+    // by the cases above.
+    for (const file of ["src/main/plugins/mcpImport.ts", "src/main/plugins/catalog.generated.ts", "src/main/mcpCatalog.ts"]) {
+      const ours = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+      expect(ours, `${file} must not author a requestHeadersCommand`).not.toContain("requestHeadersCommand");
+    }
+  });
 });
