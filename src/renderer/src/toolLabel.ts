@@ -120,6 +120,45 @@ export function brandIconFor(identifier: string | undefined): string | undefined
 
 const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
 
+/**
+ * Name a pi-subagents artifact the model is reading, instead of showing its
+ * filename.
+ *
+ * These files are OUR plumbing surfacing in the user's transcript: from
+ * pi-subagents 0.50 the completion payload is truncated at a hardcoded 1,000
+ * characters, so the model routinely fetches the full result from disk — and the
+ * card read "Reading 7753ae03_code-explorer_0_output.md", which tells the user
+ * nothing and looks like a leak.
+ *
+ * The filename is generated, so it can be parsed rather than guessed:
+ * `<runId>_<agent>[_<index>]_<kind>.md` (shared/artifacts.ts getArtifactPaths,
+ * where the agent has had non-word characters replaced by `_`). The runId is the
+ * first segment; the kind is a fixed suffix; whatever sits between them is the
+ * agent, so the label can NAME the agent that did the work.
+ *
+ * Returns null for anything that is not one of these, so an ordinary file the
+ * user asked about keeps its normal "Reading <file>" label and its path chip.
+ */
+const ARTIFACT_DIRS = ["subagent-artifacts", "pi-subagents-artifacts"];
+const ARTIFACT_KINDS: Record<string, (agent: string) => string> = {
+  output: (a) => `Reading ${a}'s full report`,
+  input: (a) => `Reading the task given to ${a}`,
+  transcript: (a) => `Reading ${a}'s transcript`,
+  meta: (a) => `Reading ${a}'s run details`,
+};
+
+export function describeSubagentArtifact(filePath: string): string | null {
+  const parts = filePath.replace(/\/+$/, "").split("/");
+  const file = parts.pop() ?? "";
+  if (!ARTIFACT_DIRS.includes(parts.pop() ?? "")) return null;
+  const m = /^([^_]+)_(.+?)(?:_(\d+))?_(input|output|transcript|meta)\.(?:md|jsonl|json)$/.exec(file);
+  if (!m) return null;
+  const agent = m[2].trim();
+  if (!agent) return null;
+  return ARTIFACT_KINDS[m[4]]?.(agent) ?? null;
+}
+
+
 /** Collapse whitespace and cap at `n` chars with an ellipsis. */
 const truncate = (s: string, n = 60): string => {
   const one = s.replace(/\s+/g, " ").trim();
@@ -228,6 +267,11 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     }
     case "read": {
       const p = str("path");
+      const artifact = p ? describeSubagentArtifact(p) : null;
+      // A sub-agent artifact is app plumbing, not a file of the user's — say what
+      // it IS. Path deliberately omitted: the chip opens files in the editor, and
+      // this one lives in Application Support, not their project.
+      if (artifact) return { icon: "eye", label: artifact };
       return { icon: "eye", label: p ? `Reading ${basename(p)}` : "Reading a file", path: p ?? undefined };
     }
     case "grep":

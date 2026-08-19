@@ -3,7 +3,14 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, evaluate, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, displayableTask, evaluate, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import {
+  SUBAGENT_TASKS_TYPE, claimTask, emptyTaskMap, releaseTask, restoreTaskMap, serializeTaskMap,
+  stashPendingTask, taskFor, type TaskMapState,
+} from "./hv-subagent-tasks";
+import {
+  createChildOutputStore, rememberChildOutputs, substituteDeliveries, type DeliveryMessage,
+} from "./hv-subagent-delivery";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER } from "./hv-browser";
 import { unwrapMcpCall } from "./hv-mcp";
@@ -315,6 +322,30 @@ function persistMarks(pi: ExtensionAPI): void {
 function persistPlan(pi: ExtensionAPI): void {
   pi.appendEntry(PLAN_STATE_TYPE, { ...plan });
 }
+
+// Run-card captions (pi-subagents >=0.50 redacts the task everywhere we could read
+// it back — see hv-subagent-tasks.ts). Persisted the same way as plan state and
+// context marks: full snapshot, newest entry wins on restore.
+let subagentTasks: TaskMapState = emptyTaskMap();
+
+// What each completed child actually said, so the delivery can carry it instead of
+// upstream's 1,000-char truncation (hv-subagent-delivery.ts). Deliberately NOT
+// persisted: a completion and its delivery turn happen together, and writing multi-KB
+// outputs through appendEntry would bloat every session file to save a round-trip
+// that only a respawn-in-between could ever need.
+const childOutputs = createChildOutputStore();
+function persistSubagentTasks(pi: ExtensionAPI): void {
+  pi.appendEntry(SUBAGENT_TASKS_TYPE, serializeTaskMap(subagentTasks));
+}
+function restoreSubagentTasks(entries: SessionEntry[]): TaskMapState {
+  let out = emptyTaskMap();
+  for (const e of entries) {
+    if ((e.type === "custom" || e.type === "custom_message") && e.customType === SUBAGENT_TASKS_TYPE) {
+      out = restoreTaskMap(e.data); // last one seen = newest
+    }
+  }
+  return out;
+}
 // `restored` marks the one emit that replays persisted state on session_start
 // (respawn/hibernation) — main uses it to reconcile a stale enabled:true against
 // the plan file, without reverting a live re-entry into plan mode.
@@ -457,6 +488,11 @@ export default function (pi: ExtensionAPI) {
     skillManifest = loadManifest(); // §14: reflect this session's loaded skills
     const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
     restoreMarks(entries);
+    // Run-card captions survive a respawn AND an app restart: nothing on disk can
+    // rebuild them (0.50 redacts status.json too), so /hv-subagent-list's resync
+    // has no other source. Restored silently — the cards are re-emitted by the
+    // resync itself, not from here.
+    subagentTasks = restoreSubagentTasks(entries);
     // §23: plan state SURVIVES respawn (unlike dangerous mode). Restore + re-emit
     // so the renderer resyncs its banner/toggle after a hibernation/MCP respawn.
     plan = restorePlanState(entries as unknown as PlanSessionEntry[]);
@@ -563,8 +599,15 @@ export default function (pi: ExtensionAPI) {
 
   // The only place removal takes effect. Non-destructive: session file untouched.
   pi.on("context", async (event) => {
-    if (contextMarks.size === 0) return;
-    return { messages: filterMessages(event.messages as unknown as AgentMessage[], contextMarks) };
+    // Two independent rewrites of what the model is about to see. Order matters
+    // only in that both must be able to run: §9's removal marks, and the
+    // sub-agent delivery repair (hv-subagent-delivery.ts) — which would be
+    // skipped entirely when no marks exist if this handler still early-returned.
+    let messages = event.messages as unknown as AgentMessage[];
+    if (contextMarks.size > 0) messages = filterMessages(messages, contextMarks);
+    const repaired = substituteDeliveries(messages as unknown as DeliveryMessage[], childOutputs);
+    if (repaired) messages = repaired as unknown as AgentMessage[];
+    return contextMarks.size > 0 || repaired ? { messages } : undefined;
   });
 
   // Marks are persisted as custom entries; compaction rewrites history but keeps
@@ -645,6 +688,13 @@ export default function (pi: ExtensionAPI) {
           `call ${tool}() or poll with subagent status. You will be prompted with the result.`,
       };
     }
+    // The run card's caption, captured at the ONE point it is still readable:
+    // pi-subagents >=0.50 redacts `task` on every surface we could read it back
+    // from (events, status.json, metadata), so remember it now, before dispatch.
+    // Recorded even if this call is about to be denied — the store is
+    // last-write-wins per agent precisely so a denied task cannot outlive its
+    // retry (hv-subagent-tasks.ts).
+    if (tool === "subagent") stashPendingTask(subagentTasks, input.task, input.agent);
     // Direct MCP tools: drop the injected intent BEFORE anything reads input
     // (permission summaries stay factual, per the PRD) — the adapter would
     // forward it verbatim to the MCP server otherwise. The UI already has it:
@@ -1003,14 +1053,36 @@ export default function (pi: ExtensionAPI) {
     pi.events.on("subagent:async-started", (raw) => {
       const d = raw as { id?: string; agent?: string; task?: string; asyncDir?: string };
       if (!d.id) return;
-      relay({ stage: "started", runId: d.id, agent: d.agent, task: d.task, asyncDir: d.asyncDir });
+      // `d.task` is "[prompt redacted]" from 0.50 on, so the caption comes from what
+      // the tool_call stashed; displayableTask keeps the pre-0.50 value working if a
+      // future pin un-redacts it. Persisted so the resync below can rebuild cards
+      // after a respawn or an app restart, where no args event exists to re-derive.
+      const task = claimTask(subagentTasks, d.id, d.agent) ?? displayableTask(d.task);
+      persistSubagentTasks(pi);
+      relay({ stage: "started", runId: d.id, agent: d.agent, task, asyncDir: d.asyncDir });
     });
     pi.events.on("subagent:async-complete", (raw) => {
-      const d = raw as { runId?: string; id?: string; agent?: string; success?: boolean; summary?: string; state?: string };
+      const d = raw as { runId?: string; id?: string; agent?: string; success?: boolean; summary?: string; state?: string; results?: unknown };
+      // Keep each child's FULL answer before anything downstream sees the truncated
+      // rendering of it. Done first, and outside the runId guard, because this is
+      // keyed by the CHILD's run id — a different id from the workflow's, and the
+      // one the delivery message actually names.
+      rememberChildOutputs(childOutputs, d.results);
       const runId = d.runId ?? d.id;
       if (!runId) return;
       const status = d.success === true ? "success" : d.state === "paused" ? "interrupted" : "error";
-      relay({ stage: "complete", runId, agent: d.agent, status, summary: d.summary?.slice(0, 500) });
+      // 0.50 reports `agent:"workflow"` here for every top-level delegation, because
+      // its legacy single/chain entry points were removed and everything runs as a
+      // workflow. That is upstream's plumbing, not a name the user chose — relaying
+      // it made the hand-off notice read "workflow finished". Dropped, so the
+      // renderer falls back to a neutral word; the CARD keeps the real agent, which
+      // it took from the tool call's own args.
+      const agent = d.agent === "workflow" ? undefined : d.agent;
+      relay({ stage: "complete", runId, agent, status, summary: d.summary?.slice(0, 500) });
+      // The card is gone; its caption would otherwise accumulate in the session file
+      // for the life of the session.
+      releaseTask(subagentTasks, runId);
+      persistSubagentTasks(pi);
     });
     pi.events.on("subagent:control-event", (raw) => {
       const d = raw as { event?: { type?: string }; asyncDir?: string };
@@ -1056,6 +1128,10 @@ export default function (pi: ExtensionAPI) {
         runs = listAsyncRuns(ASYNC_DIR, { states: ["queued", "running"], sessionId }).map((r) => ({
           runId: r.id,
           agent: r.steps?.[0]?.agent,
+          // The caption cannot come off disk: 0.50 redacts steps[].description too
+          // (statusStepDescription ignores its own argument). This is the whole
+          // reason the map is persisted rather than kept in renderer state.
+          task: taskFor(subagentTasks, r.id) ?? displayableTask(r.steps?.[0]?.description),
           asyncDir: r.asyncDir,
         }));
       } catch {

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { readFileSync } from "node:fs";
-import { toolLabel, brandIconFor, BRAND_ICONS } from "../src/renderer/src/toolLabel";
+import { toolLabel, brandIconFor, BRAND_ICONS, describeSubagentArtifact } from "../src/renderer/src/toolLabel";
 import { MCP_CATALOG } from "../src/main/mcpCatalog";
 
 // W1.1 — human headlines for tool cards (PRD "Chat experience").
@@ -199,4 +199,53 @@ test("without an intent the browser card keeps its derived URL headline", () => 
   const l = toolLabel("browser_open", { url: "http://localhost:8000/minesweeper.html" });
   expect(l.label).toBe("Opening localhost:8000/minesweeper.html");
   expect(l.path).toBeUndefined();
+});
+
+// ── Sub-agent artifacts read back by the model ───────────────────────────────
+// pi-subagents 0.50 truncates the completion payload at a hardcoded 1,000 chars,
+// so the model routinely fetches the full result from disk. That surfaced in the
+// transcript as "Reading 7753ae03_code-explorer_0_output.md" — our plumbing, in
+// the user's face, looking like a leak.
+
+const ARTIFACTS = "/Users/x/Library/Application Support/HappyVibe/sessions/subagent-artifacts";
+
+test("names the agent instead of the generated filename", () => {
+  // Verbatim from a real session (2026-08-18).
+  expect(toolLabel("read", { path: `${ARTIFACTS}/7753ae03_code-explorer_0_output.md` }).label)
+    .toBe("Reading code-explorer's full report");
+});
+
+test("distinguishes the other artifact kinds", () => {
+  const at = (f: string): string => toolLabel("read", { path: `${ARTIFACTS}/${f}` }).label;
+  expect(at("7753ae03_code-explorer_0_input.md")).toBe("Reading the task given to code-explorer");
+  expect(at("7753ae03_code-explorer_0_transcript.jsonl")).toBe("Reading code-explorer's transcript");
+  expect(at("7753ae03_code-explorer_0_meta.json")).toBe("Reading code-explorer's run details");
+});
+
+test("drops the path chip for an artifact, keeps it for a real file", () => {
+  // The chip opens files in the editor; an artifact lives in Application Support,
+  // not the user's project, so offering to open it is a dead end.
+  expect(toolLabel("read", { path: `${ARTIFACTS}/7753ae03_code-explorer_0_output.md` }).path).toBeUndefined();
+  expect(toolLabel("read", { path: "/repo/src/app.ts" }).path).toBe("/repo/src/app.ts");
+});
+
+test("an ordinary file the user asked about is untouched", () => {
+  expect(toolLabel("read", { path: "/repo/src/output.md" }).label).toBe("Reading output.md");
+  // Same NAME, but not in the artifacts dir — the directory is what qualifies it.
+  expect(describeSubagentArtifact("/repo/notes/7753ae03_code-explorer_0_output.md")).toBeNull();
+});
+
+test("copes with an index-less name and an agent containing underscores", () => {
+  // getArtifactPaths omits the suffix when index is undefined, and replaces
+  // non-word characters in the agent with "_", so both shapes are real.
+  expect(describeSubagentArtifact(`${ARTIFACTS}/abc123_researcher_output.md`))
+    .toBe("Reading researcher's full report");
+  expect(describeSubagentArtifact(`${ARTIFACTS}/abc123_agents_md_maker_0_output.md`))
+    .toBe("Reading agents_md_maker's full report");
+});
+
+test("returns null rather than guessing at an unknown shape", () => {
+  expect(describeSubagentArtifact(`${ARTIFACTS}/not-an-artifact.md`)).toBeNull();
+  expect(describeSubagentArtifact(`${ARTIFACTS}/abc123_agent_0_unknownkind.md`)).toBeNull();
+  expect(describeSubagentArtifact("")).toBeNull();
 });

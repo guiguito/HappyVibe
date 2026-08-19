@@ -1,15 +1,20 @@
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
 import {
   asyncResultInfo,
   delegationHint,
   delegationLabel,
   formatElapsed,
+  isSubagentQuery,
   isSubagentTool,
   joinToolPermissions,
   mergeTrace,
   parseAgents,
   parseSubagentEvent,
   parseTools,
+  runLabel,
   traceFor,
   traceFromEnd,
   traceFromUpdate,
@@ -215,6 +220,58 @@ describe("delegationLabel", () => {
     expect(label.endsWith("…")).toBe(true);
   });
 
+  test("never captions a card with pi-subagents 0.50's redaction", () => {
+    // 0.50 replaces task/goal with REDACTED_PROMPT on every surface the UI could
+    // read. The bridge substitutes the task it remembered at tool_call time, and
+    // this is the backstop for any path that reads upstream's value directly. An
+    // empty caption is the intended degradation — showing "[prompt redacted]" to a
+    // user who just typed the task is worse than showing nothing.
+    expect(delegationLabel({ task: REDACTED_PROMPT })).toBe("");
+    expect(delegationLabel({ intent: REDACTED_PROMPT, task: "the real task" })).toBe("the real task");
+    expect(runLabel(REDACTED_PROMPT)).toBe("");
+    expect(runLabel("map the repo")).toBe("map the repo");
+    expect(runLabel(undefined)).toBe("");
+  });
+
+  test("an async dispatch RE-KEYS its card to the runId instead of deleting it", () => {
+    // The 0.50 regression this guards: every top-level delegation now runs as
+    // mode:"workflow", and that path emits `subagent:async-complete` but NEVER
+    // `subagent:async-started` (measured twice with a probe extension). The card
+    // used to be raised by the `started` notify, so an async delegation showed the
+    // user nothing for its whole life and then dropped a result in — the inverse of
+    // PRD §12. tool_execution_end carries details.asyncId and the card already has
+    // the real agent and task from the call's own args, so the card is converted
+    // rather than dropped. Pinned as a source scan (the renderer suite has no DOM):
+    // the old `delete next[t.toolCallId]` with no re-key is the bug.
+    const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+    const block = app.slice(app.indexOf("const detached = asyncResultInfo(t.result)"));
+    expect(block.slice(0, 700)).toMatch(/next\[detached\.asyncId\]\s*=/);
+    // Idempotent against a `started` notify that DID arrive (nested/single runs).
+    expect(block.slice(0, 700)).toMatch(/next\[detached\.asyncId\]\s*\?\?/);
+  });
+
+  test("asyncResultInfo reads the runId the completion notify will use", () => {
+    // Measured 2026-08-17: details.asyncId === details.runId === the runId on the
+    // hv.subagent complete notify, so a card keyed by asyncId is the same card the
+    // completion and the /hv-subagent-list resync will find.
+    expect(asyncResultInfo({ details: { asyncId: "fa7d236f", runId: "fa7d236f" } })).toEqual({ asyncId: "fa7d236f" });
+    expect(asyncResultInfo({ details: {} })).toBeNull();
+    expect(asyncResultInfo(undefined)).toBeNull();
+  });
+
+  test("the async card and the resync path both route through runLabel", () => {
+    // Renderer tests have no DOM (vitest.config.ts collects .ts only), so the
+    // contract is pinned in two halves: the mapping above as data, and the ABSENCE
+    // of the raw reads here as a source scan — an absence is exactly what a render
+    // test would not fail on. Both sites used to be `sub.task ?? ""` / `x.task ?? ""`,
+    // which is how the redaction would reach the screen.
+    const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+    expect(app).not.toMatch(/label:\s*sub\.task\s*\?\?/);
+    expect(app).not.toMatch(/label:\s*x\.task\s*\?\?/);
+    expect(app).toMatch(/label:\s*runLabel\(sub\.task\)/);
+    expect(app).toMatch(/label:\s*runLabel\(x\.task\)/);
+  });
+
   test("empty/garbage args → empty label (not a crash)", () => {
     expect(delegationLabel(undefined)).toBe("");
     expect(delegationLabel({ intent: "   " })).toBe("");
@@ -322,5 +379,39 @@ describe("traceFor (V2.C1 sticky-section trace lookup)", () => {
     expect(traceFor(items, "other")).toBeUndefined();
     expect(traceFor(items, "missing")).toBeUndefined();
     expect(traceFor([], "call-1")).toBeUndefined();
+  });
+});
+
+describe("a subagent status poll is not a delegation", () => {
+  // Reported from a real session: one delegation produced FOUR tool calls, and the
+  // third — `subagent {action:"status", id}` — drew a delegation card with no agent
+  // and no task, rendering literally "→ asked ?". It is the model polling its own
+  // machinery, not work anyone asked for.
+  test("recognises the poll the model actually sent", () => {
+    expect(isSubagentQuery({ action: "status", id: "7753ae03" })).toBe(true);
+    expect(isSubagentQuery({ action: "list" })).toBe(true);
+  });
+
+  test("never hides a real delegation", () => {
+    // The delegation from the same session.
+    expect(isSubagentQuery({ agent: "code-explorer", task: "Explore the architecture" })).toBe(false);
+    // Conservative on purpose: pi-subagents 0.50 sends NO args on
+    // tool_execution_end, so "no agent" alone would suppress genuine work.
+    expect(isSubagentQuery(undefined)).toBe(false);
+    expect(isSubagentQuery({})).toBe(false);
+    // An action that also names an agent is a dispatch, not a query.
+    expect(isSubagentQuery({ action: "run", agent: "code-explorer" })).toBe(false);
+    // A blank action is not an action.
+    expect(isSubagentQuery({ action: "   " })).toBe(false);
+  });
+
+  test("App.tsx suppresses the card, beside the wait tool it belongs with", () => {
+    // Absence assertion — the renderer suite has no DOM, so the wiring is pinned by
+    // source scan (tests/modal-layer.test.ts pattern). The card must be skipped
+    // BEFORE tool_execution_start builds one, or the sticky run card appears too.
+    const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+    const guard = app.indexOf("isSubagentQuery(");
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(app.indexOf('e.type === "tool_execution_start"'));
   });
 });

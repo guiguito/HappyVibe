@@ -15,11 +15,7 @@ import { resolvePiSpawn } from "../src/main/pi/spawn";
  * Pattern of agents-bridge.test.ts; client killed in a finally.
  */
 
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-intent-dir-"));
@@ -40,9 +36,9 @@ test.skipIf(!KEY)(
   async () => {
     const spec = resolvePiSpawn(workDir, sessionDir, runtime, {
       agentDir,
-      providerEnv: { DEEPSEEK_API_KEY: KEY! },
+      providerEnv: PROVIDER_ENV,
       rulesFile,
-      model: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+      model: MODEL,
     });
     const client = new PiClient(spec);
     const events: PiEvent[] = [];

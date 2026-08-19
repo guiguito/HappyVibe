@@ -6,11 +6,7 @@ import { PiClient } from "../src/main/pi/PiClient";
 import { PI_MCP_ADAPTER_RELPATH } from "../src/main/pi/spawn";
 
 // Tiny .env loader — keeps tests dependency-free
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 let client: PiClient;
 afterEach(() => client?.stop());
 
@@ -34,12 +30,12 @@ test.skipIf(!KEY)("mcp proxy call surfaces an unwrapped hv.permission prompt; Al
       // tests/mcp-spawn.test.ts.
       "-e", path.join(runtime, PI_MCP_ADAPTER_RELPATH),
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
-      "--provider", "deepseek", "--model", "deepseek-v4-flash",
+      "--provider", MODEL.provider, "--model", MODEL.modelId,
     ],
     // HOME/XDG redirected into tmp: the adapter also reads ~/.config/mcp/mcp.json
     // and ~/.pi/agent/mcp.json — the developer's real servers must not leak in.
     env: {
-      ...process.env, DEEPSEEK_API_KEY: KEY!,
+      ...process.env, ...PROVIDER_ENV,
       HOME: tmp, XDG_CONFIG_HOME: path.join(tmp, ".config"),
     } as Record<string, string>,
     cwd: tmp,

@@ -15,11 +15,7 @@ import { PiClient } from "../src/main/pi/PiClient";
  * agents-md-bridge.test.ts.
  */
 
-for (const line of fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : []) {
-  const m = line.match(/^([A-Z_0-9]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 
@@ -36,7 +32,7 @@ function makeClient(cwd: string, sessionDir: string, env: Record<string, string>
       path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
       "--mode", "rpc", "--session-dir", sessionDir,
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
-      "--provider", "deepseek", "--model", "deepseek-v4-flash",
+      "--provider", MODEL.provider, "--model", MODEL.modelId,
     ],
     cwd,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...env } as Record<string, string>,
@@ -105,7 +101,7 @@ test.skipIf(!KEY)(
   async () => {
     const cwd = cwdWithAgent();
     const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-disc-sess-"));
-    const h = makeClient(cwd, sessionDir, { DEEPSEEK_API_KEY: KEY! });
+    const h = makeClient(cwd, sessionDir, PROVIDER_ENV);
     try {
       await h.client.start();
       const b1 = h.events.length;

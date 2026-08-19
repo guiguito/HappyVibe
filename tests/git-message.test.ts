@@ -11,17 +11,7 @@ import type { GitFileChange } from "../src/main/gitParse";
  * live suite uses).
  */
 
-// Same inline .env reader the other live tests use: only fills what is UNSET, so
-// a shell value (npm test's sk-REPLACE) always wins and the live arm self-skips.
-const envPath = path.join(__dirname, "..", ".env");
-if (fs.existsSync(envPath)) {
-  for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
-    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
-    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
-  }
-}
-const RAW_KEY = process.env.DEEPSEEK_API_KEY;
-const KEY = RAW_KEY && !RAW_KEY.startsWith("sk-REPLACE") ? RAW_KEY : undefined;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const FILES: GitFileChange[] = [
   { path: "src/auth.ts", status: "modified", staged: false, additions: 12, deletions: 3 },
@@ -93,8 +83,8 @@ describe.skipIf(!KEY)("draftCommitMessage (live DeepSeek flash)", () => {
       runtimeDir,
       process.cwd(),
       { diff: DIFF, files: FILES, recentSubjects: ["fix(auth): stop the retry loop", "feat(ui): add a badge"] },
-      { provider: "deepseek", modelId: "deepseek-v4-flash" },
-      { DEEPSEEK_API_KEY: KEY! }
+      MODEL,
+      PROVIDER_ENV
     );
 
     expect(msg, "a configured provider must produce a draft").toBeTruthy();
@@ -188,8 +178,8 @@ describe.skipIf(!KEY)("draftPullRequest (live DeepSeek flash)", () => {
       runtimeDir,
       process.cwd(),
       { commits: ["fix(auth): stop the retry loop"], diff: DIFF, branch: "fix/retry", base: "main" },
-      { provider: "deepseek", modelId: "deepseek-v4-flash" },
-      { DEEPSEEK_API_KEY: KEY! }
+      MODEL,
+      PROVIDER_ENV
     );
     expect(draft, "a configured provider must produce a draft").toBeTruthy();
     expect(draft!.title.includes("\n")).toBe(false);

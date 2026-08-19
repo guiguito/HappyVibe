@@ -20,7 +20,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   and it was ~20 of the 55 typecheck runs in this repo's history.
 
 ## Tests
-- Live-Pi tests (real DeepSeek; `DEEPSEEK_API_KEY` in `.env`, skipIf-gated) — **17 files** as of
+- **Which model the live tests use is decided in ONE place: `tests/liveModel.ts`.** It loads `.env`
+  and resolves, first usable key wins: `OPENROUTER_API_KEY` → `openrouter` /
+  `deepseek/deepseek-v4-flash` (the floating "latest" alias; the dated snapshot is `-0731`), else
+  `DEEPSEEK_API_KEY` → `deepseek` / `deepseek-v4-flash`, else `KEY` is undefined and everything
+  skips. Live files import `{ KEY, MODEL, PROVIDER_ENV }` from it — never re-inline a provider, a
+  model id or an `.env` loader (16 files each carried their own copy, which is how one dead account
+  produced 4 failures that read as a 0.50 regression). OpenRouter is preferred because it can be
+  topped up without touching a provider account. Measured 2026-08-17: Pi accepts
+  `--provider openrouter --model deepseek/deepseek-v4-flash` and a bogus key returns OpenRouter's
+  own `401 User not found`, so the route is proven independently of any balance. Pricing is
+  ~$0.08/M in, $0.17/M out — a full serial batch costs pennies. Resolver pinned by
+  `tests/live-model.test.ts`.
+- Live-Pi tests (real model via the resolver above, skipIf-gated) — **17 files** as of
   2026-08-16 (was 14; browser-bridge, terminal-bridge and git-message joined since).
   Source of truth = `grep -rl "skipIf(!KEY" tests/` — RE-DERIVE IT, never trust a list in prose.
   The count in this file has drifted twice; the grep has not.
@@ -32,6 +44,9 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   Run it only when `npm run live:why` prints something — that prints the changed files which
   are Pi-facing (`pi-runtime/extensions/`, `src/main/pi/`, or a live test file). Empty output
   means the batch is not required; SAY so, don't silently omit it.
+  **It diffs `main...HEAD`, so it only sees COMMITTED work** — staging a pin bump and asking is
+  silence, not a green light, and `git add` does not change that. Check it after the commit that
+  carries the change, not before (this reads as "the gate script regressed" if you forget).
   (`--no-file-parallelism` is load-bearing: concurrent files mean concurrent DeepSeek sessions,
   and the provider degrades under that — the residual "flakes" were turns that came back with no
   tool call at all. Serial costs ~6 min and is green.)
@@ -49,10 +64,15 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   and 1.27% of all tool output, so there is no context to save — and one agent spawn costs ~45k
   tokens, i.e. 67% of what every test run in this repo's history cost combined, to hand back a
   paraphrase of the stack trace you needed verbatim.
-- Non-live suite = `npm test` (= `DEEPSEEK_API_KEY=sk-REPLACE vitest run`). No exclude list:
-  every live file computes `KEY` as undefined when the key starts `sk-REPLACE`, and their inline
-  `.env` loader only fills vars that are UNSET — so the shell value wins and all 14 skip
-  themselves. This is exactly what CI runs (CI has no key at all), and it is STRICTLY MORE than
+- Non-live suite = `npm test`
+  (= `DEEPSEEK_API_KEY=sk-REPLACE OPENROUTER_API_KEY=sk-REPLACE vitest run`). No exclude list:
+  the resolver treats an `sk-REPLACE` key as ABSENT for either provider, and its `.env` loader only
+  fills vars that are UNSET — so the shell value wins and every live file skips itself.
+  **BOTH vars must be neutralised.** Setting only the DeepSeek one meant that the day an
+  OpenRouter key landed in `.env`, `npm test` would silently stop being the non-live suite: 25-40 s
+  becomes ~6 min and starts spending money, with nothing in the output saying so. Verified in both
+  directions (`tests/live-model.test.ts` plus an end-to-end check that `npm test` still skips with a
+  real-looking key exported in the shell). This is exactly what CI runs (CI has no key at all), and it is STRICTLY MORE than
   the old exclude glob: 9 key-free tests live inside those 14 files (context-bridge ×2,
   rules-bridge ×3, agents-bridge ×2, agents-md-bridge, subagent-discovery-bridge) and the glob
   threw them on the floor. Measured: 139 files, 1253 tests, 15 skipped, ~25-40 s (2026-08-04).
@@ -104,7 +124,9 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   snapshot is empty) and the `status` RPC's structured `fleet` field withholds run identifiers by
   design (`rpc.ts:76` "never a run or async identifier") while `/hv-subagent-list` needs
   `{runId, agent, asyncDir}`. Gate: `tests/pi-subagents-contract.test.ts` (key-free) pins the
-  relative form, the exports map, and the three fields. Bumped 0.34.0 → 0.40.0 on 2026-08-02.
+  relative form, the exports map, and the three fields. Bumped 0.34.0 → 0.40.0 on 2026-08-02,
+  0.40.0 → 0.50.0 on 2026-08-17. At 0.50 the map lists **11** subpaths and `./shared-types`
+  looks like ASYNC_DIR's home but re-exports TYPES ONLY — re-derive, never hand-list.
 - **Two PRD §12 invariants are enforced by matching an upstream NAME or SHAPE, and 0.40.0 broke
   both silently — no test failed.** (1) The "never block on a delegation" guard matched the literal
   `"wait"`; 0.35.0 renamed the tool `subagent_wait` with no alias. Both names now live in
@@ -114,12 +136,75 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `toolCalls` (same commit as the deep-fan-out protocol-limit fix). Renderer maps `toolCalls` → the
   same rows and renders `finalOutput`. Both pinned in `tests/pi-subagents-contract.test.ts` +
   `agents-renderer.test.ts`; wire shapes in docs/validation/d1.md.
-- **A subagent's `tools:` list is a STRICT allowlist from pi-subagents 0.40 — an unknown name fails
+  (3) 0.50 **redacts the delegation `task`/`goal` to `"[prompt redacted]"` on every surface an
+  observer reads** — the lifecycle events, `status.json`'s `steps[].description`, metadata, the
+  child's input artifact — unconditionally (`statusStepDescription` ignores its own argument; no
+  config, no env). The child still gets the real task, so only DISPLAY breaks. Nothing can hand a
+  caption back, so `hv-subagent-tasks.ts` remembers it from the bridge's own `tool_call` and
+  PERSISTS it (a respawn has no args event and no on-disk task). One slot per agent,
+  last-write-wins — **not** a queue: a DENIED delegation also passes through `tool_call`, and a
+  queue would caption the next same-agent run with the refused task. `REDACTED_PROMPT` lives in
+  hv-rules.ts beside WAIT_TOOLS (the renderer cannot import a vendored package) and the contract
+  test asserts our copy still equals upstream's constant.
+- **Every delegation is a WORKFLOW from 0.50, and that silently removed the run card.**
+  `details.mode` is `"workflow"` with a `missionId` even for one child (0.50 deleted the legacy
+  entry points — `public-execution.ts`: *"action='single' is not supported"*). The workflow path
+  emits `subagent:async-complete` but **NEVER `subagent:async-started`** — measured twice with a
+  `console.error` inside the bridge's own handler. The sticky card was raised by that notify, so an
+  async delegation showed the user NOTHING for its whole life and then dropped a result in, the
+  inverse of PRD §12 and with no test covering it. The card is now RE-KEYED from the foreground one
+  at `tool_execution_end` (`details.asyncId`, measured `=== details.runId === the complete notify's
+  runId`), which needs no notify and survives whichever path upstream takes next. Two more from the
+  same measurement: `agent` on the completion event is the literal `"workflow"` (the bridge drops
+  it, or the hand-off notice names a pipeline the user never chose), and **async is upstream's own
+  default now** — a run with no `asyncByDefault` config still detached.
+- **`tool_execution_update` is not emitted AT ALL for a subagent at 0.50** — zero on a blocking run,
+  zero on an async one. There is no live child transcript: expanding a card shows nothing until the
+  run ends, and `traceFromUpdate` is dead weight kept against a pin that restores streaming.
+  `tests/agents-bridge.test.ts` asserts the absence so that day is loud. Related trap in the same
+  family: **`tool_execution_end` carries no `args`** — they are on `tool_execution_start` only, so a
+  delegation must be found by correlating START→END on `toolCallId`. That one had been hiding a
+  VACUOUS assertion (`undefined?.result?.details?.asyncId` is falsy, so "foreground has no asyncId"
+  passed for a delegation the test never found).
+- **The parent gets its child's whole answer because WE put it back — `hv-subagent-delivery.ts`.**
+  Upstream truncates the completion payload at a hardcoded 1,000 chars
+  (`subagent-executor.ts`, `formatWorkflowValue(v).slice(0, 1_000)`; unchanged at 0.51, no config),
+  so a 4,107-char report arrived as 1,108 chars of JSON cut mid-string and the model spent FOUR
+  tool calls recovering it (`subagent`, `subagent_wait`, `status`, `read`). The bridge remembers
+  `results[].output` from `subagent:async-complete` and substitutes it into the injected message
+  from the `context` hook — measured after: ONE tool call. Three things make it work and would
+  each break it silently: the notify IS rewritable in the context hook
+  (`{role:"custom", customType:"subagent-notify", content:<string>}` — probe before trusting);
+  the id in that message is the **child's** run id, NOT the workflow async UUID we key everything
+  else by (`results[].runId` is the join); and the message's own `details` is EMPTY, so the output
+  must be captured at completion. It is NOT persisted and does NOT rewrite the session file — the
+  record keeps what upstream sent, we repair what the model sees. Never "simplify" the refusals:
+  an unknown header, a message naming several children, or >32 KB must all fall through untouched.
+  Wire shapes + the measurements: docs/validation/d1.md §The delivery repair.
+- **A blocking delegation now costs ~5 KB of context; the async one costs 1.2 KB.** Measured
+  `toolResult.content`: 4,947–5,532 chars for `async:false` (the whole workflow return JSON inlined
+  — launch-contract digest, extension hashes, artifact paths, usage, acceptance scaffolding,
+  `childReport`) versus 1,255 for async (a `Run fan-out: n/64 used` receipt; the answer arrives on
+  the triggered turn). The child TRANSCRIPT still stays out, so isolation holds — but PRD §12's
+  "only the call and the final result enter the main context" is now ~5 KB a delegation on the
+  blocking path. `subagent-context.test.ts` branches on the path, because **the model picks `async`
+  itself and picked differently on consecutive identical runs** — never assert a bound that depends
+  on which it chose.
+- **Before believing ANY live-test failure at a new pin, check the account has balance.** 0.50's
+  bump produced four red live tests that matched the expected inventory precisely — transcript
+  gone, `asyncId` missing, no `tool_execution_update` — and all four were `402 Insufficient
+  Balance`. The tells were in the assertions (`expected 0 to be greater than 0`; `a real
+  delegation ran: expected undefined`): **no delegation ran at all**, so nothing about 0.50 was
+  being measured. All three shapes are in fact unchanged at 0.50 and are now pinned by key-free
+  source scans for exactly this reason. `curl -s -o /dev/null -w '%{http_code}'
+  https://api.deepseek.com/chat/completions -H "Authorization: Bearer $KEY" -d '{...}'` costs one
+  second and settles it. Full retraction: docs/validation/d1.md §pi-subagents 0.50.
+- **A subagent's `tools:` list is a STRICT allowlist from pi-subagents >=0.40 — an unknown name fails
   the whole run**, with `"Agent 'x' requested unavailable child tools: …"` (its new
   `src/runs/shared/tool-availability.ts`; no such check in 0.34, which ignored unknown names).
   Pi 0.83's builtins are exactly **bash, edit, find, grep, ls, read, write** — there is NO `glob`
   and NO `list`. Both bundled agents shipped asking for `glob, list` and were silently running
-  without them; at 0.40 that is fatal. Extension tools need more than a name (`subagentOnlyExtensions`
+  without them; from 0.40 that is fatal. Extension tools need more than a name (`subagentOnlyExtensions`
   / a path-like entry), so never just add one to `tools:`. Pinned by
   `tests/pi-subagents-contract.test.ts`, which derives the legal set from Pi's own registrations.
 - **`ctx.hasUI` is TRUE in `--mode rpc` — "RPC" is not "headless".** Measured, not inferred:

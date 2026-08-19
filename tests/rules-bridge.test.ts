@@ -15,11 +15,7 @@ import { askUntil } from "./reask";
  */
 
 // Tiny .env loader — keeps tests dependency-free (same as bridge.test.ts).
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-rules-cwd-"));
@@ -57,7 +53,7 @@ function makeClient(env: Record<string, string>): PiClient {
       path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
       "--mode", "rpc", "--no-session",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
-      "--provider", "deepseek", "--model", "deepseek-v4-flash",
+      "--provider", MODEL.provider, "--model", MODEL.modelId,
     ],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", HV_RULES_FILE: rulesPath, ...env } as Record<string, string>,
     cwd: workDir,
@@ -132,7 +128,7 @@ test.skipIf(!KEY)(
       rulesPath,
       JSON.stringify({ global: [{ layer: "command", pattern: "touch *", action: "deny" }], workspaces: {} }),
     );
-    const c = makeClient({ DEEPSEEK_API_KEY: KEY! });
+    const c = makeClient(PROVIDER_ENV);
     try {
       await c.start();
       const seen = requests.length; // only inspect requests from this point on

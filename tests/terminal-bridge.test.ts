@@ -6,11 +6,7 @@ import { PiClient } from "../src/main/pi/PiClient";
 import { askUntil } from "./reask";
 
 // Tiny .env loader — keeps tests dependency-free
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 let client: PiClient;
 afterEach(() => client?.stop());
 
@@ -40,11 +36,11 @@ function start(opts: { builtins?: Record<string, unknown>; allow?: boolean } = {
       path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
       "--mode", "rpc", "--no-session",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
-      "--provider", "deepseek", "--model", "deepseek-v4-flash",
+      "--provider", MODEL.provider, "--model", MODEL.modelId,
     ],
     env: {
       ...process.env,
-      DEEPSEEK_API_KEY: KEY!,
+      ...PROVIDER_ENV,
       ...(opts.builtins ? { HV_BUILTINS: JSON.stringify(opts.builtins) } : {}),
     } as Record<string, string>,
     cwd: tmp,

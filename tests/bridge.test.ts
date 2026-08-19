@@ -6,11 +6,7 @@ import { PiClient } from "../src/main/pi/PiClient";
 import { askUntil } from "./reask";
 
 // Tiny .env loader — keeps tests dependency-free
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 let client: PiClient;
 afterEach(() => client?.stop());
 
@@ -23,9 +19,9 @@ test.skipIf(!KEY)("bridge intercepts bash; deny blocks and agent continues", asy
       path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
       "--mode", "rpc", "--no-session",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
-      "--provider", "deepseek", "--model", "deepseek-v4-flash",
+      "--provider", MODEL.provider, "--model", MODEL.modelId,
     ],
-    env: { ...process.env, DEEPSEEK_API_KEY: KEY! } as Record<string, string>,
+    env: { ...process.env, ...PROVIDER_ENV } as Record<string, string>,
     cwd: tmp,
   });
   await client.start();
@@ -89,4 +85,11 @@ test.skipIf(!KEY)("bridge intercepts bash; deny blocks and agent continues", asy
   const forbidden = path.join(tmp, "forbidden.txt");
   expect(fs.existsSync(forbidden)).toBe(false);
   console.log("[bridge.test] PASS: forbidden.txt does NOT exist — deny successfully blocked tool call");
-}, 240_000); // up to 3 × 45 s of re-asking, plus spawn
+// 360 s, raised from 240 s on 2026-08-17. Not a masked failure — measured: this test
+// passes ALONE and timed out at exactly 240 s inside the full serial batch, twice in
+// the same shape. askUntil budgets 3 × 45 s of WAITING, but each re-ask also awaits a
+// prompt that may still be in flight, so under a slower provider (OpenRouter adds
+// latency over first-party DeepSeek) the real ceiling is well above 135 s + spawn.
+// The thing arrives, only late, which is the one case where a longer wait is the fix
+// rather than a papered-over flake — and no assertion is weakened by the extra room.
+}, 360_000);

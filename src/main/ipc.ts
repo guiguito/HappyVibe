@@ -1016,6 +1016,39 @@ export function registerIpc(win: BrowserWindow): void {
         }
       }
       send("hv:pi-event", { ...e, sessionId });
+      // ── An async delegation announces itself HERE, not on a lifecycle notify ──
+      // pi-subagents 0.50 runs every top-level delegation as a workflow, and that
+      // path emits `subagent:async-complete` but never `subagent:async-started`
+      // (measured — docs/validation/d1.md §pi-subagents 0.50). THREE things used to
+      // hang off that dead notify and all failed silently:
+      //   1. activity.asyncStarted — without it `isIdle` is true while a delegation
+      //      runs, so hibernation or an MCP live-reload could manager.stop() the
+      //      session mid-run. That is a correctness bug, not a cosmetic one.
+      //   2. the status poller — the card had no `currentTool`/turn/tool counts, so
+      //      a three-minute run showed "working · 3m21s" and looked frozen.
+      //   3. the audit record.
+      // The dispatch RESULT carries both ids we need (`asyncId` === the runId the
+      // completion notify uses, and `asyncDir` to tail), so it is the reliable
+      // trigger — and it needs no cooperation from upstream. `complete` still ends
+      // all three symmetrically.
+      if (e.type === "tool_execution_end" && (e as { toolName?: string }).toolName === "subagent") {
+        const d = (e as { result?: { details?: { asyncId?: unknown; asyncDir?: unknown } } }).result?.details;
+        const runId = typeof d?.asyncId === "string" ? d.asyncId : undefined;
+        const asyncDir = typeof d?.asyncDir === "string" ? d.asyncDir : undefined;
+        // Guard the (theoretical) race where a very fast child completes before its
+        // own dispatch event is processed: `complete` has then already run, and
+        // starting a poller here would leak a 500 ms timer nothing stops.
+        if (runId && !finishedAsyncRuns.has(runId)) {
+          activity.asyncStarted(sessionId, runId);
+          startSubagentPoll(sessionId, runId, asyncDir);
+          void log.append({
+            type: "subagent.async_started",
+            sessionId,
+            workspaceId: meta?.workspaceId,
+            data: { runId, agent: (e as { args?: { agent?: string } }).args?.agent },
+          });
+        }
+      }
       // The compaction session-file entry carries no reason — only this event
       // does. Log it so a restored boundary bubble can say WHY the history is
       // gone: Pi's auto-compaction is ON by default (settings default
@@ -1089,10 +1122,17 @@ export function registerIpc(win: BrowserWindow): void {
       const sub = parseSubagentNotify(r);
       if (sub) {
         if (sub.stage === "started" && sub.runId) {
+          // Belt-and-braces for the paths that DO still emit a start event (nested
+          // and single runs). The dispatch-result branch above is what fires for a
+          // top-level delegation at 0.50; `subagentPollers` dedupes the poller and
+          // `asyncStarted` is set-based, so the only thing worth guarding is the
+          // audit line, which must not be written twice for one run.
+          const already = subagentPollers.has(sub.runId);
           activity.asyncStarted(sessionId, sub.runId);
           startSubagentPoll(sessionId, sub.runId, sub.asyncDir);
-          void log.append({ type: "subagent.async_started", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, agent: sub.agent } });
+          if (!already) void log.append({ type: "subagent.async_started", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, agent: sub.agent } });
         } else if (sub.stage === "complete" && sub.runId) {
+          finishedAsyncRuns.add(sub.runId);
           activity.asyncEnded(sessionId, sub.runId);
           stopSubagentPoll(sub.runId);
           drainPendingReload(sessionId); // a deferred reload can now proceed
@@ -1444,6 +1484,13 @@ export function registerIpc(win: BrowserWindow): void {
 
   // ── Async subagent status pollers (one per live detached run, by runId) ────
   const subagentPollers = new Map<string, { sessionId: string; stop: () => void }>();
+  // Runs whose completion we have already handled. An async delegation is
+  // announced from its dispatch RESULT (0.50 emits no start event — see the
+  // tool_execution_end branch above), and a child fast enough to finish before
+  // that result is processed would otherwise be "started" after it ended,
+  // leaving a poller nothing ever stops. Bounded: one short id per delegation
+  // for the life of the window, and only for runs that actually completed.
+  const finishedAsyncRuns = new Set<string>();
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
     if (!asyncDir || subagentPollers.has(runId)) return;
     const stop = pollSubagentStatus(asyncDir, (status) => send("hv:subagent-status", { sessionId, runId, status }));

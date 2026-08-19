@@ -41,7 +41,7 @@ import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
-import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
+import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
@@ -640,7 +640,10 @@ export default function App(): React.JSX.Element {
           id: sub.runId,
           kind: "async",
           agent: sub.agent ?? "subagent",
-          label: sub.task ?? "",
+          // runLabel, not sub.task: from pi-subagents 0.50 the event's own task is
+          // redacted, and this caption must never show that. The bridge substitutes
+          // the task it remembered from the tool call (hv-subagent-tasks.ts).
+          label: runLabel(sub.task),
           startedAt: Date.now(),
           status: "running",
         };
@@ -657,6 +660,9 @@ export default function App(): React.JSX.Element {
           return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, status } } } : p;
         });
         // Hand-off notice: the actual result streams in on the triggered turn.
+        // `sub.agent` is absent for a 0.50 workflow run (the bridge drops upstream's
+        // generic "workflow"), so this reads "Subagent finished" rather than naming
+        // a pipeline the user never asked for. The CARD still shows the real agent.
         appendItem(sid, { kind: "notice", text: `${sub.agent ?? "Subagent"} finished — delivering results…`, pending: false });
         setTimeout(() => {
           setDelegations((p) => {
@@ -676,7 +682,7 @@ export default function App(): React.JSX.Element {
           for (const x of runs) {
             const existing = cur[x.runId];
             async[x.runId] = existing ?? {
-              id: x.runId, kind: "async", agent: x.agent ?? "subagent", label: x.task ?? "", startedAt: Date.now(), status: "running",
+              id: x.runId, kind: "async", agent: x.agent ?? "subagent", label: runLabel(x.task), startedAt: Date.now(), status: "running",
             };
           }
           return { ...p, [sid]: { ...fg, ...async } };
@@ -973,6 +979,15 @@ export default function App(): React.JSX.Element {
       // §23: plan-mode tools are internal transitions — the PlanCard/banner
       // represent them, so never render them as raw tool cards.
       if (PLAN_TOOL_NAMES.has((e as { toolName?: string }).toolName ?? "")) return;
+      // A `subagent` call that only INSPECTS a run (`{action:"status"}`) is the
+      // model polling its own machinery, not work the user asked for. It used to
+      // draw a delegation card with no agent and no task — literally "→ asked ?".
+      // Hidden for the same reason as the wait tool above; the delegation, its
+      // result and any artifact read all still show.
+      if (
+        isSubagentTool((e as { toolName?: string }).toolName)
+        && isSubagentQuery((e as { args?: unknown }).args)
+      ) return;
       if (e.type === "tool_execution_start") {
         const t = e as unknown as { toolCallId: string; toolName: string; args: unknown };
         commitStream(sid); // flush the live bubble before the tool card (order preserved)
@@ -1033,12 +1048,34 @@ export default function App(): React.JSX.Element {
         }));
         if (isSub) {
           // Async dispatch: this tool call returned immediately (details.asyncId).
-          // Drop the fg card — the async card (keyed by runId) owns the life.
-          if (asyncResultInfo(t.result)) {
+          // RE-KEY the card from toolCallId to runId rather than dropping it and
+          // waiting for the bridge's `started` notify to raise a fresh one.
+          //
+          // pi-subagents 0.50 made that notify unreliable: every top-level
+          // delegation now runs as mode:"workflow" (its legacy single/chain/parallel
+          // entry points were removed), and the workflow path emits only
+          // `subagent:async-complete` — never `subagent:async-started`. Measured
+          // twice with a probe extension: the handler never fires. Raising the card
+          // from the notify therefore showed the user NOTHING for the whole run,
+          // then dropped the result in — the opposite of PRD §12's "watch it run
+          // while you keep chatting".
+          //
+          // Everything the card needs is already here and is NOT redacted: the
+          // runId is details.asyncId, and this card already carries the real task
+          // and agent from tool_execution_start's original args. So the conversion
+          // is strictly more robust than the notify AND survives whichever path
+          // upstream takes next. The `started` handler stays as belt-and-braces
+          // (it still fires for nested/single runs) and is idempotent against this.
+          const detached = asyncResultInfo(t.result);
+          if (detached) {
             setDelegations((p) => {
-              if (!p[sid]?.[t.toolCallId]) return p;
+              const fg = p[sid]?.[t.toolCallId];
+              if (!fg) return p;
               const next = { ...p[sid] };
               delete next[t.toolCallId];
+              // Keep an already-raised async card (a `started` notify that DID
+              // arrive wins — it is the authoritative agent name for the run).
+              next[detached.asyncId] = next[detached.asyncId] ?? { ...fg, id: detached.asyncId, kind: "async", status: "running" };
               return { ...p, [sid]: next };
             });
           } else {

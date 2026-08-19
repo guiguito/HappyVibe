@@ -11,11 +11,7 @@ import { PiClient } from "../src/main/pi/PiClient";
  * asserts an unapproved skill never reaches the model (get_commands).
  */
 
-for (const line of (fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split("\n") : [])) {
-  const m = line.match(/^([A-Z_]+)=(.+)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-const KEY = process.env.DEEPSEEK_API_KEY?.startsWith("sk-REPLACE") ? undefined : process.env.DEEPSEEK_API_KEY;
+import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 const runtime = path.join(process.cwd(), "pi-runtime");
 let client: PiClient;
 afterEach(() => client?.stop());
@@ -58,10 +54,10 @@ test.skipIf(!KEY)(
         "--mode", "rpc", "--no-session",
         "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
         "--no-skills", "--skill", approvedDir,
-        "--provider", "deepseek", "--model", "deepseek-v4-flash",
+        "--provider", MODEL.provider, "--model", MODEL.modelId,
       ],
       env: {
-        ...process.env, ELECTRON_RUN_AS_NODE: "1", DEEPSEEK_API_KEY: KEY!,
+        ...process.env, ELECTRON_RUN_AS_NODE: "1", ...PROVIDER_ENV,
         HOME: home, XDG_CONFIG_HOME: path.join(home, ".config"),
         HV_SKILLS_FILE: manifestFile,
       } as Record<string, string>,

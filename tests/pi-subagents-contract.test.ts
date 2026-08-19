@@ -47,7 +47,7 @@ import * as path from "node:path";
 import { listAsyncRuns } from "../pi-runtime/node_modules/pi-subagents/src/runs/background/async-status.ts";
 import { ASYNC_DIR } from "../pi-runtime/node_modules/pi-subagents/src/shared/types.ts";
 import { drainOutstandingWork } from "../pi-runtime/node_modules/pi-subagents/src/runs/background/auto-drain.ts";
-import { WAIT_TOOLS, isWaitTool } from "../pi-runtime/extensions/hv-rules";
+import { REDACTED_PROMPT, WAIT_TOOLS, displayableTask, isRedactedPrompt, isWaitTool } from "../pi-runtime/extensions/hv-rules";
 
 const BRIDGE = path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts");
 const PKG = path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "package.json");
@@ -78,13 +78,11 @@ describe("pi-subagents active-run inventory contract", () => {
     expect(path.basename(ASYNC_DIR)).toBe("async-subagent-runs");
   });
 
-  it("listAsyncRuns yields {id, asyncDir, steps[].agent} for an active run", () => {
-    const root = mkdtempSync(path.join(os.tmpdir(), "hv-async-runs-"));
-    const runId = "run-contract-fixture";
+  /** A run dir with a verbatim-readable status.json (no `pid`: the stale-run
+   *  reconciler short-circuits on a pid-less status). Returns its asyncDir. */
+  const writeRun = (root: string, runId: string, over: Record<string, unknown> = {}): string => {
     const dir = path.join(root, runId);
-    mkdirSync(dir);
-    // No `pid`: the stale-run reconciler short-circuits on a non-running or
-    // pid-less status, so the fixture is read back verbatim.
+    mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, "status.json"), JSON.stringify({
       runId,
       sessionId: "session-under-test",
@@ -93,7 +91,24 @@ describe("pi-subagents active-run inventory contract", () => {
       startedAt: 1,
       lastUpdate: 1,
       steps: [{ index: 0, agent: "researcher", status: "pending" }],
+      ...over,
     }));
+    return dir;
+  };
+
+  /** The `.active-runs/<runId>` marker pi-subagents >=0.49 writes for an active
+   *  run (`active-run-index.ts` markerPath: an EMPTY file, index dir at the
+   *  runs-root). Active-state queries read ONLY this — see the next test. */
+  const writeMarker = (root: string, runId: string): void => {
+    mkdirSync(path.join(root, ".active-runs"), { recursive: true });
+    writeFileSync(path.join(root, ".active-runs", runId), "");
+  };
+
+  it("listAsyncRuns yields {id, asyncDir, steps[].agent} for an active run", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "hv-async-runs-"));
+    const runId = "run-contract-fixture";
+    const dir = writeRun(root, runId);
+    writeMarker(root, runId);
 
     // Called exactly as the bridge calls it (happyvibe-bridge.ts /hv-subagent-list).
     const runs = listAsyncRuns(root, { states: ["queued", "running"], sessionId: "session-under-test" });
@@ -107,28 +122,110 @@ describe("pi-subagents active-run inventory contract", () => {
     expect(listAsyncRuns(root, { states: ["complete"], sessionId: "session-under-test" })).toHaveLength(0);
   });
 
-  it("finds an active run WITHOUT any index — pins the 0.40 scan that 0.49 replaces", () => {
-    // pi-subagents 0.49.0 stops scanning for active-state queries (the exact
-    // shape /hv-subagent-list uses) and reads `.active-runs/<runId>` markers
-    // instead, with NO fallback when that index is absent. We are deliberately
-    // held at 0.40.0 — see the caveats page — and this case is what will go red
-    // when the pin finally moves, which is the reminder that a detached run
-    // started before the upgrade keeps running with its card gone.
+  it("active-state queries read the marker index and do NOT fall back to a scan", () => {
+    // THE 0.50 UPGRADE HOLE, pinned deliberately (Decision 2026-08-17: accepted,
+    // no migrator). From 0.49 an active-state query — the exact shape
+    // /hv-subagent-list uses (states all-active, no runId, no entryLimit) — is
+    // `readActiveRunIndex(root) ?? []` with no directory scan behind it
+    // (async-status.ts). A detached run started under 0.40 wrote no marker, so
+    // after the app upgrade it keeps executing with its card gone. It still
+    // COMPLETES and still delivers (completion is file-watch, not index), which
+    // is what makes one missing card cheaper than a backfill migration.
     const root = mkdtempSync(path.join(os.tmpdir(), "hv-async-noindex-"));
-    const runId = "run-without-marker";
-    const dir = path.join(root, runId);
-    mkdirSync(dir);
-    writeFileSync(path.join(dir, "status.json"), JSON.stringify({
-      runId, sessionId: "s", state: "running", mode: "single",
-      startedAt: 1, lastUpdate: 1, steps: [{ index: 0, agent: "researcher", status: "running" }],
-    }));
+    writeRun(root, "run-without-marker", { sessionId: "s", state: "running" });
+    expect(listAsyncRuns(root, { states: ["queued", "running"], sessionId: "s" })).toHaveLength(0);
+
+    // Same run, now indexed — found. (Two assertions, one test: the hole and its
+    // shape are the same fact, and splitting them lets one rot without the other.)
+    writeMarker(root, "run-without-marker");
     expect(listAsyncRuns(root, { states: ["queued", "running"], sessionId: "s" })).toHaveLength(1);
+  });
+
+  it("a runId-TARGETED query still scans, so interrupt survives the upgrade hole", () => {
+    // The consolation the hole rests on: `/hv-subagent-interrupt <runId>` and any
+    // other targeted lookup take the `options.runId` branch, which resolves or
+    // scans by prefix rather than reading the index. So an unindexed 0.40-era run
+    // is invisible to the LIST but still addressable by id.
+    const root = mkdtempSync(path.join(os.tmpdir(), "hv-async-targeted-"));
+    writeRun(root, "run-without-marker", { sessionId: "s", state: "running" });
+    expect(listAsyncRuns(root, { runId: "run-without-marker", sessionId: "s" })).toHaveLength(1);
   });
 
   it("returns empty rather than throwing when the runs root does not exist", () => {
     // The bridge wraps the call in try/catch, but an absent root is the normal
     // "no delegation has ever run" case and must not be an error path.
     expect(listAsyncRuns(path.join(os.tmpdir(), "hv-async-runs-does-not-exist"))).toEqual([]);
+  });
+});
+
+describe("pi-subagents 0.50 lifecycle payload contract", () => {
+  // The 0.40 → 0.50 bump changed WHAT the lifecycle events say, not their names.
+  // Each assertion below is a thing the bridge or the renderer reads; upstream
+  // moving any of them would otherwise show up as a wrong caption or a card that
+  // never appears, with no test failing.
+  const subagentsSrc = (...rel: string[]): string =>
+    readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", ...rel), "utf8");
+
+  it("redacts task/goal on async-started, using the literal our UI screens for", () => {
+    // THE load-bearing pin. REDACTED_PROMPT is duplicated in hv-rules.ts because
+    // the renderer cannot import a vendored runtime package; this asserts the two
+    // still agree, so a reworded redaction fails HERE and not as a card captioned
+    // "[prompt redacted]" in front of a user.
+    expect(subagentsSrc("src", "shared", "utils.ts")).toContain(`PROMPT_REDACTED = "${REDACTED_PROMPT}"`);
+
+    // …and that the started event really does substitute it for the task.
+    const emit = subagentsSrc("src", "runs", "background", "async-execution.ts");
+    expect(emit).toMatch(/task:\s*task\?\.trim\(\)\s*\?\s*PROMPT_REDACTED/);
+    expect(isRedactedPrompt(REDACTED_PROMPT)).toBe(true);
+    expect(displayableTask(REDACTED_PROMPT)).toBeUndefined();
+    expect(displayableTask("map the repo")).toBe("map the repo");
+  });
+
+  it("still identifies an async run by `id` + carries asyncDir and a lifecycle version", () => {
+    // The bridge relays `id → runId` (0.40 renamed it away from `runId`) and tails
+    // `<asyncDir>/status.json`; lifecycleArtifactVersion is pinned so the NEXT
+    // payload revision announces itself instead of arriving silently.
+    const emit = subagentsSrc("src", "runs", "background", "async-execution.ts");
+    const started = emit.slice(emit.indexOf("SUBAGENT_ASYNC_STARTED_EVENT, {"));
+    for (const field of ["lifecycleArtifactVersion", "id,", "agent", "asyncDir", "sessionId"]) {
+      expect(started, `async-started carries ${field}`).toContain(field);
+    }
+  });
+
+  it("still puts asyncId on the dispatch tool result — the renderer's async/foreground switch", () => {
+    // asyncResultInfo() (renderer agents.ts) reads result.details.asyncId to know
+    // a delegation went async and the foreground card must be discarded. Without
+    // it the user would see two cards for one delegation. Both emit sites checked:
+    // a bare `grep asyncId` would pass on the type declaration alone.
+    const emit = subagentsSrc("src", "runs", "background", "async-execution.ts");
+    const sites = [...emit.matchAll(/details:\s*\{[^\n]*asyncId:\s*id/g)];
+    expect(sites.length, "asyncId present on the async dispatch result").toBeGreaterThanOrEqual(2);
+  });
+
+  it("exposes waitTool.enabled — the sanctioned off-switch we set (PRD §12, 2026-08-17)", () => {
+    // writeSubagentConfig writes { waitTool: { enabled: false } }. A config key that
+    // upstream renames fails SILENT, which is exactly why the WAIT_TOOLS name guard
+    // stays on top of it; this pin is the loud half.
+    expect(subagentsSrc("src", "shared", "types.ts")).toMatch(/waitTool\?*:/);
+    expect(subagentsSrc("src", "runs", "background", "wait-tool.ts")).toMatch(/enabled/);
+  });
+
+  it("keeps ASYNC_DIR out of every public subpath, which is why the import is relative", () => {
+    // Re-derived, never hand-listed. 0.50 ships 11 subpaths and `./shared-types`
+    // looked like the home for ASYNC_DIR — it re-exports TYPES only, so the deep
+    // relative import stays and upstream ask A (export ./async-status) stays open.
+    const map = (JSON.parse(readFileSync(PKG, "utf8")) as { exports?: Record<string, string> }).exports ?? {};
+    expect(Object.keys(map).length).toBeGreaterThan(1);
+    const publicSrc = Object.values(map)
+      .map((target) => {
+        try { return subagentsSrc(...target.replace(/^\.\//, "").split("/")); } catch { return ""; }
+      })
+      .join("\n");
+    // Non-vacuity arm: the negative below is only meaningful if we actually read
+    // the public surface. A subpath target that stops resolving would otherwise
+    // turn this test into a tautology. Measured 2026-08-17: 11 files, ~43.7k chars.
+    expect(publicSrc.length, "public subpath sources were readable").toBeGreaterThan(10_000);
+    expect(publicSrc, "no public subpath re-exports ASYNC_DIR").not.toMatch(/\bASYNC_DIR\b/);
   });
 });
 
