@@ -37,7 +37,7 @@ afterEach(() => {
   fs.rmSync(userData, { recursive: true, force: true });
 });
 
-test("writes the four keys the PRD's async-delegation contract rests on", async () => {
+test("writes the five keys the PRD's async-delegation contract rests on", async () => {
   const cfg = await write();
   // §12 (2026-07-17): async by default — the turn ends at dispatch so the user
   // keeps chatting.
@@ -49,6 +49,23 @@ test("writes the four keys the PRD's async-delegation contract rests on", async 
   // §12 (2026-08-17): the wait tool is disabled AT SOURCE. A blocking wait is
   // never right here; per-task discretion is `async:false` at dispatch instead.
   expect(cfg.waitTool).toMatchObject({ enabled: false });
+  // §12 (2026-08-19): 0.51 added defaultSubagentContext, which decides whether a
+  // child starts fresh or FORKS the parent's session. Its default is already
+  // "fresh" — see the next test — so this changes nothing today. It is stated
+  // anyway because a flip to "fork" would hand every sub-agent the parent's whole
+  // transcript: an isolation break with no user-visible symptom and no failing
+  // test to announce it.
+  expect(cfg.defaultSubagentContext).toBe("fresh");
+});
+
+test("upstream's own context default still agrees, so the pin is a guard not a change", async () => {
+  // If this fails, upstream changed its mind and the config line above went from
+  // belt-and-braces to load-bearing — worth knowing which of the two it is.
+  const fork = fs.readFileSync(
+    path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", "shared", "fork-context.ts"),
+    "utf8",
+  );
+  expect(fork).toMatch(/defaultSubagentContext\s*\?\?\s*input\.agentDefaultContext\s*\?\?\s*"fresh"/);
 });
 
 test("merges over an existing file, keeping keys a future pin may have added", async () => {
