@@ -166,6 +166,21 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   delegation must be found by correlating START→END on `toolCallId`. That one had been hiding a
   VACUOUS assertion (`undefined?.result?.details?.asyncId` is falsy, so "foreground has no asyncId"
   passed for a delegation the test never found).
+- **The parent gets its child's whole answer because WE put it back — `hv-subagent-delivery.ts`.**
+  Upstream truncates the completion payload at a hardcoded 1,000 chars
+  (`subagent-executor.ts`, `formatWorkflowValue(v).slice(0, 1_000)`; unchanged at 0.51, no config),
+  so a 4,107-char report arrived as 1,108 chars of JSON cut mid-string and the model spent FOUR
+  tool calls recovering it (`subagent`, `subagent_wait`, `status`, `read`). The bridge remembers
+  `results[].output` from `subagent:async-complete` and substitutes it into the injected message
+  from the `context` hook — measured after: ONE tool call. Three things make it work and would
+  each break it silently: the notify IS rewritable in the context hook
+  (`{role:"custom", customType:"subagent-notify", content:<string>}` — probe before trusting);
+  the id in that message is the **child's** run id, NOT the workflow async UUID we key everything
+  else by (`results[].runId` is the join); and the message's own `details` is EMPTY, so the output
+  must be captured at completion. It is NOT persisted and does NOT rewrite the session file — the
+  record keeps what upstream sent, we repair what the model sees. Never "simplify" the refusals:
+  an unknown header, a message naming several children, or >32 KB must all fall through untouched.
+  Wire shapes + the measurements: docs/validation/d1.md §The delivery repair.
 - **A blocking delegation now costs ~5 KB of context; the async one costs 1.2 KB.** Measured
   `toolResult.content`: 4,947–5,532 chars for `async:false` (the whole workflow return JSON inlined
   — launch-contract digest, extension hashes, artifact paths, usage, acceptance scaffolding,
