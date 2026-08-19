@@ -433,6 +433,10 @@ describe("async completion delivery is scoped to a PROCESS, so HappyVibe claims 
   const OWNER_KEY = Symbol.for("pi-subagents.completion-owner-id");
   const SESSION = "/tmp/session-under-test.jsonl";
 
+  /** Read a file out of the vendored pi-subagents source tree. */
+  const src = (...p: string[]): string =>
+    readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", ...p), "utf8");
+
   /** Enough of an ExtensionAPI for the notifier: it sends and it subscribes. */
   const fakePi = () => {
     const sent: Array<{ customType?: string; content?: string }> = [];
@@ -548,6 +552,31 @@ describe("async completion delivery is scoped to a PROCESS, so HappyVibe claims 
     expect(seed).toContain("HV_SUBAGENT_OWNER");
     // ??= so we never stomp a value some future upstream set first.
     expect(seed).toMatch(/\?\?=/);
+  });
+
+  it("an on-disk result is delivered through the SAME owner check, at session start", () => {
+    // This is what makes the refusal REACHABLE, and it is easy to miss: a result
+    // is a FILE, not just a live process. Even though an async run dies with its
+    // parent Pi (measured — see docs/validation/d1.md §0.51), a child that
+    // finished and wrote its result before the parent went away leaves that file
+    // behind, and the NEXT session start scans it:
+    //
+    //   index.ts        -> primeExistingResults({ triggerTurn: !recovering })
+    //   result-watcher  -> scheduleResult -> handleResult -> notifier.deliver(...)
+    //
+    // …which is the owner-scoped guard exercised behaviourally above. Without a
+    // claimed id the resumed process's id never matches, so the answer is refused
+    // — and refused deliveries are RETRIED rather than dropped, with the file left
+    // un-marked, so no future process ever delivers it either. Permanent, silent
+    // loss of a completed sub-agent's answer. Pinned as a ROUTE assertion: if a
+    // pin bump stops priming at session start, or stops routing priming through
+    // deliver, the seed silently stops covering this and this test says so.
+    expect(src("extension", "index.ts"), "results left on disk are primed at session start")
+      .toContain("primeExistingResults(");
+    const watcher = src("runs", "background", "result-watcher.ts");
+    expect(watcher, "priming schedules the same handler as the live path").toMatch(/primeExistingResults[\s\S]{0,600}scheduleResult\(file, triggerTurn\)/);
+    expect(watcher, "and that handler delivers through the owner-scoped notifier").toContain("await notifier.deliver(");
+    expect(watcher, "a refused delivery is retried, never discarded").toMatch(/if \(!accepted\) \{[\s\S]{0,120}scheduleResult\(file, triggerTurn, RETRY_DELAY_MS\)/);
   });
 
   it("there is still no config key that turns the scoping off", () => {
