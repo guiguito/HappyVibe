@@ -41,7 +41,7 @@ import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
-import { asyncResultInfo, delegationLabel, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
+import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
@@ -979,6 +979,15 @@ export default function App(): React.JSX.Element {
       // §23: plan-mode tools are internal transitions — the PlanCard/banner
       // represent them, so never render them as raw tool cards.
       if (PLAN_TOOL_NAMES.has((e as { toolName?: string }).toolName ?? "")) return;
+      // A `subagent` call that only INSPECTS a run (`{action:"status"}`) is the
+      // model polling its own machinery, not work the user asked for. It used to
+      // draw a delegation card with no agent and no task — literally "→ asked ?".
+      // Hidden for the same reason as the wait tool above; the delegation, its
+      // result and any artifact read all still show.
+      if (
+        isSubagentTool((e as { toolName?: string }).toolName)
+        && isSubagentQuery((e as { args?: unknown }).args)
+      ) return;
       if (e.type === "tool_execution_start") {
         const t = e as unknown as { toolCallId: string; toolName: string; args: unknown };
         commitStream(sid); // flush the live bubble before the tool card (order preserved)

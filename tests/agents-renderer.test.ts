@@ -7,6 +7,7 @@ import {
   delegationHint,
   delegationLabel,
   formatElapsed,
+  isSubagentQuery,
   isSubagentTool,
   joinToolPermissions,
   mergeTrace,
@@ -378,5 +379,39 @@ describe("traceFor (V2.C1 sticky-section trace lookup)", () => {
     expect(traceFor(items, "other")).toBeUndefined();
     expect(traceFor(items, "missing")).toBeUndefined();
     expect(traceFor([], "call-1")).toBeUndefined();
+  });
+});
+
+describe("a subagent status poll is not a delegation", () => {
+  // Reported from a real session: one delegation produced FOUR tool calls, and the
+  // third — `subagent {action:"status", id}` — drew a delegation card with no agent
+  // and no task, rendering literally "→ asked ?". It is the model polling its own
+  // machinery, not work anyone asked for.
+  test("recognises the poll the model actually sent", () => {
+    expect(isSubagentQuery({ action: "status", id: "7753ae03" })).toBe(true);
+    expect(isSubagentQuery({ action: "list" })).toBe(true);
+  });
+
+  test("never hides a real delegation", () => {
+    // The delegation from the same session.
+    expect(isSubagentQuery({ agent: "code-explorer", task: "Explore the architecture" })).toBe(false);
+    // Conservative on purpose: pi-subagents 0.50 sends NO args on
+    // tool_execution_end, so "no agent" alone would suppress genuine work.
+    expect(isSubagentQuery(undefined)).toBe(false);
+    expect(isSubagentQuery({})).toBe(false);
+    // An action that also names an agent is a dispatch, not a query.
+    expect(isSubagentQuery({ action: "run", agent: "code-explorer" })).toBe(false);
+    // A blank action is not an action.
+    expect(isSubagentQuery({ action: "   " })).toBe(false);
+  });
+
+  test("App.tsx suppresses the card, beside the wait tool it belongs with", () => {
+    // Absence assertion — the renderer suite has no DOM, so the wiring is pinned by
+    // source scan (tests/modal-layer.test.ts pattern). The card must be skipped
+    // BEFORE tool_execution_start builds one, or the sticky run card appears too.
+    const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+    const guard = app.indexOf("isSubagentQuery(");
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(app.indexOf('e.type === "tool_execution_start"'));
   });
 });

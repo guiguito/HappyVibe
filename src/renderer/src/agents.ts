@@ -194,6 +194,31 @@ export function isSubagentTool(toolName: unknown): boolean {
   return toolName === "subagent";
 }
 
+/**
+ * True for a `subagent` call that INSPECTS the machinery instead of delegating —
+ * `{action:"status", id}` and friends, which the model fires to poll a run it
+ * already started.
+ *
+ * These are not delegations and must not be drawn as one: the delegation card is
+ * "→ asked <agent>: <task>", and a status poll has neither, so it rendered as
+ * `→ asked ?` with an empty task — a card that says nothing about work nobody
+ * asked for. Same class as the wait tool, which is hidden for the same reason.
+ *
+ * Deliberately conservative: it hides only a call KNOWN to be a query — an
+ * `action` string AND no agent. A real delegation whose args we never saw is not
+ * hidden, which matters because pi-subagents 0.50 sends no `args` at all on
+ * `tool_execution_end`, so "no agent" alone would suppress genuine work.
+ *
+ * (Polls got common at 0.50: the completion payload is truncated at 1,000 chars
+ * upstream, so the model often re-checks status and reads the output artifact
+ * rather than receiving a whole result. Hiding the poll does not hide the
+ * delegation, its result, or the artifact read.)
+ */
+export function isSubagentQuery(args: unknown): boolean {
+  const a = args as { action?: unknown; agent?: unknown } | undefined;
+  return typeof a?.action === "string" && a.action.trim() !== "" && typeof a?.agent !== "string";
+}
+
 // ── W1.2/V2.C1 delegation-run helpers ────────────────────────────────────────
 // A delegation run lives OUTSIDE the chat flow while running: App tracks every
 // in-flight subagent call keyed by toolCallId; ChatView renders them as a
