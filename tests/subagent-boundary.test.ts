@@ -8,11 +8,14 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
+import { evaluate } from "../pi-runtime/extensions/hv-rules";
 import {
   boundaryRuleName,
   isReadOnlyBoundary,
   isWiderThanReadOnly,
+  needsWiderCeiling,
   READ_ONLY_CHILD_TOOLS,
+  summarizeBoundary,
   widenBoundary,
   writeCapableIn,
   WRITE_CAPABLE_TOOLS,
@@ -142,5 +145,96 @@ describe("the bridge uses the module rather than re-deriving it", () => {
     const src = bridgeSrc();
     expect(src).not.toMatch(/\["find",\s*"grep",\s*"ls",\s*"read"\]/);
     expect(src).toContain("READ_ONLY_CHILD_TOOLS");
+  });
+});
+
+describe("summarizeBoundary", () => {
+  const base = { agent: "code-explorer", explicitAllowlist: true, effectiveAllowlist: ["read", "grep"] };
+
+  it("reports a declared agent's own toolset", () => {
+    const b = summarizeBoundary(base);
+    expect(b.tools).toEqual(["grep", "read"]);
+    expect(b.declared).toBe(true);
+    expect(b.writeCapable).toEqual([]);
+  });
+
+  it("an UNDECLARED agent shows the read-only default, never an empty list", () => {
+    // The trap this exists for: with no ceiling passed, upstream resolves an
+    // agent that declares no `tools:` to effectiveAllowlist === [] and
+    // explicitAllowlist === false — and that empty array does NOT mean "no
+    // tools", it means NO --tools FLAG, i.e. Pi's entire builtin set. Rendering
+    // it verbatim would tell the user a bash-capable child was toolless.
+    const b = summarizeBoundary({ agent: "x", explicitAllowlist: false, effectiveAllowlist: [] });
+    expect(b.tools).toEqual(["find", "grep", "ls", "read"]);
+    expect(b.declared).toBe(false);
+    expect(b.tools).not.toEqual([]);
+  });
+
+  it("calls out write-capable tools and fan-out separately", () => {
+    const b = summarizeBoundary({ ...base, effectiveAllowlist: ["read", "bash", "subagent"] });
+    expect(b.writeCapable).toEqual(["bash"]);
+    expect(b.fanout).toBe(true);
+  });
+
+  it("carries the declarations that change child behaviour", () => {
+    const b = summarizeBoundary({ ...base, declarations: ["inheritSkills", "outputMode"] });
+    expect(b.declarations).toEqual(["inheritSkills", "outputMode"]);
+  });
+
+  it("defaults context to fresh, matching writeSubagentConfig", () => {
+    expect(summarizeBoundary(base).context).toBe("fresh");
+    expect(summarizeBoundary({ ...base, context: "fork" }).context).toBe("fork");
+  });
+
+  it("is stable under duplicate tool names", () => {
+    expect(summarizeBoundary({ ...base, effectiveAllowlist: ["read", "read", "grep"] }).tools)
+      .toEqual(["grep", "read"]);
+  });
+});
+
+describe("needsWiderCeiling", () => {
+  it("true only when a DECLARED boundary exceeds the read-only floor", () => {
+    expect(needsWiderCeiling(summarizeBoundary({ agent: "a", explicitAllowlist: true, effectiveAllowlist: ["read", "bash"] }))).toBe(true);
+    expect(needsWiderCeiling(summarizeBoundary({ agent: "a", explicitAllowlist: true, effectiveAllowlist: ["read"] }))).toBe(false);
+  });
+
+  it("false for an undeclared agent — it must never widen anything", () => {
+    // An undeclared agent inherits the ceiling. If it could widen it, FR3 would
+    // be self-defeating: the very agents we refuse to widen for would do it.
+    expect(needsWiderCeiling(summarizeBoundary({ agent: "a", explicitAllowlist: false, effectiveAllowlist: [] }))).toBe(false);
+  });
+});
+
+/**
+ * The migration this rename forces, asserted in the direction that is safe.
+ *
+ * A delegation now gates as `subagent:<agent>`, so a rule or grant written
+ * against the bare tool name `subagent` stops matching — the engine anchors a
+ * tool-layer pattern (`^subagent$`). That is the POINT (coarse "allow all
+ * delegations" is what per-agent naming removes), and it fails toward MORE
+ * prompting rather than less, so it needs no data migration. It does need to be
+ * deliberate, which is what these two assert.
+ */
+describe("legacy bare-`subagent` rules stop auto-allowing (deliberate)", () => {
+  const call = (agent: string) => ({
+    tool: boundaryRuleName(agent), input: { agent }, workspace: "/ws",
+  });
+
+  it("an old exact rule no longer covers a delegation", () => {
+    const rules = { global: [{ layer: "tool" as const, pattern: "subagent", action: "allow" as const }], workspaces: {} };
+    const v = evaluate(rules, call("code-explorer"));
+    expect(v.action, "falls through to the default ask, never a silent allow").toBe("ask");
+    expect(v.source).toBe("default");
+  });
+
+  it("a glob still works, for anyone who wants the old blanket grant back", () => {
+    const rules = { global: [{ layer: "tool" as const, pattern: "subagent*", action: "allow" as const }], workspaces: {} };
+    expect(evaluate(rules, call("code-explorer")).action).toBe("allow");
+  });
+
+  it("a per-agent rule covers only its own agent", () => {
+    const rules = { global: [{ layer: "tool" as const, pattern: "subagent:code-explorer", action: "allow" as const }], workspaces: {} };
+    expect(evaluate(rules, call("code-explorer")).action).toBe("allow");
+    expect(evaluate(rules, call("agents-md-maker")).action).toBe("ask");
   });
 });

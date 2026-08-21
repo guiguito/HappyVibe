@@ -30,9 +30,11 @@ import { parseBuiltins } from "./hv-builtins";
 // listAsyncRuns/ASYNC_DIR above, which are absent from the map and therefore
 // must stay relative. Do not "tidy" these two into the same shape.
 import { registerSubagentCapabilityCeiling } from "pi-subagents/capability-ceiling";
+import { resolveSubagentLaunchContract } from "pi-subagents/preflight";
 import {
-  boundaryRuleName, isReadOnlyBoundary, isWiderThanReadOnly, READ_ONLY_CHILD_TOOLS,
-  widenBoundary, writeCapableIn,
+  boundaryRuleName, isReadOnlyBoundary, isWiderThanReadOnly, needsWiderCeiling,
+  READ_ONLY_CHILD_TOOLS, summarizeBoundary, widenBoundary, writeCapableIn,
+  type BoundarySummary,
 } from "./hv-subagent-boundary";
 import {
   buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
@@ -384,6 +386,47 @@ function applyCeiling(sessionId: string | undefined): void {
 
 /** Set when the ceiling could not be registered — a delegation then refuses. */
 let ceilingError: string | undefined;
+
+/** The declarations worth showing at approval, because each changes child behaviour. */
+const SURFACED_DECLARATIONS = ["skills", "inheritSkills", "extensions", "subagentOnlyExtensions", "outputMode"] as const;
+
+/**
+ * §12 FR1/FR8 — resolve what a delegation's child would actually be able to do.
+ *
+ * `resolveSubagentLaunchContract` has no side effects: it resolves the agent, its
+ * effective tool allowlist, skills and context mode, and returns. Called with NO
+ * capability ceiling on purpose — see summarizeBoundary's comment; passing ours
+ * would resolve a bash-declaring agent down to read-only and the prompt would
+ * understate the very thing it exists to disclose.
+ *
+ * Returns undefined when the contract cannot be resolved (unknown agent, an
+ * upstream diagnostic, a throw). That is NOT treated as "no boundary, carry on":
+ * the caller refuses the delegation, because a reach we cannot describe is a
+ * reach we cannot ask a human to approve.
+ */
+async function resolveBoundary(agent: string): Promise<BoundarySummary | undefined> {
+  try {
+    const c = (await resolveSubagentLaunchContract({ agent, cwd: process.cwd() })) as {
+      ok?: boolean;
+      tools?: { explicitAllowlist?: boolean; effectiveAllowlist?: string[] };
+      skills?: { resolved?: Array<{ name: string }> };
+      agent?: Record<string, unknown>;
+      context?: string;
+    };
+    if (!c?.ok || !c.tools) return undefined;
+    const declared = c.agent ?? {};
+    return summarizeBoundary({
+      agent,
+      explicitAllowlist: c.tools.explicitAllowlist === true,
+      effectiveAllowlist: c.tools.effectiveAllowlist ?? [],
+      skills: (c.skills?.resolved ?? []).map((s) => s.name),
+      ...(c.context ? { context: c.context } : {}),
+      declarations: SURFACED_DECLARATIONS.filter((k) => declared[k] !== undefined),
+    });
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * The session id, or undefined.
@@ -807,6 +850,51 @@ export default function (pi: ExtensionAPI) {
     // read-only explorer cover a bash-wielding agent for the rest of the session.
     const subagentName = tool === "subagent" && typeof input.agent === "string" ? input.agent : null;
     const permTool = mcp?.ruleTool ?? browserNav ?? (subagentName ? boundaryRuleName(subagentName) : tool);
+
+    // §12 FR1: resolve the child's reach BEFORE the prompt, so the human approves
+    // a boundary rather than a verb. Side-effect-free.
+    const boundary = subagentName ? await resolveBoundary(subagentName) : undefined;
+    if (subagentName) {
+      if (ceilingError) {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+        return { block: true, reason: `HappyVibe could not establish a sub-agent boundary (${ceilingError}), so it will not launch one. Do the work in this session instead.` };
+      }
+      if (!boundary) {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+        return { block: true, reason: `HappyVibe could not resolve what '${subagentName}' would be able to do, so it will not launch it. Check the agent exists and its definition is valid.` };
+      }
+      // FR3, enforced rather than inherited: an agent declaring no `tools:` takes
+      // the ceiling as its tool set (pi-args.ts:396-399). If another agent's
+      // approval has already widened the ceiling this turn, that would silently
+      // hand this one the wider set. Refused BEFORE the bypass check for the same
+      // reason plan mode is: "don't ask me again" is not "give undeclared agents
+      // bash". The ceiling resets at turn_start, so the next turn is clean.
+      if (!boundary.declared && isWiderThanReadOnly(ceilingTools)) {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+        return {
+          block: true,
+          reason:
+            `'${subagentName}' declares no tools, so it would inherit this turn's widened sub-agent boundary ` +
+            `(${ceilingTools.join(", ")}) instead of the read-only default. Refused. Either give the agent an ` +
+            `explicit 'tools:' list, or delegate to it on a turn where no wider boundary was approved.`,
+        };
+      }
+    }
+
+    /**
+     * Grant the approved boundary by widening the session ceiling.
+     *
+     * Called at every point that PERMITS a delegation. Idempotent, and the failure
+     * direction is deliberate: a missed call site means the child launches with the
+     * read-only ceiling and loses tools it was approved for — visible and harmless
+     * — never the reverse.
+     */
+    const grantBoundary = (): void => {
+      if (boundary && needsWiderCeiling(boundary)) {
+        ceilingTools = widenBoundary(boundary.tools);
+        applyCeiling(sessionIdOf(ctx));
+      }
+    };
     const summary = mcp?.display ?? summarize(tool, input);
 
     // W2.3: nested AGENTS.md discovery — every file-tool call reveals which
@@ -898,6 +986,9 @@ export default function (pi: ExtensionAPI) {
         wouldHave: shadow.action,
         rule: shadow.rule,
       });
+      // FR6: bypass means bypass, for children too — grant the boundary the agent
+      // asked for rather than leaving it narrower than the un-bypassed path.
+      grantBoundary();
       return;
     }
 
@@ -912,6 +1003,7 @@ export default function (pi: ExtensionAPI) {
     // explicit rules are honored by falling through to the prompt.
     if (v.action === "allow" && !planFloorAsk) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: v.source === "rule" ? "rule" : "safe-default", rule: v.rule });
+      grantBoundary();
       return;
     }
 
@@ -943,6 +1035,7 @@ export default function (pi: ExtensionAPI) {
     // v5: a session grant also covers the outside-workspace confinement ask.
     if ((v.source === "default" || v.source === "outside-workspace") && sessionGrants.has(permTool)) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "user", grant: "session" });
+      grantBoundary();
       return;
     }
 
@@ -950,7 +1043,7 @@ export default function (pi: ExtensionAPI) {
     const title = JSON.stringify(
       v.source === "outside-workspace"
         ? { kind: "hv.permission", tool: permTool, summary, reason: "outside-workspace", path: v.outsidePath }
-        : { kind: "hv.permission", tool: permTool, summary },
+        : { kind: "hv.permission", tool: permTool, summary, ...(boundary ? { boundary } : {}) },
     );
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).
     // NO timeout, NO auto-allow: permission prompts wait indefinitely by design.
@@ -959,10 +1052,12 @@ export default function (pi: ExtensionAPI) {
     if (choice === "Allow for session") {
       sessionGrants.add(permTool);
       audit(ctx.ui, { tool: permTool, summary, decision: "allow-session", source: "user" });
+      grantBoundary();
       return;
     }
     if (choice === "Allow") {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "user" });
+      grantBoundary();
       return;
     }
     audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "user" });

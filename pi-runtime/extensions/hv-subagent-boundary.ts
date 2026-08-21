@@ -102,3 +102,74 @@ export function widenBoundary(approved: readonly string[]): string[] {
 export function isWiderThanReadOnly(tools: readonly string[]): boolean {
   return tools.some((t) => !READ_ONLY_CHILD_TOOLS.has(t));
 }
+
+/** What the approval prompt shows, and what the ceiling is widened to. */
+export interface BoundarySummary {
+  agent: string;
+  /** The child's tools: the agent's own declaration, or our read-only default. */
+  tools: string[];
+  /** False when the agent declares no `tools:` and therefore inherits the ceiling. */
+  declared: boolean;
+  writeCapable: string[];
+  /** `subagent` in the toolset — reported on its own line, never as a write. */
+  fanout: boolean;
+  skills: string[];
+  context: string;
+  /** Declared resources that change child behaviour (inheritSkills, outputMode, …). */
+  declarations: string[];
+}
+
+/**
+ * Turn a preflight-resolved launch contract into the boundary a human approves.
+ *
+ * Call preflight WITHOUT a capability ceiling to build this. That sounds wrong and
+ * is the only honest option: `effectiveCapabilityCeiling` in preflight comes from
+ * its inputs and never from the registry (`preflight.ts:263`), so passing our
+ * read-only ceiling would resolve a bash-declaring agent down to read-only, the
+ * prompt would say "read-only", and then approving it would widen the ceiling and
+ * hand the child bash. The prompt must show what the agent ASKS FOR — that is the
+ * thing being approved.
+ *
+ * The trap this function exists for: an agent declaring no `tools:` resolves to
+ * `effectiveAllowlist === []` with `explicitAllowlist === false`, and that empty
+ * array does **not** mean "no tools". It means no `--tools` flag is emitted, i.e.
+ * Pi's ENTIRE builtin set (`pi-args.ts:424-427`). Rendering it verbatim would
+ * describe the most dangerous case as the safest one. So an undeclared agent is
+ * summarised as the read-only default, which is what our ceiling will actually
+ * give it.
+ */
+export function summarizeBoundary(input: {
+  agent: string;
+  explicitAllowlist: boolean;
+  effectiveAllowlist: readonly string[];
+  skills?: readonly string[];
+  context?: string;
+  declarations?: readonly string[];
+}): BoundarySummary {
+  const tools = input.explicitAllowlist
+    ? [...new Set(input.effectiveAllowlist)].sort()
+    : [...READ_ONLY_CHILD_TOOLS].sort();
+  return {
+    agent: input.agent,
+    tools,
+    declared: input.explicitAllowlist,
+    writeCapable: writeCapableIn(tools),
+    fanout: tools.includes("subagent"),
+    skills: [...(input.skills ?? [])],
+    // `fresh` mirrors writeSubagentConfig's explicit default; a child that forks
+    // the parent session is an isolation change and must never be implied.
+    context: input.context ?? "fresh",
+    declarations: [...(input.declarations ?? [])],
+  };
+}
+
+/**
+ * Does approving this boundary require widening the session ceiling?
+ *
+ * False for an undeclared agent even if the ceiling is read-only — an agent that
+ * inherits the ceiling must never be the reason it grows, or FR3 would defeat
+ * itself: the exact agents we refuse to widen for would be the ones widening it.
+ */
+export function needsWiderCeiling(b: BoundarySummary): boolean {
+  return b.declared && isWiderThanReadOnly(b.tools);
+}
