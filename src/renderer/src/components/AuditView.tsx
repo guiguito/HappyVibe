@@ -9,7 +9,10 @@ interface Decision {
   summary: string;
   decision: "allow" | "allow-session" | "deny";
   /** "dangerous" is the pre-round-15 name for "bypass" — old logs keep it. */
-  source: "rule" | "user" | "bypass" | "dangerous" | "safe-default" | "plan" | "terminal";
+  source: "rule" | "user" | "bypass" | "dangerous" | "safe-default" | "plan" | "terminal" | "subagent";
+  /** §12 FR7: set on a decision made INSIDE a sub-agent child. */
+  agent?: string;
+  runId?: string;
   /** Round 15: on a bypassed row, what the rule engine would have decided. */
   wouldHave?: "allow" | "ask" | "deny";
   rule?: HvRule & { scope: string };
@@ -73,7 +76,7 @@ const ONESHOT_LABEL: Record<OneShot["kind"], string> = {
  * mode it ran under, so bypass reads calm and amber marks it as unusual
  * without shouting.
  */
-const SOURCE_LABEL: Record<string, string> = { dangerous: "bypass" };
+const SOURCE_LABEL: Record<string, string> = { dangerous: "bypass", subagent: "sub-agent" };
 /**
  * No tone at all — every source renders in the same muted ink.
  *
@@ -87,9 +90,19 @@ const SOURCE_LABEL: Record<string, string> = { dangerous: "bypass" };
  */
 const SOURCE_TONE: Record<string, string> = {};
 
-/** "bypass · rules would have asked" — the sentence the column exists for. */
-function sourceText(r: Decision): string {
-  const base = SOURCE_LABEL[r.source] ?? r.source;
+/**
+ * "bypass · rules would have asked" — the sentence the column exists for.
+ *
+ * §12: a sub-agent row NAMES the agent. Without it a denial reads as coming from
+ * the session itself, and the one thing a reader needs to know about a child's
+ * decision is which child made it.
+ *
+ * Exported for tests: the renderer suite has no DOM, so the wording is pinned as
+ * data (the tests/modal-layer.test.ts pattern).
+ */
+export function sourceText(r: Decision): string {
+  const label = SOURCE_LABEL[r.source] ?? r.source;
+  const base = r.source === "subagent" && r.agent ? `${label} ${r.agent}` : label;
   const would =
     r.wouldHave === "ask" ? "rules would have asked"
     : r.wouldHave === "deny" ? "rules would have DENIED"

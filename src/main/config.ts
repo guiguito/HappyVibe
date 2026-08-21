@@ -493,6 +493,18 @@ export function rulesFile(): string {
 }
 
 /**
+ * §12 FR7: where the child guard appends its per-run decision JSONL
+ * (HV_CHILD_AUDIT_DIR). Under userData because MAIN owns it — the guard writes,
+ * main drains and deletes, and `subagentAudit.ts` confines every read to this
+ * root rather than trusting the env var it travelled through.
+ */
+export function childAuditRoot(): string {
+  const d = path.join(app.getPath("userData"), "subagent-audit");
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
+
+/**
  * Built-in agent dir (B6). pi-subagents discovers agents from
  * `<PI_CODING_AGENT_DIR>/agents/*.md` — since agentDir() is PI_CODING_AGENT_DIR,
  * our built-ins live in agentDir()/agents. Also where duplicates/edits land.

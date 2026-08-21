@@ -11,7 +11,7 @@ import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig,
-  resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
+  childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
@@ -61,6 +61,7 @@ import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, Works
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
+import { clearGuardAudit, readGuardAudit, rollupGuardAudit } from "./subagentAudit";
 import { pollSubagentStatus } from "./subagentStatus";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
@@ -584,6 +585,7 @@ export function registerIpc(win: BrowserWindow): void {
       providerEnv: providerEnv(),
       resumeFile,
       rulesFile: rulesFile(),
+      childAuditDir: childAuditRoot(),
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
       bypass: resolveBypass(workspace ?? null),
@@ -1019,6 +1021,14 @@ export function registerIpc(win: BrowserWindow): void {
           /* never disturb the event stream */
         }
       }
+      // The ONLY event carrying a delegation's `agent`: args ride
+      // tool_execution_start and nothing later repeats them. Captured outside the
+      // snapshot try/catch above so a snapshot failure cannot lose the name.
+      if (e.type === "tool_execution_start" && (e as { toolName?: string }).toolName === "subagent") {
+        const id = typeof e.toolCallId === "string" ? e.toolCallId : undefined;
+        const agent = (e as { args?: { agent?: unknown } }).args?.agent;
+        if (id && typeof agent === "string") delegatedAgentByCall.set(id, agent);
+      }
       send("hv:pi-event", { ...e, sessionId });
       // ── An async delegation announces itself HERE, not on a lifecycle notify ──
       // pi-subagents 0.50 runs every top-level delegation as a workflow, and that
@@ -1042,6 +1052,11 @@ export function registerIpc(win: BrowserWindow): void {
         // Guard the (theoretical) race where a very fast child completes before its
         // own dispatch event is processed: `complete` has then already run, and
         // starting a poller here would leak a 500 ms timer nothing stops.
+        // Carry the agent name from the START event across to the run id.
+        const callId = typeof e.toolCallId === "string" ? e.toolCallId : undefined;
+        const agent = callId ? delegatedAgentByCall.get(callId) : undefined;
+        if (runId && agent) delegatedAgentByRun.set(runId, agent);
+        if (callId) delegatedAgentByCall.delete(callId);
         if (runId && !finishedAsyncRuns.has(runId)) {
           activity.asyncStarted(sessionId, runId);
           startSubagentPoll(sessionId, runId, asyncDir);
@@ -1049,7 +1064,7 @@ export function registerIpc(win: BrowserWindow): void {
             type: "subagent.async_started",
             sessionId,
             workspaceId: meta?.workspaceId,
-            data: { runId, agent: (e as { args?: { agent?: string } }).args?.agent },
+            data: { runId, agent },
           });
         }
       }
@@ -1141,6 +1156,16 @@ export function registerIpc(win: BrowserWindow): void {
           stopSubagentPoll(sub.runId);
           drainPendingReload(sessionId); // a deferred reload can now proceed
           void log.append({ type: "subagent.async_complete", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, status: sub.status } });
+          // §12 FR7: fold the child guard's own decisions into the audit log.
+          // Drained at completion rather than streamed: the guard appends from a
+          // separate process, so this is the first moment the file is complete.
+          // `agent` comes from the completion event we already hold — the guard
+          // deliberately does not learn agent names, so main joins them here.
+          // `sub.agent` is undefined for every top-level delegation (upstream
+          // reports "workflow"; the bridge drops it), so the name comes from the
+          // START→END correlation above.
+          drainChildAudit(sessionId, meta?.workspaceId, sub.runId, sub.agent ?? delegatedAgentByRun.get(sub.runId));
+          delegatedAgentByRun.delete(sub.runId);
         } else if (sub.stage === "active") {
           const runs = sub.runs ?? [];
           activity.asyncSet(sessionId, runs.map((x) => x.runId));
@@ -1495,6 +1520,67 @@ export function registerIpc(win: BrowserWindow): void {
   // leaving a poller nothing ever stops. Bounded: one short id per delegation
   // for the life of the window, and only for runs that actually completed.
   const finishedAsyncRuns = new Set<string>();
+  /**
+   * toolCallId → the delegated agent's name, and then runId → the same.
+   *
+   * Needed because NOTHING else in the event stream carries it at the moment we
+   * need it. `tool_execution_end` has no `args` at all (args ride
+   * tool_execution_start only), and the completion notify reports upstream's
+   * generic `agent:"workflow"`, which the bridge drops. So the agent name has to
+   * be correlated START→END on toolCallId — the same correlation the run card
+   * does, for the same reason.
+   *
+   * This also fixes a pre-existing quiet bug: the `subagent.async_started` audit
+   * row read `agent` off the END event and had therefore always logged undefined.
+   */
+  const delegatedAgentByCall = new Map<string, string>();
+  const delegatedAgentByRun = new Map<string, string>();
+
+  /**
+   * §12 FR7 — turn a finished run's guard rows into EventLog entries.
+   *
+   * One row per DECISION plus one rollup, never one row per child tool call:
+   * a forty-tool child would otherwise bury the permission story these rows exist
+   * to tell (the full-transcript ingestion is the recorded follow-up). The rollup
+   * is what keeps silence unambiguous — an uneventful child still leaves a trace,
+   * so an empty audit view cannot mean both "well-behaved" and "ingestion broke".
+   */
+  const drainChildAudit = (
+    sessionId: string,
+    workspaceId: string | undefined,
+    runId: string,
+    agent?: string,
+  ): void => {
+    const root = childAuditRoot();
+    const rows = readGuardAudit(root, root, runId);
+    if (rows.length === 0) return;
+    for (const r of rows) {
+      void log.append({
+        type: "permission.decision",
+        sessionId,
+        workspaceId,
+        // Same envelope the parent's own decisions use, so AuditView renders them
+        // interleaved by timestamp. `source` is what distinguishes them.
+        data: {
+          ts: r.ts,
+          tool: r.tool,
+          summary: r.summary,
+          decision: r.decision,
+          source: r.source === "bypass" ? "bypass" : "subagent",
+          wouldHave: r.wouldHave,
+          runId: r.runId,
+          ...(agent ? { agent } : {}),
+        },
+      });
+    }
+    void log.append({
+      type: "subagent.audit_rollup",
+      sessionId,
+      workspaceId,
+      data: { runId, ...(agent ? { agent } : {}), ...rollupGuardAudit(rows) },
+    });
+    clearGuardAudit(root, root, runId);
+  };
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
     if (!asyncDir || subagentPollers.has(runId)) return;
     const stop = pollSubagentStatus(asyncDir, (status) => send("hv:subagent-status", { sessionId, runId, status }));
