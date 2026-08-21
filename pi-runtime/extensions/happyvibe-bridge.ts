@@ -25,6 +25,15 @@ import {
   type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
 import { parseBuiltins } from "./hv-builtins";
+// PRD §12 (2026-08-21): the sub-agent boundary. `capability-ceiling` IS in
+// pi-subagents' exports map, so it takes the BARE specifier — unlike
+// listAsyncRuns/ASYNC_DIR above, which are absent from the map and therefore
+// must stay relative. Do not "tidy" these two into the same shape.
+import { registerSubagentCapabilityCeiling } from "pi-subagents/capability-ceiling";
+import {
+  boundaryRuleName, isReadOnlyBoundary, isWiderThanReadOnly, READ_ONLY_CHILD_TOOLS,
+  widenBoundary, writeCapableIn,
+} from "./hv-subagent-boundary";
 import {
   buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
@@ -323,6 +332,73 @@ function persistPlan(pi: ExtensionAPI): void {
   pi.appendEntry(PLAN_STATE_TYPE, { ...plan });
 }
 
+/**
+ * §12 (2026-08-21) — the capability ceiling that holds every child of this
+ * session inside the boundary a human approved.
+ *
+ * Two things this buys that the parent gate cannot. It bounds the tool set of a
+ * child and of every DESCENDANT (the resolved ceiling travels in the child's
+ * environment, so a grandchild can only narrow); and `denyExtensions` closes a
+ * hole the parent never had — a child whose agent declares no `extensions` key
+ * was ambient-loading anything sitting in `<agentDir>/extensions`, and from
+ * pi-subagents 0.52 also anything shipped BESIDE the agent file.
+ *
+ * It also supplies FR3 for free rather than as its own mechanism: upstream treats
+ * a present ceiling as the declared tool set for an agent that declares none
+ * (`pi-args.ts:396-399`), so registering this replaces "no `tools:` means Pi's
+ * full builtin set" with "no `tools:` means read-only".
+ *
+ * WIDENING IS MONOTONIC WITHIN A TURN, and that is forced, not preferred — see
+ * widenBoundary's comment and docs/validation/d1.md §Subagent delegation
+ * concurrency. `ceilingTools` is reset at turn_start, which is safe for the one
+ * reason that matters: the ceiling is read at SPAWN, a turn cannot end before its
+ * tool batch resolves, so by the next turn every spawn it authorised has already
+ * happened. No in-flight accounting needed.
+ */
+let ceiling: { update(c: unknown): void; dispose(): void } | undefined;
+let ceilingTools: string[] = [...READ_ONLY_CHILD_TOOLS].sort();
+
+/** Register (or re-point) the session ceiling at the current `ceilingTools`. */
+function applyCeiling(sessionId: string | undefined): void {
+  const value = { allowedTools: ceilingTools, denyExtensions: true };
+  if (ceiling) {
+    ceiling.update(value);
+    return;
+  }
+  try {
+    ceiling = registerSubagentCapabilityCeiling({
+      // A ceiling is keyed by session id; without one there is nothing to key it
+      // to, so a session with no id gets a stable literal rather than silently
+      // registering nothing.
+      sessionId: sessionId || "hv-session",
+      source: "happyvibe",
+      ceiling: value,
+    });
+  } catch (e) {
+    // Registration is the boundary. If it throws we must NOT continue as if a
+    // ceiling existed — surface it, because the alternative is children running
+    // unbounded while the UI implies otherwise.
+    ceilingError = e instanceof Error ? e.message : String(e);
+  }
+}
+
+/** Set when the ceiling could not be registered — a delegation then refuses. */
+let ceilingError: string | undefined;
+
+/**
+ * The session id, or undefined.
+ *
+ * Optional-chained on purpose: `applyCeiling` runs from `turn_start`, so throwing
+ * here would throw on EVERY turn, and a ceiling keyed to the fallback literal
+ * still bounds the children of this process (one Pi process serves one session,
+ * so the fallback cannot collide with another session's registration). Losing the
+ * id degrades the key; throwing would lose the boundary.
+ */
+function sessionIdOf(ctx: unknown): string | undefined {
+  const sm = (ctx as { sessionManager?: { getSessionId?: () => string | null } } | undefined)?.sessionManager;
+  return sm?.getSessionId?.() ?? undefined;
+}
+
 // Run-card captions (pi-subagents >=0.50 redacts the task everywhere we could read
 // it back — see hv-subagent-tasks.ts). Persisted the same way as plan state and
 // context marks: full snapshot, newest entry wins on restore.
@@ -480,12 +556,27 @@ export default function (pi: ExtensionAPI) {
   // §13 round 12: the headline is bought with tokens, so it has a switch. In
   // proxy mode that is five tools; with a server exposing tools DIRECTLY it is
   // every tool that server publishes, which is where the cost actually scales.
-  pi.on("turn_start", () => { requireIntent(pi, builtins.intent); stripIntent(pi, builtins.intent); });
+  pi.on("turn_start", (_e, ctx) => {
+    requireIntent(pi, builtins.intent); stripIntent(pi, builtins.intent);
+    // §12: drop any widening the previous turn's approvals opened. Safe here and
+    // nowhere earlier — see the ceiling's own comment: it is read at spawn, and a
+    // turn cannot end before its tool batch resolves.
+    if (isWiderThanReadOnly(ceilingTools)) {
+      ceilingTools = [...READ_ONLY_CHILD_TOOLS].sort();
+      applyCeiling(sessionIdOf(ctx));
+    }
+  });
 
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi, builtins.intent); // all extensions have registered by now (idempotent across reloads)
     stripIntent(pi, builtins.intent); // …and take it off the bridge's own tools, which declare it themselves
     skillManifest = loadManifest(); // §14: reflect this session's loaded skills
+    // §12: the resting boundary for every child of this session. Registered here
+    // rather than at module scope because it needs the session id, and re-applied
+    // on a respawn so a resumed session is bounded exactly like a fresh one
+    // (unlike dangerous mode, this is not something a respawn should relax).
+    ceilingTools = [...READ_ONLY_CHILD_TOOLS].sort();
+    applyCeiling(sessionIdOf(ctx));
     const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
     restoreMarks(entries);
     // Run-card captions survive a respawn AND an app restart: nothing on disk can
@@ -711,7 +802,11 @@ export default function (pi: ExtensionAPI) {
       (tool === "browser_open" || tool === "browser_navigate") && typeof input.url === "string"
         ? browserRuleName(input.url)
         : null;
-    const permTool = mcp?.ruleTool ?? browserNav ?? tool;
+    // §12: a delegation gates per AGENT, not per tool — the same reasoning as the
+    // two lines above. `subagent` as a rule name made "Allow for session" on a
+    // read-only explorer cover a bash-wielding agent for the rest of the session.
+    const subagentName = tool === "subagent" && typeof input.agent === "string" ? input.agent : null;
+    const permTool = mcp?.ruleTool ?? browserNav ?? (subagentName ? boundaryRuleName(subagentName) : tool);
     const summary = mcp?.display ?? summarize(tool, input);
 
     // W2.3: nested AGENTS.md discovery — every file-tool call reveals which
