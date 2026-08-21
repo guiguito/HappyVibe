@@ -141,3 +141,64 @@ test.skipIf(!KEY)(
   },
   300_000,
 );
+
+/**
+ * The other half of the promise, and the one that is easy to lose.
+ *
+ * FR1 says the modal tells the truth about a child's reach. So when it says "It
+ * can change things with: write" and the user allows it, the write must actually
+ * WORK. A boundary that is approved and then silently refused deeper down is a
+ * worse lie than no boundary at all: the user believes they granted something.
+ *
+ * This is the assertion that catches any layer added beneath the guard which
+ * denies unconditionally rather than per-boundary.
+ */
+test.skipIf(!KEY)(
+  "an APPROVED write actually succeeds — no layer beneath may refuse it blanket",
+  async () => {
+    const allowWrites = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-guard-rules2-")), "permission-rules.json");
+    fs.writeFileSync(allowWrites, JSON.stringify({
+      global: [
+        { layer: "tool", pattern: "subagent*", action: "allow" },
+        // The user has explicitly allowed writing. The guard must permit it, and
+        // nothing below the guard may override that.
+        { layer: "tool", pattern: "write", action: "allow" },
+      ],
+      workspaces: {},
+    }));
+    const cwd2 = fs.mkdtempSync(path.join(os.tmpdir(), "hv-guard-cwd2-"));
+    const audit2 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-guard-audit2-")), "child-audit");
+
+    const spec = resolvePiSpawn(cwd2, fs.mkdtempSync(path.join(os.tmpdir(), "hv-guard-sess2-")), runtime, {
+      agentDir, providerEnv: PROVIDER_ENV, rulesFile: allowWrites, childAuditDir: audit2, model: MODEL,
+    });
+    const c2 = new PiClient(spec);
+    const rows2 = (): Array<Record<string, unknown>> =>
+      !fs.existsSync(audit2) ? [] : fs.readdirSync(audit2)
+        .filter((f) => f.endsWith(".jsonl"))
+        .flatMap((f) => fs.readFileSync(path.join(audit2, f), "utf8").split("\n").filter(Boolean))
+        .flatMap((l) => { try { return [JSON.parse(l) as Record<string, unknown>]; } catch { return []; } });
+    try {
+      await c2.start();
+      await c2.send({
+        type: "prompt",
+        message:
+          "Use the subagent tool right now with async false to delegate to the agent named 'writer'. " +
+          "Give it exactly this task: 'create a file called ok.txt containing the word HI'. " +
+          "Do not do anything else yourself.",
+      });
+      await waitFor(() => rows2().some((r) => r.tool === "write"), 240_000, "the child attempted a write");
+
+      const write = rows2().find((r) => r.tool === "write")!;
+      expect(write.decision, `the guard must ALLOW an explicitly allowed write; rows: ${JSON.stringify(rows2())}`).toBe("allow");
+      expect(write.wouldHave).toBe("allow");
+      // And it must actually have happened. If a layer beneath the guard denied
+      // it, the row says allow and the file is still missing — which is exactly
+      // the failure this test exists to catch.
+      expect(fs.existsSync(path.join(cwd2, "ok.txt")), "an approved write must really write").toBe(true);
+    } finally {
+      c2.stop();
+    }
+  },
+  300_000,
+);
