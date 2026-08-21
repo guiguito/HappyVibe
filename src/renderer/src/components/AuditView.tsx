@@ -13,6 +13,8 @@ interface Decision {
   /** §12 FR7: set on a decision made INSIDE a sub-agent child. */
   agent?: string;
   runId?: string;
+  /** §12 FR7: the child decision was allowed by the bypass, not by a rule. */
+  bypass?: boolean;
   /** Round 15: on a bypassed row, what the rule engine would have decided. */
   wouldHave?: "allow" | "ask" | "deny";
   rule?: HvRule & { scope: string };
@@ -102,7 +104,11 @@ const SOURCE_TONE: Record<string, string> = {};
  */
 export function sourceText(r: Decision): string {
   const label = SOURCE_LABEL[r.source] ?? r.source;
-  const base = r.source === "subagent" && r.agent ? `${label} ${r.agent}` : label;
+  const named = r.source === "subagent" && r.agent ? `${label} ${r.agent}` : label;
+  // A child row under bypass says BOTH: which child, and that the bypass decided.
+  // Folding it to plain "bypass" made a sub-agent's actions indistinguishable
+  // from the parent's, which is the one thing these rows must not do.
+  const base = r.source === "subagent" && r.bypass ? `${named} · bypass` : named;
   const would =
     r.wouldHave === "ask" ? "rules would have asked"
     : r.wouldHave === "deny" ? "rules would have DENIED"

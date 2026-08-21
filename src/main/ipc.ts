@@ -61,7 +61,7 @@ import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, Works
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
-import { clearGuardAudit, readGuardAudit, rollupGuardAudit } from "./subagentAudit";
+import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
 import { inspectCommand, inspectRequestId, parseInspectFrame, type InspectReply } from "./subagentInspect";
 import { pollSubagentStatus } from "./subagentStatus";
 import { EventLog } from "./log";
@@ -1569,38 +1569,80 @@ export function registerIpc(win: BrowserWindow): void {
   const drainChildAudit = (
     sessionId: string,
     workspaceId: string | undefined,
-    runId: string,
+    /** The WORKFLOW run id — used only for the no-activity rollup below, since
+        the guard's own files are keyed by the CHILD run id (see the scan). */
+    completedRunId: string,
     agent?: string,
   ): void => {
     const root = childAuditRoot();
-    const rows = readGuardAudit(root, root, runId);
-    if (rows.length === 0) return;
+    // Drained by SCANNING, not by the completing run's id — and that is not a
+    // shortcut, it is the only thing that works. The guard names its file after
+    // PI_SUBAGENT_RUN_ID, which is the CHILD's own run id; the completion event
+    // carries the workflow async id. They are different values (measured in the
+    // running app: guard file 0d2c82ad…, completion runId dd0e257a…), and the
+    // child cannot know the workflow id — PI_SUBAGENT_PARENT_RUN_ID is only set
+    // when fan-out is authorized, which our children never have.
+    //
+    // Scanning is lossless even for a sibling still running: the guard appends by
+    // PATH, so deleting a file it is still writing to simply makes the next
+    // append recreate it, and those rows arrive in a later drain.
+    const rows = guardAuditRows(root, root);
+    if (rows.length === 0) {
+      // A child that made NO tool calls leaves no guard rows, so without this the
+      // delegation would leave no audit trace at all — and FR7's whole point is
+      // that silence should not be ambiguous. Seen in the app: a child returned
+      // empty, and the log said nothing whatsoever about it.
+      //
+      // Honest limit, stated rather than glossed: this row cannot distinguish "the
+      // child did nothing" from "the guard failed to load". Nothing available to
+      // main can. What covers the second case is the contract test asserting the
+      // wrapper injects the guard and the guard file exists.
+      void log.append({
+        type: "subagent.audit_rollup",
+        sessionId,
+        workspaceId,
+        data: { runId: completedRunId, ...(agent ? { agent } : {}), attempted: 0, denied: 0 },
+      });
+      return;
+    }
     for (const r of rows) {
       void log.append({
         type: "permission.decision",
         sessionId,
         workspaceId,
-        // Same envelope the parent's own decisions use, so AuditView renders them
-        // interleaved by timestamp. `source` is what distinguishes them.
+        // The parent's own envelope, so AuditView interleaves these by timestamp.
+        // `source` is what distinguishes them.
         data: {
           ts: r.ts,
           tool: r.tool,
           summary: r.summary,
           decision: r.decision,
-          source: r.source === "bypass" ? "bypass" : "subagent",
+          // ALWAYS "subagent", never folded into "bypass". A child decision has to
+          // stay identifiable as a child's (FR7) — with the fold, a run under
+          // bypass rendered exactly like a parent bypass row and the audit log
+          // could not answer "what did the sub-agent do", which is the question
+          // these rows exist for. Seen in the running app before it was fixed.
+          source: "subagent",
+          // …and the bypass fact is kept beside it rather than instead of it.
+          ...(r.source === "bypass" ? { bypass: true } : {}),
           wouldHave: r.wouldHave,
           runId: r.runId,
           ...(agent ? { agent } : {}),
         },
       });
     }
-    void log.append({
-      type: "subagent.audit_rollup",
-      sessionId,
-      workspaceId,
-      data: { runId, ...(agent ? { agent } : {}), ...rollupGuardAudit(rows) },
-    });
-    clearGuardAudit(root, root, runId);
+    // One rollup per CHILD run, so an uneventful child still leaves a trace and a
+    // run with several children is not collapsed into one number.
+    for (const runId of new Set(rows.map((r) => r.runId))) {
+      const own = rows.filter((r) => r.runId === runId);
+      void log.append({
+        type: "subagent.audit_rollup",
+        sessionId,
+        workspaceId,
+        data: { runId, ...(agent ? { agent } : {}), ...rollupGuardAudit(own) },
+      });
+      clearGuardAudit(root, root, runId);
+    }
   };
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
     if (!asyncDir || subagentPollers.has(runId)) return;

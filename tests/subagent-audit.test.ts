@@ -182,3 +182,92 @@ describe("the delegated agent name is correlated START→END", () => {
     expect(bridge).toMatch(/d\.agent === "workflow" \? undefined : d\.agent/);
   });
 });
+
+/**
+ * The id mismatch this drain is built around, found by a UI test rather than a
+ * unit test — which is exactly the class of bug a UI test exists to catch.
+ *
+ * The guard names its file after PI_SUBAGENT_RUN_ID, the CHILD's own run id. The
+ * completion event carries the WORKFLOW async id. Measured in the running app:
+ * guard file `0d2c82ad-…`, completion runId `dd0e257a-…`. Keying the drain on the
+ * completion id therefore found nothing and silently ingested zero rows, while
+ * every individual piece tested green.
+ */
+describe("the drain must not key on the completing run's id", () => {
+  it("finds rows whose runId is nothing like the workflow id", () => {
+    write("0d2c82ad-d8b5-44c3-a8c6-056ea8288543",
+      row({ runId: "0d2c82ad-d8b5-44c3-a8c6-056ea8288543", tool: "ls" }));
+    // What the old code did: look up the workflow id.
+    expect(readGuardAudit(root, dir, "dd0e257a-f00d-4bba-89f2-187befcec85e")).toEqual([]);
+    // What it does now: scan.
+    expect(guardAuditRows(root, dir)).toHaveLength(1);
+  });
+
+  it("groups a rollup per CHILD run, so several children are not collapsed", () => {
+    write("c1", row({ runId: "c1", tool: "ls" }), row({ runId: "c1", tool: "write", decision: "deny" }));
+    write("c2", row({ runId: "c2", tool: "read" }));
+    const rows = guardAuditRows(root, dir);
+    const byRun = new Set(rows.map((r) => r.runId));
+    expect(byRun).toEqual(new Set(["c1", "c2"]));
+    expect(rollupGuardAudit(rows.filter((r) => r.runId === "c1"))).toEqual({ attempted: 2, denied: 1 });
+    expect(rollupGuardAudit(rows.filter((r) => r.runId === "c2"))).toEqual({ attempted: 1, denied: 0 });
+  });
+
+  it("the guard appends by PATH, which is what makes delete-after-drain lossless", () => {
+    // A sibling still running has its file deleted mid-flight; because the guard
+    // calls appendFileSync with a path (not a held fd), its next write recreates
+    // the file and those rows arrive in a later drain instead of being lost.
+    const guard = fs.readFileSync(
+      path.join(__dirname, "..", "pi-runtime", "extensions", "hv-child-guard.ts"), "utf8");
+    expect(guard).toMatch(/appendFileSync\(path\.join\(auditDir/);
+    expect(guard, "no long-lived fd").not.toMatch(/openSync|createWriteStream/);
+  });
+
+  it("main scans rather than looking up a single run", () => {
+    const ipc = fs.readFileSync(path.join(__dirname, "..", "src", "main", "ipc.ts"), "utf8");
+    expect(ipc).toContain("guardAuditRows(root, root)");
+    expect(ipc, "the completing run's id must not be the key").not.toMatch(/readGuardAudit\(root, root, runId\)/);
+  });
+});
+
+describe("a child row under bypass stays identifiable as a child's", () => {
+  const base = { ts: "2026-08-21T10:00:00.000Z", tool: "ls", summary: "{}", decision: "allow" as const };
+
+  it("says both which child AND that bypass decided", () => {
+    const t = sourceText({ ...base, source: "subagent", agent: "code-explorer", bypass: true, wouldHave: "allow" } as never);
+    expect(t).toContain("sub-agent");
+    expect(t).toContain("code-explorer");
+    expect(t).toContain("bypass");
+  });
+
+  it("is NOT folded into a plain parent bypass row", () => {
+    // The bug this fixes, seen in the running app: with the fold, a child's
+    // actions under bypass rendered exactly like the parent's own and the audit
+    // log could no longer answer "what did the sub-agent do".
+    const child = sourceText({ ...base, source: "subagent", agent: "x", bypass: true, wouldHave: "allow" } as never);
+    const parent = sourceText({ ...base, source: "bypass", wouldHave: "allow" } as never);
+    expect(child).not.toBe(parent);
+    expect(parent).not.toContain("sub-agent");
+  });
+
+  it("main never writes source:\"bypass\" for a child row", () => {
+    const ipc = fs.readFileSync(path.join(__dirname, "..", "src", "main", "ipc.ts"), "utf8");
+    expect(ipc).not.toMatch(/r\.source === "bypass" \? "bypass" : "subagent"/);
+    expect(ipc).toMatch(/\.\.\.\(r\.source === "bypass" \? \{ bypass: true \} : \{\}\)/);
+  });
+});
+
+describe("a delegation always leaves a trace", () => {
+  it("main emits a zero rollup when the child made no tool calls", () => {
+    // Seen in the running app: a child returned empty, made no tool calls, and the
+    // audit log therefore said nothing about the delegation at all — which defeats
+    // the rollup's purpose of making silence unambiguous.
+    const ipc = fs.readFileSync(path.join(__dirname, "..", "src", "main", "ipc.ts"), "utf8");
+    expect(ipc).toMatch(/rows\.length === 0[\s\S]{0,900}attempted: 0, denied: 0/);
+  });
+
+  it("that rollup is keyed by the WORKFLOW run id, the only id main has there", () => {
+    const ipc = fs.readFileSync(path.join(__dirname, "..", "src", "main", "ipc.ts"), "utf8");
+    expect(ipc).toMatch(/data: \{ runId: completedRunId/);
+  });
+});
