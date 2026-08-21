@@ -387,8 +387,49 @@ function applyCeiling(sessionId: string | undefined): void {
 /** Set when the ceiling could not be registered — a delegation then refuses. */
 let ceilingError: string | undefined;
 
-/** The declarations worth showing at approval, because each changes child behaviour. */
-const SURFACED_DECLARATIONS = ["skills", "inheritSkills", "extensions", "subagentOnlyExtensions", "outputMode"] as const;
+/**
+ * FR8 — the resolved facts worth showing at approval, because each changes what
+ * a child can reach.
+ *
+ * Derived from the RESOLVED contract, never from the agent file's frontmatter.
+ * That is deliberate: `contract.agent` is the agent's identity (name, path,
+ * digest, shadowed candidates), not its declarations, and 0.53 lets an extension
+ * register an agent at runtime with no file to read at all. Reading the resolved
+ * contract works for both.
+ *
+ * `outputMode` is NOT here despite being named in FR8: the launch contract does
+ * not expose it (measured — its keys are version, runId, agent, context,
+ * modelCandidates, systemPromptMode, inheritProjectContext, inheritSkills,
+ * skills, tools, roots, protocol, diagnostics, launchContractDigest, digest). It
+ * is better to omit it than to render a field that is always absent.
+ */
+type PreflightContract = {
+  context?: string;
+  inheritSkills?: boolean;
+  inheritProjectContext?: boolean;
+  skills?: { requested?: string[]; resolved?: Array<{ name: string }> };
+  agent?: { shadowedCandidates?: unknown[] };
+  tools?: {
+    explicitAllowlist?: boolean;
+    effectiveAllowlist?: string[];
+    configuredExtensions?: string[];
+    toolExtensionPaths?: string[];
+  };
+};
+
+function declarationsOf(k: PreflightContract): string[] {
+  const out: string[] = [];
+  if (k.inheritSkills === true) out.push("inheritSkills");
+  if ((k.skills?.requested?.length ?? 0) > 0) out.push("skills");
+  if ((k.tools?.configuredExtensions?.length ?? 0) > 0 || (k.tools?.toolExtensionPaths?.length ?? 0) > 0) {
+    out.push("extensions");
+  }
+  if (k.inheritProjectContext === true) out.push("projectContext");
+  // A same-named agent was overridden to resolve this one — the workspace/plugin
+  // shadowing case FR10 cares about, and invisible without saying so.
+  if ((k.agent?.shadowedCandidates?.length ?? 0) > 0) out.push("shadowsAnotherAgent");
+  return out;
+}
 
 /**
  * §12 FR1/FR8 — resolve what a delegation's child would actually be able to do.
@@ -406,22 +447,23 @@ const SURFACED_DECLARATIONS = ["skills", "inheritSkills", "extensions", "subagen
  */
 async function resolveBoundary(agent: string): Promise<BoundarySummary | undefined> {
   try {
-    const c = (await resolveSubagentLaunchContract({ agent, cwd: process.cwd() })) as {
+    // The result is `{ok, contract}` — everything is nested under `contract`, and
+    // reading it off the top level yields undefined for every field, which then
+    // reads as "unresolvable" and refuses every delegation. Measured, after doing
+    // exactly that.
+    const res = (await resolveSubagentLaunchContract({ agent, cwd: process.cwd() })) as {
       ok?: boolean;
-      tools?: { explicitAllowlist?: boolean; effectiveAllowlist?: string[] };
-      skills?: { resolved?: Array<{ name: string }> };
-      agent?: Record<string, unknown>;
-      context?: string;
+      contract?: PreflightContract;
     };
-    if (!c?.ok || !c.tools) return undefined;
-    const declared = c.agent ?? {};
+    const k = res?.contract;
+    if (!res?.ok || !k?.tools) return undefined;
     return summarizeBoundary({
       agent,
-      explicitAllowlist: c.tools.explicitAllowlist === true,
-      effectiveAllowlist: c.tools.effectiveAllowlist ?? [],
-      skills: (c.skills?.resolved ?? []).map((s) => s.name),
-      ...(c.context ? { context: c.context } : {}),
-      declarations: SURFACED_DECLARATIONS.filter((k) => declared[k] !== undefined),
+      explicitAllowlist: k.tools.explicitAllowlist === true,
+      effectiveAllowlist: k.tools.effectiveAllowlist ?? [],
+      skills: (k.skills?.resolved ?? []).map((s) => s.name),
+      ...(k.context ? { context: k.context } : {}),
+      declarations: declarationsOf(k),
     });
   } catch {
     return undefined;
