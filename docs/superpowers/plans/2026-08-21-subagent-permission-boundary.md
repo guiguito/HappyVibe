@@ -65,10 +65,13 @@
 - [ ] **Step 1: Install the current pin so the baseline is real**
 
 ```bash
-cd pi-runtime && npm ci && node -e 'console.log(require("pi-subagents/package.json").version)'
+cd pi-runtime && npm ci
+python3 -c "import json;print(json.load(open('node_modules/pi-subagents/package.json'))['version'])"
 ```
 
 Expected: `0.51.0`. If it prints anything else, the checkout was stale and the previous baseline was fiction.
+
+Read the file directly — **`require("pi-subagents/package.json")` throws**: the package ships an `exports` map, and an exports map gates bare specifiers, so `./package.json` is not reachable. Same reason the bridge imports `listAsyncRuns` by relative path.
 
 - [ ] **Step 2: Record a green baseline before touching the pin**
 
