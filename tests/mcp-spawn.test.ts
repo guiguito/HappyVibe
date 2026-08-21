@@ -65,3 +65,51 @@ test("a session id becomes an owner claim that is stable across respawn", () => 
 test("pinned adapter entry file exists in the vendored tree", () => {
   expect(fs.existsSync(path.join(runtime, PI_MCP_ADAPTER_RELPATH))).toBe(true);
 });
+
+/**
+ * §12 FR4 — the child guard rides the PI_SUBAGENT_PI_BINARY wrapper.
+ *
+ * This is the one injection point a capability ceiling's `denyExtensions` cannot
+ * strip, because the wrapper runs after pi-args has finished building argv. If
+ * any of these regress, children run with no HappyVibe permission gate at all —
+ * and that failure is silent from the app's side, which is why it is pinned here
+ * rather than left to the live batch.
+ */
+test("the wrapper injects the child guard BEFORE the positional task", () => {
+  const sh = fs.readFileSync(path.join(runtime, "bin", "pi-node.sh"), "utf8");
+  const execs = sh.split("\n").filter((l) => l.includes("exec ") && l.includes("$CLI"));
+  expect(execs.length, "both the packaged and the dev exec paths").toBe(2);
+  for (const line of execs) {
+    expect(line, "guard is passed").toContain('--extension "$GUARD"');
+    // pi-args appends the task as a trailing positional (`Task: …` or `@file`),
+    // so the flag must precede "$@" — a flag after a positional is not something
+    // to bet the permission gate on.
+    expect(line.indexOf('--extension "$GUARD"'), line).toBeLessThan(line.indexOf('"$@"'));
+  }
+});
+
+test("the guard file the wrapper names actually exists in the vendored tree", () => {
+  // The same class of check as the owner-seed test above: a wrapper naming a
+  // missing extension would leave children ungated.
+  expect(fs.existsSync(path.join(runtime, "extensions", "hv-child-guard.ts"))).toBe(true);
+});
+
+test("GUARD resolves under the runtime dir, so a packaged app finds it too", () => {
+  const sh = fs.readFileSync(path.join(runtime, "bin", "pi-node.sh"), "utf8");
+  expect(sh).toMatch(/GUARD="\$RUNTIME\/extensions\/hv-child-guard\.ts"/);
+});
+
+test("upstream still passes wrapper argv through untouched", () => {
+  // getPiSpawnCommand returning `args` unchanged is what makes prepending safe.
+  // If a bump ever rewrites argv here, the guard could be dropped or reordered.
+  const src = fs.readFileSync(
+    path.join(runtime, "node_modules", "pi-subagents", "src", "runs", "shared", "pi-spawn.ts"), "utf8");
+  expect(src).toContain("return { command: piBinary, args }");
+});
+
+test("the child audit dir is passed only when asked for, and reaches the child's env", () => {
+  const plain = resolvePiSpawn("/ws", "/sess", runtime, {});
+  expect(plain.env.HV_CHILD_AUDIT_DIR).toBeUndefined();
+  const withDir = resolvePiSpawn("/ws", "/sess", runtime, { childAuditDir: "/tmp/hv-audit" });
+  expect(withDir.env.HV_CHILD_AUDIT_DIR).toBe("/tmp/hv-audit");
+});

@@ -9,14 +9,28 @@
 RUNTIME="$(cd "$(dirname "$0")/.." && pwd)"
 CLI="$RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
 
+# PRD §12: every sub-agent child loads HappyVibe's permission guard. This script
+# IS PI_SUBAGENT_PI_BINARY, so it is children-only — the parent session spawns
+# through nodeExecPath() and never comes here.
+#
+# Injected HERE rather than through an agent's `extensions:` key for two reasons:
+# it reaches every child with no per-agent stamping, and a capability ceiling's
+# `denyExtensions` cannot strip it, because pi-args has already finished building
+# argv by the time this runs (getPiSpawnCommand passes args through untouched).
+#
+# PREPENDED, never appended: pi-args puts the task LAST as a positional
+# (`Task: …` or `@/tmp/…/task.md`), and whether a flag after a positional is
+# still parsed is not something worth betting the permission gate on.
+GUARD="$RUNTIME/extensions/hv-child-guard.ts"
+
 # Packaged layout: <Bundle>/Contents/Resources/pi-runtime → helpers live in
 # <Bundle>/Contents/Frameworks/. Discover relative to this script.
 CONTENTS="$(dirname "$(dirname "$RUNTIME")")"
 for h in "$CONTENTS/Frameworks/"*" Helper (Plugin).app/Contents/MacOS/"*; do
   if [ -x "$h" ]; then
     export ELECTRON_RUN_AS_NODE=1
-    exec "$h" "$CLI" "$@"
+    exec "$h" "$CLI" --extension "$GUARD" "$@"
   fi
 done
 
-exec node "$CLI" "$@"
+exec node "$CLI" --extension "$GUARD" "$@"
