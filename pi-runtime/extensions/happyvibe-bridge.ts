@@ -21,7 +21,7 @@ import {
 import { parseAgentFile, renderSubagentSection, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
-  buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, shouldForcePlanOff,
+  buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, resolvePlanVerdict, restorePlanState, shouldForcePlanOff,
   type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
 import { parseBuiltins } from "./hv-builtins";
@@ -997,7 +997,9 @@ export default function (pi: ExtensionAPI) {
     // calls only; an in-flight async delegation is untouched.
     let planFloorAsk = false;
     if (builtins.plan && plan.enabled) {
-      const g = gatePlanCall(tool, input);
+      // §23: the verdict — including the read-only-delegation decision — is
+      // resolved in hv-plan.ts, which is typechecked. See resolvePlanVerdict.
+      const g = resolvePlanVerdict(gatePlanCall(tool, input), boundary);
       if (g.kind === "block") {
         audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "plan" });
         ctx.ui.notify(JSON.stringify({ kind: "hv.plan.blocked", toolName: tool, toolCallId: event.toolCallId, reason: g.reason }), "info");

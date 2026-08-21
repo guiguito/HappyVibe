@@ -171,7 +171,7 @@ export function planSlug(body: string): string {
 // outright. `browser_open`/`browser_navigate` are deliberately NOT here — they
 // fall through to floor-ask, because opening documentation to read it is
 // legitimate planning, and a GET the user approves per-call is not a mutation.
-const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "subagent", "terminal_run", "browser_click", "browser_type", "browser_evaluate"]);
+const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "terminal_run", "browser_click", "browser_type", "browser_evaluate"]);
 /** Read-only tools that pass straight through the plan gate. */
 const PLAN_PASS_TOOLS = new Set([
   // use_skill only returns an ALREADY-APPROVED SKILL.md's text (spawn-time trust
@@ -190,10 +190,24 @@ const PLAN_PASS_TOOLS = new Set([
   "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close",
 ]);
 
+import { isReadOnlyBoundary, writeCapableIn } from "./hv-subagent-boundary";
+
 export type PlanGate =
   | { kind: "block"; reason: string }
   | { kind: "floor-ask" }
-  | { kind: "pass" };
+  | { kind: "pass" }
+  /**
+   * §23 (2026-08-21) — a delegation, whose verdict depends on the child's
+   * RESOLVED toolset. This module is pure and synchronous; preflight is neither,
+   * so the answer is deferred to the bridge rather than guessed here.
+   *
+   * A DISTINCT variant rather than `pass` or `floor-ask`, on purpose: the union's
+   * exhaustiveness check makes a caller that forgets to resolve the boundary fail
+   * the TYPECHECK, instead of silently letting an unbounded child run during a
+   * mode whose whole promise is that it is read-only. The one property that keeps
+   * a read-only mode honest is that its gate cannot be removed by accident.
+   */
+  | { kind: "needs-boundary" };
 
 /**
  * Read-only extras enabled by default in Plan Mode (the ported policy leaves
@@ -211,7 +225,59 @@ export const PLAN_SAFE_SUBCOMMANDS: SafeSubcommands = {
  *   pass      → continue to the normal gates (read-only builtins, allowlisted bash)
  *   floor-ask → run the rule engine but clamp any `allow` to `ask` (MCP/unknown)
  */
+/** What the bridge actually does, once a delegation's boundary is known. */
+export type PlanVerdict =
+  | { kind: "block"; reason: string }
+  | { kind: "floor-ask" }
+  | { kind: "pass" };
+
+/**
+ * Collapse a PlanGate into a verdict, resolving `needs-boundary` against the
+ * child's actual reach.
+ *
+ * This lives HERE rather than in the bridge for one concrete reason:
+ * `happyvibe-bridge.ts` is in neither tsconfig, so an exhaustiveness check
+ * written there is decorative — verified by deleting a branch and watching the
+ * typecheck stay green. `hv-plan.ts` IS typechecked, so the `never` below is real:
+ * a future PlanGate variant nobody handles fails `npm run build` instead of
+ * falling through to the permissive path in a mode whose whole promise is that it
+ * is read-only.
+ */
+export function resolvePlanVerdict(
+  g: PlanGate,
+  boundary: { agent: string; tools: readonly string[] } | undefined,
+): PlanVerdict {
+  switch (g.kind) {
+    case "block":
+    case "floor-ask":
+    case "pass":
+      return g;
+    case "needs-boundary": {
+      // §23: read-only delegation is allowed while planning; anything wider is
+      // not, because the calm banner would otherwise be lying.
+      if (boundary && isReadOnlyBoundary(boundary.tools)) return { kind: "floor-ask" };
+      const why = boundary
+        ? `'${boundary.agent}' can use ${writeCapableIn(boundary.tools).join(", ") || "tools outside the read-only set"}`
+        : "its reach could not be resolved";
+      return {
+        kind: "block",
+        reason: `Plan mode is read-only — ${why}. Delegate a read-only exploration instead, or leave plan mode to run it.`,
+      };
+    }
+    default: {
+      const unhandled: never = g;
+      return unhandled;
+    }
+  }
+}
+
 export function gatePlanCall(toolName: string, input: unknown): PlanGate {
+  // Checked FIRST so the intent is unmissable: `subagent` is deliberately absent
+  // from BLOCKED_PLAN_TOOLS, and this is where that shows. Planning IS
+  // exploration, and delegating a long codebase search to a read-only explorer is
+  // the most useful thing a planning session can do — which the old clamp
+  // forbade for a reason (§12, 2026-07-19) that the capability ceiling removed.
+  if (toolName === "subagent") return { kind: "needs-boundary" };
   if (BLOCKED_PLAN_TOOLS.has(toolName)) {
     return { kind: "block", reason: `Plan mode is read-only — '${toolName}' is blocked. Explore and draft a plan; the user implements it later.` };
   }
