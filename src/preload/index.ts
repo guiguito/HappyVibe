@@ -239,6 +239,8 @@ contextBridge.exposeInMainWorld("hv", {
   // Async subagents: stop button + live status. Lifecycle (started/complete/
   // control/active) arrives as hv.subagent notifies through onUiRequest.
   subagentInterrupt: (sessionId: string, runId: string) => ipcRenderer.invoke("hv:subagent-interrupt", sessionId, runId),
+  // §12: pull a child's transcript on demand (no model turn).
+  subagentInspect: (sessionId: string, asyncId: string) => ipcRenderer.invoke("hv:subagent-inspect", sessionId, asyncId),
   onSubagentStatus: (cb: (i: { sessionId: string; runId: string; status: Record<string, unknown> }) => void): (() => void) => {
     const listener = (_e: unknown, i: { sessionId: string; runId: string; status: Record<string, unknown> }): void => cb(i);
     ipcRenderer.on("hv:subagent-status", listener);

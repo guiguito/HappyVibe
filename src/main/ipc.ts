@@ -62,6 +62,7 @@ import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
 import { clearGuardAudit, readGuardAudit, rollupGuardAudit } from "./subagentAudit";
+import { inspectCommand, inspectRequestId, parseInspectFrame, type InspectReply } from "./subagentInspect";
 import { pollSubagentStatus } from "./subagentStatus";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
@@ -1099,6 +1100,16 @@ export function registerIpc(win: BrowserWindow): void {
       }
     });
     client.on("ui-request", (r: { id: string; method?: string; title?: string; message?: string }) => {
+      // §12: an inspect reply arrives as a setWidget frame on the SAME channel as
+      // permission prompts. Checked FIRST and returned early so it never reaches
+      // the permission dispatch — and never responded to, because upstream awaits
+      // nothing here (setWidget is fire-and-forget from the extension's side).
+      const inspect = parseInspectFrame(r);
+      if (inspect) {
+        pendingInspects.get(inspect.requestId)?.(inspect);
+        pendingInspects.delete(inspect.requestId);
+        return;
+      }
       // B4 audit channel: hv.audit notifies are fire-and-forget (never respond)
       // and land in the EventLog, not the renderer.
       const audit = parseAuditNotify(r);
@@ -1535,6 +1546,16 @@ export function registerIpc(win: BrowserWindow): void {
    */
   const delegatedAgentByCall = new Map<string, string>();
   const delegatedAgentByRun = new Map<string, string>();
+  /**
+   * §12: in-flight `/subagents-inspect-rpc` calls, by requestId.
+   *
+   * Correlated by requestId rather than by run, because a user can expand two
+   * cards at once and upstream answers on a shared channel. Each entry is settled
+   * exactly once and always settled — an unanswered inspect would leave a card
+   * spinning forever, which is why there is a timeout as well as a resolver.
+   */
+  const pendingInspects = new Map<string, (r: InspectReply | null) => void>();
+  let inspectSeq = 0;
 
   /**
    * §12 FR7 — turn a finished run's guard rows into EventLog entries.
@@ -2948,6 +2969,34 @@ export function registerIpc(win: BrowserWindow): void {
   });
   // Interrupt a running async subagent (stop button). Fire-and-forget prompt to
   // that session's client; the bridge drives pi-subagents' RPC and notifies back.
+  /**
+   * §12: fetch a child's task, a bounded transcript window and its final output.
+   *
+   * Costs NO model turn — upstream answers from its own artifacts — so the card
+   * can call this on every expand. Always settles: on the reply, or on a timeout,
+   * or on a send failure, because a card that never hears back spins forever.
+   */
+  ipcMain.handle("hv:subagent-inspect", async (_e, sessionId: string, asyncId: string) => {
+    const client = manager.get(sessionId) as PiClient | null;
+    if (!client) return { ok: false as const, error: "session is not running" };
+    const requestId = inspectRequestId(++inspectSeq);
+    const reply = await new Promise<InspectReply | null>((resolve) => {
+      const timer = setTimeout(() => {
+        pendingInspects.delete(requestId);
+        resolve(null);
+      }, 10_000);
+      pendingInspects.set(requestId, (r) => { clearTimeout(timer); resolve(r); });
+      void client.send({ type: "prompt", message: inspectCommand(requestId, asyncId) }).catch(() => {
+        clearTimeout(timer);
+        pendingInspects.delete(requestId);
+        resolve(null);
+      });
+    });
+    if (!reply) return { ok: false as const, error: "no reply" };
+    if (reply.error) return { ok: false as const, error: reply.error.message, code: reply.error.code };
+    return { ok: true as const, reply };
+  });
+
   ipcMain.handle("hv:subagent-interrupt", (_e, sessionId: string, runId: string) => {
     void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-interrupt ${runId}` }).catch(() => {});
   });

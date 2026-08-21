@@ -697,6 +697,17 @@ interface HvApi {
   listTools(sessionId?: string): Promise<void>;
   /** Async subagents: interrupt a running detached run (stop button). */
   subagentInterrupt(sessionId: string, runId: string): Promise<void>;
+  /**
+   * §12: a child's task, a bounded transcript window and its final output,
+   * fetched on demand. Costs NO model turn, so it is safe to call on expand.
+   * Resolves ok:false rather than rejecting — inspection is scoped to the current
+   * session's children, so a respawn can legitimately answer foreign_session.
+   */
+  subagentInspect(sessionId: string, asyncId: string): Promise<
+    | { ok: true; reply: { asyncId?: string; task?: string; status?: string; finalOutput?: string;
+                           messages?: Array<{ role: string; kind: "text" | "toolCall" | "toolResult"; text: string; name?: string; isError?: boolean }> } }
+    | { ok: false; error: string; code?: string }
+  >;
   /** Live status pushes for detached runs (currentTool, activityState, …). */
   onSubagentStatus(cb: (i: { sessionId: string; runId: string; status: Record<string, unknown> }) => void): () => void;
   readAgent(filePath: string): Promise<{ body: string; model?: string }>;
