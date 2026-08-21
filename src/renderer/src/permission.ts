@@ -7,9 +7,19 @@ export interface UiRequest {
   options?: string[];
 }
 
+import type { BoundarySummary } from "../../../pi-runtime/extensions/hv-subagent-boundary";
+
 export interface PermissionInfo {
   tool: string;
   summary: string;
+  /**
+   * §12: the child's resolved reach, present only on a delegation prompt.
+   *
+   * Typed from the bridge's own pure module so the renderer cannot drift from
+   * what was enforced — the prompt and the ceiling must agree, or the user
+   * approves one thing while another is applied.
+   */
+  boundary?: BoundarySummary;
   /** v5: set when the call reached outside the workspace root. */
   reason?: "outside-workspace";
   /** v5: the offending path, for the outside-workspace badge. */
@@ -39,6 +49,23 @@ export function parsePermission(r: UiRequest): PermissionInfo | null {
     const p = JSON.parse(r.title ?? "");
     if (p?.kind === "hv.permission") {
       const info: PermissionInfo = { tool: String(p.tool ?? ""), summary: String(p.summary ?? "") };
+      // Validated structurally rather than trusted: a malformed boundary must
+      // degrade to "no boundary block" (the prompt still shows the factual
+      // summary), never throw and lose the whole prompt — which never times out
+      // and would leave the agent blocked forever.
+      const bnd = p.boundary as Record<string, unknown> | undefined;
+      if (bnd && typeof bnd === "object" && typeof bnd.agent === "string" && Array.isArray(bnd.tools)) {
+        info.boundary = {
+          agent: bnd.agent,
+          tools: (bnd.tools as unknown[]).filter((t): t is string => typeof t === "string"),
+          declared: bnd.declared === true,
+          writeCapable: Array.isArray(bnd.writeCapable) ? (bnd.writeCapable as unknown[]).filter((t): t is string => typeof t === "string") : [],
+          fanout: bnd.fanout === true,
+          skills: Array.isArray(bnd.skills) ? (bnd.skills as unknown[]).filter((t): t is string => typeof t === "string") : [],
+          context: typeof bnd.context === "string" ? bnd.context : "fresh",
+          declarations: Array.isArray(bnd.declarations) ? (bnd.declarations as unknown[]).filter((t): t is string => typeof t === "string") : [],
+        };
+      }
       if (p.reason === "outside-workspace") {
         info.reason = "outside-workspace";
         if (typeof p.path === "string") info.path = p.path;

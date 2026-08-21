@@ -1,5 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import type { PermissionChoice, PermissionInfo, UiRequest } from "../permission";
+import type { BoundarySummary } from "../../../../pi-runtime/extensions/hv-subagent-boundary";
 import { toolLabel } from "../toolLabel";
 import { ToolIcon } from "./ToolCard";
 
@@ -39,6 +40,46 @@ const EXPANDED_CHOICES: PermissionChoice[] = [
   "Always allow",
   "Deny",
 ];
+
+/**
+ * §12 FR1 — the delegation boundary, as sentences a person can act on.
+ *
+ * Exported as DATA because the renderer suite has no DOM: the wording is pinned
+ * in tests/permission-boundary-render.test.ts, including the absences (no model
+ * is ever named; "read-only" never appears on a boundary that can write).
+ *
+ * Two wordings are load-bearing rather than cosmetic:
+ *
+ *  - An UNDECLARED agent is described as clamped BY HappyVibe, not as having
+ *    asked for read-only. It declared nothing and would otherwise have received
+ *    Pi's entire builtin set, so "read-only" alone would credit the agent for a
+ *    restriction we imposed.
+ *  - Write-capable tools are always NAMED. A count ("2 write tools") is the kind
+ *    of summary a user approves without reading, and §13's rule is that a person
+ *    approves against facts.
+ */
+export function boundaryLines(b: BoundarySummary): string[] {
+  const lines: string[] = [];
+  lines.push(
+    b.declared
+      ? `${b.agent} may use: ${b.tools.join(", ")}`
+      : `${b.agent} declares no tools, so HappyVibe limits it to: ${b.tools.join(", ")}`,
+  );
+  if (b.writeCapable.length > 0) {
+    lines.push(`It can change things with: ${b.writeCapable.join(", ")}`);
+  } else {
+    lines.push("Read-only — it cannot change anything.");
+  }
+  if (b.fanout) lines.push("It can delegate to other sub-agents.");
+  if (b.skills.length > 0) lines.push(`Skills: ${b.skills.join(", ")}`);
+  lines.push(
+    b.context === "fork"
+      ? "It forks this session, so it sees this conversation."
+      : "It runs in its own context and does not see this conversation.",
+  );
+  if (b.declarations.length > 0) lines.push(`Also declared: ${b.declarations.join(", ")}`);
+  return lines;
+}
 
 export function PermissionModal({
   req,
@@ -86,6 +127,23 @@ export function PermissionModal({
             <div className="mb-4 rounded-xl border-2 border-berry/50 bg-berry-soft px-3 py-2 text-xs font-semibold text-berry break-all">
               This is outside your workspace{info.path ? ": " : "."}
               {info.path && <span className="font-mono">{info.path}</span>}
+            </div>
+          )}
+          {/* §12: a delegation is approved as a BOUNDARY, so the child's whole
+              reach is shown before launch — never behind the details toggle,
+              which is where a user would not look before clicking Allow. */}
+          {info.boundary && (
+            <div className={`mb-4 rounded-xl border-2 px-3 py-2 text-xs font-semibold ${
+              info.boundary.writeCapable.length > 0
+                ? "border-berry/50 bg-berry-soft text-berry"
+                : "border-ink/20 bg-ink/5 text-ink"
+            }`}>
+              <div className="mb-1 text-[11px] font-bold uppercase tracking-wide opacity-70">
+                sub-agent boundary
+              </div>
+              {boundaryLines(info.boundary).map((line) => (
+                <div key={line} className="break-words">{line}</div>
+              ))}
             </div>
           )}
           {/* Raw tool name + summary stay available behind a collapsed toggle. */}
