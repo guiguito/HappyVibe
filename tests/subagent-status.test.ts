@@ -86,3 +86,39 @@ test("ipc.ts starts the poll and the idle guard from tool_execution_end, not the
   // And completion still marks it, or the guard above can never be true.
   expect(ipc).toMatch(/finishedAsyncRuns\.add\(/);
 });
+
+/**
+ * pi-subagents 0.52 persists a run's status BEFORE publishing its result file,
+ * closing a race where an observer could read a completed result while the run's
+ * own status still said `running`.
+ *
+ * We carry no defensive code for that race and never did — `readSubagentStatus`
+ * returning null on a torn read is atomic-write handling, a different thing, and
+ * it stays. So this pin exists purely so the ordering cannot regress silently
+ * underneath a poller that now depends on it.
+ *
+ * Asserted as a source-order comparison rather than behaviourally, because
+ * reproducing it needs a real child mid-completion: the point is only that the
+ * final status write still precedes the result publish inside the same function.
+ */
+test("upstream persists status before publishing the result (0.52 ordering)", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents",
+              "src", "runs", "background", "subagent-runner.ts"), "utf8");
+
+  const publish = src.indexOf("writeAsyncResultFile(filePath, payload as Record<string, unknown>)");
+  expect(publish, "the async result publish site is still findable").toBeGreaterThan(-1);
+
+  // The last status flush before the publish — writeStatusPayload() is upstream's
+  // own coalescing writer for <asyncDir>/status.json.
+  const statusFlush = src.lastIndexOf("writeStatusPayload();", publish);
+  expect(statusFlush, "a status flush precedes the publish").toBeGreaterThan(-1);
+  expect(statusFlush).toBeLessThan(publish);
+});
+
+test("our status reader carries no retry/compensation for that race", () => {
+  // If someone adds one later, this test is the place to explain why it became
+  // necessary — upstream's ordering is supposed to make it unnecessary.
+  const ours = fs.readFileSync(path.join(__dirname, "..", "src", "main", "subagentStatus.ts"), "utf8");
+  expect(ours).not.toMatch(/setTimeout|retry|attempts/i);
+});
