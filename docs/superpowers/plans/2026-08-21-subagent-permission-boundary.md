@@ -21,6 +21,13 @@
 - **`npm run gate` = `build` → non-live suite, one command.** Never run `npm run typecheck` before `gate` or `build`; build runs both typechecks and fast-fails.
 - **Do not run `npm run lint` or `npm run format`** — scaffold leftovers that rewrite 85% of the repo.
 - **Live tests:** only when `npm run live:why` prints something, and it diffs `main...HEAD`, so check it **after** the commit carrying a Pi-facing change. Background it (`run_in_background: true`) and do not edit `pi-runtime/` or `src/` while it runs.
+- **A fresh worktree has no `.env`, and the live batch then reports itself GREEN.** `cp <main-checkout>/.env .env` before the first live run. Without it `tests/liveModel.ts` resolves `KEY` to undefined, every `skipIf(!KEY)` file skips itself, and the batch exits **0** — measured here as `6 passed | 11 skipped` in **4.45s** against a real run's ~6 minutes. Nothing in the output says the gate did not run, so the two tells are the **skip count** and the **duration**: 17 files and minutes, or it did not happen. Verify the resolver picked a key before believing a green live run:
+
+```bash
+npx tsx -e 'import {KEY,MODEL} from "./tests/liveModel"; console.log(!!KEY, MODEL)'
+```
+
+  and if a live test then fails, probe the balance before blaming the code — one `curl` settles it (`200` = real completion, `402` = the failure has nothing to do with your change).
 
 ---
 
