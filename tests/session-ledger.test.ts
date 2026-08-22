@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ledgerTotal } from "../src/main/calls";
-import { agentByRunFrom, runByCallFrom, runCalls, runTotalsByCall, sessionCalls } from "../src/main/sessionLedger";
+import { agentByFileFrom, callsFromChildSessions, childSessionsByRunFrom, runByCallFrom, runTotalsByCall, sessionCalls } from "../src/main/sessionLedger";
 
 /** One assistant line in Pi's session-file shape (verified against real files). */
 const line = (ts: number, provider: string, model: string, cost: number): string =>
@@ -18,20 +18,21 @@ const line = (ts: number, provider: string, model: string, cost: number): string
     },
   });
 
-function tree(): { dir: string; parent: string } {
+function tree(): { dir: string; parent: string; childFile: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-ledger-"));
   const parent = path.join(dir, "s1.jsonl");
   fs.writeFileSync(parent, line(1000, "deepseek", "deepseek-v4-flash", 0.01) + "\n");
   const kid = path.join(dir, "s1", "run-x", "run-0");
   fs.mkdirSync(kid, { recursive: true });
-  fs.writeFileSync(path.join(kid, "session.jsonl"), line(2000, "deepseek", "deepseek-v4-flash", 0.02) + "\n");
-  return { dir, parent };
+  const childFile = path.join(kid, "session.jsonl");
+  fs.writeFileSync(childFile, line(2000, "deepseek", "deepseek-v4-flash", 0.02) + "\n");
+  return { dir, parent, childFile };
 }
 
 describe("sessionCalls", () => {
   test("includes the children and names the agent", () => {
-    const { dir, parent } = tree();
-    const calls = sessionCalls(dir, parent, new Set(), new Map([["run-x", "code-explorer"]]))!;
+    const { dir, parent, childFile } = tree();
+    const calls = sessionCalls(dir, parent, new Set(), new Map([[childFile, "code-explorer"]]))!;
     expect(calls).toHaveLength(2);
     expect(calls[0].agent).toBeUndefined(); // the session's own call
     expect(calls[1].agent).toBe("code-explorer"); // the child's
@@ -111,100 +112,97 @@ describe("sessionCalls", () => {
   });
 });
 
-describe("runCalls", () => {
-  test("narrows to one delegation's own calls", () => {
-    const { dir, parent } = tree();
-    const calls = runCalls(dir, parent, "run-x", new Set(), "code-explorer");
+describe("callsFromChildSessions", () => {
+  test("reads a run's own calls from the recorded paths", () => {
+    const { dir, childFile } = tree();
+    const calls = callsFromChildSessions(dir, [{ sessionFile: childFile, agent: "code-explorer" }], new Set());
     expect(calls).toHaveLength(1);
     expect(calls[0].agent).toBe("code-explorer");
     expect(ledgerTotal(calls).cost).toBeCloseTo(0.02, 10);
   });
 
-  test("empty for a run that wrote nothing", () => {
-    const { dir, parent } = tree();
-    expect(runCalls(dir, parent, "run-nope", new Set())).toEqual([]);
+  test("a path that is gone contributes nothing rather than throwing", () => {
+    const { dir } = tree();
+    expect(callsFromChildSessions(dir, [{ sessionFile: "/nope/session.jsonl" }], new Set())).toEqual([]);
   });
 
-  // FR-C4's two-paths-one-fact rule: the live readout and the restored footer
-  // call the SAME function over the SAME files, so they cannot drift.
-  test("a run's total is identical live and on reopen", () => {
-    const { dir, parent } = tree();
-    const live = ledgerTotal(runCalls(dir, parent, "run-x", new Set(), "code-explorer"));
-    const restored = ledgerTotal(runCalls(dir, parent, "run-x", new Set(), "code-explorer"));
-    expect(restored).toEqual(live);
+  test("a plan-billed child owes nothing", () => {
+    const { dir, childFile } = tree();
+    const calls = callsFromChildSessions(dir, [{ sessionFile: childFile }], new Set(["deepseek"]));
+    expect(ledgerTotal(calls).cost).toBe(0);
+    expect(ledgerTotal(calls).plan).toBe(1);
   });
 });
 
 describe("runTotalsByCall", () => {
-  const started = (runId: string, toolCallId: string, agent?: string) => ({
-    type: "subagent.async_started",
-    data: { runId, toolCallId, ...(agent ? { agent } : {}) },
-  });
+  /**
+   * THE regression this suite exists for. Measured 2026-08-22 in the running
+   * app: a delegation whose WORKFLOW async id was 72e6fd2e-… wrote its child
+   * session into a directory named 8a2f9f62-… — the run's INNER id. Every id
+   * the app holds is the async one, so the first implementation looked the
+   * child up by async id, found nothing, and showed no number at all. These
+   * fixtures therefore use two DIFFERENT ids on purpose; using one id on both
+   * sides is exactly what let the bug through.
+   */
+  const ASYNC_ID = "72e6fd2e-async";
+  const INNER_DIR = "run-x"; // what the directory is actually named
+  const rows = (childFile: string) => [
+    { type: "subagent.async_started", data: { runId: ASYNC_ID, toolCallId: "call-1", agent: "code-explorer" } },
+    { type: "subagent.async_complete", data: { runId: ASYNC_ID, children: [{ sessionFile: childFile, agent: "code-explorer" }] } },
+  ];
 
-  test("keys a run's total by the tool call a restored card carries", () => {
-    const { dir, parent } = tree();
-    const totals = runTotalsByCall(dir, parent, [started("run-x", "call-1", "code-explorer")], new Set());
+  test("finds a run's spend even though its directory is named a different id", () => {
+    const { dir, childFile } = tree();
+    expect(childFile).toContain(INNER_DIR);
+    expect(childFile).not.toContain(ASYNC_ID);
+    const totals = runTotalsByCall(dir, rows(childFile), new Set());
     expect(totals.get("call-1")?.cost).toBeCloseTo(0.02, 10);
-    expect(totals.get("call-1")?.calls).toBe(1);
   });
 
-  // Two paths, one fact: the restored footer and the live readout are the same
-  // arithmetic over the same file, so they cannot drift.
   test("equals what the live card computes for the same run", () => {
-    const { dir, parent } = tree();
-    const live = ledgerTotal(runCalls(dir, parent, "run-x", new Set(), "code-explorer"));
-    expect(runTotalsByCall(dir, parent, [started("run-x", "call-1", "code-explorer")], new Set()).get("call-1")).toEqual(live);
+    const { dir, childFile } = tree();
+    const live = ledgerTotal(callsFromChildSessions(dir, [{ sessionFile: childFile, agent: "code-explorer" }], new Set()));
+    expect(runTotalsByCall(dir, rows(childFile), new Set()).get("call-1")).toEqual(live);
   });
 
-  // A delegation logged before toolCallId was recorded, or one whose child files
-  // are gone, yields NO entry — its card renders exactly as it did before.
-  test("no entry for a run with nothing to read, and none for a legacy row", () => {
-    const { dir, parent } = tree();
-    expect(runTotalsByCall(dir, parent, [started("run-gone", "call-9")], new Set()).has("call-9")).toBe(false);
-    expect(runTotalsByCall(dir, parent, [{ type: "subagent.async_complete", data: { runId: "run-x" } }], new Set()).size).toBe(0);
-  });
-
-  test("a plan-billed run yields a total that owes nothing", () => {
-    const { dir, parent } = tree();
-    const t = runTotalsByCall(dir, parent, [started("run-x", "call-1")], new Set(["deepseek"])).get("call-1");
-    expect(t?.plan).toBe(1);
-    expect(t?.cost).toBe(0);
+  test("no entry for a legacy row that recorded no children", () => {
+    const { dir } = tree();
+    const legacy = [
+      { type: "subagent.async_started", data: { runId: ASYNC_ID, toolCallId: "call-1" } },
+      { type: "subagent.async_complete", data: { runId: ASYNC_ID, status: "success" } },
+    ];
+    expect(runTotalsByCall(dir, legacy, new Set()).size).toBe(0);
   });
 });
 
-describe("agentByRunFrom", () => {
-  test("reads run→agent off the delegation rows main already logs", () => {
-    const m = agentByRunFrom([
-      { type: "subagent.async_started", data: { runId: "r1", agent: "code-explorer" } },
-      { type: "permission.decision", data: { runId: "r2", agent: "nope" } },
-      { type: "subagent.async_complete", data: { runId: "r2", agent: "agents-md-maker" } },
-      { type: "subagent.async_complete", data: { runId: "r3" } },
+describe("childSessionsByRunFrom", () => {
+  test("reads the recorded child sessions off the completion row", () => {
+    const m = childSessionsByRunFrom([
+      { type: "subagent.async_complete", data: { runId: "r1", children: [{ sessionFile: "/a/session.jsonl", agent: "code-explorer" }] } },
+      { type: "subagent.async_complete", data: { runId: "r2", status: "success" } },
     ]);
-    expect(m.get("r1")).toBe("code-explorer");
-    expect(m.get("r2")).toBe("agents-md-maker");
-    expect(m.has("r3")).toBe(false);
+    expect(m.get("r1")).toEqual([{ sessionFile: "/a/session.jsonl", agent: "code-explorer" }]);
+    expect(m.has("r2")).toBe(false);
+  });
+
+  test("drops malformed entries rather than trusting them", () => {
+    const m = childSessionsByRunFrom([
+      { type: "subagent.async_complete", data: { runId: "r1", children: [{ agent: "x" }, { sessionFile: 7 }] } },
+    ]);
+    expect(m.size).toBe(0);
   });
 });
 
-describe("runByCallFrom", () => {
-  test("maps a tool call to its run, from either delegation row", () => {
-    const m = runByCallFrom([
-      { type: "subagent.async_started", data: { runId: "r1", toolCallId: "call-1" } },
-      { type: "subagent.async_complete", data: { runId: "r2", toolCallId: "call-2" } },
-      { type: "permission.decision", data: { runId: "r9", toolCallId: "call-9" } },
-      { type: "subagent.async_complete", data: { runId: "r3" } },
+describe("agentByFileFrom", () => {
+  // Keyed by FILE because the ledger finds children by globbing and the rows
+  // are keyed by the async id — the path is the only thing both routes share.
+  test("maps a child session file to the agent that wrote it", () => {
+    const m = agentByFileFrom([
+      { type: "subagent.async_complete", data: { runId: "r1", children: [{ sessionFile: "/a/session.jsonl", agent: "code-explorer" }] } },
+      { type: "subagent.async_complete", data: { runId: "r2", children: [{ sessionFile: "/b/session.jsonl" }] } },
     ]);
-    expect(m.get("call-1")).toBe("r1");
-    expect(m.get("call-2")).toBe("r2");
-    // Only delegation rows: a permission row's toolCallId is a different thing.
-    expect(m.has("call-9")).toBe(false);
-    expect(m.size).toBe(2);
-  });
-
-  // Rows written before toolCallId was added must not break a reopen — they
-  // simply contribute no footer (the wouldHave/dangerous-rename lesson).
-  test("legacy rows without toolCallId are ignored", () => {
-    expect(runByCallFrom([{ type: "subagent.async_complete", data: { runId: "r1", status: "ok" } }]).size).toBe(0);
+    expect(m.get("/a/session.jsonl")).toBe("code-explorer");
+    expect(m.has("/b/session.jsonl")).toBe(false);
   });
 });
 

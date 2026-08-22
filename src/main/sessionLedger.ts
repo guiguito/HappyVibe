@@ -32,13 +32,17 @@ export function sessionCalls(
   sessionDirPath: string,
   piSessionFile: string | undefined,
   plans: ReadonlySet<string>,
-  agentByRun?: ReadonlyMap<string, string>,
+  agentByFile?: ReadonlyMap<string, string>,
 ): ApiCall[] | null {
   const text = readSessionFile(sessionDirPath, piSessionFile);
   if (text == null) return null;
   const own = parseCalls(text, plans);
-  const children = childSessionFiles(sessionDirPath, piSessionFile).flatMap(({ runId, file }) =>
-    parseCalls(readSessionFile(sessionDirPath, file), plans, agentByRun?.get(runId) ?? UNNAMED_AGENT),
+  // The whole-session view GLOBS, rather than reading recorded paths, because it
+  // must also cover delegations from before those paths were recorded — every
+  // child a session ever wrote is still on disk beside its parent. The recorded
+  // paths are only what supplies the agent NAME, which no path contains.
+  const children = childSessionFiles(sessionDirPath, piSessionFile).flatMap(({ file }) =>
+    parseCalls(readSessionFile(sessionDirPath, file), plans, agentByFile?.get(file) ?? UNNAMED_AGENT),
   );
   // The panel is a chronological ledger, so the two streams interleave by time
   // rather than one being appended after the other.
@@ -46,23 +50,23 @@ export function sessionCalls(
 }
 
 /**
- * runId → agent name, from the delegation rows main already writes.
+ * child session file → agent name, from the delegation rows main writes.
  *
- * The agent name is not recoverable from a child's path, and this is the only
- * DURABLE record of it: ipc's `delegatedAgentByRun` is in memory and dies with
- * the process, so a reopened session would otherwise have unnamed rows.
+ * Keyed by FILE, not by run id: the whole-session ledger finds child files by
+ * globbing (it must cover history), and a path is the only thing those two
+ * routes share — the directory carries the run's inner id, while the rows are
+ * keyed by the workflow async id. This is also the only durable record of the
+ * name at all; ipc's `delegatedAgentByRun` is in memory and dies with the
+ * process, so a reopened session would otherwise show every row as "sub-agent".
  */
-export function agentByRunFrom(
+export function agentByFileFrom(
   events: Array<{ type: string; data?: Record<string, unknown> }>,
 ): Map<string, string> {
-  const byRun = new Map<string, string>();
-  for (const e of events) {
-    if (e.type !== "subagent.async_started" && e.type !== "subagent.async_complete") continue;
-    const runId = e.data?.runId;
-    const agent = e.data?.agent;
-    if (typeof runId === "string" && typeof agent === "string") byRun.set(runId, agent);
+  const byFile = new Map<string, string>();
+  for (const kids of childSessionsByRunFrom(events).values()) {
+    for (const k of kids) if (k.agent) byFile.set(k.sessionFile, k.agent);
   }
-  return byRun;
+  return byFile;
 }
 
 /**
@@ -87,6 +91,33 @@ export function runByCallFrom(
   return byCall;
 }
 
+/** A run's child sessions as main records them (from status.json's steps). */
+export interface ChildSession {
+  sessionFile: string;
+  agent?: string;
+}
+
+/**
+ * The calls a run's own child sessions made.
+ *
+ * Takes PATHS rather than a run id on purpose. The directory pi-subagents
+ * writes a child session into is named after the run's INNER id, while every id
+ * the app holds for a run — the poller key, the audit rows, `details.asyncId` —
+ * is the WORKFLOW async id. Measured 2026-08-22: async id `72e6fd2e-…` wrote
+ * into `…/8a2f9f62-…/run-0/session.jsonl`. A lookup by async id therefore finds
+ * nothing, and finds it silently, which is how the first cut of this shipped a
+ * card that never showed a number. The path comes from `steps[].sessionFile`.
+ */
+export function callsFromChildSessions(
+  sessionDirPath: string,
+  children: readonly ChildSession[],
+  plans: ReadonlySet<string>,
+): ApiCall[] {
+  return children.flatMap((c) =>
+    parseCalls(readSessionFile(sessionDirPath, c.sessionFile), plans, c.agent ?? UNNAMED_AGENT),
+  );
+}
+
 /**
  * toolCallId → that delegation's total, for a reopened transcript.
  *
@@ -94,34 +125,40 @@ export function runByCallFrom(
  * returns totals rather than touching RestoreItem: this module knows about
  * money, not about transcript shapes.
  *
- * A run with no readable child files yields NO entry, so its card renders
+ * A run with no recorded child sessions yields NO entry, so its card renders
  * exactly as it did before this existed — which is also what every delegation
- * logged before `toolCallId` was recorded will do.
+ * logged before `children` was recorded will do.
  */
 export function runTotalsByCall(
   sessionDirPath: string,
-  piSessionFile: string | undefined,
   events: Array<{ type: string; data?: Record<string, unknown> }>,
   plans: ReadonlySet<string>,
 ): Map<string, LedgerTotal> {
-  const agents = agentByRunFrom(events);
+  const children = childSessionsByRunFrom(events);
   const totals = new Map<string, LedgerTotal>();
   for (const [callId, runId] of runByCallFrom(events)) {
-    const calls = runCalls(sessionDirPath, piSessionFile, runId, plans, agents.get(runId));
+    const kids = children.get(runId);
+    if (!kids?.length) continue;
+    const calls = callsFromChildSessions(sessionDirPath, kids, plans);
     if (calls.length) totals.set(callId, ledgerTotal(calls));
   }
   return totals;
 }
 
-/** One run's calls — the live card's readout and the restored card's footer. */
-export function runCalls(
-  sessionDirPath: string,
-  piSessionFile: string | undefined,
-  runId: string,
-  plans: ReadonlySet<string>,
-  agent?: string,
-): ApiCall[] {
-  return childSessionFiles(sessionDirPath, piSessionFile, runId).flatMap(({ file }) =>
-    parseCalls(readSessionFile(sessionDirPath, file), plans, agent ?? UNNAMED_AGENT),
-  );
+/** runId → the child sessions recorded on its completion row. */
+export function childSessionsByRunFrom(
+  events: Array<{ type: string; data?: Record<string, unknown> }>,
+): Map<string, ChildSession[]> {
+  const byRun = new Map<string, ChildSession[]>();
+  for (const e of events) {
+    if (e.type !== "subagent.async_complete") continue;
+    const runId = e.data?.runId;
+    const kids = e.data?.children;
+    if (typeof runId !== "string" || !Array.isArray(kids)) continue;
+    const clean = kids
+      .filter((k): k is ChildSession => typeof (k as ChildSession)?.sessionFile === "string")
+      .map((k) => ({ sessionFile: k.sessionFile, ...(k.agent ? { agent: k.agent } : {}) }));
+    if (clean.length) byRun.set(runId, clean);
+  }
+  return byRun;
 }

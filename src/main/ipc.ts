@@ -56,7 +56,7 @@ import {
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
-import { agentByRunFrom, runCalls, runTotalsByCall, sessionCalls } from "./sessionLedger";
+import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
@@ -64,7 +64,7 @@ import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
 import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
 import { inspectCommand, inspectRequestId, parseInspectFrame, type InspectReply } from "./subagentInspect";
-import { pollSubagentStatus } from "./subagentStatus";
+import { pollSubagentStatus, type SubagentStatus } from "./subagentStatus";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
@@ -1172,7 +1172,21 @@ export function registerIpc(win: BrowserWindow): void {
           activity.asyncEnded(sessionId, sub.runId);
           stopSubagentPoll(sub.runId);
           drainPendingReload(sessionId); // a deferred reload can now proceed
-          void log.append({ type: "subagent.async_complete", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, status: sub.status } });
+          // `children` is what a REOPENED session reads to show what this
+          // delegation cost. It has to be persisted rather than re-derived: the
+          // child's directory is named after the run's INNER id, which appears
+          // only in the run's status.json — and that lives in a tmpdir.
+          void log.append({
+            type: "subagent.async_complete",
+            sessionId,
+            workspaceId: meta?.workspaceId,
+            data: {
+              runId: sub.runId,
+              status: sub.status,
+              ...(childSessionsByRun.has(sub.runId) ? { children: childSessionsByRun.get(sub.runId) } : {}),
+            },
+          });
+          childSessionsByRun.delete(sub.runId);
           // §12 FR7: fold the child guard's own decisions into the audit log.
           // Drained at completion rather than streamed: the guard appends from a
           // separate process, so this is the first moment the file is complete.
@@ -1659,23 +1673,24 @@ export function registerIpc(win: BrowserWindow): void {
    * Nothing is priced here — the child is a Pi process and these are Pi's own
    * figures, classified by the same rules as the session's own calls (PRD §19).
    */
-  const runCostNow = (sessionId: string, runId: string): LedgerTotal | undefined => {
+  const runCostNow = (sessionId: string, status: SubagentStatus): LedgerTotal | undefined => {
     const meta = index.get(sessionId);
-    if (!meta) return undefined;
-    const calls = runCalls(
-      sessionDir(),
-      meta.piSessionFile,
-      runId,
-      planProvidersFor(providerKeyStatus()),
-      delegatedAgentByRun.get(runId),
-    );
+    if (!meta || !status.children?.length) return undefined;
+    const calls = callsFromChildSessions(sessionDir(), status.children, planProvidersFor(providerKeyStatus()));
     return calls.length ? ledgerTotal(calls) : undefined;
   };
+  /**
+   * The child session files each run is writing, remembered from its own status
+   * pushes so completion can persist them (status.json lives in a tmpdir, which
+   * a reopened session cannot count on).
+   */
+  const childSessionsByRun = new Map<string, Array<{ sessionFile: string; agent?: string }>>();
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
     if (!asyncDir || subagentPollers.has(runId)) return;
-    const stop = pollSubagentStatus(asyncDir, (status) =>
-      send("hv:subagent-status", { sessionId, runId, status, cost: runCostNow(sessionId, runId) }),
-    );
+    const stop = pollSubagentStatus(asyncDir, (status) => {
+      if (status.children?.length) childSessionsByRun.set(runId, status.children);
+      send("hv:subagent-status", { sessionId, runId, status, cost: runCostNow(sessionId, status) });
+    });
     subagentPollers.set(runId, { sessionId, stop });
   };
   const stopSubagentPoll = (runId: string): void => {
@@ -1962,7 +1977,6 @@ export function registerIpc(win: BrowserWindow): void {
       // and its card renders exactly as it did before.
       const subagentTotals = runTotalsByCall(
         sessionDir(),
-        meta.piSessionFile,
         await log.read({ sessionId }),
         planProvidersFor(providerKeyStatus()),
       );
@@ -2328,7 +2342,7 @@ export function registerIpc(win: BrowserWindow): void {
     const plans = planProvidersFor(providerKeyStatus());
     // A child's path does not carry the agent name; the delegation rows are the
     // only durable record of it. Read once per open — this is a click, not a tick.
-    const agents = agentByRunFrom(await log.read({ sessionId }));
+    const agents = agentByFileFrom(await log.read({ sessionId }));
     const calls = (meta && sessionCalls(sessionDir(), meta.piSessionFile, plans, agents)) || [];
     return { calls, total: ledgerTotal(calls) };
   });
@@ -2959,7 +2973,7 @@ export function registerIpc(win: BrowserWindow): void {
     // because planProvidersFor depends on which keys are configured.
     const plans = planProvidersFor(providerKeyStatus());
     const events = await log.read();
-    const agents = agentByRunFrom(events);
+    const agents = agentByFileFrom(events);
     const readCalls = (sessionId: string): ApiCall[] | null => {
       const meta = index.get(sessionId);
       if (!meta) return null; // no meta ⇒ we cannot price it ⇒ unknown, not $0
