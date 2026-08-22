@@ -55,7 +55,8 @@ import {
   type ByokProvider,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
-import { ledgerTotal, parseCalls, planProvidersFor, type ApiCall } from "./calls";
+import { ledgerTotal, planProvidersFor, type ApiCall } from "./calls";
+import { agentByRunFrom, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
@@ -2275,13 +2276,16 @@ export function registerIpc(win: BrowserWindow): void {
   // Returns the total alongside the calls so the sum is computed ONCE, by the
   // unit-tested ledgerTotal — a renderer-side re-sum would be mirrored logic
   // free to drift from the list it labels.
-  ipcMain.handle("hv:get-session-calls", (_e, sessionId: string) => {
+  ipcMain.handle("hv:get-session-calls", async (_e, sessionId: string) => {
     const meta = index.get(sessionId);
     // Which providers are flat-subscription rather than per-token. Resolved here
     // because it depends on key configuration (no anthropic key ⇒ the Claude
     // subscription is what paid), which calls.ts stays pure of.
     const plans = planProvidersFor(providerKeyStatus());
-    const calls = meta ? parseCalls(readSessionFile(sessionDir(), meta.piSessionFile), plans) : [];
+    // A child's path does not carry the agent name; the delegation rows are the
+    // only durable record of it. Read once per open — this is a click, not a tick.
+    const agents = agentByRunFrom(await log.read({ sessionId }));
+    const calls = (meta && sessionCalls(sessionDir(), meta.piSessionFile, plans, agents)) || [];
     return { calls, total: ledgerTotal(calls) };
   });
 
@@ -2910,14 +2914,17 @@ export function registerIpc(win: BrowserWindow): void {
     // plan spend excluded, unknown prices flagged. Resolved once per call
     // because planProvidersFor depends on which keys are configured.
     const plans = planProvidersFor(providerKeyStatus());
+    const events = await log.read();
+    const agents = agentByRunFrom(events);
     const readCalls = (sessionId: string): ApiCall[] | null => {
       const meta = index.get(sessionId);
       if (!meta) return null; // no meta ⇒ we cannot price it ⇒ unknown, not $0
-      const text = readSessionFile(sessionDir(), meta.piSessionFile);
-      if (text == null) return null;
-      return parseCalls(text, plans);
+      // The SAME function the session pill uses, so Stats cannot drift from it —
+      // that drift is exactly what round 11 fixed, and sub-agent rows would
+      // otherwise reintroduce it one surface later.
+      return sessionCalls(sessionDir(), meta.piSessionFile, plans, agents);
     };
-    return aggregate(await log.read(), filter ?? {}, readCalls);
+    return aggregate(events, filter ?? {}, readCalls);
   });
 
   // B7 onboarding: "seen the wow-flow" flag lives in config (userData), shown

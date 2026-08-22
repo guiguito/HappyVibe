@@ -25,9 +25,12 @@
  * them into one "input" figure: the divergence has to be visible to be
  * diagnosable.
  *
- * SCOPE: main-agent calls only. Sub-agents are separate Pi processes with their
- * own session files; their spend is reported per delegation on the tool card
- * (ToolCard.tsx r.usage.cost), not here.
+ * SCOPE: this function parses ONE session file. A sub-agent child is a separate
+ * Pi process with its own session file — which, since 2026-08-22, is exactly
+ * why its spend belongs in the same ledger rather than outside it: the one
+ * source is "a Pi session file", and a child writes an ordinary one. See
+ * sessionLedger.ts, which composes the parent's file with its children's, and
+ * PRD §19.
  */
 
 /**
@@ -88,6 +91,11 @@ export interface ApiCall {
   /** Pi's `usage.cost.total`. Owed only when `billing` is "metered". */
   cost: number;
   billing: Billing;
+  /**
+   * The sub-agent that made this call. Absent for the session's own calls —
+   * which is how a reader tells a delegation's row from the session's.
+   */
+  agent?: string;
 }
 
 export interface LedgerTotal {
@@ -115,6 +123,7 @@ const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v)
 export function parseCalls(
   jsonl: string | null | undefined,
   planProviders: ReadonlySet<string> = PLAN_PROVIDERS,
+  agent?: string,
 ): ApiCall[] {
   if (!jsonl) return [];
   const calls: ApiCall[] = [];
@@ -151,6 +160,7 @@ export function parseCalls(
       // (github-copilot). Otherwise tokens-at-$0 means the price is unknown; no
       // tokens at all really was free (an aborted or empty turn).
       billing: planProviders.has(provider) ? "plan" : cost === 0 && tokens > 0 ? "unknown" : "metered",
+      ...(agent ? { agent } : {}),
     });
   }
   return calls;

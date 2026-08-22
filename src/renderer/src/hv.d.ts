@@ -214,6 +214,8 @@ interface HvApiCall {
   cost: number;
   /** metered = per-token; plan = flat subscription (cost NOT owed); unknown = no rate. */
   billing: "metered" | "plan" | "unknown";
+  /** The sub-agent that made this call; absent for the session's own calls. */
+  agent?: string;
 }
 
 /** Mirrors LedgerTotal in src/main/calls.ts. */
