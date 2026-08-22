@@ -83,7 +83,7 @@ Read the file directly — **`require("pi-subagents/package.json")` throws**: th
 - [ ] **Step 2: Record a green baseline before touching the pin**
 
 ```bash
-cd /Users/guilhemduche/.superset/worktrees/HappyVibe/permission-subagents
+cd "$(git rev-parse --show-toplevel)"
 L=/tmp/gate-before.log; npm run gate > $L 2>&1; echo "EXIT=$?"; tail -30 $L
 ```
 
@@ -102,7 +102,7 @@ Expected: `0.53.0`.
 - [ ] **Step 4: Run the non-live suite and record the red list verbatim**
 
 ```bash
-cd /Users/guilhemduche/.superset/worktrees/HappyVibe/permission-subagents
+cd "$(git rev-parse --show-toplevel)"
 L=/tmp/gate-053.log; npm run gate > $L 2>&1; echo "EXIT=$?"; grep -E "FAIL|✗|Tests " $L
 ```
 
