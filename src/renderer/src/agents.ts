@@ -5,6 +5,7 @@
  * fail" discipline as context.ts / permission.ts.
  */
 import { displayableTask } from "../../../pi-runtime/extensions/hv-rules";
+import { fmtNum } from "./analytics-format";
 
 // ── hv.agents / hv.tools notifies ────────────────────────────────────────────
 
@@ -98,6 +99,25 @@ export interface SubagentResult {
 
 export interface SubagentTrace {
   results: SubagentResult[];
+}
+
+/**
+ * The per-child line on a delegation's trace: tokens and turns, never money.
+ *
+ * The card used to render `usage.cost` straight through `fmtCost`, which was
+ * wrong twice over (PRD §19 ruling 3). pi-subagents prices from its OWN
+ * registry, which has no concept of a flat-subscription provider, so a Claude
+ * Max or Copilot user was shown API-rate dollars they never owed; and an
+ * unpriced model reports 0, which `fmtCost` renders "$0.00" — free, rather than
+ * unknown. Neither can be fixed here: `usage` carries no provider. The
+ * classified figure is a RUN-level total parsed from the child's own session
+ * file, where the provider is real (src/main/sessionLedger.ts).
+ */
+export function subagentUsageLine(usage?: { input?: number; output?: number; turns?: number }): string | null {
+  if (!usage) return null;
+  const parts = [`${fmtNum((usage.input ?? 0) + (usage.output ?? 0))} tok`];
+  if (usage.turns != null) parts.push(`${usage.turns} turn${usage.turns === 1 ? "" : "s"}`);
+  return parts.join(" · ");
 }
 
 interface RawResult {

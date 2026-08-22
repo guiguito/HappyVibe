@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
-import { asyncResultInfo, delegationLabel, type SubagentResult, type SubagentTrace } from "../agents";
+import { asyncResultInfo, delegationLabel, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
 import { resolveCardPath } from "../tabs";
 import { ZoomableImage } from "./ZoomableImage";
 
@@ -340,8 +340,6 @@ function DetailsToggle({ open, onClick }: { open: boolean; onClick: () => void }
   );
 }
 
-const fmtCost = (c?: number): string => (c != null ? `$${c.toFixed(c < 0.01 ? 5 : 4)}` : "");
-
 /**
  * W2.2 — the file path on a card, made interactive (PRD "Chat experience"):
  * click opens the file in an editor tab; small hover affordances reveal it in
@@ -515,11 +513,9 @@ export function SubagentTraceView({ results }: { results: SubagentResult[] }): R
             <span className="font-bold">{r.agent}</span>
             {r.model && <span className="font-mono text-ink-soft">{r.model}</span>}
             <span className="flex-1" />
-            {r.usage && (
-              <span className="font-mono text-ink-soft" title="input/output tokens · turns · cost">
-                {(r.usage.input ?? 0) + (r.usage.output ?? 0)} tok
-                {r.usage.turns != null ? ` · ${r.usage.turns} turn${r.usage.turns === 1 ? "" : "s"}` : ""}
-                {r.usage.cost != null ? ` · ${fmtCost(r.usage.cost)}` : ""}
+            {subagentUsageLine(r.usage) && (
+              <span className="font-mono text-ink-soft" title="input/output tokens · turns">
+                {subagentUsageLine(r.usage)}
               </span>
             )}
           </div>

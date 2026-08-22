@@ -18,6 +18,7 @@ import {
   traceFor,
   traceFromEnd,
   traceFromUpdate,
+  subagentUsageLine,
   type DelegationRun,
   type PermState,
 } from "../src/renderer/src/agents";
@@ -413,5 +414,31 @@ describe("a subagent status poll is not a delegation", () => {
     const guard = app.indexOf("isSubagentQuery(");
     expect(guard).toBeGreaterThan(0);
     expect(guard).toBeLessThan(app.indexOf('e.type === "tool_execution_start"'));
+  });
+});
+
+describe("subagentUsageLine", () => {
+  test("shows tokens and turns", () => {
+    expect(subagentUsageLine({ input: 1000, output: 240, turns: 3 })).toBe("1.2k tok · 3 turns");
+  });
+  test("singularises one turn", () => {
+    expect(subagentUsageLine({ input: 10, output: 0, turns: 1 })).toBe("10 tok · 1 turn");
+  });
+  test("omits turns when upstream did not report them", () => {
+    expect(subagentUsageLine({ input: 10, output: 5 })).toBe("15 tok");
+  });
+  test("null with no usage at all", () => {
+    expect(subagentUsageLine(undefined)).toBeNull();
+  });
+  // PRD §19 ruling 3: pi-subagents prices from its own registry, which knows
+  // nothing about flat-subscription providers, so its dollars are not ours to
+  // show. Money returns as a RUN-level total once the child's provider is
+  // available from its own session file.
+  test("never renders money — `usage` carries no provider to classify it", () => {
+    expect(subagentUsageLine({ input: 10, output: 5, turns: 1 })).not.toMatch(/\$/);
+  });
+  test("the card no longer formats a raw child cost", () => {
+    const card = readFileSync(path.resolve(__dirname, "../src/renderer/src/components/ToolCard.tsx"), "utf8");
+    expect(card).not.toMatch(/fmtCost/);
   });
 });
