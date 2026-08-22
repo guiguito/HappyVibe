@@ -1560,7 +1560,7 @@ function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trac
             {open && (
               <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 max-h-72 overflow-y-auto flex flex-col gap-3">
                 {run.kind === "fg" ? (
-                  <SubagentTraceView results={trace?.results ?? []} />
+                  <SubagentTraceView results={trace?.results ?? []} cost={run.live?.cost} />
                 ) : (
                   // Detached run: no child transcript on the parent stream — show
                   // the live status snapshot from the poller instead.

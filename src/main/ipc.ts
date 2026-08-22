@@ -56,7 +56,7 @@ import {
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
-import { agentByRunFrom, runCalls, sessionCalls } from "./sessionLedger";
+import { agentByRunFrom, runCalls, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
@@ -1066,7 +1066,12 @@ export function registerIpc(win: BrowserWindow): void {
             type: "subagent.async_started",
             sessionId,
             workspaceId: meta?.workspaceId,
-            data: { runId, agent },
+            // `toolCallId` is what lets a REOPENED session attach a run's spend
+            // to the right card: a restored transcript has tool cards keyed by
+            // call id and no memory of run ids. The child's session-file paths
+            // are NOT stored — they are resolved from the run id (store.ts
+            // childSessionFiles), so there is one mechanism, not two.
+            data: { runId, agent, ...(callId ? { toolCallId: callId } : {}) },
           });
         }
       }
@@ -1950,6 +1955,17 @@ export function registerIpc(win: BrowserWindow): void {
       };
 
       const typedByHash = await promptTemplatePairs(sessionId); // §24: card pairing (see restore.ts)
+      // §12/§19 (2026-08-22): what each delegation cost, re-derived from the
+      // child's own session files by the SAME function the live card uses — two
+      // paths, one fact, the stampTurnDurations pattern. A run whose files are
+      // gone, or one logged before `toolCallId` was recorded, yields no entry
+      // and its card renders exactly as it did before.
+      const subagentTotals = runTotalsByCall(
+        sessionDir(),
+        meta.piSessionFile,
+        await log.read({ sessionId }),
+        planProvidersFor(providerKeyStatus()),
+      );
 
       // Rebuild the transcript from Pi's session FILE, not `get_messages`.
       // That RPC is the first thing a freshly spawned child has to answer, so it
@@ -1962,6 +1978,11 @@ export function registerIpc(win: BrowserWindow): void {
         // checklist progress, so a reopened card shows "implementing" (etc.)
         // and the right CTA — not a stale "draft".
         for (const it of items) {
+          if (it.kind === "tool") {
+            const total = subagentTotals.get(it.toolCallId);
+            if (total) it.subagentCost = total;
+            continue;
+          }
           if (it.kind !== "plan") continue;
           const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
           if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }

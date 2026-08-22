@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ledgerTotal } from "../src/main/calls";
-import { agentByRunFrom, runByCallFrom, runCalls, sessionCalls } from "../src/main/sessionLedger";
+import { agentByRunFrom, runByCallFrom, runCalls, runTotalsByCall, sessionCalls } from "../src/main/sessionLedger";
 
 /** One assistant line in Pi's session-file shape (verified against real files). */
 const line = (ts: number, provider: string, model: string, cost: number): string =>
@@ -135,6 +135,43 @@ describe("runCalls", () => {
   });
 });
 
+describe("runTotalsByCall", () => {
+  const started = (runId: string, toolCallId: string, agent?: string) => ({
+    type: "subagent.async_started",
+    data: { runId, toolCallId, ...(agent ? { agent } : {}) },
+  });
+
+  test("keys a run's total by the tool call a restored card carries", () => {
+    const { dir, parent } = tree();
+    const totals = runTotalsByCall(dir, parent, [started("run-x", "call-1", "code-explorer")], new Set());
+    expect(totals.get("call-1")?.cost).toBeCloseTo(0.02, 10);
+    expect(totals.get("call-1")?.calls).toBe(1);
+  });
+
+  // Two paths, one fact: the restored footer and the live readout are the same
+  // arithmetic over the same file, so they cannot drift.
+  test("equals what the live card computes for the same run", () => {
+    const { dir, parent } = tree();
+    const live = ledgerTotal(runCalls(dir, parent, "run-x", new Set(), "code-explorer"));
+    expect(runTotalsByCall(dir, parent, [started("run-x", "call-1", "code-explorer")], new Set()).get("call-1")).toEqual(live);
+  });
+
+  // A delegation logged before toolCallId was recorded, or one whose child files
+  // are gone, yields NO entry — its card renders exactly as it did before.
+  test("no entry for a run with nothing to read, and none for a legacy row", () => {
+    const { dir, parent } = tree();
+    expect(runTotalsByCall(dir, parent, [started("run-gone", "call-9")], new Set()).has("call-9")).toBe(false);
+    expect(runTotalsByCall(dir, parent, [{ type: "subagent.async_complete", data: { runId: "run-x" } }], new Set()).size).toBe(0);
+  });
+
+  test("a plan-billed run yields a total that owes nothing", () => {
+    const { dir, parent } = tree();
+    const t = runTotalsByCall(dir, parent, [started("run-x", "call-1")], new Set(["deepseek"])).get("call-1");
+    expect(t?.plan).toBe(1);
+    expect(t?.cost).toBe(0);
+  });
+});
+
 describe("agentByRunFrom", () => {
   test("reads run→agent off the delegation rows main already logs", () => {
     const m = agentByRunFrom([
@@ -150,16 +187,18 @@ describe("agentByRunFrom", () => {
 });
 
 describe("runByCallFrom", () => {
-  test("maps a tool call to its run", () => {
+  test("maps a tool call to its run, from either delegation row", () => {
     const m = runByCallFrom([
-      { type: "subagent.async_complete", data: { runId: "r1", toolCallId: "call-1" } },
-      { type: "subagent.async_started", data: { runId: "r2", toolCallId: "call-2" } },
+      { type: "subagent.async_started", data: { runId: "r1", toolCallId: "call-1" } },
+      { type: "subagent.async_complete", data: { runId: "r2", toolCallId: "call-2" } },
+      { type: "permission.decision", data: { runId: "r9", toolCallId: "call-9" } },
       { type: "subagent.async_complete", data: { runId: "r3" } },
     ]);
     expect(m.get("call-1")).toBe("r1");
-    // started rows carry no toolCallId contract — only the completion does.
-    expect(m.has("call-2")).toBe(false);
-    expect(m.size).toBe(1);
+    expect(m.get("call-2")).toBe("r2");
+    // Only delegation rows: a permission row's toolCallId is a different thing.
+    expect(m.has("call-9")).toBe(false);
+    expect(m.size).toBe(2);
   });
 
   // Rows written before toolCallId was added must not break a reopen — they

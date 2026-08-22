@@ -13,7 +13,7 @@
  * file, so the same parser and the same three-state billing apply, and nothing
  * here prices anything (PRD §19 ruling 1 — one price table, owned by Pi).
  */
-import { parseCalls, type ApiCall } from "./calls";
+import { ledgerTotal, parseCalls, type ApiCall, type LedgerTotal } from "./calls";
 import { childSessionFiles, readSessionFile } from "./store";
 
 /**
@@ -65,18 +65,52 @@ export function agentByRunFrom(
   return byRun;
 }
 
-/** toolCallId → runId, so a restored tool card can find the run's spend. */
+/**
+ * toolCallId → runId, so a restored tool card can find its run's spend.
+ *
+ * A restored transcript has tool cards keyed by call id and no memory of run
+ * ids, and a child's own path carries the run id but not the call. This joins
+ * them. Read from either delegation row so a future producer on the completion
+ * side needs no change here; rows written before the field existed simply
+ * contribute nothing, and their cards render exactly as they did.
+ */
 export function runByCallFrom(
   events: Array<{ type: string; data?: Record<string, unknown> }>,
 ): Map<string, string> {
   const byCall = new Map<string, string>();
   for (const e of events) {
-    if (e.type !== "subagent.async_complete") continue;
+    if (e.type !== "subagent.async_started" && e.type !== "subagent.async_complete") continue;
     const callId = e.data?.toolCallId;
     const runId = e.data?.runId;
     if (typeof callId === "string" && typeof runId === "string") byCall.set(callId, runId);
   }
   return byCall;
+}
+
+/**
+ * toolCallId → that delegation's total, for a reopened transcript.
+ *
+ * Keyed by call id because that is what a restored tool card has. Deliberately
+ * returns totals rather than touching RestoreItem: this module knows about
+ * money, not about transcript shapes.
+ *
+ * A run with no readable child files yields NO entry, so its card renders
+ * exactly as it did before this existed — which is also what every delegation
+ * logged before `toolCallId` was recorded will do.
+ */
+export function runTotalsByCall(
+  sessionDirPath: string,
+  piSessionFile: string | undefined,
+  events: Array<{ type: string; data?: Record<string, unknown> }>,
+  plans: ReadonlySet<string>,
+): Map<string, LedgerTotal> {
+  const agents = agentByRunFrom(events);
+  const totals = new Map<string, LedgerTotal>();
+  for (const [callId, runId] of runByCallFrom(events)) {
+    const calls = runCalls(sessionDirPath, piSessionFile, runId, plans, agents.get(runId));
+    if (calls.length) totals.set(callId, ledgerTotal(calls));
+  }
+  return totals;
 }
 
 /** One run's calls — the live card's readout and the restored card's footer. */

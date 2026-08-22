@@ -178,6 +178,9 @@ type RestoreItem =
       error?: boolean;
       images?: string[];
       imagesDropped?: boolean;
+      /** §12/§19: what this delegation cost, re-derived by main from the child's
+          own session files. Absent for non-delegation cards. */
+      subagentCost?: HvLedgerTotal;
     }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 

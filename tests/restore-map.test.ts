@@ -137,3 +137,37 @@ describe("timestamps cross the seam", () => {
     expect((it as { ts?: number }).ts).toBeUndefined();
   });
 });
+
+/**
+ * §12/§19 — the same seam, for a delegation's cost. Main re-derives what each
+ * delegation cost from the child's own session files and sends it as
+ * `subagentCost`; the card reads it as `cost`. An unlisted field is dropped in
+ * silence (this module's header), which here would look like a reopened session
+ * quietly forgetting what a sub-agent cost.
+ */
+describe("a delegation's cost crosses the seam", () => {
+  const total = {
+    calls: 2, input: 8000, output: 1200, cacheRead: 0, cacheWrite: 0,
+    cost: 0.09, metered: 2, plan: 0, unknown: 0,
+  };
+
+  it("reaches the tool card", () => {
+    let n = 0;
+    const [it] = toTranscriptItems(
+      [{ kind: "tool", toolCallId: "t1", toolName: "subagent", args: {}, subagentCost: total } as RestoredMessage],
+      { sessionId: "s", workspaceId: null },
+      () => ++n,
+    );
+    expect(it).toMatchObject({ kind: "tool", card: { cost: total } });
+  });
+
+  it("a card main sent no cost for carries none — it does not become $0", () => {
+    let n = 0;
+    const [it] = toTranscriptItems(
+      [{ kind: "tool", toolCallId: "t1", toolName: "read", args: {} }],
+      { sessionId: "s", workspaceId: null },
+      () => ++n,
+    );
+    expect((it as { card: { cost?: unknown } }).card.cost).toBeUndefined();
+  });
+});
