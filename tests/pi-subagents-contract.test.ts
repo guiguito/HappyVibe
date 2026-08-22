@@ -358,6 +358,63 @@ describe("the bridge builds tool schemas with the SAME typebox Pi consumes them 
   });
 });
 
+/**
+ * pi-tui — the same relationship as typebox, for a dependency that is NOT ours to
+ * want and is required anyway.
+ *
+ * pi-subagents declares @earendil-works/pi-tui as an OPTIONAL peer, and `npm ci` skips optional peers. But we load
+ * pi-subagents/src/extension/index.ts as an extension on every spawn
+ * (PI_SUBAGENTS_RELPATH), and that file imports pi-tui at line 21 — so the app
+ * has always needed it to boot pi-subagents at all, while a clean install did not
+ * install it. Nobody noticed because nothing in the TEST graph reached that import
+ * until the bridge started importing pi-subagents/preflight, whose chain runs
+ * through ../extension/config.ts, which imports pi-tui too.
+ *
+ * CI caught it as three suites failing to collect with "Could not resolve
+ * @earendil-works/pi-tui". The local runs were green only because this machine
+ * happened to carry a stale top-level 0.74.0 that `npm ci` would never place.
+ *
+ * So it is declared explicitly, and pinned to what Pi itself declares rather than
+ * to "newest" — the TUI code paths are dormant for us (we run --mode rpc), so the
+ * version that matters is the one the rest of the vendored tree was built against.
+ */
+describe("pi-tui is an explicit pin, because pi-subagents needs it and npm ci will not guess", () => {
+  const pkg = (...rel: string[]): Record<string, unknown> =>
+    JSON.parse(readFileSync(path.join(__dirname, "..", "pi-runtime", ...rel), "utf8")) as Record<string, unknown>;
+  const TUI = "@earendil-works/pi-tui";
+
+  it("pi-runtime declares it, so a clean npm ci installs it", () => {
+    const pin = (pkg("package.json").dependencies as Record<string, string> | undefined)?.[TUI];
+    expect(pin, "must be an explicit dependency, not an optional peer nobody installs").toBeDefined();
+  });
+
+  it("pinned to the version pi-coding-agent declares, not to newest", () => {
+    const pin = (pkg("package.json").dependencies as Record<string, string>)[TUI];
+    const piDep = (pkg("node_modules", "@earendil-works", "pi-coding-agent", "package.json")
+      .dependencies as Record<string, string> | undefined)?.[TUI];
+    expect(piDep, "pi-coding-agent still declares pi-tui").toBeDefined();
+    // Pi declares a caret range; we pin exact. The pin must satisfy it.
+    expect(`^${pin}`).toBe(piDep);
+  });
+
+  it("the copy actually installed is that version", () => {
+    const pin = (pkg("package.json").dependencies as Record<string, string>)[TUI];
+    expect(pkg("node_modules", "@earendil-works", "pi-tui", "package.json").version).toBe(pin);
+  });
+
+  it("pi-subagents still needs it — the reason the pin exists at all", () => {
+    // If upstream ever stops importing pi-tui from the extension entry and the
+    // config module, this pin can go. Until then it is load-bearing: without it
+    // the extension fails to load and the whole subagent feature is gone.
+    const sub = (...rel: string[]): string =>
+      readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", ...rel), "utf8");
+    expect(sub("src", "extension", "index.ts"), "the entry we pass with -e").toMatch(/from "@earendil-works\/pi-tui"/);
+    expect(sub("src", "extension", "config.ts"), "reached via api/preflight.ts").toMatch(/from "@earendil-works\/pi-tui"/);
+    expect((JSON.parse(sub("package.json")) as { peerDependenciesMeta?: Record<string, { optional?: boolean }> })
+      .peerDependenciesMeta?.[TUI]?.optional, "still declared OPTIONAL upstream, which is the trap").toBe(true);
+  });
+});
+
 describe("RPC mode is UI-ful, which is what disarms the headless auto-drain", () => {
   // pi-subagents >=0.40 ends every turn with, and offers NO opt-out for:
   //   pi.on("agent_end", async (_e, ctx) => { if (ctx.hasUI) return;
