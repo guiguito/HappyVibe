@@ -21,10 +21,21 @@ import {
 import { parseAgentFile, renderSubagentSection, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
-  buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, restorePlanState, shouldForcePlanOff,
+  buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, resolvePlanVerdict, restorePlanState, shouldForcePlanOff,
   type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
 import { parseBuiltins } from "./hv-builtins";
+// PRD §12 (2026-08-21): the sub-agent boundary. `capability-ceiling` IS in
+// pi-subagents' exports map, so it takes the BARE specifier — unlike
+// listAsyncRuns/ASYNC_DIR above, which are absent from the map and therefore
+// must stay relative. Do not "tidy" these two into the same shape.
+import { registerSubagentCapabilityCeiling } from "pi-subagents/capability-ceiling";
+import { resolveSubagentLaunchContract } from "pi-subagents/preflight";
+import {
+  boundaryRuleName, isReadOnlyBoundary, isWiderThanReadOnly, needsWiderCeiling,
+  READ_ONLY_CHILD_TOOLS, summarizeBoundary, widenBoundary, writeCapableIn,
+  type BoundarySummary,
+} from "./hv-subagent-boundary";
 import {
   buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
@@ -323,6 +334,156 @@ function persistPlan(pi: ExtensionAPI): void {
   pi.appendEntry(PLAN_STATE_TYPE, { ...plan });
 }
 
+/**
+ * §12 (2026-08-21) — the capability ceiling that holds every child of this
+ * session inside the boundary a human approved.
+ *
+ * Two things this buys that the parent gate cannot. It bounds the tool set of a
+ * child and of every DESCENDANT (the resolved ceiling travels in the child's
+ * environment, so a grandchild can only narrow); and `denyExtensions` closes a
+ * hole the parent never had — a child whose agent declares no `extensions` key
+ * was ambient-loading anything sitting in `<agentDir>/extensions`, and from
+ * pi-subagents 0.52 also anything shipped BESIDE the agent file.
+ *
+ * It also supplies FR3 for free rather than as its own mechanism: upstream treats
+ * a present ceiling as the declared tool set for an agent that declares none
+ * (`pi-args.ts:396-399`), so registering this replaces "no `tools:` means Pi's
+ * full builtin set" with "no `tools:` means read-only".
+ *
+ * WIDENING IS MONOTONIC WITHIN A TURN, and that is forced, not preferred — see
+ * widenBoundary's comment and docs/validation/d1.md §Subagent delegation
+ * concurrency. `ceilingTools` is reset at turn_start, which is safe for the one
+ * reason that matters: the ceiling is read at SPAWN, a turn cannot end before its
+ * tool batch resolves, so by the next turn every spawn it authorised has already
+ * happened. No in-flight accounting needed.
+ */
+let ceiling: { update(c: unknown): void; dispose(): void } | undefined;
+let ceilingTools: string[] = [...READ_ONLY_CHILD_TOOLS].sort();
+
+/** Register (or re-point) the session ceiling at the current `ceilingTools`. */
+function applyCeiling(sessionId: string | undefined): void {
+  const value = { allowedTools: ceilingTools, denyExtensions: true };
+  if (ceiling) {
+    ceiling.update(value);
+    return;
+  }
+  try {
+    ceiling = registerSubagentCapabilityCeiling({
+      // A ceiling is keyed by session id; without one there is nothing to key it
+      // to, so a session with no id gets a stable literal rather than silently
+      // registering nothing.
+      sessionId: sessionId || "hv-session",
+      source: "happyvibe",
+      ceiling: value,
+    });
+  } catch (e) {
+    // Registration is the boundary. If it throws we must NOT continue as if a
+    // ceiling existed — surface it, because the alternative is children running
+    // unbounded while the UI implies otherwise.
+    ceilingError = e instanceof Error ? e.message : String(e);
+  }
+}
+
+/** Set when the ceiling could not be registered — a delegation then refuses. */
+let ceilingError: string | undefined;
+
+/**
+ * FR8 — the resolved facts worth showing at approval, because each changes what
+ * a child can reach.
+ *
+ * Derived from the RESOLVED contract, never from the agent file's frontmatter.
+ * That is deliberate: `contract.agent` is the agent's identity (name, path,
+ * digest, shadowed candidates), not its declarations, and 0.53 lets an extension
+ * register an agent at runtime with no file to read at all. Reading the resolved
+ * contract works for both.
+ *
+ * `outputMode` is NOT here despite being named in FR8: the launch contract does
+ * not expose it (measured — its keys are version, runId, agent, context,
+ * modelCandidates, systemPromptMode, inheritProjectContext, inheritSkills,
+ * skills, tools, roots, protocol, diagnostics, launchContractDigest, digest). It
+ * is better to omit it than to render a field that is always absent.
+ */
+type PreflightContract = {
+  context?: string;
+  inheritSkills?: boolean;
+  inheritProjectContext?: boolean;
+  skills?: { requested?: string[]; resolved?: Array<{ name: string }> };
+  agent?: { shadowedCandidates?: unknown[] };
+  tools?: {
+    explicitAllowlist?: boolean;
+    effectiveAllowlist?: string[];
+    configuredExtensions?: string[];
+    toolExtensionPaths?: string[];
+  };
+};
+
+function declarationsOf(k: PreflightContract): string[] {
+  const out: string[] = [];
+  if (k.inheritSkills === true) out.push("inheritSkills");
+  if ((k.skills?.requested?.length ?? 0) > 0) out.push("skills");
+  if ((k.tools?.configuredExtensions?.length ?? 0) > 0 || (k.tools?.toolExtensionPaths?.length ?? 0) > 0) {
+    out.push("extensions");
+  }
+  if (k.inheritProjectContext === true) out.push("projectContext");
+  // A same-named agent was overridden to resolve this one — the workspace/plugin
+  // shadowing case FR10 cares about, and invisible without saying so.
+  if ((k.agent?.shadowedCandidates?.length ?? 0) > 0) out.push("shadowsAnotherAgent");
+  return out;
+}
+
+/**
+ * §12 FR1/FR8 — resolve what a delegation's child would actually be able to do.
+ *
+ * `resolveSubagentLaunchContract` has no side effects: it resolves the agent, its
+ * effective tool allowlist, skills and context mode, and returns. Called with NO
+ * capability ceiling on purpose — see summarizeBoundary's comment; passing ours
+ * would resolve a bash-declaring agent down to read-only and the prompt would
+ * understate the very thing it exists to disclose.
+ *
+ * Returns undefined when the contract cannot be resolved (unknown agent, an
+ * upstream diagnostic, a throw). That is NOT treated as "no boundary, carry on":
+ * the caller refuses the delegation, because a reach we cannot describe is a
+ * reach we cannot ask a human to approve.
+ */
+async function resolveBoundary(agent: string): Promise<BoundarySummary | undefined> {
+  try {
+    // The result is `{ok, contract}` — everything is nested under `contract`, and
+    // reading it off the top level yields undefined for every field, which then
+    // reads as "unresolvable" and refuses every delegation. Measured, after doing
+    // exactly that.
+    const res = (await resolveSubagentLaunchContract({ agent, cwd: process.cwd() })) as {
+      ok?: boolean;
+      contract?: PreflightContract;
+    };
+    const k = res?.contract;
+    if (!res?.ok || !k?.tools) return undefined;
+    return summarizeBoundary({
+      agent,
+      explicitAllowlist: k.tools.explicitAllowlist === true,
+      effectiveAllowlist: k.tools.effectiveAllowlist ?? [],
+      skills: (k.skills?.resolved ?? []).map((s) => s.name),
+      ...(k.context ? { context: k.context } : {}),
+      declarations: declarationsOf(k),
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The session id, or undefined.
+ *
+ * Optional-chained on purpose: `applyCeiling` runs from `turn_start`, so throwing
+ * here would throw on EVERY turn, and a ceiling keyed to the fallback literal
+ * still bounds the children of this process (one Pi process serves one session,
+ * so the fallback cannot collide with another session's registration). Losing the
+ * id degrades the key; throwing would lose the boundary.
+ */
+function sessionIdOf(ctx: unknown): string | undefined {
+  const sm = (ctx as { sessionManager?: { getSessionId?: () => string | null } } | undefined)?.sessionManager;
+  return sm?.getSessionId?.() ?? undefined;
+}
+
 // Run-card captions (pi-subagents >=0.50 redacts the task everywhere we could read
 // it back — see hv-subagent-tasks.ts). Persisted the same way as plan state and
 // context marks: full snapshot, newest entry wins on restore.
@@ -480,12 +641,27 @@ export default function (pi: ExtensionAPI) {
   // §13 round 12: the headline is bought with tokens, so it has a switch. In
   // proxy mode that is five tools; with a server exposing tools DIRECTLY it is
   // every tool that server publishes, which is where the cost actually scales.
-  pi.on("turn_start", () => { requireIntent(pi, builtins.intent); stripIntent(pi, builtins.intent); });
+  pi.on("turn_start", (_e, ctx) => {
+    requireIntent(pi, builtins.intent); stripIntent(pi, builtins.intent);
+    // §12: drop any widening the previous turn's approvals opened. Safe here and
+    // nowhere earlier — see the ceiling's own comment: it is read at spawn, and a
+    // turn cannot end before its tool batch resolves.
+    if (isWiderThanReadOnly(ceilingTools)) {
+      ceilingTools = [...READ_ONLY_CHILD_TOOLS].sort();
+      applyCeiling(sessionIdOf(ctx));
+    }
+  });
 
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi, builtins.intent); // all extensions have registered by now (idempotent across reloads)
     stripIntent(pi, builtins.intent); // …and take it off the bridge's own tools, which declare it themselves
     skillManifest = loadManifest(); // §14: reflect this session's loaded skills
+    // §12: the resting boundary for every child of this session. Registered here
+    // rather than at module scope because it needs the session id, and re-applied
+    // on a respawn so a resumed session is bounded exactly like a fresh one
+    // (unlike dangerous mode, this is not something a respawn should relax).
+    ceilingTools = [...READ_ONLY_CHILD_TOOLS].sort();
+    applyCeiling(sessionIdOf(ctx));
     const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
     restoreMarks(entries);
     // Run-card captions survive a respawn AND an app restart: nothing on disk can
@@ -711,7 +887,56 @@ export default function (pi: ExtensionAPI) {
       (tool === "browser_open" || tool === "browser_navigate") && typeof input.url === "string"
         ? browserRuleName(input.url)
         : null;
-    const permTool = mcp?.ruleTool ?? browserNav ?? tool;
+    // §12: a delegation gates per AGENT, not per tool — the same reasoning as the
+    // two lines above. `subagent` as a rule name made "Allow for session" on a
+    // read-only explorer cover a bash-wielding agent for the rest of the session.
+    const subagentName = tool === "subagent" && typeof input.agent === "string" ? input.agent : null;
+    const permTool = mcp?.ruleTool ?? browserNav ?? (subagentName ? boundaryRuleName(subagentName) : tool);
+
+    // §12 FR1: resolve the child's reach BEFORE the prompt, so the human approves
+    // a boundary rather than a verb. Side-effect-free.
+    const boundary = subagentName ? await resolveBoundary(subagentName) : undefined;
+    if (subagentName) {
+      if (ceilingError) {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+        return { block: true, reason: `HappyVibe could not establish a sub-agent boundary (${ceilingError}), so it will not launch one. Do the work in this session instead.` };
+      }
+      if (!boundary) {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+        return { block: true, reason: `HappyVibe could not resolve what '${subagentName}' would be able to do, so it will not launch it. Check the agent exists and its definition is valid.` };
+      }
+      // FR3, enforced rather than inherited: an agent declaring no `tools:` takes
+      // the ceiling as its tool set (pi-args.ts:396-399). If another agent's
+      // approval has already widened the ceiling this turn, that would silently
+      // hand this one the wider set. Refused BEFORE the bypass check for the same
+      // reason plan mode is: "don't ask me again" is not "give undeclared agents
+      // bash". The ceiling resets at turn_start, so the next turn is clean.
+      if (!boundary.declared && isWiderThanReadOnly(ceilingTools)) {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+        return {
+          block: true,
+          reason:
+            `'${subagentName}' declares no tools, so it would inherit this turn's widened sub-agent boundary ` +
+            `(${ceilingTools.join(", ")}) instead of the read-only default. Refused. Either give the agent an ` +
+            `explicit 'tools:' list, or delegate to it on a turn where no wider boundary was approved.`,
+        };
+      }
+    }
+
+    /**
+     * Grant the approved boundary by widening the session ceiling.
+     *
+     * Called at every point that PERMITS a delegation. Idempotent, and the failure
+     * direction is deliberate: a missed call site means the child launches with the
+     * read-only ceiling and loses tools it was approved for — visible and harmless
+     * — never the reverse.
+     */
+    const grantBoundary = (): void => {
+      if (boundary && needsWiderCeiling(boundary)) {
+        ceilingTools = widenBoundary(boundary.tools);
+        applyCeiling(sessionIdOf(ctx));
+      }
+    };
     const summary = mcp?.display ?? summarize(tool, input);
 
     // W2.3: nested AGENTS.md discovery — every file-tool call reveals which
@@ -772,7 +997,9 @@ export default function (pi: ExtensionAPI) {
     // calls only; an in-flight async delegation is untouched.
     let planFloorAsk = false;
     if (builtins.plan && plan.enabled) {
-      const g = gatePlanCall(tool, input);
+      // §23: the verdict — including the read-only-delegation decision — is
+      // resolved in hv-plan.ts, which is typechecked. See resolvePlanVerdict.
+      const g = resolvePlanVerdict(gatePlanCall(tool, input), boundary);
       if (g.kind === "block") {
         audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "plan" });
         ctx.ui.notify(JSON.stringify({ kind: "hv.plan.blocked", toolName: tool, toolCallId: event.toolCallId, reason: g.reason }), "info");
@@ -803,6 +1030,9 @@ export default function (pi: ExtensionAPI) {
         wouldHave: shadow.action,
         rule: shadow.rule,
       });
+      // FR6: bypass means bypass, for children too — grant the boundary the agent
+      // asked for rather than leaving it narrower than the un-bypassed path.
+      grantBoundary();
       return;
     }
 
@@ -817,6 +1047,7 @@ export default function (pi: ExtensionAPI) {
     // explicit rules are honored by falling through to the prompt.
     if (v.action === "allow" && !planFloorAsk) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: v.source === "rule" ? "rule" : "safe-default", rule: v.rule });
+      grantBoundary();
       return;
     }
 
@@ -848,6 +1079,7 @@ export default function (pi: ExtensionAPI) {
     // v5: a session grant also covers the outside-workspace confinement ask.
     if ((v.source === "default" || v.source === "outside-workspace") && sessionGrants.has(permTool)) {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "user", grant: "session" });
+      grantBoundary();
       return;
     }
 
@@ -855,7 +1087,7 @@ export default function (pi: ExtensionAPI) {
     const title = JSON.stringify(
       v.source === "outside-workspace"
         ? { kind: "hv.permission", tool: permTool, summary, reason: "outside-workspace", path: v.outsidePath }
-        : { kind: "hv.permission", tool: permTool, summary },
+        : { kind: "hv.permission", tool: permTool, summary, ...(boundary ? { boundary } : {}) },
     );
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).
     // NO timeout, NO auto-allow: permission prompts wait indefinitely by design.
@@ -864,10 +1096,12 @@ export default function (pi: ExtensionAPI) {
     if (choice === "Allow for session") {
       sessionGrants.add(permTool);
       audit(ctx.ui, { tool: permTool, summary, decision: "allow-session", source: "user" });
+      grantBoundary();
       return;
     }
     if (choice === "Allow") {
       audit(ctx.ui, { tool: permTool, summary, decision: "allow", source: "user" });
+      grantBoundary();
       return;
     }
     audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "user" });

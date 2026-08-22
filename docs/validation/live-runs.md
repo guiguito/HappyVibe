@@ -36,3 +36,25 @@ gate ever passed on the current `main`?" except by spending ~7 minutes and real 
    third concurrent DeepSeek consumer and has turned a ~360 s batch into 995 s with three spurious
    failures.
 5. Only then baseline on `main` — reinstall `pi-runtime` at main's pins, run the same file twice.
+
+## Measured 2026-08-21 — the async-delivery wait, in batch vs alone
+
+`subagent-async-bridge.test.ts` "async delegation returns immediately, then the result is
+auto-delivered on a triggered turn" is the file's slowest-to-satisfy assertion, because after the
+completion notify it still waits on a WHOLE EXTRA model turn that pi-subagents triggers to fold the
+result in. Two numbers from the same tree, same commit, same key:
+
+| Run | Result |
+| --- | --- |
+| Inside the full 17-file serial batch | **timeout at 136 s** |
+| That file alone (`--no-file-parallelism`) | **PASS in 16.8 s** |
+
+An **8x** spread on identical code. That is the signature this doc's rule 1 describes, and it is
+worth having the numbers: the failure is not our latency (16.8 s is nowhere near any bound in the
+test), it is the provider degrading after ~10 minutes of continuous serial load from the other 16
+files. The test's own comment already records the same thing happening at a 60 s bound.
+
+**Practical rule this adds:** when this specific test is the ONLY red in a batch, re-run it alone
+before touching anything. If it passes in seconds, it is class A. Do not raise its bound again —
+raising 60 s to 120 s bought one batch, and the next one exceeded that too; the bound is not the
+variable.

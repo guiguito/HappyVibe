@@ -14,6 +14,12 @@
  * fixes nothing.
  */
 
+/** What failed, when the message itself does not say. */
+export interface ProviderErrorContext {
+  provider?: string;
+  model?: string;
+}
+
 export interface ProviderErrorInfo {
   /** One line, plain language. Falls back to the raw text when unrecognised. */
   headline: string;
@@ -27,10 +33,11 @@ export interface ProviderErrorInfo {
 
 const has = (s: string, re: RegExp): boolean => re.test(s);
 
-export function describeProviderError(raw: string): ProviderErrorInfo {
+export function describeProviderError(raw: string, ctx: ProviderErrorContext = {}): ProviderErrorInfo {
   const t = raw.trim();
+  const what = [ctx.provider, ctx.model].filter(Boolean).join(" · ");
   if (!t) {
-    return { headline: "The model provider returned an error.", retriable: false, raw };
+    return { headline: what ? `${what} returned an error.` : "The model provider returned an error.", retriable: false, raw };
   }
 
   // Quota/billing before rate-limit: "quota exceeded" can read as a throttle but
@@ -110,6 +117,19 @@ export function describeProviderError(raw: string): ProviderErrorInfo {
     };
   }
 
+  // Timeouts and truncated streams: transient, and neither carries an HTTP code
+  // or an errno, so both used to reach the raw fallback and read as permanent.
+  // Both observed in real logs ("Upstream idle timeout exceeded" x3,
+  // "Stream ended without finish_reason").
+  if (has(t, /idle timeout|timed? ?out|timeout exceeded|stream ended|without finish_reason|incomplete (response|stream)/i)) {
+    return {
+      headline: "The provider stopped responding mid-request.",
+      hint: "The connection went idle or the stream ended early — retry; this is not a problem with your setup.",
+      retriable: true,
+      raw,
+    };
+  }
+
   // Generic 400: the request shape was refused. For a custom endpoint this is
   // almost always the compat preset (an unknown host gets OpenAI-only fields —
   // see PRESET_COMPAT in src/main/modelsJson.ts).
@@ -122,5 +142,35 @@ export function describeProviderError(raw: string): ProviderErrorInfo {
     };
   }
 
+  // A message that carries no information at all. Measured, not imagined:
+  // OpenRouter's stealth `ox-alpha` answered a failed call with the literal
+  // string "ERROR", and DeepSeek has answered with "terminated" — both rendered
+  // as a red box containing one word, with no model, no provider and no hint
+  // that retrying was reasonable. It was: the same model answered normally two
+  // minutes later.
+  //
+  // Checked LAST on purpose, so every class above keeps its specific reading,
+  // and matched on the WHOLE string so anything with real content ("ERROR: disk
+  // quota exceeded") falls through to that content instead of being flattened.
+  //
+  // Treated as retriable because a provider that cannot say what went wrong has
+  // not told us it is permanent, and the alternative leaves the user with a dead
+  // end. A pointless retry costs one request; a missing one costs the turn.
+  if (CONTENT_FREE.test(t)) {
+    return {
+      headline: what ? `${what} failed without saying why.` : "The model provider returned an error with no details.",
+      hint: "The provider sent no details. This is usually transient — retry, and if it repeats, try another model.",
+      retriable: true,
+      raw,
+    };
+  }
+
   return { headline: t, retriable: false, raw };
 }
+
+/**
+ * The whole message is a content-free failure word. Anchored, so it can only ever
+ * match a string that says nothing — never one that happens to start with it.
+ */
+const CONTENT_FREE =
+  /^(error|errored|unknown|unknown error|failure|failed|terminated|aborted|cancelled|canceled|null|undefined|\?+|-+|n\/a)[.!]?$/i;

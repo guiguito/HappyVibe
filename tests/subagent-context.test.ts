@@ -34,7 +34,7 @@ for (const name of fs.readdirSync(path.join(runtime, "agents"))) {
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-subctx-cwd-"));
 const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-subctx-sess-"));
 const rulesFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-subctx-rules-")), "permission-rules.json");
-fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent", action: "allow" }], workspaces: {} }));
+fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent*", action: "allow" }], workspaces: {} }));
 
 interface Entry {
   type: string;

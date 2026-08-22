@@ -381,7 +381,7 @@ export default function App(): React.JSX.Element {
   // error card (pendingError) so a retried-and-recovered error shows only a
   // transient "Retrying…" notice; a real error card lands only on the final,
   // non-retried failure. retryNotice tracks the in-place notice id per session.
-  const pendingError = useRef<Record<string, string>>({});
+  const pendingError = useRef<Record<string, { raw: string; provider?: string; model?: string }>>({});
   const retryNotice = useRef<Record<string, number>>({});
 
   const appendItem = (sid: string, item: TranscriptItem): void =>
@@ -1132,7 +1132,7 @@ export default function App(): React.JSX.Element {
           // nothing about whether to wait, fix a key, or fix a setting. Map it,
           // and offer a plain resend for the transient classes — Pi's own retry
           // list omits 529, so this button is the only way out of one.
-          const info = describeProviderError(err);
+          const info = describeProviderError(err.raw, { provider: err.provider, model: err.model });
           appendItem(sid, {
             kind: "error",
             text: info.headline,
@@ -1207,10 +1207,19 @@ export default function App(): React.JSX.Element {
       // it now would stack a red card per retry. Hold it; agent_end flushes it if
       // the turn ultimately failed, while auto_retry_start clears it on a retry.
       if (e.type === "message_end") {
-        const m = (e as { message?: { role?: string; stopReason?: string; errorMessage?: string } }).message;
+        const m = (e as {
+          message?: { role?: string; stopReason?: string; errorMessage?: string; provider?: string; model?: string };
+        }).message;
         if (m?.role === "assistant" && m.stopReason === "error") {
           commitStream(sid); // flush any partial bubble before the (deferred) error
-          pendingError.current[sid] = m.errorMessage || "The model call failed.";
+          // Keep the provider and model alongside the text: some providers answer
+          // a failure with a word ("ERROR", "terminated") and nothing else, and
+          // then the only way to say anything useful is to name what failed.
+          pendingError.current[sid] = {
+            raw: m.errorMessage || "The model call failed.",
+            ...(m.provider ? { provider: m.provider } : {}),
+            ...(m.model ? { model: m.model } : {}),
+          };
         }
       }
     });

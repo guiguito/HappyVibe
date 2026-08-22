@@ -43,6 +43,11 @@ export interface PiSpawnOptions {
   /** Round 3 #14: persistent "bypass all permissions" resolved for this session
       (workspace ?? global). true → HV_BYPASS=1 → bridge starts in dangerous mode. */
   bypass?: boolean;
+  /** §12 FR7: where the child guard appends its per-run decision JSONL →
+      HV_CHILD_AUDIT_DIR. Inherited by every child (all three of pi-subagents'
+      spawn sites pass `{...process.env}`), so the guard needs nothing else.
+      Main owns the directory and reads it path-confined. */
+  childAuditDir?: string;
   /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user,
       and §26's grouped Terminal entry), resolved at spawn → HV_BUILTINS (same
       pattern as HV_BYPASS). The keys are listed EXPLICITLY below, so a new
@@ -195,6 +200,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
+      ...(opts.childAuditDir ? { HV_CHILD_AUDIT_DIR: opts.childAuditDir } : {}),
       ...(opts.builtinTools
         ? { HV_BUILTINS: JSON.stringify({
             plan: opts.builtinTools.plan,

@@ -27,7 +27,7 @@ const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-intent-cwd-"));
 const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-intent-sess-"));
 // Allow subagent up front so the run never stalls on a permission prompt.
 const rulesFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-intent-rules-")), "permission-rules.json");
-fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent", action: "allow" }], workspaces: {} }));
+fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent*", action: "allow" }], workspaces: {} }));
 
 type PiEvent = { type?: string; toolName?: string; args?: Record<string, unknown>; [k: string]: unknown };
 

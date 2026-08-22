@@ -97,3 +97,52 @@ test("recovers from a corrupt config rather than throwing at startup", async () 
   expect(cfg.asyncByDefault).toBe(true);
   expect(cfg.waitTool).toMatchObject({ enabled: false });
 });
+
+/**
+ * FR12 was implemented, MEASURED, and dropped. These tests pin the absence.
+ *
+ * A native `permissions` floor cannot work here: this file is written ONCE at
+ * startup, while a boundary is approved PER DELEGATION, so any rule in it is
+ * unconditional — and upstream's `permissionDecision` has no boundary awareness
+ * to give it. That makes it either redundant (the ceiling already removed tools
+ * outside the boundary from the child's --tools) or harmful (it overrides an
+ * approval).
+ *
+ * The harm is measured, not argued: with `permissions: {rules:{write:"deny"}}`
+ * armed in a child whose boundary included `write` and whose rules explicitly
+ * ALLOWED it, the guard row said "allow" and the file was never created. The
+ * modal promises "It can change things with: write"; the write then fails
+ * silently. That is a worse lie than no boundary, because the user believes they
+ * granted something.
+ */
+test("writes NO permissions key — a static floor cannot know a per-delegation boundary", async () => {
+  const cfg = await write();
+  expect(cfg.permissions, "see the comment above before adding this back").toBeUndefined();
+});
+
+test("upstream's own limits, pinned so the decision can be revisited if they change", () => {
+  const src = fs.readFileSync(
+    path.join(process.cwd(), "pi-runtime", "node_modules", "pi-subagents",
+              "src", "runs", "shared", "permissions.ts"), "utf8");
+  // (1) bash is ungateable twice over: rejected at validation AND hardcoded allow.
+  expect(src).toContain("is unsupported; pi-subagents leaves bash policy");
+  expect(src).toMatch(/toolName === "bash".*return "allow"/s);
+  // (2) internal coordination tools are reserved.
+  expect(src).toContain("is reserved for child coordination and cannot be gated");
+  // (3) an agent's own frontmatter can WIDEN a floor, because every `allow` entry
+  //     is deleted from the merged map — so it could never have been adversarial-
+  //     proof even if it were per-delegation.
+  expect(src).toMatch(/if \(decision === "allow"\) delete merged\[tool\]/);
+  // (4) the decision function takes only (rules, toolName): there is nowhere to
+  //     pass a boundary, which is the structural reason FR12 is dead.
+  expect(src).toMatch(/export function permissionDecision\(\s*rules[^)]*toolName: string,?\s*\)/);
+});
+
+test("the gate that WOULD have read it rides the always-loaded prompt runtime", () => {
+  // Recorded because it is the fact that made FR12 look viable: unlike the
+  // third-party @gotgenes/pi-permission-system (which denyExtensions strips),
+  // this gate survives a ceiling. Viable to load, still useless to configure.
+  const dir = path.join(process.cwd(), "pi-runtime", "node_modules", "pi-subagents", "src", "runs", "shared");
+  expect(fs.readFileSync(path.join(dir, "subagent-prompt-runtime.ts"), "utf8")).toContain("registerPermissionGate(pi)");
+  expect(fs.readFileSync(path.join(dir, "pi-args.ts"), "utf8")).toContain("subagent-prompt-runtime.ts");
+});

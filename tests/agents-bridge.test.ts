@@ -34,7 +34,7 @@ const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-agents-sess-"));
 // default). Allow it up front so the delegation test never stalls on an
 // unanswered permission prompt (the gate itself is covered by rules-bridge).
 const rulesFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-agents-rules-")), "permission-rules.json");
-fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent", action: "allow" }], workspaces: {} }));
+fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent*", action: "allow" }], workspaces: {} }));
 
 type UiReq = { id: string; method?: string; title?: string; message?: string; options?: string[] };
 type PiEvent = { type?: string; [k: string]: unknown };

@@ -11,7 +11,7 @@ import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig,
-  resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
+  childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
@@ -61,6 +61,8 @@ import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, Works
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
+import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
+import { inspectCommand, inspectRequestId, parseInspectFrame, type InspectReply } from "./subagentInspect";
 import { pollSubagentStatus } from "./subagentStatus";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
@@ -584,6 +586,7 @@ export function registerIpc(win: BrowserWindow): void {
       providerEnv: providerEnv(),
       resumeFile,
       rulesFile: rulesFile(),
+      childAuditDir: childAuditRoot(),
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
       bypass: resolveBypass(workspace ?? null),
@@ -1019,6 +1022,14 @@ export function registerIpc(win: BrowserWindow): void {
           /* never disturb the event stream */
         }
       }
+      // The ONLY event carrying a delegation's `agent`: args ride
+      // tool_execution_start and nothing later repeats them. Captured outside the
+      // snapshot try/catch above so a snapshot failure cannot lose the name.
+      if (e.type === "tool_execution_start" && (e as { toolName?: string }).toolName === "subagent") {
+        const id = typeof e.toolCallId === "string" ? e.toolCallId : undefined;
+        const agent = (e as { args?: { agent?: unknown } }).args?.agent;
+        if (id && typeof agent === "string") delegatedAgentByCall.set(id, agent);
+      }
       send("hv:pi-event", { ...e, sessionId });
       // ── An async delegation announces itself HERE, not on a lifecycle notify ──
       // pi-subagents 0.50 runs every top-level delegation as a workflow, and that
@@ -1042,6 +1053,11 @@ export function registerIpc(win: BrowserWindow): void {
         // Guard the (theoretical) race where a very fast child completes before its
         // own dispatch event is processed: `complete` has then already run, and
         // starting a poller here would leak a 500 ms timer nothing stops.
+        // Carry the agent name from the START event across to the run id.
+        const callId = typeof e.toolCallId === "string" ? e.toolCallId : undefined;
+        const agent = callId ? delegatedAgentByCall.get(callId) : undefined;
+        if (runId && agent) delegatedAgentByRun.set(runId, agent);
+        if (callId) delegatedAgentByCall.delete(callId);
         if (runId && !finishedAsyncRuns.has(runId)) {
           activity.asyncStarted(sessionId, runId);
           startSubagentPoll(sessionId, runId, asyncDir);
@@ -1049,7 +1065,7 @@ export function registerIpc(win: BrowserWindow): void {
             type: "subagent.async_started",
             sessionId,
             workspaceId: meta?.workspaceId,
-            data: { runId, agent: (e as { args?: { agent?: string } }).args?.agent },
+            data: { runId, agent },
           });
         }
       }
@@ -1084,6 +1100,16 @@ export function registerIpc(win: BrowserWindow): void {
       }
     });
     client.on("ui-request", (r: { id: string; method?: string; title?: string; message?: string }) => {
+      // §12: an inspect reply arrives as a setWidget frame on the SAME channel as
+      // permission prompts. Checked FIRST and returned early so it never reaches
+      // the permission dispatch — and never responded to, because upstream awaits
+      // nothing here (setWidget is fire-and-forget from the extension's side).
+      const inspect = parseInspectFrame(r);
+      if (inspect) {
+        pendingInspects.get(inspect.requestId)?.(inspect);
+        pendingInspects.delete(inspect.requestId);
+        return;
+      }
       // B4 audit channel: hv.audit notifies are fire-and-forget (never respond)
       // and land in the EventLog, not the renderer.
       const audit = parseAuditNotify(r);
@@ -1141,6 +1167,16 @@ export function registerIpc(win: BrowserWindow): void {
           stopSubagentPoll(sub.runId);
           drainPendingReload(sessionId); // a deferred reload can now proceed
           void log.append({ type: "subagent.async_complete", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, status: sub.status } });
+          // §12 FR7: fold the child guard's own decisions into the audit log.
+          // Drained at completion rather than streamed: the guard appends from a
+          // separate process, so this is the first moment the file is complete.
+          // `agent` comes from the completion event we already hold — the guard
+          // deliberately does not learn agent names, so main joins them here.
+          // `sub.agent` is undefined for every top-level delegation (upstream
+          // reports "workflow"; the bridge drops it), so the name comes from the
+          // START→END correlation above.
+          drainChildAudit(sessionId, meta?.workspaceId, sub.runId, sub.agent ?? delegatedAgentByRun.get(sub.runId));
+          delegatedAgentByRun.delete(sub.runId);
         } else if (sub.stage === "active") {
           const runs = sub.runs ?? [];
           activity.asyncSet(sessionId, runs.map((x) => x.runId));
@@ -1495,6 +1531,119 @@ export function registerIpc(win: BrowserWindow): void {
   // leaving a poller nothing ever stops. Bounded: one short id per delegation
   // for the life of the window, and only for runs that actually completed.
   const finishedAsyncRuns = new Set<string>();
+  /**
+   * toolCallId → the delegated agent's name, and then runId → the same.
+   *
+   * Needed because NOTHING else in the event stream carries it at the moment we
+   * need it. `tool_execution_end` has no `args` at all (args ride
+   * tool_execution_start only), and the completion notify reports upstream's
+   * generic `agent:"workflow"`, which the bridge drops. So the agent name has to
+   * be correlated START→END on toolCallId — the same correlation the run card
+   * does, for the same reason.
+   *
+   * This also fixes a pre-existing quiet bug: the `subagent.async_started` audit
+   * row read `agent` off the END event and had therefore always logged undefined.
+   */
+  const delegatedAgentByCall = new Map<string, string>();
+  const delegatedAgentByRun = new Map<string, string>();
+  /**
+   * §12: in-flight `/subagents-inspect-rpc` calls, by requestId.
+   *
+   * Correlated by requestId rather than by run, because a user can expand two
+   * cards at once and upstream answers on a shared channel. Each entry is settled
+   * exactly once and always settled — an unanswered inspect would leave a card
+   * spinning forever, which is why there is a timeout as well as a resolver.
+   */
+  const pendingInspects = new Map<string, (r: InspectReply | null) => void>();
+  let inspectSeq = 0;
+
+  /**
+   * §12 FR7 — turn a finished run's guard rows into EventLog entries.
+   *
+   * One row per DECISION plus one rollup, never one row per child tool call:
+   * a forty-tool child would otherwise bury the permission story these rows exist
+   * to tell (the full-transcript ingestion is the recorded follow-up). The rollup
+   * is what keeps silence unambiguous — an uneventful child still leaves a trace,
+   * so an empty audit view cannot mean both "well-behaved" and "ingestion broke".
+   */
+  const drainChildAudit = (
+    sessionId: string,
+    workspaceId: string | undefined,
+    /** The WORKFLOW run id — used only for the no-activity rollup below, since
+        the guard's own files are keyed by the CHILD run id (see the scan). */
+    completedRunId: string,
+    agent?: string,
+  ): void => {
+    const root = childAuditRoot();
+    // Drained by SCANNING, not by the completing run's id — and that is not a
+    // shortcut, it is the only thing that works. The guard names its file after
+    // PI_SUBAGENT_RUN_ID, which is the CHILD's own run id; the completion event
+    // carries the workflow async id. They are different values (measured in the
+    // running app: guard file 0d2c82ad…, completion runId dd0e257a…), and the
+    // child cannot know the workflow id — PI_SUBAGENT_PARENT_RUN_ID is only set
+    // when fan-out is authorized, which our children never have.
+    //
+    // Scanning is lossless even for a sibling still running: the guard appends by
+    // PATH, so deleting a file it is still writing to simply makes the next
+    // append recreate it, and those rows arrive in a later drain.
+    const rows = guardAuditRows(root, root);
+    if (rows.length === 0) {
+      // A child that made NO tool calls leaves no guard rows, so without this the
+      // delegation would leave no audit trace at all — and FR7's whole point is
+      // that silence should not be ambiguous. Seen in the app: a child returned
+      // empty, and the log said nothing whatsoever about it.
+      //
+      // Honest limit, stated rather than glossed: this row cannot distinguish "the
+      // child did nothing" from "the guard failed to load". Nothing available to
+      // main can. What covers the second case is the contract test asserting the
+      // wrapper injects the guard and the guard file exists.
+      void log.append({
+        type: "subagent.audit_rollup",
+        sessionId,
+        workspaceId,
+        data: { runId: completedRunId, ...(agent ? { agent } : {}), attempted: 0, denied: 0 },
+      });
+      return;
+    }
+    for (const r of rows) {
+      void log.append({
+        type: "permission.decision",
+        sessionId,
+        workspaceId,
+        // The parent's own envelope, so AuditView interleaves these by timestamp.
+        // `source` is what distinguishes them.
+        data: {
+          ts: r.ts,
+          tool: r.tool,
+          summary: r.summary,
+          decision: r.decision,
+          // ALWAYS "subagent", never folded into "bypass". A child decision has to
+          // stay identifiable as a child's (FR7) — with the fold, a run under
+          // bypass rendered exactly like a parent bypass row and the audit log
+          // could not answer "what did the sub-agent do", which is the question
+          // these rows exist for. Seen in the running app before it was fixed.
+          source: "subagent",
+          // …and the bypass fact is kept beside it rather than instead of it.
+          ...(r.source === "bypass" ? { bypass: true } : {}),
+          wouldHave: r.wouldHave,
+          runId: r.runId,
+          ...(agent ? { agent } : {}),
+        },
+      });
+    }
+    // One rollup per CHILD run, so an uneventful child still leaves a trace and a
+    // run with several children is not collapsed into one number.
+    for (const runId of new Set(rows.map((r) => r.runId))) {
+      const own = rows.filter((r) => r.runId === runId);
+      void log.append({
+        type: "subagent.audit_rollup",
+        sessionId,
+        workspaceId,
+        data: { runId, ...(agent ? { agent } : {}), ...rollupGuardAudit(own) },
+      });
+      clearGuardAudit(root, root, runId);
+    }
+  };
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
     if (!asyncDir || subagentPollers.has(runId)) return;
     const stop = pollSubagentStatus(asyncDir, (status) => send("hv:subagent-status", { sessionId, runId, status }));
@@ -2862,6 +3011,34 @@ export function registerIpc(win: BrowserWindow): void {
   });
   // Interrupt a running async subagent (stop button). Fire-and-forget prompt to
   // that session's client; the bridge drives pi-subagents' RPC and notifies back.
+  /**
+   * §12: fetch a child's task, a bounded transcript window and its final output.
+   *
+   * Costs NO model turn — upstream answers from its own artifacts — so the card
+   * can call this on every expand. Always settles: on the reply, or on a timeout,
+   * or on a send failure, because a card that never hears back spins forever.
+   */
+  ipcMain.handle("hv:subagent-inspect", async (_e, sessionId: string, asyncId: string) => {
+    const client = manager.get(sessionId) as PiClient | null;
+    if (!client) return { ok: false as const, error: "session is not running" };
+    const requestId = inspectRequestId(++inspectSeq);
+    const reply = await new Promise<InspectReply | null>((resolve) => {
+      const timer = setTimeout(() => {
+        pendingInspects.delete(requestId);
+        resolve(null);
+      }, 10_000);
+      pendingInspects.set(requestId, (r) => { clearTimeout(timer); resolve(r); });
+      void client.send({ type: "prompt", message: inspectCommand(requestId, asyncId) }).catch(() => {
+        clearTimeout(timer);
+        pendingInspects.delete(requestId);
+        resolve(null);
+      });
+    });
+    if (!reply) return { ok: false as const, error: "no reply" };
+    if (reply.error) return { ok: false as const, error: reply.error.message, code: reply.error.code };
+    return { ok: true as const, reply };
+  });
+
   ipcMain.handle("hv:subagent-interrupt", (_e, sessionId: string, runId: string) => {
     void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-interrupt ${runId}` }).catch(() => {});
   });

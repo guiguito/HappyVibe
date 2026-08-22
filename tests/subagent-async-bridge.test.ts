@@ -54,7 +54,7 @@ function makeAgentDir(asyncByDefault: boolean): string {
 
 function rulesAllowingSubagent(): string {
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-async-rules-")), "permission-rules.json");
-  fs.writeFileSync(f, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent", action: "allow" }], workspaces: {} }));
+  fs.writeFileSync(f, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent*", action: "allow" }], workspaces: {} }));
   return f;
 }
 

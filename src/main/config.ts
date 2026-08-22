@@ -493,6 +493,18 @@ export function rulesFile(): string {
 }
 
 /**
+ * §12 FR7: where the child guard appends its per-run decision JSONL
+ * (HV_CHILD_AUDIT_DIR). Under userData because MAIN owns it — the guard writes,
+ * main drains and deletes, and `subagentAudit.ts` confines every read to this
+ * root rather than trusting the env var it travelled through.
+ */
+export function childAuditRoot(): string {
+  const d = path.join(app.getPath("userData"), "subagent-audit");
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
+
+/**
  * Built-in agent dir (B6). pi-subagents discovers agents from
  * `<PI_CODING_AGENT_DIR>/agents/*.md` — since agentDir() is PI_CODING_AGENT_DIR,
  * our built-ins live in agentDir()/agents. Also where duplicates/edits land.
@@ -650,6 +662,28 @@ export function writeSubagentConfig(): void {
   // announce it. tests/subagent-config.test.ts pins both halves: our key, and
   // that upstream still agrees.
   config.defaultSubagentContext = "fresh";
+  // PRD §12 (2026-08-21) — FR12 was IMPLEMENTED, MEASURED AND DROPPED. We
+  // deliberately write NO `permissions` key. Do not add one back.
+  //
+  // The idea was a redundant native floor beneath the ceiling and the child
+  // guard. It cannot work, because this file is written ONCE at startup while a
+  // boundary is approved per delegation, so any rule here is unconditional —
+  // and `permissionDecision` has no boundary awareness to give it.
+  //
+  // That makes it either redundant or harmful, never useful:
+  //  - when a tool is OUTSIDE the approved boundary, the capability ceiling has
+  //    already removed it from the child's --tools, so there is nothing to deny;
+  //  - when a tool is INSIDE it, this silently overrides the approval.
+  //
+  // Measured, not reasoned: with `permissions: {rules:{write:"deny"}}` armed, a
+  // child whose boundary included `write` and whose rules explicitly ALLOWED it
+  // had its guard row say "allow" and the file was still never created. The modal
+  // would promise "It can change things with: write", the user would grant it,
+  // and the write would fail silently — a worse lie than no boundary at all,
+  // because the user believes they granted something.
+  //
+  // Pinned by an absence test in tests/subagent-config.test.ts and, end to end,
+  // by "an APPROVED write actually succeeds" in tests/child-guard-bridge.test.ts.
   fs.writeFileSync(file, `${JSON.stringify(config, null, "\t")}\n`);
 }
 
