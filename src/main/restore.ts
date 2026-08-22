@@ -197,6 +197,38 @@ function stampTurnDurations(items: RestoreItem[]): RestoreItem[] {
   return items;
 }
 
+/**
+ * Strip the app-authored context blocks from a reconstructed user message.
+ *
+ * §9 (open files), §26 (agent terminals) and §28 (the browser pane) append a
+ * block to the OUTGOING prompt so the agent can see what the user is looking at.
+ * That text is part of the user message Pi records, so it lives in the session
+ * file — and while the live renderer echoes only what was typed, a RELOAD
+ * reconstructs the bubble from the file and the machinery shows up inside the
+ * user's own words. Reported 2026-08-22, when a reload surfaced an
+ * <open-browser> block in a prompt about a penalty game.
+ *
+ * §24 already solved this exact shape for prompt-template expansions by storing
+ * the typed form and showing that instead; these three blocks had no equivalent.
+ * Stripping is the cheaper half of the same idea: the blocks are machine-authored
+ * with fixed delimiters, so they can be removed exactly.
+ *
+ * Removed only from the END, one block at a time, because that is precisely how
+ * they are appended. A user who types "<open-browser>" mid-sentence keeps it —
+ * anything with text after it is theirs, not ours.
+ */
+const TRAILING_CONTEXT_BLOCK =
+  /\n{0,2}<(open-files|open-terminals|open-browser)>\n[\s\S]*?\n<\/\1>[ \t]*$/;
+
+export function stripInjectedContext(text: string): string {
+  let out = text.trimEnd();
+  for (;;) {
+    const next = out.replace(TRAILING_CONTEXT_BLOCK, "").trimEnd();
+    if (next === out) return out;
+    out = next;
+  }
+}
+
 export function restoreItems(raw: RawMessage[]): RestoreItem[] {
   const items: RestoreItem[] = [];
   // §7 round 12: one budget for the whole restore — see imagesOf.
@@ -227,7 +259,8 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
     }
     if (m.role !== "user" && m.role !== "assistant") continue;
     if (m.role === "user") {
-      const text = messageText(m.content).trim();
+      // Drop the app-authored context blocks — see stripInjectedContext.
+      const text = stripInjectedContext(messageText(m.content)).trim();
       const pics = imagesOf(m.content, budget);
       // A message that is JUST a picture is not empty — the old text-only guard
       // reconstructed it as nothing at all.

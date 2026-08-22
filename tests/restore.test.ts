@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { messageText, restoreItems } from "../src/main/restore";
+import { readFileSync } from "node:fs";
+import * as path from "node:path";
+import { messageText, restoreItems , stripInjectedContext} from "../src/main/restore";
 
 // Shapes mirror Pi's real get_messages output (verified against a session file):
 // assistant messages carry text + toolCall blocks; tool output is a separate
@@ -240,5 +242,60 @@ describe("round 15: timestamps and turn duration", () => {
     ]);
     expect((items[0] as { ts?: number }).ts).toBeUndefined();
     expect((items[1] as { turnMs?: number }).turnMs).toBeUndefined();
+  });
+});
+
+/**
+ * §9/§26/§28 append app-authored context blocks to the OUTGOING prompt, so they
+ * land in the session file as part of the user's message. Live, the renderer
+ * echoes only what was typed, so they are invisible — but a RELOAD reconstructs
+ * the bubble from the file, and the machinery appears inside the user's own
+ * words. Reported 2026-08-22 after a reload surfaced an <open-browser> block in
+ * a prompt about a penalty game.
+ *
+ * §24 already solved this shape for prompt-template expansions (store the typed
+ * form, show that instead). These three blocks had no equivalent.
+ *
+ * Stripped only from the END, and one block at a time, because that is exactly
+ * how they are appended — a user who types "<open-browser>" mid-sentence keeps it.
+ */
+describe("stripInjectedContext", () => {
+  const browser = "<open-browser>\nb1-x\thttp://localhost:5174/p.html\tready\n</open-browser>";
+  const terms = "<open-terminals>\nt1\tzsh\trunning\n</open-terminals>";
+  const files = "<open-files>\nsrc/a.ts\n</open-files>";
+
+  test("removes a trailing browser block", () => {
+    expect(stripInjectedContext(`Goal keeper is dull.\n\n${browser}`)).toBe("Goal keeper is dull.");
+  });
+
+  test("removes SEVERAL trailing blocks, in any order", () => {
+    expect(stripInjectedContext(`Do the thing.\n\n${files}\n\n${terms}\n\n${browser}`)).toBe("Do the thing.");
+    expect(stripInjectedContext(`Do it.\n\n${browser}\n\n${files}`)).toBe("Do it.");
+  });
+
+  test("leaves a message that has none alone", () => {
+    expect(stripInjectedContext("just a normal prompt")).toBe("just a normal prompt");
+  });
+
+  test("keeps a block the USER typed mid-sentence", () => {
+    // Only trailing blocks are ours. Anything with text after it is theirs.
+    const typed = `why does ${browser} show up?`;
+    expect(stripInjectedContext(typed)).toBe(typed);
+  });
+
+  test("does not eat the whole message when it is ONLY a block", () => {
+    // Degenerate but real: an empty prompt with context appended. Returning ""
+    // is right — restore.ts already drops text-empty, image-less messages.
+    expect(stripInjectedContext(browser)).toBe("");
+  });
+
+  test("survives an unclosed block rather than deleting the rest", () => {
+    const broken = "hello\n\n<open-browser>\nb1-x\tready";
+    expect(stripInjectedContext(broken)).toBe(broken);
+  });
+
+  test("is applied on the restore path", () => {
+    const src = readFileSync(path.join(__dirname, "..", "src", "main", "restore.ts"), "utf8");
+    expect(src).toMatch(/stripInjectedContext\(messageText\(m\.content\)\)/);
   });
 });
