@@ -1,12 +1,29 @@
 /**
  * Contract tests — every pi-subagents behaviour HappyVibe is pin-coupled to
- * (the pin-bump gate). Five groups, all key-free (no Pi spawn, no model):
+ * (the pin-bump gate). All key-free (no Pi spawn, no model):
  *
  *   1. the active-run inventory behind /hv-subagent-list       (the deep import)
  *   2. the parent-blocking wait tool                            (PRD §12 guard)
  *   3. bundled agents' `tools:` allowlist                       (delegation works)
  *   4. rpc mode is UI-ful, disarming the auto-drain              (PRD §12 guard)
  *   5. completion delivery is scoped to a PROCESS                (PRD §12 guard)
+ *   6. typebox and pi-tui pinned to what Pi declares            (dependency pins)
+ *   7. the capability ceiling's propagation chain               (FR11, §12)
+ *
+ * FR11 asks that every upstream surface the sub-agent boundary rests on fails
+ * `npm test` rather than the GUI. That inventory is deliberately spread across
+ * SIX files, because each one owns a different question — collapsing them here
+ * would put behaviour a long way from the thing it constrains:
+ *
+ *   pi-subagents-contract   the ceiling chain, the pins, wait/drain/delivery
+ *   subagent-adversarial    what a malicious AGENT FILE cannot reach
+ *   subagent-preflight-shape the contract fields the prompt reads + inheritance
+ *                            defaults (`inheritSkills` false is load-bearing)
+ *   subagent-config          native permissions refused; bash ungateable twice
+ *   mcp-spawn                wrapper argv pass-through + the guard injection
+ *   subagent-status          status persisted before the result publishes
+ *
+ * If you are auditing FR11, read those six. This header is the index.
  *
  * Groups 2-4 exist because the 0.34.0 → 0.40.0 bump broke or endangered all three
  * SILENTLY — no test failed, and each defeats the same locked decision ("delegate
@@ -50,6 +67,12 @@ import { ASYNC_DIR } from "../pi-runtime/node_modules/pi-subagents/src/shared/ty
 import { drainOutstandingWork } from "../pi-runtime/node_modules/pi-subagents/src/runs/background/auto-drain.ts";
 import registerSubagentNotify from "../pi-runtime/node_modules/pi-subagents/src/runs/background/notify.ts";
 import { currentCompletionOwnerId } from "../pi-runtime/node_modules/pi-subagents/src/shared/completion-owner.ts";
+import {
+  parseSubagentCapabilityCeiling,
+  registerSubagentCapabilityCeiling,
+  resolveSubagentCapabilityCeiling,
+} from "../pi-runtime/node_modules/pi-subagents/src/api/capability-ceiling.ts";
+import { buildPiArgs } from "../pi-runtime/node_modules/pi-subagents/src/runs/shared/pi-args.ts";
 import { REDACTED_PROMPT, WAIT_TOOLS, displayableTask, isRedactedPrompt, isWaitTool } from "../pi-runtime/extensions/hv-rules";
 
 const BRIDGE = path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts");
@@ -641,5 +664,127 @@ describe("async completion delivery is scoped to a PROCESS, so HappyVibe claims 
     const notify = readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", "runs", "background", "notify.ts"), "utf8");
     expect(notify).toContain("result.completionOwnerId !== state.completionOwnerId");
     expect(notify).not.toMatch(/completionOwnerScoping|disableCompletionOwner|ignoreCompletionOwner/);
+  });
+});
+
+/**
+ * FR11 — the sub-agent BOUNDARY's own propagation chain (2026-08-22).
+ *
+ * §12's three layers rest on a chain of upstream behaviours, and the round that
+ * built them pinned the ends but not the middle: `registerSubagentCapabilityCeiling`
+ * was exercised, and the resulting argv was measured, but nothing asserted how a
+ * registration REACHES that argv, or how the ceiling reaches a GRANDCHILD.
+ *
+ * Every assertion here guards a failure that is silent by construction — the
+ * child simply gets more than the human approved, and no UI says so. That is the
+ * same shape as the 0.40.0 bump this file's other groups exist for.
+ *
+ * Key-free: pure argv/env resolution and source scans, no Pi spawn, no model.
+ */
+describe("FR11 — the capability ceiling's propagation chain", () => {
+  const sub = (...rel: string[]): string =>
+    path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", ...rel);
+  const read = (...rel: string[]): string => readFileSync(sub(...rel), "utf8");
+
+  /** buildPiArgs' required fields, minimal, plus a ceiling. Returns argv. */
+  const childArgs = (ceiling: Record<string, unknown>): string[] =>
+    buildPiArgs({
+      baseArgs: ["--mode", "json", "-p"],
+      task: "t",
+      sessionEnabled: false,
+      inheritProjectContext: false,
+      inheritSkills: false,
+      cwd: process.cwd(),
+      capabilityCeiling: parseSubagentCapabilityCeiling(ceiling),
+    } as never).args as string[];
+
+  it("the ceiling env name is unchanged — it is how the ceiling reaches a GRANDCHILD", () => {
+    // A rename here does not break a build: the parent still bounds its own
+    // child (registry, in-process), while every DESCENDANT silently loses the
+    // ceiling, because inheritance travels only through this variable.
+    const src = read("src", "runs", "shared", "capability-ceiling.ts");
+    expect(src).toContain('SUBAGENT_CAPABILITY_CEILING_ENV = "PI_SUBAGENT_CAPABILITY_CEILING_V1"');
+    expect(src).toContain('SUBAGENT_CAPABILITY_CEILING_REGISTRY_KEY = "pi-subagents.capability-ceiling.v1"');
+  });
+
+  it("pi-args ENCODES the resolved ceiling into the child's env", () => {
+    // The other half of inheritance: without this write, a grandchild starts
+    // unbounded even though the env NAME is right.
+    const src = read("src", "runs", "shared", "pi-args.ts");
+    expect(src).toMatch(/env\[SUBAGENT_CAPABILITY_CEILING_ENV\] = encodedCapabilityCeiling/);
+    expect(src, "and DECODES an inherited one on the way in")
+      .toMatch(/decodeSubagentCapabilityCeiling\(\s*process\.env\[SUBAGENT_CAPABILITY_CEILING_ENV\]/);
+  });
+
+  it("a registered ceiling is what the launch path actually reads", () => {
+    // The link between the bridge's registerSubagentCapabilityCeiling() and the
+    // argv: if the launch path stopped consulting the registry, registration
+    // would keep succeeding and bound nothing.
+    for (const f of [
+      ["src", "runs", "foreground", "execution.ts"],
+      ["src", "runs", "background", "async-execution.ts"],
+    ]) {
+      expect(read(...f), f.join("/")).toMatch(/resolveCurrentSubagentCapabilityCeiling|resolveSubagentCapabilityCeiling/);
+    }
+  });
+
+  it("a registration round-trips through the registry to a resolved ceiling", () => {
+    // Behavioural, not a source scan: register → resolve, the exact path the
+    // bridge depends on, including that dispose() actually releases it.
+    const sessionId = `hv-fr11-${process.pid}`;
+    const handle = registerSubagentCapabilityCeiling({
+      sessionId, source: "happyvibe-test",
+      ceiling: { allowedTools: ["read"], denyExtensions: true },
+    });
+    try {
+      const resolved = resolveSubagentCapabilityCeiling(sessionId);
+      expect(resolved?.allowedTools).toEqual(["read"]);
+      expect(resolved?.denyExtensions).toBe(true);
+      handle.update({ allowedTools: ["read", "bash"], denyExtensions: true });
+      expect(resolveSubagentCapabilityCeiling(sessionId)?.allowedTools).toEqual(["bash", "read"]);
+    } finally {
+      handle.dispose();
+    }
+    expect(resolveSubagentCapabilityCeiling(sessionId), "dispose releases it").toBeUndefined();
+  });
+
+  it("the ceiling reaches ARGV as real flags, not just a plan object", () => {
+    // The plan's booleans are not the contract; the child's argv is. This is the
+    // difference between "we computed a restriction" and "the child is restricted".
+    const args = childArgs({
+      version: 1, allowedTools: ["read", "grep"], denyExtensions: true, sources: ["happyvibe"],
+    });
+    expect(args).toContain("--tools");
+    expect(args[args.indexOf("--tools") + 1]).toBe("grep,read");
+    expect(args, "denyExtensions must disable ambient discovery").toContain("--no-extensions");
+  });
+
+  it("an EMPTY allowed set becomes --no-tools, never a missing flag", () => {
+    // The dangerous degenerate case: if an empty intersection emitted nothing,
+    // the child would fall back to Pi's FULL builtin set — the exact hole FR3
+    // closes. It must emit --no-tools instead.
+    const args = childArgs({
+      version: 1, allowedTools: [], denyExtensions: true, sources: ["happyvibe"],
+    });
+    expect(args).toContain("--no-tools");
+    expect(args).not.toContain("--tools");
+  });
+
+  it("buildPiArgs is NOT in the exports map, so the argv assertion needs a deep import", () => {
+    // Recorded because it is the reason the import above is relative: the public
+    // ./pi-args subpath exposes only resolvePiLaunchToolPlan (the pure plan), not
+    // the argv builder. If upstream ever exports it, this can become a bare
+    // specifier — same relationship as listAsyncRuns/ASYNC_DIR above.
+    const map = (JSON.parse(readFileSync(PKG, "utf8")) as { exports: Record<string, string> }).exports;
+    expect(map["./pi-args"], "the subpath exists").toBeDefined();
+    expect(readFileSync(sub("src", "api", "pi-args.ts"), "utf8"))
+      .not.toMatch(/buildPiArgs/);
+  });
+
+  it("strict tool availability still REJECTS an unknown child tool", () => {
+    // pi-subagents >=0.40 fails the whole run for an unknown name (0.34 ignored
+    // it). Both bundled agents once asked for `glob, list`, which do not exist.
+    expect(read("src", "runs", "shared", "tool-availability.ts"))
+      .toMatch(/requested unavailable child tools/i);
   });
 });

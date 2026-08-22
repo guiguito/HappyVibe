@@ -110,3 +110,44 @@ describe("the bridge reads the contract at the right level", () => {
     expect(src, "never reads tools off the result").not.toMatch(/\bres\.tools\b/);
   });
 });
+
+
+/**
+ * FR8/FR11 — the two inheritance defaults, asserted as RESOLVED VALUES.
+ *
+ * §12 states the skills hole is "opt-in, because inheritSkills defaults false".
+ * That sentence is load-bearing and was previously guarded only by
+ * `typeof === "boolean"`, which a flipped default passes happily. A flip would be
+ * invisible in every other way: every child would inherit the user's approved
+ * skills, no test would fail, and no UI would change — the §14 trust gate quietly
+ * extended to processes it was never reviewed for.
+ *
+ * Asserted against the BUNDLED agents, which declare neither key, so the value
+ * read here IS the default.
+ */
+describe("inheritance defaults (the ones §12 and §14 rest on)", () => {
+  it("an agent that declares nothing does NOT inherit skills", async () => {
+    for (const agent of ["code-explorer", "agents-md-maker"]) {
+      const { contract: k } = await contractFor(agent);
+      expect(k.inheritSkills, `${agent} must not inherit skills by default`).toBe(false);
+    }
+  });
+
+  it("…and does not inherit project context either", async () => {
+    // Same class: AGENTS.md reaching a child is a context decision the approval
+    // prompt reports (FR8), so its default must not drift silently.
+    const { contract: k } = await contractFor("code-explorer");
+    expect(k.inheritProjectContext).toBe(false);
+  });
+
+  it("neither bundled agent declares the keys — so the values above are defaults", () => {
+    // Guards the test itself: if someone adds `inheritSkills: false` to the
+    // bundled agents, the assertions above would pass while measuring the
+    // declaration rather than the default.
+    for (const f of ["code-explorer.md", "agents-md-maker.md"]) {
+      const md = fs.readFileSync(path.join(runtime, "agents", f), "utf8");
+      expect(md, f).not.toMatch(/^inheritSkills:/m);
+      expect(md, f).not.toMatch(/^inheritProjectContext:/m);
+    }
+  });
+});
