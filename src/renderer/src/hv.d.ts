@@ -711,7 +711,7 @@ interface HvApi {
     | { ok: false; error: string; code?: string }
   >;
   /** Live status pushes for detached runs (currentTool, activityState, …). */
-  onSubagentStatus(cb: (i: { sessionId: string; runId: string; status: Record<string, unknown> }) => void): () => void;
+  onSubagentStatus(cb: (i: { sessionId: string; runId: string; status: Record<string, unknown>; cost?: HvLedgerTotal }) => void): () => void;
   readAgent(filePath: string): Promise<{ body: string; model?: string }>;
   writeAgent(filePath: string, edit: { body?: string; model?: string | null }): Promise<void>;
   duplicateAgent(filePath: string): Promise<string>;

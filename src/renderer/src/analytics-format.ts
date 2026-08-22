@@ -57,3 +57,16 @@ export function costPill(total: HvLedgerTotal): { label: string; tone: CostTone 
   const partial = total.unknown > 0;
   return { label: fmtCost(total.cost) + (partial ? "+?" : ""), tone: partial ? "amber" : "calm" };
 }
+
+/**
+ * The same money label the cost pill uses, marked as an estimate when it IS one.
+ *
+ * The pill has no room for the "estimated" badge the cost panel carries, but a
+ * card line does — so metered dollars get a "~" while "plan" and "$?" do not: a
+ * covered call is a fact and an unknown price is a gap, and neither is an
+ * estimate of an amount owed.
+ */
+export function costEstimateLabel(total: HvLedgerTotal): string {
+  const { label } = costPill(total);
+  return total.metered > 0 ? `~${label}` : label;
+}

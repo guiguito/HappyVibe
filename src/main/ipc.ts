@@ -55,8 +55,8 @@ import {
   type ByokProvider,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
-import { ledgerTotal, planProvidersFor, type ApiCall } from "./calls";
-import { agentByRunFrom, sessionCalls } from "./sessionLedger";
+import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
+import { agentByRunFrom, runCalls, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
@@ -1645,9 +1645,32 @@ export function registerIpc(win: BrowserWindow): void {
       clearGuardAudit(root, root, runId);
     }
   };
+  /**
+   * A running delegation's spend so far, from the child's own session file.
+   *
+   * Recomputed on each status push rather than on a timer of its own: a child
+   * turn is what appends to that file AND what moves `turnCount`, so the poll's
+   * existing change-gate already fires exactly when the number can have moved.
+   * Nothing is priced here — the child is a Pi process and these are Pi's own
+   * figures, classified by the same rules as the session's own calls (PRD §19).
+   */
+  const runCostNow = (sessionId: string, runId: string): LedgerTotal | undefined => {
+    const meta = index.get(sessionId);
+    if (!meta) return undefined;
+    const calls = runCalls(
+      sessionDir(),
+      meta.piSessionFile,
+      runId,
+      planProvidersFor(providerKeyStatus()),
+      delegatedAgentByRun.get(runId),
+    );
+    return calls.length ? ledgerTotal(calls) : undefined;
+  };
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
     if (!asyncDir || subagentPollers.has(runId)) return;
-    const stop = pollSubagentStatus(asyncDir, (status) => send("hv:subagent-status", { sessionId, runId, status }));
+    const stop = pollSubagentStatus(asyncDir, (status) =>
+      send("hv:subagent-status", { sessionId, runId, status, cost: runCostNow(sessionId, runId) }),
+    );
     subagentPollers.set(runId, { sessionId, stop });
   };
   const stopSubagentPoll = (runId: string): void => {

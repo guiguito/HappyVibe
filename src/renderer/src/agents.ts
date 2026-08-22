@@ -264,7 +264,18 @@ export interface DelegationRun {
   startedAt: number;
   status: "running" | "done" | "error" | "interrupted";
   /** Async only — latest status-poll snapshot (currentTool, activityState, …). */
-  live?: { currentTool?: string; activityState?: string; turnCount?: number; recentTools?: Array<{ tool: string; args?: string }> };
+  live?: {
+    currentTool?: string;
+    activityState?: string;
+    turnCount?: number;
+    recentTools?: Array<{ tool: string; args?: string }>;
+    /**
+     * Spend so far, parsed from the child's own session file on the same tick.
+     * Absent until the child's first turn is billed — the card then shows just
+     * its elapsed time, never a $0.00 standing in for "not measured yet".
+     */
+    cost?: HvLedgerTotal;
+  };
 }
 
 // ── async subagent lifecycle (hv.subagent notify) ────────────────────────────
