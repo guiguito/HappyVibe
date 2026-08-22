@@ -157,13 +157,20 @@ export function CostPanel({
                       {time(c.ts)}
                     </td>
                     {/* A delegation's calls are the session's spend too, but a
-                        reader has to be able to tell whose turn burned it. */}
+                        reader has to be able to tell whose turn burned it.
+                        The agent goes on its OWN line rather than after the
+                        model: this column truncates at 11rem and a model id is
+                        already longer than that, so an inline suffix was clipped
+                        away every time — the marker the footnote promises has to
+                        survive the truncation that hides it. */}
                     <td
-                      className="px-2 py-1.5 font-mono max-w-[11rem] truncate"
+                      className="px-2 py-1.5 font-mono max-w-[11rem]"
                       title={`${c.provider} / ${c.model}${c.agent ? ` — sub-agent ${c.agent}` : ""}`}
                     >
-                      {c.model}
-                      {c.agent && <span className="text-ink-soft"> · {c.agent}</span>}
+                      <span className="block truncate">{c.model}</span>
+                      {c.agent && (
+                        <span className="block truncate text-[10px] text-tangerine-deep">↳ {c.agent}</span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 font-mono text-right">{fmtNum(c.input)}</td>
                     <td className="px-2 py-1.5 font-mono text-right">{fmtNum(c.output)}</td>
