@@ -457,12 +457,36 @@ export function Transcript({
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Round 11: follow the stream only from near the bottom. `streaming` is in the
-  // deps, so this runs once per rAF frame while text arrives — unconditionally
-  // scrolling made reading back during a response impossible.
-  useEffect(() => {
+  /**
+   * Whether to keep following the transcript. Owned by the USER, not by geometry.
+   *
+   * Round 11 asked "is the viewport near the bottom?" inside this effect, which
+   * runs AFTER the new content is committed. For a reader pinned at the bottom
+   * `scrollTop` has not moved while `scrollHeight` has, so the measurement equals
+   * the height of the item JUST ADDED — and any tool card taller than the slack
+   * read exactly like a deliberate scroll-up, silently ending the follow until
+   * the next send. Streaming prose never tripped it because it arrives in
+   * sub-slack increments; code cards did, constantly.
+   *
+   * A scroll EVENT cannot be fooled that way: it fires only when scrollTop
+   * changes, which appended content never does. So the flag is set from the
+   * event, and the effect just obeys it. This is not a widening of the old guard
+   * — reading back during a response still stops the follow, because that is a
+   * real scroll. It is the same intent, measured off the one signal that only
+   * the user can produce.
+   */
+  const follow = useRef(true);
+
+  // Both directions, deliberately: scrolling away stops the follow, and scrolling
+  // back to the bottom resumes it. Our own scrollIntoView also lands here and
+  // sets it true, which is harmless and keeps the two in agreement.
+  const onScroll = (): void => {
     const box = scrollRef.current;
-    if (box && !isNearBottom(box)) return;
+    if (box) follow.current = isNearBottom(box);
+  };
+
+  useEffect(() => {
+    if (!follow.current) return;
     bottom.current?.scrollIntoView({ block: "end" });
   }, [items, busy, streaming]);
 
@@ -477,6 +501,7 @@ export function Transcript({
   useEffect(() => {
     if (landed.current || items.length === 0) return;
     landed.current = true;
+    follow.current = true;
     bottom.current?.scrollIntoView({ block: "end" });
   }, [items]);
 
@@ -484,6 +509,9 @@ export function Transcript({
   // its own initial run — the landing above owns that.
   useEffect(() => {
     if (!scrollNonce) return;
+    // A send re-latches the follow: having scrolled up to read something is not a
+    // decision to stop watching the NEXT answer.
+    follow.current = true;
     bottom.current?.scrollIntoView({ block: "end" });
   }, [scrollNonce]);
 
@@ -559,7 +587,7 @@ export function Transcript({
   }
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto">
+    <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
       {header}
       <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
         {/* Round 15: the held-back head of a long conversation. Same disclosure
