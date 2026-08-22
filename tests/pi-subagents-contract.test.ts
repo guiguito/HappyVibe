@@ -788,3 +788,47 @@ describe("FR11 — the capability ceiling's propagation chain", () => {
       .toMatch(/requested unavailable child tools/i);
   });
 });
+
+/**
+ * 8. The child session-file layout the cost ledger reads (PRD §19, 2026-08-22).
+ *
+ * `src/main/store.ts` childSessionFiles resolves upstream's layout to find a
+ * delegation's own Pi session file, which is what puts sub-agent spend in the
+ * session's cost, the pill and Stats. Nothing about that is announced on the
+ * wire — if upstream moves the directory, every sub-agent figure silently
+ * becomes absent rather than wrong, which is the quieter failure and the reason
+ * this group exists.
+ */
+describe("child session files (the cost ledger's source)", () => {
+  const read = (...rel: string[]): string =>
+    readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", ...rel), "utf8");
+
+  it("roots a child's session beside the PARENT's own session file", () => {
+    // Not a tmpdir — this is what makes a reopened session able to show the
+    // same numbers it showed live.
+    const src = read("src", "extension", "index.ts");
+    expect(src).toMatch(/function getSubagentSessionRoot/);
+    expect(src).toMatch(/path\.basename\(parentSessionFile, "\.jsonl"\)/);
+    expect(src).toMatch(/path\.join\(sessionsDir, baseName\)/);
+  });
+
+  it("nests one directory per run and one per step, leaf session.jsonl", () => {
+    const src = read("src", "runs", "foreground", "subagent-executor.ts");
+    expect(src).toMatch(/sessionRoot = path\.join\(baseSessionRoot, runId\)/);
+    expect(src).toMatch(/path\.join\(sessionRoot, `run-\$\{idx \?\? 0\}`\)/);
+    expect(src).toMatch(/path\.join\(sessionDirForIndex\(idx\), "session\.jsonl"\)/);
+  });
+
+  it("always enables a child session on the dispatch path", () => {
+    // Without this a child writes no session file at all and there is nothing
+    // to read: the numbers would be ABSENT rather than wrong.
+    expect(read("src", "runs", "foreground", "subagent-executor.ts")).toMatch(/sessionDir: sessionDirForIndex\(0\)/);
+    expect(read("src", "runs", "background", "subagent-runner.ts")).toMatch(/sessionEnabled = Boolean\(config\.sessionDir\)/);
+  });
+
+  it("still records the per-turn cost our ledger sums", () => {
+    // The child's own stream reports `usage.cost.total`; calls.ts reads exactly
+    // that field. We sum Pi's numbers and never price anything ourselves.
+    expect(read("src", "runs", "background", "subagent-runner.ts")).toMatch(/usage\.cost \+= eventUsage\.cost\?\.total/);
+  });
+});
