@@ -55,7 +55,8 @@ import {
   type ByokProvider,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
-import { ledgerTotal, parseCalls, planProvidersFor, type ApiCall } from "./calls";
+import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
+import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
@@ -63,7 +64,7 @@ import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
 import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
 import { inspectCommand, inspectRequestId, parseInspectFrame, type InspectReply } from "./subagentInspect";
-import { pollSubagentStatus } from "./subagentStatus";
+import { pollSubagentStatus, type SubagentStatus } from "./subagentStatus";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
@@ -1065,7 +1066,12 @@ export function registerIpc(win: BrowserWindow): void {
             type: "subagent.async_started",
             sessionId,
             workspaceId: meta?.workspaceId,
-            data: { runId, agent },
+            // `toolCallId` is what lets a REOPENED session attach a run's spend
+            // to the right card: a restored transcript has tool cards keyed by
+            // call id and no memory of run ids. The child's session-file paths
+            // are NOT stored — they are resolved from the run id (store.ts
+            // childSessionFiles), so there is one mechanism, not two.
+            data: { runId, agent, ...(callId ? { toolCallId: callId } : {}) },
           });
         }
       }
@@ -1166,7 +1172,21 @@ export function registerIpc(win: BrowserWindow): void {
           activity.asyncEnded(sessionId, sub.runId);
           stopSubagentPoll(sub.runId);
           drainPendingReload(sessionId); // a deferred reload can now proceed
-          void log.append({ type: "subagent.async_complete", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, status: sub.status } });
+          // `children` is what a REOPENED session reads to show what this
+          // delegation cost. It has to be persisted rather than re-derived: the
+          // child's directory is named after the run's INNER id, which appears
+          // only in the run's status.json — and that lives in a tmpdir.
+          void log.append({
+            type: "subagent.async_complete",
+            sessionId,
+            workspaceId: meta?.workspaceId,
+            data: {
+              runId: sub.runId,
+              status: sub.status,
+              ...(childSessionsByRun.has(sub.runId) ? { children: childSessionsByRun.get(sub.runId) } : {}),
+            },
+          });
+          childSessionsByRun.delete(sub.runId);
           // §12 FR7: fold the child guard's own decisions into the audit log.
           // Drained at completion rather than streamed: the guard appends from a
           // separate process, so this is the first moment the file is complete.
@@ -1644,9 +1664,33 @@ export function registerIpc(win: BrowserWindow): void {
       clearGuardAudit(root, root, runId);
     }
   };
+  /**
+   * A running delegation's spend so far, from the child's own session file.
+   *
+   * Recomputed on each status push rather than on a timer of its own: a child
+   * turn is what appends to that file AND what moves `turnCount`, so the poll's
+   * existing change-gate already fires exactly when the number can have moved.
+   * Nothing is priced here — the child is a Pi process and these are Pi's own
+   * figures, classified by the same rules as the session's own calls (PRD §19).
+   */
+  const runCostNow = (sessionId: string, status: SubagentStatus): LedgerTotal | undefined => {
+    const meta = index.get(sessionId);
+    if (!meta || !status.children?.length) return undefined;
+    const calls = callsFromChildSessions(sessionDir(), status.children, planProvidersFor(providerKeyStatus()));
+    return calls.length ? ledgerTotal(calls) : undefined;
+  };
+  /**
+   * The child session files each run is writing, remembered from its own status
+   * pushes so completion can persist them (status.json lives in a tmpdir, which
+   * a reopened session cannot count on).
+   */
+  const childSessionsByRun = new Map<string, Array<{ sessionFile: string; agent?: string }>>();
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
     if (!asyncDir || subagentPollers.has(runId)) return;
-    const stop = pollSubagentStatus(asyncDir, (status) => send("hv:subagent-status", { sessionId, runId, status }));
+    const stop = pollSubagentStatus(asyncDir, (status) => {
+      if (status.children?.length) childSessionsByRun.set(runId, status.children);
+      send("hv:subagent-status", { sessionId, runId, status, cost: runCostNow(sessionId, status) });
+    });
     subagentPollers.set(runId, { sessionId, stop });
   };
   const stopSubagentPoll = (runId: string): void => {
@@ -1926,6 +1970,16 @@ export function registerIpc(win: BrowserWindow): void {
       };
 
       const typedByHash = await promptTemplatePairs(sessionId); // §24: card pairing (see restore.ts)
+      // §12/§19 (2026-08-22): what each delegation cost, re-derived from the
+      // child's own session files by the SAME function the live card uses — two
+      // paths, one fact, the stampTurnDurations pattern. A run whose files are
+      // gone, or one logged before `toolCallId` was recorded, yields no entry
+      // and its card renders exactly as it did before.
+      const subagentTotals = runTotalsByCall(
+        sessionDir(),
+        await log.read({ sessionId }),
+        planProvidersFor(providerKeyStatus()),
+      );
 
       // Rebuild the transcript from Pi's session FILE, not `get_messages`.
       // That RPC is the first thing a freshly spawned child has to answer, so it
@@ -1938,6 +1992,11 @@ export function registerIpc(win: BrowserWindow): void {
         // checklist progress, so a reopened card shows "implementing" (etc.)
         // and the right CTA — not a stale "draft".
         for (const it of items) {
+          if (it.kind === "tool") {
+            const total = subagentTotals.get(it.toolCallId);
+            if (total) it.subagentCost = total;
+            continue;
+          }
           if (it.kind !== "plan") continue;
           const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
           if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }
@@ -2275,13 +2334,16 @@ export function registerIpc(win: BrowserWindow): void {
   // Returns the total alongside the calls so the sum is computed ONCE, by the
   // unit-tested ledgerTotal — a renderer-side re-sum would be mirrored logic
   // free to drift from the list it labels.
-  ipcMain.handle("hv:get-session-calls", (_e, sessionId: string) => {
+  ipcMain.handle("hv:get-session-calls", async (_e, sessionId: string) => {
     const meta = index.get(sessionId);
     // Which providers are flat-subscription rather than per-token. Resolved here
     // because it depends on key configuration (no anthropic key ⇒ the Claude
     // subscription is what paid), which calls.ts stays pure of.
     const plans = planProvidersFor(providerKeyStatus());
-    const calls = meta ? parseCalls(readSessionFile(sessionDir(), meta.piSessionFile), plans) : [];
+    // A child's path does not carry the agent name; the delegation rows are the
+    // only durable record of it. Read once per open — this is a click, not a tick.
+    const agents = agentByFileFrom(await log.read({ sessionId }));
+    const calls = (meta && sessionCalls(sessionDir(), meta.piSessionFile, plans, agents)) || [];
     return { calls, total: ledgerTotal(calls) };
   });
 
@@ -2910,14 +2972,17 @@ export function registerIpc(win: BrowserWindow): void {
     // plan spend excluded, unknown prices flagged. Resolved once per call
     // because planProvidersFor depends on which keys are configured.
     const plans = planProvidersFor(providerKeyStatus());
+    const events = await log.read();
+    const agents = agentByFileFrom(events);
     const readCalls = (sessionId: string): ApiCall[] | null => {
       const meta = index.get(sessionId);
       if (!meta) return null; // no meta ⇒ we cannot price it ⇒ unknown, not $0
-      const text = readSessionFile(sessionDir(), meta.piSessionFile);
-      if (text == null) return null;
-      return parseCalls(text, plans);
+      // The SAME function the session pill uses, so Stats cannot drift from it —
+      // that drift is exactly what round 11 fixed, and sub-agent rows would
+      // otherwise reintroduce it one surface later.
+      return sessionCalls(sessionDir(), meta.piSessionFile, plans, agents);
     };
-    return aggregate(await log.read(), filter ?? {}, readCalls);
+    return aggregate(events, filter ?? {}, readCalls);
   });
 
   // B7 onboarding: "seen the wow-flow" flag lives in config (userData), shown

@@ -20,6 +20,20 @@ export interface SubagentStatus {
   turnCount?: number;
   toolCount?: number;
   recentTools?: Array<{ tool: string; args?: string }>;
+  /**
+   * The child Pi session files this run is writing, with the agent that owns
+   * each — `steps[].sessionFile` / `steps[].agent`, verbatim.
+   *
+   * This is the ONLY link between a run and its own spend, and it has to be
+   * read rather than derived: the directory pi-subagents writes the child
+   * session into is named after the run's INNER id, while every id the app
+   * holds for a run (the poller key, the audit rows, `details.asyncId`) is the
+   * WORKFLOW async id. Measured 2026-08-22 — async id
+   * `72e6fd2e-…` wrote into `…/8a2f9f62-…/run-0/session.jsonl`. Resolving a path
+   * from the async id therefore finds nothing, silently, which is exactly how
+   * the first implementation shipped a card that never showed a number.
+   */
+  children?: Array<{ sessionFile: string; agent?: string }>;
 }
 
 /**
@@ -42,8 +56,18 @@ export function readSubagentStatus(asyncDir: string): SubagentStatus | null {
   } catch {
     return null;
   }
-  const step = Array.isArray(s.steps) ? (s.steps[0] as Record<string, unknown> | undefined) : undefined;
+  const steps = Array.isArray(s.steps) ? (s.steps as Array<Record<string, unknown>>) : [];
+  const step = steps[0];
+  // Every step, not just the first: a fan-out writes one child session per step,
+  // and the run's spend is all of them.
+  const children = steps
+    .filter((st) => typeof st?.sessionFile === "string")
+    .map((st) => ({
+      sessionFile: st.sessionFile as string,
+      ...(typeof st.agent === "string" ? { agent: st.agent } : {}),
+    }));
   return {
+    ...(children.length ? { children } : {}),
     state: s.state as string | undefined,
     activityState: s.activityState as string | undefined,
     currentTool: (s.currentTool ?? step?.currentTool) as string | undefined,
@@ -62,7 +86,11 @@ export function statusUnchanged(a: SubagentStatus | null, b: SubagentStatus | nu
     a.activityState === b.activityState &&
     a.currentTool === b.currentTool &&
     a.turnCount === b.turnCount &&
-    a.toolCount === b.toolCount
+    a.toolCount === b.toolCount &&
+    // The child session file arriving is itself news: it is what unlocks the
+    // run's cost readout, and it can land on a tick where nothing else moved.
+    (a.children ?? []).map((c) => c.sessionFile).join("|") ===
+      (b.children ?? []).map((c) => c.sessionFile).join("|")
   );
 }
 

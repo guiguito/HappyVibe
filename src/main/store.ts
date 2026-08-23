@@ -196,6 +196,66 @@ export function readSessionFile(sessionDirPath: string, file: string | undefined
   }
 }
 
+/** One sub-agent child's Pi session file, tagged with the run that spawned it. */
+export interface ChildSessionFile {
+  runId: string;
+  file: string;
+}
+
+const subdirs = (dir: string): string[] => {
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => path.join(dir, e.name));
+  } catch {
+    return []; // never delegated, or not readable — both mean "no children"
+  }
+};
+
+/**
+ * The Pi session files of a session's sub-agent children.
+ *
+ * pi-subagents roots a child's session beside the PARENT's own file —
+ * `<sessionsDir>/<parentBasename>/<runId>/run-<idx>/session.jsonl`
+ * (`getSubagentSessionRoot` + `sessionDirForIndex`) — and a child is an ordinary
+ * Pi process, so that file is an ordinary Pi session file the cost ledger parses
+ * with no special case (PRD §19). It is NOT in a tmpdir: it lives as long as the
+ * parent session does, which is what lets a reopened session show the same
+ * numbers it showed live.
+ *
+ * Confinement is the same as readSessionFile's, and free: the root is derived
+ * from an already-confined parent path.
+ *
+ * ponytail: resolves upstream's layout rather than tracking a path per run. It
+ * is the only option that works for a COMPLETED run anyway — a live run
+ * publishes its child's path on status.json, but that file is in a tmpdir that
+ * is gone by the time a session is reopened, so a status-field shortcut would
+ * be a second mechanism serving only the live case. Pinned by
+ * tests/pi-subagents-contract.test.ts so a pin bump fails loudly instead of
+ * silently returning nothing. Known ceiling: a delegation for which the MODEL
+ * passed its own `sessionDir` relocates the child outside this root and is
+ * missed; upgrade path = record status.json's `sessionFile` at dispatch.
+ */
+export function childSessionFiles(
+  sessionDirPath: string,
+  piSessionFile: string | undefined,
+  runId?: string,
+): ChildSessionFile[] {
+  const parent = confinedSessionPath(sessionDirPath, piSessionFile);
+  if (!parent) return [];
+  const root = parent.replace(/\.jsonl$/, "");
+  const runDirs = runId ? [path.join(root, runId)] : subdirs(root);
+  const out: ChildSessionFile[] = [];
+  for (const runDir of runDirs) {
+    for (const stepDir of subdirs(runDir)) {
+      const file = path.join(stepDir, "session.jsonl");
+      if (fs.existsSync(file)) out.push({ runId: path.basename(runDir), file });
+    }
+  }
+  return out;
+}
+
 /** Per-workspace settings (W1.4). Model hierarchy: session → workspace → global;
  *  the session tier lands in Wave 2 — `model` here is the workspace tier. */
 export interface WorkspaceEntry {

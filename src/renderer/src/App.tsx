@@ -894,7 +894,7 @@ export default function App(): React.JSX.Element {
       }
     });
 
-    const offSubStatus = window.hv.onSubagentStatus(({ sessionId, runId, status }) => {
+    const offSubStatus = window.hv.onSubagentStatus(({ sessionId, runId, status, cost }) => {
       setDelegations((p) => {
         const run = p[sessionId]?.[runId];
         if (!run) return p;
@@ -903,6 +903,10 @@ export default function App(): React.JSX.Element {
           activityState: status.activityState as string | undefined,
           turnCount: status.turnCount as number | undefined,
           recentTools: status.recentTools as Array<{ tool: string; args?: string }> | undefined,
+          // Keep the last figure when a tick arrives without one: a stopped or
+          // finishing run must freeze on what it cost, never blank back to
+          // nothing after having shown a number.
+          cost: cost ?? run.live?.cost,
         };
         return { ...p, [sessionId]: { ...p[sessionId], [runId]: { ...run, live } } };
       });

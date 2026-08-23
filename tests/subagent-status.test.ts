@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -121,4 +121,46 @@ test("our status reader carries no retry/compensation for that race", () => {
   // necessary — upstream's ordering is supposed to make it unnecessary.
   const ours = fs.readFileSync(path.join(__dirname, "..", "src", "main", "subagentStatus.ts"), "utf8");
   expect(ours).not.toMatch(/setTimeout|retry|attempts/i);
+});
+
+/**
+ * The child session file the cost readout depends on. Captured from a real 0.53
+ * run (2026-08-22): the RUN level has no `sessionFile` at all — it is per STEP,
+ * and it is the only link between a run and its own spend, because the
+ * directory it names carries the run's INNER id while every id the app holds is
+ * the workflow async id.
+ */
+describe("children (the cost readout's source)", () => {
+  const write = (dir: string, status: unknown): void =>
+    fs.writeFileSync(path.join(dir, "status.json"), JSON.stringify(status));
+
+  it("reads sessionFile and agent from every step, not just the first", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-status-"));
+    write(dir, {
+      state: "running",
+      steps: [
+        { agent: "code-explorer", sessionFile: "/s/a/run-0/session.jsonl" },
+        { agent: "agents-md-maker", sessionFile: "/s/b/run-1/session.jsonl" },
+      ],
+    });
+    expect(readSubagentStatus(dir)?.children).toEqual([
+      { sessionFile: "/s/a/run-0/session.jsonl", agent: "code-explorer" },
+      { sessionFile: "/s/b/run-1/session.jsonl", agent: "agents-md-maker" },
+    ]);
+  });
+
+  it("absent before the child has a session — never an empty entry", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-status-"));
+    write(dir, { state: "running", steps: [{ agent: "code-explorer" }] });
+    expect(readSubagentStatus(dir)?.children).toBeUndefined();
+  });
+
+  // It can land on a tick where nothing else moved, and it is what unlocks the
+  // readout — so its arrival has to count as a change, or the card stays blank.
+  it("its arrival is a change worth pushing", () => {
+    const before = { state: "running", turnCount: 1 };
+    const after = { state: "running", turnCount: 1, children: [{ sessionFile: "/s/a/run-0/session.jsonl" }] };
+    expect(statusUnchanged(before, after)).toBe(false);
+    expect(statusUnchanged(after, after)).toBe(true);
+  });
 });

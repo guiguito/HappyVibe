@@ -39,6 +39,8 @@ export type RestoredMessage =
       error?: boolean;
       images?: string[];
       imagesDropped?: boolean;
+      /** §12/§19: what this delegation cost, re-derived by main. */
+      subagentCost?: HvLedgerTotal;
     }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
@@ -69,6 +71,10 @@ export function toTranscriptItems(
           // listed is dropped silently, which is how it was lost to begin with.
           images: m.images,
           imagesDropped: m.imagesDropped,
+          // §12/§19: what this delegation cost, re-derived by main from the
+          // child's own session files. Named here for this module's header
+          // reason — an unlisted field is dropped in silence.
+          cost: m.subagentCost,
         },
       };
     }

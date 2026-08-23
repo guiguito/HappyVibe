@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { costPill, fmtCost, fmtDuration, fmtNum } from "../src/renderer/src/analytics-format";
+import { costEstimateLabel, costPill, fmtCost, fmtDuration, fmtNum } from "../src/renderer/src/analytics-format";
 
 describe("fmtNum", () => {
   test("small numbers pass through rounded", () => {
@@ -89,5 +89,33 @@ describe("costPill", () => {
 
   test("metered + plan needs no suffix — nothing is missing", () => {
     expect(costPill(t({ calls: 4, metered: 2, plan: 2, cost: 1.5 }))).toEqual({ label: "$1.50", tone: "calm" });
+  });
+});
+
+describe("costEstimateLabel", () => {
+  const t = (over: Partial<HvLedgerTotal> = {}): HvLedgerTotal => ({
+    calls: 1, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0,
+    metered: 0, plan: 0, unknown: 0, ...over,
+  });
+
+  // The "~" marks an estimate, and only real money is an estimate of anything.
+  test("marks metered dollars as an estimate", () => {
+    expect(costEstimateLabel(t({ metered: 1, cost: 0.04 }))).toBe("~$0.04");
+  });
+
+  test("says plan without a tilde — a covered call is a fact, not an estimate", () => {
+    expect(costEstimateLabel(t({ plan: 1 }))).toBe("plan");
+  });
+
+  test("says $? for tokens burned at an unknown price, never $0.00", () => {
+    expect(costEstimateLabel(t({ unknown: 1 }))).toBe("$?");
+  });
+
+  test("keeps the partial marker when only some of the bill is known", () => {
+    expect(costEstimateLabel(t({ calls: 2, metered: 1, unknown: 1, cost: 1.5 }))).toBe("~$1.50+?");
+  });
+
+  test("a dash before anything has been measured", () => {
+    expect(costEstimateLabel(t({ calls: 0 }))).toBe("\u2014");
   });
 });

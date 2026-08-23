@@ -10,6 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
+import type { LedgerTotal } from "./calls";
 
 export type RestoreItem =
   // §24: `command` is present when this user message was a prompt-template
@@ -41,6 +42,10 @@ export type RestoreItem =
           tool finished), else the call's. Not rendered on the card; it is what
           lets a turn ending in a tool call measure its true length. */
       ts?: number;
+      /** §12/§19: what this delegation cost. Filled by main from the child's own
+          session files, so a reopened card shows the live run's numbers. Absent
+          for every non-delegation card and for runs whose files are gone. */
+      subagentCost?: LedgerTotal;
     }
   // §23: the plan card, emitted at its plan_complete position (not the bottom).
   // planPath comes from the plan_complete tool RESULT; status/done/total are

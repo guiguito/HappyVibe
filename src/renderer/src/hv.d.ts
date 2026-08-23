@@ -178,6 +178,9 @@ type RestoreItem =
       error?: boolean;
       images?: string[];
       imagesDropped?: boolean;
+      /** §12/§19: what this delegation cost, re-derived by main from the child's
+          own session files. Absent for non-delegation cards. */
+      subagentCost?: HvLedgerTotal;
     }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
@@ -214,6 +217,8 @@ interface HvApiCall {
   cost: number;
   /** metered = per-token; plan = flat subscription (cost NOT owed); unknown = no rate. */
   billing: "metered" | "plan" | "unknown";
+  /** The sub-agent that made this call; absent for the session's own calls. */
+  agent?: string;
 }
 
 /** Mirrors LedgerTotal in src/main/calls.ts. */
@@ -709,7 +714,7 @@ interface HvApi {
     | { ok: false; error: string; code?: string }
   >;
   /** Live status pushes for detached runs (currentTool, activityState, …). */
-  onSubagentStatus(cb: (i: { sessionId: string; runId: string; status: Record<string, unknown> }) => void): () => void;
+  onSubagentStatus(cb: (i: { sessionId: string; runId: string; status: Record<string, unknown>; cost?: HvLedgerTotal }) => void): () => void;
   readAgent(filePath: string): Promise<{ body: string; model?: string }>;
   writeAgent(filePath: string, edit: { body?: string; model?: string | null }): Promise<void>;
   duplicateAgent(filePath: string): Promise<string>;

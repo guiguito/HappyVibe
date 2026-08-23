@@ -11,6 +11,7 @@ import { CostPanel } from "./CostPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
 import { delegationHint, formatElapsed, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
+import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
 import { insertAtComposer } from "../composerText";
@@ -1516,6 +1517,17 @@ function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trac
               {running ? (
                 <span className="font-mono text-xs text-ink-soft tabular-nums shrink-0" title="Elapsed time">
                   {attention ? "needs attention" : currentTool ? currentTool : "working"} · {formatElapsed(now - run.startedAt)}
+                  {/* §12 (2026-08-22): the spend sits on the STOP control's own
+                      line, so "this is getting expensive" and the means to end
+                      it are one glance apart rather than a navigation. Absent
+                      until the child's first turn is billed — never a $0.00
+                      standing in for "not measured yet". */}
+                  {run.live?.cost && (
+                    <>
+                      {" "}
+                      · {fmtNum(run.live.cost.input + run.live.cost.output)} tok · {costEstimateLabel(run.live.cost)}
+                    </>
+                  )}
                 </span>
               ) : (
                 <span
@@ -1548,7 +1560,7 @@ function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trac
             {open && (
               <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 max-h-72 overflow-y-auto flex flex-col gap-3">
                 {run.kind === "fg" ? (
-                  <SubagentTraceView results={trace?.results ?? []} />
+                  <SubagentTraceView results={trace?.results ?? []} cost={run.live?.cost} />
                 ) : (
                   // Detached run: no child transcript on the parent stream — show
                   // the live status snapshot from the poller instead.

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
-import { asyncResultInfo, delegationLabel, type SubagentResult, type SubagentTrace } from "../agents";
+import { asyncResultInfo, delegationLabel, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
 import { resolveCardPath } from "../tabs";
+import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { ZoomableImage } from "./ZoomableImage";
 
 export interface ToolCardData {
@@ -20,6 +21,10 @@ export interface ToolCardData {
   approval?: "Allow" | "Allow for session";
   /** B6: subagent delegation trace (toolName "subagent" only) — live + final. */
   trace?: SubagentTrace;
+  /** §12/§19: what this delegation cost. One RUN-level figure, not one per
+   *  child: upstream's per-child `usage` carries no provider, so only the run's
+   *  own session files can be classified honestly (metered/plan/unknown). */
+  cost?: HvLedgerTotal;
 }
 
 const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
@@ -340,8 +345,6 @@ function DetailsToggle({ open, onClick }: { open: boolean; onClick: () => void }
   );
 }
 
-const fmtCost = (c?: number): string => (c != null ? `$${c.toFixed(c < 0.01 ? 5 : 4)}` : "");
-
 /**
  * W2.2 — the file path on a card, made interactive (PRD "Chat experience"):
  * click opens the file in an editor tab; small hover affordances reveal it in
@@ -492,7 +495,7 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
           {errorText && results.length === 0 ? (
             <p className="text-xs text-berry whitespace-pre-wrap break-words">{errorText}</p>
           ) : (
-            <SubagentTraceView results={results} />
+            <SubagentTraceView results={results} cost={card.cost} />
           )}
         </div>
       )}
@@ -505,21 +508,43 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
  * final at end) — shared by the in-flow SubagentCard's expand toggle and the
  * sticky delegation section (ChatView), so the two never drift apart.
  */
-export function SubagentTraceView({ results }: { results: SubagentResult[] }): React.JSX.Element {
+export function SubagentTraceView({
+  results,
+  cost,
+}: {
+  results: SubagentResult[];
+  cost?: HvLedgerTotal;
+}): React.JSX.Element {
   return (
     <>
-      {results.length === 0 && <p className="text-xs text-ink-soft italic">Waiting for the subagent to respond…</p>}
+      {/* ONE run-level figure, not one per child. Upstream's per-child `usage`
+          carries no provider, so only the run's own session files can be
+          classified honestly (PRD §19) — per-child rows keep tokens and turns.
+          The live card and a reopened one both get this from the same parser
+          over the same files, so they cannot disagree. */}
+      {cost && (
+        <div className="flex items-center gap-2 text-[11px] font-mono text-ink-soft" title="This delegation's spend — an estimate, like every cost in the app">
+          <span>{fmtNum(cost.input + cost.output)} tok</span>
+          <span>·</span>
+          <span>{costEstimateLabel(cost)}</span>
+        </div>
+      )}
+      {/* A restored delegation has no transcript (the completion arrives as a
+          notify, which the session file does not record structurally), but it
+          DOES have a cost — so "waiting" would be a lie about a run that
+          finished long ago. */}
+      {results.length === 0 && !cost && (
+        <p className="text-xs text-ink-soft italic">Waiting for the subagent to respond…</p>
+      )}
       {results.map((r, i) => (
         <div key={i} className="rounded-lg border border-line bg-card overflow-hidden">
           <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-line text-[11px]">
             <span className="font-bold">{r.agent}</span>
             {r.model && <span className="font-mono text-ink-soft">{r.model}</span>}
             <span className="flex-1" />
-            {r.usage && (
-              <span className="font-mono text-ink-soft" title="input/output tokens · turns · cost">
-                {(r.usage.input ?? 0) + (r.usage.output ?? 0)} tok
-                {r.usage.turns != null ? ` · ${r.usage.turns} turn${r.usage.turns === 1 ? "" : "s"}` : ""}
-                {r.usage.cost != null ? ` · ${fmtCost(r.usage.cost)}` : ""}
+            {subagentUsageLine(r.usage) && (
+              <span className="font-mono text-ink-soft" title="input/output tokens · turns">
+                {subagentUsageLine(r.usage)}
               </span>
             )}
           </div>

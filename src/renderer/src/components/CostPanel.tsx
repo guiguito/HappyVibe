@@ -156,8 +156,21 @@ export function CostPanel({
                       {multiDay && <span className="mr-1">{day(c.ts)}</span>}
                       {time(c.ts)}
                     </td>
-                    <td className="px-2 py-1.5 font-mono max-w-[11rem] truncate" title={`${c.provider} / ${c.model}`}>
-                      {c.model}
+                    {/* A delegation's calls are the session's spend too, but a
+                        reader has to be able to tell whose turn burned it.
+                        The agent goes on its OWN line rather than after the
+                        model: this column truncates at 11rem and a model id is
+                        already longer than that, so an inline suffix was clipped
+                        away every time — the marker the footnote promises has to
+                        survive the truncation that hides it. */}
+                    <td
+                      className="px-2 py-1.5 font-mono max-w-[11rem]"
+                      title={`${c.provider} / ${c.model}${c.agent ? ` — sub-agent ${c.agent}` : ""}`}
+                    >
+                      <span className="block truncate">{c.model}</span>
+                      {c.agent && (
+                        <span className="block truncate text-[10px] text-tangerine-deep">↳ {c.agent}</span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 font-mono text-right">{fmtNum(c.input)}</td>
                     <td className="px-2 py-1.5 font-mono text-right">{fmtNum(c.output)}</td>
@@ -194,7 +207,8 @@ export function CostPanel({
         <div className="px-5 py-2.5 border-t-2 border-line text-[11px] text-ink-soft leading-snug">
           Estimated from the price table pinned in this build — a provider that routes to different
           upstreams (OpenRouter) or discounts cache hits will invoice a different figure. Sub-agent
-          spend is reported on each delegation card, not here.
+          spend is included: a delegation's own calls appear as rows named after the agent that made
+          them.
         </div>
       </div>
     </div>

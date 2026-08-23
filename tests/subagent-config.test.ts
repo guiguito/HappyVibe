@@ -120,6 +120,26 @@ test("writes NO permissions key — a static floor cannot know a per-delegation 
   expect(cfg.permissions, "see the comment above before adding this back").toBeUndefined();
 });
 
+/**
+ * PRD §19 (2026-08-22): there are NO budgets. Not global, not per-workspace,
+ * not per-call, not soft warnings — a product decision recorded verbatim as
+ * "overkill, and it kills the purpose of subagents if they can't do their work".
+ * The feature that shipped instead is visibility: see what a delegation costs,
+ * stop it if you want to, count it in the session's total.
+ *
+ * Pinned as an ABSENCE because that is the only way it can be pinned. Upstream
+ * has a full `usageBudget` implementation sitting right beside the keys we DO
+ * write, so enforcement is one plausible-looking line away at every pin bump,
+ * and nothing about adding it would fail a behavioural test — it would simply
+ * start refusing delegations the user expected to run.
+ */
+test("writes NO usageBudget — visibility is the feature, enforcement is not", async () => {
+  const cfg = await write();
+  expect(cfg.usageBudget, "PRD §19: no budgets. See the comment above.").toBeUndefined();
+  // Belt and braces against a renamed key doing the same job.
+  expect(Object.keys(cfg).filter((k) => /budget/i.test(k))).toEqual([]);
+});
+
 test("upstream's own limits, pinned so the decision can be revisited if they change", () => {
   const src = fs.readFileSync(
     path.join(process.cwd(), "pi-runtime", "node_modules", "pi-subagents",
