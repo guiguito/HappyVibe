@@ -10,7 +10,7 @@ import { piRuntimeDir } from "./pi/runtimeDir";
 import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig,
+  saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
   childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
@@ -532,6 +532,15 @@ export function registerIpc(win: BrowserWindow): void {
     writeSubagentConfig();
   } catch (e) {
     console.warn("[hv] subagent config write failed:", e);
+  }
+
+  // §12 (2026-08-28): keep upstream's six external-CLI builtin agents out of the
+  // roster the model is shown. Hygiene, not enforcement — the bridge refuses one
+  // outright, because a project-scope .pi/settings.json beats this file.
+  try {
+    writeSubagentSettings();
+  } catch (e) {
+    console.warn("[hv] subagent settings write failed:", e);
   }
 
 

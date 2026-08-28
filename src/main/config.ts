@@ -9,6 +9,7 @@ import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
+import { externalAgentOverrides } from "./subagentSettings";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -701,6 +702,32 @@ export function writeSubagentConfig(): void {
 // Defined in an electron-free module so the release-time catalog generator can
 // import the URL without pulling in the app; re-exported so callers here and in
 // ipc.ts are unchanged.
+/**
+ * Keep upstream's external-CLI builtin agents out of the injected roster.
+ *
+ * PRD §12 (2026-08-28): pi-subagents 0.58 ships 13 builtin agents, six of them
+ * `runner: external-cli`. This is HYGIENE only — the ENFORCEMENT is
+ * `isExternalCliAgent` in hv-rules.ts, checked by the bridge, because a
+ * PROJECT-scope `.pi/settings.json` override beats this user-scope file
+ * outright. With the six disabled here the model is never told they exist, so it
+ * cannot spend a turn proposing one and being refused.
+ *
+ * The merge logic is pure and lives in subagentSettings.ts so vitest can reach
+ * it; this function is only the file I/O. Note the target is PI's own settings
+ * file, which is why the read-merge-write shape is load-bearing rather than
+ * tidy: HappyVibe is merely the first thing in the app to write it.
+ */
+export function writeSubagentSettings(): void {
+  const file = path.join(agentDir(), "settings.json");
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    /* absent or corrupt — start fresh */
+  }
+  fs.writeFileSync(file, `${JSON.stringify(externalAgentOverrides(settings), null, 2)}\n`);
+}
+
 export { OFFICIAL_MARKETPLACE };
 
 export function listMarketplaces(): Array<{ id: string; url: string }> {

@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, displayableTask, evaluate, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, displayableTask, evaluate, isExternalCliAgent, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
   SUBAGENT_TASKS_TYPE, claimTask, emptyTaskMap, releaseTask, restoreTaskMap, serializeTaskMap,
   stashPendingTask, taskFor, type TaskMapState,
@@ -893,6 +893,35 @@ export default function (pi: ExtensionAPI) {
     const subagentName = tool === "subagent" && typeof input.agent === "string" ? input.agent : null;
     const permTool = mcp?.ruleTool ?? browserNav ?? (subagentName ? boundaryRuleName(subagentName) : tool);
 
+    // Declared HERE, not further down, because the §12 refusals below audit with
+    // it. It used to sit after `grantBoundary`, i.e. AFTER three call sites that
+    // read it — a temporal-dead-zone ReferenceError on every one of those refusal
+    // paths. It failed closed (Pi's beforeToolCall re-throws as "Extension
+    // failed, blocking execution"), so the boundary held, but the refusal
+    // surfaced as an extension crash with NO hv.audit row instead of a clean
+    // denial naming the reason. Nothing caught it: this file is in neither
+    // typecheck include list (tsconfig.node.json lists only the pure hv-*.ts
+    // modules), and no test invokes the handler on those three paths.
+    const summary = mcp?.display ?? summarize(tool, input);
+
+    // §12 (2026-08-28): pi-subagents 0.58 ships six external-CLI builtin agents,
+    // which launch a third-party CLI in its own process. The ceiling cannot bound
+    // one, the child guard cannot run inside one, and its tool calls never reach
+    // the audit log, so none of §12's three layers reach inside it. Refused BEFORE
+    // resolveBoundary below, which is also what WIDENS the session ceiling — a
+    // grant for an agent nothing can hold to it is worse than no grant at all.
+    if (isExternalCliAgent(subagentName)) {
+      audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+      return {
+        block: true,
+        reason:
+          `HappyVibe does not run '${subagentName}': it launches a separate ${subagentName} CLI process, ` +
+          "so this app's permission boundary, its capability ceiling and its audit log cannot see or " +
+          "govern anything it does. Delegate to one of this session's own sub-agents instead, or do the " +
+          "work in this session where every tool call goes through the gate.",
+      };
+    }
+
     // §12 FR1: resolve the child's reach BEFORE the prompt, so the human approves
     // a boundary rather than a verb. Side-effect-free.
     const boundary = subagentName ? await resolveBoundary(subagentName) : undefined;
@@ -937,7 +966,6 @@ export default function (pi: ExtensionAPI) {
         applyCeiling(sessionIdOf(ctx));
       }
     };
-    const summary = mcp?.display ?? summarize(tool, input);
 
     // W2.3: nested AGENTS.md discovery — every file-tool call reveals which
     // subtree the session touches; the nearest AGENTS.md above the target
