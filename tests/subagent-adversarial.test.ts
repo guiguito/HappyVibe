@@ -180,18 +180,45 @@ describe("FR10 — the ceiling is what forces a bounded toolset at all", () => {
     expect(p.effectiveToolAllowlist).toEqual([]);
   });
 
-  it("a malformed pi-permission-system dir breaks argv build WITHOUT a ceiling, and cannot WITH one", () => {
+  it("a malformed pi-permission-system dir cannot break argv build — now guarded TWICE", () => {
     // Measured, not hypothesised: resolvePermissionSystemExtension() throws when
-    // <agentDir>/extensions/pi-permission-system exists without a package.json,
-    // and it is reached only when denyExtensions is falsy (pi-args.ts:454). So a
-    // stray directory in a user's agent dir is enough to fail every delegation —
-    // and our ceiling makes that unreachable. A robustness property worth owning
-    // even though it was found by accident.
+    // <agentDir>/extensions/pi-permission-system exists without a package.json.
+    // So a stray directory in a user's agent dir was once enough to fail every
+    // delegation. This is a robustness property, found by accident, worth owning.
+    //
+    // At 0.53 exactly ONE thing stood between that stray dir and every
+    // delegation: our ceiling's denyExtensions, which skipped the resolver.
+    // 0.58 adds a SECOND, independent gate — 0.54 (#1339) made the resolver
+    // reachable only when the launch carries explicit native permission rules
+    // (`hasPermissionRules`, pi-args.ts:541-544). HappyVibe writes NO
+    // `permissions` key at all (PRD §12, FR12 built-measured-and-removed on
+    // 2026-08-21, absence-pinned in subagent-config.test.ts), so that gate is
+    // shut for us too.
+    //
+    // The assertion therefore INVERTED at 0.58, and that is upstream fixing a
+    // fragility rather than a hole opening: the boundary half below is unchanged
+    // and still passes. To keep this test measuring something real instead of
+    // asserting a tautology, the fragility is proven still reachable — a launch
+    // WITH permission rules and WITHOUT a ceiling still throws. If that ever
+    // stops throwing too, upstream fixed the resolver itself and this whole test
+    // can go; until then, two gates are what keep it away from a user.
     fs.mkdirSync(path.join(tmpAgentDir, "extensions", "pi-permission-system"), { recursive: true });
 
+    // Gate 2 (new at 0.54): no permission rules ⇒ the resolver is never called,
+    // even with no ceiling at all. This is what changed.
     expect(() => resolvePiLaunchToolPlan({ cwd: process.cwd(), tools: ["read"] } as never))
-      .toThrow(/Permission-system package manifest is missing/);
+      .not.toThrow();
 
+    // …and the fragility is still real, so gate 2 is load-bearing rather than
+    // upstream having made the stray dir harmless.
+    expect(() => resolvePiLaunchToolPlan({
+      cwd: process.cwd(),
+      tools: ["read"],
+      permissionRules: { bash: "deny" },
+    } as never)).toThrow(/Permission-system package manifest is missing/);
+
+    // Gate 1 (ours, unchanged): denyExtensions skips the resolver outright, so
+    // even a launch that DID carry permission rules could not reach it.
     expect(() => plan({ tools: ["read"] })).not.toThrow();
     expect(plan({ tools: ["read"] }).effectiveToolAllowlist).toEqual(["read"]);
 

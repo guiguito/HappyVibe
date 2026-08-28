@@ -661,9 +661,39 @@ describe("async completion delivery is scoped to a PROCESS, so HappyVibe claims 
 
   it("there is still no config key that turns the scoping off", () => {
     // If upstream ever adds one, prefer it and delete the seed.
+    //
+    // 0.58 MOVED this comparison rather than removing it: notify.ts used to
+    // inline `result.completionOwnerId !== state.completionOwnerId`, and now
+    // delegates to an injectable `ownership.owns(sessionId, completionOwnerId)`
+    // (result-delivery-ownership.ts) with that same comparison as its default.
+    // The behavioural group above exercises the real notify.ts and still sees a
+    // mismatched owner REFUSED, so this scan tracks the code to its new home
+    // instead of being deleted — the point is that a future pin which drops the
+    // owner requirement is loud rather than silent.
     const notify = readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", "runs", "background", "notify.ts"), "utf8");
-    expect(notify).toContain("result.completionOwnerId !== state.completionOwnerId");
+    expect(notify, "notify still falls back to comparing the owner id itself")
+      .toContain("completionOwnerId === state.completionOwnerId");
     expect(notify).not.toMatch(/completionOwnerScoping|disableCompletionOwner|ignoreCompletionOwner/);
+
+    const ownership = readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", "runs", "background", "result-delivery-ownership.ts"), "utf8");
+    expect(ownership, "the extracted module refuses a non-matching owner")
+      .toMatch(/if \(!owner \|\| completionOwnerId !== owner\) return false/);
+    expect(ownership).not.toMatch(/completionOwnerScoping|disableCompletionOwner|ignoreCompletionOwner/);
+  });
+
+  it("0.58's predecessor-session fallback does NOT relax the owner requirement", () => {
+    // 0.58 (#1531) added `claimPredecessor`, which lets a replaced session's
+    // results be delivered — the first thing upstream has shipped that looks
+    // like a fallback on the DELIVERY path, and therefore the first thing that
+    // could make the seed redundant. It does not: the claim is keyed BY the
+    // current owner id and `owns` still demands `completionOwnerId === owner`
+    // before it ever looks at the session id. So a respawn that mints a fresh
+    // random uuid is refused exactly as before, and hv-owner-seed.ts stays
+    // load-bearing. If this assertion fails, re-measure before deleting the seed.
+    const ownership = readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", "runs", "background", "result-delivery-ownership.ts"), "utf8");
+    expect(ownership, "the fallback exists").toContain("claimPredecessor(");
+    expect(ownership, "and it is gated on the current owner").toMatch(/claimPredecessor\([\s\S]{0,400}const owner = currentOwner\(\);[\s\S]{0,80}if \(!owner/);
+    expect(ownership, "a claim is stored under the owner id, not bare").toMatch(/claimed\.set\([^)]*, owner\)/);
   });
 });
 
