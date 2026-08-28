@@ -125,7 +125,8 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   design (`rpc.ts:76` "never a run or async identifier") while `/hv-subagent-list` needs
   `{runId, agent, asyncDir}`. Gate: `tests/pi-subagents-contract.test.ts` (key-free) pins the
   relative form, the exports map, and the three fields. Bumped 0.34.0 → 0.40.0 on 2026-08-02,
-  0.40.0 → 0.50.0 on 2026-08-17. At 0.50 the map lists **11** subpaths and `./shared-types`
+  0.40.0 → 0.50.0 on 2026-08-17, 0.53.0 → 0.58.0 on 2026-08-28. At 0.58 the map lists **13** subpaths
+  (11 at 0.50) and `./shared-types`
   looks like ASYNC_DIR's home but re-exports TYPES ONLY — re-derive, never hand-list.
 - **Two PRD §12 invariants are enforced by matching an upstream NAME or SHAPE, and 0.40.0 broke
   both silently — no test failed.** (1) The "never block on a delegation" guard matched the literal
@@ -146,18 +147,56 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   queue would caption the next same-agent run with the refused task. `REDACTED_PROMPT` lives in
   hv-rules.ts beside WAIT_TOOLS (the renderer cannot import a vendored package) and the contract
   test asserts our copy still equals upstream's constant.
-- **Every delegation is a WORKFLOW from 0.50, and that silently removed the run card.**
-  `details.mode` is `"workflow"` with a `missionId` even for one child (0.50 deleted the legacy
-  entry points — `public-execution.ts`: *"action='single' is not supported"*). The workflow path
-  emits `subagent:async-complete` but **NEVER `subagent:async-started`** — measured twice with a
-  `console.error` inside the bridge's own handler. The sticky card was raised by that notify, so an
-  async delegation showed the user NOTHING for its whole life and then dropped a result in, the
-  inverse of PRD §12 and with no test covering it. The card is now RE-KEYED from the foreground one
-  at `tool_execution_end` (`details.asyncId`, measured `=== details.runId === the complete notify's
-  runId`), which needs no notify and survives whichever path upstream takes next. Two more from the
-  same measurement: `agent` on the completion event is the literal `"workflow"` (the bridge drops
-  it, or the hand-off notice names a pipeline the user never chose), and **async is upstream's own
-  default now** — a run with no `asyncByDefault` config still detached.
+- **A delegation was a WORKFLOW at 0.50-0.53 and is `mode:"single"` again from 0.55 — the card
+  survived both because it is keyed off `asyncId`, not off the mode.** At 0.50 `details.mode` was
+  `"workflow"` with a `missionId` even for one child, and that silently removed the run card:
+  the workflow path emits `subagent:async-complete` but **NEVER `subagent:async-started`**
+  (measured twice with a `console.error` inside the bridge's own handler), and the sticky card was
+  raised by that notify — so an async delegation showed the user NOTHING for its whole life and
+  then dropped a result in, the inverse of PRD §12 and with no test covering it. The card is
+  RE-KEYED from the foreground one at `tool_execution_end` (`details.asyncId`, measured
+  `=== details.runId === the complete notify's runId`), which needs no notify.
+  **0.55 then unwrapped single-child launches again** ("run public single-child launches directly…
+  so async external-job agents do not show a completed workflow"), so at 0.58 an async
+  `{agent, task}` delegation returns `details: {mode:"single", runId, asyncId, asyncDir, …}`
+  (`async-execution.ts:1967`) and only a real multi-child `workflowScript` is `mode:"workflow"`.
+  **The re-key stays load-bearing, not redundant:** `subagent:async-started` is STILL only a
+  declared constant (`types.ts:2020`) that nothing emits at 0.58. That is the whole argument for
+  keying off a field rather than a mode — the mode changed twice under us and the card never moved.
+  `agent` on the completion event was the literal `"workflow"` at 0.50 (the bridge drops it, or the
+  hand-off notice names a pipeline the user never chose); the drop is harmless now that the real
+  name comes through. **Async is upstream's own default** — a run with no `asyncByDefault` config
+  still detaches.
+- **Upstream ships 13 builtin agents from 0.58 (was 7), and SIX of them are opaque — we refuse
+  them.** `claude-code`, `claude-code-writer`, `codex-exec`, `codex-exec-writer`, `cursor-agent`,
+  `cursor-agent-writer` are all `runner: {type: external-cli}`: a third-party CLI in its own
+  process, so the capability ceiling cannot bound it, the child guard cannot run inside it, and its
+  tool calls never reach the audit log (upstream refuses ask/deny for external runners by design).
+  They arrive DELEGATABLE with the pin, `-writer` variants included, so §12's three layers would
+  have quietly stopped being true for six agents the model can pick itself.
+  **Enforcement is `EXTERNAL_CLI_AGENTS`/`isExternalCliAgent` (hv-rules.ts), checked by the bridge
+  BEFORE `resolveBoundary`** — that call also WIDENS the session ceiling, and a grant for an agent
+  nothing can hold to it is worse than no grant. It cannot live in upstream's settings file
+  instead: a PROJECT-scope `.pi/settings.json` override beats the user scope OUTRIGHT
+  (`agents.ts:1340` returns on the project override before it ever reads the user one), so a cloned
+  repo could re-enable one. `writeSubagentSettings()` (config.ts + the pure `subagentSettings.ts`)
+  is HYGIENE only, keeping them out of the injected roster — and its key is **`agentOverrides`,
+  NOT `overrides`**: pi-subagents parses the former INTO a field it calls the latter, so the obvious
+  spelling is a silent no-op. Never `disableBuiltins: true` — all-or-nothing, and it would also
+  remove `worker`/`reviewer`. The refusal set is DERIVED from upstream's own frontmatter in
+  `tests/pi-subagents-contract.test.ts`, so a seventh adapter fails there rather than arriving
+  ungoverned. Turning any of them on is a product decision (an explicitly marked boundary
+  exception in the delegation modal), never a side effect of a pin.
+- **`happyvibe-bridge.ts` is in NEITHER typecheck include list, and that hid a real bug.**
+  `tsconfig.node.json` lists only the pure `hv-*.ts` modules, so TS never checks the bridge — which
+  is how `const summary` came to sit AFTER three §12 refusal paths that audit with it, a
+  temporal-dead-zone `ReferenceError` TS would normally reject outright. It failed CLOSED (Pi's
+  `beforeToolCall` re-throws as *"Extension failed, blocking execution"*, and `emitToolCall` has no
+  try/catch of its own — unlike `emitUserBash`/`emitContext` right beside it), so the boundary held;
+  but a refusal surfaced as an extension crash with NO `hv.audit` row instead of a clean denial
+  naming its reason. Fixed 2026-08-28 by hoisting one line, pinned by source order in
+  `tests/subagent-external-agents.test.ts`. **When editing the bridge, assume the compiler is not
+  watching** — declaration order and undefined locals are yours to check.
 - **A respawned session is a STRANGER to its own detached runs from 0.51 — unless we claim the
   owner id first.** #1225 scopes async completion delivery to the launching Pi PROCESS:
   `notify.ts:279` refuses any `source !== "foreground"` completion whose `completionOwnerId`
@@ -220,7 +259,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   passed for a delegation the test never found).
 - **The parent gets its child's whole answer because WE put it back — `hv-subagent-delivery.ts`.**
   Upstream truncates the completion payload at a hardcoded 1,000 chars
-  (`subagent-executor.ts`, `formatWorkflowValue(v).slice(0, 1_000)`; unchanged at 0.51, no config),
+  (`subagent-executor.ts`, `formatWorkflowValue(v).slice(0, 1_000)`; unchanged at 0.58, no config),
   so a 4,107-char report arrived as 1,108 chars of JSON cut mid-string and the model spent FOUR
   tool calls recovering it (`subagent`, `subagent_wait`, `status`, `read`). The bridge remembers
   `results[].output` from `subagent:async-complete` and substitutes it into the injected message
