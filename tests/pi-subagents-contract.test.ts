@@ -73,7 +73,7 @@ import {
   resolveSubagentCapabilityCeiling,
 } from "../pi-runtime/node_modules/pi-subagents/src/api/capability-ceiling.ts";
 import { buildPiArgs } from "../pi-runtime/node_modules/pi-subagents/src/runs/shared/pi-args.ts";
-import { REDACTED_PROMPT, WAIT_TOOLS, displayableTask, isRedactedPrompt, isWaitTool } from "../pi-runtime/extensions/hv-rules";
+import { EXTERNAL_CLI_AGENTS, REDACTED_PROMPT, WAIT_TOOLS, displayableTask, isRedactedPrompt, isWaitTool } from "../pi-runtime/extensions/hv-rules";
 
 const BRIDGE = path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts");
 const PKG = path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "package.json");
@@ -344,6 +344,121 @@ describe("bundled agent definitions declare only child tools that exist", () => 
       expect(body, `${file} prompt mentions glob`).not.toMatch(/\bglob\b/i);
       expect(body, `${file} prompt mentions the list tool`).not.toMatch(/\blist\/|\/list\b|`list`/i);
     }
+  });
+});
+
+/**
+ * The isolation contract is STATED, not inherited (PRD §12, 2026-08-28).
+ *
+ * 0.58 flipped `inheritGlobalContext` so a child no longer inherits the
+ * operator's global context file — which is what §12's isolation contract has
+ * always assumed, so it changes nothing today. Both bundled agents state it
+ * anyway, for the same reason `defaultSubagentContext: "fresh"` is stated: a
+ * future flip back would hand every sub-agent the operator's global context,
+ * with no user-visible symptom and no failing test to announce it.
+ */
+/**
+ * Our external-agent refusal set still equals upstream's, exactly (§12, 2026-08-28).
+ *
+ * EXTERNAL_CLI_AGENTS in hv-rules.ts is a hand-written copy of an upstream fact.
+ * If a future pin adds a seventh adapter, nothing else in the app notices — the
+ * new agent simply arrives delegatable, opaque to the ceiling, the child guard
+ * and the audit log. So the set is DERIVED here from upstream's own agent
+ * frontmatter and compared, rather than re-listed.
+ */
+describe("our external-agent refusal set still equals upstream's, exactly", () => {
+  const upstreamAgentsDir = path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "agents");
+
+  /** Every builtin agent upstream SHIPS, read from its own bundled files. */
+  const builtinAgentFiles = (): Array<{ name: string; src: string }> =>
+    readdirSync(upstreamAgentsDir)
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => ({ name: f.replace(/\.md$/, ""), src: readFileSync(path.join(upstreamAgentsDir, f), "utf8") }));
+
+  /** An external runner declares `type: external-cli` (or -job) under `runner:`. */
+  const isExternal = (src: string): boolean => /^\s*type:\s*external-(cli|job)\s*$/m.test(src);
+
+  it("upstream ships a builtin roster we have accounted for", () => {
+    // 7 files at 0.53, 12 at 0.58 (BUILTIN_AGENT_NAMES lists 13 — `advisor` is an
+    // alias 0.57 resolves through the bundled `oracle`, so it ships no file).
+    // A CHANGE here is the signal to re-audit: a new builtin arrives delegatable
+    // with no decision from us.
+    expect(builtinAgentFiles().map((a) => a.name).sort()).toEqual([
+      "claude-code",
+      "claude-code-writer",
+      "codex-exec",
+      "codex-exec-writer",
+      "cursor-agent",
+      "cursor-agent-writer",
+      "delegate",
+      "oracle",
+      "researcher",
+      "reviewer",
+      "scout",
+      "worker",
+    ]);
+  });
+
+  it("we refuse exactly the external-runner ones, no more and no fewer", () => {
+    const external = builtinAgentFiles().filter((a) => isExternal(a.src)).map((a) => a.name).sort();
+    expect(external.length, "upstream ships external runners").toBeGreaterThan(0);
+    expect([...EXTERNAL_CLI_AGENTS].sort()).toEqual(external);
+  });
+
+  it("the ones we KEEP are native Pi children the ceiling governs", () => {
+    // The other half of the decision: disableBuiltins would have taken these too,
+    // including the two the fleet round wants to adopt.
+    const native = builtinAgentFiles().filter((a) => !isExternal(a.src)).map((a) => a.name);
+    for (const name of native) expect(EXTERNAL_CLI_AGENTS.has(name), `${name} is kept`).toBe(false);
+    expect(native).toContain("worker");
+    expect(native).toContain("reviewer");
+  });
+
+  it("`advisor` is an alias with no file, so deriving from files cannot miss it", () => {
+    // Guard against the subtle version of this drift: if upstream ever gives
+    // `advisor` its own file WITH an external runner, the derivation above picks
+    // it up and the set comparison fails. This asserts today's shape so that
+    // change is visible rather than silently reclassifying an agent.
+    const names = readFileSync(
+      path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", "agents", "builtin-names.ts"),
+      "utf8",
+    );
+    expect(names, "advisor is still a declared builtin name").toContain('"advisor"');
+    expect(readdirSync(upstreamAgentsDir), "but ships no file of its own").not.toContain("advisor.md");
+  });
+});
+
+describe("the isolation contract is stated, not inherited", () => {
+  const agentsDir = path.join(__dirname, "..", "pi-runtime", "agents");
+  // Local, because the identically-named helper above is scoped to its describe.
+  const upstream = (...rel: string[]): string =>
+    readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", ...rel), "utf8");
+
+  it("every bundled agent states inheritGlobalContext explicitly", () => {
+    const agents = readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
+    expect(agents.length, "bundled agents present").toBeGreaterThan(0);
+    for (const file of agents) {
+      const src = readFileSync(path.join(agentsDir, file), "utf8");
+      expect(src, `${file} states inheritGlobalContext`).toMatch(/^inheritGlobalContext:\s*false$/m);
+    }
+  });
+
+  it("upstream still DEFAULTS it to false, so our value changes nothing today", () => {
+    // If this fails, upstream flipped back and our explicit false is suddenly
+    // doing real work — which is exactly why it is written down. Two independent
+    // default sites, both false; asserting both so a change to either is loud.
+    expect(upstream("agents", "runtime-agent-registry.ts"))
+      .toMatch(/inheritGlobalContext:\s*definition\.inheritGlobalContext \?\? false/);
+    expect(upstream("agents", "agent-management.ts"))
+      .toMatch(/inheritGlobalContext:\s*false/);
+  });
+
+  it("it is a real boolean to upstream, which is why the value is bare `false`", () => {
+    // pi-subagents rejects a non-boolean outright, so `false` must not be quoted
+    // in our frontmatter. Our own flat parser reads it as the STRING "false",
+    // which is fine — nothing on our side branches on it; only Pi consumes it.
+    expect(upstream("agents", "agent-management.ts"))
+      .toContain("config.inheritGlobalContext must be a boolean when provided.");
   });
 });
 
