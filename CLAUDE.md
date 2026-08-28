@@ -236,10 +236,12 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   stays load-bearing — re-measured working at 0.51 by instrumenting the bridge's own handlers
   (`substitution fired=true`, store keyed by the child `runId`, `results[].output` 4,098 chars).
   `PROMPT_REDACTED` is unchanged, nothing restores `subagent:async-started` for the workflow path,
-  and "async workflows do not have inline `live-card` projection" is now **documented as intended**
-  (#1229/#1230) rather than a bug awaiting a fix — the missing live child transcript is a
-  permanent property now, not a pin to wait out. Every workaround stays. Also measured at 0.51:
-  `tool_execution_update` still zero, `details.asyncId` still on the async dispatch result and
+  and "async workflows do not have inline `live-card` projection" was **documented as intended**
+  (#1229/#1230) rather than a bug awaiting a fix — which read at the time as "the missing live
+  child transcript is permanent". **That conclusion was wrong, and 0.58 disproved it**: streaming
+  is back for the blocking path (see the `tool_execution_update` entry below). Read #1229/#1230 as
+  scoped to ASYNC workflows, not to delegations in general. Every workaround stays. Also measured
+  at 0.51: `tool_execution_update` still zero, `details.asyncId` still on the async dispatch result and
   still absent on the foreground one, `tool_execution_start` still the only event carrying `args`.
   **A blocking delegation now costs ~14.8 KB** (was 4,947–5,532 at 0.50), of which the child's own
   answer was 4,569 — the envelope alone roughly doubled; `subagent-context.test.ts` watches the
@@ -249,11 +251,20 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   accepted decision, and #1162 exists to stop scanning. 30-day retention runs in a
   `worker_threads` worker (unref'd, 60 s after activation), so it is NOT a child process and
   carries no Dock-icon hazard.
-- **`tool_execution_update` is not emitted AT ALL for a subagent at 0.50** — zero on a blocking run,
-  zero on an async one. There is no live child transcript: expanding a card shows nothing until the
-  run ends, and `traceFromUpdate` is dead weight kept against a pin that restores streaming.
-  `tests/agents-bridge.test.ts` asserts the absence so that day is loud. Related trap in the same
-  family: **`tool_execution_end` carries no `args`** — they are on `tool_execution_start` only, so a
+- **`tool_execution_update` came BACK at 0.58, and the wait-for-a-pin bet paid off.** It was not
+  emitted at all for a subagent at 0.50-0.53 (zero on a blocking run, zero on an async one), so
+  there was no live child transcript, expanding a card showed nothing until the run ended, and
+  `traceFromUpdate` was dead weight. `tests/agents-bridge.test.ts` asserted the ABSENCE so the
+  restoration would be loud — and it was the single red test of the 0.58 live batch (38 updates
+  where 0 were expected; 53 on the probe). **`traceFromUpdate` is live code again, unchanged:**
+  the payload is still `partialResult.details.results[]`, `messages` is still absent and
+  `toolCalls` is still the transcript source, so only the DELIVERY was restored, not the shape —
+  the renderer needed no edit. Never assert an exact update COUNT; it tracks how chatty the child
+  is. 0.58 also adds `results[].progress`, `progressSummary` (`{toolCount, tokens, durationMs}`)
+  and **`transcriptPath`** — the child's own JSONL, which is where its THINKING blocks live
+  (measured: real `type:"thinking"` blocks carrying the child's reasoning, so P4 item 6 is
+  feasible and needs no upstream ask). Fixture in `tests/agents-renderer.test.ts`. Related trap in
+  the same family: **`tool_execution_end` carries no `args`** — they are on `tool_execution_start` only, so a
   delegation must be found by correlating START→END on `toolCallId`. That one had been hiding a
   VACUOUS assertion (`undefined?.result?.details?.asyncId` is falsy, so "foreground has no asyncId"
   passed for a delegation the test never found).

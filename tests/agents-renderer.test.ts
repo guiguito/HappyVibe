@@ -131,6 +131,61 @@ describe("subagent trace extraction", () => {
     expect(r.finalOutput).toBe("found two TODOs");
   });
 
+  // Captured VERBATIM from a real 0.58 tool_execution_update (probe fg,
+  // 2026-08-28; docs/validation/d1.md §pi-subagents 0.58). 0.50-0.53 emitted no
+  // update at all for a subagent; 0.58 restored streaming AND added sibling
+  // fields the mapping has never seen — `progress`, `progressSummary`,
+  // `transcriptPath`, `capabilityAudit`, `effects`, `outputState`. The fixture
+  // keeps them so an over-eager mapping change that trips over an unknown key
+  // fails here rather than in an expanded card.
+  const live058Payload = {
+    details: {
+      mode: "single",
+      runId: "0caa2c48-ebc6-43bf-949d-829bd0156be6",
+      progress: [{ index: 0, agent: "code-explorer", status: "completed", task: "[prompt redacted]" }],
+      results: [
+        {
+          index: 0,
+          agent: "code-explorer",
+          task: "[prompt redacted]",
+          toolCalls: [{ text: "read /tmp/notes.md", expandedText: "read /tmp/notes.md" }],
+          progress: { index: 0, agent: "code-explorer", status: "completed", recentTools: [{ tool: "read" }] },
+          progressSummary: { toolCount: 1, tokens: 5231, durationMs: 45274 },
+          transcriptPath: "/tmp/subagent-artifacts/0caa2c48_code-explorer_0_transcript.jsonl",
+          usage: { input: 3352, output: 1879, cacheRead: 1536, cacheWrite: 0, cost: 0.000657208116, turns: 2 },
+          model: "deepseek/deepseek-v4-flash",
+          exitCode: 0,
+          outputMode: "text",
+          outputState: "written",
+          capabilityAudit: {},
+          effects: {},
+          launchContractDigest: "sha256:…",
+          artifactPaths: [],
+          finalOutput: "## Detailed Report: notes.md",
+        },
+      ],
+    },
+  };
+
+  test("maps a real 0.58 streamed update, extra sibling fields and all", () => {
+    const r = traceFromUpdate(live058Payload).results[0];
+    expect(r.agent).toBe("code-explorer");
+    expect(r.messages).toEqual([{ role: "tool", text: "read /tmp/notes.md" }]);
+    // usage/model come from the top level here, not from modelAttempts[].
+    expect(r.usage?.cost).toBeCloseTo(0.000657208116);
+    expect(r.model).toBe("deepseek/deepseek-v4-flash");
+    expect(r.exitCode).toBe(0);
+    expect(r.finalOutput).toBe("## Detailed Report: notes.md");
+  });
+
+  test("the streamed 0.58 update still carries no `messages`", () => {
+    // The delivery came back, the SHAPE did not change: toolCalls remains the
+    // transcript source. If a future pin restores `messages`, the test above
+    // ("real messages still win") is what starts preferring it.
+    const raw = live058Payload.details.results[0] as Record<string, unknown>;
+    expect("messages" in raw, "0.58 streams toolCalls, not messages").toBe(false);
+  });
+
   test("the end projection derives the same rows from toolCalls", () => {
     expect(traceFromEnd(toolCallsPayload).results[0].messages).toHaveLength(2);
   });

@@ -443,6 +443,27 @@ describe("the isolation contract is stated, not inherited", () => {
     }
   });
 
+  it("our bundled agents resolve to systemPromptMode 'replace' — the identity pin", () => {
+    // P4 item 5, "the child never thinks it is Pi", CLOSED by measurement rather
+    // than built: `defaultSystemPromptMode(name)` returns "replace" for every
+    // agent except the builtin `delegate`, and neither bundled agent sets the key
+    // — so both resolve to "replace". At launch that emits `--system-prompt`
+    // rather than `--append-system-prompt` (pi-args.ts), so the child receives ONLY
+    // its own prompt and never Pi's. Already true; pinned because it is exactly
+    // the kind of fact that flips silently on a bump, and the symptom would be a
+    // sub-agent that introduces itself as Pi.
+    expect(upstream("agents", "agents.ts"))
+      .toMatch(/defaultSystemPromptMode[\s\S]{0,120}name === "delegate" \? "append" : "replace"/);
+    for (const file of readdirSync(agentsDir).filter((f) => f.endsWith(".md"))) {
+      const src = readFileSync(path.join(agentsDir, file), "utf8");
+      expect(src, `${file} must not opt into append`).not.toMatch(/^systemPromptMode:\s*append$/m);
+      expect(file, "a bundled agent named delegate would default to append").not.toBe("delegate.md");
+    }
+    // …and "replace" is what actually changes the argv, not just a stored string.
+    expect(upstream("runs", "shared", "pi-args.ts"))
+      .toMatch(/systemPromptMode === "replace"[\s\S]{0,80}"--system-prompt"[\s\S]{0,60}"--append-system-prompt"/);
+  });
+
   it("upstream still DEFAULTS it to false, so our value changes nothing today", () => {
     // If this fails, upstream flipped back and our explicit false is suddenly
     // doing real work — which is exactly why it is written down. Two independent

@@ -24,14 +24,15 @@ import path from "node:path";
 import { PiClient } from "../src/main/pi/PiClient.ts";
 import { resolvePiSpawn } from "../src/main/pi/spawn.ts";
 import { LIVE, MODEL, PROVIDER_ENV } from "../tests/liveModel.ts";
+import { externalAgentOverrides } from "../src/main/subagentSettings.ts";
 
 if (!LIVE) throw new Error("need OPENROUTER_API_KEY or DEEPSEEK_API_KEY in .env");
 console.error(`[probe] using ${LIVE.label}`);
 
-const mode = (process.argv[2] ?? "async") as "async" | "fg" | "waitoff" | "respawn";
+const mode = (process.argv[2] ?? "async") as "async" | "fg" | "waitoff" | "respawn" | "roster" | "roster-trimmed";
 const runtime = path.join(process.cwd(), "pi-runtime");
 
-function makeAgentDir(waitToolEnabled: boolean): string {
+function makeAgentDir(waitToolEnabled: boolean, trimExternal = false): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "probe050-dir-"));
   fs.mkdirSync(path.join(dir, "agents"), { recursive: true });
   for (const name of fs.readdirSync(path.join(runtime, "agents"))) {
@@ -47,12 +48,37 @@ function makeAgentDir(waitToolEnabled: boolean): string {
       ...(waitToolEnabled ? {} : { waitTool: { enabled: false } }),
     }),
   );
+  // 0.58 probe 1: the agent dir normally has NO settings.json, which is exactly
+  // upstream's default — so `roster` measures what a user would get without our
+  // hygiene write, and `roster-trimmed` measures it with. Uses the SAME pure
+  // function main writes through, never a hand-rolled copy of the shape.
+  if (trimExternal) {
+    fs.writeFileSync(
+      path.join(dir, "settings.json"),
+      `${JSON.stringify(externalAgentOverrides({}), null, 2)}\n`,
+    );
+  }
   return dir;
 }
 
 function rulesAllowingSubagent(): string {
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "probe050-rules-")), "permission-rules.json");
-  fs.writeFileSync(f, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent", action: "allow" }], workspaces: {} }));
+  // BOTH patterns, and the second is the load-bearing one. §12 (2026-08-21) gates
+  // a delegation under the per-agent rule name `subagent:<agent>`, so a rule for
+  // the bare tool name stopped matching — the prompt was raised, nothing here
+  // answers a ui-request, and permission prompts never time out by design. The
+  // probe therefore hung on `[ui] select` and measured NOTHING, silently. Tool
+  // patterns are globs (globToRegExp), so `subagent:*` covers every agent.
+  // Note this deliberately allows `subagent:claude-code` too: the external-agent
+  // refusal runs BEFORE the rule engine, so the roster probe proves the refusal
+  // fires even when a rule would have permitted it.
+  fs.writeFileSync(f, JSON.stringify({
+    global: [
+      { layer: "tool", pattern: "subagent", action: "allow" },
+      { layer: "tool", pattern: "subagent:*", action: "allow" },
+    ],
+    workspaces: {},
+  }));
   return f;
 }
 
@@ -60,13 +86,24 @@ function rulesAllowingSubagent(): string {
 // transcript to carry — a one-turn "say PONGPROBE" child produces neither
 // `messages` nor `toolCalls`, which looks identical to upstream having dropped them.
 const TASK = "read notes.md with the read tool and write a DETAILED report: list every section heading and both of its facts verbatim. Be thorough and complete — do not summarise or omit any section.";
-const prompt = mode === "fg"
+const ROSTER_PROMPT =
+  "Do exactly these three things and nothing else. "
+  + "(1) Call the subagent tool with {action:\"list\"} and then write out, verbatim and in full, "
+  + "every agent name it returned, one per line, prefixed with ROSTER:. "
+  + "(2) Call the subagent tool with {action:\"detail\", agent:\"code-explorer\"} and write out its "
+  + "reply verbatim, prefixed with DETAIL:. "
+  + "(3) Call the subagent tool to delegate to the agent named 'claude-code' with the task 'say hi', "
+  + "and then write out whatever the tool returned verbatim, prefixed with EXTERNAL:.";
+
+const prompt = mode === "roster" || mode === "roster-trimmed"
+  ? ROSTER_PROMPT
+  : mode === "fg"
   ? `Use the subagent tool right now with async: false to delegate to the agent named 'code-explorer' with the task '${TASK}'. Do not do anything else.`
   // async is the config default, but a model that is told "mode: single" tends to
   // pass async:false as well, so demand it explicitly.
   : `Use the subagent tool right now with async: true to delegate to the agent named 'code-explorer' with the task '${TASK}'. Do not do anything else, and do NOT wait for it.`;
 
-const agentDir = makeAgentDir(mode === "waitoff" ? false : true);
+const agentDir = makeAgentDir(mode === "waitoff" ? false : true, mode === "roster-trimmed");
 const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "probe050-cwd-")));
 fs.writeFileSync(path.join(cwd, "probe-target.txt"), "PONGPROBE\n");
 // A file big enough that a faithful report exceeds upstream's 1,000-char
@@ -229,7 +266,7 @@ try {
     await client.start();
     await client.send({ type: "prompt", message: prompt });
     // Long enough for dispatch + child completion + the triggered delivery turn.
-    await sleep(mode === "fg" ? 90_000 : 150_000);
+    await sleep(mode === "fg" ? 90_000 : mode.startsWith("roster") ? 120_000 : 150_000);
   }
 } finally {
   dump();
