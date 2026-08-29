@@ -63,11 +63,27 @@ export type Billing = "metered" | "plan" | "unknown";
 export const PLAN_PROVIDERS: ReadonlySet<string> = new Set(["openai-codex", "github-copilot"]);
 
 /**
+ * Providers that are a subscription sign-in AND accept an API key, so which one
+ * paid can only be told from key presence. Upstream marks each of these
+ * `isSubscription` while also offering them as a one-key catalog row — the
+ * combination IS the rule, and `tests/provider-catalog.test.ts` re-derives it
+ * from Pi's registry so a pin that adds a fourth fails there rather than
+ * quietly billing a subscription as metered.
+ *
+ * `openai-codex` and `github-copilot` are absent because neither is resolvable:
+ * codex offers no key at all, and Copilot's token is one HappyVibe never asks
+ * for — both are unconditional above.
+ */
+export const KEY_RESOLVED_PLAN_PROVIDERS: readonly string[] = ["anthropic", "xai", "kimi-coding"];
+
+/**
  * The plan-provider set for a given key configuration. `anthropic` and (since
- * the 2026-08-29 providers round) `xai` count as plan-billed exactly when no
- * API key is configured for them — with no key Pi falls back to the
- * subscription OAuth in auth.json (Claude Pro/Max, Grok/X), so those calls cost
- * nothing per token.
+ * the 2026-08-29 providers round) `xai` and `kimi-coding` count as plan-billed
+ * exactly when no API key is configured for them — with no key Pi falls back to
+ * the subscription OAuth in auth.json (Claude Pro/Max, Grok/X, Kimi Code), so
+ * those calls cost nothing per token. The set is exactly the providers upstream
+ * marks `isSubscription` that ALSO accept a key; a sign-in that mints a metered
+ * key (OpenRouter) is not one of them.
  *
  * ponytail: this reads key presence at QUERY time, not at call time, because the
  * session file does not record which auth resolved. Ceiling: a session billed
@@ -81,7 +97,7 @@ export function planProvidersFor(keyStatus: Record<string, string | null>): Read
   // nothing per call. `openrouter` is deliberately NOT here — its PKCE flow
   // mints a user-controlled key billed from OpenRouter credits, so it is
   // metered however it arrived, and calling it "plan" would hide real spend.
-  for (const id of ["anthropic", "xai"]) if (!keyStatus?.[id]) s.add(id);
+  for (const id of KEY_RESOLVED_PLAN_PROVIDERS) if (!keyStatus?.[id]) s.add(id);
   return s;
 }
 

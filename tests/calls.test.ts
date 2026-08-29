@@ -165,6 +165,11 @@ describe("planProvidersFor", () => {
     }
   });
 
+  test("no kimi key -> kimi-coding billed via the Kimi Code subscription", () => {
+    expect(planProvidersFor({ "kimi-coding": null }).has("kimi-coding")).toBe(true);
+    expect(planProvidersFor({ "kimi-coding": "stored" }).has("kimi-coding")).toBe(false);
+  });
+
   test("openrouter OAuth mints a METERED key — never plan", () => {
     // The PKCE flow mints a user-controlled key billed from OpenRouter credits.
     // Treating it as plan would hide real spend, the inverse of the openai-codex

@@ -120,7 +120,7 @@ describe("mergeOllamaModelsJson", () => {
 describe("OAuth sign-in list (2026-08-29 round)", () => {
   test("one source of truth, five providers, our labels", () => {
     expect(OAUTH_PROVIDERS.map((p) => p.id)).toEqual(
-      ["anthropic", "github-copilot", "openai-codex", "openrouter", "xai"],
+      ["anthropic", "github-copilot", "kimi-coding", "openai-codex", "openrouter", "xai"],
     );
     const by = new Map(OAUTH_PROVIDERS.map((p) => [p.id, p]));
     // The app names the SUBSCRIPTION, not the vendor — upstream says

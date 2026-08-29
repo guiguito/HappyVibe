@@ -7,6 +7,7 @@ import {
   OAUTH_NOT_ENABLED,
   PROVIDER_CATALOG,
 } from "../src/main/providerCatalog.generated";
+import { KEY_RESOLVED_PLAN_PROVIDERS, PLAN_PROVIDERS } from "../src/main/calls";
 
 /**
  * Pin-bump gate for the generated provider catalog (key-free).
@@ -149,7 +150,30 @@ describe.skipIf(!HAVE_RUNTIME)("generated provider catalog (Pi pin-bump gate)", 
       "pi-ai ships an OAuth flow HappyVibe neither offers nor names as refused — " +
         "enabling one is a product decision, not a pin side effect",
     ).toEqual(shipped);
-    expect(offered).toEqual(["anthropic", "github-copilot", "openai-codex", "openrouter", "xai"]);
+    expect(offered).toEqual(["anthropic", "github-copilot", "kimi-coding", "openai-codex", "openrouter", "xai"]);
+  });
+
+  test("every subscription provider that also takes a key is key-resolved for billing", async () => {
+    // §19: a provider that is BOTH a subscription sign-in and a plain API key
+    // cannot be classified by id alone — the session file records only the
+    // provider, so main resolves it by key presence at query time. Deriving the
+    // expected set from upstream means a pin bump that adds such a provider
+    // fails HERE, rather than silently reporting a covered subscription's
+    // tokens as dollars owed (the openai-codex defect PLAN_PROVIDERS exists for).
+    const offered = new Set(PROVIDER_CATALOG.flatMap((r) => r.providerIds));
+    const expected = (await upstream())
+      .filter((p) => p.auth?.oauth?.isSubscription && p.auth?.apiKey && offered.has(p.id))
+      .map((p) => p.id)
+      .sort();
+    expect([...KEY_RESOLVED_PLAN_PROVIDERS].sort()).toEqual(expected);
+
+    // And the unconditional ones must NOT be key-resolved: they offer no key we
+    // ever ask for, so "no key configured" is not evidence of anything.
+    for (const id of PLAN_PROVIDERS) expect(KEY_RESOLVED_PLAN_PROVIDERS).not.toContain(id);
+
+    // A sign-in that mints a METERED key is not a plan provider on either list.
+    expect(KEY_RESOLVED_PLAN_PROVIDERS).not.toContain("openrouter");
+    expect([...PLAN_PROVIDERS]).not.toContain("openrouter");
   });
 
   test("the multi-field cloud providers stay out (PRD-deferred)", () => {

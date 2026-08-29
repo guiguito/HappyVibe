@@ -113,20 +113,27 @@ stay two rows — which is the shape the "plain rows, no region picker" decision
 radius, xai. A provider advertises one by declaring `auth.oauth` (`lazyOAuth`), which also carries
 upstream's own `loginLabel` and `isSubscription`.
 
-Offered: the five in `OAUTH_CATALOG`. `radius` falls out on 0 models. **`kimi-coding` is refused by
-name** in `OAUTH_NOT_ENABLED` with its reason — it was not part of this round's decision, and the
-contract test asserts every upstream flow is either offered or explicitly refused, so a pin that
-adds an eighth fails rather than surfacing a sign-in button nobody reviewed. (Kimi is still
-available as a BYOK key; only the one-click flow is withheld.)
+Offered: **all six** in `OAUTH_CATALOG` (`radius` falls out on 0 models). `OAUTH_NOT_ENABLED` is
+empty by design — it is the mechanism for withholding a flow WITH its reason, and the contract test
+asserts every upstream flow is either offered or listed there, so a pin that adds a seventh fails
+rather than surfacing a sign-in button nobody reviewed.
 
-**Neither new flow needed bridge or renderer work**, verified in source rather than assumed:
+`kimi-coding` was initially withheld (it was not in the round's decision) and **enabled on
+2026-08-30 at Guilhem's request**. Enabling it was not just a list edit: upstream declares it
+`isSubscription: true` AND it accepts `KIMI_API_KEY`, which makes it the **third** provider — after
+`anthropic` and `xai` — whose billing cannot be settled from the provider id alone. It therefore
+joined `KEY_RESOLVED_PLAN_PROVIDERS`, and that set is now DERIVED from upstream in the contract
+test (`isSubscription && auth.apiKey && offered as a key row`), so the next such provider fails the
+gate instead of silently reporting a covered subscription's tokens as dollars owed.
+
+**No new flow needed bridge or renderer work**, verified in source rather than assumed:
 `hv-login` validates against `runtime.getProviders()` and has no per-provider branches, and the
-interaction types the two flows use are already handled end to end — openrouter emits
-`auth_url` + `manual_code` + `progress`, xai emits `device_code`, and `AuthFlowModal` already
-renders all eight stages.
+interaction types all three use are already handled end to end — openrouter emits
+`auth_url` + `manual_code` + `progress`, xai and kimi-coding emit `device_code`, and
+`AuthFlowModal` already renders all eight stages.
 
 ## Result
 
-29 key rows covering 993 models (was 5 covering ~385), plus 5 OAuth flows. Regenerate with
+29 key rows covering 993 models (was 5 covering ~385), plus 6 OAuth flows. Regenerate with
 `npm run catalog:providers` and read the run summary — the reject histogram is where a surprise
 shows up, exactly as it does for the plugin catalog (§25).

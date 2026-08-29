@@ -344,6 +344,12 @@ export const OAUTH_CATALOG: readonly CatalogOAuthProvider[] = [
     "isSubscription": true
   },
   {
+    "id": "kimi-coding",
+    "label": "Kimi For Coding",
+    "loginLabel": "Sign in with Kimi Code",
+    "isSubscription": true
+  },
+  {
     "id": "openai-codex",
     "label": "OpenAI Codex",
     "isSubscription": true
@@ -362,9 +368,7 @@ export const OAUTH_CATALOG: readonly CatalogOAuthProvider[] = [
 ];
 
 /** Upstream OAuth flows deliberately NOT surfaced, with the reason. */
-export const OAUTH_NOT_ENABLED: Readonly<Record<string, string>> = {
-  "kimi-coding": "Not part of the 2026-08-29 providers round — enable as a product decision, not a pin side effect."
-};
+export const OAUTH_NOT_ENABLED: Readonly<Record<string, string>> = {};
 
 /** The cards that stay above the "More providers…" search. */
 export const FEATURED_PROVIDER_IDS = ["deepseek", "anthropic", "openai", "google", "openrouter"] as const;

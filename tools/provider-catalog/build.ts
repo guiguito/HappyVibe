@@ -58,7 +58,9 @@ const KEY_ROW_EXCLUDED = new Set(["github-copilot"]);
  * flow fails the test instead of quietly appearing in the sign-in list.
  */
 const OAUTH_NOT_ENABLED: Record<string, string> = {
-  "kimi-coding": "Not part of the 2026-08-29 providers round — enable as a product decision, not a pin side effect.",
+  // Empty by design: every OAuth flow upstream ships is currently offered.
+  // Adding an entry here is how a flow gets withheld — with its reason — and
+  // the contract test fails on any flow that is neither offered nor listed.
 };
 
 /** anthropic declares three env vars; its key input has always meant this one. */
