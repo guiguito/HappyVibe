@@ -5,8 +5,8 @@ import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
 import { EMPTY_RULES, displayableTask, evaluate, isExternalCliAgent, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
-  SUBAGENT_TASKS_TYPE, claimTask, emptyTaskMap, releaseTask, restoreTaskMap, serializeTaskMap,
-  stashPendingTask, taskFor, type TaskMapState,
+  SUBAGENT_TASKS_TYPE, bindRun, claimTask, dropPendingTask, emptyTaskMap, releaseTask, restoreTaskMap,
+  serializeTaskMap, stashPendingTask, taskFor, type TaskMapState,
 } from "./hv-subagent-tasks";
 import {
   createChildOutputStore, rememberChildOutputs, substituteDeliveries, type DeliveryMessage,
@@ -844,6 +844,31 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  /**
+   * Bind a delegation to the run it produced — the EXACT caption pairing.
+   *
+   * `tool_result` is the only event carrying BOTH the tool call id and
+   * `details.asyncId` (the run id), which is what makes this immune to the
+   * same-agent fan-out that broke the old per-agent slot. The `async-started`
+   * notify cannot do it: it carries no tool call id, so with two dispatches
+   * outstanding it now declines to caption rather than guessing wrong.
+   *
+   * Fails open in every direction: a foreground delegation has no `asyncId` and
+   * simply drops its pending entry, and an unknown shape leaves the store alone.
+   */
+  pi.on("tool_result", async (event) => {
+    if (event.toolName !== "subagent") return;
+    const details = (event as { details?: { asyncId?: unknown; runId?: unknown } }).details;
+    const runId = typeof details?.asyncId === "string" ? details.asyncId : undefined;
+    if (!runId) {
+      // Foreground, refused, or errored: no run to caption, so release the slot
+      // instead of leaving it to make the next claim ambiguous.
+      dropPendingTask(subagentTasks, event.toolCallId);
+      return;
+    }
+    if (bindRun(subagentTasks, event.toolCallId, runId)) persistSubagentTasks(pi);
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     const tool = event.toolName as string;
     const input = (event.input ?? {}) as Record<string, unknown>;
@@ -867,10 +892,10 @@ export default function (pi: ExtensionAPI) {
     // The run card's caption, captured at the ONE point it is still readable:
     // pi-subagents >=0.50 redacts `task` on every surface we could read it back
     // from (events, status.json, metadata), so remember it now, before dispatch.
-    // Recorded even if this call is about to be denied — the store is
-    // last-write-wins per agent precisely so a denied task cannot outlive its
-    // retry (hv-subagent-tasks.ts).
-    if (tool === "subagent") stashPendingTask(subagentTasks, input.task, input.agent);
+    // Keyed by THIS call's id: a model can emit two `subagent` toolCall blocks in
+    // one assistant message, and the previous per-agent slot silently overwrote
+    // the first — captioning one run with the other's task (2026-08-29).
+    if (tool === "subagent") stashPendingTask(subagentTasks, event.toolCallId, input.task, input.agent);
     // Direct MCP tools: drop the injected intent BEFORE anything reads input
     // (permission summaries stay factual, per the PRD) — the adapter would
     // forward it verbatim to the MCP server otherwise. The UI already has it:

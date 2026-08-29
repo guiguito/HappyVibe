@@ -160,9 +160,14 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   so async external-job agents do not show a completed workflow"), so at 0.58 an async
   `{agent, task}` delegation returns `details: {mode:"single", runId, asyncId, asyncDir, …}`
   (`async-execution.ts:1967`) and only a real multi-child `workflowScript` is `mode:"workflow"`.
-  **The re-key stays load-bearing, not redundant:** `subagent:async-started` is STILL only a
-  declared constant (`types.ts:2020`) that nothing emits at 0.58. That is the whole argument for
-  keying off a field rather than a mode — the mode changed twice under us and the card never moved.
+  **The re-key stays load-bearing, but not for the reason first recorded.** `subagent:async-started`
+  IS emitted at 0.58 (`async-execution.ts:1413`, `:1940`) — an earlier note here claimed nothing
+  emits it, from a grep for the literal string that only matched the constant's definition while
+  every emitter references `SUBAGENT_ASYNC_STARTED_EVENT`. What was measured behaviourally at 0.50
+  was narrower and still true: the WORKFLOW path never emitted it. 0.55's single-child unwrap put
+  delegations back on the direct async path, which does. The re-key still matters because the
+  notify cannot caption a card correctly — it carries no `toolCallId`, so two same-agent
+  delegations in one turn are indistinguishable there (see the caption entry below).
   `agent` on the completion event was the literal `"workflow"` at 0.50 (the bridge drops it, or the
   hand-off notice names a pipeline the user never chose); the drop is harmless now that the real
   name comes through. **Async is upstream's own default** — a run with no `asyncByDefault` config

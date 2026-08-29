@@ -1077,9 +1077,18 @@ export default function App(): React.JSX.Element {
               if (!fg) return p;
               const next = { ...p[sid] };
               delete next[t.toolCallId];
-              // Keep an already-raised async card (a `started` notify that DID
-              // arrive wins — it is the authoritative agent name for the run).
-              next[detached.asyncId] = next[detached.asyncId] ?? { ...fg, id: detached.asyncId, kind: "async", status: "running" };
+              // Keep an already-raised async card (its status/live fields), but the
+              // TASK and AGENT come from THIS card: `fg` took them from
+              // tool_execution_start's own args, which are exact per call. The
+              // notify's caption is a best-effort pairing — `subagent:async-started`
+              // carries no tool call id, so with two same-agent delegations in one
+              // turn it cannot tell them apart. Letting it win is what captioned a
+              // Beat Saber run "Minesweeper" (2026-08-29); the store now declines to
+              // guess, and this prefers the value that was never a guess.
+              const raised = next[detached.asyncId];
+              next[detached.asyncId] = raised
+                ? { ...raised, label: fg.label || raised.label, agent: fg.agent || raised.agent }
+                : { ...fg, id: detached.asyncId, kind: "async", status: "running" };
               return { ...p, [sid]: next };
             });
           } else {
