@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { agentBlurb, agentDisabledReason, agentTokenCost, rosterTokenCost, sortAgents, type AgentInfo } from "../agents";
+import { agentBlurb, agentTokenCost, rosterTokenCost, sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
 import { Toggle } from "./Toggle";
 
@@ -148,10 +148,7 @@ export function AgentsView({
                   </button>
                 </div>
                 <p className="text-sm text-ink-soft mt-1">{agentBlurb(a)}</p>
-                {a.enabled === false && agentDisabledReason(a.name) && (
-                  // An agent that starts off with no explanation reads as a bug.
-                  <p className="text-[11px] text-ink-soft mt-1 italic">Off by default — {agentDisabledReason(a.name)}</p>
-                )}
+
                 {a.tools && a.tools.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {a.tools.map((t) => (

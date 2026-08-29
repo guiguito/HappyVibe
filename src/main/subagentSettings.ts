@@ -67,11 +67,13 @@ const OVERRIDES_KEY = "agentOverrides";
  */
 export function resolveDisabledAgents(agentsEnabled: Record<string, boolean> = {}): Set<string> {
   const out = new Set<string>();
-  for (const name of UNSUPPORTED_BUILTIN_AGENTS) out.add(name);
   for (const [name, enabled] of Object.entries(agentsEnabled)) {
-    if (enabled) out.delete(name);
-    else out.add(name);
+    if (!enabled) out.add(name);
   }
+  // Both forced sets are applied LAST and unconditionally, so a hand-edited
+  // config cannot re-open either. They are also never LISTED (the bridge drops
+  // them), which is what keeps the page's switches to agents that actually work.
+  for (const name of UNSUPPORTED_BUILTIN_AGENTS) out.add(name);
   for (const name of EXTERNAL_CLI_AGENTS) out.add(name);
   return out;
 }

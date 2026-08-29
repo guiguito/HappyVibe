@@ -167,10 +167,14 @@ export function isExternalCliAgent(agent: unknown): boolean {
  * SEPARATE concern from EXTERNAL_CLI_AGENTS above, deliberately kept as its own
  * set because the two mean different things and only the first is a refusal.
  *
- * From 2026-08-30 this is a DEFAULT the user can override per agent on the
- * Agents page; the external set above stays forced. Only explicit user choices
- * are stored (config `agentsEnabled`), so changing what is in this set still
- * reaches everyone who never expressed an opinion.
+ * These are NOT user-toggleable and are not listed anywhere in the app — the
+ * same treatment as the external set above, for a different reason. The Agents
+ * page's switches govern agents that WORK; an agent that cannot do its job is
+ * not a preference to express, and showing one switched-off invites turning it
+ * on to discover it does nothing.
+ *
+ * The distinction the page rests on: HappyVibe-disabled agents are invisible,
+ * USER-disabled ones stay listed and dimmed so they can be switched back on.
  *
  * These are ordinary Pi children the ceiling governs perfectly well. The problem
  * is that each is inoperable or meaningless under our own constraints, and
@@ -201,18 +205,6 @@ export const UNSUPPORTED_BUILTIN_AGENTS: ReadonlySet<string> = new Set([
   "oracle",
 ]);
 
-/**
- * Why each of the above starts off, in the user's words.
- *
- * The set is a DEFAULT, not a refusal (2026-08-30): the Agents page can switch
- * any of them back on. So the reason has to be shown — an unexplained agent that
- * starts disabled reads as a bug, and a user who turns one on deserves to know
- * what they are getting.
- */
-export const UNSUPPORTED_BUILTIN_REASON: Record<string, string> = {
-  researcher: "Needs web search, which this Pi runtime does not provide — it would only be able to read local files.",
-  oracle: "Works by inheriting the parent conversation, which HappyVibe keeps separate so a sub-agent never sees your session.",
-};
 
 /** Every upstream builtin we write `disabled: true` for, for either reason. */
 export const DISABLED_BUILTIN_AGENTS: ReadonlySet<string> = new Set([

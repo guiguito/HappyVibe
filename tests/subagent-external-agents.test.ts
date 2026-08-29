@@ -306,11 +306,14 @@ describe("resolveDisabledAgents", () => {
     expect([...resolve({})].sort()).toEqual([...DISABLED_BUILTIN_AGENTS].sort());
   });
 
-  it("a user can enable an unsupported builtin", async () => {
+  it("an unsupported builtin stays disabled however hard the config asks", async () => {
+    // 2026-08-30: these are NOT user-toggleable. An agent that cannot do its job
+    // here is not a preference — offering the switch would only let someone turn
+    // one on and find it does nothing.
     const resolve = await load();
-    const out = resolve({ researcher: true });
-    expect(out.has("researcher")).toBe(false);
-    expect(out.has("oracle"), "the other default is untouched").toBe(true);
+    for (const n of UNSUPPORTED_BUILTIN_AGENTS) {
+      expect(resolve({ [n]: true }).has(n), `${n} stays disabled`).toBe(true);
+    }
   });
 
   it("a user can disable an agent that is on by default", async () => {
@@ -339,14 +342,15 @@ describe("disabledAgentOverrides writes the user's choice, not just ours", () =>
   it("writes an explicit `false` for an agent the user re-enabled", async () => {
     // Omitting the key is NOT enough: a previous run already wrote
     // `disabled: true` to this file, and only an explicit false clears it.
+    // Uses `scout`, a normal agent — the forced sets cannot be re-enabled.
     const write = await load();
-    const first = write({}, {});
-    const ov1 = (first.subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
-    expect(ov1["researcher"].disabled).toBe(true);
+    const off = write({}, { scout: false });
+    const ov1 = (off.subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
+    expect(ov1["scout"].disabled).toBe(true);
 
-    const second = write(first, { researcher: true });
-    const ov2 = (second.subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
-    expect(ov2["researcher"].disabled, "explicitly re-enabled, not merely absent").toBe(false);
+    const on = write(off, { scout: true });
+    const ov2 = (on.subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
+    expect(ov2["scout"].disabled, "explicitly re-enabled, not merely absent").toBe(false);
   });
 
   it("keeps a user's model override across a disable/enable round trip", async () => {
@@ -362,7 +366,7 @@ describe("disabledAgentOverrides writes the user's choice, not just ours", () =>
     // The regression: the resolved set became a function of user config, and
     // losing the forced six inside it would look perfectly healthy on screen.
     const write = await load();
-    const ov = (write({}, { scout: false, researcher: true }).subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
+    const ov = (write({}, { scout: false }).subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
     for (const n of EXTERNAL_CLI_AGENTS) expect(ov[n].disabled, `${n}`).toBe(true);
   });
 

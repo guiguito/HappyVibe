@@ -783,3 +783,28 @@ describe("agents use the app's shared Toggle", () => {
     expect(voice).not.toContain("function Toggle(");
   });
 });
+
+// ── Who disabled it decides whether you can see it (2026-08-30) ────────────
+describe("HappyVibe-disabled agents are invisible; user-disabled ones are not", () => {
+  test("the bridge drops both forced sets before the page ever sees them", () => {
+    const bridge = readFileSync(path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts"), "utf8");
+    expect(bridge).toContain("if (isExternalCliAgent(name0)) continue;");
+    expect(bridge).toContain("if (UNSUPPORTED_BUILTIN_AGENTS.has(name0)) continue;");
+  });
+
+  test("a USER-disabled agent still reaches the page, marked", () => {
+    // The distinction the whole design rests on: `enabled` is set rather than
+    // the row being dropped, so the switch that turns it back on can exist.
+    const bridge = readFileSync(path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts"), "utf8");
+    expect(bridge).toContain("enabled: a.disabled !== true");
+  });
+
+  test("the page no longer explains an off-by-default agent — there are none", () => {
+    // Absence: the reason line existed only for agents that started off. Now
+    // that those are invisible, a leftover would be dead UI for a state that
+    // cannot occur.
+    const av = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx"), "utf8");
+    expect(av).not.toContain("Off by default");
+    expect(av).not.toContain("agentDisabledReason");
+  });
+});

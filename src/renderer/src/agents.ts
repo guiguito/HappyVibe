@@ -4,7 +4,7 @@
  * in tests/agents-renderer.test.ts). Same "try JSON, guard on kind, null on
  * fail" discipline as context.ts / permission.ts.
  */
-import { UNSUPPORTED_BUILTIN_REASON, displayableTask } from "../../../pi-runtime/extensions/hv-rules";
+import { displayableTask } from "../../../pi-runtime/extensions/hv-rules";
 import { subagentRosterLine } from "../../../pi-runtime/extensions/hv-agents";
 import { fmtNum } from "./analytics-format";
 
@@ -571,7 +571,3 @@ export function rosterTokenCost(agents: ReadonlyArray<{ name: string; descriptio
   return agents.filter((a) => a.enabled !== false).reduce((n, a) => n + agentTokenCost(a), 0);
 }
 
-/** Why an agent starts switched off, when we have a reason for it. */
-export function agentDisabledReason(name: string): string | undefined {
-  return UNSUPPORTED_BUILTIN_REASON[name];
-}

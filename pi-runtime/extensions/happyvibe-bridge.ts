@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, displayableTask, evaluate, isExternalCliAgent, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, UNSUPPORTED_BUILTIN_AGENTS, displayableTask, evaluate, isExternalCliAgent, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
   SUBAGENT_TASKS_TYPE, bindRun, claimTask, dropPendingTask, emptyTaskMap, releaseTask, restoreTaskMap,
   serializeTaskMap, stashPendingTask, taskFor, type TaskMapState,
@@ -1342,6 +1342,10 @@ export default function (pi: ExtensionAPI) {
         // the refusal, never a second copy of the set.
         const name0 = typeof a.name === "string" ? a.name : "";
         if (isExternalCliAgent(name0)) continue;
+        // Not listed at all (2026-08-30): an agent HappyVibe disabled because it
+        // cannot work here is not a preference to express. Only a USER-disabled
+        // agent stays listed — dimmed, so it can be switched back on.
+        if (UNSUPPORTED_BUILTIN_AGENTS.has(name0)) continue;
         // And a SEVENTH adapter upstream adds later is refused here before the
         // contract test has been updated to name it: the ceiling cannot bound
         // any external-cli process, so the page never offers one.

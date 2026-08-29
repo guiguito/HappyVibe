@@ -114,8 +114,15 @@ test("/hv-agents lists every agent that exists, not just our own dir", async () 
   expect(explorer.tools).toContain("read"); // read-only frontmatter honored
 
   // Upstream's NATIVE builtins, delegatable all along and invisible until now.
-  for (const native of ["reviewer", "scout", "researcher", "oracle", "delegate"]) {
+  for (const native of ["reviewer", "scout", "delegate"]) {
     expect(names).toContain(native);
+  }
+
+  // ABSENCE: agents HappyVibe disabled because they cannot work here are not
+  // listed at all (2026-08-30) — unlike a USER-disabled agent, which stays
+  // listed and dimmed so it can be switched back on.
+  for (const unsupported of ["researcher", "oracle"]) {
+    expect(names).not.toContain(unsupported);
   }
   expect(agents.find((a) => a.name === "reviewer")!.source).toBe("builtin");
 

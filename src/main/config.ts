@@ -10,7 +10,7 @@ import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
 import { disabledAgentOverrides } from "./subagentSettings";
-import { EXTERNAL_CLI_AGENTS } from "../../pi-runtime/extensions/hv-rules";
+import { EXTERNAL_CLI_AGENTS, UNSUPPORTED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -759,6 +759,7 @@ export function writeSubagentSettings(): void {
  */
 export function setAgentEnabled(name: string, enabled: boolean): void {
   if (EXTERNAL_CLI_AGENTS.has(name)) throw new Error(`'${name}' cannot be enabled: HappyVibe's boundary cannot govern an external CLI agent.`);
+  if (UNSUPPORTED_BUILTIN_AGENTS.has(name)) throw new Error(`'${name}' cannot be enabled: it cannot do its job in this runtime.`);
   const cfg = load();
   cfg.agentsEnabled = { ...(cfg.agentsEnabled ?? {}), [name]: enabled };
   save(cfg);
