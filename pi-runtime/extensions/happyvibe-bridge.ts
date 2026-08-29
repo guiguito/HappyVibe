@@ -1363,6 +1363,12 @@ export default function (pi: ExtensionAPI) {
           description,
           ...(Array.isArray(a.tools) ? { tools: a.tools as string[] } : {}),
           ...(typeof a.model === "string" && a.model ? { model: a.model } : {}),
+          // The agent's own prompt, straight off upstream's discovery — no file
+          // read, so the Agents page can SHOW a builtin's prompt without main
+          // widening its path confinement to dirs it does not own (a package
+          // agent can live under the global npm root). ~20 KB for the whole
+          // builtin roster, on a notify the user triggers by opening the page.
+          ...(typeof a.systemPrompt === "string" && a.systemPrompt ? { systemPrompt: a.systemPrompt } : {}),
           source: resolved,
           path: filePath,
         });

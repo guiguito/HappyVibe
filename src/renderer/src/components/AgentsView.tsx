@@ -39,6 +39,7 @@ export function AgentsView({
   sessionId: string | null;
 }): React.JSX.Element {
   const [editing, setEditing] = useState<AgentInfo | null>(null);
+  const [viewing, setViewing] = useState<AgentInfo | null>(null);
 
   // Refresh the agent inventory on mount (fire-and-forget; results stream
   // back as an hv.agents notify the parent captures).
@@ -85,6 +86,20 @@ export function AgentsView({
                       agent or a package agent would simply fail. Omit it rather
                       than grey it out — Duplicate is the honest route to a copy
                       the user CAN edit. */}
+                  {/* §12 (2026-08-29): a read-only agent's prompt is still worth
+                      READING — these are the agents the model will actually
+                      delegate to, and until this round they were invisible
+                      entirely. The prompt rides the discovery notify, so this
+                      needs no file read outside the dirs main owns. */}
+                  {!EDITABLE_SOURCES.has(a.source) && a.systemPrompt && (
+                    <button
+                      type="button"
+                      onClick={() => setViewing(a)}
+                      className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer"
+                    >
+                      View
+                    </button>
+                  )}
                   {EDITABLE_SOURCES.has(a.source) && (
                     <button
                       type="button"
@@ -119,6 +134,8 @@ export function AgentsView({
         </Section>
       </div>
 
+      {viewing && <AgentPromptView agent={viewing} onClose={() => setViewing(null)} />}
+
       {editing && (
         <AgentEditor
           agent={editing}
@@ -129,6 +146,55 @@ export function AgentsView({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Read-only view of an agent HappyVibe cannot write: upstream's builtins, a
+ * `~/.agents` agent, a package agent. The prompt comes from the discovery
+ * notify rather than a file read, so showing it costs main no widening of the
+ * path confinement that keeps writes inside dirs the app owns.
+ */
+function AgentPromptView({ agent, onClose }: { agent: AgentInfo; onClose: () => void }): React.JSX.Element {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+      <div
+        className="w-full max-w-2xl rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 flex flex-col max-h-[85vh]"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="font-black text-xl leading-tight">{agent.name}</h2>
+            <p className="text-sm text-ink-soft truncate" title={agent.path}>
+              {agent.source} · read-only — duplicate it to make a version you can edit
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg border-2 border-line px-2.5 py-1 text-xs font-bold text-ink-soft hover:bg-paper-deep/40 cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+
+        {agent.tools && agent.tools.length > 0 && (
+          <>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-1">Tools it may use</label>
+            <div className="mb-3 flex flex-wrap gap-1">
+              {agent.tools.map((t) => (
+                <span key={t} className="font-mono text-[10px] rounded bg-paper-deep px-1.5 py-0.5 text-ink-soft">{t}</span>
+              ))}
+            </div>
+          </>
+        )}
+
+        <label className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-1">System prompt</label>
+        <pre className="flex-1 min-h-48 overflow-auto whitespace-pre-wrap rounded-xl border-2 border-line-strong bg-paper px-3.5 py-3 font-mono text-xs">
+          {agent.systemPrompt}
+        </pre>
+      </div>
     </div>
   );
 }

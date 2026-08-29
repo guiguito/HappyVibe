@@ -610,3 +610,30 @@ describe("the agent roster reaches the composer without visiting Settings", () =
     expect(app).toContain("void window.hv.listAgents(selectedId);");
   });
 });
+
+// ── A read-only agent's prompt is still readable (§12, 2026-08-29) ──────────
+describe("viewing a prompt we cannot write", () => {
+  const VIEW = path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx");
+  const view = readFileSync(VIEW, "utf8");
+
+  test("View is offered exactly where Edit is not", () => {
+    expect(view).toContain("{!EDITABLE_SOURCES.has(a.source) && a.systemPrompt && (");
+    expect(view).toContain("{EDITABLE_SOURCES.has(a.source) && (");
+  });
+
+  test("the prompt comes from discovery, never from a widened file read", () => {
+    // main's agent read is path-confined to dirs the app owns; a package agent
+    // can live under the global npm root. Reading the prompt off the discovery
+    // notify is what lets the page show it without opening that up.
+    expect(view).toContain("agent.systemPrompt");
+    expect(view).not.toContain("readAgent(agent.path)".replace("agent.path", "viewing.path"));
+  });
+
+  test("the read-only view offers no Save", () => {
+    // An absence: a Save that silently failed would be worse than no Save.
+    const viewer = view.slice(view.indexOf("function AgentPromptView"), view.indexOf("function AgentEditor"));
+    expect(viewer).not.toContain("Save");
+    expect(viewer).not.toContain("writeAgent");
+    expect(viewer).toContain("duplicate it to make a version you can edit");
+  });
+});

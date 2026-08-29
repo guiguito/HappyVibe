@@ -41,6 +41,12 @@ export interface AgentDef {
   source: AgentSource;
   /** Absolute path to the .md file. */
   path: string;
+  /**
+   * The agent's system prompt, when discovery supplied it. Present so the
+   * Agents page can SHOW a read-only agent's prompt (upstream builtins, user
+   * and package agents) without main reading files outside the dirs it owns.
+   */
+  systemPrompt?: string;
 }
 
 /**

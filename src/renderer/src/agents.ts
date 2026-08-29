@@ -22,6 +22,8 @@ export interface AgentInfo {
    */
   source: "builtin" | "bundled" | "user" | "project" | "package";
   path: string;
+  /** Supplied by discovery so a read-only agent's prompt is still viewable. */
+  systemPrompt?: string;
 }
 
 export interface ToolInfo {
