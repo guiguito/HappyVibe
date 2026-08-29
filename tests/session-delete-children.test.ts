@@ -252,3 +252,52 @@ describe("a run's outputs/ directory is cleaned up like its other artifacts", ()
     expect(fs.existsSync(path.join(artifacts(), ".last-cleanup"))).toBe(true);
   });
 });
+
+// ── The sweep must see BOTH id spaces (2026-08-30) ─────────────────────────
+//
+// Found by watching a child transcript disappear across an app restart while its
+// session was still open. `sessionRunIds` takes a UNION of the `<stem>/<runId>/`
+// directory names and the asyncId/runId strings inside the parent file, with a
+// comment saying the two "only sometimes coincide" and that deriving one from the
+// other silently misses files. The SWEEP read only the second, so any artifact
+// filed under a child run id the parent never names was treated as orphaned and
+// deleted at every startup — including transcripts the run card reads.
+describe("the sweep counts a child directory as a reference too", () => {
+  it("keeps artifacts filed under a run id that only appears as a child directory", () => {
+    const stem = "2026-08-30T09-00-00-000Z_union";
+    // A live session whose parent file does NOT mention the child's run id.
+    fs.writeFileSync(path.join(dir, `${stem}.jsonl`), JSON.stringify({ type: "message" }) + "\n");
+    const runDir = path.join(dir, stem, "child-run-01", "run-0");
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, "session.jsonl"), "{}\n");
+    const transcript = path.join(artifacts(), "child-run-01_code-explorer_transcript.jsonl");
+    fs.writeFileSync(transcript, "x");
+
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(transcript), "a live session's child transcript survives").toBe(true);
+  });
+
+  it("still collects an artifact whose session is genuinely gone", () => {
+    // The sweep must not become a no-op: widening `referenced` too far would
+    // simply stop it collecting anything.
+    const orphan = path.join(artifacts(), "dead-run-99_code-explorer_transcript.jsonl");
+    fs.writeFileSync(orphan, "x");
+    const swept = sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(orphan)).toBe(false);
+    expect(swept.artifacts).toBeGreaterThan(0);
+  });
+
+  it("does not resurrect references from a directory whose session file is gone", () => {
+    // Half 1 removes `<stem>/` when `<stem>.jsonl` is missing. If half 2 read
+    // those names first, a deleted session's ids would protect its own artifacts.
+    const stem = "2026-08-30T10-00-00-000Z_dead";
+    const runDir = path.join(dir, stem, "ghost-run-01", "run-0");
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, "session.jsonl"), "{}\n"); // no <stem>.jsonl
+    const artifact = path.join(artifacts(), "ghost-run-01_code-explorer_transcript.jsonl");
+    fs.writeFileSync(artifact, "x");
+
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(artifact), "an orphaned session's artifacts still go").toBe(false);
+  });
+});

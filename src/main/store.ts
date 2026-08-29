@@ -427,6 +427,12 @@ export function sweepOrphanedSubagentData(sessionDirPath: string): { dirs: numbe
   }
 
   // Half 2: artifacts, by reference. Bail on ANY unreadable session.
+  //
+  // `referenced` is a UNION of the same two id spaces `sessionRunIds` unions, and
+  // for the same measured reason: the id an artifact is filed under and the
+  // asyncId the parent transcript records only sometimes coincide. Reading the
+  // session text alone deleted a live session's child transcripts at every
+  // startup (observed 2026-08-30, after the run card started reading them).
   const referenced = new Set<string>();
   for (const e of entries) {
     if (!e.isFile() || !e.name.endsWith(".jsonl")) continue;
@@ -438,6 +444,13 @@ export function sweepOrphanedSubagentData(sessionDirPath: string): { dirs: numbe
     }
     for (const m of raw.matchAll(/"(?:asyncId|runId)"\s*:\s*"([^"]+)"/g)) {
       if (plausibleRunId(m[1])) referenced.add(m[1]);
+    }
+    // Child run directories under this session's own `<stem>/`. Read AFTER half 1
+    // has removed the stems whose session file is gone, so a deleted session can
+    // never protect its own artifacts with the directories it left behind.
+    for (const name of subdirs(path.join(root, e.name.replace(/\.jsonl$/, "")))) {
+      const id = path.basename(name);
+      if (plausibleRunId(id)) referenced.add(id);
     }
   }
   let names: string[];
