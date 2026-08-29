@@ -205,6 +205,13 @@ interface HvCustomEndpoint {
 }
 
 /** Mirrors ApiCall in src/main/calls.ts (from hv:get-session-calls). */
+/** §12: one row of a child's interleaved reasoning-and-actions trace. */
+interface HvChildTrace {
+  kind: "thinking" | "call";
+  text: string;
+  name?: string;
+}
+
 interface HvApiCall {
   ts: string;
   provider: string;
@@ -704,8 +711,8 @@ interface HvApi {
   subagentInterrupt(sessionId: string, runId: string): Promise<void>;
   /** §12: stop one child of a fan-out, leaving its siblings running. */
   subagentStopChild(sessionId: string, runId: string, childId: string): Promise<void>;
-  /** §12: a child's own thinking blocks, read from its transcript on demand. */
-  subagentThinking(transcriptPath: string): Promise<string[]>;
+  /** §12: a child's interleaved thinking + tool calls, from its transcript. */
+  subagentThinking(transcriptPath: string): Promise<HvChildTrace[]>;
   /**
    * §12: a child's task, a bounded transcript window and its final output,
    * fetched on demand. Costs NO model turn, so it is safe to call on expand.

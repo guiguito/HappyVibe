@@ -1562,12 +1562,26 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
    * opened. Toggling OFF clears rather than caching, so re-opening a running
    * child re-reads and shows what it is thinking now, not what it thought.
    */
-  const [thinking, setThinking] = useState<string[] | null>(null);
+  const [childTrace, setChildTrace] = useState<HvChildTrace[] | null>(null);
   const transcriptPath = run.live?.children?.find((c) => c.transcriptPath)?.transcriptPath;
-  const toggleThinking = (): void => {
-    if (thinking) { setThinking(null); return; }
+  const showTrace = childTrace !== null;
+  /**
+   * LIVE while open. Keyed on `run.live`, which App rebuilds on every status
+   * push — and pushes are already rate-limited by `statusUnchanged`, so this
+   * re-reads roughly once per child turn or tool rather than on a timer.
+   * Measured cost: 0.3-2.7 ms to parse a real transcript (7 KB to 674 KB), and
+   * nothing at all runs while the toggle is off.
+   */
+  useEffect(() => {
+    if (!showTrace || !transcriptPath) return;
+    let alive = true;
+    void window.hv.subagentThinking(transcriptPath).then((rows) => { if (alive) setChildTrace(rows); }).catch(() => {});
+    return () => { alive = false; };
+  }, [showTrace, transcriptPath, run.live]);
+  const toggleTrace = (): void => {
+    if (childTrace) { setChildTrace(null); return; }
     if (!transcriptPath) return;
-    void window.hv.subagentThinking(transcriptPath).then(setThinking).catch(() => setThinking([]));
+    void window.hv.subagentThinking(transcriptPath).then(setChildTrace).catch(() => setChildTrace([]));
   };
   return (
     <div
@@ -1711,18 +1725,29 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                     {transcriptPath && (
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); toggleThinking(); }}
+                        onClick={(e) => { e.stopPropagation(); toggleTrace(); }}
                         className="self-start text-[11px] font-bold text-plum hover:underline cursor-pointer"
                       >
-                        {thinking ? "Hide thinking" : "Show thinking"}
+                        {showTrace ? "Hide thinking" : "Show thinking"}
                       </button>
                     )}
-                    {thinking?.map((t, i) => (
-                      <p key={i} className="text-xs text-ink-soft italic border-l-2 border-plum/40 pl-2 whitespace-pre-wrap">{t}</p>
-                    ))}
-                    {thinking?.length === 0 && <p className="text-xs text-ink-soft">No reasoning recorded for this run.</p>}
+                    {/* §12 round 2: thinking INTERLEAVED with the calls it
+                        produced, in transcript order — reasoning next to the
+                        action it explains. This replaces the recentTools list
+                        while open, because it already contains it, in order. */}
+                    {childTrace?.map((row, i) =>
+                      row.kind === "thinking" ? (
+                        <p key={i} className="text-xs text-ink-soft italic border-l-2 border-plum/40 pl-2 whitespace-pre-wrap">{row.text}</p>
+                      ) : (
+                        <div key={i} className="font-mono text-xs truncate pl-2">
+                          <span className="text-ink font-semibold">{row.name}</span>
+                          {row.text && <span className="text-ink-soft"> {row.text}</span>}
+                        </div>
+                      ),
+                    )}
+                    {childTrace?.length === 0 && <p className="text-xs text-ink-soft">Nothing recorded for this run yet.</p>}
                     {run.live?.turnCount != null && <div>turn {run.live.turnCount}{currentTool ? ` · ${currentTool}` : ""}</div>}
-                    {(run.live?.recentTools ?? []).slice(-8).map((t, i) => (
+                    {!showTrace && (run.live?.recentTools ?? []).slice(-8).map((t, i) => (
                       <div key={i} className="font-mono truncate">
                         {t.tool}{t.args ? ` ${t.args}` : ""}
                       </div>

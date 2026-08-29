@@ -66,7 +66,7 @@ import { parseSubagentNotify } from "./subagentEvents";
 import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
 import { inspectCommand, inspectRequestId, parseInspectFrame, type InspectReply } from "./subagentInspect";
 import { pollSubagentStatus, type SubagentStatus } from "./subagentStatus";
-import { readChildThinking } from "./subagentThinking";
+import { readChildTrace } from "./subagentThinking";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
@@ -3197,7 +3197,7 @@ export function registerIpc(win: BrowserWindow): void {
    * into it, so that (NOT os.tmpdir(), which guards status.json) is the root.
    * Reads only when the card's toggle is opened; nothing happens otherwise.
    */
-  ipcMain.handle("hv:subagent-thinking", (_e, transcriptPath: string) => readChildThinking(sessionDir(), transcriptPath));
+  ipcMain.handle("hv:subagent-thinking", (_e, transcriptPath: string) => readChildTrace(sessionDir(), transcriptPath));
 
   ipcMain.handle("hv:subagent-stop-child", (_e, sessionId: string, runId: string, childId: string) => {
     void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-stop-child ${runId} ${childId}` }).catch(() => {});
