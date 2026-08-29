@@ -1412,6 +1412,20 @@ export default function App(): React.JSX.Element {
   }, [selectedId]);
 
   /**
+   * §12 (2026-08-29): fetch the agent roster per session, for the composer's
+   * `@agent` menu and the delegate chip.
+   *
+   * It used to be requested ONLY by AgentsView on mount, which made both
+   * affordances empty until the user had visited the settings page — precisely
+   * the user the "delegate from the flow" item exists for. Same shape as the
+   * skills effect above; the reply arrives as an hv.agents notify.
+   */
+  useEffect(() => {
+    if (!selectedId) return;
+    void window.hv.listAgents(selectedId);
+  }, [selectedId]);
+
+  /**
    * §26: persist the layout. Debounced, because a divider drag fires this on
    * every animation frame and config.json is a whole-file rewrite.
    *

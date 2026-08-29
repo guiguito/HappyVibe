@@ -598,3 +598,15 @@ describe("delegating from the flow", () => {
     expect(chip).not.toContain("onBlur");
   });
 });
+
+// ── The roster has to be FETCHED, or both affordances are empty ─────────────
+describe("the agent roster reaches the composer without visiting Settings", () => {
+  test("App requests it per session, not only from the Agents page", () => {
+    // Found during the fleet round: listAgents was called ONLY by AgentsView on
+    // mount, so `agents` stayed null until the user opened the settings page —
+    // and @agent plus the delegate chip were empty for exactly the user the
+    // "delegate from the flow" item exists for. An absence, so: source scan.
+    const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+    expect(app).toContain("void window.hv.listAgents(selectedId);");
+  });
+});
