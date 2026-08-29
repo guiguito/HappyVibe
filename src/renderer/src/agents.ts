@@ -275,6 +275,13 @@ export interface DelegationRun {
      * its elapsed time, never a $0.00 standing in for "not measured yet".
      */
     cost?: HvLedgerTotal;
+    /**
+     * The child's live context occupancy (§12, 2026-08-29). Like `cost`, the
+     * last reading is KEPT when a tick arrives without one — a finishing or
+     * stopped run must freeze on the gauge it reached, never blank back to no
+     * gauge after having shown one.
+     */
+    context?: { window: number; limit: number };
   };
 }
 

@@ -907,6 +907,10 @@ export default function App(): React.JSX.Element {
           // finishing run must freeze on what it cost, never blank back to
           // nothing after having shown a number.
           cost: cost ?? run.live?.cost,
+          // Same keep-the-last rule as cost, for the same reason: this object is
+          // REBUILT on every push, so a field omitted here is silently dropped
+          // on the next tick rather than merged.
+          context: status.context ?? run.live?.context,
         };
         return { ...p, [sessionId]: { ...p[sessionId], [runId]: { ...run, live } } };
       });

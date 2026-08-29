@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
+import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
 import {
   asyncResultInfo,
   delegationHint,
@@ -505,5 +506,42 @@ describe("subagentUsageLine", () => {
   test("the card no longer formats a raw child cost", () => {
     const card = readFileSync(path.resolve(__dirname, "../src/renderer/src/components/ToolCard.tsx"), "utf8");
     expect(card).not.toMatch(/fmtCost/);
+  });
+});
+
+// ── The run card header (§12, 2026-08-29 — the fleet round) ──────────────────
+//
+// The renderer suite has no DOM, so a visual contract is pinned in two halves:
+// the mapping as exported DATA, and the ABSENCE as a source scan. The absence
+// half is the one that matters here — an intent that quietly stayed on the
+// header row is exactly what a screenshot glance forgives.
+describe("the delegation run card header", () => {
+  const CHAT = path.join(__dirname, "..", "src", "renderer", "src", "components", "ChatView.tsx");
+  const chat = readFileSync(CHAT, "utf8");
+
+  test("renders the gauge from childGauge, never from a second threshold table", () => {
+    expect(chat).toContain("childGauge(run.live?.context)");
+    // A percentage computed inline here would drift from §9's zones silently:
+    // both gauges would still look plausible, on different scales.
+    expect(chat).not.toMatch(/run\.live\?\.context\.window\s*\/\s*run\.live\?\.context\.limit/);
+  });
+
+  test("the gauge tones are the session bubble's zones, not fresh colours", () => {
+    for (const zone of ["calm", "amber", "red"] as const) {
+      expect(GAUGE_TONE[zone]).toBeTruthy();
+    }
+    expect(GAUGE_TONE.calm).toContain("leaf");
+    expect(GAUGE_TONE.amber).toContain("honey");
+    expect(GAUGE_TONE.red).toContain("berry");
+  });
+
+  test("no longer puts the intent on the header row", () => {
+    // The old shape was this exact span, nested INSIDE the agent-name span.
+    // An absence cannot be screenshotted, which is why it is asserted here.
+    expect(chat).not.toContain('<span className="text-ink-soft font-medium"> — {run.label}</span>');
+  });
+
+  test("the gauge is gated on `running`, so a finished card shows no live number", () => {
+    expect(chat).toContain("const gauge = running ? childGauge(run.live?.context) : null;");
   });
 });

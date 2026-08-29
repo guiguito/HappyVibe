@@ -9,7 +9,8 @@ import { ContextPanel } from "./ContextPanel";
 import { CostBubble } from "./CostBubble";
 import { CostPanel } from "./CostPanel";
 import { emptyQueue, type QueueState } from "../queue";
-import { computeGauge, type ContextSnapshot, type SessionStats } from "../context";
+import { computeGauge, type ContextSnapshot, type GaugeZone, type SessionStats } from "../context";
+import { childGauge } from "../subagentGauge";
 import { delegationHint, formatElapsed, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
@@ -1458,6 +1459,17 @@ function DelegationSection({ runs, items, onStopRun }: { runs: DelegationRun[]; 
 }
 
 /**
+ * §12 (2026-08-29): the run card's context pill, in ContextBubble's own zone
+ * hues (its rest state — this pill is a readout, not a toggle). Declared as
+ * DATA so the renderer suite, which has no DOM, can pin the mapping.
+ */
+export const GAUGE_TONE: Record<GaugeZone, string> = {
+  calm: "border-leaf/60 bg-leaf-soft text-leaf",
+  amber: "border-honey/60 bg-honey-soft text-tangerine-deep",
+  red: "border-berry/60 bg-berry-soft text-berry",
+};
+
+/**
  * V2.C1: one run card — robot icon, agent name, intent, live elapsed, status,
  * with a shimmer bar while working. Clicking toggles the LIVE child transcript
  * inline (same trace the in-flow SubagentCard renders — the expansion scrolls
@@ -1489,6 +1501,10 @@ function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trac
   const dot = attention ? "bg-tangerine animate-pulse" : running ? "bg-sky animate-pulse" : run.status === "done" ? "bg-leaf" : "bg-berry";
   const canStop = running && run.kind === "async" && onStopRun;
   const currentTool = run.live?.currentTool;
+  // §12 (2026-08-29): the child's own context gauge — §9's headline
+  // differentiator, per child. Null whenever the model has no known window, and
+  // the pill then does not render at all rather than showing 0%.
+  const gauge = running ? childGauge(run.live?.context) : null;
   return (
     <div
       className={`grid transition-[grid-template-rows,opacity] duration-350 ease-in-out ${
@@ -1508,12 +1524,22 @@ function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trac
               >
                 <span className={`mt-1 size-2.5 rounded-full shrink-0 ${dot}`} />
                 <ToolIcon kind="robot" className="mt-0.5 size-4 shrink-0 text-sky" />
-                {/* v5: intent wraps instead of clipping with an ellipsis. */}
                 <span className="flex-1 min-w-0 break-words">
                   <span className="font-black text-tangerine-deep">{run.agent}</span>
-                  {run.label && <span className="text-ink-soft font-medium"> — {run.label}</span>}
                 </span>
               </button>
+              {/* §12 (2026-08-29): how full this sub-agent's head is. Zones are
+                  the session gauge's own (subagentGauge.ts reuses zoneOf), so
+                  amber means the same thing on both. Absent when the model has
+                  no registered window — no pill, never a 0%. */}
+              {gauge && (
+                <span
+                  title={`This subagent's context window: ${gauge.label} tokens`}
+                  className={`shrink-0 font-mono text-[10px] font-bold rounded-full border px-1.5 py-0.5 ${GAUGE_TONE[gauge.zone]}`}
+                >
+                  {gauge.percent}%
+                </span>
+              )}
               {running ? (
                 <span className="font-mono text-xs text-ink-soft tabular-nums shrink-0" title="Elapsed time">
                   {attention ? "needs attention" : currentTool ? currentTool : "working"} · {formatElapsed(now - run.startedAt)}
@@ -1556,6 +1582,22 @@ function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trac
                 {open ? "▾" : "▸"}
               </button>
             </div>
+            {/* §12 (2026-08-29): the intent moved OFF the header row. The header
+                now carries the context gauge alongside elapsed/tokens/cost, and
+                a fifth figure sharing a line with wrapping prose was unreadable.
+                It stays part of the expand control, so the whole card still
+                toggles wherever you click it. */}
+            {run.label && (
+              <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                aria-expanded={open}
+                title={open ? "Collapse the subagent details" : "See what the subagent is doing"}
+                className="w-full text-left px-4 pb-2.5 -mt-1 text-sm font-medium text-ink-soft break-words cursor-pointer"
+              >
+                {run.label}
+              </button>
+            )}
             {running && !open && <div className={`h-1 ${attention ? "bg-tangerine/40" : "hv-shimmer"}`} aria-hidden />}
             {open && (
               <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 max-h-72 overflow-y-auto flex flex-col gap-3">
