@@ -5,15 +5,31 @@
  * and is imported directly by src/main (path-confined read/write) and by
  * vitest. One parser, logic never forks — same discipline as hv-rules.ts.
  *
- * pi-subagents discovers agents from `<PI_CODING_AGENT_DIR>/agents/*.md`
- * (source "user", the app-owned dir → our "builtin") and `<cwd>/.pi/agents/*.md`
- * (source "project"). Its frontmatter parser is flat `key: value` (no YAML
- * lib); we match it: parse and serialize the same flat shape so a round-trip
- * (read → edit body/model → write) never corrupts a file pi-subagents reads.
- * See package/src/agents/frontmatter.ts in pi-subagents 0.33.1.
+ * Its frontmatter parser is flat `key: value` (no YAML lib); we match it: parse
+ * and serialize the same flat shape so a round-trip (read → edit body/model →
+ * write) never corrupts a file pi-subagents reads. See
+ * package/src/agents/frontmatter.ts in pi-subagents 0.33.1.
+ *
+ * DISCOVERY does not live here and never did well: from 2026-08-29 the bridge
+ * calls pi-subagents' own `discoverAgentsAll`, because the two-directory scan
+ * this module's comment used to describe was missing four of the six places
+ * upstream actually looks. This module still owns PARSING and SERIALIZING —
+ * the app edits agent files, so it needs a writer that round-trips.
  */
 
-export type AgentSource = "builtin" | "project";
+/**
+ * Where an agent came from.
+ *
+ * Widened 2026-08-29 (the fleet round) from `builtin | project`: pi-subagents
+ * discovers from SIX directories plus agents contributed by installed packages,
+ * and the app listed two of them. `builtin` is now UPSTREAM's packaged roster;
+ * `bundled` is ours (the app-owned agent dir). Both were "builtin" before,
+ * which is exactly why nobody noticed upstream's seven were missing.
+ *
+ * Only `bundled` and `project` are writable by the app (`hv:write-agent` is
+ * path-confined to those dirs) — the Agents page gates Edit on that.
+ */
+export type AgentSource = "builtin" | "bundled" | "user" | "project" | "package";
 
 export interface AgentDef {
   name: string;
@@ -107,7 +123,12 @@ export function renderSubagentSection(agents: AgentDef[]): string {
     "each runs in its own context and reports back a concise result.\n\n" +
     lines.join("\n") +
     "\n\n**How to delegate:** call the `subagent` tool directly with `{ agent: \"<name>\", task: \"<what to do>\" }`. " +
-    "Do NOT call `{ action: \"list\" }` first — the agents above are the full, current list. " +
+    // The countermand stays (the tool description steers the model to call
+    // `list` first, which costs a turn). The superlative that used to follow it
+    // — "the agents above are the full, current list" — was removed 2026-08-29:
+    // it was false while the roster came from a two-directory scan, and even
+    // now a project-local agent file can add one between two turns.
+    "Delegate directly by name. Do NOT call `{ action: \"list\" }` first. " +
     "Delegations run in the background by default. After you delegate, **end your turn** with a brief " +
     "note that the work is running in the background — do NOT call the `wait` tool and do NOT poll with " +
     "`subagent` status. This is an interactive session: the subagent's result is delivered to you " +

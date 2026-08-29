@@ -14,7 +14,13 @@ export interface AgentInfo {
   description: string;
   tools?: string[];
   model?: string;
-  source: "builtin" | "project";
+  /**
+   * §12 (2026-08-29): five sources, because there are five. `bundled` is ours
+   * (the app-owned agent dir, editable); `builtin` is UPSTREAM's packaged
+   * roster, which this page did not show at all until this round. Only
+   * `bundled` and `project` are writable — `hv:write-agent` is path-confined.
+   */
+  source: "builtin" | "bundled" | "user" | "project" | "package";
   path: string;
 }
 

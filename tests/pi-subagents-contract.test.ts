@@ -1090,3 +1090,65 @@ describe("our bundled agents still shadow upstream's builtins of the same name",
     expect(fm).not.toContain("contact_supervisor");
   });
 });
+
+// ── The agent inventory comes from upstream's discovery (§12, 2026-08-29) ────
+//
+// The bridge used to enumerate two directories. Upstream reads six plus
+// installed packages and walks UP for the project root, so the Agents page and
+// the model's per-turn roster both under-reported — silently, since a short
+// list looks exactly like a small installation.
+describe("the agent inventory comes from upstream's own discovery", () => {
+  const bridge = readFileSync(BRIDGE, "utf8");
+  const agentsSrc = subagentSource("src", "agents", "agents.ts");
+
+  it("reaches discoverAgentsAll by relative path — the exports map blocks the bare one", () => {
+    expect(bridge).toContain('from "../node_modules/pi-subagents/src/agents/agents.ts"');
+    expect(bridge).not.toMatch(/from\s+"pi-subagents\/src\//);
+  });
+
+  it("the `./agents` subpath exists but exposes registration, not discovery", () => {
+    // This is why the reach is relative even though a subpath of that name is
+    // in the map — reading the map alone would suggest a bare specifier works.
+    const exports = (JSON.parse(readFileSync(PKG, "utf8")) as { exports?: Record<string, string> }).exports ?? {};
+    expect(exports["./agents"]).toBeTruthy();
+    const api = subagentSource("src", "api", "agents.ts");
+    expect(api).not.toContain("discoverAgentsAll");
+  });
+
+  it("upstream still exports discoverAgentsAll with the four scopes we render", () => {
+    expect(agentsSrc).toMatch(/export function discoverAgentsAll\(cwd: string\)/);
+    for (const scope of ["builtin", "package", "user", "project"]) {
+      expect(agentsSrc).toMatch(new RegExp(`${scope}: AgentConfig\\[\\]`));
+    }
+  });
+
+  it("discoverAgentsAll does NOT drop disabled agents, which is why we filter", () => {
+    // The singular discoverAgents filters (`agent.disabled !== true`); the All
+    // variant does not. Without our own filter the six refused external-CLI
+    // agents would be listed on the Agents page as available.
+    const all = agentsSrc.slice(agentsSrc.indexOf("export function discoverAgentsAll"));
+    expect(all.slice(0, all.indexOf("export function", 10))).not.toContain("agent.disabled !== true");
+    expect(bridge).toContain("a.disabled === true) continue");
+  });
+
+  it("the page filters on the SAME predicate the bridge refuses with", () => {
+    // Not a second copy of the set: a page that advertises an agent the bridge
+    // declines is worse than one that omits it.
+    expect(bridge).toContain("if (isExternalCliAgent(name0)) continue;");
+    expect(bridge).toContain('?.type === "external-cli") continue;');
+  });
+
+  it("upstream still discovers from the dirs the old two-dir scan missed", () => {
+    expect(agentsSrc).toContain('path.join(os.homedir(), ".agents")');
+    expect(agentsSrc).toContain("collectPackageSubagentPaths");
+    expect(agentsSrc).toContain("findConfiguredProjectRoot");
+    expect(agentsSrc).toContain("EXTRA_AGENT_DIRS_ENV");
+  });
+
+  it("an AgentConfig still carries the fields the page renders", () => {
+    expect(agentsSrc).toMatch(/export interface AgentConfig \{[\s\S]*?filePath: string/);
+    for (const field of ["name: string", "description: string", "tools\\?: string\\[\\]", "source: AgentSource"]) {
+      expect(agentsSrc).toMatch(new RegExp(`export interface AgentConfig \\{[\\s\\S]*?${field}`));
+    }
+  });
+});

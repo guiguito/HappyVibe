@@ -76,6 +76,14 @@ describe("toAgentDef", () => {
       path: "/a/greeter.md",
     });
   });
+  test("keeps every discovered source through toAgentDef", () => {
+    // Widened 2026-08-29 from builtin|project: upstream reports four scopes and
+    // we split its "user" into ours (bundled) and everyone else's.
+    for (const source of ["builtin", "bundled", "user", "project", "package"] as const) {
+      expect(toAgentDef({ name: "a", description: "d" }, source, "/x/a.md")?.source).toBe(source);
+    }
+  });
+
   test("returns null when name or description is missing (pi-subagents skips those)", () => {
     expect(toAgentDef({ name: "x" }, "project", "/p.md")).toBeNull();
     expect(toAgentDef({ description: "y" }, "project", "/p.md")).toBeNull();
@@ -149,6 +157,17 @@ describe("renderSubagentSection", () => {
     // model delegates directly, and its background/wait guidance.
     expect(s).toContain('Do NOT call `{ action: "list" }`');
     expect(s).toContain("wait");
+  });
+
+  test("no longer claims the injected roster is the complete list", () => {
+    // §12 (2026-08-29): it never was — the roster came from a two-directory scan
+    // while pi-subagents discovers from six plus installed packages. The
+    // countermand above stays (the tool description steers the model to call
+    // `list` first, which costs a turn); the superlative goes, because a
+    // project-local agent file can falsify it between one turn and the next.
+    const s = renderSubagentSection([mk("worker", "implements things")]);
+    expect(s).not.toContain("the full, current list");
+    expect(s).not.toContain("full, current");
   });
 
   test("clamps long descriptions to ~200 chars", () => {

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
 import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
+import { EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
 import {
   asyncResultInfo,
   delegationHint,
@@ -543,5 +544,31 @@ describe("the delegation run card header", () => {
 
   test("the gauge is gated on `running`, so a finished card shows no live number", () => {
     expect(chat).toContain("const gauge = running ? childGauge(run.live?.context) : null;");
+  });
+});
+
+// ── The Agents page's source taxonomy (§12, 2026-08-29) ─────────────────────
+describe("the agent inventory's five sources", () => {
+  test("every source the bridge can emit has a tone", () => {
+    // A source with no tone falls through to a grey default that reads like a
+    // deliberate neutral rather than a missing case.
+    for (const source of ["builtin", "bundled", "user", "project", "package"]) {
+      expect(SOURCE_TONE[source]).toBeTruthy();
+    }
+  });
+
+  test("only the paths hv:write-agent can actually write are editable", () => {
+    // hv:write-agent is path-confined to the app-owned + project dirs. An Edit
+    // button on any other row is a button that fails.
+    expect([...EDITABLE_SOURCES].sort()).toEqual(["bundled", "project"]);
+    for (const readOnly of ["builtin", "user", "package"]) {
+      expect(EDITABLE_SOURCES.has(readOnly)).toBe(false);
+    }
+  });
+
+  test("ours stays visually distinct from upstream's", () => {
+    // If these ever collapse to the same tone the page goes back to being
+    // unable to say which agents the user owns.
+    expect(SOURCE_TONE.bundled).not.toBe(SOURCE_TONE.builtin);
   });
 });

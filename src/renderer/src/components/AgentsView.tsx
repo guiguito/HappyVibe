@@ -2,15 +2,34 @@ import { useEffect, useMemo, useState } from "react";
 import type { AgentInfo } from "../agents";
 import { Section } from "./Section";
 
-const SOURCE_TONE: Record<string, string> = {
-  builtin: "bg-honey-soft text-tangerine-deep border-honey/60",
+/**
+ * §12 (2026-08-29): five sources, because there are five. `bundled` is ours and
+ * keeps the honey the page has always used; `builtin` is UPSTREAM's packaged
+ * roster, which this page hid entirely until this round, and takes a neutral
+ * tone so the ones the user can edit stay the ones that stand out.
+ *
+ * Exported as DATA: the renderer suite has no DOM, so this mapping is how the
+ * visual contract gets pinned (tests/agents-renderer.test.ts).
+ */
+export const SOURCE_TONE: Record<string, string> = {
+  bundled: "bg-honey-soft text-tangerine-deep border-honey/60",
+  builtin: "bg-paper-deep text-ink-soft border-line-strong",
   project: "bg-leaf-soft text-leaf border-leaf/50",
+  user: "bg-plum-soft text-plum border-plum/50",
+  package: "bg-sky-soft text-sky border-sky/50",
 };
+
+/** Where `hv:write-agent` is path-confined to — the only rows Edit can serve. */
+export const EDITABLE_SOURCES: ReadonlySet<string> = new Set(["bundled", "project"]);
 
 /**
  * Agents page (split out of the old combined Skills/MCP/Agents/Tools view).
- * Lists the agent inventory (built-in + project) with edit-system-prompt /
- * duplicate / agent-tier model override.
+ * Lists the agent inventory — bundled, upstream builtin, project, user and
+ * package — with edit-system-prompt / duplicate / agent-tier model override.
+ *
+ * The list comes from pi-subagents' own discovery via the bridge (§12,
+ * 2026-08-29). Before that it was a two-directory scan, and this page showed
+ * two agents while sessions could delegate to nine or more.
  */
 export function AgentsView({
   agents,
@@ -41,10 +60,10 @@ export function AgentsView({
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Agents</h1>
-        <p className="text-sm text-ink-soft mb-8">The subagents you can delegate to.</p>
+        <p className="text-sm text-ink-soft mb-8">Every subagent this workspace can delegate to — yours, this project's, and the ones your Pi runtime and installed packages provide.</p>
 
         {/* Agents */}
-        <Section icon="agents" title="Agents" subtitle="Built-in and project subagents you can delegate to.">
+        <Section icon="agents" title="Agents" subtitle="Bundled, built-in, project, user and package subagents you can delegate to.">
         {sortedAgents === null ? (
           <p className="text-sm text-ink-soft">Loading…</p>
         ) : sortedAgents.length === 0 ? (
@@ -60,13 +79,21 @@ export function AgentsView({
                   </span>
                   {a.model && <span className="font-mono text-[10px] text-ink-soft">{a.model}</span>}
                   <span className="flex-1" />
-                  <button
-                    type="button"
-                    onClick={() => setEditing(a)}
-                    className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer"
-                  >
-                    Edit
-                  </button>
+                  {/* §12 (2026-08-29): Edit only where we can actually write.
+                      hv:write-agent is path-confined to the app-owned and
+                      project dirs, so Edit on an upstream builtin, a ~/.agents
+                      agent or a package agent would simply fail. Omit it rather
+                      than grey it out — Duplicate is the honest route to a copy
+                      the user CAN edit. */}
+                  {EDITABLE_SOURCES.has(a.source) && (
+                    <button
+                      type="button"
+                      onClick={() => setEditing(a)}
+                      className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer"
+                    >
+                      Edit
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => void duplicate(a)}

@@ -910,7 +910,7 @@ export default function App(): React.JSX.Element {
           // Same keep-the-last rule as cost, for the same reason: this object is
           // REBUILT on every push, so a field omitted here is silently dropped
           // on the next tick rather than merged.
-          context: status.context ?? run.live?.context,
+          context: (status.context as { window: number; limit: number } | undefined) ?? run.live?.context,
         };
         return { ...p, [sessionId]: { ...p[sessionId], [runId]: { ...run, live } } };
       });

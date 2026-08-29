@@ -94,19 +94,41 @@ beforeAll(async () => {
 
 afterAll(() => client?.stop());
 
-test("/hv-agents lists the two bundled built-in agents", async () => {
+test("/hv-agents lists every agent that exists, not just our own dir", async () => {
   await client.send({ type: "prompt", message: "/hv-agents" });
   const req = await nextRequest((r) => isKind(r, "hv.agents"));
   expect(req.method).toBe("notify");
   const agents = payload(req).agents as Array<{ name: string; source: string; description: string; path: string; tools?: string[] }>;
   const names = agents.map((a) => a.name).sort();
+
+  // Ours, from the app-owned agent dir. Source is "bundled" from 2026-08-29:
+  // it used to be "builtin", which collided with UPSTREAM's builtin roster and
+  // is a large part of why nobody noticed that roster was missing entirely.
   expect(names).toContain("code-explorer");
   expect(names).toContain("agents-md-maker"); // v5: summarizer removed — compaction is Pi-native
+  expect(names).toContain("worker"); // §12 2026-08-29: the write-capable one
   const explorer = agents.find((a) => a.name === "code-explorer")!;
-  expect(explorer.source).toBe("builtin");
+  expect(explorer.source).toBe("bundled");
   expect(explorer.description.length).toBeGreaterThan(0);
   expect(explorer.path.endsWith("code-explorer.md")).toBe(true);
   expect(explorer.tools).toContain("read"); // read-only frontmatter honored
+
+  // Upstream's NATIVE builtins, delegatable all along and invisible until now.
+  for (const native of ["reviewer", "scout", "researcher", "oracle", "delegate"]) {
+    expect(names).toContain(native);
+  }
+  expect(agents.find((a) => a.name === "reviewer")!.source).toBe("builtin");
+
+  // ABSENCE, and the whole reason the disabled filter exists: discoverAgentsAll
+  // applies our overrides but does NOT drop what they disable. Without the
+  // filter these six would be listed as available agents the bridge refuses at
+  // delegation time — worse than not listing them at all (PRD §12, 2026-08-28).
+  for (const external of [
+    "claude-code", "claude-code-writer", "codex-exec",
+    "codex-exec-writer", "cursor-agent", "cursor-agent-writer",
+  ]) {
+    expect(names).not.toContain(external);
+  }
 });
 
 test("/hv-tools emits a tool inventory with name/description/source", async () => {
