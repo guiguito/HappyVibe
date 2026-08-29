@@ -15,7 +15,7 @@
  * imports electron's `app` for `agentDir()`, so vitest cannot import it — the
  * same division of labour as spawn.ts and the pure hv-*.ts modules.
  */
-import { DISABLED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
+import { EXTERNAL_CLI_AGENTS, UNSUPPORTED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
 
 /** The settings.json key pi-subagents reads builtin overrides from. */
 const OVERRIDES_KEY = "agentOverrides";
@@ -51,13 +51,45 @@ const OVERRIDES_KEY = "agentOverrides";
  * also remove `worker` and `reviewer` — the two native builtins the next round
  * wants to adopt.
  */
-export function disabledAgentOverrides(settings: Record<string, unknown>): Record<string, unknown> {
+/**
+ * Which agents end up disabled, given the user's explicit choices.
+ *
+ * `agentsEnabled` is SPARSE — it holds only names the user actually toggled, so
+ * resolution is `userChoice ?? default`, the same shape skills use
+ * (`activation?.[skill.id] ?? true`, skills/registry.ts). Seeding it with today's
+ * defaults would freeze this round's judgement about `researcher` forever;
+ * leaving it sparse means a later change to UNSUPPORTED_BUILTIN_AGENTS still
+ * reaches everyone who never expressed an opinion.
+ *
+ * EXTERNAL_CLI_AGENTS is applied LAST and unconditionally. It is a boundary
+ * guarantee, not a preference — a hand-edited config must not re-open it, which
+ * is why main resolves this rather than trusting whatever the renderer sends.
+ */
+export function resolveDisabledAgents(agentsEnabled: Record<string, boolean> = {}): Set<string> {
+  const out = new Set<string>();
+  for (const name of UNSUPPORTED_BUILTIN_AGENTS) out.add(name);
+  for (const [name, enabled] of Object.entries(agentsEnabled)) {
+    if (enabled) out.delete(name);
+    else out.add(name);
+  }
+  for (const name of EXTERNAL_CLI_AGENTS) out.add(name);
+  return out;
+}
+
+export function disabledAgentOverrides(
+  settings: Record<string, unknown>,
+  agentsEnabled: Record<string, boolean> = {},
+): Record<string, unknown> {
   const out = { ...settings };
   const subagents = { ...((out.subagents as Record<string, unknown> | undefined) ?? {}) };
   const overrides = { ...((subagents[OVERRIDES_KEY] as Record<string, unknown> | undefined) ?? {}) };
-  for (const name of DISABLED_BUILTIN_AGENTS) {
+  const disabled = resolveDisabledAgents(agentsEnabled);
+  // Every name we have an opinion about gets an EXPLICIT boolean. Omitting the
+  // key for a re-enabled agent would leave the `disabled: true` a previous run
+  // already wrote on disk, so the toggle would appear to do nothing.
+  for (const name of new Set([...disabled, ...Object.keys(agentsEnabled)])) {
     const existing = (overrides[name] as Record<string, unknown> | undefined) ?? {};
-    overrides[name] = { ...existing, disabled: true };
+    overrides[name] = { ...existing, disabled: disabled.has(name) };
   }
   subagents[OVERRIDES_KEY] = overrides;
   out.subagents = subagents;

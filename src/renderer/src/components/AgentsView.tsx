@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { agentBlurb, sortAgents, type AgentInfo } from "../agents";
+import { agentBlurb, agentDisabledReason, agentTokenCost, rosterTokenCost, sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
 
 /**
@@ -52,6 +52,13 @@ export function AgentsView({
   // chip so the two lists of the same thing cannot disagree).
   const sortedAgents = useMemo(() => (agents ? sortAgents(agents) : null), [agents]);
 
+  /** §12 (2026-08-30): switch one agent on/off. No respawn — the bridge rebuilds
+   *  the roster every turn, so this lands on the next message. */
+  const toggle = async (a: AgentInfo): Promise<void> => {
+    await window.hv.setAgentEnabled(a.name, a.enabled === false);
+    void window.hv.listAgents(sessionId ?? undefined); // refreshes page AND composer chip
+  };
+
   const duplicate = async (a: AgentInfo): Promise<void> => {
     await window.hv.duplicateAgent(a.path);
     void window.hv.listAgents(sessionId ?? undefined); // refresh
@@ -64,7 +71,17 @@ export function AgentsView({
         <p className="text-sm text-ink-soft mb-8">Every subagent this workspace can delegate to — yours, this project's, and the ones your Pi runtime and installed packages provide.</p>
 
         {/* Agents */}
-        <Section icon="agents" title="Agents" subtitle="Bundled, built-in, project, user and package subagents you can delegate to.">
+        <Section
+          icon="agents"
+          title="Agents"
+          subtitle={
+            sortedAgents === null
+              ? "Bundled, built-in, project, user and package subagents you can delegate to."
+              // The context lever, stated plainly: the roster is injected into the
+              // system prompt on EVERY turn, so an agent left on has a standing cost.
+              : `${sortedAgents.filter((a) => a.enabled !== false).length} on · about ${rosterTokenCost(sortedAgents)} tokens of context every turn. Switch off the ones you do not use.`
+          }
+        >
         {sortedAgents === null ? (
           <p className="text-sm text-ink-soft">Loading…</p>
         ) : sortedAgents.length === 0 ? (
@@ -72,13 +89,27 @@ export function AgentsView({
         ) : (
           <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
             {sortedAgents.map((a) => (
-              <div key={a.path} className="px-4 py-3 border-b border-line last:border-b-0">
+              <div key={a.path} className={`px-4 py-3 border-b border-line last:border-b-0 ${a.enabled === false ? "opacity-55" : ""}`}>
                 <div className="flex items-center gap-2">
+                  {/* Same checkbox idiom as the skills list. A disabled agent stays
+                      listed and dimmed — you have to be able to see it to turn it
+                      back on. */}
+                  <input
+                    type="checkbox"
+                    checked={a.enabled !== false}
+                    onChange={() => void toggle(a)}
+                    aria-label={`${a.enabled === false ? "Enable" : "Disable"} ${a.name}`}
+                    title={a.enabled === false ? `Switch ${a.name} on` : `Switch ${a.name} off — frees about ${agentTokenCost(a)} tokens every turn`}
+                    className="size-4 accent-tangerine cursor-pointer shrink-0"
+                  />
                   <span className="font-bold">{a.name}</span>
                   <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${SOURCE_TONE[a.source] ?? "bg-paper-deep text-ink-soft border-line"}`}>
                     {a.source}
                   </span>
                   {a.model && <span className="font-mono text-[10px] text-ink-soft">{a.model}</span>}
+                  <span className="font-mono text-[10px] text-ink-soft" title="What this agent's line costs in the system prompt, every turn">
+                    ~{agentTokenCost(a)} tok
+                  </span>
                   <span className="flex-1" />
                   {/* §12 (2026-08-29): Edit only where we can actually write.
                       hv:write-agent is path-confined to the app-owned and
@@ -118,6 +149,10 @@ export function AgentsView({
                   </button>
                 </div>
                 <p className="text-sm text-ink-soft mt-1">{agentBlurb(a)}</p>
+                {a.enabled === false && agentDisabledReason(a.name) && (
+                  // An agent that starts off with no explanation reads as a bug.
+                  <p className="text-[11px] text-ink-soft mt-1 italic">Off by default — {agentDisabledReason(a.name)}</p>
+                )}
                 {a.tools && a.tools.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {a.tools.map((t) => (

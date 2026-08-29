@@ -42,6 +42,13 @@ export interface AgentDef {
   /** Absolute path to the .md file. */
   path: string;
   /**
+   * False when this agent is switched off (§12, 2026-08-30). Disabled agents are
+   * still LISTED — the Agents page has to show one to let you turn it back on —
+   * but they are excluded from the roster injected into the model, which is the
+   * whole point: an agent you are not using should not cost context every turn.
+   */
+  enabled?: boolean;
+  /**
    * The agent's system prompt, when discovery supplied it. Present so the
    * Agents page can SHOW a read-only agent's prompt (upstream builtins, user
    * and package agents) without main reading files outside the dirs it owns.
@@ -119,9 +126,22 @@ export function editAgentFile(
  * roster directly (same per-turn injection mechanism as renderNestedSection in
  * hv-agents-md.ts). Returns "" when there are no agents (inject nothing).
  */
-export function renderSubagentSection(agents: AgentDef[]): string {
+/**
+ * One agent's line in the injected roster. Its own function so the Agents page
+ * can MEASURE exactly what an agent costs per turn without the estimate and the
+ * injected text ever drifting apart.
+ */
+export function subagentRosterLine(a: Pick<AgentDef, "name" | "description">): string {
+  return `- **${a.name}** — ${a.description.slice(0, 200)}`;
+}
+
+export function renderSubagentSection(all: AgentDef[]): string {
+  // Disabled agents are listed on the page but never injected — that is the
+  // context lever. All-off is a legitimate state: the section vanishes entirely
+  // rather than emitting a heading with nothing under it.
+  const agents = all.filter((a) => a.enabled !== false);
   if (agents.length === 0) return "";
-  const lines = agents.map((a) => `- **${a.name}** — ${a.description.slice(0, 200)}`);
+  const lines = agents.map(subagentRosterLine);
   return (
     "\n\n## Available subagents\n\n" +
     "These subagents are ready to delegate to right now. Prefer delegating exploration, long " +

@@ -200,7 +200,7 @@ describe("the upstream roster is trimmed at source too", () => {
 describe("disabledAgentOverrides — the pure half of the settings write", () => {
   it("disables the whole union on an empty settings object", async () => {
     const { disabledAgentOverrides } = await import("../src/main/subagentSettings");
-    const out = disabledAgentOverrides({});
+    const out = disabledAgentOverrides({}, {});
     const overrides = (out.subagents as { agentOverrides: Record<string, { disabled: boolean }> }).agentOverrides;
     expect(Object.keys(overrides).sort()).toEqual([...DISABLED_BUILTIN_AGENTS].sort());
     for (const name of DISABLED_BUILTIN_AGENTS) expect(overrides[name].disabled).toBe(true);
@@ -212,7 +212,7 @@ describe("disabledAgentOverrides — the pure half of the settings write", () =>
     // would look perfectly healthy on the Agents page — and would silently
     // re-open the boundary hole the whole external-CLI decision closed.
     const { disabledAgentOverrides } = await import("../src/main/subagentSettings");
-    const overrides = (disabledAgentOverrides({}).subagents as { agentOverrides: Record<string, { disabled: boolean }> }).agentOverrides;
+    const overrides = (disabledAgentOverrides({}, {}).subagents as { agentOverrides: Record<string, { disabled: boolean }> }).agentOverrides;
     for (const name of ["claude-code", "claude-code-writer", "codex-exec", "codex-exec-writer", "cursor-agent", "cursor-agent-writer"]) {
       expect(overrides[name]?.disabled, `${name} disabled`).toBe(true);
     }
@@ -223,7 +223,7 @@ describe("disabledAgentOverrides — the pure half of the settings write", () =>
     // it resolves to ["read"] and cannot do what it advertises.
     // oracle: needs a forked context, which defaultSubagentContext: "fresh" denies.
     const { disabledAgentOverrides } = await import("../src/main/subagentSettings");
-    const overrides = (disabledAgentOverrides({}).subagents as { agentOverrides: Record<string, { disabled: boolean }> }).agentOverrides;
+    const overrides = (disabledAgentOverrides({}, {}).subagents as { agentOverrides: Record<string, { disabled: boolean }> }).agentOverrides;
     expect(overrides["researcher"]?.disabled).toBe(true);
     expect(overrides["oracle"]?.disabled).toBe(true);
     // They are NOT refused at the bridge — that guard stays scoped to the six.
@@ -236,7 +236,7 @@ describe("disabledAgentOverrides — the pure half of the settings write", () =>
     // simply the first thing in the app to write it. Replacing it would silently
     // discard whatever Pi or the user put there.
     return import("../src/main/subagentSettings").then(({ disabledAgentOverrides }) => {
-      const out = disabledAgentOverrides({ theme: "dark", models: { default: "x" } });
+      const out = disabledAgentOverrides({ theme: "dark", models: { default: "x" } }, {});
       expect(out.theme).toBe("dark");
       expect(out.models).toEqual({ default: "x" });
     });
@@ -246,7 +246,7 @@ describe("disabledAgentOverrides — the pure half of the settings write", () =>
     const { disabledAgentOverrides } = await import("../src/main/subagentSettings");
     const out = disabledAgentOverrides({
       subagents: { agentOverrides: { "code-explorer": { model: "openrouter/x" } }, defaultThinking: "low" },
-    });
+    }, {});
     const subagents = out.subagents as Record<string, unknown>;
     expect(subagents.defaultThinking, "sibling subagents keys survive").toBe("low");
     const overrides = subagents.agentOverrides as Record<string, Record<string, unknown>>;
@@ -258,8 +258,8 @@ describe("disabledAgentOverrides — the pure half of the settings write", () =>
     const { disabledAgentOverrides } = await import("../src/main/subagentSettings");
     const once = disabledAgentOverrides({
       subagents: { agentOverrides: { "claude-code": { model: "keep-me" } } },
-    });
-    const twice = disabledAgentOverrides(structuredClone(once));
+    }, {});
+    const twice = disabledAgentOverrides(structuredClone(once), {});
     expect(twice).toEqual(once);
     const overrides = (once.subagents as Record<string, unknown>).agentOverrides as Record<string, Record<string, unknown>>;
     expect(overrides["claude-code"], "existing keys kept beside disabled").toEqual({ model: "keep-me", disabled: true });
@@ -289,5 +289,87 @@ describe("the disabled sets stay distinct", () => {
       "utf8",
     );
     for (const n of UNSUPPORTED_BUILTIN_AGENTS) expect(names, `${n} is an upstream builtin`).toContain(`"${n}"`);
+  });
+});
+
+// ── Per-agent enable/disable (2026-08-30) ──────────────────────────────────
+//
+// The disabled set became a DEFAULT the user can override. Only EXPLICIT choices
+// are stored, so `userChoice ?? defaultFor(name)` — the same shape skills use
+// (skills/registry.ts `activation?.[skill.id] ?? true`). Seeding the config with
+// today's defaults would freeze this round's judgement about `researcher`.
+describe("resolveDisabledAgents", () => {
+  const load = async () => (await import("../src/main/subagentSettings")).resolveDisabledAgents;
+
+  it("defaults: the six forced, the two unsupported, nothing else", async () => {
+    const resolve = await load();
+    expect([...resolve({})].sort()).toEqual([...DISABLED_BUILTIN_AGENTS].sort());
+  });
+
+  it("a user can enable an unsupported builtin", async () => {
+    const resolve = await load();
+    const out = resolve({ researcher: true });
+    expect(out.has("researcher")).toBe(false);
+    expect(out.has("oracle"), "the other default is untouched").toBe(true);
+  });
+
+  it("a user can disable an agent that is on by default", async () => {
+    const resolve = await load();
+    expect(resolve({ scout: false }).has("scout")).toBe(true);
+  });
+
+  it("an external-CLI agent stays disabled however hard the config asks", async () => {
+    // The boundary guarantee is not a preference. main owns this, so a config
+    // file edited by hand cannot re-open it either.
+    const resolve = await load();
+    for (const n of EXTERNAL_CLI_AGENTS) {
+      expect(resolve({ [n]: true }).has(n), `${n} stays disabled`).toBe(true);
+    }
+  });
+
+  it("an unknown name in the config is inert", async () => {
+    const resolve = await load();
+    expect(resolve({ "no-such-agent": false }).has("scout")).toBe(false);
+  });
+});
+
+describe("disabledAgentOverrides writes the user's choice, not just ours", () => {
+  const load = async () => (await import("../src/main/subagentSettings")).disabledAgentOverrides;
+
+  it("writes an explicit `false` for an agent the user re-enabled", async () => {
+    // Omitting the key is NOT enough: a previous run already wrote
+    // `disabled: true` to this file, and only an explicit false clears it.
+    const write = await load();
+    const first = write({}, {});
+    const ov1 = (first.subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
+    expect(ov1["researcher"].disabled).toBe(true);
+
+    const second = write(first, { researcher: true });
+    const ov2 = (second.subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
+    expect(ov2["researcher"].disabled, "explicitly re-enabled, not merely absent").toBe(false);
+  });
+
+  it("keeps a user's model override across a disable/enable round trip", async () => {
+    const write = await load();
+    const withModel = { subagents: { agentOverrides: { scout: { model: "openrouter/x" } } } };
+    const off = write(withModel, { scout: false });
+    const on = write(off, { scout: true });
+    const ov = (on.subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
+    expect(ov["scout"]).toEqual({ model: "openrouter/x", disabled: false });
+  });
+
+  it("still forces all six external-CLI agents when the set is dynamic", async () => {
+    // The regression: the resolved set became a function of user config, and
+    // losing the forced six inside it would look perfectly healthy on screen.
+    const write = await load();
+    const ov = (write({}, { scout: false, researcher: true }).subagents as Record<string, Record<string, Record<string, unknown>>>).agentOverrides;
+    for (const n of EXTERNAL_CLI_AGENTS) expect(ov[n].disabled, `${n}`).toBe(true);
+  });
+
+  it("preserves Pi's own top-level keys and subagents siblings", async () => {
+    const write = await load();
+    const out = write({ theme: "dark", subagents: { defaultThinking: "low" } }, { scout: false });
+    expect(out.theme).toBe("dark");
+    expect((out.subagents as Record<string, unknown>).defaultThinking).toBe("low");
   });
 });

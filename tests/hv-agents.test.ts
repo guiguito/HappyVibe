@@ -5,6 +5,7 @@ import {
   joinToolPermissions,
   parseAgentFile,
   renderSubagentSection,
+  subagentRosterLine,
   serializeAgentFile,
   isSlashCommandPath,
   toAgentDef,
@@ -215,5 +216,37 @@ describe("isSlashCommandPath", () => {
 
   test("handles Windows separators", () => {
     expect(isSlashCommandPath("C:\\Users\\x\\.agents\\commands\\superset\\10x.md")).toBe(true);
+  });
+});
+
+// ── Disabled agents cost nothing (§12, 2026-08-30) ─────────────────────────
+describe("renderSubagentSection excludes switched-off agents", () => {
+  const mk = (name: string, enabled?: boolean): AgentDef =>
+    ({ name, description: `${name} does things`, source: "builtin", path: `/x/${name}.md`, ...(enabled === undefined ? {} : { enabled }) });
+
+  test("a disabled agent is not injected", () => {
+    const s = renderSubagentSection([mk("scout"), mk("researcher", false)]);
+    expect(s).toContain("scout");
+    expect(s).not.toContain("researcher");
+  });
+
+  test("`enabled` absent means ON — older payloads must not go dark", () => {
+    // The bridge always sets it now, but a stale renderer state or a restored
+    // payload without the field must not silently empty the roster.
+    expect(renderSubagentSection([mk("scout")])).toContain("scout");
+  });
+
+  test("all-off injects NOTHING, not an empty heading", () => {
+    // The end state of the context lever. A bare "## Available subagents" with
+    // no agents under it would be worse than useless — it would tell the model
+    // it has agents and then name none.
+    expect(renderSubagentSection([mk("a", false), mk("b", false)])).toBe("");
+  });
+
+  test("the measured line is the injected line", () => {
+    // subagentRosterLine is what the Agents page estimates from; if the two
+    // drifted the app would quote a number it does not actually spend.
+    const a = mk("scout");
+    expect(renderSubagentSection([a])).toContain(subagentRosterLine(a));
   });
 });

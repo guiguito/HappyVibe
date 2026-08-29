@@ -729,6 +729,8 @@ interface HvApi {
   readAgent(filePath: string): Promise<{ body: string; model?: string }>;
   writeAgent(filePath: string, edit: { body?: string; model?: string | null }): Promise<void>;
   duplicateAgent(filePath: string): Promise<string>;
+  /** §12: switch one agent on/off globally. Takes effect on the next turn. */
+  setAgentEnabled(name: string, enabled: boolean): Promise<void>;
 
   // W1.4: system prompt + workspace settings
   sysPromptSnapshot(sessionId?: string): Promise<void>;

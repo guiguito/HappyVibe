@@ -4,7 +4,8 @@
  * in tests/agents-renderer.test.ts). Same "try JSON, guard on kind, null on
  * fail" discipline as context.ts / permission.ts.
  */
-import { displayableTask } from "../../../pi-runtime/extensions/hv-rules";
+import { UNSUPPORTED_BUILTIN_REASON, displayableTask } from "../../../pi-runtime/extensions/hv-rules";
+import { subagentRosterLine } from "../../../pi-runtime/extensions/hv-agents";
 import { fmtNum } from "./analytics-format";
 
 // ── hv.agents / hv.tools notifies ────────────────────────────────────────────
@@ -24,6 +25,8 @@ export interface AgentInfo {
   path: string;
   /** Supplied by discovery so a read-only agent's prompt is still viewable. */
   systemPrompt?: string;
+  /** False when switched off: listed so it can be switched back on, but not injected. */
+  enabled?: boolean;
 }
 
 export interface ToolInfo {
@@ -549,4 +552,26 @@ const BUILTIN_BLURB: Record<string, string> = {
 /** What to SHOW for an agent. Falls through to its own description. */
 export function agentBlurb(agent: { name: string; source: string; description: string }): string {
   return (agent.source === "builtin" && BUILTIN_BLURB[agent.name]) || agent.description;
+}
+
+/**
+ * What one agent costs in the system prompt, EVERY TURN.
+ *
+ * Measured from `subagentRosterLine` — the very function that builds the injected
+ * text — so the number on the Agents page and the tokens actually spent cannot
+ * drift. The chars→tokens rule is the bridge's own `Math.ceil(chars / 4)`
+ * (happyvibe-bridge.ts), so one estimator serves both surfaces.
+ */
+export function agentTokenCost(agent: { name: string; description: string }): number {
+  return Math.ceil((subagentRosterLine(agent).length + 1) / 4);
+}
+
+/** Total per-turn cost of the agents that are actually switched on. */
+export function rosterTokenCost(agents: ReadonlyArray<{ name: string; description: string; enabled?: boolean }>): number {
+  return agents.filter((a) => a.enabled !== false).reduce((n, a) => n + agentTokenCost(a), 0);
+}
+
+/** Why an agent starts switched off, when we have a reason for it. */
+export function agentDisabledReason(name: string): string | undefined {
+  return UNSUPPORTED_BUILTIN_REASON[name];
 }

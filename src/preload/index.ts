@@ -252,6 +252,7 @@ contextBridge.exposeInMainWorld("hv", {
   writeAgent: (filePath: string, edit: { body?: string; model?: string | null }) =>
     ipcRenderer.invoke("hv:write-agent", filePath, edit),
   duplicateAgent: (filePath: string) => ipcRenderer.invoke("hv:duplicate-agent", filePath),
+  setAgentEnabled: (name: string, enabled: boolean) => ipcRenderer.invoke("hv:set-agent-enabled", name, enabled),
 
   // ── W1.4: system prompt + workspace settings (additive) ──────────
   // sysPromptSnapshot fires /hv-sysprompt; the result arrives as an

@@ -1123,13 +1123,23 @@ describe("the agent inventory comes from upstream's own discovery", () => {
     }
   });
 
-  it("discoverAgentsAll does NOT drop disabled agents, which is why we filter", () => {
+  it("discoverAgentsAll does NOT drop disabled agents — we mark them instead", () => {
     // The singular discoverAgents filters (`agent.disabled !== true`); the All
-    // variant does not. Without our own filter the six refused external-CLI
-    // agents would be listed on the Agents page as available.
+    // variant does not, which is what lets the Agents page LIST a switched-off
+    // agent so it can be switched back on (§12, 2026-08-30).
     const all = agentsSrc.slice(agentsSrc.indexOf("export function discoverAgentsAll"));
     expect(all.slice(0, all.indexOf("export function", 10))).not.toContain("agent.disabled !== true");
-    expect(bridge).toContain("a.disabled === true) continue");
+    expect(bridge).toContain("enabled: a.disabled !== true");
+  });
+
+  it("a disabled agent reaches the PAGE but never the injected roster", () => {
+    // The context lever, and the one thing that must not regress: an agent the
+    // user switched off has to stop costing tokens every turn. If the filter
+    // moved back into enumerateAgents the page would silently lose its switch;
+    // if it vanished entirely, switching off would save nothing.
+    const hvAgents = readFileSync(new URL("../pi-runtime/extensions/hv-agents.ts", import.meta.url), "utf8");
+    expect(hvAgents).toContain('const agents = all.filter((a) => a.enabled !== false);');
+    expect(bridge).not.toContain("a.disabled === true) continue");
   });
 
   it("the page filters on the SAME predicate the bridge refuses with", () => {

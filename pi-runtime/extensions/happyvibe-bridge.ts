@@ -1327,7 +1327,9 @@ export default function (pi: ExtensionAPI) {
     const byName = new Map<string, AgentDef>();
     const push = (list: ReadonlyArray<Record<string, unknown>>, source: AgentSource): void => {
       for (const a of list ?? []) {
-        if (a.disabled === true) continue;
+        // Disabled agents are KEPT (marked below) so the Agents page can offer
+        // the switch that turns them back on. They are filtered out of the
+        // injected roster by renderSubagentSection, not here.
         // The page must advertise exactly what the bridge will ACCEPT. Two
         // filters, because `disabled` alone is not enough:
         //  - `discoverAgentsAll` applies our settings overrides but, unlike the
@@ -1361,6 +1363,7 @@ export default function (pi: ExtensionAPI) {
         byName.set(name, {
           name,
           description,
+          enabled: a.disabled !== true,
           ...(Array.isArray(a.tools) ? { tools: a.tools as string[] } : {}),
           ...(typeof a.model === "string" && a.model ? { model: a.model } : {}),
           // The agent's own prompt, straight off upstream's discovery — no file
