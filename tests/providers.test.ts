@@ -2,9 +2,10 @@ import { describe, expect, test } from "vitest";
 import {
   BYOK_PROVIDERS, buildProviderEnv, isByokProvider, keySource, mergeOllamaModelsJson,
 } from "../src/main/providers";
+import { PROVIDER_CATALOG } from "../src/main/providerCatalog.generated";
 
-describe("curated provider env map (verified against pi-ai env-api-keys.js)", () => {
-  test("exact env var names per provider", () => {
+describe("provider env map (generated from Pi's registry, 2026-08-29)", () => {
+  test("exact env var names for the featured five", () => {
     expect(BYOK_PROVIDERS.deepseek.envVar).toBe("DEEPSEEK_API_KEY");
     expect(BYOK_PROVIDERS.anthropic.envVar).toBe("ANTHROPIC_API_KEY");
     expect(BYOK_PROVIDERS.openai.envVar).toBe("OPENAI_API_KEY");
@@ -12,13 +13,49 @@ describe("curated provider env map (verified against pi-ai env-api-keys.js)", ()
     expect(BYOK_PROVIDERS.openrouter.envVar).toBe("OPENROUTER_API_KEY");
   });
 
-  test("curated BYOK list stays curated — custom endpoints are a separate axis", () => {
-    expect(Object.keys(BYOK_PROVIDERS).sort()).toEqual(
-      ["anthropic", "deepseek", "google", "openai", "openrouter"],
-    );
-    // A custom endpoint id is NOT a BYOK provider (PRD §16, 2026-07-30).
+  test("the list is the generated catalog, not a hand-curated five", () => {
+    expect(Object.keys(BYOK_PROVIDERS).sort()).toEqual(PROVIDER_CATALOG.map((p) => p.id).sort());
+    // The round-1 fence is relaxed: a provider Pi supports with one key is offered.
+    expect(isByokProvider("mistral")).toBe(true);
+    expect(isByokProvider("groq")).toBe(true);
+    // A custom endpoint id is still NOT a BYOK provider (PRD §16, 2026-07-30) —
+    // custom endpoints remain a separate axis.
     expect(isByokProvider("my-vllm")).toBe(false);
-    expect(isByokProvider("mistral")).toBe(false);
+    // PRD-deferred multi-field cloud stays off this axis too.
+    expect(isByokProvider("amazon-bedrock")).toBe(false);
+    expect(isByokProvider("azure-openai-responses")).toBe(false);
+  });
+});
+
+describe("catalog-wide keys (the widened axis)", () => {
+  test("a non-featured provider's stored key becomes its env var", () => {
+    const groq = PROVIDER_CATALOG.find((p) => p.id === "groq")!;
+    expect(buildProviderEnv({ groq: "gsk_real" }, {})[groq.envVar]).toBe("gsk_real");
+  });
+
+  test("sk-REPLACE neutralisation covers EVERY catalog env var", () => {
+    // The non-live-suite guarantee (CLAUDE.md): npm test sets sk-REPLACE for the
+    // live providers, and the resolver must treat that as ABSENT. Widening the
+    // catalog must not leave a provider where the placeholder leaks through as
+    // a real key — that is how npm test would silently stop being key-free.
+    for (const p of PROVIDER_CATALOG) {
+      expect(buildProviderEnv({}, { [p.envVar]: "sk-REPLACE-me" })[p.envVar], p.id).toBeUndefined();
+      expect(keySource(p.id, {}, { [p.envVar]: "sk-REPLACE-me" }), p.id).toBe(null);
+    }
+  });
+
+  test("keySource reads env over stored for any catalog provider", () => {
+    const groq = PROVIDER_CATALOG.find((p) => p.id === "groq")!;
+    expect(keySource("groq", { groq: "stored" }, { [groq.envVar]: "gsk_env" })).toBe("env");
+    expect(keySource("groq", { groq: "stored" }, {})).toBe("stored");
+    expect(keySource("groq", {}, {})).toBe(null);
+  });
+
+  test("one key can unlock several Pi provider ids", () => {
+    // moonshotai + moonshotai-cn share MOONSHOT_API_KEY. One row, one write.
+    const row = PROVIDER_CATALOG.find((p) => p.id === "moonshotai")!;
+    expect(row.providerIds.length).toBeGreaterThan(1);
+    expect(Object.keys(buildProviderEnv({ moonshotai: "k" }, {}))).toEqual([row.envVar]);
   });
 });
 

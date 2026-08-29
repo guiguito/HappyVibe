@@ -51,10 +51,10 @@ import {
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDERS, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, OAUTH_PROVIDERS, syncModelsJson,
-  type ByokProvider,
+  authJsonProviders, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, OAUTH_PROVIDERS, syncModelsJson,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
+import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
 import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
@@ -2643,8 +2643,15 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:get-providers", () => {
     const status = providerKeyStatus();
     return {
-      byok: (Object.keys(BYOK_PROVIDERS) as ByokProvider[]).map((id) => ({
-        id, label: BYOK_PROVIDERS[id].label, source: status[id],
+      // The generated catalog (2026-08-29): `featured` decides which cards sit
+      // above the "More providers…" search, `modelCount` is what the search rows
+      // show. Both come from Pi's own registry — see providerCatalog.generated.ts.
+      byok: PROVIDER_CATALOG.map((p) => ({
+        id: p.id,
+        label: p.label,
+        source: status[p.id],
+        featured: (FEATURED_PROVIDER_IDS as readonly string[]).includes(p.id),
+        modelCount: p.modelCount,
       })),
       defaultModel: getDefaultModel(),
       // §16: the set BOTH sides filter model refs with (see resolveSpawnModel).
@@ -2652,7 +2659,7 @@ export function registerIpc(win: BrowserWindow): void {
     };
   });
   ipcMain.handle("hv:set-provider-key", async (_e, provider: string, key: string) => {
-    if (!isByokProvider(provider)) throw new Error(`Not a curated provider: ${provider}`);
+    if (!isByokProvider(provider)) throw new Error(`Unknown provider: ${provider}`);
     setProviderKey(provider, key);
     // Keys ride spawn env: the utility client respawns now; running chat
     // sessions keep their env until their next spawn (never yanked mid-turn).
@@ -2660,7 +2667,7 @@ export function registerIpc(win: BrowserWindow): void {
     providersChanged();
   });
   ipcMain.handle("hv:remove-provider-key", async (_e, provider: string) => {
-    if (!isByokProvider(provider)) throw new Error(`Not a curated provider: ${provider}`);
+    if (!isByokProvider(provider)) throw new Error(`Unknown provider: ${provider}`);
     removeProviderKey(provider);
     await restartUtility();
     providersChanged();

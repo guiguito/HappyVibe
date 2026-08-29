@@ -1,32 +1,50 @@
 import fs from "node:fs";
 import path from "node:path";
 import { mergeModelsJson, parseOpenAiModelList, type CustomEndpoint } from "./modelsJson";
+import { OAUTH_CATALOG, PROVIDER_CATALOG } from "./providerCatalog.generated";
 
 /**
- * Curated provider list (PRD B3 — locked). Env var names verified against
- * Pi 0.80.3: pi-ai/dist/env-api-keys.js `envMap` ("google" → GEMINI_API_KEY).
+ * The BYOK provider list. Round 1 curated five by hand (PRD B3); the 2026-08-29
+ * providers round replaced that with `providerCatalog.generated.ts`, derived
+ * from Pi's own registry so a pin bump adds providers instead of drifting past
+ * them. Regenerate with `npm run catalog:providers`; the shape is pinned by
+ * tests/provider-catalog.test.ts.
+ *
+ * A row is keyed by ONE env var and may unlock several Pi provider ids
+ * (`providerIds` — moonshotai and moonshotai-cn share MOONSHOT_API_KEY).
  * NO electron imports — vitest-importable.
  */
-export const BYOK_PROVIDERS = {
-  deepseek: { label: "DeepSeek", envVar: "DEEPSEEK_API_KEY" },
-  anthropic: { label: "Anthropic", envVar: "ANTHROPIC_API_KEY" },
-  openai: { label: "OpenAI", envVar: "OPENAI_API_KEY" },
-  google: { label: "Google", envVar: "GEMINI_API_KEY" },
-  openrouter: { label: "OpenRouter", envVar: "OPENROUTER_API_KEY" },
-} as const;
-export type ByokProvider = keyof typeof BYOK_PROVIDERS;
-export const BYOK_PROVIDER_IDS = Object.keys(BYOK_PROVIDERS) as ByokProvider[];
+export const BYOK_PROVIDERS: Record<string, { label: string; envVar: string }> = Object.fromEntries(
+  PROVIDER_CATALOG.map((p) => [p.id, { label: p.label, envVar: p.envVar }]),
+);
+/** A catalog provider id. Widened from a literal union when the list was generated. */
+export type ByokProvider = string;
+export const BYOK_PROVIDER_IDS: string[] = PROVIDER_CATALOG.map((p) => p.id);
 
-export function isByokProvider(p: string): p is ByokProvider {
+export function isByokProvider(p: string): boolean {
   return p in BYOK_PROVIDERS;
 }
 
-/** OAuth ladder rung 1 (Pi built-in OAuth provider ids, s0.2 §2). */
-export const OAUTH_PROVIDERS = [
-  { id: "anthropic", label: "Claude" },
-  { id: "github-copilot", label: "GitHub Copilot" },
-  { id: "openai-codex", label: "ChatGPT (Codex)" },
-] as const;
+/**
+ * OAuth ladder rung 1 (Pi built-in OAuth provider ids, s0.2 §2). Derived from
+ * the generated catalog so the sign-in list cannot disagree with what Pi can
+ * actually drive — but the LABELS are ours: upstream calls them "Anthropic" and
+ * "OpenAI Codex", and the app has always said "Claude" and "ChatGPT (Codex)"
+ * because that is the name on the subscription the user is signing in with.
+ * A provider with no override keeps upstream's name.
+ */
+const OAUTH_LABELS: Record<string, string> = {
+  anthropic: "Claude",
+  "openai-codex": "ChatGPT (Codex)",
+};
+export const OAUTH_PROVIDERS: { id: string; label: string; caveat?: string }[] = OAUTH_CATALOG.map((p) => ({
+  id: p.id,
+  label: OAUTH_LABELS[p.id] ?? p.label,
+  // Honest billing caveat — locked product decision.
+  ...(p.id === "anthropic"
+    ? { caveat: "Heads up: on Claude Pro/Max this uses your plan's extra usage." }
+    : {}),
+}));
 
 /**
  * Env vars to inject on Pi spawn. Real env vars (.env dev convenience) win
@@ -53,7 +71,11 @@ export function keySource(
   stored: Partial<Record<ByokProvider, string>>,
   env: Record<string, string | undefined> = process.env,
 ): KeySource {
-  const fromEnv = env[BYOK_PROVIDERS[id].envVar];
+  // A key stored under a provider the catalog no longer lists (a pin bump
+  // dropped it) has no env var to report — it is simply not configured.
+  const entry = BYOK_PROVIDERS[id];
+  if (!entry) return null;
+  const fromEnv = env[entry.envVar];
   if (fromEnv && !fromEnv.startsWith("sk-REPLACE")) return "env";
   return stored[id] ? "stored" : null;
 }

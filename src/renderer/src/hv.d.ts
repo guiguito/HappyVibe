@@ -188,6 +188,10 @@ interface HvByokProvider {
   id: string;
   label: string;
   source: "env" | "stored" | null;
+  /** One of the cards shown above the "More providers…" search (2026-08-29). */
+  featured: boolean;
+  /** Models this key unlocks, per Pi's registry — shown on a search row. */
+  modelCount: number;
 }
 
 /** §16 (2026-07-30): a user-defined OpenAI-compatible endpoint. Mirrors
