@@ -9,7 +9,8 @@ import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
-import { externalAgentOverrides } from "./subagentSettings";
+import { disabledAgentOverrides } from "./subagentSettings";
+import { EXTERNAL_CLI_AGENTS, UNSUPPORTED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -84,6 +85,12 @@ interface ConfigFile {
       resolution the session-title generator uses. Global only — it is a cost
       preference about a one-shot call, not a property of any workspace. */
   gitMessageModel?: { provider: string; modelId: string } | null;
+  /**
+   * §12 (2026-08-30): per-agent on/off, SPARSE — only names the user actually
+   * toggled. Resolution is `userChoice ?? default` (subagentSettings.ts), so
+   * changing our defaults still reaches anyone who never expressed an opinion.
+   */
+  agentsEnabled?: Record<string, boolean>;
 }
 
 function load(): ConfigFile {
@@ -740,7 +747,23 @@ export function writeSubagentSettings(): void {
   } catch {
     /* absent or corrupt — start fresh */
   }
-  fs.writeFileSync(file, `${JSON.stringify(externalAgentOverrides(settings), null, 2)}\n`);
+  fs.writeFileSync(file, `${JSON.stringify(disabledAgentOverrides(settings, load().agentsEnabled ?? {}), null, 2)}\n`);
+}
+
+/**
+ * Record the user's choice for one agent and re-derive upstream's settings file.
+ *
+ * An EXTERNAL_CLI agent is refused here rather than in the renderer — main owns
+ * the rules, and `resolveDisabledAgents` forces them anyway, so this is the
+ * honest error rather than a silent no-op.
+ */
+export function setAgentEnabled(name: string, enabled: boolean): void {
+  if (EXTERNAL_CLI_AGENTS.has(name)) throw new Error(`'${name}' cannot be enabled: HappyVibe's boundary cannot govern an external CLI agent.`);
+  if (UNSUPPORTED_BUILTIN_AGENTS.has(name)) throw new Error(`'${name}' cannot be enabled: it cannot do its job in this runtime.`);
+  const cfg = load();
+  cfg.agentsEnabled = { ...(cfg.agentsEnabled ?? {}), [name]: enabled };
+  save(cfg);
+  writeSubagentSettings();
 }
 
 export { OFFICIAL_MARKETPLACE };

@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, displayableTask, evaluate, isExternalCliAgent, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, UNSUPPORTED_BUILTIN_AGENTS, displayableTask, evaluate, isExternalCliAgent, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
   SUBAGENT_TASKS_TYPE, bindRun, claimTask, dropPendingTask, emptyTaskMap, releaseTask, restoreTaskMap,
   serializeTaskMap, stashPendingTask, taskFor, type TaskMapState,
@@ -18,7 +18,7 @@ import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
   type AgentMessage, type MarkKey, type SessionEntry, type ToolSpecLike,
 } from "./hv-context";
-import { parseAgentFile, renderSubagentSection, toAgentDef, type AgentDef, type AgentSource } from "./hv-agents";
+import { isSlashCommandPath, renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
   buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, resolvePlanVerdict, restorePlanState, shouldForcePlanOff,
@@ -54,6 +54,13 @@ import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from
 // tests/subagent-runs-contract.test.ts is the pin-bump gate.
 import { listAsyncRuns } from "../node_modules/pi-subagents/src/runs/background/async-status.ts";
 import { ASYNC_DIR } from "../node_modules/pi-subagents/src/shared/types.ts";
+// §12 (2026-08-29): the THIRD relative reach, for the same reason as the two
+// above — the exports map lists `./agents`, but that subpath is the runtime
+// AGENT-REGISTRATION api and exposes no discovery. `discoverAgentsAll` is the
+// function pi-subagents itself uses to decide which agents exist, and calling
+// it is what stops the Agents page and the model's roster disagreeing with the
+// runtime (and with each other).
+import { discoverAgentsAll } from "../node_modules/pi-subagents/src/agents/agents.ts";
 
 const sessionGrants = new Set<string>();
 
@@ -1286,38 +1293,103 @@ export default function (pi: ExtensionAPI) {
   // Both ride the fire-and-forget notify channel (JSON in `message`), like
   // hv.context. The renderer parses them and NEVER opens the modal.
 
-  /** The two dirs pi-subagents discovers agents from (s0.3): app-owned + project. */
-  function agentDirs(): Array<{ dir: string; source: AgentSource }> {
-    const dirs: Array<{ dir: string; source: AgentSource }> = [];
-    // App-owned agent dir (PI_CODING_AGENT_DIR/agents) → our built-ins live here.
-    if (process.env.PI_CODING_AGENT_DIR) {
-      dirs.push({ dir: path.join(process.env.PI_CODING_AGENT_DIR, "agents"), source: "builtin" });
-    }
-    // Project-local agents override/extend them.
-    dirs.push({ dir: path.join(process.cwd(), ".pi", "agents"), source: "project" });
-    return dirs;
-  }
-
+  /**
+   * The agent inventory, from pi-subagents' OWN discovery (§12, 2026-08-29).
+   *
+   * This used to read two directories: `<agentDir>/agents` and `<cwd>/.pi/agents`.
+   * Upstream reads SIX — its packaged builtins, `PI_SUBAGENT_EXTRA_AGENT_DIRS`,
+   * `<agentDir>/agents`, `~/.agents`, `<projectRoot>/.agents` and
+   * `<projectRoot>/.pi/agents` — plus agents contributed by installed packages,
+   * and it finds the project root by walking UP from cwd rather than trusting
+   * it. Re-deriving that list here produced an Agents page missing upstream's
+   * seven native builtins, every `~/.agents` agent and every package agent.
+   *
+   * The same list feeds `renderSubagentSection`, which is injected into the
+   * system prompt every turn — so the drift was never merely cosmetic: the
+   * model was handed a roster that omitted most of what it could delegate to.
+   *
+   * `disabled` MUST be filtered. `discoverAgentsAll` applies our settings
+   * overrides but, unlike the singular `discoverAgents`, does NOT drop what
+   * they disable — so without this the six external-CLI agents the bridge
+   * refuses would be advertised to the model and listed on the page as
+   * available, which is worse than not listing them at all.
+   */
   function enumerateAgents(): AgentDef[] {
-    const out: AgentDef[] = [];
-    for (const { dir, source } of agentDirs()) {
-      let names: string[];
-      try {
-        names = fs.readdirSync(dir).filter((n) => n.endsWith(".md") && !n.endsWith(".chain.md"));
-      } catch {
-        continue; // dir absent — nothing to list
-      }
-      for (const name of names) {
-        const file = path.join(dir, name);
-        try {
-          const def = toAgentDef(parseAgentFile(fs.readFileSync(file, "utf8")).frontmatter, source, file);
-          if (def) out.push(def);
-        } catch {
-          /* unreadable/malformed agent file — skip */
-        }
-      }
+    let all: ReturnType<typeof discoverAgentsAll>;
+    try {
+      all = discoverAgentsAll(process.cwd());
+    } catch {
+      return []; // discovery must never take the session down
     }
-    return out;
+    const ourDir = process.env.PI_CODING_AGENT_DIR
+      ? path.join(process.env.PI_CODING_AGENT_DIR, "agents")
+      : null;
+    const byName = new Map<string, AgentDef>();
+    const push = (list: ReadonlyArray<Record<string, unknown>>, source: AgentSource): void => {
+      for (const a of list ?? []) {
+        // Disabled agents are KEPT (marked below) so the Agents page can offer
+        // the switch that turns them back on. They are filtered out of the
+        // injected roster by renderSubagentSection, not here.
+        // The page must advertise exactly what the bridge will ACCEPT. Two
+        // filters, because `disabled` alone is not enough:
+        //  - `discoverAgentsAll` applies our settings overrides but, unlike the
+        //    singular `discoverAgents`, does not DROP what they disable;
+        //  - and a project-scope `.pi/settings.json` beats the user scope
+        //    outright (agents.ts), so a cloned repo can re-enable one.
+        // Either way the bridge still refuses the call (`isExternalCliAgent`,
+        // ahead of the rule engine), so listing them would advertise agents the
+        // app declines — worse than not listing them at all. Same predicate as
+        // the refusal, never a second copy of the set.
+        const name0 = typeof a.name === "string" ? a.name : "";
+        if (isExternalCliAgent(name0)) continue;
+        // Not listed at all (2026-08-30): an agent HappyVibe disabled because it
+        // cannot work here is not a preference to express. Only a USER-disabled
+        // agent stays listed — dimmed, so it can be switched back on.
+        if (UNSUPPORTED_BUILTIN_AGENTS.has(name0)) continue;
+        // And a SEVENTH adapter upstream adds later is refused here before the
+        // contract test has been updated to name it: the ceiling cannot bound
+        // any external-cli process, so the page never offers one.
+        if ((a.runner as { type?: unknown } | undefined)?.type === "external-cli") continue;
+        // ~/.agents is SHARED with Claude Code and tools built on it, and
+        // upstream scans it recursively — excluding `skills/` but not
+        // `commands/`. So every installed slash command arrived here as a
+        // delegatable sub-agent (measured: Superset's 10x/doctor/feedback/setup)
+        // and went into the model's roster every turn. They are not agents.
+        if (isSlashCommandPath(typeof a.filePath === "string" ? a.filePath : "")) continue;
+        const name = typeof a.name === "string" ? a.name : "";
+        const description = typeof a.description === "string" ? a.description : "";
+        if (!name || !description) continue; // pi-subagents skips these too
+        const filePath = typeof a.filePath === "string" ? a.filePath : "";
+        // Our own bundled agents arrive as upstream "user" — they live in the
+        // app-owned agent dir. They are the ones the Agents page can EDIT.
+        const resolved: AgentSource =
+          source === "user" && ourDir && filePath.startsWith(ourDir) ? "bundled" : source;
+        byName.set(name, {
+          name,
+          description,
+          enabled: a.disabled !== true,
+          ...(Array.isArray(a.tools) ? { tools: a.tools as string[] } : {}),
+          ...(typeof a.model === "string" && a.model ? { model: a.model } : {}),
+          // The agent's own prompt, straight off upstream's discovery — no file
+          // read, so the Agents page can SHOW a builtin's prompt without main
+          // widening its path confinement to dirs it does not own (a package
+          // agent can live under the global npm root). ~20 KB for the whole
+          // builtin roster, on a notify the user triggers by opening the page.
+          ...(typeof a.systemPrompt === "string" && a.systemPrompt ? { systemPrompt: a.systemPrompt } : {}),
+          source: resolved,
+          path: filePath,
+        });
+      }
+    };
+    // Insertion order IS the precedence, and it mirrors upstream's own merge
+    // (agent-selection.ts): builtin < package < user < project. That ordering
+    // is what lets our bundled `worker` shadow upstream's builtin of the same
+    // name — pinned in tests/pi-subagents-contract.test.ts.
+    push(all.builtin as never, "builtin");
+    push(all.package as never, "package");
+    push(all.user as never, "user");
+    push(all.project as never, "project");
+    return [...byName.values()];
   }
 
   pi.registerCommand("hv-agents", {
@@ -1402,6 +1474,29 @@ export default function (pi: ExtensionAPI) {
       const runId = args.trim();
       if (!runId) return;
       const { ok } = await rpcRequest("interrupt", { runId });
+      ctx.ui.notify(subEnvelope({ stage: ok ? "interrupt-sent" : "interrupt-error", runId }), ok ? "info" : "warning");
+    },
+  });
+
+  /**
+   * §12 (2026-08-29): stop ONE child of a fan-out without killing the run
+   * (upstream 0.55 / #1367).
+   *
+   * `stop` is a DIFFERENT RPC method from `interrupt` — it takes a childId, and
+   * upstream REJECTS a malformed one rather than widening to a run-level stop.
+   * That failure direction is the one we want: a bad id must never kill the
+   * siblings the user was deliberately keeping.
+   *
+   * The reply reuses the existing `interrupt-sent`/`interrupt-error` stages, so
+   * the renderer's event parser needs no change — from the card's point of view
+   * this is the same control, aimed more precisely.
+   */
+  pi.registerCommand("hv-subagent-stop-child", {
+    description: "HappyVibe: stop one child of a running fan-out. Usage: /hv-subagent-stop-child <runId> <childId>",
+    handler: async (args, ctx) => {
+      const [runId, childId] = args.trim().split(/\s+/);
+      if (!runId || !childId) return;
+      const { ok } = await rpcRequest("stop", { runId, childId });
       ctx.ui.notify(subEnvelope({ stage: ok ? "interrupt-sent" : "interrupt-error", runId }), ok ? "info" : "warning");
     },
   });

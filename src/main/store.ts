@@ -294,17 +294,42 @@ function sessionRunIds(sessionDirPath: string, piSessionFile: string | undefined
   return ids;
 }
 
-/** Delete `subagent-artifacts/<id>_*` for each id. Exact `<id>_` prefix, never a
- *  bare startsWith, and every path re-confined before it is removed. */
+/** Upstream's per-run output directory inside the artifacts dir: a child that
+ *  declares `output: context.md` writes it to `outputs/<runId>/`. */
+const OUTPUTS_DIR = "outputs";
+
+/**
+ * Delete `subagent-artifacts/<id>_*` AND `subagent-artifacts/outputs/<id>/` for
+ * each id. Exact `<id>_` prefix, never a bare startsWith, and every path
+ * re-confined before it is removed.
+ *
+ * `outputs/` was missed until 2026-08-29: both cleanup halves keyed on the flat
+ * `<runId>_<agent>_*` filenames and skipped anything without an underscore. That
+ * guard is right (pi-subagents keeps `.last-cleanup` in the same directory) but
+ * it also made the output directory permanently invisible, so a child's written
+ * answer outlived the session that asked for it.
+ */
 function deleteArtifactsFor(sessionDirPath: string, ids: ReadonlySet<string>): number {
   if (ids.size === 0) return 0;
   const dir = path.join(path.resolve(sessionDirPath), ARTIFACT_DIR);
   let removed = 0;
+  // The per-run output directories, which are named by id alone (no `_`).
+  for (const id of ids) {
+    if (!plausibleRunId(id)) continue;
+    const resolved = confinedSessionPath(sessionDirPath, path.join(dir, OUTPUTS_DIR, id));
+    if (!resolved || !fs.existsSync(resolved)) continue;
+    try {
+      fs.rmSync(resolved, { recursive: true, force: true });
+      removed++;
+    } catch {
+      /* locked — try again next start */
+    }
+  }
   let names: string[];
   try {
     names = fs.readdirSync(dir);
   } catch {
-    return 0; // no artifacts dir = nothing to clean
+    return removed; // no artifacts dir = nothing more to clean
   }
   for (const name of names) {
     // A name with no `_` is not an artifact: pi-subagents keeps its own
@@ -402,6 +427,12 @@ export function sweepOrphanedSubagentData(sessionDirPath: string): { dirs: numbe
   }
 
   // Half 2: artifacts, by reference. Bail on ANY unreadable session.
+  //
+  // `referenced` is a UNION of the same two id spaces `sessionRunIds` unions, and
+  // for the same measured reason: the id an artifact is filed under and the
+  // asyncId the parent transcript records only sometimes coincide. Reading the
+  // session text alone deleted a live session's child transcripts at every
+  // startup (observed 2026-08-30, after the run card started reading them).
   const referenced = new Set<string>();
   for (const e of entries) {
     if (!e.isFile() || !e.name.endsWith(".jsonl")) continue;
@@ -413,6 +444,13 @@ export function sweepOrphanedSubagentData(sessionDirPath: string): { dirs: numbe
     }
     for (const m of raw.matchAll(/"(?:asyncId|runId)"\s*:\s*"([^"]+)"/g)) {
       if (plausibleRunId(m[1])) referenced.add(m[1]);
+    }
+    // Child run directories under this session's own `<stem>/`. Read AFTER half 1
+    // has removed the stems whose session file is gone, so a deleted session can
+    // never protect its own artifacts with the directories it left behind.
+    for (const name of subdirs(path.join(root, e.name.replace(/\.jsonl$/, "")))) {
+      const id = path.basename(name);
+      if (plausibleRunId(id)) referenced.add(id);
     }
   }
   let names: string[];
@@ -427,6 +465,16 @@ export function sweepOrphanedSubagentData(sessionDirPath: string): { dirs: numbe
     if (sep <= 0) continue; // not an artifact (see deleteArtifactsFor)
     const id = name.slice(0, sep);
     if (plausibleRunId(id) && !referenced.has(id)) orphaned.add(id);
+  }
+  // A run can survive ONLY as an output directory — its flat artifacts may have
+  // been taken by pi-subagents' own 30-day retention while `outputs/<id>/`
+  // stayed. Those ids appear in no filename here, so they need their own pass.
+  try {
+    for (const id of fs.readdirSync(path.join(root, ARTIFACT_DIR, OUTPUTS_DIR))) {
+      if (plausibleRunId(id) && !referenced.has(id)) orphaned.add(id);
+    }
+  } catch {
+    /* no outputs dir — nothing more to collect */
   }
   out.artifacts = deleteArtifactsFor(sessionDirPath, orphaned);
   return out;

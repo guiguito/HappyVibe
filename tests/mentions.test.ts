@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  activeMentionQuery, completeMention, extractMentions, filterEntries, mentionLabel,
+  activeMentionQuery, agentMentionItems, completeMention, extractMentions, filterEntries, mentionLabel,
   splitMentionSegments, stripInjectedBlocks, type MentionEntry,
 } from "../src/renderer/src/mentions";
 
@@ -88,5 +88,70 @@ describe("splitMentionSegments", () => {
       { kind: "mention", value: "@a.ts" },
       { kind: "text", value: " see foo@bar.com" },
     ]);
+  });
+});
+
+// ── @agent in the composer (§12, 2026-08-29 — the fleet round) ──────────────
+//
+// The agents existed and nothing in the chat FLOW said so; discovery was a
+// settings page. `@agent` reuses the file-mention machinery rather than adding
+// a second trigger character, so there is one thing to learn, not two.
+describe("agentMentionItems", () => {
+  const agents = [
+    { name: "worker", description: "implements", source: "bundled" },
+    { name: "code-explorer", description: "reads", source: "bundled" },
+    { name: "agents-md-maker", description: "drafts", source: "bundled" },
+  ];
+
+  it("matches on a name substring, case-insensitively", () => {
+    expect(agentMentionItems(agents, "work").map((a) => a.name)).toEqual(["worker"]);
+    expect(agentMentionItems(agents, "EXPLOR").map((a) => a.name)).toEqual(["code-explorer"]);
+  });
+
+  it("returns everything for an empty query, so a bare @ shows the roster", () => {
+    expect(agentMentionItems(agents, "")).toHaveLength(3);
+  });
+
+  it("caps the list so agent rows never bury the file rows", () => {
+    // The `@` menu's primary job is files. An unbounded agent list on a
+    // one-character query would push every file off the visible menu.
+    const many = Array.from({ length: 20 }, (_, i) => ({ name: `a${i}`, description: "x", source: "bundled" }));
+    expect(agentMentionItems(many, "a").length).toBeLessThanOrEqual(5);
+  });
+
+  it("no match is an empty list, not the whole roster", () => {
+    expect(agentMentionItems(agents, "zzz")).toEqual([]);
+  });
+});
+
+describe("an agent mention is never resolved as a file", () => {
+  it("stays plain text because it is not in the label map", () => {
+    // extractMentions resolves labels through the map the composer fills when a
+    // FILE is picked. An agent pick deliberately writes nothing there, so a
+    // message mentioning @worker attaches no file context — the model already
+    // has the roster in its system prompt and reads the token as prose.
+    const map = new Map<string, string>([["watch.ts", "src/main/watch.ts"]]);
+    expect(extractMentions("ask @worker to fix @watch.ts", map)).toEqual(["src/main/watch.ts"]);
+  });
+});
+
+describe("agentMentionItems ordering", () => {
+  it("groups like the Agents page and the chip, not discovery order", () => {
+    // Reported 2026-08-30: the @ menu did not match the other two surfaces.
+    const mixed = [
+      { name: "scout", source: "builtin" },
+      { name: "summarizer", source: "bundled" },
+      { name: "my-scout", source: "user" },
+    ];
+    expect(agentMentionItems(mixed, "s").map((a) => a.name)).toEqual(["my-scout", "scout", "summarizer"]);
+  });
+
+  it("sorts BEFORE the cap, so the five kept are the top five", () => {
+    // Slicing first would keep five arbitrary agents and then order those.
+    const many = [
+      ...Array.from({ length: 8 }, (_, i) => ({ name: `z-bundled-${i}`, source: "bundled" })),
+      { name: "z-mine", source: "user" },
+    ];
+    expect(agentMentionItems(many, "z")[0].name).toBe("z-mine");
   });
 });

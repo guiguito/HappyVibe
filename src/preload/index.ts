@@ -239,6 +239,8 @@ contextBridge.exposeInMainWorld("hv", {
   // Async subagents: stop button + live status. Lifecycle (started/complete/
   // control/active) arrives as hv.subagent notifies through onUiRequest.
   subagentInterrupt: (sessionId: string, runId: string) => ipcRenderer.invoke("hv:subagent-interrupt", sessionId, runId),
+  subagentStopChild: (sessionId: string, runId: string, childId: string) => ipcRenderer.invoke("hv:subagent-stop-child", sessionId, runId, childId),
+  subagentThinking: (transcriptPath: string) => ipcRenderer.invoke("hv:subagent-thinking", transcriptPath),
   // §12: pull a child's transcript on demand (no model turn).
   subagentInspect: (sessionId: string, asyncId: string) => ipcRenderer.invoke("hv:subagent-inspect", sessionId, asyncId),
   onSubagentStatus: (cb: (i: { sessionId: string; runId: string; status: Record<string, unknown>; cost?: Record<string, number> }) => void): (() => void) => {
@@ -250,6 +252,7 @@ contextBridge.exposeInMainWorld("hv", {
   writeAgent: (filePath: string, edit: { body?: string; model?: string | null }) =>
     ipcRenderer.invoke("hv:write-agent", filePath, edit),
   duplicateAgent: (filePath: string) => ipcRenderer.invoke("hv:duplicate-agent", filePath),
+  setAgentEnabled: (name: string, enabled: boolean) => ipcRenderer.invoke("hv:set-agent-enabled", name, enabled),
 
   // ── W1.4: system prompt + workspace settings (additive) ──────────
   // sysPromptSnapshot fires /hv-sysprompt; the result arrives as an

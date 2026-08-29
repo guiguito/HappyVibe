@@ -162,6 +162,56 @@ export function isExternalCliAgent(agent: unknown): boolean {
   return typeof agent === "string" && EXTERNAL_CLI_AGENTS.has(agent);
 }
 
+/**
+ * Builtins HappyVibe starts DISABLED because they cannot do their job here — a
+ * SEPARATE concern from EXTERNAL_CLI_AGENTS above, deliberately kept as its own
+ * set because the two mean different things and only the first is a refusal.
+ *
+ * These are NOT user-toggleable and are not listed anywhere in the app — the
+ * same treatment as the external set above, for a different reason. The Agents
+ * page's switches govern agents that WORK; an agent that cannot do its job is
+ * not a preference to express, and showing one switched-off invites turning it
+ * on to discover it does nothing.
+ *
+ * The distinction the page rests on: HappyVibe-disabled agents are invisible,
+ * USER-disabled ones stay listed and dimmed so they can be switched back on.
+ *
+ * These are ordinary Pi children the ceiling governs perfectly well. The problem
+ * is that each is inoperable or meaningless under our own constraints, and
+ * offering an agent that cannot deliver what its description promises is worse
+ * than not offering it (§20 product taste).
+ *
+ * `researcher` declares `web_search`, `fetch_content` and `get_search_content`.
+ * Pi registers NONE of them — its builtins are exactly bash/edit/find/grep/ls/
+ * read/write. Measured 2026-08-29 through `resolveSubagentLaunchContract`: under
+ * our capability ceiling it resolves to `["read"]`, because upstream intersects
+ * `declaredBuiltinTools` with the ceiling's `allowedTools` (pi-args.ts) — so it
+ * does not fail loudly, it runs as a local-file reader while its prompt tells it
+ * to search the web. Revisit when web search exists (an MCP server would do it).
+ *
+ * `oracle` exists to reason over inherited state ("protects inherited state and
+ * prevents drift") and declares `defaultContext: fork`, but our
+ * `defaultSubagentContext: "fresh"` wins — measured, every agent resolves
+ * `ctx = fresh`. An oracle with nothing inherited has no premise.
+ *
+ * Enforcement is upstream's settings file ONLY (subagentSettings.ts), not a
+ * bridge refusal. A project-scope `.pi/settings.json` can re-enable one, and
+ * that is accepted: the consequence is a confused agent, not a boundary hole.
+ * That is exactly why this is not merged into EXTERNAL_CLI_AGENTS, whose members
+ * must keep failing at the bridge no matter what any settings file says.
+ */
+export const UNSUPPORTED_BUILTIN_AGENTS: ReadonlySet<string> = new Set([
+  "researcher",
+  "oracle",
+]);
+
+
+/** Every upstream builtin we write `disabled: true` for, for either reason. */
+export const DISABLED_BUILTIN_AGENTS: ReadonlySet<string> = new Set([
+  ...EXTERNAL_CLI_AGENTS,
+  ...UNSUPPORTED_BUILTIN_AGENTS,
+]);
+
 /** v5: Pi's built-in FILE tools — the ones whose path args we confine to the
  * workspace by default. bash is deliberately NOT here (it stays under
  * command-pattern rules; path-inspecting arbitrary shell is out of scope). */

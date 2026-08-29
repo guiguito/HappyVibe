@@ -205,6 +205,13 @@ interface HvCustomEndpoint {
 }
 
 /** Mirrors ApiCall in src/main/calls.ts (from hv:get-session-calls). */
+/** §12: one row of a child's interleaved reasoning-and-actions trace. */
+interface HvChildTrace {
+  kind: "thinking" | "call";
+  text: string;
+  name?: string;
+}
+
 interface HvApiCall {
   ts: string;
   provider: string;
@@ -702,6 +709,10 @@ interface HvApi {
   listTools(sessionId?: string): Promise<void>;
   /** Async subagents: interrupt a running detached run (stop button). */
   subagentInterrupt(sessionId: string, runId: string): Promise<void>;
+  /** §12: stop one child of a fan-out, leaving its siblings running. */
+  subagentStopChild(sessionId: string, runId: string, childId: string): Promise<void>;
+  /** §12: a child's interleaved thinking + tool calls, from its transcript. */
+  subagentThinking(transcriptPath: string): Promise<HvChildTrace[]>;
   /**
    * §12: a child's task, a bounded transcript window and its final output,
    * fetched on demand. Costs NO model turn, so it is safe to call on expand.
@@ -718,6 +729,8 @@ interface HvApi {
   readAgent(filePath: string): Promise<{ body: string; model?: string }>;
   writeAgent(filePath: string, edit: { body?: string; model?: string | null }): Promise<void>;
   duplicateAgent(filePath: string): Promise<string>;
+  /** §12: switch one agent on/off globally. Takes effect on the next turn. */
+  setAgentEnabled(name: string, enabled: boolean): Promise<void>;
 
   // W1.4: system prompt + workspace settings
   sysPromptSnapshot(sessionId?: string): Promise<void>;

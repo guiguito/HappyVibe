@@ -2,6 +2,9 @@ import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
+import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
+import { EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
+import { SOURCE_ORDER, agentBlurb, sortAgents } from "../src/renderer/src/agents";
 import {
   asyncResultInfo,
   delegationHint,
@@ -505,5 +508,303 @@ describe("subagentUsageLine", () => {
   test("the card no longer formats a raw child cost", () => {
     const card = readFileSync(path.resolve(__dirname, "../src/renderer/src/components/ToolCard.tsx"), "utf8");
     expect(card).not.toMatch(/fmtCost/);
+  });
+});
+
+// ── The run card header (§12, 2026-08-29 — the fleet round) ──────────────────
+//
+// The renderer suite has no DOM, so a visual contract is pinned in two halves:
+// the mapping as exported DATA, and the ABSENCE as a source scan. The absence
+// half is the one that matters here — an intent that quietly stayed on the
+// header row is exactly what a screenshot glance forgives.
+describe("the delegation run card header", () => {
+  const CHAT = path.join(__dirname, "..", "src", "renderer", "src", "components", "ChatView.tsx");
+  const chat = readFileSync(CHAT, "utf8");
+
+  test("renders the gauge from childGauge, never from a second threshold table", () => {
+    expect(chat).toContain("childGauge(run.live?.context)");
+    // A percentage computed inline here would drift from §9's zones silently:
+    // both gauges would still look plausible, on different scales.
+    expect(chat).not.toMatch(/run\.live\?\.context\.window\s*\/\s*run\.live\?\.context\.limit/);
+  });
+
+  test("the gauge tones are the session bubble's zones, not fresh colours", () => {
+    for (const zone of ["calm", "amber", "red"] as const) {
+      expect(GAUGE_TONE[zone]).toBeTruthy();
+    }
+    expect(GAUGE_TONE.calm).toContain("leaf");
+    expect(GAUGE_TONE.amber).toContain("honey");
+    expect(GAUGE_TONE.red).toContain("berry");
+  });
+
+  test("no longer puts the intent on the header row", () => {
+    // The old shape was this exact span, nested INSIDE the agent-name span.
+    // An absence cannot be screenshotted, which is why it is asserted here.
+    expect(chat).not.toContain('<span className="text-ink-soft font-medium"> — {run.label}</span>');
+  });
+
+  test("the gauge is gated on `running`, so a finished card shows no live number", () => {
+    expect(chat).toContain("const gauge = running ? childGauge(run.live?.context) : null;");
+  });
+});
+
+// ── The Agents page's source taxonomy (§12, 2026-08-29) ─────────────────────
+describe("the agent inventory's five sources", () => {
+  test("every source the bridge can emit has a tone", () => {
+    // A source with no tone falls through to a grey default that reads like a
+    // deliberate neutral rather than a missing case.
+    for (const source of ["builtin", "bundled", "user", "project", "package"]) {
+      expect(SOURCE_TONE[source]).toBeTruthy();
+    }
+  });
+
+  test("only the paths hv:write-agent can actually write are editable", () => {
+    // hv:write-agent is path-confined to the app-owned + project dirs. An Edit
+    // button on any other row is a button that fails.
+    expect([...EDITABLE_SOURCES].sort()).toEqual(["bundled", "project"]);
+    for (const readOnly of ["builtin", "user", "package"]) {
+      expect(EDITABLE_SOURCES.has(readOnly)).toBe(false);
+    }
+  });
+
+  test("ours stays visually distinct from upstream's", () => {
+    // If these ever collapse to the same tone the page goes back to being
+    // unable to say which agents the user owns.
+    expect(SOURCE_TONE.bundled).not.toBe(SOURCE_TONE.builtin);
+  });
+});
+
+// ── The delegate-this affordances (§12, 2026-08-29) ─────────────────────────
+describe("delegating from the flow", () => {
+  const CHAT2 = path.join(__dirname, "..", "src", "renderer", "src", "components", "ChatView.tsx");
+  const chat2 = readFileSync(CHAT2, "utf8");
+
+  test("an agent pick never writes to the file label map", () => {
+    // mentionMap is what extractMentions resolves on send. An entry there would
+    // make the app try to attach a file named after the agent.
+    const pick = chat2.slice(chat2.indexOf("const pickAgentMention"), chat2.indexOf("const pickAgentMention") + 700);
+    expect(pick).not.toContain("mentionMap.current.set");
+  });
+
+  test("an agent match opens the @ menu even when no file matches", () => {
+    expect(chat2).toContain("mention.items.length > 0 || mentionAgents.length > 0");
+  });
+
+  test("the roster chip dismisses by click-catcher, never by blur", () => {
+    // A blur-dismissed menu unmounts between mousedown and mouseup and loses its
+    // own clicks — reported twice in this app as an unclickable menu.
+    const chip = chat2.slice(chat2.indexOf("function AgentsChip"), chat2.indexOf("function SkillsChip"));
+    expect(chip).toContain('className="fixed inset-0 z-20"');
+    expect(chip).toContain("onMouseDown");
+    expect(chip).not.toContain("onBlur");
+  });
+});
+
+// ── The roster has to be FETCHED, or both affordances are empty ─────────────
+describe("the agent roster reaches the composer without visiting Settings", () => {
+  test("App requests it per session, not only from the Agents page", () => {
+    // Found during the fleet round: listAgents was called ONLY by AgentsView on
+    // mount, so `agents` stayed null until the user opened the settings page —
+    // and @agent plus the delegate chip were empty for exactly the user the
+    // "delegate from the flow" item exists for. An absence, so: source scan.
+    const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
+    expect(app).toContain("void window.hv.listAgents(selectedId);");
+  });
+});
+
+// ── A read-only agent's prompt is still readable (§12, 2026-08-29) ──────────
+describe("viewing a prompt we cannot write", () => {
+  const VIEW = path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx");
+  const view = readFileSync(VIEW, "utf8");
+
+  test("View is offered exactly where Edit is not", () => {
+    expect(view).toContain("{!EDITABLE_SOURCES.has(a.source) && a.systemPrompt && (");
+    expect(view).toContain("{EDITABLE_SOURCES.has(a.source) && (");
+  });
+
+  test("the prompt comes from discovery, never from a widened file read", () => {
+    // main's agent read is path-confined to dirs the app owns; a package agent
+    // can live under the global npm root. Reading the prompt off the discovery
+    // notify is what lets the page show it without opening that up.
+    expect(view).toContain("agent.systemPrompt");
+    expect(view).not.toContain("readAgent(agent.path)".replace("agent.path", "viewing.path"));
+  });
+
+  test("the read-only view offers no Save", () => {
+    // An absence: a Save that silently failed would be worse than no Save.
+    const viewer = view.slice(view.indexOf("function AgentPromptView"), view.indexOf("function AgentEditor"));
+    expect(viewer).not.toContain("Save");
+    expect(viewer).not.toContain("writeAgent");
+    expect(viewer).toContain("duplicate it to make a version you can edit");
+  });
+});
+
+// ── Inventory ordering (§12, 2026-08-29) ───────────────────────────────────
+describe("sortAgents", () => {
+  const mk = (name: string, source: string): { name: string; source: string } => ({ name, source });
+
+  test("puts the user's own agents on top and HappyVibe's furniture last", () => {
+    const sorted = sortAgents([
+      mk("worker", "bundled"), mk("reviewer", "builtin"), mk("my-agent", "user"),
+      mk("repo-agent", "project"), mk("pkg-agent", "package"),
+    ]);
+    expect(sorted.map((a) => a.source)).toEqual(["user", "project", "builtin", "package", "bundled"]);
+  });
+
+  test("sorts alphabetically inside a group", () => {
+    const sorted = sortAgents([mk("scout", "builtin"), mk("delegate", "builtin"), mk("oracle", "builtin")]);
+    expect(sorted.map((a) => a.name)).toEqual(["delegate", "oracle", "scout"]);
+  });
+
+  test("an unknown source sorts LAST, never above the user's own", () => {
+    // A source added upstream must not silently take the top of the page.
+    const sorted = sortAgents([mk("mystery", "something-new"), mk("mine", "user")]);
+    expect(sorted.map((a) => a.name)).toEqual(["mine", "mystery"]);
+  });
+
+  test("does not mutate its input", () => {
+    const input = [mk("worker", "bundled"), mk("mine", "user")];
+    sortAgents(input);
+    expect(input.map((a) => a.name)).toEqual(["worker", "mine"]);
+  });
+
+  test("every source the bridge can emit has an explicit rank", () => {
+    for (const s of ["builtin", "bundled", "user", "project", "package"]) {
+      expect(SOURCE_ORDER[s]).toBeTypeOf("number");
+    }
+  });
+});
+
+// ── The child trace needs no toggle (§12, 2026-08-29 round 2) ───────────────
+describe("the expanded run card shows reasoning without a second click", () => {
+  const CHAT3 = path.join(__dirname, "..", "src", "renderer", "src", "components", "ChatView.tsx");
+  const chat3 = readFileSync(CHAT3, "utf8");
+
+  test("no Show/Hide thinking control survives", () => {
+    // An absence: the control was ceremony in front of something the user had
+    // already asked for by expanding the card.
+    expect(chat3).not.toContain("Show thinking");
+    expect(chat3).not.toContain("Hide thinking");
+    expect(chat3).not.toContain("toggleTrace");
+  });
+
+  test("the fetch is gated on `open`, so a collapsed card reads nothing", () => {
+    expect(chat3).toContain("if (!open || !transcriptPath) {");
+    expect(chat3).toContain("[open, transcriptPath, run.live]");
+  });
+
+  test("recentTools stays as the fallback when there is no trace yet", () => {
+    // The trace supersedes it (same calls, in order, with the reasoning), but a
+    // run whose transcript has not landed still needs to show something.
+    expect(chat3).toContain("{!childTrace?.length && (run.live?.recentTools ?? [])");
+  });
+});
+
+// ── Display copy vs the model's copy (§12, 2026-08-30) ─────────────────────
+describe("agentBlurb", () => {
+  const mk = (name: string, source: string, description: string) => ({ name, source, description });
+
+  test("replaces upstream's frontmatter with the human-facing line", () => {
+    expect(agentBlurb(mk("scout", "builtin", "Fast codebase recon that returns compressed context for handoff")))
+      .toBe("Fast local codebase recon: relevant files, entry points, data flow, risks");
+  });
+
+  test("only for BUILTIN — a user's own `scout` keeps its own description", () => {
+    // Keyed by name, so without the source check we would overwrite someone's
+    // agent with upstream's copy about a different agent entirely.
+    expect(agentBlurb(mk("scout", "user", "my own scout"))).toBe("my own scout");
+    expect(agentBlurb(mk("scout", "project", "the repo's scout"))).toBe("the repo's scout");
+  });
+
+  test("falls through for a builtin we have no copy for", () => {
+    expect(agentBlurb(mk("something-new", "builtin", "upstream's words"))).toBe("upstream's words");
+  });
+
+  test("carries no copy for the agents we disable", () => {
+    // researcher/oracle are disabled, so a blurb for them would be dead code
+    // that quietly implied they were still on offer.
+    expect(agentBlurb(mk("researcher", "builtin", "upstream"))).toBe("upstream");
+    expect(agentBlurb(mk("oracle", "builtin", "upstream"))).toBe("upstream");
+  });
+
+  test("the MODEL still gets the frontmatter, not this copy", () => {
+    // The roster injection reads `a.description` directly; agentBlurb is a
+    // renderer export and must never reach hv-agents.ts.
+    const hvAgents = readFileSync(path.join(__dirname, "..", "pi-runtime", "extensions", "hv-agents.ts"), "utf8");
+    expect(hvAgents).not.toContain("agentBlurb");
+    expect(hvAgents).toContain("a.description.slice(0, 200)");
+  });
+});
+
+describe("the agents pill is quiet at rest", () => {
+  const CHAT4 = path.join(__dirname, "..", "src", "renderer", "src", "components", "ChatView.tsx");
+  const chat4 = readFileSync(CHAT4, "utf8");
+  const chip = chat4.slice(chat4.indexOf("function AgentsChip"), chat4.indexOf("function SkillsChip"));
+
+  test("no fill and no emoji at rest; the app's own glyph instead", () => {
+    expect(chip).not.toContain("bg-honey-soft text-tangerine-deep text-[11px]");
+    expect(chip).not.toContain("🤖");
+    expect(chip).toContain('<ToolIcon kind="robot"');
+  });
+
+  test("it still looks pressable — a border at rest, a fill on hover", () => {
+    expect(chip).toContain("border border-line");
+    expect(chip).toContain("hover:bg-honey-soft");
+  });
+
+  test("the skills pill keeps its fill — the point was one loud pill, not none", () => {
+    const skills = chat4.slice(chat4.indexOf("function SkillsChip"));
+    expect(skills).toContain("bg-plum-soft");
+  });
+});
+
+// ── The switch is a switch (2026-08-30) ────────────────────────────────────
+describe("agents use the app's shared Toggle", () => {
+  const AV = path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx");
+  const av = readFileSync(AV, "utf8");
+
+  test("a switch, not a checkbox", () => {
+    // These apply immediately (next turn), so they must not read as a
+    // selection waiting on a Save.
+    expect(av).toContain("<Toggle");
+    expect(av).not.toContain('type="checkbox"');
+  });
+
+  test("it is the SHARED component, not a fourth copy", () => {
+    // Three near-identical switches already existed. A fourth was the wrong
+    // direction; this asserts the extraction stuck.
+    expect(av).toContain('from "./Toggle"');
+    const toggle = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "Toggle.tsx"), "utf8");
+    expect(toggle).toContain('role="switch"');
+    expect(toggle).toContain("aria-checked");
+    // VoiceView adopted it rather than keeping its own copy.
+    const voice = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "VoiceView.tsx"), "utf8");
+    expect(voice).toContain('from "./Toggle"');
+    expect(voice).not.toContain("function Toggle(");
+  });
+});
+
+// ── Who disabled it decides whether you can see it (2026-08-30) ────────────
+describe("HappyVibe-disabled agents are invisible; user-disabled ones are not", () => {
+  test("the bridge drops both forced sets before the page ever sees them", () => {
+    const bridge = readFileSync(path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts"), "utf8");
+    expect(bridge).toContain("if (isExternalCliAgent(name0)) continue;");
+    expect(bridge).toContain("if (UNSUPPORTED_BUILTIN_AGENTS.has(name0)) continue;");
+  });
+
+  test("a USER-disabled agent still reaches the page, marked", () => {
+    // The distinction the whole design rests on: `enabled` is set rather than
+    // the row being dropped, so the switch that turns it back on can exist.
+    const bridge = readFileSync(path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts"), "utf8");
+    expect(bridge).toContain("enabled: a.disabled !== true");
+  });
+
+  test("the page no longer explains an off-by-default agent — there are none", () => {
+    // Absence: the reason line existed only for agents that started off. Now
+    // that those are invisible, a leftover would be dead UI for a state that
+    // cannot occur.
+    const av = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx"), "utf8");
+    expect(av).not.toContain("Off by default");
+    expect(av).not.toContain("agentDisabledReason");
   });
 });

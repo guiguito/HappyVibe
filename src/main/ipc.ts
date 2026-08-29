@@ -10,7 +10,7 @@ import { piRuntimeDir } from "./pi/runtimeDir";
 import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
+  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
   childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
@@ -66,6 +66,7 @@ import { parseSubagentNotify } from "./subagentEvents";
 import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
 import { inspectCommand, inspectRequestId, parseInspectFrame, type InspectReply } from "./subagentInspect";
 import { pollSubagentStatus, type SubagentStatus } from "./subagentStatus";
+import { readChildTrace } from "./subagentThinking";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
@@ -3186,7 +3187,32 @@ export function registerIpc(win: BrowserWindow): void {
     void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-interrupt ${runId}` }).catch(() => {});
   });
 
+  // §12 (2026-08-29): stop ONE child of a fan-out. Upstream's `stop` RPC takes a
+  // childId and rejects a malformed one rather than widening to a run stop, so
+  // this can never become "kill everything" by accident.
+  /**
+   * §12 (2026-08-29): the child's own reasoning, on demand.
+   *
+   * Confined to `sessionDir()` — pi-subagents writes `subagent-artifacts/` flat
+   * into it, so that (NOT os.tmpdir(), which guards status.json) is the root.
+   * Reads only when the card's toggle is opened; nothing happens otherwise.
+   */
+  ipcMain.handle("hv:subagent-thinking", (_e, transcriptPath: string) => readChildTrace(sessionDir(), transcriptPath));
+
+  ipcMain.handle("hv:subagent-stop-child", (_e, sessionId: string, runId: string, childId: string) => {
+    void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-stop-child ${runId} ${childId}` }).catch(() => {});
+  });
+
   // Agent file edit/duplicate — path-confined to allowed agent dirs (agents.ts).
+  /**
+   * §12 (2026-08-30): the per-agent switch. No respawn — `enumerateAgents` runs
+   * per turn in the bridge and upstream re-reads its settings file on each call,
+   * so the change lands on the very next turn of every live session.
+   */
+  ipcMain.handle("hv:set-agent-enabled", (_e, name: string, enabled: boolean) => {
+    setAgentEnabled(name, enabled);
+  });
+
   ipcMain.handle("hv:read-agent", (_e, filePath: string) => readAgentBody(agentDirs(), filePath));
   ipcMain.handle("hv:write-agent", (_e, filePath: string, edit: { body?: string; model?: string | null }) => {
     writeAgentEdit(agentDirs(), filePath, edit);

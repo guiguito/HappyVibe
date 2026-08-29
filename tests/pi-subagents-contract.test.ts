@@ -74,8 +74,17 @@ import {
 } from "../pi-runtime/node_modules/pi-subagents/src/api/capability-ceiling.ts";
 import { buildPiArgs } from "../pi-runtime/node_modules/pi-subagents/src/runs/shared/pi-args.ts";
 import { EXTERNAL_CLI_AGENTS, REDACTED_PROMPT, WAIT_TOOLS, displayableTask, isRedactedPrompt, isWaitTool } from "../pi-runtime/extensions/hv-rules";
+import { isStoppableChild } from "../src/renderer/src/agents";
 
 const BRIDGE = path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts");
+
+/**
+ * Contents of a file inside the vendored pi-subagents tree. Module-scoped twin
+ * of the `subagentsSrc` helper inside the lifecycle describe below, which is
+ * block-scoped; both read the same tree, neither derives a second path scheme.
+ */
+const subagentSource = (...rel: string[]): string =>
+  readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", ...rel), "utf8");
 const PKG = path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "package.json");
 
 describe("pi-subagents active-run inventory contract", () => {
@@ -996,5 +1005,238 @@ describe("child session files (the cost ledger's source)", () => {
     // The child's own stream reports `usage.cost.total`; calls.ts reads exactly
     // that field. We sum Pi's numbers and never price anything ourselves.
     expect(read("src", "runs", "background", "subagent-runner.ts")).toMatch(/usage\.cost \+= eventUsage\.cost\?\.total/);
+  });
+});
+
+// ── The live child context gauge (PRD §12, 2026-08-29 — the fleet round) ─────
+//
+// The run card's per-child gauge is §9's headline differentiator applied to a
+// sub-agent, and it rests entirely on two upstream fields. If either is renamed
+// or stops reaching the status file, the gauge does not break loudly — it just
+// silently never renders, which is indistinguishable from "this model has no
+// known window". These pins turn that into a failing test.
+describe("pi-subagents live child context contract", () => {
+  const types = subagentSource("src", "shared", "types.ts");
+  const projection = subagentSource("src", "runs", "background", "async-status.ts");
+
+  it("TokenUsage still carries `window` — the live occupancy, not the total", () => {
+    expect(types).toMatch(/interface TokenUsage[\s\S]{0,400}?window\?: number/);
+  });
+
+  it("an async status step still carries `contextLimit` — the divisor", () => {
+    expect(types).toMatch(/steps\?: Array<\{[\s\S]*?contextLimit\?: number/);
+  });
+
+  it("BOTH survive into the status.json projection, which is all we can read", () => {
+    // A detached run reaches us ONLY through status.json. A field that lives on
+    // the in-process type but is dropped from the projection reads to us as
+    // permanently absent, with every other assertion here still green.
+    expect(projection).toMatch(/contextLimit\?: number/);
+    expect(projection).toMatch(/tokens\?: TokenUsage/);
+  });
+
+  it("upstream updates the window per child TURN, not only at the end", () => {
+    // The word "live" is the whole feature. If this moved to a completion-only
+    // write, the gauge would appear once at 100% and never climb — and every
+    // assertion above would still pass.
+    const runner = subagentSource("src", "runs", "background", "subagent-runner.ts");
+    expect(runner).toMatch(/message_end[\s\S]{0,1500}?step\.tokens = \{[^}]*window/);
+  });
+});
+
+// ── Our bundled agents shadow upstream's builtins (PRD §12, 2026-08-29) ──────
+//
+// The fleet round AUTHORS `worker` rather than adopting upstream's, and the
+// whole reason that is free is precedence: a file in the app-owned agent dir
+// overrides the builtin of the same name outright. If upstream ever reorders
+// that merge, ours silently stops being the one that runs — and the symptom is
+// a `worker` with a different prompt and `defaultContext: fork`, which nothing
+// else here would catch.
+describe("our bundled agents still shadow upstream's builtins of the same name", () => {
+  const selection = subagentSource("src", "agents", "agent-selection.ts");
+  const OURS = path.join(__dirname, "..", "pi-runtime", "agents", "worker.md");
+
+  it("merges builtins FIRST, so later scopes overwrite them by name", () => {
+    const builtinAt = selection.indexOf("of builtinAgents");
+    const userAt = selection.indexOf("of userAgents");
+    expect(builtinAt).toBeGreaterThan(-1);
+    expect(userAt).toBeGreaterThan(builtinAt);
+    expect(selection).toContain("agentMap.set(agent.name, agent)");
+  });
+
+  it("upstream ships a builtin `worker` — the name we are deliberately taking", () => {
+    expect(subagentSource("src", "agents", "builtin-names.ts")).toContain('"worker"');
+  });
+
+  it("ours declares no defaultContext, so the config's `fresh` governs it", () => {
+    // Upstream's worker.md declares `defaultContext: fork` — the child would
+    // start from the parent's session. Config defaultSubagentContext wins over
+    // an agent defaultContext, but only for an agent that leaves it unset is
+    // that unambiguous, so ours must never acquire the key by copy-paste.
+    expect(readFileSync(OURS, "utf8")).not.toMatch(/^defaultContext:/m);
+  });
+
+  it("upstream's own worker still declares the fork we are declining to inherit", () => {
+    // If this stops being true the shadowing is less load-bearing, not more —
+    // it documents WHY we authored rather than adopted, and going stale is the
+    // signal to re-read that decision, not a failure of ours.
+    expect(subagentSource("agents", "worker.md")).toMatch(/^defaultContext: fork$/m);
+  });
+
+  it("ours is write-capable, which is the point of bundling it", () => {
+    const fm = readFileSync(OURS, "utf8");
+    for (const tool of ["bash", "edit", "write"]) expect(fm).toMatch(new RegExp(`^tools:.*\\b${tool}\\b`, "m"));
+    // contact_supervisor needs the intercom relay writeSubagentConfig disables,
+    // and an unknown/unavailable tool name fails the WHOLE run from 0.40.
+    expect(fm).not.toContain("contact_supervisor");
+  });
+});
+
+// ── The agent inventory comes from upstream's discovery (§12, 2026-08-29) ────
+//
+// The bridge used to enumerate two directories. Upstream reads six plus
+// installed packages and walks UP for the project root, so the Agents page and
+// the model's per-turn roster both under-reported — silently, since a short
+// list looks exactly like a small installation.
+describe("the agent inventory comes from upstream's own discovery", () => {
+  const bridge = readFileSync(BRIDGE, "utf8");
+  const agentsSrc = subagentSource("src", "agents", "agents.ts");
+
+  it("reaches discoverAgentsAll by relative path — the exports map blocks the bare one", () => {
+    expect(bridge).toContain('from "../node_modules/pi-subagents/src/agents/agents.ts"');
+    expect(bridge).not.toMatch(/from\s+"pi-subagents\/src\//);
+  });
+
+  it("the `./agents` subpath exists but exposes registration, not discovery", () => {
+    // This is why the reach is relative even though a subpath of that name is
+    // in the map — reading the map alone would suggest a bare specifier works.
+    const exports = (JSON.parse(readFileSync(PKG, "utf8")) as { exports?: Record<string, string> }).exports ?? {};
+    expect(exports["./agents"]).toBeTruthy();
+    const api = subagentSource("src", "api", "agents.ts");
+    expect(api).not.toContain("discoverAgentsAll");
+  });
+
+  it("upstream still exports discoverAgentsAll with the four scopes we render", () => {
+    expect(agentsSrc).toMatch(/export function discoverAgentsAll\(cwd: string\)/);
+    for (const scope of ["builtin", "package", "user", "project"]) {
+      expect(agentsSrc).toMatch(new RegExp(`${scope}: AgentConfig\\[\\]`));
+    }
+  });
+
+  it("discoverAgentsAll does NOT drop disabled agents — we mark them instead", () => {
+    // The singular discoverAgents filters (`agent.disabled !== true`); the All
+    // variant does not, which is what lets the Agents page LIST a switched-off
+    // agent so it can be switched back on (§12, 2026-08-30).
+    const all = agentsSrc.slice(agentsSrc.indexOf("export function discoverAgentsAll"));
+    expect(all.slice(0, all.indexOf("export function", 10))).not.toContain("agent.disabled !== true");
+    expect(bridge).toContain("enabled: a.disabled !== true");
+  });
+
+  it("a disabled agent reaches the PAGE but never the injected roster", () => {
+    // The context lever, and the one thing that must not regress: an agent the
+    // user switched off has to stop costing tokens every turn. If the filter
+    // moved back into enumerateAgents the page would silently lose its switch;
+    // if it vanished entirely, switching off would save nothing.
+    const hvAgents = readFileSync(new URL("../pi-runtime/extensions/hv-agents.ts", import.meta.url), "utf8");
+    expect(hvAgents).toContain('const agents = all.filter((a) => a.enabled !== false);');
+    expect(bridge).not.toContain("a.disabled === true) continue");
+  });
+
+  it("the page filters on the SAME predicate the bridge refuses with", () => {
+    // Not a second copy of the set: a page that advertises an agent the bridge
+    // declines is worse than one that omits it.
+    expect(bridge).toContain("if (isExternalCliAgent(name0)) continue;");
+    expect(bridge).toContain('?.type === "external-cli") continue;');
+  });
+
+  it("upstream still discovers from the dirs the old two-dir scan missed", () => {
+    expect(agentsSrc).toContain('path.join(os.homedir(), ".agents")');
+    expect(agentsSrc).toContain("collectPackageSubagentPaths");
+    expect(agentsSrc).toContain("findConfiguredProjectRoot");
+    expect(agentsSrc).toContain("EXTRA_AGENT_DIRS_ENV");
+  });
+
+  it("an AgentConfig still carries the fields the page renders", () => {
+    expect(agentsSrc).toMatch(/export interface AgentConfig \{[\s\S]*?filePath: string/);
+    for (const field of ["name: string", "description: string", "tools\\?: string\\[\\]", "source: AgentSource"]) {
+      expect(agentsSrc).toMatch(new RegExp(`export interface AgentConfig \\{[\\s\\S]*?${field}`));
+    }
+  });
+});
+
+// ── Child-scoped stop (PRD §12, 2026-08-29 — the fleet round) ───────────────
+//
+// Upstream 0.55 (#1367) added it. The whole value is the failure direction: a
+// malformed child id must be REJECTED, never widened into a run-level stop that
+// kills the siblings the user was deliberately keeping.
+describe("child-scoped stop contract", () => {
+  const rpc = subagentSource("src", "extension", "rpc.ts");
+
+  it("`stop` is a real RPC method, distinct from `interrupt`", () => {
+    expect(rpc).toMatch(/SUBAGENT_RPC_METHODS = \[[^\]]*"interrupt"[^\]]*"stop"/);
+  });
+
+  it("`stop` accepts a childId and rejects a malformed one instead of widening", () => {
+    expect(rpc).toContain("RPC stop childId must be a non-empty string");
+  });
+
+  it("only pending/running children are stoppable — what the button gates on", () => {
+    const id = subagentSource("src", "runs", "shared", "child-identity.ts");
+    expect(id).toMatch(/isStoppableAsyncStatusStep[\s\S]{0,200}?"pending"[\s\S]{0,40}?"running"/);
+    // Our copy of that rule, which the card uses to decide whether to draw ◼.
+    expect(isStoppableChild("pending")).toBe(true);
+    expect(isStoppableChild("running")).toBe(true);
+    for (const done of ["complete", "completed", "failed", "stopped", "rejected", "paused", undefined]) {
+      expect(isStoppableChild(done)).toBe(false);
+    }
+  });
+
+  it("stop resolves workflowKey / runId / step:<index> — NOT the declared childId", () => {
+    // The correction that cost a live run: `steps[].childId` is in upstream's
+    // type but null on the wire, and it is not what resolution accepts anyway.
+    // asyncStatusChildIdentity is the real chain; ours mirrors it exactly.
+    const id = subagentSource("src", "runs", "shared", "child-identity.ts");
+    expect(id).toContain("step.workflowKey ?? step.runId ?? `step:${index}`");
+    expect(id).toMatch(/asyncStatusChildIdentityCandidates[\s\S]{0,300}?workflowKey[\s\S]{0,60}?runId[\s\S]{0,60}?step:/);
+    const ours = readFileSync(new URL("../src/main/subagentStatus.ts", import.meta.url), "utf8");
+    expect(ours).toContain("[st.childId, st.workflowKey, st.runId]");
+    expect(ours).toContain("`step:${index}`");
+  });
+
+  it("the bridge drives `stop`, not `interrupt`, for a child", () => {
+    const bridge = readFileSync(BRIDGE, "utf8");
+    expect(bridge).toContain('rpcRequest("stop", { runId, childId })');
+    expect(bridge).toContain("hv-subagent-stop-child");
+  });
+});
+
+// ── Child thinking (PRD §12, 2026-08-29 — the fleet round) ──────────────────
+describe("child thinking contract", () => {
+  it("a status step still carries transcriptPath — our only route to the reasoning", () => {
+    expect(subagentSource("src", "shared", "types.ts")).toMatch(/steps\?: Array<\{[\s\S]*?transcriptPath\?: string/);
+  });
+
+  it("the status projection keeps it, so a detached run is not blind", () => {
+    expect(subagentSource("src", "runs", "background", "async-status.ts")).toContain("transcriptPath?: string");
+  });
+
+  it("we confine against the sessions dir, never tmpdir", () => {
+    // subagent-artifacts lives in OUR session dir. A tmpdir guard here returns
+    // nothing at all — and nothing is exactly what a passing test looks like.
+    const src = readFileSync(new URL("../src/main/subagentThinking.ts", import.meta.url), "utf8");
+    // Comments stripped: the file EXPLAINS the tmpdir trap at length, and a scan
+    // that reads prose as code fails on its own documentation.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toContain("os.tmpdir()");
+    expect(code).toContain("sessionsRoot");
+    // Containment, not a string prefix: `<root>-evil` must not pass.
+    expect(src).toContain("root + path.sep");
+  });
+
+  it("upstream still writes artifacts into the dir we confine to", () => {
+    // If pi-subagents ever relocates subagent-artifacts out of our session dir,
+    // the confinement starts refusing every real transcript.
+    const store = readFileSync(new URL("../src/main/store.ts", import.meta.url), "utf8");
+    expect(store).toContain('const ARTIFACT_DIR = "subagent-artifacts"');
   });
 });
