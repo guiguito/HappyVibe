@@ -51,7 +51,7 @@ import {
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
+  authJsonProviders, BYOK_PROVIDER_IDS, detectLocalRunner, detectOllama, fetchEndpointModels, LOCAL_RUNNERS, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
@@ -2704,6 +2704,12 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:auth-state", () => authState);
 
   ipcMain.handle("hv:detect-ollama", () => detectOllama());
+  // The other two local runners (2026-08-29). Same probe the spawn path uses,
+  // so the page and the model picker cannot disagree about what is running.
+  ipcMain.handle("hv:detect-local-runners", async () =>
+    (await Promise.all(
+      LOCAL_RUNNERS.map(async (r) => ({ id: r.id, label: r.label, ...(await detectLocalRunner(r)) })),
+    )).filter((r) => r.running && r.models.length > 0));
 
   // §16 (2026-07-30): user-defined OpenAI-compatible endpoints. Secrets never
   // reach models.json — the file references $HV_CUSTOM_<ID>_KEY and the value

@@ -1,9 +1,12 @@
 import { describe, expect, test } from "vitest";
 import {
-  BYOK_PROVIDERS, buildProviderEnv, isByokProvider, keySource, mergeOllamaModelsJson, OAUTH_PROVIDERS, probeProviderKey,
+  BYOK_PROVIDERS, buildProviderEnv, isByokProvider, keySource, detectLocalRunner, localRunnerEndpoint, LOCAL_RUNNERS, mergeOllamaModelsJson, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
 } from "../src/main/providers";
 import { PROVIDER_CATALOG } from "../src/main/providerCatalog.generated";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { CustomEndpoint as HvEndpointLike } from "../src/main/modelsJson";
 
 describe("provider env map (generated from Pi's registry, 2026-08-29)", () => {
   test("exact env var names for the featured five", () => {
@@ -203,5 +206,81 @@ describe("probeProviderKey (save-time key check, 2026-08-29)", () => {
     for (const p of PROVIDER_CATALOG) {
       expect(p.baseUrl === null || p.baseUrl.startsWith("https://"), p.id).toBe(true);
     }
+  });
+});
+
+describe("local runner auto-detect (2026-08-29 round)", () => {
+  const withModels = (ids: string[]): typeof fetch =>
+    (async () => ({ ok: true, status: 200, json: async () => ({ data: ids.map((id) => ({ id })) }) })) as unknown as typeof fetch;
+  const dead: typeof fetch = (async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch;
+
+  test("the runners are the two ports beside Ollama's", () => {
+    expect(LOCAL_RUNNERS.map((r) => r.id)).toEqual(["lmstudio", "llamacpp"]);
+    const by = new Map(LOCAL_RUNNERS.map((r) => [r.id, r]));
+    expect(by.get("lmstudio")!.baseUrl).toBe("http://localhost:1234/v1");
+    expect(by.get("llamacpp")!.baseUrl).toBe("http://localhost:8080/v1");
+    // Presets carry the compat flags — never re-derived here (PRD 2026-07-30).
+    expect(by.get("lmstudio")!.preset).toBe("lmstudio");
+    expect(by.get("llamacpp")!.preset).toBe("llamacpp");
+  });
+
+  test("a running LM Studio becomes an endpoint on the shared custom path", async () => {
+    const out = await detectLocalRunner(LOCAL_RUNNERS[0]!, withModels(["qwen3-coder"]));
+    expect(out.running).toBe(true);
+    expect(out.models).toEqual(["qwen3-coder"]);
+  });
+
+  test("nothing listening ⇒ not running, and never throws", async () => {
+    await expect(detectLocalRunner(LOCAL_RUNNERS[0]!, dead)).resolves.toEqual({ running: false, models: [] });
+  });
+
+  test("a runner serving zero models is not offered", async () => {
+    // An LM Studio with no model loaded answers 200 with an empty list. Writing
+    // an endpoint with no models would put an empty provider in the picker.
+    expect((await detectLocalRunner(LOCAL_RUNNERS[0]!, withModels([]))).models).toEqual([]);
+  });
+
+  test("the endpoint is namespaced like every other custom endpoint", () => {
+    // Ollama's bare "ollama" key is a documented HISTORICAL exception (users'
+    // sessions are pinned to it); a NEW local runner must not copy it.
+    const e = localRunnerEndpoint(LOCAL_RUNNERS[0]!, ["m"]);
+    expect(e.providerKey).toBe("hv-lmstudio");
+    expect(e.baseUrl).toBe("http://localhost:1234/v1");
+    expect(e.models).toEqual([{ id: "m" }]);
+  });
+});
+
+describe("syncModelsJson with local runners", () => {
+  const tmp = (): string => mkdtempSync(path.join(tmpdir(), "hv-sync-"));
+
+  test("a detected runner is written, and a hand-added endpoint on the same URL wins", async () => {
+    // The user's own endpoint carries their context windows and prices; an
+    // auto-detected twin would overwrite that with bare model ids.
+    const dir = tmp();
+    const mine: HvEndpointLike = {
+      id: "my-lmstudio", providerKey: "hv-my-lmstudio", label: "My LM Studio",
+      baseUrl: "http://localhost:1234/v1", preset: "lmstudio",
+      auth: { kind: "placeholder", value: "x" }, models: [{ id: "kept", contextWindow: 40000 }],
+    };
+    await syncModelsJson(dir, [mine], {
+      ollama: async () => ({ running: false, models: [] }),
+      runner: async (r) => ({ running: true, models: [`${r.id}-model`] }),
+    });
+    const out = JSON.parse(readFileSync(path.join(dir, "models.json"), "utf8"));
+    // llama.cpp had no hand-added twin, so it is offered.
+    expect(out.providers["hv-llamacpp"].models).toEqual([{ id: "llamacpp-model" }]);
+    // LM Studio did — the user's entry is the only one on that URL.
+    expect(out.providers["hv-lmstudio"]).toBeUndefined();
+    expect(out.providers["hv-my-lmstudio"].models[0].contextWindow).toBe(40000);
+  });
+
+  test("nothing running locally ⇒ no runner entries at all", async () => {
+    const dir = tmp();
+    await syncModelsJson(dir, [], {
+      ollama: async () => ({ running: false, models: [] }),
+      runner: async () => ({ running: false, models: [] }),
+    });
+    const out = JSON.parse(readFileSync(path.join(dir, "models.json"), "utf8"));
+    expect(Object.keys(out.providers ?? {})).toEqual([]);
   });
 });

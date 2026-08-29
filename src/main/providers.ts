@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { mergeModelsJson, parseOpenAiModelList, type CustomEndpoint } from "./modelsJson";
+import { mergeModelsJson, parseOpenAiModelList, providerKeyFor, type CustomEndpoint } from "./modelsJson";
 import { OAUTH_CATALOG, PROVIDER_CATALOG } from "./providerCatalog.generated";
 
 /**
@@ -96,6 +96,46 @@ export async function detectOllama(baseUrl = OLLAMA_BASE_URL): Promise<{ running
 }
 
 /**
+ * The other two local runners the "free local" rung should cover (2026-08-29).
+ * Ollama keeps its own detector because it speaks its own `/api/tags`; these
+ * two are OpenAI-compatible, so detection IS the custom-endpoint probe and the
+ * presets already pin their compat flags (PRD 2026-07-30 — a wrong flag fails
+ * at request time, not at save time, which is why presets exist).
+ */
+export const LOCAL_RUNNERS = [
+  { id: "lmstudio", label: "LM Studio", baseUrl: "http://localhost:1234/v1", preset: "lmstudio" },
+  { id: "llamacpp", label: "llama.cpp", baseUrl: "http://localhost:8080/v1", preset: "llamacpp" },
+] as const;
+export type LocalRunner = (typeof LOCAL_RUNNERS)[number];
+
+/** Probe one local runner. Never throws — nothing listening is a normal answer. */
+export async function detectLocalRunner(
+  runner: LocalRunner,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ running: boolean; models: string[] }> {
+  const res = await fetchEndpointModels(runner.baseUrl, undefined, fetchImpl);
+  return res.ok ? { running: true, models: res.models } : { running: false, models: [] };
+}
+
+/** A detected runner as a CustomEndpoint, on the shared models.json path. */
+export function localRunnerEndpoint(runner: LocalRunner, models: string[]): CustomEndpoint {
+  return {
+    id: runner.id,
+    // Namespaced `hv-<id>` like every other custom endpoint. Ollama's bare
+    // "ollama" key is a HISTORICAL exception (sessions are pinned to it), not
+    // a pattern to copy.
+    providerKey: providerKeyFor(runner.id),
+    label: runner.label,
+    baseUrl: runner.baseUrl,
+    preset: runner.preset,
+    // Placeholder — these servers ignore it, but Pi requires auth before models
+    // appear in get_available_models (docs/models.md).
+    auth: { kind: "placeholder", value: runner.id },
+    models: models.map((id) => ({ id })), // contextWindow unknown for local models
+  };
+}
+
+/**
  * Merge an "ollama" provider entry into a models.json payload (Pi 0.80.3
  * docs/models.md schema). Empty model list removes the entry. Other providers
  * in the file are preserved.
@@ -132,10 +172,28 @@ function ollamaEndpoint(models: string[]): CustomEndpoint {
 export async function syncModelsJson(
   agentDir: string,
   custom: CustomEndpoint[],
+  // Injected only by tests — probing three localhost ports is the real behaviour.
+  detectors: {
+    ollama: () => Promise<{ running: boolean; models: string[] }>;
+    runner: (r: LocalRunner) => Promise<{ running: boolean; models: string[] }>;
+  } = { ollama: detectOllama, runner: detectLocalRunner },
 ): Promise<{ running: boolean; models: string[] }> {
-  const detected = await detectOllama();
+  // All three probes run together: they are independent localhost requests and
+  // this sits in front of every spawn.
+  const [detected, ...runners] = await Promise.all([
+    detectors.ollama(),
+    ...LOCAL_RUNNERS.map(async (r) => ({ runner: r, ...(await detectors.runner(r)) })),
+  ]);
+  // A hand-added endpoint on the same base URL WINS: it carries the user's own
+  // context windows and prices, and an auto-detected twin would replace those
+  // with bare model ids. Compared by URL, not by id, because the user names
+  // their endpoint whatever they like.
+  const claimed = new Set(custom.map((e) => e.baseUrl.replace(/\/$/, "")));
   const endpoints: CustomEndpoint[] = [
     ...(detected.models.length ? [ollamaEndpoint(detected.models)] : []),
+    ...runners
+      .filter((r) => r.models.length && !claimed.has(r.runner.baseUrl.replace(/\/$/, "")))
+      .map((r) => localRunnerEndpoint(r.runner, r.models)),
     ...custom,
   ];
   const file = path.join(agentDir, "models.json");

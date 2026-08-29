@@ -666,6 +666,8 @@ interface HvApi {
     knownProviders: string[];
   }>;
   /** Saves, then reports a free auth check. The key is stored either way. */
+  /** Local OpenAI-compatible runners found listening (LM Studio, llama.cpp). */
+  detectLocalRunners(): Promise<{ id: string; label: string; running: boolean; models: string[] }[]>;
   setProviderKey(provider: string, key: string): Promise<HvKeyProbe>;
   removeProviderKey(provider: string): Promise<void>;
   authLogin(provider: string): Promise<void>;

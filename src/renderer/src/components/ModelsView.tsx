@@ -97,6 +97,8 @@ export function ModelsView({
   const [oauthProviders, setOauthProviders] = useState<HvOAuthProvider[]>([]);
   const [auth, setAuth] = useState<Record<string, AuthProviderStatus>>({});
   const [ollama, setOllama] = useState<{ running: boolean; models: string[] } | null>(null);
+  /** LM Studio / llama.cpp found listening — zero-config, same as Ollama. */
+  const [localRunners, setLocalRunners] = useState<{ id: string; label: string; models: string[] }[]>([]);
   const [models, setModels] = useState<HvModel[]>([]);
   const [defaultModel, setDefaultModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
@@ -127,6 +129,7 @@ export function ModelsView({
     setOauthProviders(p.oauth);
     setDefaultModel(p.defaultModel);
     setOllama(await window.hv.detectOllama());
+    setLocalRunners(await window.hv.detectLocalRunners());
     setCustom(await window.hv.getCustomEndpoints());
     await window.hv.authStatus(); // status arrives as an hv.auth ui-request
     setModels(await window.hv.listModels());
@@ -268,6 +271,11 @@ export function ModelsView({
           Sign out
         </button>
       ),
+    })),
+    ...localRunners.map((r) => ({
+      key: r.id,
+      label: `${r.label} (${r.models.length} local model${r.models.length === 1 ? "" : "s"})`,
+      chip: "running",
     })),
     ...(ollama?.running
       ? [{ key: "ollama", label: `Ollama (${ollama.models.length} local model${ollama.models.length === 1 ? "" : "s"})`, chip: "running" }]
