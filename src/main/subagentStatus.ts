@@ -34,6 +34,31 @@ export interface SubagentStatus {
    * the first implementation shipped a card that never showed a number.
    */
   children?: Array<{ sessionFile: string; agent?: string }>;
+  /**
+   * The child's LIVE context occupancy — `steps[].tokens.window` (its latest
+   * turn: input + cache-read) against `steps[].contextLimit` (that model's
+   * window, resolved from Pi's own registry). pi-subagents 0.57 (#1444) added
+   * this deliberately separate from cumulative spend, and rewrites both on
+   * every child `message_end`, so it moves at the child's own turn cadence.
+   *
+   * Present only when BOTH numbers are. `contextLimit` is absent whenever the
+   * resolved model is not in Pi's registry, and a window with nothing to divide
+   * by is not a percentage — the card must then show no gauge at all rather
+   * than a 0% (PRD §19 ruling 3, the same rule as an unknown price).
+   *
+   * First step only: a fan-out's children each have their own window and one
+   * bar cannot honestly represent several.
+   */
+  context?: { window: number; limit: number };
+}
+
+/** `{window, limit}` for one status step, or undefined unless both are real. */
+function stepContext(st: Record<string, unknown> | undefined): { window: number; limit: number } | undefined {
+  const limit = st?.contextLimit;
+  const window = (st?.tokens as { window?: unknown } | undefined)?.window;
+  if (typeof limit !== "number" || !Number.isFinite(limit) || limit <= 0) return undefined;
+  if (typeof window !== "number" || !Number.isFinite(window)) return undefined;
+  return { window, limit };
 }
 
 /**
@@ -66,8 +91,10 @@ export function readSubagentStatus(asyncDir: string): SubagentStatus | null {
       sessionFile: st.sessionFile as string,
       ...(typeof st.agent === "string" ? { agent: st.agent } : {}),
     }));
+  const context = stepContext(step);
   return {
     ...(children.length ? { children } : {}),
+    ...(context ? { context } : {}),
     state: s.state as string | undefined,
     activityState: s.activityState as string | undefined,
     currentTool: (s.currentTool ?? step?.currentTool) as string | undefined,
@@ -87,6 +114,11 @@ export function statusUnchanged(a: SubagentStatus | null, b: SubagentStatus | nu
     a.currentTool === b.currentTool &&
     a.turnCount === b.turnCount &&
     a.toolCount === b.toolCount &&
+    // The context gauge moves on its own schedule (once per child turn) and can
+    // move on a tick where nothing else did — omit it here and the gauge freezes
+    // at whatever the first pushed tick happened to carry.
+    a.context?.window === b.context?.window &&
+    a.context?.limit === b.context?.limit &&
     // The child session file arriving is itself news: it is what unlocks the
     // run's cost readout, and it can land on a tick where nothing else moved.
     (a.children ?? []).map((c) => c.sessionFile).join("|") ===

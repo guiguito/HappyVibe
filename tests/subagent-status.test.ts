@@ -165,3 +165,52 @@ describe("children (the cost readout's source)", () => {
     expect(statusUnchanged(after, after)).toBe(true);
   });
 });
+
+// ── The live child context gauge (PRD §12, 2026-08-29 — the fleet round) ─────
+//
+// pi-subagents 0.57 (#1444) added context-window occupancy to status.json,
+// deliberately separate from cumulative spend: `steps[].tokens.window` is the
+// child's LATEST turn (input + cache-read, i.e. what is sitting in its window)
+// and `steps[].contextLimit` is that model's window, resolved from Pi's own
+// registry. Both are rewritten on every child `message_end`, so the poll we
+// already run ticks at exactly the right cadence.
+describe("live child context occupancy", () => {
+  test("reads window + limit off steps[0]", () => {
+    const dir = runDir({
+      state: "running",
+      steps: [{ agent: "worker", status: "running", contextLimit: 200_000, tokens: { input: 9_000, output: 400, total: 9_400, window: 12_800, windowPeak: 12_800 } }],
+    });
+    expect(readSubagentStatus(dir)?.context).toEqual({ window: 12_800, limit: 200_000 });
+  });
+
+  test("omits context entirely when the model has no known window", () => {
+    // contextLimit comes from Pi's model registry; an unregistered model has
+    // none. A window with nothing to divide by is not a percentage, and half a
+    // measurement must never render as 0% (PRD §19 ruling 3).
+    const dir = runDir({
+      state: "running",
+      steps: [{ agent: "worker", status: "running", tokens: { input: 9_000, output: 400, total: 9_400, window: 12_800 } }],
+    });
+    expect(readSubagentStatus(dir)?.context).toBeUndefined();
+  });
+
+  test("omits context when no turn has been billed yet", () => {
+    const dir = runDir({ state: "running", steps: [{ agent: "worker", status: "running", contextLimit: 200_000 }] });
+    expect(readSubagentStatus(dir)?.context).toBeUndefined();
+  });
+
+  test("a zero or negative limit is not a divisor", () => {
+    const dir = runDir({ state: "running", steps: [{ contextLimit: 0, tokens: { window: 10 } }] });
+    expect(readSubagentStatus(dir)?.context).toBeUndefined();
+  });
+
+  test("a moved window is news worth pushing", () => {
+    // statusUnchanged decides whether a tick reaches the renderer at all: a
+    // field it does not compare is a field that freezes after the first tick.
+    const a = { state: "running", context: { window: 10, limit: 100 } };
+    const b = { state: "running", context: { window: 20, limit: 100 } };
+    expect(statusUnchanged(a, b)).toBe(false);
+    expect(statusUnchanged(a, { ...a })).toBe(true);
+    expect(statusUnchanged({ state: "running" }, a)).toBe(false);
+  });
+});

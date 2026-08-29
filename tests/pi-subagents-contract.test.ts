@@ -76,6 +76,14 @@ import { buildPiArgs } from "../pi-runtime/node_modules/pi-subagents/src/runs/sh
 import { EXTERNAL_CLI_AGENTS, REDACTED_PROMPT, WAIT_TOOLS, displayableTask, isRedactedPrompt, isWaitTool } from "../pi-runtime/extensions/hv-rules";
 
 const BRIDGE = path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts");
+
+/**
+ * Contents of a file inside the vendored pi-subagents tree. Module-scoped twin
+ * of the `subagentsSrc` helper inside the lifecycle describe below, which is
+ * block-scoped; both read the same tree, neither derives a second path scheme.
+ */
+const subagentSource = (...rel: string[]): string =>
+  readFileSync(path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", ...rel), "utf8");
 const PKG = path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "package.json");
 
 describe("pi-subagents active-run inventory contract", () => {
@@ -996,5 +1004,41 @@ describe("child session files (the cost ledger's source)", () => {
     // The child's own stream reports `usage.cost.total`; calls.ts reads exactly
     // that field. We sum Pi's numbers and never price anything ourselves.
     expect(read("src", "runs", "background", "subagent-runner.ts")).toMatch(/usage\.cost \+= eventUsage\.cost\?\.total/);
+  });
+});
+
+// ── The live child context gauge (PRD §12, 2026-08-29 — the fleet round) ─────
+//
+// The run card's per-child gauge is §9's headline differentiator applied to a
+// sub-agent, and it rests entirely on two upstream fields. If either is renamed
+// or stops reaching the status file, the gauge does not break loudly — it just
+// silently never renders, which is indistinguishable from "this model has no
+// known window". These pins turn that into a failing test.
+describe("pi-subagents live child context contract", () => {
+  const types = subagentSource("src", "shared", "types.ts");
+  const projection = subagentSource("src", "runs", "background", "async-status.ts");
+
+  it("TokenUsage still carries `window` — the live occupancy, not the total", () => {
+    expect(types).toMatch(/interface TokenUsage[\s\S]{0,400}?window\?: number/);
+  });
+
+  it("an async status step still carries `contextLimit` — the divisor", () => {
+    expect(types).toMatch(/steps\?: Array<\{[\s\S]*?contextLimit\?: number/);
+  });
+
+  it("BOTH survive into the status.json projection, which is all we can read", () => {
+    // A detached run reaches us ONLY through status.json. A field that lives on
+    // the in-process type but is dropped from the projection reads to us as
+    // permanently absent, with every other assertion here still green.
+    expect(projection).toMatch(/contextLimit\?: number/);
+    expect(projection).toMatch(/tokens\?: TokenUsage/);
+  });
+
+  it("upstream updates the window per child TURN, not only at the end", () => {
+    // The word "live" is the whole feature. If this moved to a completion-only
+    // write, the gauge would appear once at 100% and never climb — and every
+    // assertion above would still pass.
+    const runner = subagentSource("src", "runs", "background", "subagent-runner.ts");
+    expect(runner).toMatch(/message_end[\s\S]{0,1500}?step\.tokens = \{[^}]*window/);
   });
 });
