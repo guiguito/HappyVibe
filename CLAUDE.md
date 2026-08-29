@@ -394,7 +394,31 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   (blocking = select/input; fire-and-forget = notify); bridge slash-commands `/hv-*` via RPC prompt.
 - JSONL EventLog, frozen envelope `{ts,type,sessionId?,workspaceId?,data?}` — audit + analytics. No SQLite.
 - Model resolution: session → workspace → global, mirrored in ipc.ts `spawnOpts` AND
-  renderer composer.ts `resolveModel` — change both or neither.
+  renderer composer.ts `resolveModel` — change both or neither. **When NOTHING resolves the app
+  now refuses rather than inventing a model** (§16 finding 7, closed 2026-08-29): `resolvePiSpawn`
+  emits no `--provider`/`--model`, the SessionManager `spawn` callback throws, and ChatView
+  disables send with a visible notice. The refusal is at that callback — the ONE choke point for
+  create/resume/hibernation-wake — and deliberately NOT inside `resolvePiSpawn`, because the
+  utility client must still spawn model-less to drive `/hv-login` before any provider exists.
+- **The BYOK provider list is GENERATED, not curated** — `npm run catalog:providers` writes
+  `src/main/providerCatalog.generated.ts` from Pi's own registry (`builtinProviders()`), and
+  `BYOK_PROVIDERS`/`BYOK_PROVIDER_IDS`/`OAUTH_PROVIDERS` are views over it. Re-run it after a Pi
+  pin bump; `tests/provider-catalog.test.ts` RE-DERIVES the catalog from the vendored tree rather
+  than agreeing with the committed file, so a bump that adds a provider fails there instead of
+  drifting. Four things bite. (1) **pi-ai is a NESTED scoped dep**, not a top-level `pi-ai`:
+  `pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/`.
+  (2) The env-var map is a **local const inside a non-exported function** — never re-parse it;
+  `auth.apiKey.resolve()` calls `ctx.env(name)` per candidate, so a RECORDING ctx reads the list
+  off the real implementation. (3) **Providers can SHARE an env var** (`moonshotai` +
+  `moonshotai-cn` are both `MOONSHOT_API_KEY`; also opencode/opencode-go, qwen-token-plan/-individual)
+  — they collapse to ONE row, because the row is what `buildProviderEnv` writes and `keySource`
+  reads, and two rows over one variable makes one key look like two. (4) Every exclusion is
+  DERIVED (no `auth.apiKey`, zero models, >1 env var, no usable base URL), so the PRD-deferred
+  multi-field cloud providers fall out on their own; the only hand-listed id is `github-copilot`
+  (OAuth-only here) and the only pinned env var is `anthropic`'s, which declares three.
+- **`npm test` stays key-free only if `sk-REPLACE` neutralisation covers EVERY catalog env var**,
+  not the original five — `tests/providers.test.ts` asserts it per row. A provider where the
+  placeholder leaked through would silently turn the 40 s non-live suite into a paid ~6 min one.
 
 ## Gotchas
 - One-shot pi CLI calls hang unless stdin is closed (`stdio: ["ignore", …]`). RPC mode unaffected.
