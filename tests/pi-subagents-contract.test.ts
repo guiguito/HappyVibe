@@ -1042,3 +1042,51 @@ describe("pi-subagents live child context contract", () => {
     expect(runner).toMatch(/message_end[\s\S]{0,1500}?step\.tokens = \{[^}]*window/);
   });
 });
+
+// ── Our bundled agents shadow upstream's builtins (PRD §12, 2026-08-29) ──────
+//
+// The fleet round AUTHORS `worker` rather than adopting upstream's, and the
+// whole reason that is free is precedence: a file in the app-owned agent dir
+// overrides the builtin of the same name outright. If upstream ever reorders
+// that merge, ours silently stops being the one that runs — and the symptom is
+// a `worker` with a different prompt and `defaultContext: fork`, which nothing
+// else here would catch.
+describe("our bundled agents still shadow upstream's builtins of the same name", () => {
+  const selection = subagentSource("src", "agents", "agent-selection.ts");
+  const OURS = path.join(__dirname, "..", "pi-runtime", "agents", "worker.md");
+
+  it("merges builtins FIRST, so later scopes overwrite them by name", () => {
+    const builtinAt = selection.indexOf("of builtinAgents");
+    const userAt = selection.indexOf("of userAgents");
+    expect(builtinAt).toBeGreaterThan(-1);
+    expect(userAt).toBeGreaterThan(builtinAt);
+    expect(selection).toContain("agentMap.set(agent.name, agent)");
+  });
+
+  it("upstream ships a builtin `worker` — the name we are deliberately taking", () => {
+    expect(subagentSource("src", "agents", "builtin-names.ts")).toContain('"worker"');
+  });
+
+  it("ours declares no defaultContext, so the config's `fresh` governs it", () => {
+    // Upstream's worker.md declares `defaultContext: fork` — the child would
+    // start from the parent's session. Config defaultSubagentContext wins over
+    // an agent defaultContext, but only for an agent that leaves it unset is
+    // that unambiguous, so ours must never acquire the key by copy-paste.
+    expect(readFileSync(OURS, "utf8")).not.toMatch(/^defaultContext:/m);
+  });
+
+  it("upstream's own worker still declares the fork we are declining to inherit", () => {
+    // If this stops being true the shadowing is less load-bearing, not more —
+    // it documents WHY we authored rather than adopted, and going stale is the
+    // signal to re-read that decision, not a failure of ours.
+    expect(subagentSource("agents", "worker.md")).toMatch(/^defaultContext: fork$/m);
+  });
+
+  it("ours is write-capable, which is the point of bundling it", () => {
+    const fm = readFileSync(OURS, "utf8");
+    for (const tool of ["bash", "edit", "write"]) expect(fm).toMatch(new RegExp(`^tools:.*\\b${tool}\\b`, "m"));
+    // contact_supervisor needs the intercom relay writeSubagentConfig disables,
+    // and an unknown/unavailable tool name fails the WHOLE run from 0.40.
+    expect(fm).not.toContain("contact_supervisor");
+  });
+});
