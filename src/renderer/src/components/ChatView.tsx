@@ -1562,27 +1562,30 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
    * opened. Toggling OFF clears rather than caching, so re-opening a running
    * child re-reads and shows what it is thinking now, not what it thought.
    */
+  /**
+   * The child's reasoning, interleaved with the calls it produced — shown
+   * whenever the card is EXPANDED, with no toggle. Expanding is already the
+   * deliberate act; a second click to see why the agent did what it did was
+   * ceremony, and the reasoning only makes sense next to the calls anyway.
+   *
+   * Kept LIVE by keying on `run.live`, which App rebuilds on every status push
+   * — and pushes are already rate-limited by `statusUnchanged`, so this re-reads
+   * roughly once per child turn or tool rather than on a timer. Measured cost:
+   * 0.3-2.7 ms to parse a real transcript (7 KB to 674 KB). Nothing runs while
+   * the card is collapsed, which is almost all of the time.
+   */
   const [childTrace, setChildTrace] = useState<HvChildTrace[] | null>(null);
   const transcriptPath = run.live?.children?.find((c) => c.transcriptPath)?.transcriptPath;
-  const showTrace = childTrace !== null;
-  /**
-   * LIVE while open. Keyed on `run.live`, which App rebuilds on every status
-   * push — and pushes are already rate-limited by `statusUnchanged`, so this
-   * re-reads roughly once per child turn or tool rather than on a timer.
-   * Measured cost: 0.3-2.7 ms to parse a real transcript (7 KB to 674 KB), and
-   * nothing at all runs while the toggle is off.
-   */
   useEffect(() => {
-    if (!showTrace || !transcriptPath) return;
+    if (!open || !transcriptPath) {
+      // Drop it on collapse so reopening shows current work, never a stale read.
+      setChildTrace(null);
+      return;
+    }
     let alive = true;
     void window.hv.subagentThinking(transcriptPath).then((rows) => { if (alive) setChildTrace(rows); }).catch(() => {});
     return () => { alive = false; };
-  }, [showTrace, transcriptPath, run.live]);
-  const toggleTrace = (): void => {
-    if (childTrace) { setChildTrace(null); return; }
-    if (!transcriptPath) return;
-    void window.hv.subagentThinking(transcriptPath).then(setChildTrace).catch(() => setChildTrace([]));
-  };
+  }, [open, transcriptPath, run.live]);
   return (
     <div
       className={`grid transition-[grid-template-rows,opacity] duration-350 ease-in-out ${
@@ -1722,19 +1725,11 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                     {/* §12 (2026-08-29): the child's reasoning, on request. The
                         toggle only appears once upstream has written the
                         transcript — before that there is nothing to read. */}
-                    {transcriptPath && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); toggleTrace(); }}
-                        className="self-start text-[11px] font-bold text-plum hover:underline cursor-pointer"
-                      >
-                        {showTrace ? "Hide thinking" : "Show thinking"}
-                      </button>
-                    )}
                     {/* §12 round 2: thinking INTERLEAVED with the calls it
                         produced, in transcript order — reasoning next to the
-                        action it explains. This replaces the recentTools list
-                        while open, because it already contains it, in order. */}
+                        action it explains. No toggle: expanding the card is the
+                        ask. This supersedes the recentTools list below, which
+                        it already contains, in order and with the why. */}
                     {childTrace?.map((row, i) =>
                       row.kind === "thinking" ? (
                         <p key={i} className="text-xs text-ink-soft italic border-l-2 border-plum/40 pl-2 whitespace-pre-wrap">{row.text}</p>
@@ -1745,9 +1740,9 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                         </div>
                       ),
                     )}
-                    {childTrace?.length === 0 && <p className="text-xs text-ink-soft">Nothing recorded for this run yet.</p>}
+
                     {run.live?.turnCount != null && <div>turn {run.live.turnCount}{currentTool ? ` · ${currentTool}` : ""}</div>}
-                    {!showTrace && (run.live?.recentTools ?? []).slice(-8).map((t, i) => (
+                    {!childTrace?.length && (run.live?.recentTools ?? []).slice(-8).map((t, i) => (
                       <div key={i} className="font-mono truncate">
                         {t.tool}{t.args ? ` ${t.args}` : ""}
                       </div>

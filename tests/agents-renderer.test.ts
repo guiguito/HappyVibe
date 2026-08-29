@@ -674,3 +674,28 @@ describe("sortAgents", () => {
     }
   });
 });
+
+// ── The child trace needs no toggle (§12, 2026-08-29 round 2) ───────────────
+describe("the expanded run card shows reasoning without a second click", () => {
+  const CHAT3 = path.join(__dirname, "..", "src", "renderer", "src", "components", "ChatView.tsx");
+  const chat3 = readFileSync(CHAT3, "utf8");
+
+  test("no Show/Hide thinking control survives", () => {
+    // An absence: the control was ceremony in front of something the user had
+    // already asked for by expanding the card.
+    expect(chat3).not.toContain("Show thinking");
+    expect(chat3).not.toContain("Hide thinking");
+    expect(chat3).not.toContain("toggleTrace");
+  });
+
+  test("the fetch is gated on `open`, so a collapsed card reads nothing", () => {
+    expect(chat3).toContain("if (!open || !transcriptPath) {");
+    expect(chat3).toContain("[open, transcriptPath, run.live]");
+  });
+
+  test("recentTools stays as the fallback when there is no trace yet", () => {
+    // The trace supersedes it (same calls, in order, with the reasoning), but a
+    // run whose transcript has not landed still needs to show something.
+    expect(chat3).toContain("{!childTrace?.length && (run.live?.recentTools ?? [])");
+  });
+});
