@@ -334,6 +334,39 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   pi-subagents hazard sharper, not softer: its drain still gates on BARE `ctx.hasUI`
   (`index.ts:689`), which is the only thing keeping it dormant for us, so if it ever adopts
   `ctx.mode` the drain arms and blocks every turn on its own async delegation.
+- **pi-subagents CACHES model failures and then silently skips that model — for 24h, machine-wide,
+  with only a `console.warn` to show for it.** 0.57's `modelExclusions`: one child that returns
+  nothing ("Subagent produced no output (possible model cold-start or empty response)") excludes
+  that model from every later delegation, in every session and workspace (the store is keyed
+  per-UID), for `DEFAULT_MODEL_EXCLUSION_TTL_MS` = 24 hours. The only signal is
+  `model-fallback.ts`'s warn, which surfaces as `[pi:stderr]` in a dev terminal and nowhere in the
+  app — so the chat shows the model the user picked while children run on a fallback. **0.58 made
+  it sharper, not softer:** #1556 fails an EXPLICITLY requested model closed instead of falling
+  back, so a per-agent model override plus one empty response = that agent's delegations fail for
+  a day. Two mitigations, both in place: `writeSubagentConfig` sets
+  `modelExclusions.defaultTtlMs = 5 min` (and because the key is set explicitly, upstream also
+  SHORTENS records already on disk, so stale 24h entries self-heal), and every live exclusion
+  becomes a `model.excluded` audit row. **Read the store through OUR path, never upstream's:**
+  spawn.ts sets `PI_MODEL_EXCLUSIONS_PATH` to `<agentDir>/model-exclusions.json` because the
+  default is an internal `os.tmpdir()/pi-subagents-<scopeId>` derivation, and mirroring an
+  upstream storage location is what the MCP keychain drift punished. `src/main/modelExclusions.ts`
+  + `tests/model-exclusions.test.ts`. Debug a "my sub-agent used the wrong model" report by
+  reading that file first — the reason and expiry are in it.
+- **A session delete must take the sub-agent data with it, and `deleteSessionFile` alone does
+  not.** It is `rmSync` on a FILE path with no `recursive`, so `<sessionsDir>/<stem>/` (the child
+  Pi session files) survived; and `<sessionsDir>/subagent-artifacts/` — which pi-subagents writes
+  FLAT into our own session dir — was referenced nowhere in `src/`. Before the fix: 18 orphaned
+  dirs and 13 unreferenced artifact run-ids on one machine. `deleteSessionChildren` (store.ts) is
+  the sibling of `deleteSessionSnapshots` and **must run BEFORE `deleteSessionFile`** — an
+  artifact's `_meta.json` names its run and agent but never its parent, so the association exists
+  only inside the parent `.jsonl`. Ids are a UNION of the `<stem>/` sub-dir names and the
+  `asyncId`/`runId` values in the parent, because those id spaces only sometimes coincide.
+  `sweepOrphanedSubagentData` collects the rest at startup: directories by NAME, artifacts by
+  REFERENCE, and it abandons the artifact pass entirely if any session file is unreadable. Two
+  traps: a **closed** session is not an orphan (§19's cost readout re-parses those child files on
+  reopen), and a filename with **no underscore** is not an artifact — pi-subagents keeps
+  `.last-cleanup` in that directory and `slice(0, indexOf("_"))` turns it into a plausible id.
+
 - **`typebox` is pinned in `pi-runtime` to exactly what `pi-coding-agent` declares — move them
   together.** The bridge does `import { Type } from "typebox"` (bare), so it resolves to whatever
   `pi-runtime/node_modules` hoists. It used not to be a direct dep at all, and the pi-subagents 0.40
