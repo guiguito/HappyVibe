@@ -696,8 +696,20 @@ export function registerIpc(win: BrowserWindow): void {
 
   const manager = new SessionManager({
     pidFile,
-    spawn: (workspace, resumeFile, sessionId) =>
-      new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile, sessionId))),
+    spawn: (workspace, resumeFile, sessionId) => {
+      // §16 finding 7 (2026-08-29): refuse rather than spawn a chat session with
+      // no model. The app used to pin one to a hardcoded deepseek/deepseek-v4-
+      // flash — a provider the user may never have configured. This is the ONE
+      // choke point every chat spawn routes through (create, resume, hibernation
+      // wake), and it is deliberately not in resolvePiSpawn: the utility client
+      // must still spawn model-less to drive /hv-login before any provider
+      // exists. The renderer blocks send on the same condition (ChatView
+      // noModel), so this is the backstop, not the message the user reads.
+      if (!resolveSpawnModel(workspace, sessionId)) {
+        throw new Error("No model configured — add a provider in Settings → Models.");
+      }
+      return new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile, sessionId)));
+    },
     // W1.3: called at the cap — hibernate the oldest idle session (stats
     // captured best-effort like close-session, index marked, renderer told),
     // or return null so the manager refuses honestly.

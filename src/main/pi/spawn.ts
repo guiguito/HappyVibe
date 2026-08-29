@@ -95,15 +95,18 @@ export interface PiSpawnOptions {
  *   and remains importable by Vitest.
  */
 export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir: string, opts: PiSpawnOptions = {}) {
-  // §16 finding 7 is OPEN: when no tier resolves (e.g. the user's only provider
-  // was a custom endpoint they removed) this pins the session to a model they
-  // may never have configured. Pi's CLI does accept the flags as optional
-  // (`if (parsed.model)`, dist/main.js buildSessionOptions), but an A/B of
-  // omitting them was INCONCLUSIVE — agents-bridge's 5s-timeout tests failed
-  // 2-of-3 in BOTH arms on a loaded machine, so there is no signal either way
-  // (2026-07-30). The default stays until someone can measure it on a quiet
-  // box; the better fix is a UI signal when nothing resolves.
-  const model = opts.model ?? { provider: "deepseek", modelId: "deepseek-v4-flash" };
+  // §16 finding 7, CLOSED 2026-08-29: no model resolved means NO model flags.
+  // This used to pin the session to a hardcoded deepseek/deepseek-v4-flash — a
+  // provider the user may never have configured, and increasingly likely to be
+  // wrong now that the catalog offers 29 of them. Pi's CLI accepts the flags as
+  // optional (`if (parsed.model)`, dist/main.js buildSessionOptions).
+  //
+  // The 2026-07-30 A/B of omitting them was inconclusive, and this change does
+  // not depend on settling it: a CHAT session with no model is refused before
+  // it ever gets here (ipc.ts), so the flagless path is not how a real turn
+  // runs. It exists for the utility client, which drives /hv-login before any
+  // provider is configured and never runs a model turn at all.
+  const model = opts.model ?? null;
   return {
     execPath: nodeExecPath(),
     args: [
@@ -184,8 +187,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.promptTemplates ?? []).flatMap((f) => ["--prompt-template", f]),
       "--no-themes",
       "--session-dir", sessionDir,
-      "--provider", model.provider,
-      "--model", model.modelId,
+      ...(model ? ["--provider", model.provider, "--model", model.modelId] : []),
     ],
     env: {
       // Env is passed through wholesale and inherited by pi-subagents child

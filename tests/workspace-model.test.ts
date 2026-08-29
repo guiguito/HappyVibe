@@ -108,12 +108,14 @@ test("a tier pinned to a removed custom endpoint is skipped, not spawned with", 
 
   expect(resolveSpawnModel(index, workspaces, ws, meta.id, known)).toEqual(GLOBAL);
 
-  // And when EVERY tier is dead the resolution is null; resolvePiSpawn then
-  // applies its load-bearing default (see tests/model-flags.test.ts — omitting
-  // the flags hangs the spawn, so finding 7 needs a UI signal, not this).
+  // And when EVERY tier is dead the resolution is null — at which point nothing
+  // is invented. §16 finding 7 was closed on 2026-08-29: the spawn carries no
+  // model flags at all, main refuses to start a chat session, and the composer
+  // says so. A session pinned to a provider the user never configured was the
+  // defect, not the fix (see tests/model-flags.test.ts).
   workspaces.setModel(ws, { provider: "hv-gone", modelId: "x" });
   expect(resolveSpawnModel(index, workspaces, ws, meta.id, ["hv-other"])).toBeNull();
-  expect(resolvePiSpawn(ws, "/sess", "/rt", { model: null }).args).toContain("--provider");
+  expect(resolvePiSpawn(ws, "/sess", "/rt", { model: null }).args).not.toContain("--provider");
 });
 
 test("trailing-slash path variants can no longer make setModel/getModel miss", () => {

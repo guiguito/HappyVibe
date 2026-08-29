@@ -132,7 +132,13 @@ export function proposeAgentsMd(
 ): Promise<string | null> {
   resolveAgentsMd(registeredWorkspaces, workspaceId); // confinement gate before any spawn
   const workspace = path.resolve(workspaceId);
-  const model = opts.model ?? { provider: "deepseek", modelId: "deepseek-v4-flash" };
+  // §16 finding 7 (2026-08-29): no configured model means NO call. This used
+  // to fall back to a hardcoded deepseek/deepseek-v4-flash, so a user with no
+  // DeepSeek key got a silent failure — and one WITH a key was billed for a
+  // provider they had not chosen for this. Callers already treat null as
+  // "no draft", which is the honest answer when nothing is set up.
+  const model = opts.model;
+  if (!model) return Promise.resolve(null);
   const prompt =
     "Draft an AGENTS.md file (context notes for a coding agent) for this project. " +
     "Do NOT inspect, read, or list any files — use ONLY the facts below. " +
