@@ -17,8 +17,15 @@ import { zoneOf, type GaugeZone } from "./context";
 import { fmtNum } from "./analytics-format";
 
 export interface ChildGauge {
-  /** 0-100, clamped. */
+  /** 0-100, clamped. Drives the ZONE; not what the pill prints. */
   percent: number;
+  /**
+   * What the pill prints. `<1%` when there IS a reading but it rounds to zero
+   * — found in the GUI pass: a 1M-window model sits at ~2k for the first half
+   * minute of a run, and a bare "0%" reads as a broken gauge rather than as an
+   * almost-empty one. A genuine zero still prints "0%".
+   */
+  text: string;
   zone: GaugeZone;
   /** "12.8k/200k" — the tooltip's figures, never the pill's own label. */
   label: string;
@@ -28,5 +35,6 @@ export function childGauge(context?: { window: number; limit: number }): ChildGa
   if (!context || !Number.isFinite(context.limit) || context.limit <= 0) return null;
   if (!Number.isFinite(context.window)) return null;
   const percent = Math.max(0, Math.min(100, Math.round((context.window / context.limit) * 100)));
-  return { percent, zone: zoneOf(percent), label: `${fmtNum(context.window)}/${fmtNum(context.limit)}` };
+  const text = percent === 0 && context.window > 0 ? "<1%" : `${percent}%`;
+  return { percent, text, zone: zoneOf(percent), label: `${fmtNum(context.window)}/${fmtNum(context.limit)}` };
 }

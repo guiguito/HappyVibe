@@ -11,7 +11,7 @@ import { childGauge } from "../src/renderer/src/subagentGauge";
  */
 describe("childGauge", () => {
   it("renders occupancy as a percentage in the session gauge's own zones", () => {
-    expect(childGauge({ window: 12_800, limit: 200_000 })).toEqual({ percent: 6, zone: "calm", label: "12.8k/200k" });
+    expect(childGauge({ window: 12_800, limit: 200_000 })).toEqual({ percent: 6, text: "6%", zone: "calm", label: "12.8k/200k" });
     expect(childGauge({ window: 100_000, limit: 200_000 })).toMatchObject({ percent: 50, zone: "amber" });
     expect(childGauge({ window: 180_000, limit: 200_000 })).toMatchObject({ percent: 90, zone: "red" });
   });
@@ -22,6 +22,21 @@ describe("childGauge", () => {
     expect(childGauge({ window: 35, limit: 100 })?.zone).toBe("amber");
     expect(childGauge({ window: 79, limit: 100 })?.zone).toBe("amber");
     expect(childGauge({ window: 80, limit: 100 })?.zone).toBe("red");
+  });
+
+  it("reads `<1%` for a real but tiny reading, never a bare 0%", () => {
+    // Found in the GUI pass: a 1M-window model shows 2.2k occupancy for the
+    // first half-minute of a run, which rounds to 0. "0%" reads as broken; the
+    // gauge is measuring, the child's head is just nearly empty. `<1%` says
+    // that, and is still honest. The ZONE stays calm either way.
+    expect(childGauge({ window: 2_200, limit: 1_000_000 })).toMatchObject({ percent: 0, text: "<1%", zone: "calm" });
+    // A genuine zero (nothing in the window at all) says so plainly.
+    expect(childGauge({ window: 0, limit: 1_000_000 })).toMatchObject({ percent: 0, text: "0%" });
+  });
+
+  it("renders whole percentages above 1% unchanged", () => {
+    expect(childGauge({ window: 20_000, limit: 1_000_000 })?.text).toBe("2%");
+    expect(childGauge({ window: 180_000, limit: 200_000 })?.text).toBe("90%");
   });
 
   it("is null with no measurement — a missing window is never a 0% gauge", () => {

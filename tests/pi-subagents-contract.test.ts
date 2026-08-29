@@ -1181,8 +1181,16 @@ describe("child-scoped stop contract", () => {
     }
   });
 
-  it("a status step still carries the childId that stop resolves", () => {
-    expect(subagentSource("src", "shared", "types.ts")).toMatch(/steps\?: Array<\{[\s\S]*?childId\?: string/);
+  it("stop resolves workflowKey / runId / step:<index> — NOT the declared childId", () => {
+    // The correction that cost a live run: `steps[].childId` is in upstream's
+    // type but null on the wire, and it is not what resolution accepts anyway.
+    // asyncStatusChildIdentity is the real chain; ours mirrors it exactly.
+    const id = subagentSource("src", "runs", "shared", "child-identity.ts");
+    expect(id).toContain("step.workflowKey ?? step.runId ?? `step:${index}`");
+    expect(id).toMatch(/asyncStatusChildIdentityCandidates[\s\S]{0,300}?workflowKey[\s\S]{0,60}?runId[\s\S]{0,60}?step:/);
+    const ours = readFileSync(new URL("../src/main/subagentStatus.ts", import.meta.url), "utf8");
+    expect(ours).toContain("[st.childId, st.workflowKey, st.runId]");
+    expect(ours).toContain("`step:${index}`");
   });
 
   it("the bridge drives `stop`, not `interrupt`, for a child", () => {

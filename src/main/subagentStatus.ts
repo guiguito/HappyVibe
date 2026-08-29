@@ -62,9 +62,9 @@ export interface SubagentStatus {
    */
   steps?: Array<{
     /**
-     * Upstream's stable caller-facing child identity — the id its `stop` RPC
-     * accepts (`runs/shared/child-identity.ts`). Absent on older rows, which is
-     * why the per-child STOP renders only where it is present.
+     * The id upstream's `stop` RPC resolves — see `childIdentity` above. NOT
+     * taken from `steps[].childId`, which is declared upstream but null on the
+     * wire; a real fan-out identifies its children by `workflowKey`.
      */
     childId?: string;
     agent?: string;
@@ -73,6 +73,28 @@ export interface SubagentStatus {
     /** The child's own transcript JSONL (0.58) — where its thinking blocks live. */
     transcriptPath?: string;
   }>;
+}
+
+/**
+ * The identity upstream's `stop` RPC will actually resolve for a child.
+ *
+ * MEASURED 2026-08-29 on a live two-child `workflowScript` run: `steps[].childId`
+ * is declared in upstream's type but is NULL on the wire — what a real fan-out
+ * carries is `workflowKey` (the key the model passed to `runs.all`). Upstream's
+ * own `asyncStatusChildIdentity` (runs/shared/child-identity.ts) is
+ * `workflowKey ?? runId ?? "step:<index>"`, and `resolveAsyncStatusChild`
+ * accepts any of the three — so we mirror that chain exactly rather than
+ * trusting the declared field. Keying on `childId` alone meant the per-child
+ * STOP never rendered on the only run shape that has more than one child.
+ *
+ * `childId` still wins when present: if upstream starts populating it, it is by
+ * definition the caller-facing one.
+ */
+function childIdentity(st: Record<string, unknown>, index: number): string | undefined {
+  for (const v of [st.childId, st.workflowKey, st.runId]) {
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return `step:${index}`;
 }
 
 /** `{window, limit}` for one status step, or undefined unless both are real. */
@@ -117,10 +139,10 @@ export function readSubagentStatus(asyncDir: string): SubagentStatus | null {
   const context = stepContext(step);
   // Every step, including ones with no session file yet — a pending child is
   // stoppable, so it has to be listed before it is billable.
-  const childRows = steps.map((st) => {
+  const childRows = steps.map((st, i) => {
     const ctx = stepContext(st);
     return {
-      ...(typeof st.childId === "string" ? { childId: st.childId } : {}),
+      ...(childIdentity(st, i) ? { childId: childIdentity(st, i) } : {}),
       ...(typeof st.agent === "string" ? { agent: st.agent } : {}),
       ...(typeof st.status === "string" ? { status: st.status } : {}),
       ...(ctx ? { context: ctx } : {}),

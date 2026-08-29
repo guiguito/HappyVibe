@@ -226,6 +226,40 @@ describe("live child context occupancy", () => {
 describe("steps (the fan-out's per-child rows)", () => {
   const write = (status: unknown): string => runDir(status);
 
+  // MEASURED 2026-08-29 on a live two-child workflowScript run, and it corrected
+  // the first implementation: `steps[].childId` is declared in upstream's type
+  // but is NULL on the wire. The identity upstream's own `stop` RPC resolves is
+  // `workflowKey ?? runId ?? "step:<index>"` (runs/shared/child-identity.ts,
+  // asyncStatusChildIdentity), so that is what we derive. Keying on childId
+  // alone meant the per-child STOP never rendered at all.
+  it("derives the child identity upstream's stop RPC actually accepts", () => {
+    const dir = write({
+      state: "running",
+      mode: "workflow",
+      steps: [
+        { agent: "code-explorer", status: "running", workflowKey: "a" },
+        { agent: "reviewer", status: "running", workflowKey: "b" },
+      ],
+    });
+    expect(readSubagentStatus(dir)?.steps?.map((c) => c.childId)).toEqual(["a", "b"]);
+  });
+
+  it("falls back through runId to step:<index>, the way upstream does", () => {
+    const dir = write({
+      state: "running",
+      steps: [
+        { agent: "x", status: "running", runId: "r-1" },
+        { agent: "y", status: "running" },
+      ],
+    });
+    expect(readSubagentStatus(dir)?.steps?.map((c) => c.childId)).toEqual(["r-1", "step:1"]);
+  });
+
+  it("an explicit childId still wins when upstream supplies one", () => {
+    const dir = write({ state: "running", steps: [{ agent: "x", status: "running", childId: "c0", workflowKey: "a" }] });
+    expect(readSubagentStatus(dir)?.steps?.[0].childId).toBe("c0");
+  });
+
   it("carries each child's stoppable identity, status and own context", () => {
     const dir = write({
       state: "running",

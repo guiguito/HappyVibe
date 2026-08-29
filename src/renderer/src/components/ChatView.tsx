@@ -1601,7 +1601,7 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                   title={`This subagent's context window: ${gauge.label} tokens`}
                   className={`shrink-0 font-mono text-[10px] font-bold rounded-full border px-1.5 py-0.5 ${GAUGE_TONE[gauge.zone]}`}
                 >
-                  {gauge.percent}%
+                  {gauge.text}
                 </span>
               )}
               {running ? (
@@ -1687,7 +1687,7 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                                 title={`${c.agent ?? "This child"}'s context window: ${g.label} tokens`}
                                 className={`shrink-0 font-mono text-[10px] font-bold rounded-full border px-1.5 py-0.5 ${GAUGE_TONE[g.zone]}`}
                               >
-                                {g.percent}%
+                                {g.text}
                               </span>
                             )}
                             <span className="shrink-0 text-[10px] uppercase tracking-wide">{c.status ?? "running"}</span>
