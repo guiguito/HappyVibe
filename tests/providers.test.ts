@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  BYOK_PROVIDERS, buildProviderEnv, isByokProvider, keySource, mergeOllamaModelsJson, OAUTH_PROVIDERS,
+  BYOK_PROVIDERS, buildProviderEnv, isByokProvider, keySource, mergeOllamaModelsJson, OAUTH_PROVIDERS, probeProviderKey,
 } from "../src/main/providers";
 import { PROVIDER_CATALOG } from "../src/main/providerCatalog.generated";
 import { readFileSync } from "node:fs";
@@ -150,5 +150,58 @@ describe("OAuth sign-in list (2026-08-29 round)", () => {
     expect(src).not.toMatch(/"openai-codex"/);
     // It renders what getProviders() sent.
     expect(src).toMatch(/setOauthProviders\(p\.oauth\)/);
+  });
+});
+
+describe("probeProviderKey (save-time key check, 2026-08-29)", () => {
+  const res = (status: number, body: unknown = { data: [] }): Response =>
+    ({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response;
+
+  test("200 from /models ⇒ ok, and it asks the provider's own base URL", async () => {
+    let seen: { url?: string; auth?: string } = {};
+    const fake = (async (url: string, init?: RequestInit) => {
+      seen = { url, auth: (init?.headers as Record<string, string>)?.Authorization };
+      return res(200);
+    }) as unknown as typeof fetch;
+    expect(await probeProviderKey("groq", "gsk_good", fake)).toEqual({ status: "ok" });
+    expect(seen.url).toBe("https://api.groq.com/openai/v1/models");
+    expect(seen.auth).toBe("Bearer gsk_good");
+  });
+
+  test("401 and 403 ⇒ bad — the only verdicts that condemn a key", async () => {
+    for (const code of [401, 403]) {
+      const fake = (async () => res(code)) as unknown as typeof fetch;
+      const out = await probeProviderKey("groq", "gsk_bad", fake);
+      expect(out.status).toBe("bad");
+      expect(out.status === "bad" && out.error).toMatch(String(code));
+    }
+  });
+
+  test("a 500, a 404 or a dead host ⇒ unverified, never bad", async () => {
+    // A provider that does not implement /models, or is simply down, must not
+    // be reported as a rejected key — that would tell the user to re-enter a
+    // key that is perfectly good.
+    for (const code of [404, 429, 500]) {
+      const fake = (async () => res(code)) as unknown as typeof fetch;
+      expect((await probeProviderKey("groq", "k", fake)).status).toBe("unverified");
+    }
+    const boom = (async () => { throw new Error("ENOTFOUND"); }) as unknown as typeof fetch;
+    expect((await probeProviderKey("groq", "k", boom)).status).toBe("unverified");
+  });
+
+  test("a provider with no base URL ⇒ unverified, and never calls out", async () => {
+    let called = false;
+    const fake = (async () => { called = true; return res(200); }) as unknown as typeof fetch;
+    // Synthesised: every shipped row has a base URL, so assert the branch directly.
+    expect((await probeProviderKey("not-a-provider", "k", fake)).status).toBe("unverified");
+    expect(called).toBe(false);
+  });
+
+  test("every catalog row can be probed or is honestly unverifiable", () => {
+    // The probe is only meaningful where a base URL exists; the UI says
+    // "couldn't verify" for the rest rather than implying a check happened.
+    for (const p of PROVIDER_CATALOG) {
+      expect(p.baseUrl === null || p.baseUrl.startsWith("https://"), p.id).toBe(true);
+    }
   });
 });

@@ -13,6 +13,21 @@ import { Section } from "./Section";
  */
 
 
+/**
+ * The "More providers…" search (2026-08-29). Rows that already have a card
+ * above the box — the featured five, plus anything with a key configured — are
+ * excluded, or the same key input would be offered twice. An empty query lists
+ * NOTHING: the point of the box is that 29 providers do not become 29 inputs.
+ */
+export function filterCatalog<T extends { id: string; label: string; source: unknown; featured: boolean }>(
+  rows: T[],
+  query: string,
+): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return rows.filter((r) => !r.featured && !r.source && `${r.label} ${r.id}`.toLowerCase().includes(q));
+}
+
 const smallBtn =
   "rounded-lg border-2 px-3 py-1.5 text-xs font-bold shadow-sticker cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
 
@@ -85,6 +100,8 @@ export function ModelsView({
   const [models, setModels] = useState<HvModel[]>([]);
   const [defaultModel, setDefaultModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [keyProbes, setKeyProbes] = useState<Record<string, HvKeyProbe>>({});
+  const [providerQuery, setProviderQuery] = useState("");
   const [login, setLogin] = useState<{ provider: string; label: string; event: AuthEvent | null } | null>(null);
   // "Add provider" area — expanded during first-run (it IS the onboarding).
   const [adding, setAdding] = useState(firstRun);
@@ -174,11 +191,65 @@ export function ModelsView({
   const saveKey = async (id: string): Promise<void> => {
     const key = keyInputs[id]?.trim();
     if (!key) return;
-    await window.hv.setProviderKey(id, key);
+    // The key is saved regardless — this only reports what the provider said
+    // when asked. "bad" means it answered 401/403; "unverified" means we could
+    // not tell (no /models route, or the host was unreachable).
+    const probe = await window.hv.setProviderKey(id, key);
+    setKeyProbes((p) => ({ ...p, [id]: probe }));
     setKeyInputs((k) => ({ ...k, [id]: "" }));
     await refresh();
     if (firstRun) onSaved();
   };
+
+  /** What the key check said, per provider. Cleared when the key is removed. */
+  const keyProbeNote = (id: string): React.JSX.Element | null => {
+    const probe = keyProbes[id];
+    if (!probe || probe.status === "ok") return null;
+    return probe.status === "bad" ? (
+      <p className="mt-1 text-xs font-bold text-berry">
+        Saved, but {byok.find((b) => b.id === id)?.label ?? id} rejected this key ({probe.error}).
+      </p>
+    ) : (
+      <p className="mt-1 text-xs text-ink-soft">Saved. We couldn&apos;t verify this key here.</p>
+    );
+  };
+
+  /** One provider's key input. Used by BOTH the featured cards and the search
+   *  results, so a provider found by search behaves exactly like a listed one. */
+  const keyCard = (p: HvByokProvider): React.JSX.Element => (
+    <div key={p.id} className="rounded-xl border-2 border-line bg-paper px-4 py-3">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="font-bold text-sm flex-1 min-w-0">{p.label}</div>
+        <span className="text-[10px] text-ink-soft font-medium">{p.modelCount} models</span>
+        {p.source === "env" && <Chip tone="honey">.env</Chip>}
+        {p.source === "stored" && <Chip tone="leaf">key saved</Chip>}
+      </div>
+      <form
+        className="flex gap-2"
+        onSubmit={(ev) => {
+          ev.preventDefault();
+          void saveKey(p.id);
+        }}
+      >
+        <input
+          type="password"
+          placeholder={p.source ? "Paste a new key to replace…" : "Paste API key…"}
+          value={keyInputs[p.id] ?? ""}
+          onChange={(e) => setKeyInputs((k) => ({ ...k, [p.id]: e.target.value }))}
+          className="flex-1 min-w-0 font-mono text-xs rounded-lg border-2 border-line bg-card px-3 py-2 focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+        />
+        <button
+          type="submit"
+          disabled={!keyInputs[p.id]?.trim()}
+          className={`${smallBtn} bg-tangerine text-paper border-tangerine-deep enabled:hover:brightness-105 disabled:opacity-40`}
+        >
+          Save
+        </button>
+      </form>
+      {keyProbeNote(p.id)}
+      <p className="text-xs text-ink-soft mt-1.5">Keys are encrypted with your OS keychain.</p>
+    </div>
+  );
 
   const signedIn = (id: string): boolean => isSignedIn(auth[id]);
 
@@ -337,38 +408,28 @@ export function ModelsView({
 
               <GroupLabel>Cloud API keys</GroupLabel>
               <div className="flex flex-col gap-3">
-                {byok.map((p) => (
-                  <div key={p.id} className="rounded-xl border-2 border-line bg-paper px-4 py-3">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="font-bold text-sm flex-1 min-w-0">{p.label}</div>
-                      {p.source === "env" && <Chip tone="honey">.env</Chip>}
-                      {p.source === "stored" && <Chip tone="leaf">key saved</Chip>}
-                    </div>
-                    <form
-                      className="flex gap-2"
-                      onSubmit={(ev) => {
-                        ev.preventDefault();
-                        void saveKey(p.id);
-                      }}
-                    >
-                      <input
-                        type="password"
-                        placeholder={p.source ? "Paste a new key to replace…" : "Paste API key…"}
-                        value={keyInputs[p.id] ?? ""}
-                        onChange={(e) => setKeyInputs((k) => ({ ...k, [p.id]: e.target.value }))}
-                        className="flex-1 min-w-0 font-mono text-xs rounded-lg border-2 border-line bg-card px-3 py-2 focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!keyInputs[p.id]?.trim()}
-                        className={`${smallBtn} bg-tangerine text-paper border-tangerine-deep enabled:hover:brightness-105 disabled:opacity-40`}
-                      >
-                        Save
-                      </button>
-                    </form>
-                    <p className="text-xs text-ink-soft mt-1.5">Keys are encrypted with your OS keychain.</p>
+                {byok.filter((p) => p.featured || p.source).map(keyCard)}
+              </div>
+
+              {/* The long tail of Pi's registry. One search box, one input per
+                  pick — never 29 inputs stacked down the page. */}
+              <div className="mt-3">
+                <input
+                  type="search"
+                  value={providerQuery}
+                  onChange={(e) => setProviderQuery(e.target.value)}
+                  placeholder={`More providers… (search ${byok.length} supported by Pi)`}
+                  className="w-full text-sm rounded-lg border-2 border-line bg-card px-3 py-2 focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+                />
+                {providerQuery.trim() && (
+                  <div className="flex flex-col gap-3 mt-3">
+                    {filterCatalog(byok, providerQuery).length === 0 ? (
+                      <p className="text-xs text-ink-soft px-1">No provider matches “{providerQuery}”.</p>
+                    ) : (
+                      filterCatalog(byok, providerQuery).map(keyCard)
+                    )}
                   </div>
-                ))}
+                )}
               </div>
 
               <GroupLabel>Custom endpoint</GroupLabel>

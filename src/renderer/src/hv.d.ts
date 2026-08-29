@@ -194,6 +194,9 @@ interface HvByokProvider {
   modelCount: number;
 }
 
+/** Mirrors KeyProbe in src/main/providers.ts. "bad" = the provider said no. */
+type HvKeyProbe = { status: "ok" } | { status: "unverified" } | { status: "bad"; error: string };
+
 /** Mirrors OAUTH_PROVIDERS in src/main/providers.ts (separate tsconfig roots). */
 interface HvOAuthProvider {
   id: string;
@@ -662,7 +665,8 @@ interface HvApi {
     /** §16: the provider set BOTH main and the renderer filter model refs with. */
     knownProviders: string[];
   }>;
-  setProviderKey(provider: string, key: string): Promise<void>;
+  /** Saves, then reports a free auth check. The key is stored either way. */
+  setProviderKey(provider: string, key: string): Promise<HvKeyProbe>;
   removeProviderKey(provider: string): Promise<void>;
   authLogin(provider: string): Promise<void>;
   authLoginCancel(provider: string): Promise<void>;

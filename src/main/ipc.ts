@@ -51,7 +51,7 @@ import {
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, OAUTH_PROVIDERS, syncModelsJson,
+  authJsonProviders, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
@@ -2665,10 +2665,15 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:set-provider-key", async (_e, provider: string, key: string) => {
     if (!isByokProvider(provider)) throw new Error(`Unknown provider: ${provider}`);
     setProviderKey(provider, key);
+    // The probe INFORMS, it never blocks: the key is already saved above. A
+    // provider that answers 401 to a model listing but works for completions
+    // would otherwise lock the user out of a key that is fine.
+    const probe = await probeProviderKey(provider, key);
     // Keys ride spawn env: the utility client respawns now; running chat
     // sessions keep their env until their next spawn (never yanked mid-turn).
     await restartUtility();
     providersChanged();
+    return probe;
   });
   ipcMain.handle("hv:remove-provider-key", async (_e, provider: string) => {
     if (!isByokProvider(provider)) throw new Error(`Unknown provider: ${provider}`);

@@ -171,17 +171,52 @@ export async function syncOllamaModels(agentDir: string): Promise<{ running: boo
 export async function fetchEndpointModels(
   baseUrl: string,
   key?: string,
-): Promise<{ ok: boolean; models: string[]; error?: string }> {
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: boolean; models: string[]; error?: string; status?: number }> {
   try {
-    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, {
+    const res = await fetchImpl(`${baseUrl.replace(/\/$/, "")}/models`, {
       headers: key ? { Authorization: `Bearer ${key}` } : {},
       signal: AbortSignal.timeout(4000),
     });
-    if (!res.ok) return { ok: false, models: [], error: `HTTP ${res.status}` };
+    // `status` is reported alongside the message so callers can tell an auth
+    // rejection from a server that is merely down — probeProviderKey needs that
+    // distinction and parsing it back out of "HTTP 401" would be silly.
+    if (!res.ok) return { ok: false, models: [], error: `HTTP ${res.status}`, status: res.status };
     return { ok: true, models: parseOpenAiModelList(await res.json()) };
   } catch (e) {
     return { ok: false, models: [], error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * Verdict on a key the user just entered. Deliberately three-valued: a key is
+ * only ever condemned by the provider SAYING NO (401/403). A 404, a 500 or a
+ * dead host means we could not tell — reporting that as a bad key would send
+ * the user off to re-enter a key that is perfectly good.
+ */
+export type KeyProbe = { status: "ok" } | { status: "unverified" } | { status: "bad"; error: string };
+
+/**
+ * Check a key at save time against the provider's own `/models`, so a dead key
+ * is an inline error at entry rather than a failed first turn. Free — it proves
+ * AUTH, not balance (an insufficient-balance 402 only shows on a completion;
+ * see the 0.50 post-mortem in CLAUDE.md), which is why "ok" is not a promise
+ * that the next call succeeds.
+ *
+ * ponytail: not every provider serves /models — the anthropic-messages ones
+ * generally do not. Those land on "unverified", which the UI states plainly.
+ */
+export async function probeProviderKey(
+  id: string,
+  key: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<KeyProbe> {
+  const baseUrl = PROVIDER_CATALOG.find((p) => p.id === id)?.baseUrl;
+  if (!baseUrl) return { status: "unverified" };
+  const res = await fetchEndpointModels(baseUrl, key, fetchImpl);
+  if (res.ok) return { status: "ok" };
+  if (res.status === 401 || res.status === 403) return { status: "bad", error: res.error ?? `HTTP ${res.status}` };
+  return { status: "unverified" };
 }
 
 /** Providers present in Pi's auth.json (app-owned agent dir). Names only. */
