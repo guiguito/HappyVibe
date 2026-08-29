@@ -58,7 +58,7 @@ import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJ
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
 import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
-import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
+import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
@@ -542,6 +542,23 @@ export function registerIpc(win: BrowserWindow): void {
   } catch (e) {
     console.warn("[hv] subagent settings write failed:", e);
   }
+
+  // §5 (2026-08-29): reclaim sub-agent data whose session is already gone. Before
+  // deleteSessionChildren existed, every deleted session left its child Pi session
+  // files and its subagent-artifacts behind — 18 orphaned directories and 13
+  // unreferenced artifact run-ids on the machine this was found on. Cheap half
+  // (directories, by name) needs no reads; the artifact half bails entirely if any
+  // session file is unreadable. Non-blocking: a slow disk must not delay the window.
+  setTimeout(() => {
+    try {
+      const swept = sweepOrphanedSubagentData(sessionDir());
+      if (swept.dirs || swept.artifacts) {
+        console.log(`[hv] swept ${swept.dirs} orphaned sub-agent dir(s), ${swept.artifacts} artifact file(s)`);
+      }
+    } catch (e) {
+      console.warn("[hv] sub-agent sweep failed:", e);
+    }
+  }, 0).unref?.();
 
 
   // W1.3: main-side activity knowledge (busy / pending prompt / subagent) —
@@ -1912,6 +1929,9 @@ export function registerIpc(win: BrowserWindow): void {
       if (mode === "delete") {
         if (manager.get(s.id)) await endSession(s.id);
         index.remove(s.id);
+        // §5: before the session file, never after — the run ids its sub-agent
+        // artifacts are filed under exist only inside it.
+        deleteSessionChildren(sessionDir(), s.piSessionFile);
         deleteSessionFile(sessionDir(), s.piSessionFile);
         deleteSessionSnapshots(snapshotDir(), s.id);
         void log.append({ type: "session.delete", sessionId: s.id, workspaceId: s.workspaceId });
@@ -2131,6 +2151,9 @@ export function registerIpc(win: BrowserWindow): void {
     const meta = index.get(sessionId);
     if (!meta || !isSessionEmpty(meta, sessionDir())) return false;
     index.remove(sessionId);
+    // A no-op for an empty session (it never delegated), and one code path beats
+    // a special case. Still before deleteSessionFile, for the same reason.
+    deleteSessionChildren(sessionDir(), meta.piSessionFile);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
     deleteSessionSnapshots(snapshotDir(), sessionId);
     lastOpenFiles.delete(sessionId);
@@ -2175,6 +2198,10 @@ export function registerIpc(win: BrowserWindow): void {
     if (!meta) return;
     if (manager.get(sessionId)) await endSession(sessionId, terminals_);
     index.remove(sessionId);
+    // §5 (2026-08-29): the child Pi session files and the flat
+    // subagent-artifacts/<runId>_* sets die with the session too. MUST precede
+    // deleteSessionFile — the artifact ids are only readable while it exists.
+    deleteSessionChildren(sessionDir(), meta.piSessionFile);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
     deleteSessionSnapshots(snapshotDir(), sessionId); // §9: snapshots die with the session
     lastOpenFiles.delete(sessionId); // round 11: no stale set for a dead session

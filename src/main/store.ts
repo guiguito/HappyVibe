@@ -256,6 +256,182 @@ export function childSessionFiles(
   return out;
 }
 
+/**
+ * Everything a session's sub-agents left on disk, in the two places they land.
+ *
+ * `subagent-artifacts/` is upstream's, written straight into OUR session dir, and
+ * flat: one `<runId>_<agent>[_<idx>]_{input,output,meta,transcript}` set per child
+ * run, with no record of which session it belonged to (`_meta.json` names the run
+ * and the agent, never the parent). So the association exists in exactly one
+ * place — the parent session file — and only until it is deleted.
+ */
+const ARTIFACT_DIR = "subagent-artifacts";
+
+/** A run id we are willing to match artifacts against. Long enough that it cannot
+ *  prefix-match half the directory, and free of separators so it cannot escape. */
+const plausibleRunId = (id: string): boolean =>
+  id.length >= 8 && id.length <= 128 && /^[A-Za-z0-9._-]+$/.test(id);
+
+/**
+ * Every run id a session's children could be filed under.
+ *
+ * A UNION on purpose. The `<stem>/` sub-directory names, `details.asyncId` and the
+ * artifact prefixes are three id spaces that only sometimes coincide (CLAUDE.md's
+ * "two ids" finding), so deriving one from another silently misses files. Reading
+ * both sources costs one file read we are about to throw away anyway.
+ */
+function sessionRunIds(sessionDirPath: string, piSessionFile: string | undefined): Set<string> {
+  const ids = new Set<string>();
+  for (const child of childSessionFiles(sessionDirPath, piSessionFile)) {
+    if (plausibleRunId(child.runId)) ids.add(child.runId);
+  }
+  const raw = readSessionFile(sessionDirPath, piSessionFile);
+  if (raw) {
+    for (const m of raw.matchAll(/"(?:asyncId|runId)"\s*:\s*"([^"]+)"/g)) {
+      if (plausibleRunId(m[1])) ids.add(m[1]);
+    }
+  }
+  return ids;
+}
+
+/** Delete `subagent-artifacts/<id>_*` for each id. Exact `<id>_` prefix, never a
+ *  bare startsWith, and every path re-confined before it is removed. */
+function deleteArtifactsFor(sessionDirPath: string, ids: ReadonlySet<string>): number {
+  if (ids.size === 0) return 0;
+  const dir = path.join(path.resolve(sessionDirPath), ARTIFACT_DIR);
+  let removed = 0;
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return 0; // no artifacts dir = nothing to clean
+  }
+  for (const name of names) {
+    // A name with no `_` is not an artifact: pi-subagents keeps its own
+    // bookkeeping in this directory (`.last-cleanup`, a retention timestamp).
+    // Without this guard `indexOf` returns -1, `slice(0, -1)` yields a
+    // plausible-looking id, and the sweep deletes a file that is not ours.
+    const sep = name.indexOf("_");
+    if (sep <= 0) continue;
+    const id = name.slice(0, sep);
+    if (!ids.has(id)) continue;
+    const resolved = confinedSessionPath(sessionDirPath, path.join(dir, name));
+    if (!resolved) continue;
+    try {
+      fs.rmSync(resolved, { recursive: true, force: true });
+      removed++;
+    } catch {
+      /* locked — the session is going either way */
+    }
+  }
+  return removed;
+}
+
+/**
+ * Delete a session's sub-agent data: its child Pi session files and its artifacts.
+ *
+ * The sibling of `deleteSessionSnapshots` — §5's "delete means delete" applied to
+ * the one thing it was missing. Before this, `deleteSessionFile` removed only the
+ * `.jsonl` (no `recursive`, and it is handed a FILE path), so `<stem>/` and every
+ * `subagent-artifacts/<runId>_*` survived the session forever. Measured 2026-08-29
+ * on a real install: 18 orphaned child directories and 13 artifact run-ids
+ * belonging to no surviving session. `_output.md` holds the child's whole answer
+ * and `_transcript.jsonl` its thinking, so this is content a user believed they
+ * had deleted.
+ *
+ * MUST be called BEFORE deleteSessionFile: the artifact ids are only recoverable
+ * while the parent session file exists. tests/session-delete-children.test.ts pins
+ * that ordering at the call sites.
+ *
+ * Never throws — a cleanup failure must not block the delete the user asked for.
+ */
+export function deleteSessionChildren(sessionDirPath: string, piSessionFile: string | undefined): void {
+  const parent = confinedSessionPath(sessionDirPath, piSessionFile);
+  if (!parent) return;
+  try {
+    const ids = sessionRunIds(sessionDirPath, piSessionFile);
+    // The child-session root is the parent path minus its extension, so it needs
+    // no lookup and cannot point anywhere the parent does not already.
+    fs.rmSync(parent.replace(/\.jsonl$/, ""), { recursive: true, force: true });
+    deleteArtifactsFor(sessionDirPath, ids);
+  } catch {
+    /* best effort: the index entry and the session file go regardless */
+  }
+}
+
+/**
+ * Reclaim sub-agent data whose session is already gone.
+ *
+ * Two halves, deliberately unequal in cost. A `<stem>/` directory whose
+ * `<stem>.jsonl` does not exist is unambiguously dead and needs no scanning — that
+ * is the bulk of the bytes. The flat artifacts have no parent recorded anywhere,
+ * so the only sound test is REFERENCE: an id named by no surviving session file
+ * belongs to no surviving session.
+ *
+ * Conservative by construction. If any session file fails to read, the artifact
+ * half is skipped entirely rather than run on partial knowledge — a leak is a
+ * smaller failure than deleting a live session's data. And a directory must look
+ * like a session stem before it is considered, so an unexpected neighbour in the
+ * sessions dir is left alone.
+ *
+ * NOTE: a CLOSED session is not an orphan. Its `.jsonl` is still there, so both
+ * halves skip it — which matters because the sub-agent cost readout re-parses
+ * exactly those child session files when the session is reopened (PRD §19).
+ */
+export function sweepOrphanedSubagentData(sessionDirPath: string): { dirs: number; artifacts: number } {
+  const root = path.resolve(sessionDirPath);
+  const out = { dirs: 0, artifacts: 0 };
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return out; // no sessions dir yet
+  }
+
+  // Half 1: child directories, by name. No file reads at all.
+  for (const e of entries) {
+    if (!e.isDirectory() || e.name === ARTIFACT_DIR) continue;
+    if (!/^\d{4}-\d{2}-\d{2}T/.test(e.name)) continue; // not a session stem — not ours
+    if (fs.existsSync(path.join(root, `${e.name}.jsonl`))) continue; // its session is alive
+    try {
+      fs.rmSync(path.join(root, e.name), { recursive: true, force: true });
+      out.dirs++;
+    } catch {
+      /* locked — try again next start */
+    }
+  }
+
+  // Half 2: artifacts, by reference. Bail on ANY unreadable session.
+  const referenced = new Set<string>();
+  for (const e of entries) {
+    if (!e.isFile() || !e.name.endsWith(".jsonl")) continue;
+    let raw: string;
+    try {
+      raw = fs.readFileSync(path.join(root, e.name), "utf8");
+    } catch {
+      return out; // partial knowledge: keep everything
+    }
+    for (const m of raw.matchAll(/"(?:asyncId|runId)"\s*:\s*"([^"]+)"/g)) {
+      if (plausibleRunId(m[1])) referenced.add(m[1]);
+    }
+  }
+  let names: string[];
+  try {
+    names = fs.readdirSync(path.join(root, ARTIFACT_DIR));
+  } catch {
+    return out;
+  }
+  const orphaned = new Set<string>();
+  for (const name of names) {
+    const sep = name.indexOf("_");
+    if (sep <= 0) continue; // not an artifact (see deleteArtifactsFor)
+    const id = name.slice(0, sep);
+    if (plausibleRunId(id) && !referenced.has(id)) orphaned.add(id);
+  }
+  out.artifacts = deleteArtifactsFor(sessionDirPath, orphaned);
+  return out;
+}
+
 /** Per-workspace settings (W1.4). Model hierarchy: session → workspace → global;
  *  the session tier lands in Wave 2 — `model` here is the workspace tier. */
 export interface WorkspaceEntry {
