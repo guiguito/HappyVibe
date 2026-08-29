@@ -56,7 +56,7 @@ No code changes beyond the pin. The point of this task is to find out what actua
 - [ ] **Step 1: Record the pre-bump baseline so a later failure is attributable**
 
 ```bash
-cd /Users/guilhemduche/.superset/worktrees/HappyVibe/bump-_058
+# from the repo root
 L=/tmp/vitest-baseline.log
 npm test > $L 2>&1; echo "EXIT=$?"
 tail -15 $L
