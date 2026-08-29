@@ -10,7 +10,7 @@ import { piRuntimeDir } from "./pi/runtimeDir";
 import {
   agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig,
+  saveCustomEndpoint, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
   childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
@@ -58,7 +58,8 @@ import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJ
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
 import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
-import { deleteSessionFile, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
+import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } from "./modelExclusions";
+import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
@@ -534,6 +535,59 @@ export function registerIpc(win: BrowserWindow): void {
     console.warn("[hv] subagent config write failed:", e);
   }
 
+  // §12 (2026-08-28): keep upstream's six external-CLI builtin agents out of the
+  // roster the model is shown. Hygiene, not enforcement — the bridge refuses one
+  // outright, because a project-scope .pi/settings.json beats this file.
+  try {
+    writeSubagentSettings();
+  } catch (e) {
+    console.warn("[hv] subagent settings write failed:", e);
+  }
+
+  /** Where pi-subagents keeps its cached model exclusions — ours, not derived. */
+  const modelExclusionsPath = (): string => path.join(agentDir(), "model-exclusions.json");
+
+  /**
+   * §19: report a silently substituted model, once per exclusion.
+   *
+   * pi-subagents skips an excluded model on every delegation and says so only on
+   * stderr, so without this the chat shows a model the children are not using.
+   * Keyed by model+expiry, so a re-exclusion after one lapses is reported again
+   * while a live one is not repeated on every poll.
+   */
+  const reportedExclusions = new Set<string>();
+  const reportModelExclusions = (sessionId?: string, workspaceId?: string): void => {
+    for (const x of readExclusions(modelExclusionsPath(), Date.now())) {
+      const key = exclusionKey(x);
+      const notice = formatExclusionNotice(x, Date.now());
+      if (!key || !notice || reportedExclusions.has(key)) continue;
+      reportedExclusions.add(key);
+      void log.append({
+        type: "model.excluded",
+        ...(sessionId ? { sessionId } : {}),
+        ...(workspaceId ? { workspaceId } : {}),
+        data: { model: exclusionModel(x), notice, expiresAt: x.expiresAt },
+      });
+    }
+  };
+
+  // §5 (2026-08-29): reclaim sub-agent data whose session is already gone. Before
+  // deleteSessionChildren existed, every deleted session left its child Pi session
+  // files and its subagent-artifacts behind — 18 orphaned directories and 13
+  // unreferenced artifact run-ids on the machine this was found on. Cheap half
+  // (directories, by name) needs no reads; the artifact half bails entirely if any
+  // session file is unreadable. Non-blocking: a slow disk must not delay the window.
+  setTimeout(() => {
+    try {
+      const swept = sweepOrphanedSubagentData(sessionDir());
+      if (swept.dirs || swept.artifacts) {
+        console.log(`[hv] swept ${swept.dirs} orphaned sub-agent dir(s), ${swept.artifacts} artifact file(s)`);
+      }
+    } catch (e) {
+      console.warn("[hv] sub-agent sweep failed:", e);
+    }
+  }, 0).unref?.();
+
 
   // W1.3: main-side activity knowledge (busy / pending prompt / subagent) —
   // hibernation must never touch a genuinely active session.
@@ -605,6 +659,9 @@ export function registerIpc(win: BrowserWindow): void {
       // §24: one --prompt-template per approved ∩ enabled ∩ active command. No
       // manifest counterpart — the bridge reads nothing about commands.
       promptTemplates: workspace && sessionId ? activePromptTemplateEntries(workspace) : [],
+      // §19: a path we own, so main can read the cached model exclusions rather
+      // than re-deriving upstream's tmp layout (modelExclusions.ts).
+      modelExclusionsFile: modelExclusionsPath(),
     };
   };
 
@@ -1035,7 +1092,9 @@ export function registerIpc(win: BrowserWindow): void {
       // ── An async delegation announces itself HERE, not on a lifecycle notify ──
       // pi-subagents 0.50 runs every top-level delegation as a workflow, and that
       // path emits `subagent:async-complete` but never `subagent:async-started`
-      // (measured — docs/validation/d1.md §pi-subagents 0.50). THREE things used to
+      // (measured — docs/validation/d1.md §pi-subagents 0.50). 0.55 unwrapped
+      // single-child launches, so at 0.58 that notify fires again; announcing from
+      // the tool result still wins because it needs no notify at all. THREE things used to
       // hang off that dead notify and all failed silently:
       //   1. activity.asyncStarted — without it `isIdle` is true while a delegation
       //      runs, so hibernation or an MCP live-reload could manager.stop() the
@@ -1686,6 +1745,11 @@ export function registerIpc(win: BrowserWindow): void {
    */
   const childSessionsByRun = new Map<string, Array<{ sessionFile: string; agent?: string }>>();
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
+    // §19: a delegation is exactly when a cached model exclusion starts mattering
+    // — it is the call that gets silently rerouted. Checked here rather than on a
+    // timer so the row lands next to the run it affected, and deduped by
+    // model+expiry so a live exclusion is reported once, not once per poll.
+    reportModelExclusions(sessionId, index.get(sessionId)?.workspaceId);
     if (!asyncDir || subagentPollers.has(runId)) return;
     const stop = pollSubagentStatus(asyncDir, (status) => {
       if (status.children?.length) childSessionsByRun.set(runId, status.children);
@@ -1903,6 +1967,9 @@ export function registerIpc(win: BrowserWindow): void {
       if (mode === "delete") {
         if (manager.get(s.id)) await endSession(s.id);
         index.remove(s.id);
+        // §5: before the session file, never after — the run ids its sub-agent
+        // artifacts are filed under exist only inside it.
+        deleteSessionChildren(sessionDir(), s.piSessionFile);
         deleteSessionFile(sessionDir(), s.piSessionFile);
         deleteSessionSnapshots(snapshotDir(), s.id);
         void log.append({ type: "session.delete", sessionId: s.id, workspaceId: s.workspaceId });
@@ -2122,6 +2189,9 @@ export function registerIpc(win: BrowserWindow): void {
     const meta = index.get(sessionId);
     if (!meta || !isSessionEmpty(meta, sessionDir())) return false;
     index.remove(sessionId);
+    // A no-op for an empty session (it never delegated), and one code path beats
+    // a special case. Still before deleteSessionFile, for the same reason.
+    deleteSessionChildren(sessionDir(), meta.piSessionFile);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
     deleteSessionSnapshots(snapshotDir(), sessionId);
     lastOpenFiles.delete(sessionId);
@@ -2166,6 +2236,10 @@ export function registerIpc(win: BrowserWindow): void {
     if (!meta) return;
     if (manager.get(sessionId)) await endSession(sessionId, terminals_);
     index.remove(sessionId);
+    // §5 (2026-08-29): the child Pi session files and the flat
+    // subagent-artifacts/<runId>_* sets die with the session too. MUST precede
+    // deleteSessionFile — the artifact ids are only readable while it exists.
+    deleteSessionChildren(sessionDir(), meta.piSessionFile);
     deleteSessionFile(sessionDir(), meta.piSessionFile);
     deleteSessionSnapshots(snapshotDir(), sessionId); // §9: snapshots die with the session
     lastOpenFiles.delete(sessionId); // round 11: no stale set for a dead session
@@ -2958,11 +3032,15 @@ export function registerIpc(win: BrowserWindow): void {
    * two lists that happen to share a screen.
    */
   ipcMain.handle("hv:read-audit", async (_e, filter?: { sessionId?: string; workspaceId?: string }) => {
-    const [decisions, oneShots] = await Promise.all([
+    const [decisions, oneShots, excluded] = await Promise.all([
       log.read({ type: "permission.decision", ...filter }),
       log.read({ type: "assistant.oneshot", ...filter }),
+      // §19: a model the app is silently NOT using is the third thing this page
+      // answers for — it is neither a decision nor a call, but it IS something
+      // the app did on the user's behalf.
+      log.read({ type: "model.excluded", ...filter }),
     ]);
-    return [...decisions, ...oneShots].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    return [...decisions, ...oneShots, ...excluded].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   });
 
   // ── B7: local analytics (read + aggregate in main, never leaves the machine) ──

@@ -3,10 +3,10 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, displayableTask, evaluate, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, displayableTask, evaluate, isExternalCliAgent, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
-  SUBAGENT_TASKS_TYPE, claimTask, emptyTaskMap, releaseTask, restoreTaskMap, serializeTaskMap,
-  stashPendingTask, taskFor, type TaskMapState,
+  SUBAGENT_TASKS_TYPE, bindRun, claimTask, dropPendingTask, emptyTaskMap, releaseTask, restoreTaskMap,
+  serializeTaskMap, stashPendingTask, taskFor, type TaskMapState,
 } from "./hv-subagent-tasks";
 import {
   createChildOutputStore, rememberChildOutputs, substituteDeliveries, type DeliveryMessage,
@@ -844,6 +844,31 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  /**
+   * Bind a delegation to the run it produced — the EXACT caption pairing.
+   *
+   * `tool_result` is the only event carrying BOTH the tool call id and
+   * `details.asyncId` (the run id), which is what makes this immune to the
+   * same-agent fan-out that broke the old per-agent slot. The `async-started`
+   * notify cannot do it: it carries no tool call id, so with two dispatches
+   * outstanding it now declines to caption rather than guessing wrong.
+   *
+   * Fails open in every direction: a foreground delegation has no `asyncId` and
+   * simply drops its pending entry, and an unknown shape leaves the store alone.
+   */
+  pi.on("tool_result", async (event) => {
+    if (event.toolName !== "subagent") return;
+    const details = (event as { details?: { asyncId?: unknown; runId?: unknown } }).details;
+    const runId = typeof details?.asyncId === "string" ? details.asyncId : undefined;
+    if (!runId) {
+      // Foreground, refused, or errored: no run to caption, so release the slot
+      // instead of leaving it to make the next claim ambiguous.
+      dropPendingTask(subagentTasks, event.toolCallId);
+      return;
+    }
+    if (bindRun(subagentTasks, event.toolCallId, runId)) persistSubagentTasks(pi);
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     const tool = event.toolName as string;
     const input = (event.input ?? {}) as Record<string, unknown>;
@@ -867,10 +892,10 @@ export default function (pi: ExtensionAPI) {
     // The run card's caption, captured at the ONE point it is still readable:
     // pi-subagents >=0.50 redacts `task` on every surface we could read it back
     // from (events, status.json, metadata), so remember it now, before dispatch.
-    // Recorded even if this call is about to be denied — the store is
-    // last-write-wins per agent precisely so a denied task cannot outlive its
-    // retry (hv-subagent-tasks.ts).
-    if (tool === "subagent") stashPendingTask(subagentTasks, input.task, input.agent);
+    // Keyed by THIS call's id: a model can emit two `subagent` toolCall blocks in
+    // one assistant message, and the previous per-agent slot silently overwrote
+    // the first — captioning one run with the other's task (2026-08-29).
+    if (tool === "subagent") stashPendingTask(subagentTasks, event.toolCallId, input.task, input.agent);
     // Direct MCP tools: drop the injected intent BEFORE anything reads input
     // (permission summaries stay factual, per the PRD) — the adapter would
     // forward it verbatim to the MCP server otherwise. The UI already has it:
@@ -892,6 +917,35 @@ export default function (pi: ExtensionAPI) {
     // read-only explorer cover a bash-wielding agent for the rest of the session.
     const subagentName = tool === "subagent" && typeof input.agent === "string" ? input.agent : null;
     const permTool = mcp?.ruleTool ?? browserNav ?? (subagentName ? boundaryRuleName(subagentName) : tool);
+
+    // Declared HERE, not further down, because the §12 refusals below audit with
+    // it. It used to sit after `grantBoundary`, i.e. AFTER three call sites that
+    // read it — a temporal-dead-zone ReferenceError on every one of those refusal
+    // paths. It failed closed (Pi's beforeToolCall re-throws as "Extension
+    // failed, blocking execution"), so the boundary held, but the refusal
+    // surfaced as an extension crash with NO hv.audit row instead of a clean
+    // denial naming the reason. Nothing caught it: this file is in neither
+    // typecheck include list (tsconfig.node.json lists only the pure hv-*.ts
+    // modules), and no test invokes the handler on those three paths.
+    const summary = mcp?.display ?? summarize(tool, input);
+
+    // §12 (2026-08-28): pi-subagents 0.58 ships six external-CLI builtin agents,
+    // which launch a third-party CLI in its own process. The ceiling cannot bound
+    // one, the child guard cannot run inside one, and its tool calls never reach
+    // the audit log, so none of §12's three layers reach inside it. Refused BEFORE
+    // resolveBoundary below, which is also what WIDENS the session ceiling — a
+    // grant for an agent nothing can hold to it is worse than no grant at all.
+    if (isExternalCliAgent(subagentName)) {
+      audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+      return {
+        block: true,
+        reason:
+          `HappyVibe does not run '${subagentName}': it launches a separate ${subagentName} CLI process, ` +
+          "so this app's permission boundary, its capability ceiling and its audit log cannot see or " +
+          "govern anything it does. Delegate to one of this session's own sub-agents instead, or do the " +
+          "work in this session where every tool call goes through the gate.",
+      };
+    }
 
     // §12 FR1: resolve the child's reach BEFORE the prompt, so the human approves
     // a boundary rather than a verb. Side-effect-free.
@@ -937,7 +991,6 @@ export default function (pi: ExtensionAPI) {
         applyCeiling(sessionIdOf(ctx));
       }
     };
-    const summary = mcp?.display ?? summarize(tool, input);
 
     // W2.3: nested AGENTS.md discovery — every file-tool call reveals which
     // subtree the session touches; the nearest AGENTS.md above the target

@@ -116,6 +116,52 @@ export function displayableTask(text: unknown): string | undefined {
   return t && !isRedactedPrompt(t) ? t : undefined;
 }
 
+/**
+ * pi-subagents >=0.58's external-CLI builtin agents, which HappyVibe refuses.
+ *
+ * 0.58 grew upstream's builtin roster from 7 agents to 13, and these six run a
+ * third-party CLI in its own process (`runner: {type: "external-cli"}`). The
+ * capability ceiling cannot bound one, the child guard cannot run inside one,
+ * and its tool calls never reach the audit log — upstream refuses ask/deny
+ * rules for external runners by design and withholds extension authority from
+ * them. So PRD §12's three layers simply do not reach inside them, and they
+ * arrive DELEGATABLE the moment the pin lands, `-writer` variants included.
+ *
+ * Refusing here rather than only through upstream's settings file is
+ * deliberate, and measured: a PROJECT-scope `.pi/settings.json` override beats
+ * the user scope outright (pi-subagents' agents.ts returns on the project
+ * override before it ever reads the user one), so a cloned repo could re-enable
+ * one with `{"subagents":{"agentOverrides":{"claude-code":{"disabled":false}}}}`.
+ * Main owns the rules; upstream's roster is hygiene, not enforcement.
+ *
+ * Exact names only. A user's own agent called `claude-code-review-helper` is
+ * theirs, and shadowing a builtin name is their business — their file is a
+ * native Pi child the ceiling governs like any other.
+ *
+ * Running an external agent is a PRODUCT decision (an explicitly marked
+ * boundary exception in the delegation modal), never a side effect of a pin
+ * bump. tests/pi-subagents-contract.test.ts asserts this set still equals
+ * exactly the external-runner builtins upstream ships, so a seventh adapter
+ * fails there loudly instead of arriving ungoverned.
+ *
+ * It lives beside WAIT_TOOLS and REDACTED_PROMPT for the same reason: an
+ * upstream name set the bridge and the renderer must agree on, and neither can
+ * import it from the vendored package.
+ */
+export const EXTERNAL_CLI_AGENTS: ReadonlySet<string> = new Set([
+  "claude-code",
+  "claude-code-writer",
+  "codex-exec",
+  "codex-exec-writer",
+  "cursor-agent",
+  "cursor-agent-writer",
+]);
+
+/** True for an upstream external-CLI builtin agent — one we will not launch. */
+export function isExternalCliAgent(agent: unknown): boolean {
+  return typeof agent === "string" && EXTERNAL_CLI_AGENTS.has(agent);
+}
+
 /** v5: Pi's built-in FILE tools — the ones whose path args we confine to the
  * workspace by default. bash is deliberately NOT here (it stays under
  * command-pattern rules; path-inspecting arbitrary shell is out of scope). */

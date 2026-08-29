@@ -17,18 +17,33 @@
  *     the pairing after a restart. Hence persistence (via pi.appendEntry, which
  *     rides the session file and so survives both respawn and app restart).
  *
- * Pairing is therefore a one-slot-per-agent handoff, last write wins, and that
- * shape is chosen over a queue for a specific reason: a delegation the user DENIES
- * still passes through tool_call, so a queue would keep its task forever and hand
- * that stale caption to the next delegation to the same agent. A slot cannot — the
- * retry overwrites it before dispatch, because every dispatch writes its own
- * caption first. Pi runs tool calls one at a time, so the slot is claimed before
- * the next call writes it.
+ * Pairing is keyed by the TOOL CALL ID, because that is the only identifier that
+ * is unique per delegation and present where the task is.
  *
- * The residual failure, accepted and bounded: two runs for the SAME agent whose
- * started events arrive in the opposite order to their tool calls could swap
- * captions. Different agents cannot swap, and an ambiguous claim yields NO caption
- * rather than a guessed one — a blank caption is a smaller lie than a wrong one.
+ * It used to be one slot per AGENT, last-write-wins, on the reasoning that "Pi
+ * runs tool calls one at a time, so the slot is claimed before the next call
+ * writes it". **That reasoning was wrong and the bug was real** (2026-08-29): a
+ * model can emit two `subagent` toolCall blocks in ONE assistant message, so both
+ * stashes land before either run announces itself. Measured in a user's session —
+ * two `code-explorer` delegations, Beat Saber and Minesweeper, dispatched
+ * together: the second overwrote the first, the Beat Saber run claimed the slot
+ * and was captioned "Minesweeper", and the Minesweeper run got no caption at all.
+ * Same-agent fan-out is the normal shape, not a corner case.
+ *
+ * Two ids, two jobs, and the split is the point:
+ *
+ *   - `bindRun(toolCallId, runId)` is EXACT and is the authority. The bridge calls
+ *     it from `tool_result`, the one event carrying both the tool call id and
+ *     `details.asyncId`. Nothing can mispair here.
+ *   - `claimTask(runId, agent)` serves the `subagent:async-started` notify, which
+ *     carries no tool call id and therefore cannot be paired when several
+ *     dispatches are outstanding. It now REFUSES in that case instead of guessing.
+ *     Keying by tool call id is what lets it see the ambiguity at all — a
+ *     per-agent slot had already thrown the evidence away.
+ *
+ * A blank caption is a smaller lie than a wrong one, and it is short-lived: the
+ * renderer re-keys the card at `tool_execution_end` from the foreground card,
+ * whose task came from the tool call's own args and is always right.
  *
  * Pure and dependency-free (no pi handle, no fs) so the whole thing is unit-testable.
  */
@@ -43,9 +58,15 @@ const TASK_MAX = 300;
 /** Slot key for a dispatch whose agent name we could not read. */
 const UNKNOWN_AGENT = "";
 
+export interface PendingDispatch {
+  task: string;
+  /** The agent named in the tool call, used to disambiguate a claim. */
+  agent: string;
+}
+
 export interface TaskMapState {
-  /** agent → the task of its most recent dispatch, until a run claims it. */
-  pending: Record<string, string>;
+  /** toolCallId → the dispatch it carried, until a run is bound or claims it. */
+  pending: Record<string, PendingDispatch>;
   /** runId → task, for cards raised now and rebuilt after a restart. */
   runs: Record<string, string>;
 }
@@ -58,46 +79,77 @@ const agentKey = (agent: unknown): string =>
   typeof agent === "string" && agent.trim() ? agent.trim() : UNKNOWN_AGENT;
 
 /**
- * Record the real task from a `subagent` tool_call, before dispatch.
+ * Record the real task from a `subagent` tool_call, keyed by that call's id.
  *
  * Refuses a redacted or empty string outright: if upstream ever redacts the tool
  * INPUT too, this must degrade to "no caption", never launder the redaction back
  * into the UI through our own store.
  */
-export function stashPendingTask(state: TaskMapState, task: unknown, agent?: unknown): void {
+export function stashPendingTask(state: TaskMapState, toolCallId: unknown, task: unknown, agent?: unknown): void {
+  const id = typeof toolCallId === "string" ? toolCallId.trim() : "";
+  if (!id) return;
   const clean = displayableTask(task);
   if (!clean) return;
-  // Last write wins, deliberately: see the header note on denied delegations.
-  state.pending[agentKey(agent)] = clean.length > TASK_MAX ? `${clean.slice(0, TASK_MAX - 1)}…` : clean;
+  state.pending[id] = {
+    task: clean.length > TASK_MAX ? `${clean.slice(0, TASK_MAX - 1)}…` : clean,
+    agent: agentKey(agent),
+  };
 }
 
 /**
- * Pair a just-announced run with the task that dispatched it.
+ * Bind a dispatch to the run it produced — the EXACT pairing, and the authority.
  *
- * Idempotent: a second call for a known runId returns what it already holds. An
- * ambiguous claim (no agent on the event, several dispatches outstanding) returns
- * undefined — a blank caption beats a guessed one.
+ * Called from the bridge's `tool_result` handler, which is the one event carrying
+ * both the tool call id and `details.asyncId`. Because both ids come from the same
+ * call, two same-agent delegations in one turn cannot cross.
+ *
+ * Idempotent, and it does not overwrite a caption a run already holds: a claim
+ * that already happened was either this same dispatch or a refusal, and neither
+ * benefits from being second-guessed here.
+ */
+export function bindRun(state: TaskMapState, toolCallId: unknown, runId: unknown): string | undefined {
+  const id = typeof toolCallId === "string" ? toolCallId.trim() : "";
+  const run = typeof runId === "string" ? runId.trim() : "";
+  if (!id || !run) return undefined;
+  const dispatch = state.pending[id];
+  if (dispatch) delete state.pending[id];
+  if (state.runs[run]) return state.runs[run];
+  if (!dispatch) return undefined;
+  state.runs[run] = dispatch.task;
+  return dispatch.task;
+}
+
+/** Forget a dispatch that never became a run (a denied or failed delegation). */
+export function dropPendingTask(state: TaskMapState, toolCallId: unknown): void {
+  const id = typeof toolCallId === "string" ? toolCallId.trim() : "";
+  if (id) delete state.pending[id];
+}
+
+/**
+ * Best-effort pairing for `subagent:async-started`, which carries no tool call id.
+ *
+ * Exact when the run is already bound. Otherwise it will claim the ONE outstanding
+ * dispatch that matches the event's agent — and refuse when more than one matches,
+ * because with no tool call id there is nothing left to tell them apart. That
+ * refusal is the whole fix: the previous per-agent slot could not even detect the
+ * ambiguity, so it confidently returned the wrong caption.
  */
 export function claimTask(state: TaskMapState, runId: string, agent?: unknown): string | undefined {
   if (!runId) return undefined;
   if (state.runs[runId]) return state.runs[runId];
 
   const wanted = agentKey(agent);
-  let key: string | undefined;
-  if (wanted !== UNKNOWN_AGENT && state.pending[wanted] !== undefined) key = wanted;
-  else {
-    // No agent on the event (or no dispatch recorded under its name): fall back to
-    // the outstanding dispatch ONLY when there is exactly one, so the fallback
-    // cannot invent a pairing.
-    const keys = Object.keys(state.pending);
-    if (keys.length === 1) key = keys[0];
-  }
-  if (key === undefined) return undefined;
+  const entries = Object.entries(state.pending);
+  const matches = wanted === UNKNOWN_AGENT
+    ? entries
+    : entries.filter(([, d]) => d.agent === wanted);
+  // Exactly one candidate, or nothing: never a guess between two.
+  if (matches.length !== 1) return undefined;
 
-  const claimed = state.pending[key];
-  delete state.pending[key];
-  state.runs[runId] = claimed;
-  return claimed;
+  const [id, dispatch] = matches[0];
+  delete state.pending[id];
+  state.runs[runId] = dispatch.task;
+  return dispatch.task;
 }
 
 /** The remembered task for a run, or undefined. */

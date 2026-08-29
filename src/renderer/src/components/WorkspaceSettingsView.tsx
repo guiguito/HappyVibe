@@ -228,7 +228,7 @@ function RemoveWorkspaceBlock({ workspace, onRemoved }: { workspace: string; onR
         <div>
           <div className="font-bold text-berry">Delete permanently</div>
           <p className="text-sm text-ink-soft mt-0.5">
-            Removes <strong>{name}</strong> and permanently deletes its {sessions} — conversations and history included.
+            Removes <strong>{name}</strong> and permanently deletes its {sessions} — conversations, history and sub-agent transcripts included.
             Your files are never touched. This cannot be undone.
           </p>
         </div>

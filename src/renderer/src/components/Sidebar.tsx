@@ -795,7 +795,7 @@ export function Sidebar({
                   : "hide it from the list. You can bring it back from “Show archived”."}
               </li>
               <li>
-                <b className="text-ink">Delete permanently</b> — the conversation and its session file are gone for good.
+                <b className="text-ink">Delete permanently</b> — the conversation, its session file and its sub-agent transcripts are gone for good.
               </li>
             </ul>
             <div className="mt-5 flex justify-end gap-2">

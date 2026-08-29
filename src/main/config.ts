@@ -9,6 +9,7 @@ import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
+import { externalAgentOverrides } from "./subagentSettings";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -662,6 +663,21 @@ export function writeSubagentConfig(): void {
   // announce it. tests/subagent-config.test.ts pins both halves: our key, and
   // that upstream still agrees.
   config.defaultSubagentContext = "fresh";
+  // PRD §12/§19 (2026-08-29): pi-subagents 0.57 caches "this model failed" verdicts
+  // and silently skips the model on every later delegation. The default TTL is 24
+  // HOURS and the cache is per-UID in a temp dir, so one flaky child ("Subagent
+  // produced no output") stops that model being used across every session and
+  // workspace for a day — with the only signal a console.warn the app never shows.
+  // Observed on a real install: qwen3.8-flash excluded for 24h while the chat kept
+  // showing it as the session model.
+  //
+  // Five minutes absorbs a genuine cold start, which is what the mechanism is FOR,
+  // without letting one blip cost a day. Setting the key explicitly also shortens
+  // entries already on disk (upstream passes `shortenExisting` when the value is
+  // configured), so a stale 24h exclusion self-heals at the next start rather than
+  // needing the file deleted. The bridge reports any live exclusion as an audit
+  // row — shortening the window is not the same as telling the user.
+  config.modelExclusions = { ...(config.modelExclusions as object | undefined), defaultTtlMs: 5 * 60_000 };
   // PRD §12 (2026-08-21) — FR12 was IMPLEMENTED, MEASURED AND DROPPED. We
   // deliberately write NO `permissions` key. Do not add one back.
   //
@@ -701,6 +717,32 @@ export function writeSubagentConfig(): void {
 // Defined in an electron-free module so the release-time catalog generator can
 // import the URL without pulling in the app; re-exported so callers here and in
 // ipc.ts are unchanged.
+/**
+ * Keep upstream's external-CLI builtin agents out of the injected roster.
+ *
+ * PRD §12 (2026-08-28): pi-subagents 0.58 ships 13 builtin agents, six of them
+ * `runner: external-cli`. This is HYGIENE only — the ENFORCEMENT is
+ * `isExternalCliAgent` in hv-rules.ts, checked by the bridge, because a
+ * PROJECT-scope `.pi/settings.json` override beats this user-scope file
+ * outright. With the six disabled here the model is never told they exist, so it
+ * cannot spend a turn proposing one and being refused.
+ *
+ * The merge logic is pure and lives in subagentSettings.ts so vitest can reach
+ * it; this function is only the file I/O. Note the target is PI's own settings
+ * file, which is why the read-merge-write shape is load-bearing rather than
+ * tidy: HappyVibe is merely the first thing in the app to write it.
+ */
+export function writeSubagentSettings(): void {
+  const file = path.join(agentDir(), "settings.json");
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    /* absent or corrupt — start fresh */
+  }
+  fs.writeFileSync(file, `${JSON.stringify(externalAgentOverrides(settings), null, 2)}\n`);
+}
+
 export { OFFICIAL_MARKETPLACE };
 
 export function listMarketplaces(): Array<{ id: string; url: string }> {

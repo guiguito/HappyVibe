@@ -126,7 +126,7 @@ test("/hv-tools emits a tool inventory with name/description/source", async () =
 });
 
 test.skipIf(!KEY)(
-  "a real subagent delegation emits the tool_execution_* trace with results[].messages",
+  "a real subagent delegation STREAMS its trace again (0.58) and ends with toolCalls",
   async () => {
     const c = makeClient(PROVIDER_ENV);
     const localEvents: PiEvent[] = [];
@@ -157,20 +157,36 @@ test.skipIf(!KEY)(
       const ends = localEvents.filter((e) => e.type === "tool_execution_end" && (e as { toolName?: string }).toolName === "subagent");
       expect(ends.length, "expected a subagent tool_execution_end").toBeGreaterThan(0);
 
-      // THERE IS NO LIVE VIEW ANY MORE, and that is the headline of the 0.50 bump.
+      // THE LIVE VIEW IS BACK AT 0.58, and that is the headline of this bump.
       //
-      // The live child transcript used to stream on
-      // tool_execution_update.partialResult.details.results[]. At 0.50
-      // `tool_execution_update` is not emitted AT ALL for a subagent call —
-      // measured 2026-08-17 on both a blocking and an async delegation, zero
-      // updates in each (docs/validation/d1.md §pi-subagents 0.50). So expanding a
-      // run card shows nothing until the run finishes, and `traceFromUpdate` in the
-      // renderer is now dead weight kept only for a pin that brings it back.
+      // History, because it is the reason this assertion is worded as a presence
+      // rather than a count: the live child transcript streams on
+      // tool_execution_update.partialResult.details.results[]. At 0.50-0.53
+      // `tool_execution_update` was not emitted AT ALL for a subagent call
+      // (measured 2026-08-17, zero on both a blocking and an async delegation), so
+      // expanding a run card showed nothing until the run finished and
+      // `traceFromUpdate` in the renderer was dead weight. The assertion then was
+      // `toBe(0)` with a comment saying it should fail loudly the day upstream
+      // restored streaming. It did exactly that: 38 updates on the first 0.58 live
+      // run, 53 on the probe (docs/validation/d1.md §pi-subagents 0.58).
       //
-      // Asserting the absence is the point: this is the assertion that will fail,
-      // loudly, on the day upstream restores streaming — which we want, because the
-      // renderer mapping is still there waiting for it.
-      expect(updates.length, "0.50 emits no tool_execution_update for a subagent").toBe(0);
+      // Deliberately NOT an exact count — the number tracks how chatty the child
+      // is, which is the model's business. What matters is that updates arrive and
+      // carry the projection the renderer maps.
+      expect(updates.length, "0.58 streams the child transcript again").toBeGreaterThan(0);
+
+      // …and the payload is the shape `traceFromUpdate` -> `toResults` reads, so
+      // "updates arrive" cannot pass while the card stays empty. Measured at 0.58:
+      // `messages` is still absent and `toolCalls` is still the transcript source,
+      // exactly as at 0.40-0.53 — only the DELIVERY was restored, not the shape.
+      const live = updates[updates.length - 1] as {
+        partialResult?: { details?: { results?: Array<{ agent?: string; messages?: unknown; toolCalls?: unknown[] }> } };
+      };
+      const liveResults = live.partialResult?.details?.results ?? [];
+      expect(liveResults.length, "an update carries a results[] projection").toBeGreaterThan(0);
+      expect(liveResults[0].agent).toBe("code-explorer");
+      expect(liveResults[0].messages, "still not in `messages`, even live").toBeUndefined();
+      expect(Array.isArray(liveResults[0].toolCalls), "`toolCalls` is still the transcript source").toBe(true);
 
       // The FINAL projection is where everything the card renders now comes from.
       // `toolCalls` (not `messages`) is the transcript source — 0.40 substituted it

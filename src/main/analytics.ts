@@ -168,6 +168,11 @@ export function aggregate(
         if (d?.source) inc(bySource, d.source === "dangerous" ? "bypass" : d.source);
         break;
       }
+      case "model.excluded":
+        // §19: a silent model substitution is a fact for the AUDIT log, not a
+        // number for the dashboard — it has no cost, no tokens and no decision.
+        // Named here anyway so the switch stays an inventory of what main writes.
+        break;
       case "assistant.oneshot": {
         const d = e.data as { estTokens?: number; ok?: boolean } | undefined;
         oneShotCount += 1;
