@@ -197,3 +197,58 @@ describe("sweeping data whose session is already gone", () => {
     expect(fs.existsSync(artifacts())).toBe(true);
   });
 });
+
+// ── `outputs/<runId>/` is a run's data too (2026-08-29, round 2) ────────────
+//
+// pi-subagents also writes a per-run OUTPUT DIRECTORY inside the artifacts dir:
+// `subagent-artifacts/outputs/<runId>/…` (observed on a real install for a
+// `scout` run, which declares `output: context.md`). Both cleanup halves keyed
+// on the flat `<runId>_<agent>_*` filenames and skipped anything without an
+// underscore — a guard that exists for a good reason (pi-subagents keeps
+// `.last-cleanup` there) but which also made `outputs/` permanently invisible.
+// So a deleted session left the child's written output behind, and the sweep
+// never collected it: the same "delete means delete" gap the flat artifacts had.
+describe("a run's outputs/ directory is cleaned up like its other artifacts", () => {
+  const outputsFor = (id: string): string => path.join(artifacts(), "outputs", id);
+
+  it("deleting a session removes its children's outputs/ directories", () => {
+    const parent = makeSession("2026-08-29T12-00-00-000Z_out", ["run-outputs1"]);
+    fs.mkdirSync(outputsFor("run-outputs1"), { recursive: true });
+    fs.writeFileSync(path.join(outputsFor("run-outputs1"), "context.md"), "the child's answer");
+    deleteSessionChildren(dir, parent);
+    expect(fs.existsSync(outputsFor("run-outputs1"))).toBe(false);
+  });
+
+  it("the startup sweep collects an orphaned outputs/ directory", () => {
+    // No session file references this id at all.
+    fs.mkdirSync(outputsFor("run-orphaned1"), { recursive: true });
+    fs.writeFileSync(path.join(outputsFor("run-orphaned1"), "context.md"), "x");
+    const swept = sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(outputsFor("run-orphaned1"))).toBe(false);
+    expect(swept.artifacts).toBeGreaterThan(0);
+  });
+
+  it("keeps an outputs/ directory whose session is alive", () => {
+    makeSession("2026-08-29T13-00-00-000Z_live", ["run-alive001"]);
+    fs.mkdirSync(outputsFor("run-alive001"), { recursive: true });
+    fs.writeFileSync(path.join(outputsFor("run-alive001"), "context.md"), "keep me");
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(outputsFor("run-alive001"))).toBe(true);
+  });
+
+  it("never removes the outputs/ container itself, only what is inside it", () => {
+    // Deleting the container would make upstream recreate it, and a future
+    // entry could land while we were mid-sweep.
+    fs.mkdirSync(outputsFor("run-orphaned2"), { recursive: true });
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(path.join(artifacts(), "outputs"))).toBe(true);
+  });
+
+  it("leaves pi-subagents' own bookkeeping alone", () => {
+    // The underscore guard exists for this; widening to outputs/ must not
+    // widen to `.last-cleanup`, which is upstream's retention timestamp.
+    fs.writeFileSync(path.join(artifacts(), ".last-cleanup"), "1");
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(path.join(artifacts(), ".last-cleanup"))).toBe(true);
+  });
+});
