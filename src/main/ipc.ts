@@ -1092,7 +1092,9 @@ export function registerIpc(win: BrowserWindow): void {
       // ── An async delegation announces itself HERE, not on a lifecycle notify ──
       // pi-subagents 0.50 runs every top-level delegation as a workflow, and that
       // path emits `subagent:async-complete` but never `subagent:async-started`
-      // (measured — docs/validation/d1.md §pi-subagents 0.50). THREE things used to
+      // (measured — docs/validation/d1.md §pi-subagents 0.50). 0.55 unwrapped
+      // single-child launches, so at 0.58 that notify fires again; announcing from
+      // the tool result still wins because it needs no notify at all. THREE things used to
       // hang off that dead notify and all failed silently:
       //   1. activity.asyncStarted — without it `isIdle` is true while a delegation
       //      runs, so hibernation or an MCP live-reload could manager.stop() the

@@ -51,6 +51,7 @@ test("statusUnchanged compares only live-progress fields", () => {
 // ── The 0.50 wiring: an async run announces itself from its DISPATCH RESULT ──
 //
 // pi-subagents 0.50 emits no `subagent:async-started` for a top-level delegation
+// (the workflow path; at 0.58 the direct single-child path does — d1.md §0.58)
 // (docs/validation/d1.md §pi-subagents 0.50), and THREE things in ipc.ts hung off
 // that notify: the hibernation guard (`activity.asyncStarted` — without it a
 // session with a running delegation reads as idle and can be stopped mid-run), the

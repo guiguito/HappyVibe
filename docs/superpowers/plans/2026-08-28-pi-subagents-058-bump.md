@@ -761,7 +761,7 @@ Confirm what our two agents resolve to (upstream's bundled agents state `systemP
 Instrument the bridge's own `tool_execution_end` handler with a `console.error` of `details`, run one async delegation, and record verbatim:
 - `details.mode` (expect `"single"`, not `"workflow"`);
 - that `details.asyncId` is present and equals `details.runId`;
-- that `subagent:async-started` still never fires (a `console.error` inside the bridge's own handler for it — measured absent twice at 0.50/0.51);
+- whether `subagent:async-started` fires (a `console.error` inside the bridge's own handler for it — measured absent twice at 0.50/0.51). **Answered 2026-08-29: it DOES fire at 0.58**; the earlier absence was the workflow path only, and this plan's expectation of a continued absence was wrong.
 - that the delivery repair still fires: `substitution fired=true`, the store keyed by the child `runId`, and `results[].output` longer than 1,000 chars.
 
 - [ ] **Step 6: Write the section**
@@ -797,7 +797,7 @@ Two claims in CLAUDE.md are now false, and one of them is load-bearing for whoev
 
 - [ ] **Step 1: Correct the workflow claim**
 
-The entry beginning **"Every delegation is a WORKFLOW from 0.50, and that silently removed the run card"** is false from 0.55. Rewrite it in place to say: a single-child delegation returns `mode: "single"` with `asyncId === runId` (`async-execution.ts:1967`) and only a real multi-child `workflowScript` is `mode: "workflow"` with a `missionId`; the card survived because it was already re-keyed off `details.asyncId`; and `subagent:async-started` is STILL declared and never emitted, so the re-key remains load-bearing rather than becoming redundant. Keep the rest of the entry — the reasoning about why the re-key exists is still exactly right.
+The entry beginning **"Every delegation is a WORKFLOW from 0.50, and that silently removed the run card"** is false from 0.55. Rewrite it in place to say: a single-child delegation returns `mode: "single"` with `asyncId === runId` (`async-execution.ts:1967`) and only a real multi-child `workflowScript` is `mode: "workflow"` with a `missionId`; the card survived because it was already re-keyed off `details.asyncId`; and the re-key remains load-bearing. **This instruction was partly wrong and was not followed as written** (2026-08-29): `async-started` IS emitted at 0.58, so CLAUDE.md records that instead. The reasoning about why the re-key exists is still right — just for a different reason (the notify carries no tool-call id).
 
 - [ ] **Step 2: Add the external-agent entry**
 
@@ -876,7 +876,7 @@ Each claim below is a thing that must be TRUE on screen, on the named surface. A
 **On the Agents page (the surface that OWNS the roster, and not the surface Task 3 changed):**
 - The list shows exactly our two bundled agents (`code-explorer`, `agents-md-maker`) plus any project agents in the open workspace — the same count as before the bump.
 - **Absence, by name:** `claude-code`, `claude-code-writer`, `codex-exec`, `codex-exec-writer`, `cursor-agent` and `cursor-agent-writer` appear nowhere on this page.
-- Both bundled agents still show as installed-and-unedited, not as user-edited. Task 4 changed the bundle, and `installBuiltinAgents` hashes content — a re-approval that keeps the user's on/off is correct; a `.md.bak` file appearing beside them is NOT, and means the legacy-stamp repair path ran when it should not have.
+- Both bundled agents still show as installed-and-unedited, not as user-edited. Task 4 changed the bundle, and `installBuiltinAgents` hashes content — a re-approval that keeps the user's on/off is correct; a `.md.bak` appearing beside them was expected here to be a fault — **that expectation was wrong** (corrected 2026-08-29): it is the documented one-time legacy-stamp repair, and it fired correctly, revealing that the installed copies were pre-2026-08-02. See `docs/validation/d1.md` §Found during the GUI pass.
 
 **In Chat (where a delegation is observed):**
 - Ask the agent to explore something. The run card appears, captioned with the **real task text** — not `[prompt redacted]` — and names `code-explorer`, not `workflow`. This is the whole 0.55-unwrap risk, visible in one glance.

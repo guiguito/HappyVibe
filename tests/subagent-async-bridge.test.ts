@@ -114,7 +114,10 @@ test.skipIf(!KEY)(
       // every top-level delegation runs as mode:"workflow" — and the workflow path
       // emits `subagent:async-complete` but NEVER `subagent:async-started`. Measured
       // 2026-08-17 with a probe extension logging inside the bridge's own handler:
-      // it does not fire (docs/validation/d1.md §pi-subagents 0.50). So the renderer
+      // it does not fire (docs/validation/d1.md §pi-subagents 0.50). At 0.58 it fires
+      // again (0.55 unwrapped single-child launches) — the re-key is kept because it
+      // needs no notify and because the notify cannot tell two same-agent runs apart.
+      // So the renderer
       // re-keys the foreground card it already raised to this asyncId instead of
       // waiting for a notify that never comes; without that, an async delegation
       // showed the user nothing for its whole life. asyncId is what makes it

@@ -1059,8 +1059,11 @@ export default function App(): React.JSX.Element {
           // delegation now runs as mode:"workflow" (its legacy single/chain/parallel
           // entry points were removed), and the workflow path emits only
           // `subagent:async-complete` — never `subagent:async-started`. Measured
-          // twice with a probe extension: the handler never fires. Raising the card
-          // from the notify therefore showed the user NOTHING for the whole run,
+          // twice with a probe extension: the handler never fires. (0.55 unwrapped
+          // single-child launches, so at 0.58 the notify DOES fire again — the
+          // re-key still wins because the notify carries no toolCallId and so
+          // cannot caption two same-agent runs apart. See d1.md §0.58.) Raising
+          // the card from the notify therefore showed the user NOTHING for the whole run,
           // then dropped the result in — the opposite of PRD §12's "watch it run
           // while you keep chatting".
           //
