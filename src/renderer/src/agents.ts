@@ -523,3 +523,30 @@ export function sortAgents<T extends { name: string; source: string }>(agents: r
     return ga !== gb ? ga - gb : a.name.localeCompare(b.name);
   });
 }
+
+/**
+ * Human-facing copy for upstream's builtins, adapted from pi-subagents'
+ * `docs/agents.md`.
+ *
+ * DISPLAY ONLY. The model keeps the frontmatter `description`, which upstream
+ * writes for delegation targeting ("Use when the user asks…") and which the
+ * per-turn roster injects verbatim. These are written for a person deciding
+ * whether to pick one — the frontmatter reads as documentation, not as an offer.
+ *
+ * Keyed by name but applied only to `source: "builtin"`, so a user's own agent
+ * that happens to be called `scout` keeps its own description.
+ *
+ * Only the builtins we actually surface are here. Our bundled agents already
+ * carry call-to-action copy we wrote and control, and overriding it in the UI
+ * would put the two out of sync with nothing to keep them honest.
+ */
+const BUILTIN_BLURB: Record<string, string> = {
+  scout: "Fast local codebase recon: relevant files, entry points, data flow, risks",
+  reviewer: "Code review and small fixes — checks the implementation against the task or plan",
+  delegate: "A lightweight general-purpose child that behaves closely like the parent agent",
+};
+
+/** What to SHOW for an agent. Falls through to its own description. */
+export function agentBlurb(agent: { name: string; source: string; description: string }): string {
+  return (agent.source === "builtin" && BUILTIN_BLURB[agent.name]) || agent.description;
+}

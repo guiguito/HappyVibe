@@ -9,7 +9,7 @@ import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
-import { externalAgentOverrides } from "./subagentSettings";
+import { disabledAgentOverrides } from "./subagentSettings";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -740,7 +740,7 @@ export function writeSubagentSettings(): void {
   } catch {
     /* absent or corrupt — start fresh */
   }
-  fs.writeFileSync(file, `${JSON.stringify(externalAgentOverrides(settings), null, 2)}\n`);
+  fs.writeFileSync(file, `${JSON.stringify(disabledAgentOverrides(settings), null, 2)}\n`);
 }
 
 export { OFFICIAL_MARKETPLACE };

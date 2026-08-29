@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { sortAgents, type AgentInfo } from "../agents";
+import { agentBlurb, sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
 
 /**
@@ -117,7 +117,7 @@ export function AgentsView({
                     Duplicate
                   </button>
                 </div>
-                <p className="text-sm text-ink-soft mt-1">{a.description}</p>
+                <p className="text-sm text-ink-soft mt-1">{agentBlurb(a)}</p>
                 {a.tools && a.tools.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {a.tools.map((t) => (

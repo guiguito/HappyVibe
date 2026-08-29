@@ -1,6 +1,6 @@
 /**
- * The shape of `<agentDir>/settings.json` that keeps upstream's external-CLI
- * agents out of the injected roster — PURE, so vitest can exercise it.
+ * The shape of `<agentDir>/settings.json` that keeps the builtins HappyVibe does
+ * not offer out of upstream's own roster — PURE, so vitest can exercise it.
  *
  * PRD §12 (2026-08-28): pi-subagents 0.58 ships 13 builtin agents, six of them
  * `runner: external-cli`. `EXTERNAL_CLI_AGENTS` in hv-rules.ts, checked by the
@@ -15,13 +15,22 @@
  * imports electron's `app` for `agentDir()`, so vitest cannot import it — the
  * same division of labour as spawn.ts and the pure hv-*.ts modules.
  */
-import { EXTERNAL_CLI_AGENTS } from "../../pi-runtime/extensions/hv-rules";
+import { DISABLED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
 
 /** The settings.json key pi-subagents reads builtin overrides from. */
 const OVERRIDES_KEY = "agentOverrides";
 
 /**
- * Return `settings` with every external-CLI builtin marked disabled.
+ * Return `settings` with every builtin in DISABLED_BUILTIN_AGENTS marked disabled.
+ *
+ * That is a UNION of two sets with different reasons (hv-rules.ts): the six
+ * external-CLI runners, which the bridge also refuses because nothing can bound
+ * them; and the unsupported ones (`researcher`, `oracle`), which are ordinary Pi
+ * children that simply cannot do their job here. Disabling removes them from
+ * upstream's resolved set, so a delegation cannot find them — which is what makes
+ * "hidden" mean uninvokable rather than merely unlisted, and is also why the
+ * Agents page and the injected roster need no filter of their own
+ * (`enumerateAgents` already skips `disabled`).
  *
  * MERGES at three levels and every one of them matters:
  *  - top level, because `<agentDir>/settings.json` is PI's file (models, theme,
@@ -42,11 +51,11 @@ const OVERRIDES_KEY = "agentOverrides";
  * also remove `worker` and `reviewer` — the two native builtins the next round
  * wants to adopt.
  */
-export function externalAgentOverrides(settings: Record<string, unknown>): Record<string, unknown> {
+export function disabledAgentOverrides(settings: Record<string, unknown>): Record<string, unknown> {
   const out = { ...settings };
   const subagents = { ...((out.subagents as Record<string, unknown> | undefined) ?? {}) };
   const overrides = { ...((subagents[OVERRIDES_KEY] as Record<string, unknown> | undefined) ?? {}) };
-  for (const name of EXTERNAL_CLI_AGENTS) {
+  for (const name of DISABLED_BUILTIN_AGENTS) {
     const existing = (overrides[name] as Record<string, unknown> | undefined) ?? {};
     overrides[name] = { ...existing, disabled: true };
   }

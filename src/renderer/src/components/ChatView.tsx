@@ -11,7 +11,7 @@ import { CostPanel } from "./CostPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type GaugeZone, type SessionStats } from "../context";
 import { childGauge } from "../subagentGauge";
-import { delegationHint, formatElapsed, isStoppableChild, sortAgents, traceFor, type AgentInfo, type DelegationRun, type SubagentTrace } from "../agents";
+import { agentBlurb, delegationHint, formatElapsed, isStoppableChild, sortAgents, traceFor, type AgentInfo, type DelegationRun, type SubagentTrace } from "../agents";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
@@ -1289,7 +1289,7 @@ export function ChatView({
                     className="w-full text-left px-3 py-1.5 cursor-pointer hover:bg-paper-deep/40"
                   >
                     <span className="font-semibold">🤖 @{a.name}</span>
-                    <span className="block truncate text-[11px] font-medium text-ink-soft">{a.description}</span>
+                    <span className="block truncate text-[11px] font-medium text-ink-soft">{agentBlurb(a)}</span>
                   </button>
                 ))}
                 {mention.items.map((it, i) => {
@@ -1783,9 +1783,13 @@ function AgentsChip({ agents, onPick }: { agents: AgentInfo[]; onPick: (name: st
         type="button"
         onClick={() => setOpen((v) => !v)}
         title={`${agents.length} subagent${agents.length === 1 ? "" : "s"} you can delegate to`}
-        className="flex items-center gap-1 rounded-full bg-honey-soft text-tangerine-deep text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:brightness-105"
+        // Quiet by design (2026-08-30): the composer row already carries three
+        // filled pills. This one rests as a bare outline and fills on hover, so
+        // the model pill stays the loud one. The glyph is the app's own robot —
+        // the same one the run card uses — rather than an emoji.
+        className="flex items-center gap-1 rounded-full border border-line text-ink-soft text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:bg-honey-soft hover:text-tangerine-deep hover:border-honey/60 transition-colors"
       >
-        <span aria-hidden>🤖</span> {agents.length} agents
+        <ToolIcon kind="robot" className="size-3 shrink-0" /> {agents.length} agents
       </button>
       {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
       {open && (
@@ -1799,7 +1803,7 @@ function AgentsChip({ agents, onPick }: { agents: AgentInfo[]; onPick: (name: st
               className="w-full text-left px-3 py-1.5 cursor-pointer hover:bg-paper-deep/40"
             >
               <span className="font-bold">{a.name}</span>
-              <span className="block text-[11px] text-ink-soft line-clamp-2">{a.description}</span>
+              <span className="block text-[11px] text-ink-soft line-clamp-2">{agentBlurb(a)}</span>
             </button>
           ))}
           <p className="px-3 pt-1 text-[10px] text-ink-soft">

@@ -12,6 +12,8 @@
  * token/quoting scheme if it ever matters.
  */
 
+import { sortAgents } from "./agents";
+
 export interface MentionEntry {
   /** Workspace-relative path (OS separators, as returned by fs-list-recursive). */
   rel: string;
@@ -217,7 +219,14 @@ export function completeCommand(text: string, queryEnd: number, name: string): {
  * Capped, because the `@` menu's primary job is files: an unbounded roster on a
  * one-character query would push every file row off the visible menu.
  */
-export function agentMentionItems<T extends { name: string }>(agents: T[], query: string, limit = 5): T[] {
+export function agentMentionItems<T extends { name: string; source: string }>(
+  agents: T[],
+  query: string,
+  limit = 5,
+): T[] {
   const q = query.toLowerCase();
-  return agents.filter((a) => a.name.toLowerCase().includes(q)).slice(0, limit);
+  // Sorted BEFORE the slice, with the same grouping the Agents page and the
+  // roster chip use — otherwise the five kept here are five arbitrary ones in
+  // discovery order, and the same list reads differently on three surfaces.
+  return sortAgents(agents.filter((a) => a.name.toLowerCase().includes(q))).slice(0, limit);
 }

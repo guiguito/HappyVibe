@@ -4,7 +4,7 @@ import path from "node:path";
 import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
 import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
 import { EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
-import { SOURCE_ORDER, sortAgents } from "../src/renderer/src/agents";
+import { SOURCE_ORDER, agentBlurb, sortAgents } from "../src/renderer/src/agents";
 import {
   asyncResultInfo,
   delegationHint,
@@ -697,5 +697,63 @@ describe("the expanded run card shows reasoning without a second click", () => {
     // The trace supersedes it (same calls, in order, with the reasoning), but a
     // run whose transcript has not landed still needs to show something.
     expect(chat3).toContain("{!childTrace?.length && (run.live?.recentTools ?? [])");
+  });
+});
+
+// ── Display copy vs the model's copy (§12, 2026-08-30) ─────────────────────
+describe("agentBlurb", () => {
+  const mk = (name: string, source: string, description: string) => ({ name, source, description });
+
+  test("replaces upstream's frontmatter with the human-facing line", () => {
+    expect(agentBlurb(mk("scout", "builtin", "Fast codebase recon that returns compressed context for handoff")))
+      .toBe("Fast local codebase recon: relevant files, entry points, data flow, risks");
+  });
+
+  test("only for BUILTIN — a user's own `scout` keeps its own description", () => {
+    // Keyed by name, so without the source check we would overwrite someone's
+    // agent with upstream's copy about a different agent entirely.
+    expect(agentBlurb(mk("scout", "user", "my own scout"))).toBe("my own scout");
+    expect(agentBlurb(mk("scout", "project", "the repo's scout"))).toBe("the repo's scout");
+  });
+
+  test("falls through for a builtin we have no copy for", () => {
+    expect(agentBlurb(mk("something-new", "builtin", "upstream's words"))).toBe("upstream's words");
+  });
+
+  test("carries no copy for the agents we disable", () => {
+    // researcher/oracle are disabled, so a blurb for them would be dead code
+    // that quietly implied they were still on offer.
+    expect(agentBlurb(mk("researcher", "builtin", "upstream"))).toBe("upstream");
+    expect(agentBlurb(mk("oracle", "builtin", "upstream"))).toBe("upstream");
+  });
+
+  test("the MODEL still gets the frontmatter, not this copy", () => {
+    // The roster injection reads `a.description` directly; agentBlurb is a
+    // renderer export and must never reach hv-agents.ts.
+    const hvAgents = readFileSync(path.join(__dirname, "..", "pi-runtime", "extensions", "hv-agents.ts"), "utf8");
+    expect(hvAgents).not.toContain("agentBlurb");
+    expect(hvAgents).toContain("a.description.slice(0, 200)");
+  });
+});
+
+describe("the agents pill is quiet at rest", () => {
+  const CHAT4 = path.join(__dirname, "..", "src", "renderer", "src", "components", "ChatView.tsx");
+  const chat4 = readFileSync(CHAT4, "utf8");
+  const chip = chat4.slice(chat4.indexOf("function AgentsChip"), chat4.indexOf("function SkillsChip"));
+
+  test("no fill and no emoji at rest; the app's own glyph instead", () => {
+    expect(chip).not.toContain("bg-honey-soft text-tangerine-deep text-[11px]");
+    expect(chip).not.toContain("🤖");
+    expect(chip).toContain('<ToolIcon kind="robot"');
+  });
+
+  test("it still looks pressable — a border at rest, a fill on hover", () => {
+    expect(chip).toContain("border border-line");
+    expect(chip).toContain("hover:bg-honey-soft");
+  });
+
+  test("the skills pill keeps its fill — the point was one loud pill, not none", () => {
+    const skills = chat4.slice(chat4.indexOf("function SkillsChip"));
+    expect(skills).toContain("bg-plum-soft");
   });
 });
