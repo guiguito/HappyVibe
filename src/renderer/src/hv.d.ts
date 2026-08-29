@@ -194,6 +194,14 @@ interface HvByokProvider {
   modelCount: number;
 }
 
+/** Mirrors OAUTH_PROVIDERS in src/main/providers.ts (separate tsconfig roots). */
+interface HvOAuthProvider {
+  id: string;
+  label: string;
+  /** Honest billing note, e.g. Claude Pro/Max extra usage. */
+  caveat?: string;
+}
+
 /** §16 (2026-07-30): a user-defined OpenAI-compatible endpoint. Mirrors
  *  CustomEndpoint in src/main/modelsJson.ts. */
 interface HvCustomEndpoint {
@@ -648,6 +656,8 @@ interface HvApi {
   respondInput(id: string, value: string | null): void;
   getProviders(): Promise<{
     byok: HvByokProvider[];
+    /** Sign-in providers. Owned by main (providers.ts) — never re-listed here. */
+    oauth: HvOAuthProvider[];
     defaultModel: { provider: string; modelId: string } | null;
     /** §16: the provider set BOTH main and the renderer filter model refs with. */
     knownProviders: string[];

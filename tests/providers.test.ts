@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
-  BYOK_PROVIDERS, buildProviderEnv, isByokProvider, keySource, mergeOllamaModelsJson,
+  BYOK_PROVIDERS, buildProviderEnv, isByokProvider, keySource, mergeOllamaModelsJson, OAUTH_PROVIDERS,
 } from "../src/main/providers";
 import { PROVIDER_CATALOG } from "../src/main/providerCatalog.generated";
+import { readFileSync } from "node:fs";
 
 describe("provider env map (generated from Pi's registry, 2026-08-29)", () => {
   test("exact env var names for the featured five", () => {
@@ -110,5 +111,44 @@ describe("mergeOllamaModelsJson", () => {
     const existing = mergeOllamaModelsJson(null, ["m"]);
     const out = JSON.parse(mergeOllamaModelsJson(existing, []));
     expect(out.providers.ollama).toBeUndefined();
+  });
+});
+
+describe("OAuth sign-in list (2026-08-29 round)", () => {
+  test("one source of truth, five providers, our labels", () => {
+    expect(OAUTH_PROVIDERS.map((p) => p.id)).toEqual(
+      ["anthropic", "github-copilot", "openai-codex", "openrouter", "xai"],
+    );
+    const by = new Map(OAUTH_PROVIDERS.map((p) => [p.id, p]));
+    // The app names the SUBSCRIPTION, not the vendor — upstream says
+    // "Anthropic" / "OpenAI Codex" and these overrides are deliberate.
+    expect(by.get("anthropic")!.label).toBe("Claude");
+    expect(by.get("openai-codex")!.label).toBe("ChatGPT (Codex)");
+    // A provider with no override keeps upstream's own name.
+    expect(by.get("openrouter")!.label).toBe("OpenRouter");
+    expect(by.get("xai")!.label).toBe("xAI");
+  });
+
+  test("the Claude extra-usage caveat survives the move off the renderer", () => {
+    const claude = OAUTH_PROVIDERS.find((p) => p.id === "anthropic")!;
+    expect(claude.caveat).toMatch(/extra usage/);
+    // It is Claude-specific: no other provider claims a billing caveat it lacks.
+    for (const p of OAUTH_PROVIDERS.filter((p) => p.id !== "anthropic")) {
+      expect(p.caveat, p.id).toBeUndefined();
+    }
+  });
+
+  test("ModelsView renders the list main sends, never one of its own", () => {
+    // The list lived in TWO places (providers.ts and ModelsView.tsx) and adding
+    // a provider to one silently left the other behind. Renderer suite has no
+    // DOM, so the absence is asserted as a source scan (modal-layer pattern).
+    const src = readFileSync("src/renderer/src/components/ModelsView.tsx", "utf8");
+    expect(src, "ModelsView must not declare its own OAuth list").not.toMatch(/const OAUTH_PROVIDERS/);
+    // Nor may it name the providers itself — a hardcoded id list is the same
+    // defect wearing a different variable name.
+    expect(src).not.toMatch(/"github-copilot"/);
+    expect(src).not.toMatch(/"openai-codex"/);
+    // It renders what getProviders() sent.
+    expect(src).toMatch(/setOauthProviders\(p\.oauth\)/);
   });
 });

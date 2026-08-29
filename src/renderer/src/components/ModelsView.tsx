@@ -12,17 +12,6 @@ import { Section } from "./Section";
  * onboarding.
  */
 
-/** OAuth "sign in with your plan" providers (PRD "Providers & models"). */
-const OAUTH_PROVIDERS: { id: string; label: string; caveat?: string }[] = [
-  {
-    id: "anthropic",
-    label: "Claude",
-    // Honest billing caveat — locked product decision.
-    caveat: "Heads up: on Claude Pro/Max this uses your plan's extra usage.",
-  },
-  { id: "github-copilot", label: "GitHub Copilot" },
-  { id: "openai-codex", label: "ChatGPT (Codex)" },
-];
 
 const smallBtn =
   "rounded-lg border-2 px-3 py-1.5 text-xs font-bold shadow-sticker cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
@@ -85,6 +74,12 @@ export function ModelsView({
   onSaved: () => void;
 }): React.JSX.Element {
   const [byok, setByok] = useState<HvByokProvider[]>([]);
+  /**
+   * The sign-in list comes from MAIN (providers.ts), which derives it from Pi's
+   * own OAuth registry. It used to be hardcoded here too, so a provider added
+   * to one copy silently never appeared in the other.
+   */
+  const [oauthProviders, setOauthProviders] = useState<HvOAuthProvider[]>([]);
   const [auth, setAuth] = useState<Record<string, AuthProviderStatus>>({});
   const [ollama, setOllama] = useState<{ running: boolean; models: string[] } | null>(null);
   const [models, setModels] = useState<HvModel[]>([]);
@@ -112,6 +107,7 @@ export function ModelsView({
   const refresh = async (): Promise<void> => {
     const p = await window.hv.getProviders();
     setByok(p.byok);
+    setOauthProviders(p.oauth);
     setDefaultModel(p.defaultModel);
     setOllama(await window.hv.detectOllama());
     setCustom(await window.hv.getCustomEndpoints());
@@ -188,7 +184,7 @@ export function ModelsView({
 
   // ── configured-providers summary ──
   const configured: Array<{ key: string; label: string; chip: string; action?: React.ReactNode }> = [
-    ...OAUTH_PROVIDERS.filter((p) => signedIn(p.id)).map((p) => ({
+    ...oauthProviders.filter((p) => signedIn(p.id)).map((p) => ({
       key: p.id,
       label: p.label,
       chip: "signed in",
@@ -229,7 +225,7 @@ export function ModelsView({
       })),
   ];
 
-  const oauthCard = (p: (typeof OAUTH_PROVIDERS)[number]): React.JSX.Element => (
+  const oauthCard = (p: HvOAuthProvider): React.JSX.Element => (
     <div key={p.id} className="rounded-xl border-2 border-line bg-paper px-4 py-3">
       <div className="flex items-center gap-3">
         <div className="font-bold text-sm flex-1 min-w-0">{p.label}</div>
@@ -298,7 +294,7 @@ export function ModelsView({
           {adding && (
             <div>
               <GroupLabel>Sign in with your plan</GroupLabel>
-              <div className="flex flex-col gap-3">{OAUTH_PROVIDERS.map(oauthCard)}</div>
+              <div className="flex flex-col gap-3">{oauthProviders.map(oauthCard)}</div>
 
               <GroupLabel>Local</GroupLabel>
               <div className="rounded-xl border-2 border-line bg-paper px-4 py-3">

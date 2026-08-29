@@ -63,9 +63,10 @@ export type Billing = "metered" | "plan" | "unknown";
 export const PLAN_PROVIDERS: ReadonlySet<string> = new Set(["openai-codex", "github-copilot"]);
 
 /**
- * The plan-provider set for a given key configuration. `anthropic` counts as
- * plan-billed exactly when no API key is configured for it — with no key Pi
- * falls back to the Claude subscription OAuth in auth.json, so those calls cost
+ * The plan-provider set for a given key configuration. `anthropic` and (since
+ * the 2026-08-29 providers round) `xai` count as plan-billed exactly when no
+ * API key is configured for them — with no key Pi falls back to the
+ * subscription OAuth in auth.json (Claude Pro/Max, Grok/X), so those calls cost
  * nothing per token.
  *
  * ponytail: this reads key presence at QUERY time, not at call time, because the
@@ -75,7 +76,12 @@ export const PLAN_PROVIDERS: ReadonlySet<string> = new Set(["openai-codex", "git
  */
 export function planProvidersFor(keyStatus: Record<string, string | null>): ReadonlySet<string> {
   const s = new Set(PLAN_PROVIDERS);
-  if (!keyStatus?.anthropic) s.add("anthropic");
+  // Providers that are BOTH a subscription sign-in and a plain API key: with no
+  // key, Pi falls back to the OAuth credential in auth.json and the tokens cost
+  // nothing per call. `openrouter` is deliberately NOT here — its PKCE flow
+  // mints a user-controlled key billed from OpenRouter credits, so it is
+  // metered however it arrived, and calling it "plan" would hide real spend.
+  for (const id of ["anthropic", "xai"]) if (!keyStatus?.[id]) s.add(id);
   return s;
 }
 

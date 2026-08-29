@@ -2653,6 +2653,10 @@ export function registerIpc(win: BrowserWindow): void {
         featured: (FEATURED_PROVIDER_IDS as readonly string[]).includes(p.id),
         modelCount: p.modelCount,
       })),
+      // The sign-in list travels the same way the key list does. It used to be
+      // hardcoded a SECOND time in ModelsView, and adding a provider to one copy
+      // left the other behind — main owns it now, the renderer just renders it.
+      oauth: OAUTH_PROVIDERS,
       defaultModel: getDefaultModel(),
       // §16: the set BOTH sides filter model refs with (see resolveSpawnModel).
       knownProviders: knownProviders(),
