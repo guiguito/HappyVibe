@@ -74,6 +74,7 @@ import {
 } from "../pi-runtime/node_modules/pi-subagents/src/api/capability-ceiling.ts";
 import { buildPiArgs } from "../pi-runtime/node_modules/pi-subagents/src/runs/shared/pi-args.ts";
 import { EXTERNAL_CLI_AGENTS, REDACTED_PROMPT, WAIT_TOOLS, displayableTask, isRedactedPrompt, isWaitTool } from "../pi-runtime/extensions/hv-rules";
+import { isStoppableChild } from "../src/renderer/src/agents";
 
 const BRIDGE = path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts");
 
@@ -1150,5 +1151,43 @@ describe("the agent inventory comes from upstream's own discovery", () => {
     for (const field of ["name: string", "description: string", "tools\\?: string\\[\\]", "source: AgentSource"]) {
       expect(agentsSrc).toMatch(new RegExp(`export interface AgentConfig \\{[\\s\\S]*?${field}`));
     }
+  });
+});
+
+// ── Child-scoped stop (PRD §12, 2026-08-29 — the fleet round) ───────────────
+//
+// Upstream 0.55 (#1367) added it. The whole value is the failure direction: a
+// malformed child id must be REJECTED, never widened into a run-level stop that
+// kills the siblings the user was deliberately keeping.
+describe("child-scoped stop contract", () => {
+  const rpc = subagentSource("src", "extension", "rpc.ts");
+
+  it("`stop` is a real RPC method, distinct from `interrupt`", () => {
+    expect(rpc).toMatch(/SUBAGENT_RPC_METHODS = \[[^\]]*"interrupt"[^\]]*"stop"/);
+  });
+
+  it("`stop` accepts a childId and rejects a malformed one instead of widening", () => {
+    expect(rpc).toContain("RPC stop childId must be a non-empty string");
+  });
+
+  it("only pending/running children are stoppable — what the button gates on", () => {
+    const id = subagentSource("src", "runs", "shared", "child-identity.ts");
+    expect(id).toMatch(/isStoppableAsyncStatusStep[\s\S]{0,200}?"pending"[\s\S]{0,40}?"running"/);
+    // Our copy of that rule, which the card uses to decide whether to draw ◼.
+    expect(isStoppableChild("pending")).toBe(true);
+    expect(isStoppableChild("running")).toBe(true);
+    for (const done of ["complete", "completed", "failed", "stopped", "rejected", "paused", undefined]) {
+      expect(isStoppableChild(done)).toBe(false);
+    }
+  });
+
+  it("a status step still carries the childId that stop resolves", () => {
+    expect(subagentSource("src", "shared", "types.ts")).toMatch(/steps\?: Array<\{[\s\S]*?childId\?: string/);
+  });
+
+  it("the bridge drives `stop`, not `interrupt`, for a child", () => {
+    const bridge = readFileSync(BRIDGE, "utf8");
+    expect(bridge).toContain('rpcRequest("stop", { runId, childId })');
+    expect(bridge).toContain("hv-subagent-stop-child");
   });
 });

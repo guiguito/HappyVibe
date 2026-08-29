@@ -252,6 +252,17 @@ export function isSubagentQuery(args: unknown): boolean {
 // runs show a brief done/failed state, slide away, then App removes them
 // (~2.5s after tool_execution_end).
 
+/** One child of a fan-out delegation, as the run card renders it. */
+export interface DelegationChild {
+  /** Upstream's stable child identity — the id its `stop` RPC accepts. */
+  childId?: string;
+  agent?: string;
+  status?: string;
+  context?: { window: number; limit: number };
+  /** The child's own transcript JSONL — where its thinking blocks live. */
+  transcriptPath?: string;
+}
+
 export interface DelegationRun {
   /** Map key: the runId for async runs, the toolCallId for foreground runs. */
   id: string;
@@ -288,7 +299,19 @@ export interface DelegationRun {
      * gauge after having shown one.
      */
     context?: { window: number; limit: number };
+    /**
+     * Per-child rows for a fan-out (§12, 2026-08-29) — one per step, each with
+     * its own gauge and its own stop. Only rendered above one child: a single
+     * delegation has exactly one step, where a per-child stop would be the
+     * run's own STOP wearing a second name.
+     */
+    children?: DelegationChild[];
   };
+}
+
+/** A fan-out child is stoppable exactly while upstream says it is (0.58: pending|running). */
+export function isStoppableChild(status: string | undefined): boolean {
+  return status === "pending" || status === "running";
 }
 
 // ── async subagent lifecycle (hv.subagent notify) ────────────────────────────

@@ -3186,6 +3186,13 @@ export function registerIpc(win: BrowserWindow): void {
     void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-interrupt ${runId}` }).catch(() => {});
   });
 
+  // §12 (2026-08-29): stop ONE child of a fan-out. Upstream's `stop` RPC takes a
+  // childId and rejects a malformed one rather than widening to a run stop, so
+  // this can never become "kill everything" by accident.
+  ipcMain.handle("hv:subagent-stop-child", (_e, sessionId: string, runId: string, childId: string) => {
+    void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-stop-child ${runId} ${childId}` }).catch(() => {});
+  });
+
   // Agent file edit/duplicate — path-confined to allowed agent dirs (agents.ts).
   ipcMain.handle("hv:read-agent", (_e, filePath: string) => readAgentBody(agentDirs(), filePath));
   ipcMain.handle("hv:write-agent", (_e, filePath: string, edit: { body?: string; model?: string | null }) => {

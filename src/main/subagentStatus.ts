@@ -50,6 +50,29 @@ export interface SubagentStatus {
    * bar cannot honestly represent several.
    */
   context?: { window: number; limit: number };
+  /**
+   * One row per child of a fan-out (§12, 2026-08-29) — what the run card lists
+   * when a run has more than one, each with its own gauge and its own STOP.
+   *
+   * Deliberately SEPARATE from `children` above. That field is the cost
+   * readout's and requires a `sessionFile`; these rows exist from the moment a
+   * child is `pending`, long before it has written one, because that is when it
+   * first becomes stoppable. Same derivation, two shapes, because the two
+   * consumers genuinely want different things.
+   */
+  steps?: Array<{
+    /**
+     * Upstream's stable caller-facing child identity — the id its `stop` RPC
+     * accepts (`runs/shared/child-identity.ts`). Absent on older rows, which is
+     * why the per-child STOP renders only where it is present.
+     */
+    childId?: string;
+    agent?: string;
+    status?: string;
+    context?: { window: number; limit: number };
+    /** The child's own transcript JSONL (0.58) — where its thinking blocks live. */
+    transcriptPath?: string;
+  }>;
 }
 
 /** `{window, limit}` for one status step, or undefined unless both are real. */
@@ -92,8 +115,21 @@ export function readSubagentStatus(asyncDir: string): SubagentStatus | null {
       ...(typeof st.agent === "string" ? { agent: st.agent } : {}),
     }));
   const context = stepContext(step);
+  // Every step, including ones with no session file yet — a pending child is
+  // stoppable, so it has to be listed before it is billable.
+  const childRows = steps.map((st) => {
+    const ctx = stepContext(st);
+    return {
+      ...(typeof st.childId === "string" ? { childId: st.childId } : {}),
+      ...(typeof st.agent === "string" ? { agent: st.agent } : {}),
+      ...(typeof st.status === "string" ? { status: st.status } : {}),
+      ...(ctx ? { context: ctx } : {}),
+      ...(typeof st.transcriptPath === "string" ? { transcriptPath: st.transcriptPath } : {}),
+    };
+  });
   return {
     ...(children.length ? { children } : {}),
+    ...(childRows.length ? { steps: childRows } : {}),
     ...(context ? { context } : {}),
     state: s.state as string | undefined,
     activityState: s.activityState as string | undefined,
@@ -122,8 +158,19 @@ export function statusUnchanged(a: SubagentStatus | null, b: SubagentStatus | nu
     // The child session file arriving is itself news: it is what unlocks the
     // run's cost readout, and it can land on a tick where nothing else moved.
     (a.children ?? []).map((c) => c.sessionFile).join("|") ===
-      (b.children ?? []).map((c) => c.sessionFile).join("|")
+      (b.children ?? []).map((c) => c.sessionFile).join("|") &&
+    // A child's own status/gauge moves independently of the run's. Omit this
+    // and a finished child keeps its STOP button, and a per-child gauge freezes
+    // at whatever the first pushed tick carried.
+    stepKey(a) === stepKey(b)
   );
+}
+
+/** The per-child fields a push must not swallow: identity, status, occupancy. */
+function stepKey(s: SubagentStatus): string {
+  return (s.steps ?? [])
+    .map((c) => `${c.childId ?? ""}:${c.status ?? ""}:${c.context?.window ?? ""}:${c.transcriptPath ?? ""}`)
+    .join("|");
 }
 
 /**

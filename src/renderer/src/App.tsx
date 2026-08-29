@@ -41,7 +41,7 @@ import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
-import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
+import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
 import {
@@ -911,6 +911,9 @@ export default function App(): React.JSX.Element {
           // REBUILT on every push, so a field omitted here is silently dropped
           // on the next tick rather than merged.
           context: (status.context as { window: number; limit: number } | undefined) ?? run.live?.context,
+          // main calls these `steps` (upstream's own word); the card calls them
+          // children. Same keep-the-last rule as the two above.
+          children: (status.steps as DelegationChild[] | undefined) ?? run.live?.children,
         };
         return { ...p, [sessionId]: { ...p[sessionId], [runId]: { ...run, live } } };
       });
@@ -2551,6 +2554,7 @@ export default function App(): React.JSX.Element {
             queue={queues[sid] ?? emptyQueue}
             delegations={Object.values(delegations[sid] ?? {})}
             onStopRun={(runId) => void window.hv.subagentInterrupt(sid, runId)}
+            onStopChild={(runId, childId) => void window.hv.subagentStopChild(sid, runId, childId)}
             // §26 part 2: title and running-state come from the shared
             // `terminals` map, which the push channel keeps live — so an exited
             // terminal leaves the card stack with no extra bookkeeping.

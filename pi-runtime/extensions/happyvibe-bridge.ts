@@ -1459,6 +1459,29 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  /**
+   * §12 (2026-08-29): stop ONE child of a fan-out without killing the run
+   * (upstream 0.55 / #1367).
+   *
+   * `stop` is a DIFFERENT RPC method from `interrupt` — it takes a childId, and
+   * upstream REJECTS a malformed one rather than widening to a run-level stop.
+   * That failure direction is the one we want: a bad id must never kill the
+   * siblings the user was deliberately keeping.
+   *
+   * The reply reuses the existing `interrupt-sent`/`interrupt-error` stages, so
+   * the renderer's event parser needs no change — from the card's point of view
+   * this is the same control, aimed more precisely.
+   */
+  pi.registerCommand("hv-subagent-stop-child", {
+    description: "HappyVibe: stop one child of a running fan-out. Usage: /hv-subagent-stop-child <runId> <childId>",
+    handler: async (args, ctx) => {
+      const [runId, childId] = args.trim().split(/\s+/);
+      if (!runId || !childId) return;
+      const { ok } = await rpcRequest("stop", { runId, childId });
+      ctx.ui.notify(subEnvelope({ stage: ok ? "interrupt-sent" : "interrupt-error", runId }), ok ? "info" : "warning");
+    },
+  });
+
   pi.registerCommand("hv-subagent-list", {
     description: "HappyVibe: emit the active async subagent runs (hv.subagent active notify)",
     handler: async (_args, ctx) => {

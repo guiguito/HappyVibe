@@ -214,3 +214,53 @@ describe("live child context occupancy", () => {
     expect(statusUnchanged({ state: "running" }, a)).toBe(false);
   });
 });
+
+// ── Per-child rows for a fan-out (PRD §12, 2026-08-29 — the fleet round) ─────
+//
+// Deliberately a SEPARATE field from `children`. That one is the cost readout's
+// source and requires a `sessionFile` (a child with no session file yet is not
+// billable, and an entry without one broke the readout once). These rows are
+// the UI's, and a child is stoppable from the moment it is pending — long
+// before it has written a session file. One derivation, two shapes, because the
+// two consumers genuinely want different things.
+describe("steps (the fan-out's per-child rows)", () => {
+  const write = (status: unknown): string => runDir(status);
+
+  it("carries each child's stoppable identity, status and own context", () => {
+    const dir = write({
+      state: "running",
+      steps: [
+        { childId: "c0", agent: "worker", status: "running", contextLimit: 200_000, tokens: { window: 20_000 } },
+        { childId: "c1", agent: "reviewer", status: "complete", contextLimit: 200_000, tokens: { window: 5_000 } },
+      ],
+    });
+    expect(readSubagentStatus(dir)?.steps).toEqual([
+      { childId: "c0", agent: "worker", status: "running", context: { window: 20_000, limit: 200_000 } },
+      { childId: "c1", agent: "reviewer", status: "complete", context: { window: 5_000, limit: 200_000 } },
+    ]);
+  });
+
+  it("includes a child that has no session file yet — it is still stoppable", () => {
+    const dir = write({ state: "running", steps: [{ childId: "c0", agent: "worker", status: "pending" }] });
+    expect(readSubagentStatus(dir)?.steps).toEqual([{ childId: "c0", agent: "worker", status: "pending" }]);
+    // ...while the cost readout's own field stays empty, as it always did.
+    expect(readSubagentStatus(dir)?.children).toBeUndefined();
+  });
+
+  it("carries the child's transcript path when upstream has written one", () => {
+    const dir = write({ state: "running", steps: [{ childId: "c0", transcriptPath: "/s/subagent-artifacts/r_w_0_transcript.jsonl" }] });
+    expect(readSubagentStatus(dir)?.steps?.[0].transcriptPath).toBe("/s/subagent-artifacts/r_w_0_transcript.jsonl");
+  });
+
+  it("a child changing status is news worth pushing", () => {
+    // Without this the STOP button on a finished child never goes away.
+    const a = { state: "running", steps: [{ childId: "c0", status: "running" }] };
+    const b = { state: "running", steps: [{ childId: "c0", status: "stopped" }] };
+    expect(statusUnchanged(a, b)).toBe(false);
+    expect(statusUnchanged(a, { ...a })).toBe(true);
+  });
+
+  it("absent rather than an empty array when a run has no steps", () => {
+    expect(readSubagentStatus(runDir({ state: "running" }))?.steps).toBeUndefined();
+  });
+});

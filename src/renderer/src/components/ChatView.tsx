@@ -11,7 +11,7 @@ import { CostPanel } from "./CostPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type GaugeZone, type SessionStats } from "../context";
 import { childGauge } from "../subagentGauge";
-import { delegationHint, formatElapsed, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
+import { delegationHint, formatElapsed, isStoppableChild, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
@@ -83,6 +83,7 @@ export function ChatView({
   queue = emptyQueue,
   delegations = [],
   onStopRun,
+  onStopChild,
   terminalRuns = [],
   terminalSettings,
   onStopTerminal,
@@ -138,6 +139,8 @@ export function ChatView({
   delegations?: DelegationRun[];
   /** Interrupt a running async subagent (stop button on its card). */
   onStopRun?: (runId: string) => void;
+  /** §12: interrupt ONE child of a fan-out, leaving its siblings running. */
+  onStopChild?: (runId: string, childId: string) => void;
   /** §26 part 2: this session's live agent terminals, as sticky cards. */
   terminalRuns?: TerminalRun[];
   terminalSettings?: HvTerminalSettings | null;
@@ -994,7 +997,7 @@ export function ChatView({
               // fight for the pin, and a delegation is the shorter-lived of the
               // two so it reads better on top.
               <div className="sticky top-0 z-20 px-6">
-                {delegations.length > 0 && <DelegationSection runs={delegations} items={items} onStopRun={onStopRun} />}
+                {delegations.length > 0 && <DelegationSection runs={delegations} items={items} onStopRun={onStopRun} onStopChild={onStopChild} />}
                 {terminalRuns.length > 0 && terminalSettings && (
                   <TerminalStack
                     runs={terminalRuns}
@@ -1437,7 +1440,7 @@ const OUTCOME_LINGER_MS = 1100;
  * the top while subagents run. Concurrent runs stack vertically. Above the
  * transcript content (z-20), below modals/panels (z-40+).
  */
-function DelegationSection({ runs, items, onStopRun }: { runs: DelegationRun[]; items: TranscriptItem[]; onStopRun?: (runId: string) => void }): React.JSX.Element {
+function DelegationSection({ runs, items, onStopRun, onStopChild }: { runs: DelegationRun[]; items: TranscriptItem[]; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void }): React.JSX.Element {
   // §26: the `sticky top-0 z-20 px-6` wrapper moved OUT to the caller, so this
   // section and the terminal stack share one pinned container instead of each
   // pinning separately and overlapping.
@@ -1452,6 +1455,7 @@ function DelegationSection({ runs, items, onStopRun }: { runs: DelegationRun[]; 
           // run.live from the status poller instead.
           trace={run.kind === "fg" && run.toolCallId ? traceFor(items, run.toolCallId) : undefined}
           onStopRun={onStopRun}
+          onStopChild={onStopChild}
         />
       ))}
     </div>
@@ -1477,7 +1481,7 @@ export const GAUGE_TONE: Record<GaugeZone, string> = {
  * brief done/failed state, then a height-collapse slide-away; the in-flow call
  * line + result remain in the transcript as the record.
  */
-function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trace?: SubagentTrace; onStopRun?: (runId: string) => void }): React.JSX.Element {
+function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: DelegationRun; trace?: SubagentTrace; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void }): React.JSX.Element {
   const running = run.status === "running";
   const attention = running && run.live?.activityState === "needs_attention";
   const [open, setOpen] = useState(false);
@@ -1607,6 +1611,40 @@ function DelegationRunCard({ run, trace, onStopRun }: { run: DelegationRun; trac
                   // Detached run: no child transcript on the parent stream — show
                   // the live status snapshot from the poller instead.
                   <div className="text-xs text-ink-soft flex flex-col gap-1">
+                    {/* §12 (2026-08-29): a fan-out lists its children, each with
+                        its own gauge and its own STOP. Rendered ONLY above one
+                        child — a single delegation has exactly one step, where
+                        this would be the header's STOP under a second name. */}
+                    {(run.live?.children?.length ?? 0) > 1 &&
+                      run.live!.children!.map((c, i) => {
+                        const g = childGauge(c.context);
+                        const canStopChild = running && c.childId && isStoppableChild(c.status) && onStopChild;
+                        return (
+                          <div key={c.childId ?? i} className="flex items-center gap-2">
+                            <span className="flex-1 min-w-0 truncate font-semibold text-ink">{c.agent ?? "agent"}</span>
+                            {g && (
+                              <span
+                                title={`${c.agent ?? "This child"}'s context window: ${g.label} tokens`}
+                                className={`shrink-0 font-mono text-[10px] font-bold rounded-full border px-1.5 py-0.5 ${GAUGE_TONE[g.zone]}`}
+                              >
+                                {g.percent}%
+                              </span>
+                            )}
+                            <span className="shrink-0 text-[10px] uppercase tracking-wide">{c.status ?? "running"}</span>
+                            {canStopChild && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); onStopChild!(run.id, c.childId!); }}
+                                title={`Stop just ${c.agent ?? "this child"} — the others keep going`}
+                                aria-label={`Stop ${c.agent ?? "this child"}`}
+                                className="shrink-0 rounded-md border border-berry/50 text-berry px-1.5 py-0.5 text-[10px] font-bold hover:bg-berry/10 cursor-pointer"
+                              >
+                                ◼
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
                     {run.live?.turnCount != null && <div>turn {run.live.turnCount}{currentTool ? ` · ${currentTool}` : ""}</div>}
                     {(run.live?.recentTools ?? []).slice(-8).map((t, i) => (
                       <div key={i} className="font-mono truncate">

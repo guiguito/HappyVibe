@@ -702,6 +702,8 @@ interface HvApi {
   listTools(sessionId?: string): Promise<void>;
   /** Async subagents: interrupt a running detached run (stop button). */
   subagentInterrupt(sessionId: string, runId: string): Promise<void>;
+  /** §12: stop one child of a fan-out, leaving its siblings running. */
+  subagentStopChild(sessionId: string, runId: string, childId: string): Promise<void>;
   /**
    * §12: a child's task, a bounded transcript window and its final output,
    * fetched on demand. Costs NO model turn, so it is safe to call on expand.
