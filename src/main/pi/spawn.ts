@@ -69,6 +69,9 @@ export interface PiSpawnOptions {
   /** §14: per-session skills manifest JSON → HV_SKILLS_FILE (the bridge serves
       use_skill and detects raw SKILL.md reads from it). */
   skillsFile?: string;
+  /** §19: where pi-subagents keeps its cached model exclusions, so main can read
+   *  them and surface a silent model substitution (modelExclusions.ts). */
+  modelExclusionsFile?: string;
   /** Extended prompt-cache retention → PI_CACHE_RETENTION=long, pi-ai's only
       knob for it (pi docs/usage.md; anthropic.js resolveCacheRetention). Buys a
       1h cache TTL on Anthropic/Bedrock and `prompt_cache_retention:"24h"` on
@@ -218,6 +221,13 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
       // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).
       PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, PI_SUBAGENT_BIN_RELPATH),
+      // §19 (2026-08-29): pi-subagents 0.57 caches "this model failed" verdicts and
+      // silently skips the model afterwards. Main surfaces them as audit rows, so it
+      // needs to READ that store — and its default location is an internal
+      // `os.tmpdir()/pi-subagents-<scopeId>` derivation. Re-deriving an upstream
+      // storage path is what the MCP keychain drift punished, so we hand upstream a
+      // path we chose instead (its own documented env hook).
+      ...(opts.modelExclusionsFile ? { PI_MODEL_EXCLUSIONS_PATH: opts.modelExclusionsFile } : {}),
     } as Record<string, string>,
     cwd: workspace,
   };

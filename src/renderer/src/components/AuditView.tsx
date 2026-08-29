@@ -41,7 +41,28 @@ interface OneShot {
   ok: boolean;
 }
 
-export type Row = ({ row: "decision" } & Decision) | ({ row: "oneshot" } & OneShot);
+/**
+ * §19 — a model the app is silently NOT using.
+ *
+ * pi-subagents caches "this model failed" verdicts and then skips the model on
+ * every later delegation, saying so only on stderr. The chat keeps showing the
+ * model the user picked while their sub-agents run on a fallback, so the fact
+ * belongs here: it is something the app did on their behalf, with no decision to
+ * make and no cost of its own. See src/main/modelExclusions.ts.
+ */
+interface ModelExcluded {
+  ts: string;
+  workspaceId?: string;
+  sessionId?: string;
+  model?: string;
+  notice: string;
+  expiresAt?: number;
+}
+
+export type Row =
+  | ({ row: "decision" } & Decision)
+  | ({ row: "oneshot" } & OneShot)
+  | ({ row: "excluded" } & ModelExcluded);
 
 /**
  * One EventLog row → one display row.
@@ -56,9 +77,9 @@ export type Row = ({ row: "decision" } & Decision) | ({ row: "oneshot" } & OneSh
  */
 export function toAuditRow(e: HvAuditEvent): Row {
   const base = { ts: e.ts, sessionId: e.sessionId, workspaceId: e.workspaceId };
-  return e.type === "assistant.oneshot"
-    ? { row: "oneshot", ...(e.data as unknown as OneShot), ...base }
-    : { row: "decision", ...(e.data as unknown as Decision), ...base };
+  if (e.type === "assistant.oneshot") return { row: "oneshot", ...(e.data as unknown as OneShot), ...base };
+  if (e.type === "model.excluded") return { row: "excluded", ...(e.data as unknown as ModelExcluded), ...base };
+  return { row: "decision", ...(e.data as unknown as Decision), ...base };
 }
 
 const ONESHOT_LABEL: Record<OneShot["kind"], string> = {
@@ -170,6 +191,8 @@ export function AuditView({
     // filter under its own name so it can be isolated or excluded, and it is
     // hidden whenever a DECISION filter is on, because it is not one.
     if (r.row === "oneshot") return !decision && (!source || source === "assistant");
+    // Not a decision either: it answers to the source filter under its own name.
+    if (r.row === "excluded") return !decision && (!source || source === "model");
     return (!decision || r.decision === decision) && (!source || (SOURCE_LABEL[r.source] ?? r.source) === source);
   };
   const shown = rows?.filter(matches) ?? null;
@@ -236,6 +259,7 @@ export function AuditView({
             <option value="plan">Plan mode</option>
             <option value="terminal">Terminal</option>
             <option value="assistant">The app itself</option>
+            <option value="model">Model availability</option>
           </select>
         </div>
 
@@ -249,7 +273,26 @@ export function AuditView({
           <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden">
             {shown.map((r, i) => (
               <div key={`${r.ts}-${i}`} className="px-4 py-2.5 border-b border-line last:border-b-0 text-sm">
-                {r.row === "oneshot" ? (
+                {r.row === "excluded" ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block rounded-full border border-line bg-paper-deep px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 text-ink-soft">
+                        model
+                      </span>
+                      <span className="font-bold shrink-0">{r.model ?? "a model"} not in use</span>
+                      <span className="flex-1" />
+                      <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
+                        {new Date(r.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs text-ink-soft flex-1 min-w-0">{r.notice}</span>
+                      <span className="text-[10px] text-ink-soft/70 shrink-0" title={r.workspaceId}>
+                        {r.workspaceId ? basename(r.workspaceId) : ""}
+                      </span>
+                    </div>
+                  </>
+                ) : r.row === "oneshot" ? (
                   <>
                     <div className="flex items-center gap-2">
                       <span className="inline-block rounded-full border border-line bg-paper-deep px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 text-ink-soft">

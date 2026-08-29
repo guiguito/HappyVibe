@@ -663,6 +663,21 @@ export function writeSubagentConfig(): void {
   // announce it. tests/subagent-config.test.ts pins both halves: our key, and
   // that upstream still agrees.
   config.defaultSubagentContext = "fresh";
+  // PRD §12/§19 (2026-08-29): pi-subagents 0.57 caches "this model failed" verdicts
+  // and silently skips the model on every later delegation. The default TTL is 24
+  // HOURS and the cache is per-UID in a temp dir, so one flaky child ("Subagent
+  // produced no output") stops that model being used across every session and
+  // workspace for a day — with the only signal a console.warn the app never shows.
+  // Observed on a real install: qwen3.8-flash excluded for 24h while the chat kept
+  // showing it as the session model.
+  //
+  // Five minutes absorbs a genuine cold start, which is what the mechanism is FOR,
+  // without letting one blip cost a day. Setting the key explicitly also shortens
+  // entries already on disk (upstream passes `shortenExisting` when the value is
+  // configured), so a stale 24h exclusion self-heals at the next start rather than
+  // needing the file deleted. The bridge reports any live exclusion as an audit
+  // row — shortening the window is not the same as telling the user.
+  config.modelExclusions = { ...(config.modelExclusions as object | undefined), defaultTtlMs: 5 * 60_000 };
   // PRD §12 (2026-08-21) — FR12 was IMPLEMENTED, MEASURED AND DROPPED. We
   // deliberately write NO `permissions` key. Do not add one back.
   //

@@ -58,6 +58,7 @@ import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJ
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
 import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
+import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } from "./modelExclusions";
 import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
@@ -543,6 +544,33 @@ export function registerIpc(win: BrowserWindow): void {
     console.warn("[hv] subagent settings write failed:", e);
   }
 
+  /** Where pi-subagents keeps its cached model exclusions — ours, not derived. */
+  const modelExclusionsPath = (): string => path.join(agentDir(), "model-exclusions.json");
+
+  /**
+   * §19: report a silently substituted model, once per exclusion.
+   *
+   * pi-subagents skips an excluded model on every delegation and says so only on
+   * stderr, so without this the chat shows a model the children are not using.
+   * Keyed by model+expiry, so a re-exclusion after one lapses is reported again
+   * while a live one is not repeated on every poll.
+   */
+  const reportedExclusions = new Set<string>();
+  const reportModelExclusions = (sessionId?: string, workspaceId?: string): void => {
+    for (const x of readExclusions(modelExclusionsPath(), Date.now())) {
+      const key = exclusionKey(x);
+      const notice = formatExclusionNotice(x, Date.now());
+      if (!key || !notice || reportedExclusions.has(key)) continue;
+      reportedExclusions.add(key);
+      void log.append({
+        type: "model.excluded",
+        ...(sessionId ? { sessionId } : {}),
+        ...(workspaceId ? { workspaceId } : {}),
+        data: { model: exclusionModel(x), notice, expiresAt: x.expiresAt },
+      });
+    }
+  };
+
   // §5 (2026-08-29): reclaim sub-agent data whose session is already gone. Before
   // deleteSessionChildren existed, every deleted session left its child Pi session
   // files and its subagent-artifacts behind — 18 orphaned directories and 13
@@ -631,6 +659,9 @@ export function registerIpc(win: BrowserWindow): void {
       // §24: one --prompt-template per approved ∩ enabled ∩ active command. No
       // manifest counterpart — the bridge reads nothing about commands.
       promptTemplates: workspace && sessionId ? activePromptTemplateEntries(workspace) : [],
+      // §19: a path we own, so main can read the cached model exclusions rather
+      // than re-deriving upstream's tmp layout (modelExclusions.ts).
+      modelExclusionsFile: modelExclusionsPath(),
     };
   };
 
@@ -1712,6 +1743,11 @@ export function registerIpc(win: BrowserWindow): void {
    */
   const childSessionsByRun = new Map<string, Array<{ sessionFile: string; agent?: string }>>();
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
+    // §19: a delegation is exactly when a cached model exclusion starts mattering
+    // — it is the call that gets silently rerouted. Checked here rather than on a
+    // timer so the row lands next to the run it affected, and deduped by
+    // model+expiry so a live exclusion is reported once, not once per poll.
+    reportModelExclusions(sessionId, index.get(sessionId)?.workspaceId);
     if (!asyncDir || subagentPollers.has(runId)) return;
     const stop = pollSubagentStatus(asyncDir, (status) => {
       if (status.children?.length) childSessionsByRun.set(runId, status.children);
@@ -2994,11 +3030,15 @@ export function registerIpc(win: BrowserWindow): void {
    * two lists that happen to share a screen.
    */
   ipcMain.handle("hv:read-audit", async (_e, filter?: { sessionId?: string; workspaceId?: string }) => {
-    const [decisions, oneShots] = await Promise.all([
+    const [decisions, oneShots, excluded] = await Promise.all([
       log.read({ type: "permission.decision", ...filter }),
       log.read({ type: "assistant.oneshot", ...filter }),
+      // §19: a model the app is silently NOT using is the third thing this page
+      // answers for — it is neither a decision nor a call, but it IS something
+      // the app did on the user's behalf.
+      log.read({ type: "model.excluded", ...filter }),
     ]);
-    return [...decisions, ...oneShots].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    return [...decisions, ...oneShots, ...excluded].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   });
 
   // ── B7: local analytics (read + aggregate in main, never leaves the machine) ──
