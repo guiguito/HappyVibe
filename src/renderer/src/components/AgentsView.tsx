@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AgentInfo } from "../agents";
+import { sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
 
 /**
@@ -47,10 +47,10 @@ export function AgentsView({
     void window.hv.listAgents(sessionId ?? undefined);
   }, [sessionId]);
 
-  const sortedAgents = useMemo(
-    () => (agents ? [...agents].sort((a, b) => a.name.localeCompare(b.name)) : null),
-    [agents],
-  );
+  // §12 (2026-08-29): grouped by source — the user's own first, HappyVibe's
+  // bundled last (sortAgents in agents.ts, shared with the composer's roster
+  // chip so the two lists of the same thing cannot disagree).
+  const sortedAgents = useMemo(() => (agents ? sortAgents(agents) : null), [agents]);
 
   const duplicate = async (a: AgentInfo): Promise<void> => {
     await window.hv.duplicateAgent(a.path);

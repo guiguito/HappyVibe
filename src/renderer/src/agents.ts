@@ -492,3 +492,34 @@ export function parseAgentsMdOutput(finalOutput: string): Record<string, string>
   }
   return Object.keys(out).length > 0 ? out : null;
 }
+
+/**
+ * Display order for the agent inventory (§12, 2026-08-29).
+ *
+ * The user's OWN agents come first — they are the ones someone is looking for
+ * when they open the page, and the roster now runs to nine or more. `project`
+ * sits with `user` because both are authored by a human here rather than
+ * shipped. Then the third-party-provided ones (`builtin` = Pi's own,
+ * `package` = an installed package's), and HappyVibe's `bundled` last: they are
+ * the app's own furniture and the least likely thing to be hunting for.
+ *
+ * Exported as DATA so the renderer suite — which has no DOM — can pin it.
+ */
+export const SOURCE_ORDER: Record<string, number> = {
+  user: 0,
+  project: 1,
+  builtin: 2,
+  package: 3,
+  bundled: 4,
+};
+
+/** Sort by source group, then by name inside it. Never mutates the input. */
+export function sortAgents<T extends { name: string; source: string }>(agents: readonly T[]): T[] {
+  return [...agents].sort((a, b) => {
+    // An unknown source sorts after every known one rather than at the top,
+    // so a future source added upstream cannot silently displace the user's own.
+    const ga = SOURCE_ORDER[a.source] ?? 99;
+    const gb = SOURCE_ORDER[b.source] ?? 99;
+    return ga !== gb ? ga - gb : a.name.localeCompare(b.name);
+  });
+}

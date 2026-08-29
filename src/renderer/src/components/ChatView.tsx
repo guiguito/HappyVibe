@@ -11,7 +11,7 @@ import { CostPanel } from "./CostPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type GaugeZone, type SessionStats } from "../context";
 import { childGauge } from "../subagentGauge";
-import { delegationHint, formatElapsed, isStoppableChild, traceFor, type AgentInfo, type DelegationRun, type SubagentTrace } from "../agents";
+import { delegationHint, formatElapsed, isStoppableChild, sortAgents, traceFor, type AgentInfo, type DelegationRun, type SubagentTrace } from "../agents";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
@@ -1770,7 +1770,8 @@ function AgentsChip({ agents, onPick }: { agents: AgentInfo[]; onPick: (name: st
       {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
       {open && (
         <div className="absolute top-full left-0 mt-1.5 z-30 w-72 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
-          {agents.map((a) => (
+          {/* Same grouping as the Agents page — one sort, two surfaces. */}
+          {sortAgents(agents).map((a) => (
             <button
               key={a.path}
               type="button"

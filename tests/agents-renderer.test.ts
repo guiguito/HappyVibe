@@ -4,6 +4,7 @@ import path from "node:path";
 import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
 import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
 import { EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
+import { SOURCE_ORDER, sortAgents } from "../src/renderer/src/agents";
 import {
   asyncResultInfo,
   delegationHint,
@@ -635,5 +636,41 @@ describe("viewing a prompt we cannot write", () => {
     expect(viewer).not.toContain("Save");
     expect(viewer).not.toContain("writeAgent");
     expect(viewer).toContain("duplicate it to make a version you can edit");
+  });
+});
+
+// ── Inventory ordering (§12, 2026-08-29) ───────────────────────────────────
+describe("sortAgents", () => {
+  const mk = (name: string, source: string): { name: string; source: string } => ({ name, source });
+
+  test("puts the user's own agents on top and HappyVibe's furniture last", () => {
+    const sorted = sortAgents([
+      mk("worker", "bundled"), mk("reviewer", "builtin"), mk("my-agent", "user"),
+      mk("repo-agent", "project"), mk("pkg-agent", "package"),
+    ]);
+    expect(sorted.map((a) => a.source)).toEqual(["user", "project", "builtin", "package", "bundled"]);
+  });
+
+  test("sorts alphabetically inside a group", () => {
+    const sorted = sortAgents([mk("scout", "builtin"), mk("delegate", "builtin"), mk("oracle", "builtin")]);
+    expect(sorted.map((a) => a.name)).toEqual(["delegate", "oracle", "scout"]);
+  });
+
+  test("an unknown source sorts LAST, never above the user's own", () => {
+    // A source added upstream must not silently take the top of the page.
+    const sorted = sortAgents([mk("mystery", "something-new"), mk("mine", "user")]);
+    expect(sorted.map((a) => a.name)).toEqual(["mine", "mystery"]);
+  });
+
+  test("does not mutate its input", () => {
+    const input = [mk("worker", "bundled"), mk("mine", "user")];
+    sortAgents(input);
+    expect(input.map((a) => a.name)).toEqual(["worker", "mine"]);
+  });
+
+  test("every source the bridge can emit has an explicit rank", () => {
+    for (const s of ["builtin", "bundled", "user", "project", "package"]) {
+      expect(SOURCE_ORDER[s]).toBeTypeOf("number");
+    }
   });
 });
