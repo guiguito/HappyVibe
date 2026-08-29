@@ -1191,3 +1191,34 @@ describe("child-scoped stop contract", () => {
     expect(bridge).toContain("hv-subagent-stop-child");
   });
 });
+
+// ── Child thinking (PRD §12, 2026-08-29 — the fleet round) ──────────────────
+describe("child thinking contract", () => {
+  it("a status step still carries transcriptPath — our only route to the reasoning", () => {
+    expect(subagentSource("src", "shared", "types.ts")).toMatch(/steps\?: Array<\{[\s\S]*?transcriptPath\?: string/);
+  });
+
+  it("the status projection keeps it, so a detached run is not blind", () => {
+    expect(subagentSource("src", "runs", "background", "async-status.ts")).toContain("transcriptPath?: string");
+  });
+
+  it("we confine against the sessions dir, never tmpdir", () => {
+    // subagent-artifacts lives in OUR session dir. A tmpdir guard here returns
+    // nothing at all — and nothing is exactly what a passing test looks like.
+    const src = readFileSync(new URL("../src/main/subagentThinking.ts", import.meta.url), "utf8");
+    // Comments stripped: the file EXPLAINS the tmpdir trap at length, and a scan
+    // that reads prose as code fails on its own documentation.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toContain("os.tmpdir()");
+    expect(code).toContain("sessionsRoot");
+    // Containment, not a string prefix: `<root>-evil` must not pass.
+    expect(src).toContain("root + path.sep");
+  });
+
+  it("upstream still writes artifacts into the dir we confine to", () => {
+    // If pi-subagents ever relocates subagent-artifacts out of our session dir,
+    // the confinement starts refusing every real transcript.
+    const store = readFileSync(new URL("../src/main/store.ts", import.meta.url), "utf8");
+    expect(store).toContain('const ARTIFACT_DIR = "subagent-artifacts"');
+  });
+});

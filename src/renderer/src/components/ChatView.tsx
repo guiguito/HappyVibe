@@ -1554,6 +1554,21 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
   // differentiator, per child. Null whenever the model has no known window, and
   // the pill then does not render at all rather than showing 0%.
   const gauge = running ? childGauge(run.live?.context) : null;
+  /**
+   * §12 (2026-08-29): the child's own reasoning, fetched only when asked.
+   *
+   * This is the app's FIRST thinking surface — the main agent's reasoning is
+   * not rendered anywhere — so it is off by default and costs nothing until
+   * opened. Toggling OFF clears rather than caching, so re-opening a running
+   * child re-reads and shows what it is thinking now, not what it thought.
+   */
+  const [thinking, setThinking] = useState<string[] | null>(null);
+  const transcriptPath = run.live?.children?.find((c) => c.transcriptPath)?.transcriptPath;
+  const toggleThinking = (): void => {
+    if (thinking) { setThinking(null); return; }
+    if (!transcriptPath) return;
+    void window.hv.subagentThinking(transcriptPath).then(setThinking).catch(() => setThinking([]));
+  };
   return (
     <div
       className={`grid transition-[grid-template-rows,opacity] duration-350 ease-in-out ${
@@ -1690,6 +1705,22 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                           </div>
                         );
                       })}
+                    {/* §12 (2026-08-29): the child's reasoning, on request. The
+                        toggle only appears once upstream has written the
+                        transcript — before that there is nothing to read. */}
+                    {transcriptPath && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleThinking(); }}
+                        className="self-start text-[11px] font-bold text-plum hover:underline cursor-pointer"
+                      >
+                        {thinking ? "Hide thinking" : "Show thinking"}
+                      </button>
+                    )}
+                    {thinking?.map((t, i) => (
+                      <p key={i} className="text-xs text-ink-soft italic border-l-2 border-plum/40 pl-2 whitespace-pre-wrap">{t}</p>
+                    ))}
+                    {thinking?.length === 0 && <p className="text-xs text-ink-soft">No reasoning recorded for this run.</p>}
                     {run.live?.turnCount != null && <div>turn {run.live.turnCount}{currentTool ? ` · ${currentTool}` : ""}</div>}
                     {(run.live?.recentTools ?? []).slice(-8).map((t, i) => (
                       <div key={i} className="font-mono truncate">
