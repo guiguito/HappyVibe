@@ -2555,6 +2555,7 @@ export default function App(): React.JSX.Element {
             delegations={Object.values(delegations[sid] ?? {})}
             onStopRun={(runId) => void window.hv.subagentInterrupt(sid, runId)}
             onStopChild={(runId, childId) => void window.hv.subagentStopChild(sid, runId, childId)}
+            agents={agents}
             // §26 part 2: title and running-state come from the shared
             // `terminals` map, which the push channel keeps live — so an exited
             // terminal leaves the card stack with no extra bookkeeping.

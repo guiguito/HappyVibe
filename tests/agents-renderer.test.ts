@@ -572,3 +572,29 @@ describe("the agent inventory's five sources", () => {
     expect(SOURCE_TONE.bundled).not.toBe(SOURCE_TONE.builtin);
   });
 });
+
+// ── The delegate-this affordances (§12, 2026-08-29) ─────────────────────────
+describe("delegating from the flow", () => {
+  const CHAT2 = path.join(__dirname, "..", "src", "renderer", "src", "components", "ChatView.tsx");
+  const chat2 = readFileSync(CHAT2, "utf8");
+
+  test("an agent pick never writes to the file label map", () => {
+    // mentionMap is what extractMentions resolves on send. An entry there would
+    // make the app try to attach a file named after the agent.
+    const pick = chat2.slice(chat2.indexOf("const pickAgentMention"), chat2.indexOf("const pickAgentMention") + 700);
+    expect(pick).not.toContain("mentionMap.current.set");
+  });
+
+  test("an agent match opens the @ menu even when no file matches", () => {
+    expect(chat2).toContain("mention.items.length > 0 || mentionAgents.length > 0");
+  });
+
+  test("the roster chip dismisses by click-catcher, never by blur", () => {
+    // A blur-dismissed menu unmounts between mousedown and mouseup and loses its
+    // own clicks — reported twice in this app as an unclickable menu.
+    const chip = chat2.slice(chat2.indexOf("function AgentsChip"), chat2.indexOf("function SkillsChip"));
+    expect(chip).toContain('className="fixed inset-0 z-20"');
+    expect(chip).toContain("onMouseDown");
+    expect(chip).not.toContain("onBlur");
+  });
+});

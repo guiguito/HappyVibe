@@ -11,7 +11,7 @@ import { CostPanel } from "./CostPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type GaugeZone, type SessionStats } from "../context";
 import { childGauge } from "../subagentGauge";
-import { delegationHint, formatElapsed, isStoppableChild, traceFor, type DelegationRun, type SubagentTrace } from "../agents";
+import { delegationHint, formatElapsed, isStoppableChild, traceFor, type AgentInfo, type DelegationRun, type SubagentTrace } from "../agents";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
@@ -30,7 +30,7 @@ import {
 } from "../composer";
 import {
   activeCommandQuery, activeMentionQuery, commandSubtitle, completeCommand, completeMention, composerCommands, extractMentions, filterCommands,
-  filterEntries, mentionLabel, type MentionEntry, type SlashCommand,
+  agentMentionItems, filterEntries, mentionLabel, type MentionEntry, type SlashCommand,
 } from "../mentions";
 
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
@@ -84,6 +84,7 @@ export function ChatView({
   delegations = [],
   onStopRun,
   onStopChild,
+  agents,
   terminalRuns = [],
   terminalSettings,
   onStopTerminal,
@@ -139,6 +140,8 @@ export function ChatView({
   delegations?: DelegationRun[];
   /** Interrupt a running async subagent (stop button on its card). */
   onStopRun?: (runId: string) => void;
+  /** §12 (2026-08-29): the agent roster, for @agent and the delegate chip. */
+  agents?: AgentInfo[] | null;
   /** §12: interrupt ONE child of a fan-out, leaving its siblings running. */
   onStopChild?: (runId: string, childId: string) => void;
   /** §26 part 2: this session's live agent terminals, as sticky cards. */
@@ -294,7 +297,7 @@ export function ChatView({
   // and the live dropdown state.
   const mentionMap = useRef<Map<string, string>>(new Map());
   const mentionIndex = useRef<MentionEntry[] | null>(null);
-  const [mention, setMention] = useState<{ start: number; items: MentionEntry[]; sel: number } | null>(null);
+  const [mention, setMention] = useState<{ start: number; items: MentionEntry[]; sel: number; query: string } | null>(null);
   useEffect(() => {
     mentionIndex.current = null;
     mentionMap.current = new Map();
@@ -316,7 +319,9 @@ export function ChatView({
     const q = activeMentionQuery(text, caret);
     if (!q) { setMention(null); return; }
     const items = filterEntries(await ensureMentionIndex(), q.query);
-    setMention({ start: q.start, items, sel: 0 });
+    // `query` is kept so the agent rows (rendered above the files) can filter on
+    // the same text without re-deriving it from the caret.
+    setMention({ start: q.start, items, sel: 0, query: q.query });
   }, [ensureMentionIndex]);
   const pickMention = (entry: MentionEntry): void => {
     const el = taRef.current;
@@ -329,6 +334,27 @@ export function ChatView({
     setMention(null);
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(done.caret, done.caret); autoGrow(); });
   };
+
+  /**
+   * §12 (2026-08-29): pick an AGENT from the `@` menu.
+   *
+   * Mirrors pickMention except for the one line that matters: it does NOT write
+   * to `mentionMap`. That map is what `extractMentions` resolves on send, so an
+   * entry there would make the app try to attach a file called "worker".
+   */
+  const pickAgentMention = (name: string): void => {
+    const el = taRef.current;
+    if (!el || !mention) return;
+    const caret = el.selectionStart ?? input.length;
+    const next = `${input.slice(0, mention.start)}@${name} ${input.slice(caret)}`;
+    const pos = mention.start + name.length + 2;
+    setInput(next);
+    setMention(null);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos); autoGrow(); });
+  };
+
+  // §12 (2026-08-29): the agent rows shown above the file rows in the `@` menu.
+  const mentionAgents = mention ? agentMentionItems(agents ?? [], mention.query) : [];
 
   // §14 round 6: `/skill:<name>` autocomplete. Pi already registers a command per
   // loaded skill; get_commands is a pure query so this costs no model turn. The
@@ -638,6 +664,7 @@ export function ChatView({
             />
           </div>
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
+        {agents && agents.length > 0 && <AgentsChip agents={agents} onPick={(name) => insertText(`Ask ${name} to `)} />}
         {/* §23 round 9: the active-plan pill. A plan card lives at its
             plan_complete position in history, so a compaction that ate that
             position would otherwise leave an implementable plan with no way to
@@ -1244,9 +1271,27 @@ export function ChatView({
             </button>
           )}
           <div className="relative flex-1 min-w-0">
-            {/* F3: @file autocomplete — opens above the composer, styled like the attach menu. */}
-            {mention && mention.items.length > 0 && (
+            {/* F3: @file autocomplete — opens above the composer, styled like the
+                attach menu. §12 (2026-08-29): an AGENT match opens it too, so
+                `@wor` finds `worker` even where no file matches. */}
+            {mention && (mention.items.length > 0 || mentionAgents.length > 0) && (
               <div className="absolute bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+                {/* §12: agents first — they are the rarer, more valuable pick,
+                    and the file list is long. Mouse-picked only: the arrow/Tab
+                    index below still addresses mention.items (files), which
+                    keeps the existing keyboard contract byte-identical. */}
+                {mentionAgents.map((a) => (
+                  <button
+                    key={`agent:${a.name}`}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickAgentMention(a.name)}
+                    className="w-full text-left px-3 py-1.5 cursor-pointer hover:bg-paper-deep/40"
+                  >
+                    <span className="font-semibold">🤖 @{a.name}</span>
+                    <span className="block truncate text-[11px] font-medium text-ink-soft">{a.description}</span>
+                  </button>
+                ))}
                 {mention.items.map((it, i) => {
                   const base = it.rel.split(/[\\/]/).pop() ?? it.rel;
                   return (
@@ -1667,6 +1712,53 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
  * §14 round 6: which skills this session loaded, and which the agent actually
  * reached for. One chip answers both — what was available, and what got used.
  */
+/**
+ * §12 (2026-08-29): the delegate-this affordance, chip half.
+ *
+ * The agents existed and nothing in the chat flow said so — discovery was a
+ * settings page. This is the version a first-time user finds; `@agent` in the
+ * composer is the version a hundredth-session user types. Both, deliberately:
+ * one is discoverable, the other is fast.
+ *
+ * Dismissal is a `fixed inset-0` click-catcher, NOT onBlur. A blur-dismissed
+ * menu unmounts between mousedown and mouseup and loses its own clicks — twice
+ * reported in this app as "none of this menu is clickable" (see CLAUDE.md).
+ */
+function AgentsChip({ agents, onPick }: { agents: AgentInfo[]; onPick: (name: string) => void }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={`${agents.length} subagent${agents.length === 1 ? "" : "s"} you can delegate to`}
+        className="flex items-center gap-1 rounded-full bg-honey-soft text-tangerine-deep text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:brightness-105"
+      >
+        <span aria-hidden>🤖</span> {agents.length} agents
+      </button>
+      {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
+      {open && (
+        <div className="absolute top-full left-0 mt-1.5 z-30 w-72 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
+          {agents.map((a) => (
+            <button
+              key={a.path}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onPick(a.name); setOpen(false); }}
+              className="w-full text-left px-3 py-1.5 cursor-pointer hover:bg-paper-deep/40"
+            >
+              <span className="font-bold">{a.name}</span>
+              <span className="block text-[11px] text-ink-soft line-clamp-2">{a.description}</span>
+            </button>
+          ))}
+          <p className="px-3 pt-1 text-[10px] text-ink-soft">
+            Or type <span className="font-mono">@</span> in the message box.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SkillsChip({ skills }: { skills: Array<{ name: string; scope: string; used: boolean }> }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const used = skills.filter((s) => s.used).length;
