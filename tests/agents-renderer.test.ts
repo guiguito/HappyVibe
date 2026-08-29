@@ -757,3 +757,29 @@ describe("the agents pill is quiet at rest", () => {
     expect(skills).toContain("bg-plum-soft");
   });
 });
+
+// ── The switch is a switch (2026-08-30) ────────────────────────────────────
+describe("agents use the app's shared Toggle", () => {
+  const AV = path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx");
+  const av = readFileSync(AV, "utf8");
+
+  test("a switch, not a checkbox", () => {
+    // These apply immediately (next turn), so they must not read as a
+    // selection waiting on a Save.
+    expect(av).toContain("<Toggle");
+    expect(av).not.toContain('type="checkbox"');
+  });
+
+  test("it is the SHARED component, not a fourth copy", () => {
+    // Three near-identical switches already existed. A fourth was the wrong
+    // direction; this asserts the extraction stuck.
+    expect(av).toContain('from "./Toggle"');
+    const toggle = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "Toggle.tsx"), "utf8");
+    expect(toggle).toContain('role="switch"');
+    expect(toggle).toContain("aria-checked");
+    // VoiceView adopted it rather than keeping its own copy.
+    const voice = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "VoiceView.tsx"), "utf8");
+    expect(voice).toContain('from "./Toggle"');
+    expect(voice).not.toContain("function Toggle(");
+  });
+});

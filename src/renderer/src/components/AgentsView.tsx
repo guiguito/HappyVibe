@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { agentBlurb, agentDisabledReason, agentTokenCost, rosterTokenCost, sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
+import { Toggle } from "./Toggle";
 
 /**
  * §12 (2026-08-29): five sources, because there are five. `bundled` is ours and
@@ -91,16 +92,14 @@ export function AgentsView({
             {sortedAgents.map((a) => (
               <div key={a.path} className={`px-4 py-3 border-b border-line last:border-b-0 ${a.enabled === false ? "opacity-55" : ""}`}>
                 <div className="flex items-center gap-2">
-                  {/* Same checkbox idiom as the skills list. A disabled agent stays
-                      listed and dimmed — you have to be able to see it to turn it
-                      back on. */}
-                  <input
-                    type="checkbox"
-                    checked={a.enabled !== false}
+                  {/* A switch, not a checkbox: it applies immediately (next turn)
+                      rather than waiting on a Save. A disabled agent stays listed
+                      and dimmed — you have to see it to turn it back on. */}
+                  <Toggle
+                    on={a.enabled !== false}
                     onChange={() => void toggle(a)}
-                    aria-label={`${a.enabled === false ? "Enable" : "Disable"} ${a.name}`}
+                    label={`${a.enabled === false ? "Enable" : "Disable"} ${a.name}`}
                     title={a.enabled === false ? `Switch ${a.name} on` : `Switch ${a.name} off — frees about ${agentTokenCost(a)} tokens every turn`}
-                    className="size-4 accent-tangerine cursor-pointer shrink-0"
                   />
                   <span className="font-bold">{a.name}</span>
                   <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${SOURCE_TONE[a.source] ?? "bg-paper-deep text-ink-soft border-line"}`}>
