@@ -177,3 +177,28 @@ export function joinToolPermissions(
     permission: verdicts[t.name] ?? "ask",
   }));
 }
+
+/**
+ * True when a discovered `.md` is a SLASH COMMAND, not an agent definition.
+ *
+ * pi-subagents claims `~/.agents` as its user agent dir and scans it
+ * recursively. That directory is shared: Claude Code and tools built on it keep
+ * slash commands in `commands/` and skills in `skills/`. Upstream already
+ * excludes `skills/` (`isLegacyAgentSkillPath`), but not `commands/` — so on a
+ * real install every Superset slash command (`10x`, `doctor`, `feedback`,
+ * `setup`, from `~/.agents/commands/superset/`) was read as a delegatable
+ * sub-agent, listed on the Agents page, and injected into the model's roster
+ * every turn. They are not agents: they carry Claude Code's `argument-hint` and
+ * `allowed-tools` keys and reference `${CLAUDE_SKILL_DIR}`.
+ *
+ * Same shape as upstream's own skills exclusion, one segment name different.
+ * Matches a whole path SEGMENT so an agent named `commands-expert` survives.
+ *
+ * This hides them; it does not refuse them. They are ordinary Pi children the
+ * capability ceiling governs, so a user who explicitly names one still gets it —
+ * unlike the external-CLI agents, which are refused because nothing can bound
+ * them. The problem here is advertising another tool's commands as our agents.
+ */
+export function isSlashCommandPath(filePath: string): boolean {
+  return filePath.split(/[\\/]/).includes("commands");
+}

@@ -6,6 +6,7 @@ import {
   parseAgentFile,
   renderSubagentSection,
   serializeAgentFile,
+  isSlashCommandPath,
   toAgentDef,
   type AgentDef,
   type PermState,
@@ -175,5 +176,44 @@ describe("renderSubagentSection", () => {
     const s = renderSubagentSection([mk("verbose", long)]);
     expect(s).toContain("x".repeat(200));
     expect(s).not.toContain("x".repeat(201));
+  });
+});
+
+// ── A slash command is not a sub-agent (§12, 2026-08-29) ────────────────────
+//
+// pi-subagents claims `~/.agents` as its user agent dir and scans it
+// RECURSIVELY. That directory is shared with Claude Code / Superset, which keep
+// slash commands in `commands/` and skills in `skills/`. Upstream excludes
+// `skills/` (isLegacyAgentSkillPath, agents.ts:1817) but not `commands/`, so
+// every installed slash command was being read as a delegatable sub-agent:
+// measured on a real install, `10x`, `doctor`, `feedback` and `setup` from
+// ~/.agents/commands/superset/ were listed on the Agents page AND injected into
+// the model's roster every turn. They are not agents — they carry Claude Code's
+// `argument-hint` / `allowed-tools` keys and reference ${CLAUDE_SKILL_DIR}.
+describe("isSlashCommandPath", () => {
+  test("rejects a commands/ file under a user agent dir", () => {
+    expect(isSlashCommandPath("/Users/x/.agents/commands/superset/10x.md")).toBe(true);
+    expect(isSlashCommandPath("/Users/x/.agents/commands/doctor.md")).toBe(true);
+  });
+
+  test("rejects a project-scope commands/ file too", () => {
+    expect(isSlashCommandPath("/repo/.agents/commands/deploy.md")).toBe(true);
+    expect(isSlashCommandPath("/repo/.claude/commands/deploy.md")).toBe(true);
+  });
+
+  test("keeps real agents, wherever they live", () => {
+    expect(isSlashCommandPath("/Users/x/.agents/my-agent.md")).toBe(false);
+    expect(isSlashCommandPath("/app/pi-agent/agents/worker.md")).toBe(false);
+    expect(isSlashCommandPath("/repo/.pi/agents/reviewer.md")).toBe(false);
+  });
+
+  test("matches a whole SEGMENT, never a substring", () => {
+    // An agent legitimately named for commands must survive.
+    expect(isSlashCommandPath("/Users/x/.agents/commands-expert.md")).toBe(false);
+    expect(isSlashCommandPath("/Users/x/.agents/my-commands/a.md")).toBe(false);
+  });
+
+  test("handles Windows separators", () => {
+    expect(isSlashCommandPath("C:\\Users\\x\\.agents\\commands\\superset\\10x.md")).toBe(true);
   });
 });

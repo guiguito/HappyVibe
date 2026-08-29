@@ -18,7 +18,7 @@ import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
   type AgentMessage, type MarkKey, type SessionEntry, type ToolSpecLike,
 } from "./hv-context";
-import { renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
+import { isSlashCommandPath, renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
   buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, resolvePlanVerdict, restorePlanState, shouldForcePlanOff,
@@ -1344,6 +1344,12 @@ export default function (pi: ExtensionAPI) {
         // contract test has been updated to name it: the ceiling cannot bound
         // any external-cli process, so the page never offers one.
         if ((a.runner as { type?: unknown } | undefined)?.type === "external-cli") continue;
+        // ~/.agents is SHARED with Claude Code and tools built on it, and
+        // upstream scans it recursively — excluding `skills/` but not
+        // `commands/`. So every installed slash command arrived here as a
+        // delegatable sub-agent (measured: Superset's 10x/doctor/feedback/setup)
+        // and went into the model's roster every turn. They are not agents.
+        if (isSlashCommandPath(typeof a.filePath === "string" ? a.filePath : "")) continue;
         const name = typeof a.name === "string" ? a.name : "";
         const description = typeof a.description === "string" ? a.description : "";
         if (!name || !description) continue; // pi-subagents skips these too

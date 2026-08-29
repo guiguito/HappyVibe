@@ -123,6 +123,13 @@ test("/hv-agents lists every agent that exists, not just our own dir", async () 
   // applies our overrides but does NOT drop what they disable. Without the
   // filter these six would be listed as available agents the bridge refuses at
   // delegation time — worse than not listing them at all (PRD §12, 2026-08-28).
+  // ABSENCE: another tool's slash commands are not our sub-agents. ~/.agents is
+  // shared with Claude Code / Superset, upstream scans it recursively, and these
+  // four were being listed AND injected into the model's roster every turn.
+  for (const slashCommand of ["10x", "doctor", "feedback", "setup"]) {
+    expect(names).not.toContain(slashCommand);
+  }
+
   for (const external of [
     "claude-code", "claude-code-writer", "codex-exec",
     "codex-exec-writer", "cursor-agent", "cursor-agent-writer",
