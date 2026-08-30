@@ -210,6 +210,9 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:get-analytics", filter),
   getOnboardingSeen: () => ipcRenderer.invoke("hv:get-onboarding-seen"),
   setOnboardingSeen: (seen: boolean) => ipcRenderer.invoke("hv:set-onboarding-seen", seen),
+  // §30: the changelog dot's flag.
+  getLastSeenVersion: () => ipcRenderer.invoke("hv:get-last-seen-version"),
+  setLastSeenVersion: (version: string) => ipcRenderer.invoke("hv:set-last-seen-version", version),
 
   // ── B5: context visibility (additive) ────────────────────────────
   // Snapshot/remove/restore fire /hv-context* commands; results arrive as
