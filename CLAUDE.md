@@ -47,6 +47,14 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   **It diffs `main...HEAD`, so it only sees COMMITTED work** — staging a pin bump and asking is
   silence, not a green light, and `git add` does not change that. Check it after the commit that
   carries the change, not before (this reads as "the gate script regressed" if you forget).
+  **A fresh WORKTREE has no `.env`, so the batch exits 0 having tested nothing — and it looks
+  green.** `.env` is gitignored, so it does not travel with a worktree; `KEY` is then undefined
+  and all 18 files skip themselves, while the key-free tests inside them still report as passes
+  (measured 2026-08-31: `6 passed | 12 skipped`, exit 0). **The tell is the DURATION** — a real
+  batch is ~6 min, that one took 4.72 s. Always read the wall time before believing a green live
+  run, and symlink the key in first: `ln -s ~/Documents/Github/HappyVibe/.env .env` (still
+  ignored through the link — `git check-ignore -v .env` confirms). Same silent-skip class as the
+  `sk-REPLACE` rule above, one directory over.
   (`--no-file-parallelism` is load-bearing: concurrent files mean concurrent DeepSeek sessions,
   and the provider degrades under that — the residual "flakes" were turns that came back with no
   tool call at all. Serial costs ~6 min and is green.)
