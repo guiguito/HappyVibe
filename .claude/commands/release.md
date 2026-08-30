@@ -64,12 +64,14 @@ disagree** — then follow the user's call.
 
 ### 5. Stamp
 
-- Rename `## [Unreleased]` → `## [x.y.z] — YYYY-MM-DD` (today's real date), and add a fresh empty
-  `## [Unreleased]` above it.
+- Rename `## [Unreleased]` → `## [x.y.z] — YYYY-MM-DD` (today's real date). Do **not** leave an
+  empty `## [Unreleased]` behind — an empty heading is the first thing a reader hits on the page,
+  and the next entry creates its own.
 - `npm version <bump> --no-git-tag-version` — this is the only thing that writes a version number.
 - Verify the invariant by eye: the top released heading equals `package.json`'s `version`.
 - Commit `chore(release): x.y.z` (CHANGELOG.md + package.json + package-lock.json only).
-- `git tag vx.y.z`
+- `git tag vx.y.z` — **do not skip this even though nothing enforces it.** `changelog.sh digest`
+  finds the previous release by tag; without one the next release replays the whole history.
 
 ### 6. Stop
 
