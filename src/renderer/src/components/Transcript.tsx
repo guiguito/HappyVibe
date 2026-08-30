@@ -6,7 +6,7 @@ import { PlanCard, type PlanCardData } from "./PlanCard";
 import { splitMentionSegments, stripInjectedBlocks } from "../mentions";
 import { ZoomableImage } from "./ZoomableImage";
 import { BrandLogo } from "./BrandLogo";
-import { formatDuration, timeago } from "../timeago";
+import { formatDuration, timeagoLong } from "../timeago";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -121,7 +121,7 @@ function Stamp({ ts, turnMs, tone }: { ts?: number; turnMs?: number; tone: strin
   if (ts == null && turnMs == null) return null;
   return (
     <span className={`text-[10px] tabular-nums ${tone}`} title={ts != null ? new Date(ts).toLocaleString() : undefined}>
-      {ts != null && `${timeago(ts)} ago`}
+      {ts != null && timeagoLong(ts)}
       {ts != null && turnMs != null && " · "}
       {turnMs != null && (
         <span title={`This turn took ${formatDuration(turnMs)}`}>{formatDuration(turnMs)}</span>
