@@ -8,10 +8,10 @@ import { spawn } from "node:child_process";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
+  agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
-  childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
+  childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
@@ -71,7 +71,7 @@ import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
-import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
+import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
@@ -1947,12 +1947,6 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   // ── config / folder picking ──────────────────────────────────────
-  ipcMain.handle("hv:get-api-key", () => getApiKey());
-  ipcMain.handle("hv:set-api-key", (_e, key: string) => setApiKey(key));
-  ipcMain.handle("hv:pick-folder", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
-    return r.canceled ? null : r.filePaths[0];
-  });
 
   // ── workspaces ───────────────────────────────────────────────────
   ipcMain.handle("hv:list-workspaces", () => workspaces.list());
@@ -3156,14 +3150,6 @@ export function registerIpc(win: BrowserWindow): void {
     void log.append({ type: "agents_md.written", workspaceId, data: { files: written } });
     return written;
   });
-  ipcMain.handle("hv:propose-agents-md", (_e, workspaceId: string) =>
-    proposeAgentsMd(piRuntimeDir(), workspaces.list(), workspaceId, {
-      // §16: same guarded resolution as a chat spawn — a removed endpoint's
-      // ref must not be handed to a one-shot Pi call either.
-      model: resolveSpawnModel(),
-      env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
-      onDone: oneShot("agents-md", workspaceId),
-    }));
   // W2.3 missing-file flow: CLAUDE.md → AGENTS.md copy (same confinement).
   ipcMain.handle("hv:has-claude-md", (_e, workspaceId: string) =>
     hasClaudeMd(workspaces.list(), workspaceId));

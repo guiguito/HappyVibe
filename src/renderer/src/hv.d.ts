@@ -519,9 +519,6 @@ interface McpServerStatusLike {
 }
 
 interface HvApi {
-  getApiKey(): Promise<string | null>;
-  setApiKey(key: string): Promise<void>;
-  pickFolder(): Promise<string | null>;
   getStats(sessionId?: string): Promise<unknown>;
   /** Billed API calls (oldest first) + their total. Main sums it so the renderer
    *  never re-implements ledgerTotal. Mirrors src/main/calls.ts. */
@@ -647,7 +644,6 @@ interface HvApi {
   writeAgentsMd(workspaceId: string, content: string): Promise<void>;
   /** WS5: write the agents-md-maker structured draft (root + nested). Returns written rel paths. */
   writeAgentsMdFiles(workspaceId: string, files: Record<string, string>): Promise<string[]>;
-  proposeAgentsMd(workspaceId: string): Promise<string | null>;
   // W2.3 missing-file flow
   hasClaudeMd(workspaceId: string): Promise<boolean>;
   copyClaudeMd(workspaceId: string): Promise<string>;

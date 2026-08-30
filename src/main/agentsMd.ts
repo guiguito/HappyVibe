@@ -1,7 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
-import { PI_CLI_RELPATH, nodeExecPath } from "./pi/spawn";
 
 /**
  * AGENTS.md support (B2). Pi loads context files at session start (cwd upward,
@@ -91,94 +89,4 @@ export function writeAgentsMdFiles(
     written.push(path.relative(ws, abs));
   }
   return written;
-}
-
-/** Facts handed to the draft prompt — the model inspects nothing itself. */
-export function workspaceFacts(workspace: string): string {
-  let entries: string[] = [];
-  try {
-    entries = fs.readdirSync(workspace).filter((n) => !n.startsWith(".")).slice(0, 60);
-  } catch {
-    /* unreadable dir — facts stay minimal */
-  }
-  let pkg = "";
-  try {
-    const p = JSON.parse(fs.readFileSync(path.join(workspace, "package.json"), "utf8")) as {
-      name?: string;
-      scripts?: Record<string, string>;
-    };
-    pkg = `\npackage.json name: ${p.name ?? "(unnamed)"}\nnpm scripts: ${JSON.stringify(p.scripts ?? {})}`;
-  } catch {
-    /* no package.json */
-  }
-  return `Project folder: ${path.basename(workspace)}\nTop-level entries: ${entries.join(", ") || "(empty)"}${pkg}`;
-}
-
-/**
- * One-shot `pi -p` draft generation — same pattern as titles.ts generateTitle:
- * `--no-tools --no-extensions --no-session` keeps it pure text, stdin "ignore"
- * (one-shot Pi hangs if stdin stays open). Resolves null on any failure.
- */
-export function proposeAgentsMd(
-  runtimeDir: string,
-  registeredWorkspaces: string[],
-  workspaceId: string,
-  opts: {
-    model?: { provider: string; modelId: string } | null;
-    env?: Record<string, string>;
-    /** Round 15: report the call so main can audit it (see oneShotLog.ts). */
-    onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }) => void;
-  } = {}
-): Promise<string | null> {
-  resolveAgentsMd(registeredWorkspaces, workspaceId); // confinement gate before any spawn
-  const workspace = path.resolve(workspaceId);
-  // §16 finding 7 (2026-08-29): no configured model means NO call. This used
-  // to fall back to a hardcoded deepseek/deepseek-v4-flash, so a user with no
-  // DeepSeek key got a silent failure — and one WITH a key was billed for a
-  // provider they had not chosen for this. Callers already treat null as
-  // "no draft", which is the honest answer when nothing is set up.
-  const model = opts.model;
-  if (!model) return Promise.resolve(null);
-  const prompt =
-    "Draft an AGENTS.md file (context notes for a coding agent) for this project. " +
-    "Do NOT inspect, read, or list any files — use ONLY the facts below. " +
-    "Keep it under 30 lines: a one-line project description, key commands, and 2-3 working conventions. " +
-    "Reply with ONLY the raw markdown content, no code fences.\n\n" +
-    workspaceFacts(workspace);
-  return new Promise((resolve) => {
-    const child = spawn(
-      nodeExecPath(),
-      [
-        path.join(runtimeDir, PI_CLI_RELPATH),
-        "-p", "--no-session", "--no-tools", "--no-extensions",
-        "--provider", model.provider,
-        "--model", model.modelId,
-        prompt,
-      ],
-      {
-        cwd: workspace,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(opts.env ?? {}) },
-        stdio: ["ignore", "pipe", "ignore"],
-        timeout: 60_000,
-      }
-    );
-    let out = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (d: string) => (out += d));
-    const done = (ok: boolean): void =>
-      opts.onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok });
-    child.on("error", () => {
-      done(false);
-      resolve(null);
-    });
-    child.on("exit", (code) => {
-      if (code !== 0) {
-        done(false);
-        return resolve(null);
-      }
-      const draft = out.trim().replace(/^```(?:markdown|md)?\n?/, "").replace(/\n?```$/, "").trim();
-      done(!!draft);
-      resolve(draft || null);
-    });
-  });
 }

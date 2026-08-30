@@ -26,9 +26,6 @@ interface VoiceSettingsDTO {
 contextBridge.exposeInMainWorld("hv", {
   // WS8: absolute OS path of a dragged File (Electron ≥32; replaces File.path).
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
-  getApiKey: () => ipcRenderer.invoke("hv:get-api-key"),
-  setApiKey: (k: string) => ipcRenderer.invoke("hv:set-api-key", k),
-  pickFolder: () => ipcRenderer.invoke("hv:pick-folder"),
   getStats: (sessionId?: string) => ipcRenderer.invoke("hv:get-stats", sessionId),
   getSessionCalls: (sessionId: string) => ipcRenderer.invoke("hv:get-session-calls", sessionId),
   respondPermission: (id: string, choice: string) => ipcRenderer.send("hv:respond-permission", id, choice),
@@ -162,7 +159,6 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:write-agents-md", workspaceId, content),
   writeAgentsMdFiles: (workspaceId: string, files: Record<string, string>) =>
     ipcRenderer.invoke("hv:write-agents-md-files", workspaceId, files),
-  proposeAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:propose-agents-md", workspaceId),
   // W2.3 missing-file flow (additive)
   hasClaudeMd: (workspaceId: string) => ipcRenderer.invoke("hv:has-claude-md", workspaceId),
   copyClaudeMd: (workspaceId: string) => ipcRenderer.invoke("hv:copy-claude-md", workspaceId),

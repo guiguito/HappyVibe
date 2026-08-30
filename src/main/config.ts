@@ -455,15 +455,6 @@ export function setLinkedPromptTemplateDirs(dirs: string[]): void {
   save(cfg);
 }
 
-// Legacy shims — existing window.hv.getApiKey/setApiKey surface (DeepSeek).
-export function getApiKey(): string | null {
-  return providerEnv().DEEPSEEK_API_KEY ?? null;
-}
-
-export function setApiKey(key: string): void {
-  setProviderKey("deepseek", key);
-}
-
 export function sessionDir(): string {
   const d = path.join(app.getPath("userData"), "sessions");
   fs.mkdirSync(d, { recursive: true });
