@@ -7,7 +7,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 ## Commands
 - `npm install && (cd pi-runtime && npm ci)` — BOTH installs required (pi-runtime is a separate vendored tree; fresh worktrees fail live tests without it)
 - `npm run dev` · `npm test` (= the non-live suite, see §Tests) · `npm run build`
-- `npm run typecheck` (node + web; passes `--composite false` — don't hand-roll the raw `tsc` calls)
+- `npm run typecheck` (node + web + ext; the first two pass `--composite false` — don't hand-roll the raw `tsc` calls)
 - `npm run lint` / `npm run format` are SCAFFOLD LEFTOVERS — don't run them casually.
   `eslint.config.mjs` is untouched electron-vite boilerplate from the initial commit: lint reports
   86 errors + 19,839 warnings (mostly `prettier/prettier`) and walks `release/` build output, and
@@ -192,16 +192,21 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `tests/pi-subagents-contract.test.ts`, so a seventh adapter fails there rather than arriving
   ungoverned. Turning any of them on is a product decision (an explicitly marked boundary
   exception in the delegation modal), never a side effect of a pin.
-- **`happyvibe-bridge.ts` is in NEITHER typecheck include list, and that hid a real bug.**
-  `tsconfig.node.json` lists only the pure `hv-*.ts` modules, so TS never checks the bridge — which
+- **ALL of `pi-runtime/extensions/` is typechecked by `tsconfig.extensions.json` at every gate
+  (since 2026-08-30, housekeeping item 1).** It existed unchecked for the app's whole life — which
   is how `const summary` came to sit AFTER three §12 refusal paths that audit with it, a
   temporal-dead-zone `ReferenceError` TS would normally reject outright. It failed CLOSED (Pi's
-  `beforeToolCall` re-throws as *"Extension failed, blocking execution"*, and `emitToolCall` has no
-  try/catch of its own — unlike `emitUserBash`/`emitContext` right beside it), so the boundary held;
+  `beforeToolCall` re-throws as *"Extension failed, blocking execution"*), so the boundary held;
   but a refusal surfaced as an extension crash with NO `hv.audit` row instead of a clean denial
-  naming its reason. Fixed 2026-08-28 by hoisting one line, pinned by source order in
-  `tests/subagent-external-agents.test.ts`. **When editing the bridge, assume the compiler is not
-  watching** — declaration order and undefined locals are yours to check.
+  naming its reason. Fixed 2026-08-28 by hoisting one line; the source-order pin in
+  `tests/subagent-external-agents.test.ts` is retained but no longer load-bearing alone — TS
+  rejects use-before-declaration at the gate now. The config is standalone `--noEmit` (not
+  composite, not referenced from the root tsconfig); its knobs are load-bearing:
+  `allowImportingTsExtensions` for the bridge's explicit `.ts` imports, `noUnusedLocals/Parameters`
+  off because pi-subagents ships raw `.ts` sources our lint flags would fail, and `paths` mapping
+  the NESTED `pi-ai`/`pi-agent-core` (under `pi-coding-agent/node_modules/`) that walk-up
+  resolution cannot see. Coverage is pinned by `tests/extensions-typecheck.test.ts` (whole-directory
+  include + chain wiring).
 - **A respawned session is a STRANGER to its own detached runs from 0.51 — unless we claim the
   owner id first.** #1225 scopes async completion delivery to the launching Pi PROCESS:
   `notify.ts:279` refuses any `source !== "foreground"` completion whose `completionOwnerId`
@@ -377,6 +382,13 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   Schema was byte-identical across 1.1.38/1.3.7 for all seven constructors we use, and typebox
   attaches no Symbol-keyed metadata, so there is no dual-package hazard — the alignment is for
   future-proofing, not a live bug.)
+
+- **A pin bump can now fail TYPECHECK, with errors pointing under `node_modules` — never patch
+  vendored source.** `tsconfig.extensions.json` typechecks a slice of pi-subagents' raw `.ts`
+  source under our flags, and its `paths` encode the nested `pi-ai`/`pi-agent-core` layout. If a
+  bump breaks it, adjust OUR config (a hoisted/renamed nested dep shows as `TS2307` naming the
+  exact specifier), or use the `.mjs`+`.d.ts` shim escape hatch recorded in the Notion "Deferred
+  housekeeping" doc (item 1) — tsc trusts declarations and never opens the implementation.
 
 ## Architecture (keep layer)
 - src/main/pi/{spawn,codec,PiClient}.ts — spawns the pinned Pi CLI per session, `--mode rpc`,
