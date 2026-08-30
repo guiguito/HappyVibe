@@ -711,13 +711,22 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   (round 15 renamed it `bypass` and nothing rewrites history), so `AuditView` maps both to one
   label and `analytics.ts` folds them into one `bySource` bucket. Forget the fold and one fact
   shows as two half-sized buckets either side of the rename.
-- **The app's own model calls are TOKENS, never dollars (`src/main/oneShotLog.ts`).** The four
-  one-shot `pi -p --no-session` callers (session titles, the AGENTS.md draft, the commit message,
-  the PR draft) carry no usage record at all, so a dollar figure would have to come from a price
-  table main does not have and must not grow a second copy of — §19 ruling 3's "unknown price
-  rendered as a number", one surface over. They log `assistant.oneshot` (estimated tokens), appear
-  as audit rows interleaved by timestamp, and sit BESIDE the Stats cost, never inside it. A test
-  asserts the payload has no cost key.
+- **The app's own model calls are TOKENS, never dollars (`src/main/oneShotLog.ts`).** The
+  one-shot `pi -p --no-session` callers carry no usage record at all, so a dollar figure would have
+  to come from a price table main does not have and must not grow a second copy of — §19 ruling 3's
+  "unknown price rendered as a number", one surface over. They log `assistant.oneshot` (estimated
+  tokens), appear as audit rows interleaved by timestamp, and sit BESIDE the Stats cost, never
+  inside it. A test asserts the payload has no cost key.
+  **There are THREE, not four — this entry and PRD §15/§19 all said four, and the fourth is dead.**
+  Live: session titles (`titles.ts`), the commit message and the PR draft (`gitMessage.ts`).
+  The **AGENTS.md draft is NOT a one-shot** — since 2026-07-12 (`49c12fd`) it is a normal
+  delegation to the `agents-md-maker` sub-agent, prompted from the RENDERER
+  (`AgentsMdPanel.tsx`, `promptSession`), so it runs on the session's own model and is gated and
+  audited like any other delegation. `proposeAgentsMd` (agentsMd.ts) survives as an unreferenced
+  export with a dead IPC handler, and round 15 wired `oneShot("agents-md")` audit logging INTO
+  that dead handler a month later — so no such audit row has ever been emitted, and
+  AuditView's `"drafted AGENTS.md"` label is unreachable. Verify before trusting any list of these
+  callers: `grep -rn "proposeAgentsMd" src/renderer/src` returns nothing.
 - **Git (§29): the panel renders GIT's hunks, and that is not a style preference.** The tool cards
   use the js `diff` library (`diffs.ts`) and keep it — they render an edit's own before/after,
   which git never saw. But git and that library split the same change into DIFFERENT hunks, so a
