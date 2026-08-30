@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
-import { parseAgentsMdOutput, traceFromEnd } from "../agents";
+import { parseAgentsMdOutput, traceFromEnd, type AgentInfo } from "../agents";
 
 /** Strip an accidental markdown fence around a drafted file. */
 const unfence = (s: string): string =>
@@ -20,14 +20,30 @@ export function AgentsMdPanel({
   workspace,
   relPath = "AGENTS.md",
   sessionId,
+  agents,
   onClose,
 }: {
   workspace: string;
   /** WS7: which AGENTS.md — root by default, or any nested one opened from the tree. */
   relPath?: string;
   sessionId: string | null;
+  /** PRD §15 (2026-08-30): the Agents page's own inventory — the draft is a
+      delegation, so that page decides whether it can run. null = not loaded. */
+  agents?: AgentInfo[] | null;
   onClose: () => void;
 }): React.JSX.Element {
+  /**
+   * PRD §15 (2026-08-30): drafting is a delegation to ONE agent, and that agent
+   * has a switch on the Agents page. With it off the delegation used to be
+   * offered anyway, cost a whole turn, and fail with "No draft was produced this
+   * turn" — which names neither the cause nor the cure. Say both instead.
+   *
+   * Only once the inventory has actually loaded: an undefined or empty list is
+   * "we do not know yet", and hiding the button on that would be the inverse
+   * mistake.
+   */
+  const maker = agents?.find((a) => a.name === "agents-md-maker");
+  const makerOff = !!agents?.length && (!maker || maker.enabled === false);
   // Root AGENTS.md keeps the missing-file affordances (CLAUDE.md copy, draft);
   // a nested one is a plain confined read/write via the generic fs API.
   const isRoot = relPath === "AGENTS.md";
@@ -204,15 +220,22 @@ export function AgentsMdPanel({
                         Copy CLAUDE.md
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={draft}
-                      disabled={drafting || !sessionId}
-                      title={sessionId ? undefined : "Open a session to generate a draft"}
-                      className="rounded-xl bg-honey text-ink font-bold text-sm px-4 py-2 border-2 border-ink/80 shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-50"
-                    >
-                      {drafting ? "Drafting…" : "Draft with agents-md-maker"}
-                    </button>
+                    {makerOff ? (
+                      <p className="text-sm text-ink-soft">
+                        Drafting is turned off — switch <span className="font-bold">agents-md-maker</span> back on in
+                        Settings → Agents.
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={draft}
+                        disabled={drafting || !sessionId}
+                        title={sessionId ? undefined : "Open a session to generate a draft"}
+                        className="rounded-xl bg-honey text-ink font-bold text-sm px-4 py-2 border-2 border-ink/80 shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-50"
+                      >
+                        {drafting ? "Drafting…" : "Draft with agents-md-maker"}
+                      </button>
+                    )}
                   </>
                 )}
                 {justCreated && (

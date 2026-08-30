@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Section } from "./Section";
+import { PromptRow, TogglePill } from "./PromptRow";
 
 /** Minor 3: same phrase used in the Plan-off confirm modal and in the live
     hv:session-reloading notice (App.tsx) — reused verbatim so every control
@@ -22,37 +23,10 @@ interface Builtins {
   browser: boolean;
 }
 
-const HINT =
-  "The built-in prompt above can't be edited — it's shown so you can see exactly what the agent is told. Your " +
-  'additions are appended after it. Add preferences (e.g. \'always list affected files\'), not contradictions.';
-
-function TogglePill({
-  on,
-  onClick,
-  disabled,
-}: {
-  on: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm ${
-        disabled
-          ? "cursor-not-allowed opacity-50 bg-card text-ink-soft border-line"
-          : `cursor-pointer ${on ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"}`
-      }`}
-    >
-      {on ? "On" : "Off"}
-    </button>
-  );
-}
-
-/** Plan mode's row: toggle (with an off-confirm) + an expandable panel showing
-    the real, unmodified built-in prompt (read-only) and the append textarea. */
+/** Plan mode's row. The prompt panel and the append box are PromptRow's, shared
+    with §19's "On your behalf" page; what stays here is the one thing this row
+    does differently — turning it OFF asks first, because that unregisters three
+    tools and respawns live sessions. */
 function PlanModeRow({
   builtins,
   onChange,
@@ -60,37 +34,8 @@ function PlanModeRow({
   builtins: Builtins;
   onChange: (p: Partial<Builtins>) => void;
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [prompt, setPrompt] = useState<string | null>(null);
-  const [promptError, setPromptError] = useState(false);
-  const [append, setAppend] = useState(builtins.planAppend);
-  const [dirty, setDirty] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open && prompt === null && !promptError) {
-      void window.hv.builtinPrompt("plan")
-        .then((r) => setPrompt(r.text))
-        .catch(() => setPromptError(true));
-    }
-  }, [open, prompt, promptError]);
-
-  // Minor 2: don't leave the optimistic patch standing if the write failed —
-  // revert it and surface why, instead of a pill that shows a state that was
-  // never actually saved to disk.
-  const save = async (): Promise<void> => {
-    setError(null);
-    try {
-      await window.hv.builtinsSet({ planAppend: append });
-      onChange({ planAppend: append });
-      setDirty(false);
-      setSaved(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save.");
-    }
-  };
 
   const turnOn = (): void => {
     setError(null);
@@ -109,72 +54,22 @@ function PlanModeRow({
   };
 
   return (
-    <div className="border-b border-line last:border-b-0">
-      <div className="w-full px-4 py-3 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className="flex-1 min-w-0 text-left flex items-center gap-2.5 cursor-pointer"
-        >
-          <span className={`shrink-0 text-ink-soft transition-transform ${open ? "rotate-90" : ""}`}>›</span>
-          <span className="min-w-0">
-            <span className="font-bold block">Plan mode</span>
-            <span className="text-xs text-ink-soft">
-              Lets the agent draft and track a step-by-step plan before acting.
-            </span>
-          </span>
-        </button>
-        <TogglePill on={builtins.plan} onClick={() => (builtins.plan ? setConfirming(true) : turnOn())} />
-      </div>
-      {error && <p className="px-4 pb-2 -mt-1 text-xs font-semibold text-berry">{error}</p>}
-
-      {open && (
-        <div className="px-4 pb-4 pt-0 flex flex-col gap-3">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-2">
-              built-in prompt (read-only)
-            </div>
-            {promptError ? (
-              <p className="text-sm text-berry">Could not load the built-in prompt.</p>
-            ) : prompt === null ? (
-              <p className="text-sm text-ink-soft">Loading…</p>
-            ) : (
-              <pre className="font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-72 select-text">
-                {prompt}
-              </pre>
-            )}
-          </div>
-
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-2">your additions</div>
-            <textarea
-              value={append}
-              onChange={(e) => {
-                setAppend(e.target.value);
-                setDirty(true);
-                setSaved(false);
-              }}
-              rows={4}
-              placeholder="Extra preferences appended after the built-in prompt above…"
-              className="w-full font-mono text-xs rounded-xl border-2 border-line bg-paper px-3 py-2.5 focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60 resize-y"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <p className="text-xs text-ink-soft flex-1">{HINT}</p>
-            {saved && <span className="text-xs font-bold text-leaf shrink-0">Saved.</span>}
-            <button
-              type="button"
-              disabled={!dirty}
-              onClick={() => void save()}
-              className="shrink-0 rounded-lg border-2 px-3 py-1.5 font-bold text-xs cursor-pointer bg-tangerine text-paper border-tangerine-deep enabled:hover:brightness-105 disabled:opacity-40"
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      )}
+    <>
+      <PromptRow
+        title="Plan mode"
+        subtitle="Lets the agent draft and track a step-by-step plan before acting."
+        on={builtins.plan}
+        // Turning it OFF asks first: it unregisters three tools and respawns
+        // live sessions, so the toggle hands the intent back rather than acting.
+        onToggle={(next) => (next ? turnOn() : setConfirming(true))}
+        loadPrompt={() => window.hv.builtinPrompt("plan").then((r) => r.text)}
+        append={builtins.planAppend}
+        onSaveAppend={async (v) => {
+          await window.hv.builtinsSet({ planAppend: v });
+          onChange({ planAppend: v });
+        }}
+        error={error}
+      />
 
       {confirming && (
         <div
@@ -209,9 +104,10 @@ function PlanModeRow({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
+
 
 /** Ask user has no injected prompt to show (per brief: no prompt editing for
     it) — just a toggle, no expand, no confirm (not consequential like plan).
@@ -307,62 +203,27 @@ function TerminalRow({
   on: boolean;
   onChange: (on: boolean) => void;
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
-  const [prompt, setPrompt] = useState<string | null>(null);
-  const [promptError, setPromptError] = useState(false);
-
-  useEffect(() => {
-    if (open && prompt === null && !promptError) {
-      void window.hv.builtinPrompt("terminal")
-        .then((r) => setPrompt(r.text))
-        .catch(() => setPromptError(true));
-    }
-  }, [open, prompt, promptError]);
-
   return (
-    <div className="border-b border-line last:border-b-0">
-      <div className="w-full px-4 py-3 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className="flex-1 min-w-0 text-left flex items-center gap-2.5 cursor-pointer"
-        >
-          <span className={`shrink-0 text-ink-soft transition-transform ${open ? "rotate-90" : ""}`}>›</span>
-          <span className="min-w-0">
-            <span className="font-bold block">Terminal — 3 tools</span>
-            {/* Honest about the trade: this is not a safety improvement. With
-                the group off the model does not stop wanting a dev server — it
-                goes back to `npm run dev &> /tmp/log &`, where you cannot see
-                or stop it. Round 6's driver was context, so say what it costs. */}
-            <span className="text-xs text-ink-soft">
-              Lets the agent run long-running commands in terminals you can watch, type into and stop. Turning this
-              off doesn&apos;t stop it wanting to — it goes back to backgrounding commands in bash, where you can
-              neither see nor stop them. Saves the context cost of three tool schemas.
-            </span>
-          </span>
-        </button>
-        <TogglePill on={on} onClick={() => onChange(!on)} />
-      </div>
-      {open && (
-        <div className="px-4 pb-4 pt-0">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-2">
-            built-in prompt (read-only)
-          </div>
-          {promptError ? (
-            <p className="text-sm text-berry">Could not load the built-in prompt.</p>
-          ) : prompt === null ? (
-            <p className="text-sm text-ink-soft">Loading…</p>
-          ) : (
-            <pre className="font-mono text-xs bg-ink text-paper rounded-xl px-4 py-3 overflow-auto whitespace-pre-wrap break-words max-h-72 select-text">
-              {prompt}
-            </pre>
-          )}
-        </div>
-      )}
-    </div>
+    <PromptRow
+      title="Terminal — 3 tools"
+      // Honest about the trade: this is not a safety improvement. With the group
+      // off the model does not stop wanting a dev server — it goes back to
+      // `npm run dev &> /tmp/log &`, where you cannot see or stop it. Round 6's
+      // driver was context, so say what it costs.
+      subtitle={
+        <>
+          Lets the agent run long-running commands in terminals you can watch, type into and stop. Turning this off
+          doesn&apos;t stop it wanting to — it goes back to backgrounding commands in bash, where you can neither see
+          nor stop them. Saves the context cost of three tool schemas.
+        </>
+      }
+      on={on}
+      onToggle={onChange}
+      loadPrompt={() => window.hv.builtinPrompt("terminal").then((r) => r.text)}
+    />
   );
 }
+
 
 /**
  * §28 — ONE entry for ten tools, following Plan mode's and the terminal's

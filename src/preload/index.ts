@@ -26,9 +26,6 @@ interface VoiceSettingsDTO {
 contextBridge.exposeInMainWorld("hv", {
   // WS8: absolute OS path of a dragged File (Electron ≥32; replaces File.path).
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
-  getApiKey: () => ipcRenderer.invoke("hv:get-api-key"),
-  setApiKey: (k: string) => ipcRenderer.invoke("hv:set-api-key", k),
-  pickFolder: () => ipcRenderer.invoke("hv:pick-folder"),
   getStats: (sessionId?: string) => ipcRenderer.invoke("hv:get-stats", sessionId),
   getSessionCalls: (sessionId: string) => ipcRenderer.invoke("hv:get-session-calls", sessionId),
   respondPermission: (id: string, choice: string) => ipcRenderer.send("hv:respond-permission", id, choice),
@@ -128,9 +125,6 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:git-draft-message", workspaceId, stagedOnly),
   gitInstallPrompt: () => ipcRenderer.invoke("hv:git-install-prompt"),
   gitPrUrl: (workspaceId: string, draft?: boolean) => ipcRenderer.invoke("hv:git-pr-url", workspaceId, draft),
-  gitMessageModel: () => ipcRenderer.invoke("hv:git-message-model"),
-  setGitMessageModel: (m: { provider: string; modelId: string } | null) =>
-    ipcRenderer.invoke("hv:set-git-message-model", m),
   onGitChanged: (cb: (p: { workspaceId: string }) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { workspaceId: string });
     ipcRenderer.on("hv:git-changed", h);
@@ -162,7 +156,6 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:write-agents-md", workspaceId, content),
   writeAgentsMdFiles: (workspaceId: string, files: Record<string, string>) =>
     ipcRenderer.invoke("hv:write-agents-md-files", workspaceId, files),
-  proposeAgentsMd: (workspaceId: string) => ipcRenderer.invoke("hv:propose-agents-md", workspaceId),
   // W2.3 missing-file flow (additive)
   hasClaudeMd: (workspaceId: string) => ipcRenderer.invoke("hv:has-claude-md", workspaceId),
   copyClaudeMd: (workspaceId: string) => ipcRenderer.invoke("hv:copy-claude-md", workspaceId),
@@ -270,6 +263,10 @@ contextBridge.exposeInMainWorld("hv", {
   builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }) =>
     ipcRenderer.invoke("hv:builtins-set", t),
   builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
+  // §19: the three model calls the app makes without a session.
+  assistantTasksGet: () => ipcRenderer.invoke("hv:assistant-tasks-get"),
+  assistantTaskSet: (id: string, patch: unknown) => ipcRenderer.invoke("hv:assistant-task-set", id, patch),
+  assistantTaskPrompt: (id: string) => ipcRenderer.invoke("hv:assistant-task-prompt", id),
 
   // Extended prompt-cache retention (PI_CACHE_RETENTION=long) — next spawn.
   getLongCache: () => ipcRenderer.invoke("hv:get-long-cache"),

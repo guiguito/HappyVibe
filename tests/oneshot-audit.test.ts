@@ -7,10 +7,16 @@ import { toAuditRow } from "../src/renderer/src/components/AuditView";
 import type { LogEvent } from "../src/main/log";
 
 /**
- * Round 15 — the four model calls the app makes on the user's behalf stop being
- * invisible: session titles, the AGENTS.md draft, the commit message, the PR
- * draft. Asked directly ("which costs are not tracked? where should it appear?
- * does it appear in the audit log?"), so the answers are pinned here.
+ * Round 15 — the model calls the app makes on the user's behalf stop being
+ * invisible: session titles, the commit message, the PR draft. Asked directly
+ * ("which costs are not tracked? where should it appear? does it appear in the
+ * audit log?"), so the answers are pinned here.
+ *
+ * There are THREE, not the four this file used to name (PRD §11/§19, corrected
+ * 2026-08-30). The AGENTS.md draft is a delegation, not a one-shot — it runs on
+ * the session's own model, enters the transcript, and is gated and audited as a
+ * delegation. Its `agents-md` row type was wired on 2026-08-16 into a handler
+ * that had already been dead for a month, so no such row was ever emitted.
  */
 
 const sink = (): { rows: Array<Record<string, unknown>>; append: (e: Record<string, unknown>) => void } => {
@@ -44,7 +50,7 @@ describe("logOneShot", () => {
       ok: true,
       workspaceId: "/ws",
     });
-    expect(ev).toEqual({ kind: "commit-message", model: "deepseek/deepseek-v4-flash", estTokens: 1_050, ok: true });
+    expect(ev).toEqual({ kind: "commit-message", model: "deepseek/deepseek-v4-flash", estTokens: 1_050, ok: true, appended: false });
     expect(s.rows).toHaveLength(1);
     expect(s.rows[0]).toMatchObject({ type: "assistant.oneshot", workspaceId: "/ws" });
     expect(s.rows[0].data).toMatchObject({ kind: "commit-message", estTokens: 1_050, ok: true });
@@ -74,7 +80,7 @@ describe("logOneShot", () => {
       outputChars: 100,
       ok: true,
     });
-    expect(Object.keys(s.rows[0].data as object)).toEqual(["kind", "model", "estTokens", "ok"]);
+    expect(Object.keys(s.rows[0].data as object)).toEqual(["kind", "model", "estTokens", "ok", "appended"]);
   });
 
   it("never throws when there is nowhere to log — a draft must not fail on logging", () => {
@@ -213,3 +219,40 @@ describe("toAuditRow discriminates on the event TYPE, not the payload", () => {
     }
   });
 });
+
+// ── PRD §15 (2026-08-30): the AGENTS.md draft is an agent, not a one-shot ────
+
+describe("agents-md is not a one-shot kind", () => {
+  const read = (rel: string): string => readFileSync(path.join(__dirname, "..", rel), "utf8");
+
+  it("has no kind, no label and no handler left behind", () => {
+    // A source scan, not a behavioural test, because what this pins is an
+    // ABSENCE — and an absence is exactly what a behavioural test cannot fail
+    // on. Same shape as tests/modal-layer.test.ts.
+    // The KIND literal, not the word: the comment there explains why it went.
+    expect(read("src/main/oneShotLog.ts")).not.toMatch(/"agents-md"/);
+    expect(read("src/renderer/src/components/AuditView.tsx")).not.toMatch(/drafted AGENTS\.md/);
+    expect(read("src/main/ipc.ts")).not.toMatch(/oneShot\("agents-md"/);
+  });
+});
+
+// ── §19 (2026-08-30): an append is recorded, not silent ─────────────────────
+
+describe("the audit row says when the prompt was appended to", () => {
+  const model = { provider: "p", modelId: "m" };
+
+  it("records appended:true so the token estimate is not silently inflated", () => {
+    // oneShotLog measures CHARACTERS, so an append raises estTokens with
+    // nothing on the row explaining why. This flag is that explanation.
+    const s = sink();
+    logOneShot(s, { kind: "title", model, promptChars: 100, outputChars: 20, ok: true, appended: true });
+    expect(s.rows[0].data).toMatchObject({ appended: true });
+  });
+
+  it("defaults to false — an untouched prompt claims nothing", () => {
+    const s = sink();
+    logOneShot(s, { kind: "pr-draft", model, promptChars: 10, outputChars: 5, ok: true });
+    expect(s.rows[0].data).toMatchObject({ appended: false });
+  });
+});
+

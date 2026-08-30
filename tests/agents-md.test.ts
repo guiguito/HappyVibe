@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, resolveAgentsMd, workspaceFacts, writeAgentsMd } from "../src/main/agentsMd";
+import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, resolveAgentsMd, writeAgentsMd } from "../src/main/agentsMd";
 
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), "hv-agents-"));
 const registered = [ws];
@@ -32,15 +32,6 @@ test("write to an unregistered workspace never touches disk", () => {
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), "hv-outside-"));
   expect(() => writeAgentsMd(registered, outside, "nope")).toThrow(/Unknown workspace/);
   expect(fs.existsSync(path.join(outside, "AGENTS.md"))).toBe(false);
-});
-
-test("workspaceFacts lists top-level entries and package.json name/scripts", () => {
-  fs.writeFileSync(path.join(ws, "package.json"), JSON.stringify({ name: "demo", scripts: { dev: "vite" } }));
-  fs.mkdirSync(path.join(ws, "src"), { recursive: true });
-  const facts = workspaceFacts(ws);
-  expect(facts).toContain("src");
-  expect(facts).toContain("demo");
-  expect(facts).toContain('"dev":"vite"');
 });
 
 // ── W2.3 missing-file flow: CLAUDE.md copy (same trust boundary) ─────────────

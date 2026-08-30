@@ -518,10 +518,18 @@ interface McpServerStatusLike {
   lastChecked: number;
 }
 
+/** §19: the same three ids as main's AssistantTaskId and OneShotKind — one
+    vocabulary, so a settings row and an audit row cannot disagree. */
+type HvAssistantTaskId = "title" | "commit-message" | "pr-draft";
+
+interface HvAssistantTask {
+  enabled: boolean;
+  /** null = "Same as your default model". */
+  model: { provider: string; modelId: string } | null;
+  append: string;
+}
+
 interface HvApi {
-  getApiKey(): Promise<string | null>;
-  setApiKey(key: string): Promise<void>;
-  pickFolder(): Promise<string | null>;
   getStats(sessionId?: string): Promise<unknown>;
   /** Billed API calls (oldest first) + their total. Main sums it so the renderer
    *  never re-implements ledgerTotal. Mirrors src/main/calls.ts. */
@@ -625,8 +633,6 @@ interface HvApi {
    * was unavailable and the commit list was used instead.
    */
   gitPrUrl(workspaceId: string, draft?: boolean): Promise<{ url: string; drafted: boolean } | null>;
-  gitMessageModel(): Promise<{ provider: string; modelId: string } | null>;
-  setGitMessageModel(m: { provider: string; modelId: string } | null): Promise<{ provider: string; modelId: string } | null>;
   onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;
 
   // §23 Plan Mode
@@ -647,7 +653,6 @@ interface HvApi {
   writeAgentsMd(workspaceId: string, content: string): Promise<void>;
   /** WS5: write the agents-md-maker structured draft (root + nested). Returns written rel paths. */
   writeAgentsMdFiles(workspaceId: string, files: Record<string, string>): Promise<string[]>;
-  proposeAgentsMd(workspaceId: string): Promise<string | null>;
   // W2.3 missing-file flow
   hasClaudeMd(workspaceId: string): Promise<boolean>;
   copyClaudeMd(workspaceId: string): Promise<string>;
@@ -764,6 +769,14 @@ interface HvApi {
   builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
+  /** §19 (2026-08-30): the three model calls the app makes without a session. */
+  assistantTasksGet(): Promise<Record<HvAssistantTaskId, HvAssistantTask>>;
+  assistantTaskSet(
+    id: HvAssistantTaskId,
+    patch: Partial<HvAssistantTask>,
+  ): Promise<Record<HvAssistantTaskId, HvAssistantTask>>;
+  /** The prompt as a TEMPLATE — `note` names what is substituted into it. */
+  assistantTaskPrompt(id: HvAssistantTaskId): Promise<{ text: string; note: string }>;
 
   /** Extended prompt-cache retention (PI_CACHE_RETENTION=long). Global, applied
       at the next spawn — live sessions keep the retention they started with. */

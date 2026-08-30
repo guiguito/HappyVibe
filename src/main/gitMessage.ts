@@ -36,7 +36,7 @@ export const DEFAULT_DIFF_BUDGET = 24_000;
  * per-file stats and the head of each hunk — so a 400-file commit still drafts
  * something honest instead of timing out.
  */
-export function buildDraftPrompt(input: DraftInput, budgetChars: number): string {
+export function buildDraftPrompt(input: DraftInput, budgetChars: number, append = ""): string {
   const { diff, files, recentSubjects } = input;
   const truncated = diff.length > budgetChars;
   const body = truncated ? summarise(diff, files, budgetChars) : diff;
@@ -51,6 +51,10 @@ export function buildDraftPrompt(input: DraftInput, budgetChars: number): string
     "Write a commit message for the change below.",
     "Reply with ONLY the commit message subject line: one line, imperative mood, no quotes, no trailing period, at most 72 characters.",
     style,
+    // §19 (2026-08-30): the user's own addition. AFTER the instructions, so it
+    // reads as an addition to them; BEFORE the diff, because the diff is the
+    // payload and a long one would push this out of the model's attention.
+    append.trim() ? `\n${append.trim()}\n` : "",
     truncated
       ? "\nThe diff was TRUNCATED because it is large. You are given the changed files, their line counts, and the beginning of each change:\n"
       : "\nThe diff:\n",
@@ -95,9 +99,11 @@ export function draftCommitMessage(
   env: Record<string, string> = {},
   budgetChars: number = DEFAULT_DIFF_BUDGET,
   /** Round 15: report the call so main can audit it (see oneShotLog.ts). */
-  onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }) => void,
+  onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean; appended: boolean }) => void,
+  /** §19: the user's own addition to the prompt. */
+  append = "",
 ): Promise<string | null> {
-  const prompt = buildDraftPrompt(input, budgetChars);
+  const prompt = buildDraftPrompt(input, budgetChars, append);
   return new Promise((resolve) => {
     const child = spawn(
       nodeExecPath(),
@@ -119,7 +125,8 @@ export function draftCommitMessage(
     let out = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (d: string) => (out += d));
-    const done = (ok: boolean): void => onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok });
+    const done = (ok: boolean): void =>
+      onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok, appended: !!append.trim() });
     child.on("error", () => {
       done(false);
       resolve(null);
@@ -165,7 +172,7 @@ export interface PrDraft {
 }
 
 /** Pure: the prompt. A PR wants a headline AND prose, unlike a commit subject. */
-export function buildPrPrompt(input: PrDraftInput, budgetChars: number): string {
+export function buildPrPrompt(input: PrDraftInput, budgetChars: number, append = ""): string {
   const { commits, branch, base } = input;
   const truncated = input.diff.length > budgetChars;
   const diff = truncated ? input.diff.slice(0, budgetChars) : input.diff;
@@ -177,6 +184,9 @@ export function buildPrPrompt(input: PrDraftInput, budgetChars: number): string 
     "  - then a blank line",
     "  - then the description in markdown: what changed and why, a short bullet list where it helps.",
     "Do not wrap the answer in code fences. Do not invent changes that are not in the diff.",
+    // §19 (2026-08-30): appended, never substituted — splitPrDraft parses this
+    // output, so a rewritten prompt breaks the parse silently.
+    append.trim() ? `\n${append.trim()}` : "",
     "",
     commits.length ? `Commits on this branch:\n${commits.map((c) => `- ${c}`).join("\n")}` : "",
     "",
@@ -200,9 +210,11 @@ export function draftPullRequest(
   env: Record<string, string> = {},
   budgetChars: number = DEFAULT_DIFF_BUDGET,
   /** Round 15: report the call so main can audit it (see oneShotLog.ts). */
-  onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }) => void,
+  onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean; appended: boolean }) => void,
+  /** §19: the user's own addition to the prompt. */
+  append = "",
 ): Promise<PrDraft | null> {
-  const prompt = buildPrPrompt(input, budgetChars);
+  const prompt = buildPrPrompt(input, budgetChars, append);
   return new Promise((resolve) => {
     const child = spawn(
       nodeExecPath(),
@@ -223,7 +235,8 @@ export function draftPullRequest(
     let out = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (d: string) => (out += d));
-    const done = (ok: boolean): void => onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok });
+    const done = (ok: boolean): void =>
+      onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok, appended: !!append.trim() });
     child.on("error", () => {
       done(false);
       resolve(null);

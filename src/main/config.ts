@@ -84,7 +84,8 @@ interface ConfigFile {
   /** §29 (2b): model for "Write it for me". Absent = the same cheap-flash
       resolution the session-title generator uses. Global only — it is a cost
       preference about a one-shot call, not a property of any workspace. */
-  gitMessageModel?: { provider: string; modelId: string } | null;
+  /** §19 (2026-08-30): the three model calls the app makes without a session. */
+  assistantTasks?: Partial<Record<AssistantTaskId, Partial<AssistantTask>>>;
   /**
    * §12 (2026-08-30): per-agent on/off, SPARSE — only names the user actually
    * toggled. Resolution is `userChoice ?? default` (subagentSettings.ts), so
@@ -268,19 +269,6 @@ export function setGitRulesSeeded(seeded: boolean): void {
   save(cfg);
 }
 
-// §29 (2b): the model "Write it for me" uses. null = fall back to the session
-// model resolution, exactly as the title generator does.
-export function getGitMessageModel(): { provider: string; modelId: string } | null {
-  return load().gitMessageModel ?? null;
-}
-
-export function setGitMessageModel(m: { provider: string; modelId: string } | null): void {
-  const cfg = load();
-  if (m) cfg.gitMessageModel = m;
-  else delete cfg.gitMessageModel;
-  save(cfg);
-}
-
 // Round 3 #14: persistent "bypass all permissions".
 export function getGlobalBypass(): boolean {
   return load().bypassAll ?? false;
@@ -335,6 +323,54 @@ export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend
 export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean }): void {
   const cfg = load();
   cfg.builtinTools = { ...cfg.builtinTools, ...t };
+  save(cfg);
+}
+
+/**
+ * §19 (2026-08-30) — the three model calls the app makes WITHOUT a session:
+ * the session title (titles.ts), the commit message and the PR draft
+ * (gitMessage.ts). Deliberately the same shape as getBuiltinTools above — one
+ * global record, a merging setter, fail-OPEN defaults — because it is the same
+ * idea one surface over, and a second shape would be a second thing to be wrong.
+ *
+ * Fail open: a task the user has never touched RUNS. A default of off would be
+ * a model call configured and never delivered, with nothing explaining it.
+ *
+ * This replaces `gitMessageModel`, which was ONE setting the commit-message and
+ * PR rows would have silently shared. It was built end to end in main and never
+ * given a renderer caller, so no user has one on disk — hence no migration and
+ * no legacy read. The ids are deliberately the same three strings as
+ * OneShotKind (oneShotLog.ts): one vocabulary, so a settings row and an audit
+ * row can never disagree about which task they mean.
+ */
+export type AssistantTaskId = "title" | "commit-message" | "pr-draft";
+
+export interface AssistantTask {
+  enabled: boolean;
+  /** null = "Same as your default model" — resolveSpawnModel's normal tiers. */
+  model: { provider: string; modelId: string } | null;
+  /** Appended AFTER the built-in prompt, never replacing it (PRD §13 round 6). */
+  append: string;
+}
+
+export const ASSISTANT_TASK_IDS: readonly AssistantTaskId[] = ["title", "commit-message", "pr-draft"];
+
+export function getAssistantTasks(): Record<AssistantTaskId, AssistantTask> {
+  const stored = load().assistantTasks ?? {};
+  return Object.fromEntries(
+    ASSISTANT_TASK_IDS.map((id) => {
+      const t = stored[id];
+      return [id, { enabled: t?.enabled ?? true, model: t?.model ?? null, append: t?.append ?? "" }];
+    }),
+  ) as Record<AssistantTaskId, AssistantTask>;
+}
+
+export function setAssistantTask(id: AssistantTaskId, patch: Partial<AssistantTask>): void {
+  // The renderer is a trust boundary like any other — a typo must not grow a
+  // fourth task that nothing reads and nothing shows.
+  if (!ASSISTANT_TASK_IDS.includes(id)) return;
+  const cfg = load();
+  cfg.assistantTasks = { ...cfg.assistantTasks, [id]: { ...cfg.assistantTasks?.[id], ...patch } };
   save(cfg);
 }
 
@@ -453,15 +489,6 @@ export function setLinkedPromptTemplateDirs(dirs: string[]): void {
   if (clean.length) cfg.linkedPromptTemplateDirs = clean;
   else delete cfg.linkedPromptTemplateDirs;
   save(cfg);
-}
-
-// Legacy shims — existing window.hv.getApiKey/setApiKey surface (DeepSeek).
-export function getApiKey(): string | null {
-  return providerEnv().DEEPSEEK_API_KEY ?? null;
-}
-
-export function setApiKey(key: string): void {
-  setProviderKey("deepseek", key);
 }
 
 export function sessionDir(): string {

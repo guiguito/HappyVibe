@@ -35,7 +35,7 @@ interface OneShot {
   ts: string;
   workspaceId?: string;
   sessionId?: string;
-  kind: "title" | "agents-md" | "commit-message" | "pr-draft";
+  kind: "title" | "commit-message" | "pr-draft";
   model: string;
   estTokens: number;
   ok: boolean;
@@ -84,7 +84,6 @@ export function toAuditRow(e: HvAuditEvent): Row {
 
 const ONESHOT_LABEL: Record<OneShot["kind"], string> = {
   title: "named a session",
-  "agents-md": "drafted AGENTS.md",
   "commit-message": "wrote a commit message",
   "pr-draft": "drafted a pull request",
 };

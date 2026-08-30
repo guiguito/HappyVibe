@@ -8,15 +8,15 @@ import { spawn } from "node:child_process";
 import { resolvePiSpawn } from "./pi/spawn";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getApiKey, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
+  agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
-  childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setApiKey, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
+  childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
   getVoiceSettings, setVoiceSettings,
-  getGitMessageModel, setGitMessageModel,
+  getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
 } from "./config";
 import { TerminalManager } from "./terminals";
 import {
@@ -69,9 +69,9 @@ import { pollSubagentStatus, type SubagentStatus } from "./subagentStatus";
 import { readChildTrace } from "./subagentThinking";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
-import { generateTitle } from "./titles";
+import { buildTitlePrompt, generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
-import { copyClaudeMdToAgentsMd, hasClaudeMd, proposeAgentsMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
+import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
@@ -80,7 +80,7 @@ import {
   publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
-import { draftCommitMessage, draftPullRequest } from "./gitMessage";
+import { DEFAULT_DIFF_BUDGET, buildDraftPrompt, buildPrPrompt, draftCommitMessage, draftPullRequest } from "./gitMessage";
 import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
@@ -1044,11 +1044,21 @@ export function registerIpc(win: BrowserWindow): void {
     const msg = firstPrompt.get(sessionId);
     if (!meta || meta.titleSource !== "fallback" || !msg) return;
     firstPrompt.delete(sessionId);
+    // §19 (2026-08-30): off means no call at all. The truncated-first-message
+    // fallback title stays, which is exactly what someone who switched this off
+    // asked for — this is the one of the three that fires unasked.
+    const task = getAssistantTasks().title;
+    if (!task.enabled) return;
     // Fire-and-forget — never blocks the chat; fallback title stays on failure.
     void generateTitle(piRuntimeDir(), meta.workspaceId, msg, {
-      // §16: same guarded resolution as a chat spawn — a removed endpoint's
-      // ref must not be handed to a one-shot Pi call either.
-      model: resolveSpawnModel(),
+      // §19 (2026-08-30): session → workspace → global, identically to a chat
+      // spawn. This was `resolveSpawnModel()` with NO arguments, so a workspace
+      // model override was honoured for a commit message and ignored for the
+      // title of the session it belonged to — with both ids already in hand on
+      // the lines above. §16 still holds: the resolution is the guarded one, so
+      // a removed endpoint's ref never reaches a one-shot Pi call either.
+      model: task.model ?? resolveSpawnModel(meta.workspaceId, sessionId),
+      append: task.append,
       // BYOK keys via env; OAuth creds live in auth.json under the agent dir.
       env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
       onDone: oneShot("title", meta.workspaceId, sessionId),
@@ -1947,12 +1957,6 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   // ── config / folder picking ──────────────────────────────────────
-  ipcMain.handle("hv:get-api-key", () => getApiKey());
-  ipcMain.handle("hv:set-api-key", (_e, key: string) => setApiKey(key));
-  ipcMain.handle("hv:pick-folder", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
-    return r.canceled ? null : r.filePaths[0];
-  });
 
   // ── workspaces ───────────────────────────────────────────────────
   ipcMain.handle("hv:list-workspaces", () => workspaces.list());
@@ -3059,9 +3063,60 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   /**
+   * §19 (2026-08-30) — "On your behalf": the three model calls the app makes
+   * without a session. Same read-only-prompt-plus-append contract as
+   * hv:builtin-prompt right above, deliberately: it is PRD §13 round 6's rule,
+   * inherited rather than re-decided.
+   *
+   * The prompt is served as a TEMPLATE, not as a prompt built from empty input.
+   * The two git prompts do not exist until there is a diff, and a prompt
+   * rendered from an empty diff would be a DIFFERENT string from the one that
+   * actually runs — which is precisely the misreport this page exists to end.
+   * So the substitution points are named in the text and explained in `note`.
+   */
+  ipcMain.handle("hv:assistant-task-prompt", (_e, id: AssistantTaskId) => {
+    if (id === "title") {
+      return {
+        text: buildTitlePrompt("<your first message in the session>"),
+        note: "Your first message is inserted where it says so above, trimmed to 500 characters.",
+      };
+    }
+    if (id === "commit-message") {
+      return {
+        text: buildDraftPrompt(
+          { diff: "<your changes, as a diff>", files: [], recentSubjects: ["<your last 20 commit subjects>"] },
+          DEFAULT_DIFF_BUDGET,
+        ),
+        note: "Your diff and your recent commit subjects are inserted where they say so above. A diff over ~24,000 characters degrades to a file list plus the head of each change, so a large commit still drafts something honest.",
+      };
+    }
+    if (id === "pr-draft") {
+      return {
+        text: buildPrPrompt(
+          {
+            commits: ["<the commits on this branch>"],
+            diff: "<this branch's diff against its base>",
+            branch: "<your branch>",
+            base: "<the base branch>",
+          },
+          DEFAULT_DIFF_BUDGET,
+        ),
+        note: "Your branch's commits and its diff against the base are inserted where they say so above.",
+      };
+    }
+    return { text: "", note: "" };
+  });
+
+  ipcMain.handle("hv:assistant-tasks-get", () => getAssistantTasks());
+  ipcMain.handle("hv:assistant-task-set", (_e, id: AssistantTaskId, patch: Partial<AssistantTask>) => {
+    setAssistantTask(id, patch);
+    return getAssistantTasks();
+  });
+
+  /**
    * Round 15: the audit page reads BOTH kinds of row — permission decisions and
-   * the app's own one-shot model calls (§19: titles, the AGENTS.md draft, the
-   * commit message, the PR draft). They belong on the same page because the
+   * the app's own one-shot model calls (§19: titles, the commit message, the
+   * PR draft). They belong on the same page because the
    * question the user asked is one question: "what has run, and did I see it?"
    * Sorted by timestamp so the two interleave honestly rather than appearing as
    * two lists that happen to share a screen.
@@ -3156,14 +3211,6 @@ export function registerIpc(win: BrowserWindow): void {
     void log.append({ type: "agents_md.written", workspaceId, data: { files: written } });
     return written;
   });
-  ipcMain.handle("hv:propose-agents-md", (_e, workspaceId: string) =>
-    proposeAgentsMd(piRuntimeDir(), workspaces.list(), workspaceId, {
-      // §16: same guarded resolution as a chat spawn — a removed endpoint's
-      // ref must not be handed to a one-shot Pi call either.
-      model: resolveSpawnModel(),
-      env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
-      onDone: oneShot("agents-md", workspaceId),
-    }));
   // W2.3 missing-file flow: CLAUDE.md → AGENTS.md copy (same confinement).
   ipcMain.handle("hv:has-claude-md", (_e, workspaceId: string) =>
     hasClaudeMd(workspaces.list(), workspaceId));
@@ -3592,7 +3639,11 @@ export function registerIpc(win: BrowserWindow): void {
   // §2b — the drafted commit message. Never the live session: this is a one-shot
   // print-mode call, so nothing reaches a transcript or a context window.
   ipcMain.handle("hv:git-draft-message", async (_e, workspaceId: string, stagedOnly: boolean) => {
-    const model = getGitMessageModel() ?? resolveSpawnModel(workspaceId);
+    // §19 (2026-08-30): the SWITCH is enforced here, in main. The renderer
+    // hiding the wand button is an affordance, never the enforcement.
+    const task = getAssistantTasks()["commit-message"];
+    if (!task.enabled) return null;
+    const model = task.model ?? resolveSpawnModel(workspaceId);
     if (!model) return null;
     const [files, diffs, log20] = await Promise.all([
       gitStatus(workspaceId),
@@ -3615,6 +3666,7 @@ export function registerIpc(win: BrowserWindow): void {
       { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
       undefined,
       oneShot("commit-message", workspaceId),
+      task.append,
     );
   });
 
@@ -3668,8 +3720,13 @@ export function registerIpc(win: BrowserWindow): void {
     // status change to decide whether the button exists, so it must never run
     // the model or read a diff. `draft: true` is the click.
     let drafted: { title: string; body: string } | null = null;
-    if (draft) {
-      const model = getGitMessageModel() ?? resolveSpawnModel(workspaceId);
+    // §19 (2026-08-30): this switch gates the DRAFT, not the button. Turning it
+    // off must still open the forge — the description simply falls back to the
+    // commit list, exactly as it already does when no provider resolves. It is
+    // the one of the three whose "off" is not "the button disappears".
+    const task = getAssistantTasks()["pr-draft"];
+    if (draft && task.enabled) {
+      const model = task.model ?? resolveSpawnModel(workspaceId);
       if (model) {
         const diffs = await gitDiff(workspaceId, "base");
         const diffText = diffs.map((f) => `${f.fileHeader}\n${f.hunks.map((h) => h.raw).join("")}`).join("\n");
@@ -3681,6 +3738,7 @@ export function registerIpc(win: BrowserWindow): void {
           { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
           undefined,
           oneShot("pr-draft", workspaceId),
+          task.append,
         );
       }
     }
@@ -3693,11 +3751,6 @@ export function registerIpc(win: BrowserWindow): void {
     return url ? { url, drafted: !!drafted } : null;
   });
 
-  ipcMain.handle("hv:git-message-model", () => getGitMessageModel());
-  ipcMain.handle("hv:set-git-message-model", (_e, m: { provider: string; modelId: string } | null) => {
-    setGitMessageModel(m && typeof m.provider === "string" && typeof m.modelId === "string" ? m : null);
-    return getGitMessageModel();
-  });
 
   // Per-workspace model override (spawn resolution: workspace → global default).
   // Applies to sessions spawned/restarted after the change.

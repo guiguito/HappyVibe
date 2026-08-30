@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ASSISTANT_TASKS_CHANGED } from "./PromptRow";
 import { DiffView, StatusGlyph } from "./DiffView";
 import { groupByDir, primaryAction, summarise } from "../gitui";
 
@@ -95,10 +96,24 @@ export function ChangesPanel({
     // "don't show what cannot work". A configured provider is the precondition;
     // beyond that, failure is quiet and the button hides itself (see the catch
     // on gitDraftMessage below), never an error surface.
-    void window.hv
-      .getProviders()
-      .then((p) => setCanDraft(p.byok.some((b) => b.source !== null) || !!p.defaultModel))
-      .catch(() => setCanDraft(false));
+    // §19 (2026-08-30): and the user's own switch, on Settings -> On your
+    // behalf. This is the AFFORDANCE only — main refuses the call regardless
+    // (hv:git-draft-message returns null when the task is off), because a
+    // hidden button is not an enforcement.
+    const refresh = (): void => {
+      void Promise.all([window.hv.getProviders(), window.hv.assistantTasksGet()])
+        .then(([p, tasks]) =>
+          setCanDraft(
+            tasks["commit-message"].enabled && (p.byok.some((b) => b.source !== null) || !!p.defaultModel),
+          ),
+        )
+        .catch(() => setCanDraft(false));
+    };
+    refresh();
+    // This panel outlives a trip to Settings, so the switch has to reach it —
+    // otherwise the wand lingers until a reload and fails when pressed.
+    window.addEventListener(ASSISTANT_TASKS_CHANGED, refresh);
+    return () => window.removeEventListener(ASSISTANT_TASKS_CHANGED, refresh);
   }, [workspace]);
 
   /**

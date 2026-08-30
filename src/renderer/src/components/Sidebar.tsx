@@ -12,7 +12,8 @@ export type View =
   // §25: Plugins sits above them — it is where skills/prompts/servers come FROM.
   | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools"
   // Round 8: the settings scroll exploded into pages, each its own destination.
-  | "models" | "permissions" | "sysprompt" | "stats" | "audit" | "shortcuts"
+  // §19 (2026-08-30): the model calls the app makes without a session.
+  | "models" | "permissions" | "sysprompt" | "onBehalf" | "stats" | "audit" | "shortcuts"
   | "terminal"
   // §27.
   | "voice"
@@ -106,6 +107,16 @@ function SysPromptIcon(): React.JSX.Element {
     </svg>
   );
 }
+/** §19: a hand doing something for you — the calls you did not ask for. */
+function OnBehalfIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v9" />
+      <path d="M8.5 12V6.5M15.5 12V7.5" />
+      <path d="M5 12v3a7 7 0 0 0 14 0v-3" />
+    </svg>
+  );
+}
 function StatsIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -179,6 +190,9 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   // Configuration.
   { view: "permissions", label: "Permissions", Icon: PermissionsIcon },
   { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon },
+  // §19 (2026-08-30): beside System prompt, because both pages answer the same
+  // question — what does this app tell a model, that I never typed?
+  { view: "onBehalf", label: "On your behalf", Icon: OnBehalfIcon },
   { view: "terminal", label: "Terminal", Icon: TerminalIcon },
   { view: "voice", label: "Voice", Icon: VoiceIcon },
   // Shortcuts closes the configuration block rather than trailing the reports:
