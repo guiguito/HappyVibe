@@ -16,7 +16,7 @@ import {
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
   getVoiceSettings, setVoiceSettings,
-  getGitMessageModel, setGitMessageModel,
+  getAssistantTasks,
 } from "./config";
 import { TerminalManager } from "./terminals";
 import {
@@ -3578,7 +3578,7 @@ export function registerIpc(win: BrowserWindow): void {
   // §2b — the drafted commit message. Never the live session: this is a one-shot
   // print-mode call, so nothing reaches a transcript or a context window.
   ipcMain.handle("hv:git-draft-message", async (_e, workspaceId: string, stagedOnly: boolean) => {
-    const model = getGitMessageModel() ?? resolveSpawnModel(workspaceId);
+    const model = getAssistantTasks()["commit-message"].model ?? resolveSpawnModel(workspaceId);
     if (!model) return null;
     const [files, diffs, log20] = await Promise.all([
       gitStatus(workspaceId),
@@ -3655,7 +3655,7 @@ export function registerIpc(win: BrowserWindow): void {
     // the model or read a diff. `draft: true` is the click.
     let drafted: { title: string; body: string } | null = null;
     if (draft) {
-      const model = getGitMessageModel() ?? resolveSpawnModel(workspaceId);
+      const model = getAssistantTasks()["pr-draft"].model ?? resolveSpawnModel(workspaceId);
       if (model) {
         const diffs = await gitDiff(workspaceId, "base");
         const diffText = diffs.map((f) => `${f.fileHeader}\n${f.hunks.map((h) => h.raw).join("")}`).join("\n");
@@ -3679,11 +3679,6 @@ export function registerIpc(win: BrowserWindow): void {
     return url ? { url, drafted: !!drafted } : null;
   });
 
-  ipcMain.handle("hv:git-message-model", () => getGitMessageModel());
-  ipcMain.handle("hv:set-git-message-model", (_e, m: { provider: string; modelId: string } | null) => {
-    setGitMessageModel(m && typeof m.provider === "string" && typeof m.modelId === "string" ? m : null);
-    return getGitMessageModel();
-  });
 
   // Per-workspace model override (spawn resolution: workspace → global default).
   // Applies to sessions spawned/restarted after the change.

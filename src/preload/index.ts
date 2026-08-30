@@ -125,9 +125,6 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:git-draft-message", workspaceId, stagedOnly),
   gitInstallPrompt: () => ipcRenderer.invoke("hv:git-install-prompt"),
   gitPrUrl: (workspaceId: string, draft?: boolean) => ipcRenderer.invoke("hv:git-pr-url", workspaceId, draft),
-  gitMessageModel: () => ipcRenderer.invoke("hv:git-message-model"),
-  setGitMessageModel: (m: { provider: string; modelId: string } | null) =>
-    ipcRenderer.invoke("hv:set-git-message-model", m),
   onGitChanged: (cb: (p: { workspaceId: string }) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { workspaceId: string });
     ipcRenderer.on("hv:git-changed", h);

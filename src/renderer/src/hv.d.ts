@@ -622,8 +622,6 @@ interface HvApi {
    * was unavailable and the commit list was used instead.
    */
   gitPrUrl(workspaceId: string, draft?: boolean): Promise<{ url: string; drafted: boolean } | null>;
-  gitMessageModel(): Promise<{ provider: string; modelId: string } | null>;
-  setGitMessageModel(m: { provider: string; modelId: string } | null): Promise<{ provider: string; modelId: string } | null>;
   onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;
 
   // §23 Plan Mode
