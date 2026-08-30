@@ -157,16 +157,23 @@ export function acceptableMarks(requested: MarkKey[], entries: SessionEntry[]): 
  * assistant message of all content, drop the whole message so we never send an
  * empty assistant turn to the provider.
  */
-export function filterMessages(messages: AgentMessage[], marks: Set<MarkKey>): AgentMessage[] {
+export function filterMessages<M extends { role: string; content?: unknown; toolCallId?: string; timestamp?: number }>(
+  messages: M[],
+  marks: Set<MarkKey>,
+): M[] {
+  // Identity-preserving generic: the bridge passes upstream's AgentMessage[]
+  // (this module stays zero-import, so the bound is structural, not upstream's).
   if (marks.size === 0) return messages;
-  const out: AgentMessage[] = [];
+  const out: M[] = [];
   for (const m of messages) {
     if (m.role === "toolResult" && m.toolCallId && marks.has(toolKey(m.toolCallId))) continue;
     if (typeof m.timestamp === "number" && marks.has(msgKey(m.timestamp))) continue;
     if (m.role === "assistant" && Array.isArray(m.content)) {
-      const kept = m.content.filter((b) => !(b.type === "toolCall" && marks.has(toolKey((b as ToolCallBlock).id))));
+      const blocks = m.content as ContentBlock[]; // every block shape carries `type`
+      const kept = blocks.filter((b) => !(b.type === "toolCall" && marks.has(toolKey((b as ToolCallBlock).id))));
       if (kept.length === 0) continue; // whole assistant turn was tool calls, all removed
-      if (kept.length !== m.content.length) { out.push({ ...m, content: kept }); continue; }
+      // Same message, a subset of its own content array — still an M.
+      if (kept.length !== blocks.length) { out.push({ ...m, content: kept } as M); continue; }
     }
     out.push(m);
   }
