@@ -1,11 +1,11 @@
 {
-  "name": "hv-scaffold",
+  "name": "happyvibe",
   "productName": "HappyVibe",
-  "version": "1.0.0",
-  "description": "An Electron application with React and TypeScript",
+  "version": "0.1.0",
+  "description": "Vibe coding you can actually watch.",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "Guilhem Duché <guilhem.duche@gmail.com>",
+  "homepage": "https://happyvibe.dev",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",

@@ -135,3 +135,7 @@ alone cannot tell them apart).
 
 Fold the durable lessons into `CLAUDE.md` and the wire shapes into `docs/validation/d1.md` in the
 same session. One commit per logical change; `/land` is the close-out gate.
+
+The changelog is written at release time, not here (PRD §30) — but if the bump changes
+something a USER can see (new builtin agents, a new provider, a new tool), say so in the commit
+body, because that is what the `changelog` skill will be reading months later.
