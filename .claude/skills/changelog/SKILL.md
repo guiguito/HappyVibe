@@ -17,8 +17,15 @@ word, or you will produce a transcription and have to start over.
 ## Step 1 — see what changed
 
 ```
-.claude/skills/changelog/scripts/changelog.sh digest
+.claude/skills/changelog/scripts/changelog.sh digest          # since the last tag
+.claude/skills/changelog/scripts/changelog.sh digest <ref>    # since an explicit commit or tag
 ```
+
+**If it warns that no tag was found, stop and read the warning.** Tags are cut by hand after the
+release commit, so there is a real window where the last release has shipped but is not tagged —
+and the fallback is the first commit, which quietly turns "what is new in this release" into "the
+entire project". Find the previous release's commit (`git log --oneline --grep '^chore(release)'`)
+and pass it.
 
 That prints the commit range, a **type × scope count table**, every `feat` and `fix` subject
 grouped, the renderer files that moved, and the pins line ready to paste. Read the count table
@@ -56,9 +63,18 @@ Go back and group.
 
 ## Step 3 — write
 
-Into the `## [Unreleased]` block at the top of `CHANGELOG.md`. Headings from
-**Added · Changed · Fixed · Removed**, only the ones you need, plus **Heads up** first when it
-applies.
+Add a `## [Unreleased]` heading at the top of `CHANGELOG.md`, directly under the `# Changelog` H1,
+and write into it. **Expect it to be absent** — cutting a release renames it to the version, and
+nothing puts an empty one back, so an untouched file goes straight from the H1 to the newest
+release. Create it; do not hunt for it.
+
+The file has **no preamble**. `# Changelog`, then entries, nothing between. A Keep a Changelog
+header with format and semver links lived there once and was deleted — it is boilerplate above the
+thing people came to read, and the link in it was relative, which used to navigate the whole app
+away. Do not reintroduce it.
+
+Headings from **Added · Changed · Fixed · Removed**, only the ones you need, plus **Heads up**
+first when it applies.
 
 ### The seven rules
 
@@ -114,8 +130,8 @@ picture them caring about.
 
 ## Notes
 
-- **Do not touch the version number or the heading.** This skill writes into `[Unreleased]`;
-  stamping the version, the date and the tag is `/release`'s phase 5. Keeping them separate means
+- **Do not touch the version number.** This skill writes under `[Unreleased]`; turning that heading
+  into a version, stamping the date and cutting the tag is `/release`'s phase 5. Keeping them separate means
   the entry can be written, read and revised before anything is committed to a number.
 - **The first release is the one exception to rule 3.** With nothing shipped, `0.1.0` describes the
   whole product, so ~20 bullets is right rather than a failure of grouping.

@@ -5,7 +5,15 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-base_ref() { git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD; }
+# The base is the last release. A tag is the normal way to know it, but the tag
+# is cut by hand AFTER the release commit, so there is a real window where it is
+# missing — and falling back to the first commit silently turns "what shipped in
+# this release" into "the entire history". Say so loudly, and take an override.
+base_ref() {
+  if [ -n "${2:-}" ]; then echo "$2"; return; fi
+  git describe --tags --abbrev=0 2>/dev/null && return
+  echo "__NONE__"
+}
 
 runtime_line() {
   node -e "const d=require('./pi-runtime/package.json').dependencies;
@@ -15,9 +23,18 @@ runtime_line() {
 
 case "${1:-digest}" in
 digest)
-  BASE=$(base_ref)
+  BASE=$(base_ref "$@")
   echo "### Range"
-  echo "from $(git describe --tags --abbrev=0 2>/dev/null || echo 'first commit') to HEAD"
+  if [ "$BASE" = "__NONE__" ]; then
+    BASE=$(git rev-list --max-parents=0 HEAD)
+    echo "!! NO TAG FOUND — this is the ENTIRE history, not one release."
+    echo "!! If a release already shipped, pass its commit or tag:"
+    echo "!!     changelog.sh digest <ref>      e.g. changelog.sh digest v0.1.0"
+    echo "!! Otherwise everything below is the whole project and the triage will"
+    echo "!! re-describe features the user already has."
+    echo
+  fi
+  echo "from ${BASE} to HEAD"
   echo "$(git log --no-merges --oneline "$BASE"..HEAD | wc -l | tr -d ' ') non-merge commits, $(git log --merges --oneline "$BASE"..HEAD | wc -l | tr -d ' ') merged PRs"
   echo
   echo "### Commits by type and scope — read this FIRST, it is your grouping key"
