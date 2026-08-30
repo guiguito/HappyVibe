@@ -275,9 +275,49 @@ export function isSubagentTool(toolName: unknown): boolean {
  * rather than receiving a whole result. Hiding the poll does not hide the
  * delegation, its result, or the artifact read.)
  */
+/**
+ * Fields that mean "real work was requested". Derived from upstream's own launch
+ * classifier (`subagent-executor.ts` `classifyRun`: workflowScript → chain →
+ * tasks → agent), NOT invented here — a `chain`/`tasks` fan-out carries no
+ * top-level `agent`, so requiring one would hide a genuine multi-child run.
+ * `task` and `workflowScriptPath` join them as the public spellings of the same
+ * request. Pinned against upstream in `tests/pi-subagents-contract.test.ts`.
+ */
+export const SUBAGENT_WORK_FIELDS = ["agent", "task", "workflowScript", "workflowScriptPath", "chain", "tasks"] as const;
+
+/**
+ * Is this `subagent` call the model poking its own machinery rather than
+ * delegating?
+ *
+ * Reported twice. First as `subagent {action:"status", id}` drawing a delegation
+ * card with no agent and no task — literally "→ asked ?". Then again
+ * (2026-08-31) for a call carrying a control field but NO `action`, which the
+ * first version's "`action` must be present" rule sailed straight past.
+ *
+ * So the rule no longer enumerates machinery — it asks the one question with a
+ * bounded answer: **does this call request work?** `SubagentParamsLike` has 90
+ * fields and all but six are either plumbing or control, so listing the control
+ * ones was a treadmill that would fail on every benign pin bump while still
+ * missing the next one. Inverting means a new machinery field is handled the
+ * day upstream adds it, and only a new WORK field needs a decision — which the
+ * contract test forces by pinning this list against upstream's own classifier.
+ *
+ * The empty case is load-bearing and must stay `false`: pi-subagents sends **no
+ * args at all** on `tool_execution_end`, so treating "no work in args" as a
+ * query would suppress the END event and leave every real card stuck on
+ * "running" forever.
+ */
 export function isSubagentQuery(args: unknown): boolean {
-  const a = args as { action?: unknown; agent?: unknown } | undefined;
-  return typeof a?.action === "string" && a.action.trim() !== "" && typeof a?.agent !== "string";
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  const a = args as Record<string, unknown>;
+  const keys = Object.keys(a);
+  if (keys.length === 0) return false;
+  const requestsWork = SUBAGENT_WORK_FIELDS.some((f) => {
+    const v = a[f];
+    if (typeof v === "string") return v.trim() !== "";
+    return Array.isArray(v) ? v.length > 0 : false;
+  });
+  return !requestsWork;
 }
 
 // ── W1.2/V2.C1 delegation-run helpers ────────────────────────────────────────

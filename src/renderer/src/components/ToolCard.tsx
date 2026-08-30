@@ -576,7 +576,7 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
           />
           <ToolIcon kind={"robot" as IconKind} className="mt-0.5 size-4 shrink-0 text-sky" />
           <span className="text-sm min-w-0 break-words flex-1" title={req?.task}>
-            <span className="text-ink-soft">→ asked</span> <span className="font-bold">{req?.agent ?? results[0]?.agent ?? "?"}</span>
+            <span className="text-ink-soft">→ asked</span> <span className="font-bold">{req?.agent ?? results[0]?.agent ?? "a subagent"}</span>
             {label && <span className="text-ink-soft">: {label}</span>}
           </span>
           {/* No status glyph here either, for the reason given above the badge

@@ -55,6 +55,7 @@
  * Key-free: no Pi spawn, no model. Stays in the non-live suite.
  */
 import { describe, expect, it } from "vitest";
+import { SUBAGENT_WORK_FIELDS } from "../src/renderer/src/agents";
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -1238,5 +1239,53 @@ describe("child thinking contract", () => {
     // the confinement starts refusing every real transcript.
     const store = readFileSync(new URL("../src/main/store.ts", import.meta.url), "utf8");
     expect(store).toContain('const ARTIFACT_DIR = "subagent-artifacts"');
+  });
+});
+
+/**
+ * 8. the delegation-card guard's WORK list is upstream's own launch classifier
+ *
+ * The renderer draws a delegation card only for a `subagent` call that requests
+ * work, and suppresses one for machinery (a status poll, a resume, a steer).
+ * That inversion is only safe while this list matches what upstream actually
+ * treats as a launch — a `chain`/`tasks` fan-out carries NO top-level `agent`,
+ * so a missing entry here hides a genuine multi-child run.
+ *
+ * Reported twice: first as `{action:"status", id}`, then (2026-08-31) as a call
+ * carrying a control field with no `action` at all, which the first rule missed.
+ */
+describe("the delegation-card guard tracks upstream's launch classifier", () => {
+  const executor = (): string =>
+    readFileSync(
+      path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents", "src", "runs", "foreground", "subagent-executor.ts"),
+      "utf8",
+    );
+
+  it("classifyRun still dispatches on exactly these four shapes", () => {
+    const src = executor();
+    const at = src.indexOf('if (params.workflowScript !== undefined) return "workflow"');
+    expect(at, "classifyRun moved or changed shape — re-derive SUBAGENT_WORK_FIELDS").toBeGreaterThan(-1);
+    const cls = src.slice(at, at + 400);
+    for (const f of ["workflowScript", "chain", "tasks", "agent"]) {
+      expect(cls, `classifyRun no longer mentions ${f}`).toContain(`params.${f}`);
+      expect(SUBAGENT_WORK_FIELDS, `${f} launches a run but does not draw a card`).toContain(f);
+    }
+  });
+
+  it("every work field is still a declared param", () => {
+    const src = executor();
+    const start = src.indexOf("export interface SubagentParamsLike {");
+    expect(start, "SubagentParamsLike moved or was renamed").toBeGreaterThan(-1);
+    const body = src.slice(start, src.indexOf("\n}", start));
+    for (const f of SUBAGENT_WORK_FIELDS) {
+      expect(body, `${f} is no longer a subagent param`).toMatch(new RegExp(`^\\t${f}\\??:`, "m"));
+    }
+  });
+
+  it("the public task/workflowScriptPath spellings are still there", () => {
+    // These are how a MODEL asks; the classifier reads the resolved forms.
+    const body = executor();
+    expect(body).toMatch(/^\ttask\??:/m);
+    expect(body).toMatch(/^\tworkflowScriptPath\??:/m);
   });
 });

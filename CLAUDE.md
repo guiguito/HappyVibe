@@ -662,6 +662,23 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   three-line tail moved to the rail's hover readout as `TerminalTail` — which must keep reading
   `window.hv.termText` (main's rendered grid), never re-parse raw PTY bytes, or `sleep 600` renders
   as `ssleep 600` again. Pinned by `tests/run-rail-layout.test.ts`.
+- **"→ asked ?" is a `subagent` call that requested no WORK, and the guard for it must invert on
+  work — never enumerate machinery.** Reported twice. First as `{action:"status", id}`; the fix
+  required `action` to be present, so the second report (2026-08-31) walked straight through it —
+  a call carrying a control field with **no `action` at all** (`{runId}`, `{resume}`, a steer).
+  `SubagentParamsLike` has **90 fields** and all but six are plumbing or control, so listing the
+  control ones is a treadmill that fails on every benign pin bump *and* still misses the next one.
+  `isSubagentQuery` therefore asks the one bounded question: does this call carry
+  `agent`/`task`/`workflowScript`/`workflowScriptPath`/`chain`/`tasks`? If not, it is machinery and
+  draws no card — so a control field upstream adds tomorrow is handled today. **Two things are
+  load-bearing.** Empty/absent args must stay NOT-a-query: pi-subagents sends **no args on
+  `tool_execution_end`**, so "no work in args ⇒ machinery" there would suppress the END event and
+  leave every real card stuck on "running" forever. And the work list is DERIVED from upstream's own
+  `classifyRun` (`subagent-executor.ts`: workflowScript → chain → tasks → agent), because a
+  `chain`/`tasks` fan-out carries **no top-level `agent`** — requiring one would hide a genuine
+  multi-child run. Pinned in `tests/pi-subagents-contract.test.ts` (group 8, against upstream's
+  source) + `tests/agents-renderer.test.ts`. The card's own fallback now reads "a subagent" rather
+  than `?`, so a shape that ever slips the guard degrades to a sentence.
 - **Portalling a dialog to the end of `<body>` does NOT put it on top.** Among POSITIONED elements
   an explicit z-index beats document order, so every `z-20`…`z-50` in the app painted above a Radix
   dialog whose z-index was `auto` — `.hv-overlay`/`.hv-dialog` were animation-only classes with no
