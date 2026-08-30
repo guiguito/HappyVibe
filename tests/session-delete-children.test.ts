@@ -197,3 +197,107 @@ describe("sweeping data whose session is already gone", () => {
     expect(fs.existsSync(artifacts())).toBe(true);
   });
 });
+
+// ── `outputs/<runId>/` is a run's data too (2026-08-29, round 2) ────────────
+//
+// pi-subagents also writes a per-run OUTPUT DIRECTORY inside the artifacts dir:
+// `subagent-artifacts/outputs/<runId>/…` (observed on a real install for a
+// `scout` run, which declares `output: context.md`). Both cleanup halves keyed
+// on the flat `<runId>_<agent>_*` filenames and skipped anything without an
+// underscore — a guard that exists for a good reason (pi-subagents keeps
+// `.last-cleanup` there) but which also made `outputs/` permanently invisible.
+// So a deleted session left the child's written output behind, and the sweep
+// never collected it: the same "delete means delete" gap the flat artifacts had.
+describe("a run's outputs/ directory is cleaned up like its other artifacts", () => {
+  const outputsFor = (id: string): string => path.join(artifacts(), "outputs", id);
+
+  it("deleting a session removes its children's outputs/ directories", () => {
+    const parent = makeSession("2026-08-29T12-00-00-000Z_out", ["run-outputs1"]);
+    fs.mkdirSync(outputsFor("run-outputs1"), { recursive: true });
+    fs.writeFileSync(path.join(outputsFor("run-outputs1"), "context.md"), "the child's answer");
+    deleteSessionChildren(dir, parent);
+    expect(fs.existsSync(outputsFor("run-outputs1"))).toBe(false);
+  });
+
+  it("the startup sweep collects an orphaned outputs/ directory", () => {
+    // No session file references this id at all.
+    fs.mkdirSync(outputsFor("run-orphaned1"), { recursive: true });
+    fs.writeFileSync(path.join(outputsFor("run-orphaned1"), "context.md"), "x");
+    const swept = sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(outputsFor("run-orphaned1"))).toBe(false);
+    expect(swept.artifacts).toBeGreaterThan(0);
+  });
+
+  it("keeps an outputs/ directory whose session is alive", () => {
+    makeSession("2026-08-29T13-00-00-000Z_live", ["run-alive001"]);
+    fs.mkdirSync(outputsFor("run-alive001"), { recursive: true });
+    fs.writeFileSync(path.join(outputsFor("run-alive001"), "context.md"), "keep me");
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(outputsFor("run-alive001"))).toBe(true);
+  });
+
+  it("never removes the outputs/ container itself, only what is inside it", () => {
+    // Deleting the container would make upstream recreate it, and a future
+    // entry could land while we were mid-sweep.
+    fs.mkdirSync(outputsFor("run-orphaned2"), { recursive: true });
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(path.join(artifacts(), "outputs"))).toBe(true);
+  });
+
+  it("leaves pi-subagents' own bookkeeping alone", () => {
+    // The underscore guard exists for this; widening to outputs/ must not
+    // widen to `.last-cleanup`, which is upstream's retention timestamp.
+    fs.writeFileSync(path.join(artifacts(), ".last-cleanup"), "1");
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(path.join(artifacts(), ".last-cleanup"))).toBe(true);
+  });
+});
+
+// ── The sweep must see BOTH id spaces (2026-08-30) ─────────────────────────
+//
+// Found by watching a child transcript disappear across an app restart while its
+// session was still open. `sessionRunIds` takes a UNION of the `<stem>/<runId>/`
+// directory names and the asyncId/runId strings inside the parent file, with a
+// comment saying the two "only sometimes coincide" and that deriving one from the
+// other silently misses files. The SWEEP read only the second, so any artifact
+// filed under a child run id the parent never names was treated as orphaned and
+// deleted at every startup — including transcripts the run card reads.
+describe("the sweep counts a child directory as a reference too", () => {
+  it("keeps artifacts filed under a run id that only appears as a child directory", () => {
+    const stem = "2026-08-30T09-00-00-000Z_union";
+    // A live session whose parent file does NOT mention the child's run id.
+    fs.writeFileSync(path.join(dir, `${stem}.jsonl`), JSON.stringify({ type: "message" }) + "\n");
+    const runDir = path.join(dir, stem, "child-run-01", "run-0");
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, "session.jsonl"), "{}\n");
+    const transcript = path.join(artifacts(), "child-run-01_code-explorer_transcript.jsonl");
+    fs.writeFileSync(transcript, "x");
+
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(transcript), "a live session's child transcript survives").toBe(true);
+  });
+
+  it("still collects an artifact whose session is genuinely gone", () => {
+    // The sweep must not become a no-op: widening `referenced` too far would
+    // simply stop it collecting anything.
+    const orphan = path.join(artifacts(), "dead-run-99_code-explorer_transcript.jsonl");
+    fs.writeFileSync(orphan, "x");
+    const swept = sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(orphan)).toBe(false);
+    expect(swept.artifacts).toBeGreaterThan(0);
+  });
+
+  it("does not resurrect references from a directory whose session file is gone", () => {
+    // Half 1 removes `<stem>/` when `<stem>.jsonl` is missing. If half 2 read
+    // those names first, a deleted session's ids would protect its own artifacts.
+    const stem = "2026-08-30T10-00-00-000Z_dead";
+    const runDir = path.join(dir, stem, "ghost-run-01", "run-0");
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, "session.jsonl"), "{}\n"); // no <stem>.jsonl
+    const artifact = path.join(artifacts(), "ghost-run-01_code-explorer_transcript.jsonl");
+    fs.writeFileSync(artifact, "x");
+
+    sweepOrphanedSubagentData(dir);
+    expect(fs.existsSync(artifact), "an orphaned session's artifacts still go").toBe(false);
+  });
+});

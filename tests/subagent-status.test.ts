@@ -165,3 +165,136 @@ describe("children (the cost readout's source)", () => {
     expect(statusUnchanged(after, after)).toBe(true);
   });
 });
+
+// ── The live child context gauge (PRD §12, 2026-08-29 — the fleet round) ─────
+//
+// pi-subagents 0.57 (#1444) added context-window occupancy to status.json,
+// deliberately separate from cumulative spend: `steps[].tokens.window` is the
+// child's LATEST turn (input + cache-read, i.e. what is sitting in its window)
+// and `steps[].contextLimit` is that model's window, resolved from Pi's own
+// registry. Both are rewritten on every child `message_end`, so the poll we
+// already run ticks at exactly the right cadence.
+describe("live child context occupancy", () => {
+  test("reads window + limit off steps[0]", () => {
+    const dir = runDir({
+      state: "running",
+      steps: [{ agent: "worker", status: "running", contextLimit: 200_000, tokens: { input: 9_000, output: 400, total: 9_400, window: 12_800, windowPeak: 12_800 } }],
+    });
+    expect(readSubagentStatus(dir)?.context).toEqual({ window: 12_800, limit: 200_000 });
+  });
+
+  test("omits context entirely when the model has no known window", () => {
+    // contextLimit comes from Pi's model registry; an unregistered model has
+    // none. A window with nothing to divide by is not a percentage, and half a
+    // measurement must never render as 0% (PRD §19 ruling 3).
+    const dir = runDir({
+      state: "running",
+      steps: [{ agent: "worker", status: "running", tokens: { input: 9_000, output: 400, total: 9_400, window: 12_800 } }],
+    });
+    expect(readSubagentStatus(dir)?.context).toBeUndefined();
+  });
+
+  test("omits context when no turn has been billed yet", () => {
+    const dir = runDir({ state: "running", steps: [{ agent: "worker", status: "running", contextLimit: 200_000 }] });
+    expect(readSubagentStatus(dir)?.context).toBeUndefined();
+  });
+
+  test("a zero or negative limit is not a divisor", () => {
+    const dir = runDir({ state: "running", steps: [{ contextLimit: 0, tokens: { window: 10 } }] });
+    expect(readSubagentStatus(dir)?.context).toBeUndefined();
+  });
+
+  test("a moved window is news worth pushing", () => {
+    // statusUnchanged decides whether a tick reaches the renderer at all: a
+    // field it does not compare is a field that freezes after the first tick.
+    const a = { state: "running", context: { window: 10, limit: 100 } };
+    const b = { state: "running", context: { window: 20, limit: 100 } };
+    expect(statusUnchanged(a, b)).toBe(false);
+    expect(statusUnchanged(a, { ...a })).toBe(true);
+    expect(statusUnchanged({ state: "running" }, a)).toBe(false);
+  });
+});
+
+// ── Per-child rows for a fan-out (PRD §12, 2026-08-29 — the fleet round) ─────
+//
+// Deliberately a SEPARATE field from `children`. That one is the cost readout's
+// source and requires a `sessionFile` (a child with no session file yet is not
+// billable, and an entry without one broke the readout once). These rows are
+// the UI's, and a child is stoppable from the moment it is pending — long
+// before it has written a session file. One derivation, two shapes, because the
+// two consumers genuinely want different things.
+describe("steps (the fan-out's per-child rows)", () => {
+  const write = (status: unknown): string => runDir(status);
+
+  // MEASURED 2026-08-29 on a live two-child workflowScript run, and it corrected
+  // the first implementation: `steps[].childId` is declared in upstream's type
+  // but is NULL on the wire. The identity upstream's own `stop` RPC resolves is
+  // `workflowKey ?? runId ?? "step:<index>"` (runs/shared/child-identity.ts,
+  // asyncStatusChildIdentity), so that is what we derive. Keying on childId
+  // alone meant the per-child STOP never rendered at all.
+  it("derives the child identity upstream's stop RPC actually accepts", () => {
+    const dir = write({
+      state: "running",
+      mode: "workflow",
+      steps: [
+        { agent: "code-explorer", status: "running", workflowKey: "a" },
+        { agent: "reviewer", status: "running", workflowKey: "b" },
+      ],
+    });
+    expect(readSubagentStatus(dir)?.steps?.map((c) => c.childId)).toEqual(["a", "b"]);
+  });
+
+  it("falls back through runId to step:<index>, the way upstream does", () => {
+    const dir = write({
+      state: "running",
+      steps: [
+        { agent: "x", status: "running", runId: "r-1" },
+        { agent: "y", status: "running" },
+      ],
+    });
+    expect(readSubagentStatus(dir)?.steps?.map((c) => c.childId)).toEqual(["r-1", "step:1"]);
+  });
+
+  it("an explicit childId still wins when upstream supplies one", () => {
+    const dir = write({ state: "running", steps: [{ agent: "x", status: "running", childId: "c0", workflowKey: "a" }] });
+    expect(readSubagentStatus(dir)?.steps?.[0].childId).toBe("c0");
+  });
+
+  it("carries each child's stoppable identity, status and own context", () => {
+    const dir = write({
+      state: "running",
+      steps: [
+        { childId: "c0", agent: "worker", status: "running", contextLimit: 200_000, tokens: { window: 20_000 } },
+        { childId: "c1", agent: "reviewer", status: "complete", contextLimit: 200_000, tokens: { window: 5_000 } },
+      ],
+    });
+    expect(readSubagentStatus(dir)?.steps).toEqual([
+      { childId: "c0", agent: "worker", status: "running", context: { window: 20_000, limit: 200_000 } },
+      { childId: "c1", agent: "reviewer", status: "complete", context: { window: 5_000, limit: 200_000 } },
+    ]);
+  });
+
+  it("includes a child that has no session file yet — it is still stoppable", () => {
+    const dir = write({ state: "running", steps: [{ childId: "c0", agent: "worker", status: "pending" }] });
+    expect(readSubagentStatus(dir)?.steps).toEqual([{ childId: "c0", agent: "worker", status: "pending" }]);
+    // ...while the cost readout's own field stays empty, as it always did.
+    expect(readSubagentStatus(dir)?.children).toBeUndefined();
+  });
+
+  it("carries the child's transcript path when upstream has written one", () => {
+    const dir = write({ state: "running", steps: [{ childId: "c0", transcriptPath: "/s/subagent-artifacts/r_w_0_transcript.jsonl" }] });
+    expect(readSubagentStatus(dir)?.steps?.[0].transcriptPath).toBe("/s/subagent-artifacts/r_w_0_transcript.jsonl");
+  });
+
+  it("a child changing status is news worth pushing", () => {
+    // Without this the STOP button on a finished child never goes away.
+    const a = { state: "running", steps: [{ childId: "c0", status: "running" }] };
+    const b = { state: "running", steps: [{ childId: "c0", status: "stopped" }] };
+    expect(statusUnchanged(a, b)).toBe(false);
+    expect(statusUnchanged(a, { ...a })).toBe(true);
+  });
+
+  it("absent rather than an empty array when a run has no steps", () => {
+    expect(readSubagentStatus(runDir({ state: "running" }))?.steps).toBeUndefined();
+  });
+});

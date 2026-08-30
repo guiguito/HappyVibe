@@ -47,6 +47,7 @@ export const RESERVED_SLASH_COMMANDS: ReadonlySet<string> = new Set([
   "hv-rules-reload",
   "hv-subagent-interrupt",
   "hv-subagent-list",
+  "hv-subagent-stop-child",
   "hv-sysprompt",
   "hv-tools",
 ]);

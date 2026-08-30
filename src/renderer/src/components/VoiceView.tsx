@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Toggle } from "./Toggle";
 import { Section } from "./Section";
 // Electron-free main modules, imported rather than restated — the pattern
 // TerminalView uses for DEFAULT_TERMINAL_SETTINGS. A second copy of the
@@ -45,34 +46,6 @@ function Row({
   );
 }
 
-function Toggle({
-  on,
-  onChange,
-  label,
-}: {
-  on: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={() => onChange(!on)}
-      className={`w-11 h-6 rounded-full border-2 transition-colors cursor-pointer relative ${
-        on ? "bg-sky-soft border-sky" : "bg-paper-deep border-line"
-      }`}
-    >
-      <span
-        className={`absolute top-[2px] size-4 rounded-full bg-card border-2 transition-all ${
-          on ? "left-[22px] border-sky" : "left-[2px] border-line"
-        }`}
-      />
-    </button>
-  );
-}
 
 /**
  * Round 2: settings are OWNED BY APP and passed in, mirroring TerminalView's

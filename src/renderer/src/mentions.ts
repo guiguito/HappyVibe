@@ -12,6 +12,8 @@
  * token/quoting scheme if it ever matters.
  */
 
+import { sortAgents } from "./agents";
+
 export interface MentionEntry {
   /** Workspace-relative path (OS separators, as returned by fs-list-recursive). */
   rel: string;
@@ -200,4 +202,31 @@ export function completeCommand(text: string, queryEnd: number, name: string): {
   const insert = `/${name} `;
   const rest = text.slice(queryEnd).replace(/^ /, ""); // don't double the space we just added
   return { text: insert + rest, caret: insert.length };
+}
+
+/**
+ * §12 (2026-08-29): agents in the `@` menu, so delegation is discoverable from
+ * the chat FLOW rather than only from the Agents page.
+ *
+ * Deliberately the same trigger as files: one thing to learn, not two, and the
+ * existing `activeMentionQuery`/menu plumbing carries it for free.
+ *
+ * An agent pick inserts PLAIN TEXT and is NOT added to the label→relPath map,
+ * so `extractMentions` never sees it and it can never be resolved as a file
+ * path. The model already receives the agent roster in its system prompt every
+ * turn, so `@worker` in the prose is enough for it to delegate.
+ *
+ * Capped, because the `@` menu's primary job is files: an unbounded roster on a
+ * one-character query would push every file row off the visible menu.
+ */
+export function agentMentionItems<T extends { name: string; source: string }>(
+  agents: T[],
+  query: string,
+  limit = 5,
+): T[] {
+  const q = query.toLowerCase();
+  // Sorted BEFORE the slice, with the same grouping the Agents page and the
+  // roster chip use — otherwise the five kept here are five arbitrary ones in
+  // discovery order, and the same list reads differently on three surfaces.
+  return sortAgents(agents.filter((a) => a.name.toLowerCase().includes(q))).slice(0, limit);
 }

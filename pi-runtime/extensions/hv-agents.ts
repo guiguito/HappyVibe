@@ -5,15 +5,31 @@
  * and is imported directly by src/main (path-confined read/write) and by
  * vitest. One parser, logic never forks — same discipline as hv-rules.ts.
  *
- * pi-subagents discovers agents from `<PI_CODING_AGENT_DIR>/agents/*.md`
- * (source "user", the app-owned dir → our "builtin") and `<cwd>/.pi/agents/*.md`
- * (source "project"). Its frontmatter parser is flat `key: value` (no YAML
- * lib); we match it: parse and serialize the same flat shape so a round-trip
- * (read → edit body/model → write) never corrupts a file pi-subagents reads.
- * See package/src/agents/frontmatter.ts in pi-subagents 0.33.1.
+ * Its frontmatter parser is flat `key: value` (no YAML lib); we match it: parse
+ * and serialize the same flat shape so a round-trip (read → edit body/model →
+ * write) never corrupts a file pi-subagents reads. See
+ * package/src/agents/frontmatter.ts in pi-subagents 0.33.1.
+ *
+ * DISCOVERY does not live here and never did well: from 2026-08-29 the bridge
+ * calls pi-subagents' own `discoverAgentsAll`, because the two-directory scan
+ * this module's comment used to describe was missing four of the six places
+ * upstream actually looks. This module still owns PARSING and SERIALIZING —
+ * the app edits agent files, so it needs a writer that round-trips.
  */
 
-export type AgentSource = "builtin" | "project";
+/**
+ * Where an agent came from.
+ *
+ * Widened 2026-08-29 (the fleet round) from `builtin | project`: pi-subagents
+ * discovers from SIX directories plus agents contributed by installed packages,
+ * and the app listed two of them. `builtin` is now UPSTREAM's packaged roster;
+ * `bundled` is ours (the app-owned agent dir). Both were "builtin" before,
+ * which is exactly why nobody noticed upstream's seven were missing.
+ *
+ * Only `bundled` and `project` are writable by the app (`hv:write-agent` is
+ * path-confined to those dirs) — the Agents page gates Edit on that.
+ */
+export type AgentSource = "builtin" | "bundled" | "user" | "project" | "package";
 
 export interface AgentDef {
   name: string;
@@ -25,6 +41,19 @@ export interface AgentDef {
   source: AgentSource;
   /** Absolute path to the .md file. */
   path: string;
+  /**
+   * False when this agent is switched off (§12, 2026-08-30). Disabled agents are
+   * still LISTED — the Agents page has to show one to let you turn it back on —
+   * but they are excluded from the roster injected into the model, which is the
+   * whole point: an agent you are not using should not cost context every turn.
+   */
+  enabled?: boolean;
+  /**
+   * The agent's system prompt, when discovery supplied it. Present so the
+   * Agents page can SHOW a read-only agent's prompt (upstream builtins, user
+   * and package agents) without main reading files outside the dirs it owns.
+   */
+  systemPrompt?: string;
 }
 
 /**
@@ -97,9 +126,22 @@ export function editAgentFile(
  * roster directly (same per-turn injection mechanism as renderNestedSection in
  * hv-agents-md.ts). Returns "" when there are no agents (inject nothing).
  */
-export function renderSubagentSection(agents: AgentDef[]): string {
+/**
+ * One agent's line in the injected roster. Its own function so the Agents page
+ * can MEASURE exactly what an agent costs per turn without the estimate and the
+ * injected text ever drifting apart.
+ */
+export function subagentRosterLine(a: Pick<AgentDef, "name" | "description">): string {
+  return `- **${a.name}** — ${a.description.slice(0, 200)}`;
+}
+
+export function renderSubagentSection(all: AgentDef[]): string {
+  // Disabled agents are listed on the page but never injected — that is the
+  // context lever. All-off is a legitimate state: the section vanishes entirely
+  // rather than emitting a heading with nothing under it.
+  const agents = all.filter((a) => a.enabled !== false);
   if (agents.length === 0) return "";
-  const lines = agents.map((a) => `- **${a.name}** — ${a.description.slice(0, 200)}`);
+  const lines = agents.map(subagentRosterLine);
   return (
     "\n\n## Available subagents\n\n" +
     "These subagents are ready to delegate to right now. Prefer delegating exploration, long " +
@@ -107,7 +149,12 @@ export function renderSubagentSection(agents: AgentDef[]): string {
     "each runs in its own context and reports back a concise result.\n\n" +
     lines.join("\n") +
     "\n\n**How to delegate:** call the `subagent` tool directly with `{ agent: \"<name>\", task: \"<what to do>\" }`. " +
-    "Do NOT call `{ action: \"list\" }` first — the agents above are the full, current list. " +
+    // The countermand stays (the tool description steers the model to call
+    // `list` first, which costs a turn). The superlative that used to follow it
+    // — "the agents above are the full, current list" — was removed 2026-08-29:
+    // it was false while the roster came from a two-directory scan, and even
+    // now a project-local agent file can add one between two turns.
+    "Delegate directly by name. Do NOT call `{ action: \"list\" }` first. " +
     "Delegations run in the background by default. After you delegate, **end your turn** with a brief " +
     "note that the work is running in the background — do NOT call the `wait` tool and do NOT poll with " +
     "`subagent` status. This is an interactive session: the subagent's result is delivered to you " +
@@ -155,4 +202,29 @@ export function joinToolPermissions(
     source: t.source ?? "",
     permission: verdicts[t.name] ?? "ask",
   }));
+}
+
+/**
+ * True when a discovered `.md` is a SLASH COMMAND, not an agent definition.
+ *
+ * pi-subagents claims `~/.agents` as its user agent dir and scans it
+ * recursively. That directory is shared: Claude Code and tools built on it keep
+ * slash commands in `commands/` and skills in `skills/`. Upstream already
+ * excludes `skills/` (`isLegacyAgentSkillPath`), but not `commands/` — so on a
+ * real install every Superset slash command (`10x`, `doctor`, `feedback`,
+ * `setup`, from `~/.agents/commands/superset/`) was read as a delegatable
+ * sub-agent, listed on the Agents page, and injected into the model's roster
+ * every turn. They are not agents: they carry Claude Code's `argument-hint` and
+ * `allowed-tools` keys and reference `${CLAUDE_SKILL_DIR}`.
+ *
+ * Same shape as upstream's own skills exclusion, one segment name different.
+ * Matches a whole path SEGMENT so an agent named `commands-expert` survives.
+ *
+ * This hides them; it does not refuse them. They are ordinary Pi children the
+ * capability ceiling governs, so a user who explicitly names one still gets it —
+ * unlike the external-CLI agents, which are refused because nothing can bound
+ * them. The problem here is advertising another tool's commands as our agents.
+ */
+export function isSlashCommandPath(filePath: string): boolean {
+  return filePath.split(/[\\/]/).includes("commands");
 }

@@ -5,6 +5,7 @@
  * fail" discipline as context.ts / permission.ts.
  */
 import { displayableTask } from "../../../pi-runtime/extensions/hv-rules";
+import { subagentRosterLine } from "../../../pi-runtime/extensions/hv-agents";
 import { fmtNum } from "./analytics-format";
 
 // ── hv.agents / hv.tools notifies ────────────────────────────────────────────
@@ -14,8 +15,18 @@ export interface AgentInfo {
   description: string;
   tools?: string[];
   model?: string;
-  source: "builtin" | "project";
+  /**
+   * §12 (2026-08-29): five sources, because there are five. `bundled` is ours
+   * (the app-owned agent dir, editable); `builtin` is UPSTREAM's packaged
+   * roster, which this page did not show at all until this round. Only
+   * `bundled` and `project` are writable — `hv:write-agent` is path-confined.
+   */
+  source: "builtin" | "bundled" | "user" | "project" | "package";
   path: string;
+  /** Supplied by discovery so a read-only agent's prompt is still viewable. */
+  systemPrompt?: string;
+  /** False when switched off: listed so it can be switched back on, but not injected. */
+  enabled?: boolean;
 }
 
 export interface ToolInfo {
@@ -246,6 +257,17 @@ export function isSubagentQuery(args: unknown): boolean {
 // runs show a brief done/failed state, slide away, then App removes them
 // (~2.5s after tool_execution_end).
 
+/** One child of a fan-out delegation, as the run card renders it. */
+export interface DelegationChild {
+  /** Upstream's stable child identity — the id its `stop` RPC accepts. */
+  childId?: string;
+  agent?: string;
+  status?: string;
+  context?: { window: number; limit: number };
+  /** The child's own transcript JSONL — where its thinking blocks live. */
+  transcriptPath?: string;
+}
+
 export interface DelegationRun {
   /** Map key: the runId for async runs, the toolCallId for foreground runs. */
   id: string;
@@ -275,7 +297,26 @@ export interface DelegationRun {
      * its elapsed time, never a $0.00 standing in for "not measured yet".
      */
     cost?: HvLedgerTotal;
+    /**
+     * The child's live context occupancy (§12, 2026-08-29). Like `cost`, the
+     * last reading is KEPT when a tick arrives without one — a finishing or
+     * stopped run must freeze on the gauge it reached, never blank back to no
+     * gauge after having shown one.
+     */
+    context?: { window: number; limit: number };
+    /**
+     * Per-child rows for a fan-out (§12, 2026-08-29) — one per step, each with
+     * its own gauge and its own stop. Only rendered above one child: a single
+     * delegation has exactly one step, where a per-child stop would be the
+     * run's own STOP wearing a second name.
+     */
+    children?: DelegationChild[];
   };
+}
+
+/** A fan-out child is stoppable exactly while upstream says it is (0.58: pending|running). */
+export function isStoppableChild(status: string | undefined): boolean {
+  return status === "pending" || status === "running";
 }
 
 // ── async subagent lifecycle (hv.subagent notify) ────────────────────────────
@@ -454,3 +495,79 @@ export function parseAgentsMdOutput(finalOutput: string): Record<string, string>
   }
   return Object.keys(out).length > 0 ? out : null;
 }
+
+/**
+ * Display order for the agent inventory (§12, 2026-08-29).
+ *
+ * The user's OWN agents come first — they are the ones someone is looking for
+ * when they open the page, and the roster now runs to nine or more. `project`
+ * sits with `user` because both are authored by a human here rather than
+ * shipped. Then the third-party-provided ones (`builtin` = Pi's own,
+ * `package` = an installed package's), and HappyVibe's `bundled` last: they are
+ * the app's own furniture and the least likely thing to be hunting for.
+ *
+ * Exported as DATA so the renderer suite — which has no DOM — can pin it.
+ */
+export const SOURCE_ORDER: Record<string, number> = {
+  user: 0,
+  project: 1,
+  builtin: 2,
+  package: 3,
+  bundled: 4,
+};
+
+/** Sort by source group, then by name inside it. Never mutates the input. */
+export function sortAgents<T extends { name: string; source: string }>(agents: readonly T[]): T[] {
+  return [...agents].sort((a, b) => {
+    // An unknown source sorts after every known one rather than at the top,
+    // so a future source added upstream cannot silently displace the user's own.
+    const ga = SOURCE_ORDER[a.source] ?? 99;
+    const gb = SOURCE_ORDER[b.source] ?? 99;
+    return ga !== gb ? ga - gb : a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Human-facing copy for upstream's builtins, adapted from pi-subagents'
+ * `docs/agents.md`.
+ *
+ * DISPLAY ONLY. The model keeps the frontmatter `description`, which upstream
+ * writes for delegation targeting ("Use when the user asks…") and which the
+ * per-turn roster injects verbatim. These are written for a person deciding
+ * whether to pick one — the frontmatter reads as documentation, not as an offer.
+ *
+ * Keyed by name but applied only to `source: "builtin"`, so a user's own agent
+ * that happens to be called `scout` keeps its own description.
+ *
+ * Only the builtins we actually surface are here. Our bundled agents already
+ * carry call-to-action copy we wrote and control, and overriding it in the UI
+ * would put the two out of sync with nothing to keep them honest.
+ */
+const BUILTIN_BLURB: Record<string, string> = {
+  scout: "Fast local codebase recon: relevant files, entry points, data flow, risks",
+  reviewer: "Code review and small fixes — checks the implementation against the task or plan",
+  delegate: "A lightweight general-purpose child that behaves closely like the parent agent",
+};
+
+/** What to SHOW for an agent. Falls through to its own description. */
+export function agentBlurb(agent: { name: string; source: string; description: string }): string {
+  return (agent.source === "builtin" && BUILTIN_BLURB[agent.name]) || agent.description;
+}
+
+/**
+ * What one agent costs in the system prompt, EVERY TURN.
+ *
+ * Measured from `subagentRosterLine` — the very function that builds the injected
+ * text — so the number on the Agents page and the tokens actually spent cannot
+ * drift. The chars→tokens rule is the bridge's own `Math.ceil(chars / 4)`
+ * (happyvibe-bridge.ts), so one estimator serves both surfaces.
+ */
+export function agentTokenCost(agent: { name: string; description: string }): number {
+  return Math.ceil((subagentRosterLine(agent).length + 1) / 4);
+}
+
+/** Total per-turn cost of the agents that are actually switched on. */
+export function rosterTokenCost(agents: ReadonlyArray<{ name: string; description: string; enabled?: boolean }>): number {
+  return agents.filter((a) => a.enabled !== false).reduce((n, a) => n + agentTokenCost(a), 0);
+}
+

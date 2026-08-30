@@ -5,7 +5,9 @@ import {
   joinToolPermissions,
   parseAgentFile,
   renderSubagentSection,
+  subagentRosterLine,
   serializeAgentFile,
+  isSlashCommandPath,
   toAgentDef,
   type AgentDef,
   type PermState,
@@ -76,6 +78,14 @@ describe("toAgentDef", () => {
       path: "/a/greeter.md",
     });
   });
+  test("keeps every discovered source through toAgentDef", () => {
+    // Widened 2026-08-29 from builtin|project: upstream reports four scopes and
+    // we split its "user" into ours (bundled) and everyone else's.
+    for (const source of ["builtin", "bundled", "user", "project", "package"] as const) {
+      expect(toAgentDef({ name: "a", description: "d" }, source, "/x/a.md")?.source).toBe(source);
+    }
+  });
+
   test("returns null when name or description is missing (pi-subagents skips those)", () => {
     expect(toAgentDef({ name: "x" }, "project", "/p.md")).toBeNull();
     expect(toAgentDef({ description: "y" }, "project", "/p.md")).toBeNull();
@@ -151,10 +161,92 @@ describe("renderSubagentSection", () => {
     expect(s).toContain("wait");
   });
 
+  test("no longer claims the injected roster is the complete list", () => {
+    // §12 (2026-08-29): it never was — the roster came from a two-directory scan
+    // while pi-subagents discovers from six plus installed packages. The
+    // countermand above stays (the tool description steers the model to call
+    // `list` first, which costs a turn); the superlative goes, because a
+    // project-local agent file can falsify it between one turn and the next.
+    const s = renderSubagentSection([mk("worker", "implements things")]);
+    expect(s).not.toContain("the full, current list");
+    expect(s).not.toContain("full, current");
+  });
+
   test("clamps long descriptions to ~200 chars", () => {
     const long = "x".repeat(500);
     const s = renderSubagentSection([mk("verbose", long)]);
     expect(s).toContain("x".repeat(200));
     expect(s).not.toContain("x".repeat(201));
+  });
+});
+
+// ── A slash command is not a sub-agent (§12, 2026-08-29) ────────────────────
+//
+// pi-subagents claims `~/.agents` as its user agent dir and scans it
+// RECURSIVELY. That directory is shared with Claude Code / Superset, which keep
+// slash commands in `commands/` and skills in `skills/`. Upstream excludes
+// `skills/` (isLegacyAgentSkillPath, agents.ts:1817) but not `commands/`, so
+// every installed slash command was being read as a delegatable sub-agent:
+// measured on a real install, `10x`, `doctor`, `feedback` and `setup` from
+// ~/.agents/commands/superset/ were listed on the Agents page AND injected into
+// the model's roster every turn. They are not agents — they carry Claude Code's
+// `argument-hint` / `allowed-tools` keys and reference ${CLAUDE_SKILL_DIR}.
+describe("isSlashCommandPath", () => {
+  test("rejects a commands/ file under a user agent dir", () => {
+    expect(isSlashCommandPath("/Users/x/.agents/commands/superset/10x.md")).toBe(true);
+    expect(isSlashCommandPath("/Users/x/.agents/commands/doctor.md")).toBe(true);
+  });
+
+  test("rejects a project-scope commands/ file too", () => {
+    expect(isSlashCommandPath("/repo/.agents/commands/deploy.md")).toBe(true);
+    expect(isSlashCommandPath("/repo/.claude/commands/deploy.md")).toBe(true);
+  });
+
+  test("keeps real agents, wherever they live", () => {
+    expect(isSlashCommandPath("/Users/x/.agents/my-agent.md")).toBe(false);
+    expect(isSlashCommandPath("/app/pi-agent/agents/worker.md")).toBe(false);
+    expect(isSlashCommandPath("/repo/.pi/agents/reviewer.md")).toBe(false);
+  });
+
+  test("matches a whole SEGMENT, never a substring", () => {
+    // An agent legitimately named for commands must survive.
+    expect(isSlashCommandPath("/Users/x/.agents/commands-expert.md")).toBe(false);
+    expect(isSlashCommandPath("/Users/x/.agents/my-commands/a.md")).toBe(false);
+  });
+
+  test("handles Windows separators", () => {
+    expect(isSlashCommandPath("C:\\Users\\x\\.agents\\commands\\superset\\10x.md")).toBe(true);
+  });
+});
+
+// ── Disabled agents cost nothing (§12, 2026-08-30) ─────────────────────────
+describe("renderSubagentSection excludes switched-off agents", () => {
+  const mk = (name: string, enabled?: boolean): AgentDef =>
+    ({ name, description: `${name} does things`, source: "builtin", path: `/x/${name}.md`, ...(enabled === undefined ? {} : { enabled }) });
+
+  test("a disabled agent is not injected", () => {
+    const s = renderSubagentSection([mk("scout"), mk("researcher", false)]);
+    expect(s).toContain("scout");
+    expect(s).not.toContain("researcher");
+  });
+
+  test("`enabled` absent means ON — older payloads must not go dark", () => {
+    // The bridge always sets it now, but a stale renderer state or a restored
+    // payload without the field must not silently empty the roster.
+    expect(renderSubagentSection([mk("scout")])).toContain("scout");
+  });
+
+  test("all-off injects NOTHING, not an empty heading", () => {
+    // The end state of the context lever. A bare "## Available subagents" with
+    // no agents under it would be worse than useless — it would tell the model
+    // it has agents and then name none.
+    expect(renderSubagentSection([mk("a", false), mk("b", false)])).toBe("");
+  });
+
+  test("the measured line is the injected line", () => {
+    // subagentRosterLine is what the Agents page estimates from; if the two
+    // drifted the app would quote a number it does not actually spend.
+    const a = mk("scout");
+    expect(renderSubagentSection([a])).toContain(subagentRosterLine(a));
   });
 });
