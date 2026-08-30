@@ -136,6 +136,7 @@ const MessageItem = memo(function MessageItem({
   it,
   onRetry,
   workspace,
+  sessionId,
   onOpenFile,
   onRewind,
   onLoadEarlier,
@@ -144,6 +145,10 @@ const MessageItem = memo(function MessageItem({
   onRetry?: () => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
+  /** §12 (2026-08-30): the session a card belongs to. Only the subagent card
+      uses it — it inspects a finished child by asyncId, and inspection is
+      session-scoped. Threaded exactly like `workspace`. */
+  sessionId?: string | null;
   onOpenFile?: (relPath: string) => void;
   /** Round 3 #11: rewind to a user message (only wired for user items). */
   onRewind?: (it: TranscriptItem) => void;
@@ -172,7 +177,7 @@ const MessageItem = memo(function MessageItem({
       </div>
     );
   }
-  if (it.kind === "tool") return <ToolCard card={it.card} workspace={workspace} onOpenFile={onOpenFile} />;
+  if (it.kind === "tool") return <ToolCard card={it.card} workspace={workspace} sessionId={sessionId} onOpenFile={onOpenFile} />;
   if (it.kind === "plan") return <PlanCard card={it.card} onOpenFile={onOpenFile} />;
   if (it.kind === "error") {
     return (
@@ -421,6 +426,7 @@ export function Transcript({
   header,
   onRetry,
   workspace,
+  sessionId,
   onOpenFile,
   onRewind,
   searchQuery,
@@ -439,6 +445,10 @@ export function Transcript({
   onRetry?: () => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
+  /** §12 (2026-08-30): the session a card belongs to. Only the subagent card
+      uses it — it inspects a finished child by asyncId, and inspection is
+      session-scoped. Threaded exactly like `workspace`. */
+  sessionId?: string | null;
   onOpenFile?: (relPath: string) => void;
   /** Round 3 #11: rewind a user message (removes everything after + re-edits). */
   onRewind?: (it: TranscriptItem) => void;
@@ -618,6 +628,7 @@ export function Transcript({
               it={it}
               onRetry={onRetry}
               workspace={workspace}
+              sessionId={sessionId}
               onOpenFile={onOpenFile}
               onRewind={onRewind}
               onLoadEarlier={onLoadEarlier}

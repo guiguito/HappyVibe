@@ -1048,6 +1048,7 @@ export function ChatView({
           }
           onRetry={onRetry}
           workspace={workspace}
+          sessionId={sessionId}
           onOpenFile={onOpenFile}
           onRewind={onRewind && !busy ? openRewind : undefined}
           onLoadEarlier={onLoadEarlier}

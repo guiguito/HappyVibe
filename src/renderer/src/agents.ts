@@ -200,6 +200,36 @@ export function traceFromEnd(result: unknown): SubagentTrace {
 }
 
 /**
+ * §12 (2026-08-30): an inspect reply, mapped onto the rows the trace view
+ * already renders.
+ *
+ * `/subagents-inspect-rpc` answers from upstream's own artifacts and keeps
+ * working after the result has been delivered, which is exactly what a FINISHED
+ * async delegation's card needs — its sticky card is long gone and its
+ * `tool_execution_end` never carried a transcript.
+ *
+ * The three message kinds collapse into the two-field row `SubagentMessage`
+ * already is, the same way `traceFromEnd` folds upstream's compact `toolCalls`.
+ * Returns an EMPTY array when there is nothing to show: an empty card claiming
+ * a child ran is worse than no card at all.
+ */
+export function inspectToResults(
+  reply: {
+    finalOutput?: string;
+    messages?: Array<{ role: string; kind: "text" | "toolCall" | "toolResult"; text: string; name?: string }>;
+  },
+  agent: string,
+): SubagentResult[] {
+  const messages: SubagentMessage[] = (reply.messages ?? []).map((m) => ({
+    role: m.role,
+    text: m.kind === "text" ? m.text : `${m.name ?? m.kind} ${m.text}`.trim(),
+  }));
+  const finalOutput = reply.finalOutput?.trim() || undefined;
+  if (messages.length === 0 && !finalOutput) return [];
+  return [{ agent, messages, finalOutput }];
+}
+
+/**
  * Merge a final (end) trace onto the live (update) trace: the end carries the
  * outcome (model/usage/finalOutput) but NOT the transcript, so keep the update's
  * messages per agent and adopt the end's outcome fields. Matched by index (the

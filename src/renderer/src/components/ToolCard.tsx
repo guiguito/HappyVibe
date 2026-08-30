@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
-import { asyncResultInfo, delegationLabel, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
+import { asyncResultInfo, delegationLabel, inspectToResults, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
 import { resolveCardPath } from "../tabs";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { ZoomableImage } from "./ZoomableImage";
@@ -468,7 +468,7 @@ export function delegationSummary(card: ToolCardData): string {
  * "it's running" signal is the sticky delegation section (ChatView), not this line.
  * W1.1: shares the headline treatment — robot icon + intent-first label.
  */
-function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
+function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: string | null }): React.JSX.Element {
   const running = card.status === "running";
   const [open, setOpen] = useState(false);
   const req = card.args as { agent?: string; task?: string } | undefined;
@@ -493,6 +493,50 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
         ? "failed"
         : (outcome ?? (async ? "dispatched" : "done"));
   const summary = delegationSummary(card);
+  /**
+   * §12 (2026-08-30): a FINISHED async delegation's child transcript, on demand.
+   *
+   * An async `tool_execution_end` carries a dispatch receipt, so this card has
+   * never had a transcript to show — expanding it said "waiting" and nothing
+   * else. Upstream answers `/subagents-inspect-rpc` from its own artifacts with
+   * NO model turn and keeps answering after delivery, so the ask is affordable —
+   * but only when ASKED: it is an RPC round trip with a 10 s timeout, and there
+   * can be many of these cards in one transcript.
+   *
+   * Dropped on collapse rather than cached, so reopening re-reads. Same rule the
+   * run card's thinking view uses, for the same reason.
+   */
+  const [inspected, setInspected] = useState<SubagentResult[] | null>(null);
+  const [inspectError, setInspectError] = useState<string | null>(null);
+  const asyncId = async?.asyncId;
+  useEffect(() => {
+    if (!open || !asyncId || !sessionId || results.length > 0) {
+      setInspected(null);
+      setInspectError(null);
+      return;
+    }
+    let alive = true;
+    void window.hv.subagentInspect(sessionId, asyncId).then((r) => {
+      if (!alive) return;
+      if (r.ok) {
+        setInspected(inspectToResults(r.reply, req?.agent ?? "subagent"));
+        setInspectError(null);
+      } else {
+        // Named, never a spinner: inspection is scoped to the current session's
+        // children, so a respawn answers foreign_session and that is a FACT
+        // about this run, not a failure to report.
+        setInspectError(
+          r.code === "foreign_session"
+            ? "This delegation belongs to an earlier session — its transcript is no longer readable from here."
+            : `Could not read this delegation's transcript: ${r.error}`,
+        );
+        setInspected(null);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open, asyncId, sessionId, results.length, req?.agent]);
   return (
     <div className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}>
       <button
@@ -539,10 +583,17 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
       </button>
       {open && (
         <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 flex flex-col gap-3">
-          {errorText && results.length === 0 ? (
+          {errorText && results.length === 0 && !inspected?.length ? (
             <p className="text-xs text-berry whitespace-pre-wrap break-words">{errorText}</p>
           ) : (
-            <SubagentTraceView results={results} cost={card.cost} outcome={outcome} />
+            <>
+              <SubagentTraceView
+                results={results.length > 0 ? results : (inspected ?? [])}
+                cost={card.cost}
+                outcome={outcome}
+              />
+              {inspectError && <p className="text-xs text-ink-soft italic">{inspectError}</p>}
+            </>
           )}
         </div>
       )}
@@ -628,14 +679,18 @@ export function SubagentTraceView({
 export function ToolCard({
   card,
   workspace,
+  sessionId,
   onOpenFile,
 }: {
   card: ToolCardData;
   /** W2.2: session workspace — card paths resolve against it. */
   workspace?: string | null;
+  /** §12 (2026-08-30): needed only by the subagent card, which inspects a
+   *  finished child by asyncId — inspection is session-scoped. */
+  sessionId?: string | null;
   onOpenFile?: (relPath: string) => void;
 }): React.JSX.Element {
-  if (card.toolName === "subagent") return <SubagentCard card={card} />;
+  if (card.toolName === "subagent") return <SubagentCard card={card} sessionId={sessionId} />;
   // W1.1: headline = icon + human label; the technical block (raw name/args/
   // result) lives behind the collapsed "details" toggle. Diffs are NOT
   // technical — they ARE the human content for edit/write — so they render
