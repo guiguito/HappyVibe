@@ -85,7 +85,9 @@ export type TranscriptItem = { id?: number } & (
   | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string }
   // A neutral, warm status line (not an error). `pending` shows an ongoing
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
-  | { kind: "notice"; text: string; pending?: boolean }
+  // `title` is hover-only detail that must NOT widen the pill — round 16: the
+  // provider's error message lives here, not in `text`.
+  | { kind: "notice"; text: string; pending?: boolean; title?: string }
   // §9 round 9: the compaction boundary. Everything ABOVE it is out of the
   // agent's context; `loaded` flips once the user pulls that history in.
   | { kind: "boundary"; compactions: number; reason: string | null; loaded: boolean }
@@ -211,13 +213,18 @@ const MessageItem = memo(function MessageItem({
   }
   if (it.kind === "notice") {
     return (
-      <div className="flex items-center gap-2.5 self-center rounded-full border-2 border-line bg-card px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker">
+      <div
+        title={it.title}
+        // Round 16: max-w + truncate is the STRUCTURAL guard — the text is
+        // already short, and this is what stops a future notice re-exploding it.
+        className="flex items-center gap-2.5 self-center max-w-md rounded-full border-2 border-line bg-card px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker"
+      >
         {it.pending ? (
           <span className="size-2 rounded-full bg-honey animate-pulse shrink-0" />
         ) : (
           <span className="size-2 rounded-full bg-leaf shrink-0" />
         )}
-        <span>{it.text}</span>
+        <span className="truncate">{it.text}</span>
       </div>
     );
   }

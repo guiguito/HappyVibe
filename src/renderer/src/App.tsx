@@ -14,7 +14,7 @@ import { ChangelogView } from "./components/ChangelogView";
 import { type TranscriptItem } from "./components/Transcript";
 import { type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
-import { describeProviderError } from "./providerError";
+import { describeProviderError, retryNoticeText } from "./providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
@@ -456,11 +456,11 @@ export default function App(): React.JSX.Element {
 
   // Upsert the per-session "Retrying…" notice in place (one notice spans all
   // attempts; text updates each attempt). Mirrors the compaction-notice pattern.
-  const upsertRetryNotice = (sid: string, text: string): void => {
+  const upsertRetryNotice = (sid: string, text: string, title?: string): void => {
     const existing = retryNotice.current[sid];
     if (existing === undefined) {
       retryNotice.current[sid] = idCounter.current; // id appendItem assigns next
-      appendItem(sid, { kind: "notice", text, pending: true });
+      appendItem(sid, { kind: "notice", text, pending: true, title });
       return;
     }
     setTranscripts((p) => {
@@ -469,7 +469,7 @@ export default function App(): React.JSX.Element {
       const i = items.findIndex((it) => it.id === existing && it.kind === "notice");
       if (i < 0) return p;
       const next = items.slice();
-      next[i] = { ...items[i], kind: "notice", text, pending: true };
+      next[i] = { ...items[i], kind: "notice", text, pending: true, title };
       return { ...p, [sid]: next };
     });
   };
@@ -1233,9 +1233,10 @@ export default function App(): React.JSX.Element {
         const r = e as unknown as { attempt?: number; maxAttempts?: number; delayMs?: number; errorMessage?: string };
         delete pendingError.current[sid]; // this failure is being retried, not final
         commitStream(sid);
-        const secs = Math.round((r.delayMs ?? 0) / 1000);
-        const why = r.errorMessage ? ` — ${r.errorMessage}` : "";
-        upsertRetryNotice(sid, `Retrying (attempt ${r.attempt ?? 1}/${r.maxAttempts ?? 3}${secs ? `, next in ${secs}s` : ""})${why}`);
+        // Round 16: the pill carries a bounded chip; the provider's own words
+        // ride the hover title. If the retries exhaust, they land in the error
+        // card at agent_end, which is built to carry them.
+        upsertRetryNotice(sid, retryNoticeText(r), r.errorMessage);
       }
       if (e.type === "auto_retry_end") {
         const r = e as unknown as { success?: boolean; attempt?: number };

@@ -174,3 +174,17 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
  */
 const CONTENT_FREE =
   /^(error|errored|unknown|unknown error|failure|failed|terminated|aborted|cancelled|canceled|null|undefined|\?+|-+|n\/a)[.!]?$/i;
+
+/**
+ * Round 16 — the retry notice's text, bounded by construction.
+ *
+ * It used to read `Retrying (attempt 1/3, next in 5s) — <the provider's entire
+ * error message>`, poured into a `rounded-full` pill sized for a chip. The
+ * shape was never the problem; an unbounded string in it was. The provider's
+ * own words are not lost: if the retries are exhausted they reach the error
+ * card at agent_end, which is built to carry them.
+ */
+export function retryNoticeText(r: { attempt?: number; maxAttempts?: number; delayMs?: number }): string {
+  const secs = Math.round((r.delayMs ?? 0) / 1000);
+  return `Retrying ${r.attempt ?? 1}/${r.maxAttempts ?? 3}${secs ? ` · ${secs}s` : ""}`;
+}
