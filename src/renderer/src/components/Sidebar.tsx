@@ -447,7 +447,7 @@ export function Sidebar({
   onToggleSettingsOpen: () => void;
   /** §30: an unread changelog — a passive dot, never a modal. */
   changelogUnread: boolean;
-  /** F6: slim icon-rail mode + its toggle (⌘B); state persisted in App. */
+  /** F6: slim icon-rail mode + its toggle (⌘\); state persisted in App. */
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
   onAddWorkspace: () => void;
@@ -533,7 +533,8 @@ export function Sidebar({
   const archivedCount = sessions.filter((s) => s.archived).length;
 
   // F6: collapsed icon rail — brand, workspace initials (click expands), and the
-  // MCP/Settings/Help nav at the bottom. ⌘B (App) and the chevron toggle it.
+  // MCP/Settings/Help nav at the bottom. ⌘\ (App) and the chevron toggle it.
+  // (§28 round 1 swapped the keys: ⌘B opens a BROWSER, the sidebar moved to ⌘\.)
   if (railCollapsed) {
     const railBtn = (active: boolean): string =>
       `size-9 flex items-center justify-center rounded-xl border-2 cursor-pointer transition-colors ${
@@ -544,7 +545,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={onToggleCollapsed}
-          title="Expand sidebar (⌘B)"
+          title="Expand sidebar (⌘\)"
           aria-label="Expand sidebar"
           className="cursor-pointer hover:brightness-105 transition-all"
         >
@@ -591,7 +592,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={onToggleCollapsed}
-          title="Collapse sidebar (⌘B)"
+          title="Collapse sidebar (⌘\)"
           aria-label="Collapse sidebar"
           className="shrink-0 text-ink-soft hover:text-ink cursor-pointer text-lg leading-none px-1"
         >
@@ -792,7 +793,7 @@ export function Sidebar({
           <span className="flex-1" />
           {/* §30: the dot bubbles up through collapse the user did not choose.
               A closed group hides the Changelog row, so the marker surfaces
-              here — but the ⌘B icon rail (handled far above) is an explicit
+              here — but the ⌘\ icon rail (handled far above) is an explicit
               "hide the sidebar" gesture and deliberately shows nothing. */}
           {changelogUnread && !settingsOpen && <UnreadDot />}
         </button>
