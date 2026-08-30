@@ -621,6 +621,17 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   turn, keeps working after delivery, and answers `foreign_session` after a respawn, which the card
   must NAME rather than spin on. Related: `SubagentTraceView`'s "don't say waiting" guard was written
   for the RESTORE path (`cost`) and had never once fired live, because nothing set `cost` on a live
+  **And a RESTORED card needs that id handed to it as a FIELD.** Every unit test fed a LIVE card
+  (`result.details.asyncId`), while `restore.ts` flattens a toolResult to its text blocks — so on the
+  one path where the fetch is actually needed (a live run streams its own transcript and never asks),
+  a reopened delegation had no id and expanded to an empty 125-char panel. Found ONLY by the GUI
+  pass. The id is structured on the message's `details` sibling, so it is READ there and carried
+  `restore.ts` → `restoreMap.ts` → `ToolCardData.asyncId`, never parsed back out of the flattened
+  text (which spells it inside `[brackets]`, not as JSON — a grep for `"asyncId"` matches `details`,
+  so the obvious regex could never have fired). `asyncResultInfo` stays structured-only on purpose:
+  it answers "still in flight" and raises the "running in the background" line, so teaching it the
+  restore shape re-opens the very bug this fixed. And remember `restoreMap.ts`'s own rule — a field
+  main sends that is not NAMED there is dropped in silence.
   tool card. Pinned by `tests/delegation-card-outcome.test.ts` + `tests/subagent-inspect-card.test.ts`;
   measurements in docs/validation/d1.md §The run rail.
 - **The sticky run rail's overlay is `absolute` inside a `sticky` container, and four traps are
