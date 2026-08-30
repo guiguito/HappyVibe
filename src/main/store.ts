@@ -22,6 +22,9 @@ export interface SessionMeta {
   hibernated?: boolean;
   /** W2.1: per-session model override (hierarchy: session → workspace → global). Additive; survives hibernation/resume. */
   model?: { provider: string; modelId: string };
+  /** §16 round 16: per-session thinking override (session → global — there is
+   *  deliberately no workspace tier). Additive; survives hibernation/resume. */
+  thinking?: string;
   /** Who last set the title. "user" is never overwritten by generation. */
   titleSource: "fallback" | "model" | "user";
 }

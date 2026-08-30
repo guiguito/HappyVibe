@@ -641,7 +641,13 @@ describe("delegating from the flow", () => {
   test("the roster chip dismisses by click-catcher, never by blur", () => {
     // A blur-dismissed menu unmounts between mousedown and mouseup and loses its
     // own clicks — reported twice in this app as an unclickable menu.
-    const chip = chat2.slice(chat2.indexOf("function AgentsChip"), chat2.indexOf("function SkillsChip"));
+    // Sliced to the END OF AgentsChip, not to the next named component: the
+    // old boundary was `function SkillsChip`, so anything inserted between the
+    // two was measured as if it were part of the chip (round 16's ThinkingPill
+    // tripped it with the word "onBlur" inside a comment saying not to use it).
+    const from = chat2.indexOf("function AgentsChip");
+    const ends = [chat2.indexOf("\nfunction ", from + 1), chat2.indexOf("\n/**", from + 1)].filter((i) => i > 0);
+    const chip = chat2.slice(from, Math.min(...ends));
     expect(chip).toContain('className="fixed inset-0 z-20"');
     expect(chip).toContain("onMouseDown");
     expect(chip).not.toContain("onBlur");

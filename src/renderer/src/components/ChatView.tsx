@@ -514,6 +514,23 @@ export function ChatView({
   // into the display name (e.g. "Z.ai: GLM 5.2" → "GLM 5.2").
   const modelLabel = modelName?.replace(/^[^:]+:\s+/, "") ?? null;
 
+  /**
+   * §16 round 16 — the session's thinking effort.
+   *
+   * `levels` is what THIS session's model supports, re-read whenever the model
+   * changes: an empty list means the model cannot think at all, and the pill
+   * then does not render — the rule the context gauge follows for a model with
+   * no known window, rather than a disabled control standing in for "n/a".
+   */
+  const [thinkingLevels, setThinkingLevels] = useState<string[]>([]);
+  const [thinkingLevel, setThinkingLevel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sessionId) return;
+    let alive = true;
+    void window.hv.getThinkingLevels(sessionId).then((l) => { if (alive) setThinkingLevels(l); });
+    return () => { alive = false; };
+  }, [sessionId, resolved?.provider, resolved?.modelId]);
+
   const pickModel = async (m: HvModel): Promise<void> => {
     setModelMenuOpen(false);
     if (!sessionId) return;
@@ -671,6 +688,18 @@ export function ChatView({
               )}
             />
           </div>
+          {/* §16 round 16: the session's thinking level, beside the model it
+              belongs to. It does NOT render when the model supports no levels. */}
+          {thinkingLevels.length > 0 && sessionId && (
+            <ThinkingPill
+              levels={thinkingLevels}
+              value={thinkingLevel}
+              onPick={(l) => {
+                setThinkingLevel(l);
+                void window.hv.setSessionThinking(sessionId, l).then(({ live }) => setRestartHint(!live));
+              }}
+            />
+          )}
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
         {agents && agents.length > 0 && <AgentsChip agents={agents} onPick={(name) => insertText(`Ask ${name} to `)} />}
         {/* §23 round 9: the active-plan pill. A plan card lives at its
@@ -2016,6 +2045,60 @@ function AgentsChip({ agents, onPick }: { agents: AgentInfo[]; onPick: (name: st
             Or type <span className="font-mono">@</span> in the message box.
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * §16 round 16 — the thinking-effort pill, styled as the model chip's twin so
+ * the two read as one group.
+ *
+ * Dismissal is the `fixed inset-0` click-catcher every other menu in the app
+ * uses, NOT onBlur: pressing a button does not focus it, so a blur-dismissed
+ * menu unmounts between mousedown and mouseup and the click lands on nothing.
+ */
+function ThinkingPill({
+  levels,
+  value,
+  onPick,
+}: {
+  levels: string[];
+  value: string | null;
+  onPick: (level: string) => void;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        aria-label="Change thinking effort for this session"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        title={`Thinking effort: ${value ?? "default"}`}
+        className="font-mono text-[11px] rounded-full border-2 border-line bg-card px-2.5 py-1 text-ink hover:border-honey cursor-pointer transition-colors"
+      >
+        think: {value ?? "default"}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 mt-1.5 z-30 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+            {levels.map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => {
+                  onPick(l);
+                  setOpen(false);
+                }}
+                className={`block w-full text-left px-3 py-1 font-mono text-xs hover:bg-paper-deep cursor-pointer ${l === value ? "font-bold" : ""}`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

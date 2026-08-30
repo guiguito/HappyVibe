@@ -187,6 +187,12 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:fetch-endpoint-models", baseUrl, key),
   listModels: () => ipcRenderer.invoke("hv:list-models"),
   setDefaultModel: (provider: string, modelId: string) => ipcRenderer.invoke("hv:set-default-model", provider, modelId),
+  // §16 round 16: thinking effort — global default + per-session override.
+  setSessionThinking: (sessionId: string, level: string | null) =>
+    ipcRenderer.invoke("hv:set-session-thinking", sessionId, level),
+  setDefaultThinking: (level: string | null) => ipcRenderer.invoke("hv:set-default-thinking", level),
+  getDefaultThinking: () => ipcRenderer.invoke("hv:get-default-thinking"),
+  getThinkingLevels: (sessionId?: string) => ipcRenderer.invoke("hv:get-thinking-levels", sessionId),
   hasAnyProvider: () => ipcRenderer.invoke("hv:has-any-provider"),
   openExternal: (url: string) => ipcRenderer.invoke("hv:open-external", url),
 

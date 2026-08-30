@@ -6,9 +6,10 @@ import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile } from "../../pi-
 import { PiClient } from "./pi/PiClient";
 import { spawn } from "node:child_process";
 import { resolvePiSpawn } from "./pi/spawn";
+import { THINKING_LEVELS, resolveThinking } from "./thinking";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getGlobalBypass, getLastSeenVersion, setLastSeenVersion, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
+  agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLastSeenVersion, setLastSeenVersion, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
   childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
@@ -628,6 +629,14 @@ export function registerIpc(win: BrowserWindow): void {
     );
   };
 
+  /** §16 round 16: session override → global default. Mirrors resolveSpawnModel's
+   *  shape but with two tiers, and returns null rather than inventing one. */
+  const resolveSpawnThinking = (sessionId?: string): string | null =>
+    resolveThinking(
+      sessionId ? (index.get(sessionId)?.thinking as never) : null,
+      getDefaultThinking() as never,
+    );
+
   /** Everything a Pi spawn needs from provider config (B3) + rules delivery (B4).
    *  Model resolution (W2.1, full PRD hierarchy): session override → workspace
    *  override → global default. Mirrors resolveModel in renderer composer.ts. */
@@ -638,6 +647,7 @@ export function registerIpc(win: BrowserWindow): void {
     const entries = workspace && sessionId ? activeSkillEntries(workspace) : [];
     return {
       model: resolveSpawnModel(workspace, sessionId),
+      thinking: resolveSpawnThinking(sessionId),
       agentDir: agentDir(),
       providerEnv: providerEnv(),
       resumeFile,
@@ -3341,12 +3351,61 @@ export function registerIpc(win: BrowserWindow): void {
       if (!client || !model) return { live: false };
       try {
         const res = await client.send({ type: "set_model", provider: model.provider, modelId: model.modelId });
+        // §16 round 16: set_model RE-CLAMPS the thinking level upstream, so the
+        // user's choice has to be re-asserted or it changes underneath them
+        // with nothing on screen to say so.
+        const level = resolveSpawnThinking(sessionId);
+        if (level) await client.send({ type: "set_thinking_level", level }).catch(() => {});
         return { live: res.success !== false };
       } catch {
         return { live: false }; // persisted — applies on next spawn
       }
     }
   );
+
+  // §16 round 16 — the session tier. Mirrors hv:set-session-model verb for
+  // verb: persist so it survives hibernation and resume, apply live when a Pi
+  // is running, and report `live` so the UI can say "applies on restart"
+  // honestly instead of lying about a switch that did not happen.
+  ipcMain.handle(
+    "hv:set-session-thinking",
+    async (_e, sessionId: string, level: string | null): Promise<{ live: boolean }> => {
+      if (!index.get(sessionId)) throw new Error("Unknown session");
+      const valid = resolveThinking(level as never, null);
+      index.update(sessionId, { thinking: valid ?? undefined });
+      sessionsChanged();
+      const client = manager.get(sessionId) as PiClient | null;
+      if (!client || !valid) return { live: false };
+      try {
+        const res = await client.send({ type: "set_thinking_level", level: valid });
+        return { live: res.success !== false };
+      } catch {
+        return { live: false }; // persisted — applies on next spawn
+      }
+    }
+  );
+
+  ipcMain.handle("hv:set-default-thinking", (_e, level: string | null) => {
+    setDefaultThinking(resolveThinking(level as never, null));
+  });
+
+  ipcMain.handle("hv:get-default-thinking", () => getDefaultThinking());
+
+  // Per MODEL, not a fixed list: a model may support none at all, and the
+  // control then does not render — the rule the context gauge already follows
+  // for a model with no known window. A session with no live Pi cannot be
+  // asked, so it gets the full set and the picker stays usable.
+  ipcMain.handle("hv:get-thinking-levels", async (_e, sessionId?: string): Promise<string[]> => {
+    const client = sessionId ? (manager.get(sessionId) as PiClient | null) : null;
+    if (!client) return [...THINKING_LEVELS];
+    try {
+      const res = await client.send({ type: "get_available_thinking_levels" });
+      const levels = (res as { data?: { levels?: string[] } }).data?.levels;
+      return Array.isArray(levels) ? levels : [];
+    } catch {
+      return [...THINKING_LEVELS];
+    }
+  });
 
   // Image picker for the "+" attach menu — main-side dialog, images only.
   // Returns base64 + mimeType matching the RPC ImageContent shape (no data: prefix).

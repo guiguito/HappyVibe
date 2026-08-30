@@ -32,6 +32,11 @@ export const PI_MCP_ADAPTER_RELPATH = "node_modules/pi-mcp-adapter/index.ts";
 export interface PiSpawnOptions {
   /** Global default model (config.ts); falls back to the spike default. */
   model?: { provider: string; modelId: string } | null;
+  /** §16 round 16: session → global, resolved by resolveThinking. Passed
+   *  UNCONDITIONALLY when it resolves, which is what stops Pi's own
+   *  settings.json default (`defaultThinkingLevel`) being consulted at all —
+   *  the same reason --provider/--model never had this bug. */
+  thinking?: string | null;
   /** App-owned Pi agent dir → PI_CODING_AGENT_DIR (auth.json, models.json). */
   agentDir?: string;
   /** Provider API-key env vars (providers.ts buildProviderEnv). */
@@ -188,6 +193,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       "--no-themes",
       "--session-dir", sessionDir,
       ...(model ? ["--provider", model.provider, "--model", model.modelId] : []),
+      ...(opts.thinking ? ["--thinking", opts.thinking] : []),
     ],
     env: {
       // Env is passed through wholesale and inherited by pi-subagents child
