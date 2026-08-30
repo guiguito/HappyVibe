@@ -750,7 +750,7 @@ If either box shows the other's text, the extracted component is holding state a
 
 - [ ] **Step 7: Capture and record**
 
-Screenshot the page and the two Changes-panel states (wand present / wand gone). Record the run and its date in `docs/validation/RESULTS.md`.
+Screenshot the page and the two Changes-panel states (wand present / wand gone). Record a live-batch run in `docs/validation/live-runs.md`, **not** `RESULTS.md` — that file is explicitly historical ("the rows are deliberately not updated") and records the 2026-07-03 V1-V7 spike only.
 
 - [ ] **Step 8: Final gate, then check whether the live batch is owed**
 
