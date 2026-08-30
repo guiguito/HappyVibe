@@ -1,12 +1,6 @@
 # Changelog
 
-Everything that changed in HappyVibe, written for the person using it.
-
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the version
-numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) — see
-[§30 of the PRD](docs/prd.md) for what each number means here.
-
-## [Unreleased]
+## [0.1.0] — 2026-08-30
 
 The first build of HappyVibe: vibe coding you can actually watch.
 

@@ -31,13 +31,16 @@ describe("settings nav order", () => {
       "shortcuts",
       "stats",
       "audit",
+      // §30: product state like the two above it — what this build is, and what
+      // changed to get here. Last because it is the least often reached.
+      "changelog",
     ]);
   });
 
   test("every destination still has exactly one row", () => {
-    expect(NAV).toHaveLength(15);
-    expect(new Set(NAV.map((n) => n.view)).size).toBe(15);
-    expect(new Set(NAV.map((n) => n.label)).size).toBe(15);
+    expect(NAV).toHaveLength(16);
+    expect(new Set(NAV.map((n) => n.view)).size).toBe(16);
+    expect(new Set(NAV.map((n) => n.label)).size).toBe(16);
   });
 
   test("every row has a label and an icon — a blank row is a dead end", () => {

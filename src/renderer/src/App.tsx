@@ -10,6 +10,7 @@ import { SystemPromptView } from "./components/SystemPromptView";
 import { OnBehalfView } from "./components/OnBehalfView";
 import { DashboardView } from "./components/DashboardView";
 import { AuditView } from "./components/AuditView";
+import { ChangelogView } from "./components/ChangelogView";
 import { type TranscriptItem } from "./components/Transcript";
 import { type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
@@ -133,6 +134,22 @@ export default function App(): React.JSX.Element {
   // B7: onboarding wow-flow overlay. Shown once for a brand-new user's first
   // session (no prior sessions), re-openable from the Help affordance.
   const [onboarding, setOnboarding] = useState(false);
+  /**
+   * §30: the changelog dot. TRUE only when a version the user has ACTUALLY read
+   * differs from this one — never when nothing has been recorded, because that
+   * is a fresh install (or an existing install meeting this feature for the
+   * first time) and neither has been *updated*. That case is seeded silently
+   * below, which is why 0.1.0 shows a dot to nobody.
+   */
+  const [changelogUnread, setChangelogUnread] = useState(false);
+  // Decided once at startup. `null` = never recorded, so seed it and show
+  // nothing; only a version differing from one actually READ raises the dot.
+  useEffect(() => {
+    void window.hv.getLastSeenVersion().then((seen) => {
+      if (seen === null) void window.hv.setLastSeenVersion(__APP_VERSION__);
+      else setChangelogUnread(seen !== __APP_VERSION__);
+    });
+  }, []);
   // W1.4: workspace whose settings modal is open (gear on a sidebar workspace row).
   const [wsSettings, setWsSettings] = useState<string | null>(null);
   // W2.2: center tabs (chat + open files), PER-WORKSPACE — switching sessions
@@ -1695,6 +1712,12 @@ export default function App(): React.JSX.Element {
     void window.hv.setOnboardingSeen(true);
   };
 
+  // §30: opening the Changelog page IS reading it.
+  const markChangelogSeen = (): void => {
+    setChangelogUnread(false);
+    void window.hv.setLastSeenVersion(__APP_VERSION__);
+  };
+
   /**
    * Load a session's history (and start/resume its Pi process), once.
    *
@@ -2204,6 +2227,7 @@ export default function App(): React.JSX.Element {
           });
         }}
         settingsOpen={settingsOpen}
+        changelogUnread={changelogUnread}
         onToggleSettingsOpen={() => setSettingsOpen((o) => !o)}
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
@@ -2272,6 +2296,7 @@ export default function App(): React.JSX.Element {
         {activeView === "onBehalf" && <OnBehalfView />}
         {activeView === "stats" && <DashboardView workspaces={workspaces} />}
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
+        {activeView === "changelog" && <ChangelogView onSeen={markChangelogSeen} />}
         {activeView === "skills" && (
           <SkillsView
             sessionId={selectedId}
