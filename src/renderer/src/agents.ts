@@ -200,6 +200,36 @@ export function traceFromEnd(result: unknown): SubagentTrace {
 }
 
 /**
+ * §12 (2026-08-30): an inspect reply, mapped onto the rows the trace view
+ * already renders.
+ *
+ * `/subagents-inspect-rpc` answers from upstream's own artifacts and keeps
+ * working after the result has been delivered, which is exactly what a FINISHED
+ * async delegation's card needs — its sticky card is long gone and its
+ * `tool_execution_end` never carried a transcript.
+ *
+ * The three message kinds collapse into the two-field row `SubagentMessage`
+ * already is, the same way `traceFromEnd` folds upstream's compact `toolCalls`.
+ * Returns an EMPTY array when there is nothing to show: an empty card claiming
+ * a child ran is worse than no card at all.
+ */
+export function inspectToResults(
+  reply: {
+    finalOutput?: string;
+    messages?: Array<{ role: string; kind: "text" | "toolCall" | "toolResult"; text: string; name?: string }>;
+  },
+  agent: string,
+): SubagentResult[] {
+  const messages: SubagentMessage[] = (reply.messages ?? []).map((m) => ({
+    role: m.role,
+    text: m.kind === "text" ? m.text : `${m.name ?? m.kind} ${m.text}`.trim(),
+  }));
+  const finalOutput = reply.finalOutput?.trim() || undefined;
+  if (messages.length === 0 && !finalOutput) return [];
+  return [{ agent, messages, finalOutput }];
+}
+
+/**
  * Merge a final (end) trace onto the live (update) trace: the end carries the
  * outcome (model/usage/finalOutput) but NOT the transcript, so keep the update's
  * messages per agent and adopt the end's outcome fields. Matched by index (the
@@ -245,9 +275,49 @@ export function isSubagentTool(toolName: unknown): boolean {
  * rather than receiving a whole result. Hiding the poll does not hide the
  * delegation, its result, or the artifact read.)
  */
+/**
+ * Fields that mean "real work was requested". Derived from upstream's own launch
+ * classifier (`subagent-executor.ts` `classifyRun`: workflowScript → chain →
+ * tasks → agent), NOT invented here — a `chain`/`tasks` fan-out carries no
+ * top-level `agent`, so requiring one would hide a genuine multi-child run.
+ * `task` and `workflowScriptPath` join them as the public spellings of the same
+ * request. Pinned against upstream in `tests/pi-subagents-contract.test.ts`.
+ */
+export const SUBAGENT_WORK_FIELDS = ["agent", "task", "workflowScript", "workflowScriptPath", "chain", "tasks"] as const;
+
+/**
+ * Is this `subagent` call the model poking its own machinery rather than
+ * delegating?
+ *
+ * Reported twice. First as `subagent {action:"status", id}` drawing a delegation
+ * card with no agent and no task — literally "→ asked ?". Then again
+ * (2026-08-31) for a call carrying a control field but NO `action`, which the
+ * first version's "`action` must be present" rule sailed straight past.
+ *
+ * So the rule no longer enumerates machinery — it asks the one question with a
+ * bounded answer: **does this call request work?** `SubagentParamsLike` has 90
+ * fields and all but six are either plumbing or control, so listing the control
+ * ones was a treadmill that would fail on every benign pin bump while still
+ * missing the next one. Inverting means a new machinery field is handled the
+ * day upstream adds it, and only a new WORK field needs a decision — which the
+ * contract test forces by pinning this list against upstream's own classifier.
+ *
+ * The empty case is load-bearing and must stay `false`: pi-subagents sends **no
+ * args at all** on `tool_execution_end`, so treating "no work in args" as a
+ * query would suppress the END event and leave every real card stuck on
+ * "running" forever.
+ */
 export function isSubagentQuery(args: unknown): boolean {
-  const a = args as { action?: unknown; agent?: unknown } | undefined;
-  return typeof a?.action === "string" && a.action.trim() !== "" && typeof a?.agent !== "string";
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  const a = args as Record<string, unknown>;
+  const keys = Object.keys(a);
+  if (keys.length === 0) return false;
+  const requestsWork = SUBAGENT_WORK_FIELDS.some((f) => {
+    const v = a[f];
+    if (typeof v === "string") return v.trim() !== "";
+    return Array.isArray(v) ? v.length > 0 : false;
+  });
+  return !requestsWork;
 }
 
 // ── W1.2/V2.C1 delegation-run helpers ────────────────────────────────────────
@@ -328,6 +398,13 @@ export interface SubagentEvent {
   task?: string;
   asyncDir?: string;
   status?: "success" | "error" | "interrupted";
+  /**
+   * The completion's own one-liner, capped at 500 chars by the bridge. This is
+   * the only content the notify carries, and from 2026-08-30 it is what the
+   * TRANSCRIPT card's collapsed line shows once a run has finished — the field
+   * existed on the wire and had no reader.
+   */
+  summary?: string;
   activityState?: "long-running" | "needs_attention";
   runs?: Array<{ runId: string; agent?: string; task?: string; asyncDir?: string }>;
 }
@@ -397,6 +474,7 @@ export function asyncResultInfo(result: unknown): { asyncId: string } | null {
   const id = (result as { details?: { asyncId?: unknown } } | undefined)?.details?.asyncId;
   return typeof id === "string" && id ? { asyncId: id } : null;
 }
+
 
 const LABEL_MAX = 90;
 

@@ -1,49 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { visibleRuns, summaryLabel, STACK_CAP, type TerminalRun } from "../src/renderer/src/components/TerminalRunCard";
+import { formatElapsed } from "../src/renderer/src/components/TerminalRunCard";
 import { parseTerminalEvent } from "../src/renderer/src/agents";
 import { toolLabel } from "../src/renderer/src/toolLabel";
 
-const t = (id: string, title: string, running = true): TerminalRun => ({
-  terminalId: id,
-  title,
-  running,
-  intent: `run ${id}`,
-  startedAt: 0,
-});
+// §26 (2026-08-30): the stack cap and its "N running · titles" summary strip
+// are gone — every run is a circle in the shared rail now, and the rail's own
+// policy is pinned in tests/run-rail.test.ts. What is left here is the wire
+// shape and the labels, which the rail did not touch.
 
-describe("stack cap", () => {
-  it("shows up to two cards in full", () => {
-    const runs = [t("a", "vite"), t("b", "vitest")];
-    expect(visibleRuns(runs)).toEqual({ cards: runs, collapsed: [] });
+describe("formatElapsed", () => {
+  it("counts seconds, then minutes with a padded remainder", () => {
+    expect(formatElapsed(0)).toBe("0s");
+    expect(formatElapsed(59_999)).toBe("59s");
+    expect(formatElapsed(60_000)).toBe("1m 00s");
+    expect(formatElapsed(187_000)).toBe("3m 07s");
   });
 
-  // §26: a terminal card pins INDEFINITELY, unlike a delegation card which
-  // assumes termination — so without a cap three dev servers eat the chat.
-  it("collapses everything beyond two into a summary strip", () => {
-    const runs = [t("a", "vite"), t("b", "vitest"), t("c", "docker")];
-    const v = visibleRuns(runs);
-    expect(v.cards).toHaveLength(0);
-    expect(v.collapsed).toHaveLength(3);
-    expect(summaryLabel(v.collapsed)).toBe("3 running · vite, vitest, docker");
-  });
-
-  // The regression the design risks: closing one of three must return the stack
-  // to two FULL cards, not leave a strip still claiming three. Driving it off
-  // live state rather than a captured count is what makes that automatic.
-  it("returns to full cards when one of three exits", () => {
-    const runs = [t("a", "vite"), t("b", "vitest"), t("c", "docker", false)];
-    const v = visibleRuns(runs);
-    expect(v.collapsed).toHaveLength(0);
-    expect(v.cards.map((r) => r.terminalId)).toEqual(["a", "b"]);
-  });
-
-  it("drops exited terminals from the stack", () => {
-    const runs = [t("a", "vite"), t("b", "vitest", false)];
-    expect(visibleRuns(runs).cards.map((r) => r.terminalId)).toEqual(["a"]);
-  });
-
-  it("caps at two", () => {
-    expect(STACK_CAP).toBe(2);
+  it("never renders a negative elapsed", () => {
+    expect(formatElapsed(-5_000)).toBe("0s");
   });
 });
 

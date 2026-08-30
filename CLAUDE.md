@@ -607,6 +607,78 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   the tab context menu, FileTree) dismisses with a `fixed inset-0` click-catcher, which closes on
   CLICK and is therefore immune — this was the only blur-dismissed menu. Pinned by
   `tests/tabstrip-menu.test.ts`.
+- **An async delegation's transcript card is updated by the NOTIFY, not by its own tool result — and
+  the link between them exists for one instant.** `tool_execution_end` for `async:true` carries a
+  dispatch receipt (`details.asyncId`, no `results`), and the run finishes minutes later on an
+  `hv.subagent` `complete` notify that carries only the runId and **no toolCallId**. `App.tsx`'s
+  `asyncCards` ref (`asyncId → toolCallId`, per session) is captured at that end event **because
+  nothing else ever holds both ids again** — without it the card froze at "running in the
+  background" forever, which is how it shipped and how it was reported (2026-08-30, twenty minutes
+  after the run finished). Two corollaries, both about fields that existed with no reader. The
+  notify's `summary` (capped at 500 chars in the bridge) is the collapsed line now. And
+  `window.hv.subagentInspect` — built 2026-08-21, **zero renderer callers** until 2026-08-30 — is
+  what the EXPANDED card reads, because that end event never carried a transcript; it costs no model
+  turn, keeps working after delivery, and answers `foreign_session` after a respawn, which the card
+  must NAME rather than spin on. Related: `SubagentTraceView`'s "don't say waiting" guard was written
+  for the RESTORE path (`cost`) and had never once fired live, because nothing set `cost` on a live
+  **And a RESTORED card needs that id handed to it as a FIELD.** Every unit test fed a LIVE card
+  (`result.details.asyncId`), while `restore.ts` flattens a toolResult to its text blocks — so on the
+  one path where the fetch is actually needed (a live run streams its own transcript and never asks),
+  a reopened delegation had no id and expanded to an empty 125-char panel. Found ONLY by the GUI
+  pass. The id is structured on the message's `details` sibling, so it is READ there and carried
+  `restore.ts` → `restoreMap.ts` → `ToolCardData.asyncId`, never parsed back out of the flattened
+  text (which spells it inside `[brackets]`, not as JSON — a grep for `"asyncId"` matches `details`,
+  so the obvious regex could never have fired). `asyncResultInfo` stays structured-only on purpose:
+  it answers "still in flight" and raises the "running in the background" line, so teaching it the
+  restore shape re-opens the very bug this fixed. And remember `restoreMap.ts`'s own rule — a field
+  main sends that is not NAMED there is dropped in silence.
+  tool card. Pinned by `tests/delegation-card-outcome.test.ts` + `tests/subagent-inspect-card.test.ts`;
+  measurements in docs/validation/d1.md §The run rail.
+- **The sticky run rail's overlay is `absolute` inside a `sticky` container, and four traps are
+  already paid for.** (1) `absolute` positions against the nearest POSITIONED ancestor, so the
+  sticky wrapper carries `relative` — drop it and the card lands somewhere else entirely. (2) It
+  stays at **z-20**: it is a readout, not a modal, and `.hv-overlay`/`.hv-dialog` own 100 with
+  `tests/modal-layer.test.ts` guarding that scale. (3) There is **no `fixed inset-0` click-catcher**,
+  the idiom every other menu here uses — `browserCoverage.ts` gathers candidates by class word and
+  judges them by BOX, so a full-viewport catcher reads as covering every browser pane; dismissal is
+  toggle-the-same-avatar plus Escape. (4) The hover readout has **no gap** between circle and panel
+  (the `pt-1` is inside the hover target): a gap means the pointer leaves on the way in and the STOP
+  inside is unreachable, and that STOP is the whole point of the panel (§12's 2026-08-22 "spend on
+  the line that stops it", which a circle has no line for). The avatar's hue is an inline `style`,
+  never a computed Tailwind class — the JIT scanner never sees one and every circle renders
+  unstyled. Policy lives in `runRail.ts` (pure, `tests/run-rail.test.ts`); geometry and absences in
+  `tests/run-rail-layout.test.ts`. This replaced §26's `STACK_CAP`/`visibleRuns`/`summaryLabel` —
+  the rail is the shared cap that rule was written to avoid.
+- **A card the rail opens is ALREADY EXPANDED, and its top-right glyph is a ✕, not a chevron
+  (2026-08-31).** The first cut reused each card's own expand toggle, so a click opened a card that
+  was still shut — one click short of showing anything, which is exactly what the avatar was meant
+  to save. `DelegationRunCard` therefore has `const open = true` and no toggle state; the terminal
+  card mounts `LiveTerminal` unconditionally. **Both header titles are inert `<span>`s now** — on the
+  terminal card a stray click on the title used to dispose the emulator you had just opened. ✕ calls
+  `onClose` (back to the circle), which is deliberately NOT a stop: main owns the PTY and a
+  delegation keeps running. Two rules that look like oversights and are not: a **promoted**
+  (`needs_attention`) card is passed **no** `onClose`, because it has no circle to return to and
+  that state must not be dismissible; and `TerminalRunCard`'s collapsed branch is gone, with §26's
+  three-line tail moved to the rail's hover readout as `TerminalTail` — which must keep reading
+  `window.hv.termText` (main's rendered grid), never re-parse raw PTY bytes, or `sleep 600` renders
+  as `ssleep 600` again. Pinned by `tests/run-rail-layout.test.ts`.
+- **"→ asked ?" is a `subagent` call that requested no WORK, and the guard for it must invert on
+  work — never enumerate machinery.** Reported twice. First as `{action:"status", id}`; the fix
+  required `action` to be present, so the second report (2026-08-31) walked straight through it —
+  a call carrying a control field with **no `action` at all** (`{runId}`, `{resume}`, a steer).
+  `SubagentParamsLike` has **90 fields** and all but six are plumbing or control, so listing the
+  control ones is a treadmill that fails on every benign pin bump *and* still misses the next one.
+  `isSubagentQuery` therefore asks the one bounded question: does this call carry
+  `agent`/`task`/`workflowScript`/`workflowScriptPath`/`chain`/`tasks`? If not, it is machinery and
+  draws no card — so a control field upstream adds tomorrow is handled today. **Two things are
+  load-bearing.** Empty/absent args must stay NOT-a-query: pi-subagents sends **no args on
+  `tool_execution_end`**, so "no work in args ⇒ machinery" there would suppress the END event and
+  leave every real card stuck on "running" forever. And the work list is DERIVED from upstream's own
+  `classifyRun` (`subagent-executor.ts`: workflowScript → chain → tasks → agent), because a
+  `chain`/`tasks` fan-out carries **no top-level `agent`** — requiring one would hide a genuine
+  multi-child run. Pinned in `tests/pi-subagents-contract.test.ts` (group 8, against upstream's
+  source) + `tests/agents-renderer.test.ts`. The card's own fallback now reads "a subagent" rather
+  than `?`, so a shape that ever slips the guard degrades to a sentence.
 - **Portalling a dialog to the end of `<body>` does NOT put it on top.** Among POSITIONED elements
   an explicit z-index beats document order, so every `z-20`…`z-50` in the app painted above a Radix
   dialog whose z-index was `auto` — `.hv-overlay`/`.hv-dialog` were animation-only classes with no

@@ -12,9 +12,11 @@ import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type GaugeZone, type SessionStats } from "../context";
 import { childGauge } from "../subagentGauge";
 import { agentBlurb, delegationHint, formatElapsed, isStoppableChild, sortAgents, traceFor, type AgentInfo, type DelegationRun, type SubagentTrace } from "../agents";
+import { promotedKeys, toRunAvatars, RUN_STATE_RING, type RunAvatar } from "../runRail";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
-import { TerminalStack, type TerminalRun } from "./TerminalRunCard";
+import { TerminalRunCard, TerminalTail, type TerminalRun } from "./TerminalRunCard";
+import { type IconKind } from "../toolLabel";
 import { insertAtComposer } from "../composerText";
 import { MicButton } from "./MicButton";
 import { VoiceActivateModal } from "./VoiceActivateModal";
@@ -1025,25 +1027,28 @@ export function ChatView({
           scrollNonce={scrollNonce}
           header={
             delegations.length > 0 || terminalRuns.length > 0 ? (
-              // §26: the terminal stack is a SIBLING of the delegation stack in
-              // the same sticky container, and sits below it — the two must not
-              // fight for the pin, and a delegation is the shorter-lived of the
-              // two so it reads better on top.
-              <div className="sticky top-0 z-20 px-6">
-                {delegations.length > 0 && <DelegationSection runs={delegations} items={items} onStopRun={onStopRun} onStopChild={onStopChild} />}
-                {terminalRuns.length > 0 && terminalSettings && (
-                  <TerminalStack
-                    runs={terminalRuns}
-                    settings={terminalSettings}
-                    onStop={onStopTerminal!}
-                    onOpenAsTab={onOpenTerminalAsTab!}
-                  />
-                )}
+              // §12/§26 (2026-08-30): ONE rail for both families, replacing the
+              // two sibling stacks that used to share this container. `relative`
+              // is load-bearing — the rail's expanded overlay is `absolute` and
+              // positions against the nearest positioned ancestor, which is this
+              // container or nothing.
+              <div className="sticky top-0 z-20 px-6 relative max-w-3xl mx-auto w-full">
+                <RunRail
+                  runs={delegations}
+                  terminalRuns={terminalRuns}
+                  terminalSettings={terminalSettings}
+                  items={items}
+                  onStopRun={onStopRun}
+                  onStopChild={onStopChild}
+                  onStopTerminal={onStopTerminal}
+                  onOpenTerminalAsTab={onOpenTerminalAsTab}
+                />
               </div>
             ) : undefined
           }
           onRetry={onRetry}
           workspace={workspace}
+          sessionId={sessionId}
           onOpenFile={onOpenFile}
           onRewind={onRewind && !busy ? openRewind : undefined}
           onLoadEarlier={onLoadEarlier}
@@ -1490,22 +1495,81 @@ function StopIcon(): React.JSX.Element {
     the run ~2.5s after tool_execution_end, so collapse (~350ms) finishes first. */
 const OUTCOME_LINGER_MS = 1100;
 
+/** The overlay's own marker, so the layout test can find it by name. */
+const RUN_RAIL_OVERLAY = "absolute left-0 top-full mt-2 w-full max-w-2xl";
+
 /**
- * V2.C1: sticky in-flow delegation section — first child of the transcript
- * scroll container (`position: sticky; top: 0`): scrolls naturally, pins at
- * the top while subagents run. Concurrent runs stack vertically. Above the
- * transcript content (z-20), below modals/panels (z-40+).
+ * §12 / §26 (2026-08-30): both run families as one row of circles.
+ *
+ * Supersedes V2.C1's stacked delegation section and §26's capped terminal
+ * stack. A card was the resting state of something that is mostly BACKGROUND
+ * work — ~3 rows each, and the fleet round gave the delegation card a fourth,
+ * so two runs plus a terminal pushed the conversation off the screen. The
+ * circle is the resting state now; the card is what a click opens, unchanged.
+ *
+ * Three things are load-bearing and each has a comment where it lives: the
+ * overlay is `absolute` inside the sticky container (so it paints OVER the
+ * transcript instead of pushing it, which is what "overlay" was asked for) and
+ * therefore needs `relative` on that container; dismissal is toggle-only, never
+ * a `fixed inset-0` catcher, because browserCoverage.ts would read that as
+ * covering every browser pane; and a run needing attention is PROMOTED to a
+ * full card rather than waiting behind a click.
  */
-function DelegationSection({ runs, items, onStopRun, onStopChild }: { runs: DelegationRun[]; items: TranscriptItem[]; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void }): React.JSX.Element {
-  // §26: the `sticky top-0 z-20 px-6` wrapper moved OUT to the caller, so this
-  // section and the terminal stack share one pinned container instead of each
-  // pinning separately and overlapping.
-  return (
-    <div className="max-w-3xl mx-auto w-full flex flex-col">
-      {runs.map((run) => (
+function RunRail({
+  runs,
+  terminalRuns,
+  terminalSettings,
+  items,
+  onStopRun,
+  onStopChild,
+  onStopTerminal,
+  onOpenTerminalAsTab,
+}: {
+  runs: DelegationRun[];
+  terminalRuns: TerminalRun[];
+  terminalSettings?: HvTerminalSettings | null;
+  items: TranscriptItem[];
+  onStopRun?: (runId: string) => void;
+  onStopChild?: (runId: string, childId: string) => void;
+  onStopTerminal?: (terminalId: string) => void;
+  onOpenTerminalAsTab?: (terminalId: string) => void;
+}): React.JSX.Element | null {
+  const [open, setOpen] = useState<string | null>(null);
+  const [hover, setHover] = useState<string | null>(null);
+  const avatars = toRunAvatars(runs, terminalRuns);
+  const promoted = new Set(promotedKeys(avatars));
+
+  // Escape closes the overlay. The only dismissal besides clicking the same
+  // circle again — see the class comment on why there is no click-catcher.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setOpen(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  // A run that disappears (a delegation slides away 2.5s after completion, a
+  // terminal is killed) must not leave its overlay open over nothing.
+  const keys = avatars.map((a) => a.key).join("|");
+  useEffect(() => {
+    setOpen((o) => (o && !keys.split("|").includes(o) ? null : o));
+    setHover((h) => (h && !keys.split("|").includes(h) ? null : h));
+  }, [keys]);
+
+  if (avatars.length === 0) return null;
+
+  const cardFor = (key: string, closable: boolean): React.JSX.Element | null => {
+    const run = runs.find((r) => r.id === key);
+    if (run) {
+      return (
         <DelegationRunCard
-          key={run.id}
           run={run}
+          // A PROMOTED card has no circle to return to, so it gets no ✕ — the
+          // run needs attention and closing it would hide the one state that
+          // must not be dismissible (PRD §12, 2026-08-30).
+          onClose={closable ? () => setOpen(null) : undefined}
           // Foreground runs stream their child transcript onto the in-flow tool
           // card; async (detached) runs have none — their live progress rides
           // run.live from the status poller instead.
@@ -1513,8 +1577,143 @@ function DelegationSection({ runs, items, onStopRun, onStopChild }: { runs: Dele
           onStopRun={onStopRun}
           onStopChild={onStopChild}
         />
-      ))}
+      );
+    }
+    const t = terminalRuns.find((x) => x.terminalId === key);
+    if (!t || !terminalSettings || !onStopTerminal || !onOpenTerminalAsTab) return null;
+    return (
+      <TerminalRunCard
+        run={t}
+        settings={terminalSettings}
+        // The rail IS the collapsed state, so the card it opens is the expanded
+        // one and ✕ goes back to the circle. Exactly one is ever mounted, which
+        // is what makes hosting a live emulator affordable (§26).
+        onClose={() => setOpen(null)}
+        onStop={onStopTerminal}
+        onOpenAsTab={onOpenTerminalAsTab}
+      />
+    );
+  };
+
+  return (
+    <div className="w-full flex flex-col">
+      {/* Attention takes SPACE, not a click. */}
+      {avatars
+        .filter((a) => promoted.has(a.key))
+        .map((a) => (
+          <div key={`promoted-${a.key}`}>{cardFor(a.key, false)}</div>
+        ))}
+      <div className="pt-3 flex items-center gap-2 flex-wrap">
+        {avatars
+          .filter((a) => !promoted.has(a.key))
+          .map((a) => (
+            <div
+              key={a.key}
+              className="relative"
+              onMouseEnter={() => setHover(a.key)}
+              onMouseLeave={() => setHover((h) => (h === a.key ? null : h))}
+            >
+              <button
+                type="button"
+                onClick={() => setOpen((o) => (o === a.key ? null : a.key))}
+                aria-expanded={open === a.key}
+                aria-label={`${a.name}${a.caption ? ` — ${a.caption}` : ""} (${a.state})`}
+                // The hue is INLINE, not a class: Tailwind's scanner never sees
+                // a computed class name and would emit nothing.
+                style={{ backgroundColor: `hsl(${a.hue} 70% 92%)`, color: `hsl(${a.hue} 60% 30%)` }}
+                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer ${RUN_STATE_RING[a.state]}`}
+              >
+                <ToolIcon kind={(a.kind === "agent" ? "robot" : "terminal") as IconKind} className="size-4" />
+              </button>
+              {hover === a.key && open !== a.key && (
+                // No gap between the circle and this panel: a gap means the
+                // mouse leaves on the way in and the STOP inside is
+                // unreachable. The `pt-1` is INSIDE the hover target.
+                <div className="absolute left-0 top-full pt-1 z-20 w-72">
+                  <div className="rounded-lg border-2 border-line bg-card shadow-sticker-lg px-3 py-2 flex flex-col gap-1">
+                    <span className="text-sm font-black text-tangerine-deep break-words">{a.name}</span>
+                    {a.caption && <span className="text-xs text-ink-soft break-words">{a.caption}</span>}
+                    <RunFacts avatar={a} runs={runs} terminalRuns={terminalRuns} />
+                    {/* §26 (2026-08-31): what that terminal is actually printing.
+                        This was the collapsed card's body; the circle is the
+                        collapsed state now, so it lives here. Mounted only while
+                        hovered, so it polls in bursts rather than forever. */}
+                    {a.kind === "terminal" && <TerminalTail terminalId={a.key} />}
+                    <div className="flex items-center gap-2 pt-0.5">
+                      {a.state === "working" && (
+                        <button
+                          type="button"
+                          // mousedown, not click: this control lives inside a
+                          // surface that can vanish, and a click that arrives
+                          // after the unmount lands on nothing.
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            if (a.kind === "agent") onStopRun?.(a.key);
+                            else onStopTerminal?.(a.key);
+                          }}
+                          title={a.kind === "agent" ? "Stop this subagent" : "Stop this terminal and the process in it"}
+                          className="rounded-md border border-berry/50 text-berry px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide hover:bg-berry/10 cursor-pointer"
+                        >
+                          ◼ Stop
+                        </button>
+                      )}
+                      <span className="text-[10px] uppercase tracking-wide text-ink-soft">{a.state}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+      </div>
+      {open && !promoted.has(open) && <div className={`${RUN_RAIL_OVERLAY} z-20`}>{cardFor(open, true)}</div>}
     </div>
+  );
+}
+
+/**
+ * The numbers the card's header used to carry, now in the hover readout: PRD
+ * §12's 2026-08-22 decision put a running delegation's spend "on the line that
+ * stops it", and an avatar has no line — this panel is that line.
+ */
+function RunFacts({
+  avatar,
+  runs,
+  terminalRuns,
+}: {
+  avatar: RunAvatar;
+  runs: DelegationRun[];
+  terminalRuns: TerminalRun[];
+}): React.JSX.Element | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const run = avatar.kind === "agent" ? runs.find((r) => r.id === avatar.key) : undefined;
+  const term = avatar.kind === "terminal" ? terminalRuns.find((t) => t.terminalId === avatar.key) : undefined;
+  const startedAt = run?.startedAt ?? term?.startedAt;
+  if (startedAt == null) return null;
+  const gauge = run && run.status === "running" ? childGauge(run.live?.context) : null;
+  return (
+    <span className="flex items-center gap-2 flex-wrap font-mono text-[11px] text-ink-soft tabular-nums">
+      <span title="Elapsed time">{formatElapsed(now - startedAt)}</span>
+      {run?.live?.currentTool && <span className="truncate">{run.live.currentTool}</span>}
+      {/* Absent until the child's first turn is billed — never a $0.00 standing
+          in for "not measured yet". */}
+      {run?.live?.cost && (
+        <span>
+          {fmtNum(run.live.cost.input + run.live.cost.output)} tok · {costEstimateLabel(run.live.cost)}
+        </span>
+      )}
+      {gauge && (
+        <span
+          title={`This subagent's context window: ${gauge.label} tokens`}
+          className={`rounded-full border px-1.5 py-0.5 text-[10px] font-bold ${GAUGE_TONE[gauge.zone]}`}
+        >
+          {gauge.text}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -1537,10 +1736,17 @@ export const GAUGE_TONE: Record<GaugeZone, string> = {
  * brief done/failed state, then a height-collapse slide-away; the in-flow call
  * line + result remain in the transcript as the record.
  */
-function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: DelegationRun; trace?: SubagentTrace; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void }): React.JSX.Element {
+function DelegationRunCard({ run, trace, onClose, onStopRun, onStopChild }: { run: DelegationRun; trace?: SubagentTrace; onClose?: () => void; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void }): React.JSX.Element {
   const running = run.status === "running";
   const attention = running && run.live?.activityState === "needs_attention";
-  const [open, setOpen] = useState(false);
+  /**
+   * §12 (2026-08-31): the card IS the expanded state, so there is no collapsed
+   * one to toggle back to — the rail's circle is what "collapsed" means now, and
+   * a card that opened shut was one click short of showing anything. The header
+   * is therefore inert and the top-right control CLOSES (back to the circle)
+   * rather than collapsing in place.
+   */
+  const open = true;
   const [leaving, setLeaving] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -1607,19 +1813,13 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
         <div className="pt-3">
           <div className={`rounded-xl border-2 bg-card shadow-sticker-lg overflow-hidden ${border}`}>
             <div className="w-full flex items-start gap-3 px-4 py-2.5 text-sm font-semibold">
-              <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                aria-expanded={open}
-                title={open ? "Collapse the subagent details" : "See what the subagent is doing"}
-                className="flex-1 min-w-0 flex items-start gap-3 text-left cursor-pointer"
-              >
+              <span className="flex-1 min-w-0 flex items-start gap-3 text-left">
                 <span className={`mt-1 size-2.5 rounded-full shrink-0 ${dot}`} />
                 <ToolIcon kind="robot" className="mt-0.5 size-4 shrink-0 text-sky" />
                 <span className="flex-1 min-w-0 break-words">
                   <span className="font-black text-tangerine-deep">{run.agent}</span>
                 </span>
-              </button>
+              </span>
               {/* §12 (2026-08-29): how full this sub-agent's head is. Zones are
                   the session gauge's own (subagentGauge.ts reuses zoneOf), so
                   amber means the same thing on both. Absent when the model has
@@ -1664,15 +1864,17 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                   ◼ Stop
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                aria-hidden
-                tabIndex={-1}
-                className="shrink-0 text-[11px] text-ink-soft cursor-pointer"
-              >
-                {open ? "▾" : "▸"}
-              </button>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  title="Close — the run keeps going, and its circle stays in the row"
+                  aria-label="Close this run's card"
+                  className="shrink-0 text-sm leading-none text-ink-soft hover:text-ink cursor-pointer px-0.5"
+                >
+                  ✕
+                </button>
+              )}
             </div>
             {/* §12 (2026-08-29): the intent moved OFF the header row. The header
                 now carries the context gauge alongside elapsed/tokens/cost, and
@@ -1680,17 +1882,10 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                 It stays part of the expand control, so the whole card still
                 toggles wherever you click it. */}
             {run.label && (
-              <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                aria-expanded={open}
-                title={open ? "Collapse the subagent details" : "See what the subagent is doing"}
-                className="w-full text-left px-4 pb-2.5 -mt-1 text-sm font-medium text-ink-soft break-words cursor-pointer"
-              >
+              <p className="w-full text-left px-4 pb-2.5 -mt-1 text-sm font-medium text-ink-soft break-words">
                 {run.label}
-              </button>
+              </p>
             )}
-            {running && !open && <div className={`h-1 ${attention ? "bg-tangerine/40" : "hv-shimmer"}`} aria-hidden />}
             {open && (
               <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 max-h-72 overflow-y-auto flex flex-col gap-3">
                 {run.kind === "fg" ? (

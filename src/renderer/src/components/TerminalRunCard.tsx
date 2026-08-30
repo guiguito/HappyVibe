@@ -16,7 +16,7 @@ import { fontStack } from "../../../main/terminalSettings";
  * its sibling (same anatomy, terminal glyph instead of the robot).
  *
  * Three things differ, because a terminal is not a subagent:
- *   1. it does not end on its own, so the stack is CAPPED (see visibleRuns);
+ *   1. it does not end on its own, so it never leaves the rail by itself;
  *   2. its content is a byte stream, so only the EXPANDED card hosts a live
  *      emulator — collapsed is a cheap text tail;
  *   3. it takes keyboard input, ungated.
@@ -33,140 +33,46 @@ export interface TerminalRun {
 }
 
 /**
- * §26: two cards, then a strip.
+ * §26 (2026-08-30): the cap and the summary strip are gone.
  *
- * The delegation card assumes termination — it lingers after completion and
- * slides away. A terminal card pins INDEFINITELY, which is exactly what a dev
- * server needs and exactly what would eat the transcript at three of them.
+ * They existed because a shared cap would have changed how delegation cards
+ * behave, which was out of that round's scope — the avatar row IS that shared
+ * treatment, arrived at deliberately (PRD §26, 2026-08-30). A row of circles is
+ * already the summary the strip stood in for, and it stays legible past three.
  *
- * Terminal-only, NOT shared with delegation cards: a shared cap would change
- * how subagent cards behave, which is outside this feature and a behaviour
- * people are used to. Worst case is two terminal rows plus live delegations.
+ * `formatElapsed` stays exported: the rail's hover readout uses it.
  */
-export const STACK_CAP = 2;
-
-export function visibleRuns(runs: TerminalRun[]): { cards: TerminalRun[]; collapsed: TerminalRun[] } {
-  const live = runs.filter((r) => r.running);
-  return live.length > STACK_CAP ? { cards: [], collapsed: live } : { cards: live, collapsed: [] };
-}
-
-export function summaryLabel(runs: TerminalRun[]): string {
-  return `${runs.length} running · ${runs.map((r) => r.title).join(", ")}`;
-}
-
 export function formatElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 }
 
-/** The sticky stack. Rendered beside DelegationSection, below it. */
-export function TerminalStack({
-  runs,
-  settings,
-  onStop,
-  onOpenAsTab,
-}: {
-  runs: TerminalRun[];
-  settings: HvTerminalSettings;
-  onStop: (terminalId: string) => void;
-  onOpenAsTab: (terminalId: string) => void;
-}): React.JSX.Element | null {
-  // Only ONE expanded card at a time, so only one emulator is ever mounted.
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [stripOpen, setStripOpen] = useState(false);
-  const { cards, collapsed } = visibleRuns(runs);
-  if (!cards.length && !collapsed.length) return null;
-
-  return (
-    <div className="max-w-3xl mx-auto w-full flex flex-col">
-      {cards.map((run) => (
-        <TerminalRunCard
-          key={run.terminalId}
-          run={run}
-          settings={settings}
-          open={expanded === run.terminalId}
-          onToggle={() => setExpanded((e) => (e === run.terminalId ? null : run.terminalId))}
-          onStop={onStop}
-          onOpenAsTab={onOpenAsTab}
-        />
-      ))}
-      {collapsed.length > 0 && (
-        <div className="pt-3">
-          <button
-            type="button"
-            onClick={() => setStripOpen((o) => !o)}
-            aria-expanded={stripOpen}
-            title="See the running terminals"
-            className="w-full rounded-xl border-2 border-tangerine/60 bg-card shadow-sticker-lg px-4 py-2.5 text-sm font-semibold flex items-center gap-3 text-left cursor-pointer"
-          >
-            <span className="size-2.5 rounded-full shrink-0 bg-tangerine animate-pulse" />
-            <ToolIcon kind="terminal" className="size-4 shrink-0 text-tangerine-deep" />
-            <span className="flex-1 min-w-0 break-words">{summaryLabel(collapsed)}</span>
-            <span className="shrink-0 text-[11px] text-ink-soft">{stripOpen ? "▾" : "▸"}</span>
-          </button>
-          {stripOpen && (
-            <div className="flex flex-col">
-              {collapsed.map((run) => (
-                <TerminalRunCard
-                  key={run.terminalId}
-                  run={run}
-                  settings={settings}
-                  open={expanded === run.terminalId}
-                  onToggle={() => setExpanded((e) => (e === run.terminalId ? null : run.terminalId))}
-                  onStop={onStop}
-                  onOpenAsTab={onOpenAsTab}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TerminalRunCard({
-  run,
-  settings,
-  open,
-  onToggle,
-  onStop,
-  onOpenAsTab,
-}: {
-  run: TerminalRun;
-  settings: HvTerminalSettings;
-  open: boolean;
-  onToggle: () => void;
-  onStop: (terminalId: string) => void;
-  onOpenAsTab: (terminalId: string) => void;
-}): React.JSX.Element {
-  const [now, setNow] = useState(() => Date.now());
+/**
+ * §26 (2026-08-31): the cheap three-line tail, now in the RAIL's hover readout.
+ *
+ * It used to be the collapsed card's body; the circle is the collapsed state
+ * now, so this is where "what is that terminal actually doing" belongs. Only
+ * mounted while a circle is hovered, so it polls for a second or two at a time
+ * rather than continuously.
+ *
+ * It reads MAIN's rendered grid rather than accumulating raw PTY bytes here, and
+ * that is not fastidiousness. The first version did accumulate bytes and
+ * stripped CSI escapes with a regex, which leaves CONTROL characters behind:
+ * zsh's line editor writes `s`, then a backspace, then rewrites the line, so
+ * `sleep 600` rendered as `ssleep 600` in the card while the terminal itself was
+ * perfectly fine. §26's whole reason for a headless mirror is that a second
+ * parser over raw bytes gets this wrong — so there is not one.
+ *
+ * ponytail: polled at 1s. The push channel could trigger it instead, but a
+ * firehose would then re-read on every chunk; upgrade to a debounced push if a
+ * 1s tail ever feels stale.
+ */
+export function TerminalTail({ terminalId }: { terminalId: string }): React.JSX.Element | null {
   const [tail, setTail] = useState<string[]>([]);
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  // Collapsed: a cheap three-line tail, the same treatment tool-card output
-  // gets. Never an emulator — three of those in a sticky stack is three live
-  // terminals rendering a firehose nobody is looking at.
-  //
-  // It reads MAIN's rendered grid rather than accumulating raw PTY bytes here,
-  // and that is not fastidiousness. The first version did accumulate bytes and
-  // stripped CSI escapes with a regex, which leaves CONTROL characters behind:
-  // zsh's line editor writes `s`, then a backspace, then rewrites the line, so
-  // `sleep 600` rendered as `ssleep 600` in the card while the terminal itself
-  // was perfectly fine. §26's whole reason for a headless mirror is that a
-  // second parser over raw bytes gets this wrong — so there is not one.
-  //
-  // ponytail: polled at 1s while collapsed. The push channel could trigger it
-  // instead, but a firehose would then re-read on every chunk; upgrade to a
-  // debounced push if a 1s tail ever feels stale.
-  useEffect(() => {
-    if (open) return;
     let alive = true;
     const pull = (): void => {
-      void window.hv.termText(run.terminalId, 3).then((text) => {
+      void window.hv.termText(terminalId, 3).then((text) => {
         if (!alive) return;
         setTail((text ?? "").split("\n").filter((l) => l.trim().length > 0).slice(-3));
       });
@@ -177,19 +83,44 @@ function TerminalRunCard({
       alive = false;
       clearInterval(t);
     };
-  }, [open, run.terminalId]);
+  }, [terminalId]);
+  if (!tail.length) return null;
+  return (
+    <pre className="rounded border border-line bg-paper-deep/60 px-2 py-1 text-[10px] font-mono text-ink-soft whitespace-pre-wrap break-words max-h-16 overflow-hidden">
+      {tail.join("\n")}
+    </pre>
+  );
+}
+
+export function TerminalRunCard({
+  run,
+  settings,
+  onClose,
+  onStop,
+  onOpenAsTab,
+}: {
+  run: TerminalRun;
+  settings: HvTerminalSettings;
+  /** Back to the circle. The PTY is untouched — main owns it (§26). */
+  onClose: () => void;
+  onStop: (terminalId: string) => void;
+  onOpenAsTab: (terminalId: string) => void;
+}): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <div className="pt-3">
       <div className="rounded-xl border-2 border-tangerine/60 bg-card shadow-sticker-lg overflow-hidden">
         <div className="w-full flex items-start gap-3 px-4 py-2.5 text-sm font-semibold">
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded={open}
-            title={open ? "Collapse this terminal" : "Open this terminal — you can type in it"}
-            className="flex-1 min-w-0 flex items-start gap-3 text-left cursor-pointer"
-          >
+          {/* §26 (2026-08-31): inert. The card IS the expanded state — the rail's
+              circle is what "collapsed" means — so there is nothing to toggle,
+              and a stray click on the title used to close the emulator you had
+              just opened. */}
+          <span className="flex-1 min-w-0 flex items-start gap-3 text-left">
             <span className="mt-1 size-2.5 rounded-full shrink-0 bg-tangerine animate-pulse" />
             {/* The terminal glyph, not the robot: this is a running COMMAND. */}
             <ToolIcon kind="terminal" className="mt-0.5 size-4 shrink-0 text-tangerine-deep" />
@@ -197,12 +128,11 @@ function TerminalRunCard({
               <span className="font-black text-tangerine-deep">{run.title}</span>
               {run.intent && <span className="text-ink-soft font-medium"> — {run.intent}</span>}
             </span>
-          </button>
+          </span>
           <span className="font-mono text-xs text-ink-soft tabular-nums shrink-0" title="Elapsed time">
             {formatElapsed(now - run.startedAt)}
           </span>
-          {open && (
-            <button
+          <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
@@ -213,7 +143,6 @@ function TerminalRunCard({
             >
               Open as tab
             </button>
-          )}
           {/* No confirmation: the human can always kill an agent terminal (§26). */}
           <button
             type="button"
@@ -226,21 +155,17 @@ function TerminalRunCard({
           >
             ◼ Stop
           </button>
-          <button type="button" onClick={onToggle} aria-hidden tabIndex={-1} className="shrink-0 text-[11px] text-ink-soft cursor-pointer">
-            {open ? "▾" : "▸"}
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close — the terminal keeps running, and its circle stays in the row"
+            aria-label="Close this terminal's card"
+            className="shrink-0 text-sm leading-none text-ink-soft hover:text-ink cursor-pointer px-0.5"
+          >
+            ✕
           </button>
         </div>
-        {!open && (
-          <>
-            <div className="h-1 hv-shimmer" aria-hidden />
-            {tail.length > 0 && (
-              <pre className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2 text-[11px] font-mono text-ink-soft whitespace-pre-wrap break-words">
-                {tail.join("\n")}
-              </pre>
-            )}
-          </>
-        )}
-        {open && <LiveTerminal terminalId={run.terminalId} settings={settings} />}
+        <LiveTerminal terminalId={run.terminalId} settings={settings} />
       </div>
     </div>
   );

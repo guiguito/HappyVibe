@@ -303,19 +303,23 @@ describe("delegationLabel", () => {
     // rather than dropped. Pinned as a source scan (the renderer suite has no DOM):
     // the old `delete next[t.toolCallId]` with no re-key is the bug.
     const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
-    const block = app.slice(app.indexOf("const detached = asyncResultInfo(t.result)"));
-    expect(block.slice(0, 1200)).toMatch(/next\[detached\.asyncId\]\s*=/);
+    // The window is generous on purpose: it exists to exclude the REST of the
+    // file, not to measure this branch's length. 2026-08-30 added the
+    // asyncId → toolCallId capture at the top of this same branch and a 1200
+    // char window failed on comment text alone.
+    const block = app.slice(app.indexOf("const detached = asyncResultInfo(t.result)"), app.indexOf("// Foreground (async:false)"));
+    expect(block).toMatch(/next\[detached\.asyncId\]\s*=/);
     // Still idempotent against a `started` notify that DID arrive — but it no
     // longer lets that notify's caption WIN. 2026-08-29: `subagent:async-started`
     // carries no tool call id, so two same-agent delegations in one turn cannot be
     // told apart there, and a real session had a Beat Saber run captioned
     // "Minesweeper". `fg.label`/`fg.agent` come from tool_execution_start's own
     // args and are exact per call, so the merge prefers them over the guess.
-    expect(block.slice(0, 1200), "an already-raised card is merged, not replaced")
+    expect(block, "an already-raised card is merged, not replaced")
       .toMatch(/const raised = next\[detached\.asyncId\]/);
-    expect(block.slice(0, 1200), "the exact label wins over the notify's")
+    expect(block, "the exact label wins over the notify's")
       .toMatch(/label: fg\.label \|\| raised\.label/);
-    expect(block.slice(0, 1200), "and so does the exact agent")
+    expect(block, "and so does the exact agent")
       .toMatch(/agent: fg\.agent \|\| raised\.agent/);
   });
 
@@ -452,26 +456,62 @@ describe("traceFor (V2.C1 sticky-section trace lookup)", () => {
 });
 
 describe("a subagent status poll is not a delegation", () => {
-  // Reported from a real session: one delegation produced FOUR tool calls, and the
-  // third — `subagent {action:"status", id}` — drew a delegation card with no agent
-  // and no task, rendering literally "→ asked ?". It is the model polling its own
-  // machinery, not work anyone asked for.
-  test("recognises the poll the model actually sent", () => {
+  // Reported TWICE. First as `subagent {action:"status", id}` drawing a delegation
+  // card with no agent and no task — literally "→ asked ?". Then again on
+  // 2026-08-31 for a call carrying a control field with NO `action`, which the
+  // first rule ("action must be present") sailed straight past. The guard now
+  // asks the one question with a bounded answer: does this call request WORK?
+  test("recognises the polls the model actually sent", () => {
     expect(isSubagentQuery({ action: "status", id: "7753ae03" })).toBe(true);
     expect(isSubagentQuery({ action: "list" })).toBe(true);
   });
 
+  test("recognises machinery that carries NO action — the 2026-08-31 report", () => {
+    // Every one of these is the model poking its own run, and every one of them
+    // rendered "→ asked ?" under the old action-must-be-present rule.
+    expect(isSubagentQuery({ runId: "22f70b6d" })).toBe(true);
+    expect(isSubagentQuery({ id: "22f70b6d" })).toBe(true);
+    expect(isSubagentQuery({ childId: "c1" })).toBe(true);
+    expect(isSubagentQuery({ resume: "22f70b6d" })).toBe(true);
+    expect(isSubagentQuery({ message: "keep going", runId: "r1" })).toBe(true);
+    expect(isSubagentQuery({ view: "fleet" })).toBe(true);
+    // …and anything upstream adds later, without this file changing: the rule is
+    // "no work requested", not a list of control fields.
+    expect(isSubagentQuery({ someFutureControlField: true })).toBe(true);
+  });
+
   test("never hides a real delegation", () => {
-    // The delegation from the same session.
     expect(isSubagentQuery({ agent: "code-explorer", task: "Explore the architecture" })).toBe(false);
-    // Conservative on purpose: pi-subagents 0.50 sends NO args on
-    // tool_execution_end, so "no agent" alone would suppress genuine work.
-    expect(isSubagentQuery(undefined)).toBe(false);
-    expect(isSubagentQuery({})).toBe(false);
-    // An action that also names an agent is a dispatch, not a query.
+    // An action that also names an agent is a dispatch, not a query — unchanged.
     expect(isSubagentQuery({ action: "run", agent: "code-explorer" })).toBe(false);
-    // A blank action is not an action.
-    expect(isSubagentQuery({ action: "   " })).toBe(false);
+    // A fan-out carries NO top-level agent (upstream's classifyRun), so these
+    // must survive or a real multi-child run loses its card.
+    expect(isSubagentQuery({ tasks: [{ agent: "a", task: "x" }] })).toBe(false);
+    expect(isSubagentQuery({ chain: [{ agent: "a", task: "x" }] })).toBe(false);
+    expect(isSubagentQuery({ workflowScript: "await agent('x')" })).toBe(false);
+    expect(isSubagentQuery({ workflowScriptPath: "./wf.js" })).toBe(false);
+  });
+
+  test("EMPTY args are never a query, and that is load-bearing", () => {
+    // pi-subagents sends NO args on tool_execution_end. Treating "no work in
+    // args" as a query there would suppress the END event and leave every real
+    // card stuck on "running" forever.
+    expect(isSubagentQuery(undefined)).toBe(false);
+    expect(isSubagentQuery(null)).toBe(false);
+    expect(isSubagentQuery({})).toBe(false);
+    // Not an object at all — never a query.
+    expect(isSubagentQuery("status")).toBe(false);
+    expect(isSubagentQuery([])).toBe(false);
+  });
+
+  test("a blank work value does not count as work", () => {
+    // `{agent:"   "}` names nobody. Under the old rule this drew a card titled
+    // with whitespace; it is machinery-shaped and gets none.
+    expect(isSubagentQuery({ agent: "   " })).toBe(true);
+    expect(isSubagentQuery({ task: "" })).toBe(true);
+    expect(isSubagentQuery({ tasks: [] })).toBe(true);
+    // A blank action with nothing else is likewise not a delegation.
+    expect(isSubagentQuery({ action: "   " })).toBe(true);
   });
 
   test("App.tsx suppresses the card, beside the wait tool it belongs with", () => {
@@ -482,6 +522,14 @@ describe("a subagent status poll is not a delegation", () => {
     const guard = app.indexOf("isSubagentQuery(");
     expect(guard).toBeGreaterThan(0);
     expect(guard).toBeLessThan(app.indexOf('e.type === "tool_execution_start"'));
+  });
+
+  test("the card's own fallback is a phrase, not a glyph", () => {
+    // Belt and braces: if a shape ever slips the guard, the card must not read
+    // "→ asked ?" — that literal is what got reported, twice.
+    const card = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "ToolCard.tsx"), "utf8");
+    expect(card).not.toContain('results[0]?.agent ?? "?"');
+    expect(card).toContain('results[0]?.agent ?? "a subagent"');
   });
 });
 

@@ -41,6 +41,9 @@ export type RestoredMessage =
       imagesDropped?: boolean;
       /** §12/§19: what this delegation cost, re-derived by main. */
       subagentCost?: HvLedgerTotal;
+      /** §12 (2026-08-30): an async delegation's run id, so a reopened card can
+       *  inspect its child's transcript. */
+      asyncId?: string;
     }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
@@ -75,6 +78,10 @@ export function toTranscriptItems(
           // child's own session files. Named here for this module's header
           // reason — an unlisted field is dropped in silence.
           cost: m.subagentCost,
+          // §12 (2026-08-30): and the run id, for the same reason. Without it a
+          // reopened delegation expands to an empty panel — it has no id to ask
+          // upstream for its child's transcript with.
+          asyncId: m.asyncId,
         },
       };
     }
