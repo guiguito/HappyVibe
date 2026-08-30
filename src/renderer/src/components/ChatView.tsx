@@ -409,6 +409,16 @@ export function ChatView({
   // when it changes. Starts at 0, whose initial effect run is what makes a
   // freshly opened session land at the bottom rather than at the top.
   const [scrollNonce, setScrollNonce] = useState(0);
+  /**
+   * §7 round 16 — bumped on send, so Transcript remounts the thinking blocks
+   * and any the user opened close again. The decision is explicitly "collapsed
+   * by default EACH TIME you send", not just on first render.
+   *
+   * It lives HERE rather than in App on purpose: ChatView is mounted per
+   * session, so sending in one session cannot collapse another's reasoning.
+   * A single counter in App would be global and would do exactly that.
+   */
+  const [collapseNonce, setCollapseNonce] = useState(0);
   const showPlanPill = !!activePlan && showsPlanPill(activePlan.status);
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
   const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
@@ -637,6 +647,8 @@ export function ChatView({
     // guarded by isNearBottom — that guard exists to protect a reader scrolling
     // back mid-response, which is a different act from pressing send.
     setScrollNonce((n) => n + 1);
+    setCollapseNonce((n) => n + 1); // §7 round 16: re-collapse this session's thinking
+
     onClearPageRefs?.();
     setInput("");
     setAttachments([]);
@@ -1054,6 +1066,7 @@ export function ChatView({
           streaming={streaming}
           busy={busy}
           scrollNonce={scrollNonce}
+          collapseNonce={collapseNonce}
           header={
             delegations.length > 0 || terminalRuns.length > 0 ? (
               // §12/§26 (2026-08-30): ONE rail for both families, replacing the
@@ -1803,10 +1816,12 @@ function DelegationRunCard({ run, trace, onClose, onStopRun, onStopChild }: { ru
   /**
    * §12 (2026-08-29): the child's own reasoning, fetched only when asked.
    *
-   * This is the app's FIRST thinking surface — the main agent's reasoning is
-   * not rendered anywhere — so it is off by default and costs nothing until
-   * opened. Toggling OFF clears rather than caching, so re-opening a running
-   * child re-reads and shows what it is thinking now, not what it thought.
+   * The sub-agent card was the app's FIRST thinking surface; round 16 gave the
+   * main agent its own (Transcript's ThinkingBlock), so that asymmetry is gone.
+   * This one stays distinct: a child's reasoning lives in its own transcript
+   * file and is read on demand, where the parent's arrives on the stream.
+   * Toggling OFF clears rather than caching, so re-opening a running child
+   * re-reads and shows what it is thinking now, not what it thought.
    */
   /**
    * The child's reasoning, interleaved with the calls it produced — shown

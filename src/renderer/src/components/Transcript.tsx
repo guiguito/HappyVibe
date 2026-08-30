@@ -88,6 +88,10 @@ export type TranscriptItem = { id?: number } & (
   // `title` is hover-only detail that must NOT widen the pill — round 16: the
   // provider's error message lives here, not in `text`.
   | { kind: "notice"; text: string; pending?: boolean; title?: string }
+  // §7 round 16: the agent's own reasoning. Collapsed by default and
+  // re-collapsed on every send — the flow still reads as high-level working
+  // state, and the reasoning is one click away for the turn you care about.
+  | { kind: "thinking"; text: string; ts?: number }
   // §9 round 9: the compaction boundary. Everything ABOVE it is out of the
   // agent's context; `loaded` flips once the user pulls that history in.
   | { kind: "boundary"; compactions: number; reason: string | null; loaded: boolean }
@@ -129,6 +133,50 @@ function Stamp({ ts, turnMs, tone }: { ts?: number; turnMs?: number; tone: strin
         <span title={`This turn took ${formatDuration(turnMs)}`}>{formatDuration(turnMs)}</span>
       )}
     </span>
+  );
+}
+
+/**
+ * §7 round 16 — a thinking item's key carries the send counter, so sending
+ * remounts it and any block the user opened closes again.
+ *
+ * ONLY thinking items: folding the nonce into every key would remount the
+ * whole transcript on every send, throwing away each card's own open/closed
+ * state and re-parsing every message's markdown.
+ */
+function thinkingKey(it: TranscriptItem, i: number, nonce?: number): string | number {
+  return it.kind === "thinking" ? `${it.id ?? i}-${nonce ?? 0}` : (it.id ?? i);
+}
+
+/**
+ * §7 round 16 — the agent's reasoning, closed.
+ *
+ * `useState(false)` is the whole safety of reversing §7's old "no raw
+ * chain-of-thought" rule: the flow keeps reading as high-level working state,
+ * and only a deliberate click shows the reasoning for one turn. Transcript
+ * remounts these on every send (the collapseNonce in the key), which is what
+ * re-collapses them.
+ */
+function ThinkingBlock({ text }: { text: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="self-start max-w-3xl w-full">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        title={open ? "Hide the agent's reasoning" : "Show the agent's reasoning for this turn"}
+        className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-ink-soft hover:text-ink cursor-pointer"
+      >
+        <span className={`transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+        thinking
+      </button>
+      {open && (
+        <div className="mt-1 rounded-xl border-2 border-line bg-paper-deep/40 px-3.5 py-2.5 text-xs text-ink-soft whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+          {text}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -211,6 +259,7 @@ const MessageItem = memo(function MessageItem({
       </div>
     );
   }
+  if (it.kind === "thinking") return <ThinkingBlock text={it.text} />;
   if (it.kind === "notice") {
     return (
       <div
@@ -441,6 +490,7 @@ export function Transcript({
   onSearchTotal,
   onLoadEarlier,
   scrollNonce,
+  collapseNonce,
 }: {
   items: TranscriptItem[];
   busy: boolean;
@@ -471,6 +521,9 @@ export function Transcript({
    * must not yank a reader who has scrolled up.
    */
   scrollNonce?: number;
+  /** §7 round 16: bumped on send; folded into a thinking item's key so an
+      expanded block closes again. Nothing else remounts. */
+  collapseNonce?: number;
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -644,9 +697,9 @@ export function Transcript({
           // Dimmed items get a wrapper; everything else stays a direct flex
           // child, so `self-end` / `self-center` positioning is untouched.
           return "outOfContext" in it && it.outOfContext ? (
-            <div key={it.id ?? i} className="flex flex-col opacity-60">{item}</div>
+            <div key={thinkingKey(it, i, collapseNonce)} className="flex flex-col opacity-60">{item}</div>
           ) : (
-            <Fragment key={it.id ?? i}>{item}</Fragment>
+            <Fragment key={thinkingKey(it, i, collapseNonce)}>{item}</Fragment>
           );
         })}
         {/* Perf: the in-progress turn renders here, outside `items`, so a delta

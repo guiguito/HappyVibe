@@ -29,6 +29,9 @@ export type RestoreItem =
           long the turn took, from the user message that started it. */
       turnMs?: number;
     }
+  // §7 round 16: the agent's own reasoning, dropped on purpose until this
+  // round. Rendered collapsed, so a reopened session shows what a live one does.
+  | { kind: "thinking"; text: string; ts?: number }
   | {
       kind: "tool";
       toolCallId: string;
@@ -189,7 +192,13 @@ const tsOf = (m: RawMessage): { ts?: number } =>
 function stampTurnDurations(items: RestoreItem[]): RestoreItem[] {
   // The union's message member is `kind: "user" | "assistant"`, so
   // Extract<…, {kind:"assistant"}> is `never` — name the member instead.
-  type MsgItem = Extract<RestoreItem, { text: string }>;
+  //
+  // §7 round 16: matched on KIND, not on `{ text: string }`. The thinking item
+  // also carries `text`, so the structural form silently widened this to a
+  // member with no `turnMs` — a duration belongs on a bubble, never on the
+  // reasoning that preceded it. (A thinking item still moves `lastTs` below,
+  // which is right: a turn that ends thinking really did run that long.)
+  type MsgItem = Extract<RestoreItem, { kind: "user" | "assistant" }>;
   const stampOf = (it: RestoreItem): number | undefined => ("ts" in it ? it.ts : undefined);
 
   let turnStart: number | undefined;
@@ -290,11 +299,18 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
       if (text || pics.images || pics.imagesDropped) items.push({ kind: "user", text, ...pics, ...tsOf(m) });
       continue;
     }
-    // Assistant: emit text bubbles and tool cards in document order (skip thinking).
+    // Assistant: text bubbles, thinking blocks and tool cards, in document order.
     const blocks = Array.isArray(m.content) ? m.content : [];
     for (const b of blocks) {
       const block = b as { type?: string; text?: string; id?: string; name?: string; arguments?: unknown };
-      if (block.type === "text" && block.text?.trim()) {
+      if (block.type === "thinking") {
+        // §7 round 16: restored WHOLE and unbudgeted. Measured on a real
+        // install, the worst session carries 407k chars of thinking against a
+        // median of 6k — 5% of the image budget, and this file is already
+        // parsed end to end, so a second budget would buy nothing.
+        const thought = (b as { thinking?: string }).thinking ?? block.text ?? "";
+        if (thought.trim()) items.push({ kind: "thinking", text: thought, ...tsOf(m) });
+      } else if (block.type === "text" && block.text?.trim()) {
         items.push({ kind: "assistant", text: block.text, ...tsOf(m) });
       } else if (block.type === "toolCall" && block.id && block.name === "plan_complete") {
         // The plan card at the position the plan was submitted (path filled by the result).

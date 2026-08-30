@@ -383,6 +383,10 @@ export default function App(): React.JSX.Element {
   // mirror (one update per frame via rAF); `streamRef` holds the latest buffer.
   const [streamText, setStreamText] = useState<Record<string, string>>({});
   const streamRef = useRef<Record<string, string>>({});
+  // §7 round 16: the thinking buffer, separate from the text one so a thinking
+  // block and an answer never merge into one bubble. Committed at
+  // thinking_end — the block is collapsed, so nothing repaints per delta.
+  const thinkRef = useRef<Record<string, string>>({});
   const rafRef = useRef<number | null>(null);
   // Stable, monotonic id per committed item (see appendItem) so Transcript can
   // key on identity instead of the array index and skip re-parsing.
@@ -1194,6 +1198,24 @@ export default function App(): React.JSX.Element {
         streamRef.current[sid] = applyDelta(streamRef.current, sid, ame.delta, streaming.current[sid]);
         streaming.current[sid] = true;
         scheduleFlush();
+      }
+      // §7 round 16 — the agent's own reasoning. Pi already streams these three
+      // on the same channel as text_delta (json-event.js forwards the event
+      // untouched); the app simply never read them. Accumulated in a ref and
+      // committed once at the end: the block is collapsed, so a per-frame
+      // repaint would be work nobody is looking at.
+      if (e.type === "message_update" && ame?.type === "thinking_start") {
+        thinkRef.current[sid] = "";
+      }
+      if (e.type === "message_update" && ame?.type === "thinking_delta" && ame.delta) {
+        thinkRef.current[sid] = (thinkRef.current[sid] ?? "") + ame.delta;
+      }
+      if (e.type === "message_update" && ame?.type === "thinking_end") {
+        const thought = thinkRef.current[sid] ?? "";
+        delete thinkRef.current[sid];
+        // A turn where the model did no thinking gets no row at all, rather
+        // than an empty one that says nothing.
+        if (thought.trim()) appendItem(sid, { kind: "thinking", text: thought, ts: Date.now() });
       }
       // A triggered turn (e.g. an async subagent completion delivering its
       // result) starts without a local send, so mark busy here too — otherwise

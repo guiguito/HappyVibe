@@ -46,6 +46,9 @@ describe("restoreItems", () => {
     const items = restoreItems(raw);
     expect(items).toEqual([
       { kind: "user", text: "write a poem" },
+      // §7 round 16: thinking is RESTORED now. This fixture always carried a
+      // thinking block; until this round the assertion proved it was dropped.
+      { kind: "thinking", text: "…" },
       { kind: "assistant", text: "On it." },
       {
         kind: "tool",
@@ -297,5 +300,43 @@ describe("stripInjectedContext", () => {
   test("is applied on the restore path", () => {
     const src = readFileSync(path.join(__dirname, "..", "src", "main", "restore.ts"), "utf8");
     expect(src).toMatch(/stripInjectedContext\(messageText\(m\.content\)\)/);
+  });
+});
+
+// §7 round 16 — thinking blocks were dropped on purpose until this round, so a
+// reopened session showed less than a live one. These pin that they agree.
+describe("the agent's thinking survives a reopen", () => {
+  test("a reopened session shows the thinking a live one does", () => {
+    const items = restoreItems([
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Let me read AGENTS.md first." },
+          { type: "text", text: "Here is what the project does." },
+        ],
+      },
+    ]);
+    const kinds = items.map((i) => i.kind);
+    expect(kinds).toContain("thinking");
+    // Order matters: the reasoning precedes the answer it produced.
+    expect(kinds.indexOf("thinking")).toBeLessThan(kinds.indexOf("assistant"));
+    expect(items.find((i) => i.kind === "thinking")).toMatchObject({
+      kind: "thinking",
+      text: "Let me read AGENTS.md first.",
+    });
+  });
+
+  test("an empty thinking block yields no item rather than a blank one", () => {
+    const items = restoreItems([
+      { role: "assistant", content: [{ type: "thinking", thinking: "   " }] },
+    ]);
+    expect(items.some((i) => i.kind === "thinking")).toBe(false);
+  });
+
+  test("a turn that did no thinking gains nothing", () => {
+    const items = restoreItems([
+      { role: "assistant", content: [{ type: "text", text: "hi" }] },
+    ]);
+    expect(items.map((i) => i.kind)).toEqual(["assistant"]);
   });
 });
