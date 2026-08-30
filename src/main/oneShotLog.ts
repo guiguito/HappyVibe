@@ -1,10 +1,9 @@
 /**
  * Round 15 — the app's OWN model calls stop being invisible.
  *
- * HappyVibe makes four model calls no session ever sees: the session title
- * (titles.ts), the AGENTS.md draft (agentsMd.ts), the commit message and the
- * pull-request draft (gitMessage.ts). All four run `pi -p --no-session`, which
- * is the point — nothing enters a transcript or a context window — and also the
+ * HappyVibe makes THREE model calls no session ever sees: the session title
+ * (titles.ts), the commit message and the pull-request draft (gitMessage.ts).
+ * All three run `pi -p --no-session`, which is the point — nothing enters a transcript or a context window — and also the
  * problem: with no session there is no usage record anywhere, so until now
  * these calls existed in no log, no ledger and no total. The user asked which
  * model use is untracked; this is the answer, made visible.
@@ -21,8 +20,15 @@
  * is all the Stats line claims.
  */
 
-/** Which of the four ran. Used verbatim as the audit row's label. */
-export type OneShotKind = "title" | "agents-md" | "commit-message" | "pr-draft";
+/**
+ * Which of the three ran. Used verbatim as the audit row's label.
+ *
+ * There was a fourth, `agents-md`, added 2026-08-16. It was wired into a
+ * handler that had been dead since 2026-07-12, so no row of that kind was ever
+ * written — the AGENTS.md draft is a delegation (PRD §15) and is audited as
+ * one. Removed rather than kept for a history that does not exist.
+ */
+export type OneShotKind = "title" | "commit-message" | "pr-draft";
 
 export interface OneShotEvent {
   kind: OneShotKind;

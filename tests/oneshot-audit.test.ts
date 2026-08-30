@@ -7,10 +7,16 @@ import { toAuditRow } from "../src/renderer/src/components/AuditView";
 import type { LogEvent } from "../src/main/log";
 
 /**
- * Round 15 — the four model calls the app makes on the user's behalf stop being
- * invisible: session titles, the AGENTS.md draft, the commit message, the PR
- * draft. Asked directly ("which costs are not tracked? where should it appear?
- * does it appear in the audit log?"), so the answers are pinned here.
+ * Round 15 — the model calls the app makes on the user's behalf stop being
+ * invisible: session titles, the commit message, the PR draft. Asked directly
+ * ("which costs are not tracked? where should it appear? does it appear in the
+ * audit log?"), so the answers are pinned here.
+ *
+ * There are THREE, not the four this file used to name (PRD §11/§19, corrected
+ * 2026-08-30). The AGENTS.md draft is a delegation, not a one-shot — it runs on
+ * the session's own model, enters the transcript, and is gated and audited as a
+ * delegation. Its `agents-md` row type was wired on 2026-08-16 into a handler
+ * that had already been dead for a month, so no such row was ever emitted.
  */
 
 const sink = (): { rows: Array<Record<string, unknown>>; append: (e: Record<string, unknown>) => void } => {
@@ -211,5 +217,21 @@ describe("toAuditRow discriminates on the event TYPE, not the payload", () => {
       if (r.row === "oneshot") expect(typeof r.estTokens).toBe("number");
       else expect(typeof r.decision).toBe("string");
     }
+  });
+});
+
+// ── PRD §15 (2026-08-30): the AGENTS.md draft is an agent, not a one-shot ────
+
+describe("agents-md is not a one-shot kind", () => {
+  const read = (rel: string): string => readFileSync(path.join(__dirname, "..", rel), "utf8");
+
+  it("has no kind, no label and no handler left behind", () => {
+    // A source scan, not a behavioural test, because what this pins is an
+    // ABSENCE — and an absence is exactly what a behavioural test cannot fail
+    // on. Same shape as tests/modal-layer.test.ts.
+    // The KIND literal, not the word: the comment there explains why it went.
+    expect(read("src/main/oneShotLog.ts")).not.toMatch(/"agents-md"/);
+    expect(read("src/renderer/src/components/AuditView.tsx")).not.toMatch(/drafted AGENTS\.md/);
+    expect(read("src/main/ipc.ts")).not.toMatch(/oneShot\("agents-md"/);
   });
 });

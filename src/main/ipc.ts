@@ -3054,8 +3054,8 @@ export function registerIpc(win: BrowserWindow): void {
 
   /**
    * Round 15: the audit page reads BOTH kinds of row — permission decisions and
-   * the app's own one-shot model calls (§19: titles, the AGENTS.md draft, the
-   * commit message, the PR draft). They belong on the same page because the
+   * the app's own one-shot model calls (§19: titles, the commit message, the
+   * PR draft). They belong on the same page because the
    * question the user asked is one question: "what has run, and did I see it?"
    * Sorted by timestamp so the two interleave honestly rather than appearing as
    * two lists that happen to share a screen.
