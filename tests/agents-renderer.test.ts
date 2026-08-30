@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
 import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
-import { EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
+import { AGENT_STATUS_LABEL, AGENT_STATUS_TONE, EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
 import { SOURCE_ORDER, agentBlurb, sortAgents } from "../src/renderer/src/agents";
 import {
   asyncResultInfo,
@@ -661,29 +661,44 @@ describe("the agent roster reaches the composer without visiting Settings", () =
 });
 
 // ── A read-only agent's prompt is still readable (§12, 2026-08-29) ──────────
-describe("viewing a prompt we cannot write", () => {
+describe("inspecting an agent (round 16: the row opens the dialog)", () => {
   const VIEW = path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx");
   const view = readFileSync(VIEW, "utf8");
 
-  test("View is offered exactly where Edit is not", () => {
-    expect(view).toContain("{!EDITABLE_SOURCES.has(a.source) && a.systemPrompt && (");
-    expect(view).toContain("{EDITABLE_SOURCES.has(a.source) && (");
+  test("Edit is offered exactly where hv:write-agent can write", () => {
+    // Round 16 supersedes "View is offered exactly where Edit is not": there is
+    // no View any more, because the row itself opens the dialog. The Edit rule
+    // is unchanged and now lives inside that dialog.
+    expect(view).toContain("{EDITABLE_SOURCES.has(agent.source) && (");
+    expect(view).not.toMatch(/>\s*View\s*</);
   });
 
   test("the prompt comes from discovery, never from a widened file read", () => {
     // main's agent read is path-confined to dirs the app owns; a package agent
     // can live under the global npm root. Reading the prompt off the discovery
     // notify is what lets the page show it without opening that up.
-    expect(view).toContain("agent.systemPrompt");
-    expect(view).not.toContain("readAgent(agent.path)".replace("agent.path", "viewing.path"));
+    //
+    // Scoped to the INSPECTOR: AgentEditor does call readAgent, and is right
+    // to — it only ever opens for a bundled or project agent, which is inside
+    // the confinement. The inspector opens for all five sources.
+    const viewer = view.slice(view.indexOf("function AgentInspector"), view.indexOf("function AgentEditor"));
+    expect(viewer).toContain("agent.systemPrompt");
+    expect(viewer).not.toContain("readAgent");
   });
 
-  test("the read-only view offers no Save", () => {
+  test("the inspector offers no Save", () => {
     // An absence: a Save that silently failed would be worse than no Save.
-    const viewer = view.slice(view.indexOf("function AgentPromptView"), view.indexOf("function AgentEditor"));
-    expect(viewer).not.toContain("Save");
+    // Editing goes through AgentEditor, which the dialog opens.
+    const viewer = view.slice(view.indexOf("function AgentInspector"), view.indexOf("function AgentEditor"));
     expect(viewer).not.toContain("writeAgent");
     expect(viewer).toContain("duplicate it to make a version you can edit");
+  });
+
+  test("the dialog carries the switch the row gave up", () => {
+    const viewer = view.slice(view.indexOf("function AgentInspector"), view.indexOf("function AgentEditor"));
+    expect(viewer).toContain("Enable");
+    expect(viewer).toContain("Disable");
+    expect(viewer).toContain("Duplicate");
   });
 });
 
@@ -807,28 +822,27 @@ describe("the agents pill is quiet at rest", () => {
 });
 
 // ── The switch is a switch (2026-08-30) ────────────────────────────────────
-describe("agents use the app's shared Toggle", () => {
-  const AV = path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx");
-  const av = readFileSync(AV, "utf8");
-
-  test("a switch, not a checkbox", () => {
-    // These apply immediately (next turn), so they must not read as a
-    // selection waiting on a Save.
-    expect(av).toContain("<Toggle");
-    expect(av).not.toContain('type="checkbox"');
-  });
-
-  test("it is the SHARED component, not a fourth copy", () => {
-    // Three near-identical switches already existed. A fourth was the wrong
-    // direction; this asserts the extraction stuck.
-    expect(av).toContain('from "./Toggle"');
+describe("the app's shared Toggle (round 16: no longer used by Agents)", () => {
+  // The Agents page moved to the Skills pattern, so its inline switch is gone
+  // and the assertions that pinned it are superseded. The component's own
+  // contract still matters — VoiceView uses it, and a fifth near-copy would be
+  // the wrong direction for whoever adds the next switch.
+  test("it is a switch, with the accessibility a switch needs", () => {
     const toggle = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "Toggle.tsx"), "utf8");
     expect(toggle).toContain('role="switch"');
     expect(toggle).toContain("aria-checked");
-    // VoiceView adopted it rather than keeping its own copy.
+  });
+
+  test("VoiceView uses the shared one rather than its own copy", () => {
     const voice = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "VoiceView.tsx"), "utf8");
     expect(voice).toContain('from "./Toggle"');
     expect(voice).not.toContain("function Toggle(");
+  });
+
+  test("the Agents page no longer carries one", () => {
+    const av = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx"), "utf8");
+    expect(av).not.toContain("<Toggle");
+    expect(av).not.toContain('type="checkbox"');
   });
 });
 
@@ -854,5 +868,38 @@ describe("HappyVibe-disabled agents are invisible; user-disabled ones are not", 
     const av = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "components", "AgentsView.tsx"), "utf8");
     expect(av).not.toContain("Off by default");
     expect(av).not.toContain("agentDisabledReason");
+  });
+});
+
+describe("the Agents page follows the Skills pattern (round 16)", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/renderer/src/components/AgentsView.tsx"), "utf8");
+
+  test("status is a badge in the row, exported as data because the suite has no DOM", () => {
+    expect(AGENT_STATUS_LABEL.on).toBe("on");
+    expect(AGENT_STATUS_LABEL.off).toBe("off");
+    // Same tones the Skills page uses for active/disabled, so the two read alike.
+    expect(AGENT_STATUS_TONE.on).toContain("leaf");
+    expect(AGENT_STATUS_TONE.off).toContain("ink-soft");
+  });
+
+  test("the View button is gone — the row itself opens the dialog", () => {
+    // The absence is the point, and an absence cannot be screenshotted.
+    // NOT `not.toContain(">View<")`: the JSX puts the word on its own line, so
+    // that string is absent TODAY and the assertion would pass before the
+    // change was written. Match across the whitespace, and pin the handler too.
+    expect(src).not.toMatch(/>\s*View\s*</);
+    expect(src).not.toContain("setViewing");
+  });
+
+  test("the inline switch is gone — enable/disable moved into the dialog", () => {
+    expect(src).not.toContain("<Toggle");
+    expect(src).not.toContain('from "./Toggle"');
+  });
+
+  test("Edit stays confined to what hv:write-agent can actually write", () => {
+    // Unchanged rule, restated here because the button moved surface.
+    expect(EDITABLE_SOURCES.has("bundled")).toBe(true);
+    expect(EDITABLE_SOURCES.has("project")).toBe(true);
+    for (const s of ["builtin", "user", "package"]) expect(EDITABLE_SOURCES.has(s)).toBe(false);
   });
 });

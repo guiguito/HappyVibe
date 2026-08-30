@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { agentBlurb, agentTokenCost, rosterTokenCost, sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
-import { Toggle } from "./Toggle";
 
 /**
  * §12 (2026-08-29): five sources, because there are five. `bundled` is ours and
@@ -19,6 +18,20 @@ export const SOURCE_TONE: Record<string, string> = {
   user: "bg-plum-soft text-plum border-plum/50",
   package: "bg-sky-soft text-sky border-sky/50",
 };
+
+/**
+ * Round 16 — the Agents page adopts the Skills pattern, and a skill's state is
+ * a BADGE in the row rather than a control. Same two tones Skills uses for
+ * active/disabled, so a user reading both pages reads one vocabulary.
+ *
+ * Exported as DATA for the same reason SOURCE_TONE is: the renderer suite has
+ * no DOM, so this mapping is how the visual contract gets pinned.
+ */
+export const AGENT_STATUS_TONE: Record<"on" | "off", string> = {
+  on: "bg-leaf-soft text-leaf border-leaf/50",
+  off: "bg-paper-deep text-ink-soft border-line",
+};
+export const AGENT_STATUS_LABEL: Record<"on" | "off", string> = { on: "on", off: "off" };
 
 /** Where `hv:write-agent` is path-confined to — the only rows Edit can serve. */
 export const EDITABLE_SOURCES: ReadonlySet<string> = new Set(["bundled", "project"]);
@@ -40,7 +53,7 @@ export function AgentsView({
   sessionId: string | null;
 }): React.JSX.Element {
   const [editing, setEditing] = useState<AgentInfo | null>(null);
-  const [viewing, setViewing] = useState<AgentInfo | null>(null);
+  const [inspecting, setInspecting] = useState<AgentInfo | null>(null);
 
   // Refresh the agent inventory on mount (fire-and-forget; results stream
   // back as an hv.agents notify the parent captures).
@@ -89,83 +102,66 @@ export function AgentsView({
           <p className="text-sm text-ink-soft">No agents found.</p>
         ) : (
           <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
-            {sortedAgents.map((a) => (
-              <div key={a.path} className={`px-4 py-3 border-b border-line last:border-b-0 ${a.enabled === false ? "opacity-55" : ""}`}>
-                <div className="flex items-center gap-2">
-                  {/* A switch, not a checkbox: it applies immediately (next turn)
-                      rather than waiting on a Save. A disabled agent stays listed
-                      and dimmed — you have to see it to turn it back on. */}
-                  <Toggle
-                    on={a.enabled !== false}
-                    onChange={() => void toggle(a)}
-                    label={`${a.enabled === false ? "Enable" : "Disable"} ${a.name}`}
-                    title={a.enabled === false ? `Switch ${a.name} on` : `Switch ${a.name} off — frees about ${agentTokenCost(a)} tokens every turn`}
-                  />
-                  <span className="font-bold">{a.name}</span>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${SOURCE_TONE[a.source] ?? "bg-paper-deep text-ink-soft border-line"}`}>
-                    {a.source}
-                  </span>
-                  {a.model && <span className="font-mono text-[10px] text-ink-soft">{a.model}</span>}
-                  <span className="font-mono text-[10px] text-ink-soft" title="What this agent's line costs in the system prompt, every turn">
-                    ~{agentTokenCost(a)} tok
-                  </span>
-                  <span className="flex-1" />
-                  {/* §12 (2026-08-29): Edit only where we can actually write.
-                      hv:write-agent is path-confined to the app-owned and
-                      project dirs, so Edit on an upstream builtin, a ~/.agents
-                      agent or a package agent would simply fail. Omit it rather
-                      than grey it out — Duplicate is the honest route to a copy
-                      the user CAN edit. */}
-                  {/* §12 (2026-08-29): a read-only agent's prompt is still worth
-                      READING — these are the agents the model will actually
-                      delegate to, and until this round they were invisible
-                      entirely. The prompt rides the discovery notify, so this
-                      needs no file read outside the dirs main owns. */}
-                  {!EDITABLE_SOURCES.has(a.source) && a.systemPrompt && (
-                    <button
-                      type="button"
-                      onClick={() => setViewing(a)}
-                      className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer"
-                    >
-                      View
-                    </button>
-                  )}
-                  {EDITABLE_SOURCES.has(a.source) && (
-                    <button
-                      type="button"
-                      onClick={() => setEditing(a)}
-                      className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer"
-                    >
-                      Edit
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => void duplicate(a)}
-                    className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer"
-                  >
-                    Duplicate
-                  </button>
-                </div>
-                <p className="text-sm text-ink-soft mt-1">{agentBlurb(a)}</p>
-
-                {a.tools && a.tools.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {a.tools.map((t) => (
-                      <span key={t} className="font-mono text-[10px] rounded bg-paper-deep px-1.5 py-0.5 text-ink-soft">
-                        {t}
-                      </span>
-                    ))}
+            {sortedAgents.map((a) => {
+              const on = a.enabled !== false;
+              return (
+                <button
+                  key={a.path}
+                  type="button"
+                  onClick={() => setInspecting(a)}
+                  className={`w-full text-left px-4 py-3 border-b border-line last:border-b-0 hover:bg-paper-deep/30 cursor-pointer block ${on ? "" : "opacity-55"}`}
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Round 16: the state is a BADGE, not a control — the row
+                        opens the dialog, and the dialog switches it. Same
+                        anatomy as a skill row, deliberately. */}
+                    <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 shrink-0 ${AGENT_STATUS_TONE[on ? "on" : "off"]}`}>
+                      {AGENT_STATUS_LABEL[on ? "on" : "off"]}
+                    </span>
+                    <span className="font-bold">{a.name}</span>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${SOURCE_TONE[a.source] ?? "bg-paper-deep text-ink-soft border-line"}`}>
+                      {a.source}
+                    </span>
+                    {a.model && <span className="font-mono text-[10px] text-ink-soft">{a.model}</span>}
+                    <span className="font-mono text-[10px] text-ink-soft" title="What this agent's line costs in the system prompt, every turn">
+                      ~{agentTokenCost(a)} tok
+                    </span>
+                    <span className="ml-auto shrink-0 text-ink-soft">›</span>
                   </div>
-                )}
-              </div>
-            ))}
+                  <p className="text-sm text-ink-soft mt-1">{agentBlurb(a)}</p>
+                  {a.tools && a.tools.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {a.tools.map((t) => (
+                        <span key={t} className="font-mono text-[10px] rounded bg-paper-deep px-1.5 py-0.5 text-ink-soft">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
         </Section>
       </div>
 
-      {viewing && <AgentPromptView agent={viewing} onClose={() => setViewing(null)} />}
+      {inspecting && (
+        <AgentInspector
+          agent={inspecting}
+          onClose={() => setInspecting(null)}
+          onToggle={() => {
+            void toggle(inspecting).then(() => setInspecting(null));
+          }}
+          onDuplicate={() => {
+            void duplicate(inspecting).then(() => setInspecting(null));
+          }}
+          onEdit={() => {
+            setEditing(inspecting);
+            setInspecting(null);
+          }}
+        />
+      )}
 
       {editing && (
         <AgentEditor
@@ -187,7 +183,19 @@ export function AgentsView({
  * notify rather than a file read, so showing it costs main no widening of the
  * path confinement that keeps writes inside dirs the app owns.
  */
-function AgentPromptView({ agent, onClose }: { agent: AgentInfo; onClose: () => void }): React.JSX.Element {
+function AgentInspector({
+  agent,
+  onClose,
+  onToggle,
+  onDuplicate,
+  onEdit,
+}: {
+  agent: AgentInfo;
+  onClose: () => void;
+  onToggle: () => void;
+  onDuplicate: () => void;
+  onEdit: () => void;
+}): React.JSX.Element {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
       <div
@@ -198,7 +206,9 @@ function AgentPromptView({ agent, onClose }: { agent: AgentInfo; onClose: () => 
           <div className="min-w-0 flex-1">
             <h2 className="font-black text-xl leading-tight">{agent.name}</h2>
             <p className="text-sm text-ink-soft truncate" title={agent.path}>
-              {agent.source} · read-only — duplicate it to make a version you can edit
+              {EDITABLE_SOURCES.has(agent.source)
+                ? agent.path
+                : `${agent.source} · read-only — duplicate it to make a version you can edit`}
             </p>
           </div>
           <button
@@ -208,6 +218,56 @@ function AgentPromptView({ agent, onClose }: { agent: AgentInfo; onClose: () => 
           >
             Close
           </button>
+        </div>
+
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${AGENT_STATUS_TONE[agent.enabled === false ? "off" : "on"]}`}>
+            {AGENT_STATUS_LABEL[agent.enabled === false ? "off" : "on"]}
+          </span>
+          <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${SOURCE_TONE[agent.source] ?? "bg-paper-deep text-ink-soft border-line"}`}>
+            {agent.source}
+          </span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={onDuplicate}
+            className="rounded-xl border-2 border-line font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 cursor-pointer"
+          >
+            Duplicate
+          </button>
+          {/* Unchanged rule: hv:write-agent is path-confined, so Edit exists
+              only where the app can actually write. Omitted rather than greyed
+              out — Duplicate is the honest route to a copy the user CAN edit. */}
+          {EDITABLE_SOURCES.has(agent.source) && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="rounded-xl border-2 border-line font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 cursor-pointer"
+            >
+              Edit
+            </button>
+          )}
+          {/* The switch the row used to carry. Same wording as the Skills
+              inspector's Approve/Disable pair, for the same reason. */}
+          {agent.enabled === false ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              title={`Switch ${agent.name} on`}
+              className="rounded-xl bg-tangerine text-paper font-bold text-sm px-5 py-2 border-2 border-tangerine-deep shadow-sticker hover:brightness-105 cursor-pointer"
+            >
+              Enable
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggle}
+              title={`Switch ${agent.name} off — frees about ${agentTokenCost(agent)} tokens every turn`}
+              className="rounded-xl border-2 border-line font-bold text-sm px-5 py-2 hover:bg-paper-deep/40 cursor-pointer"
+            >
+              Disable
+            </button>
+          )}
         </div>
 
         {agent.tools && agent.tools.length > 0 && (
