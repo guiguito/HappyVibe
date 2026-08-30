@@ -899,6 +899,32 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   exists so the negative assertions can't pass vacuously). `--no-context-files` is deliberately NOT
   passed (AGENTS.md loading is wanted). See docs/validation/sk1.md.
 
+## Releasing (PRD §30)
+- **`package.json` `version` is the ONLY version.** electron-builder derives `Info.plist` from it,
+  the renderer gets it as a build-time constant, the tag is `v<version>`. Never a second copy.
+- SemVer in USER terms: **PATCH** = fixes, nothing new to learn · **MINOR** = anything new you can
+  see or do (the normal release) · **MAJOR** = you have to do something (a setting is gone or means
+  something else, a stored format won't roll back, a permission default got less restrictive).
+  We are **`0.x` until the public launch**; pre-1.0 the MAJOR class ships as MINOR with a
+  **Heads up** block. `1.0.0` = launch, NOT "§6's V1 list is done".
+- **A pin bump is not its own axis** — it is MINOR if the user sees it (new builtin agents, a new
+  provider, a new tool), PATCH if not. But **every release names the four pins**: §3's promise is
+  that the Pi inside is pinned and tested, so which one you got is user-facing.
+- **`CHANGELOG.md` is hand-written, at the functional level** — what the user can now DO, in the
+  words the sidebar uses (Prompts, cost, Save a version). No commit scopes, no file paths, no PR
+  numbers. A MINOR is 5-15 bullets; past ~20 you are transcribing `git log`. Never generate it:
+  ~100 scoped developer bullets is the wrong altitude for the audience (§29's two-altitudes rule).
+- **The `changelog` skill owns the how** (`.claude/skills/changelog/SKILL.md`) — the triage that
+  gets hundreds of commits down to a dozen bullets, the seven voice rules, and
+  `scripts/changelog.sh digest|check`. It is the ONE copy: `/release` phase 3 points at it rather
+  than restating it, and it is written at RELEASE time only — a pin bump does not write one, it
+  just says what a user would see in its commit body.
+- **The invariant:** the top RELEASED entry in `CHANGELOG.md` equals `package.json`'s version, so a
+  version cannot ship with no notes. Pinned with the no-commit-prose scan in
+  `tests/changelog.test.ts` (key-free, in the non-live suite).
+- Cutting one: **`/release <patch|minor|major>`** (`.claude/commands/release.md`) — gate, read the
+  log since the last tag, write the entry, stamp, tag. It stops before pushing.
+
 ## Docs workflow
 Locked product decisions go to BOTH the Notion PRD and docs/prd.md in the same session,
 folded in place with the "Decision (…)" convention. Never rewrite user-authored documents wholesale.
