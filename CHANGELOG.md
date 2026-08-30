@@ -1,7 +1,5 @@
 # Changelog
 
-Everything that changed in HappyVibe, written for the person using it.
-
 ## [0.1.0] — 2026-08-30
 
 The first build of HappyVibe: vibe coding you can actually watch.
