@@ -38,6 +38,13 @@ export interface OneShotEvent {
   estTokens: number;
   /** False when the child errored, exited non-zero, or produced nothing. */
   ok: boolean;
+  /**
+   * §19 (2026-08-30): true when the user's own append was added to the
+   * built-in prompt for this call. Load-bearing, not decoration — estTokens is
+   * derived from CHARACTER counts, so an append raises the estimate with
+   * nothing else on the row to explain why.
+   */
+  appended: boolean;
 }
 
 export const CHARS_PER_TOKEN = 4;
@@ -64,6 +71,7 @@ export function logOneShot(
     promptChars: number;
     outputChars: number;
     ok: boolean;
+    appended?: boolean;
     workspaceId?: string;
     sessionId?: string;
   },
@@ -73,6 +81,7 @@ export function logOneShot(
     model: `${o.model.provider}/${o.model.modelId}`,
     estTokens: estimateTokens(o.promptChars, o.outputChars),
     ok: o.ok,
+    appended: o.appended ?? false,
   };
   try {
     void log?.append({

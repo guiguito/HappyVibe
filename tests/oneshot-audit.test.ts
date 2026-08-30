@@ -50,7 +50,7 @@ describe("logOneShot", () => {
       ok: true,
       workspaceId: "/ws",
     });
-    expect(ev).toEqual({ kind: "commit-message", model: "deepseek/deepseek-v4-flash", estTokens: 1_050, ok: true });
+    expect(ev).toEqual({ kind: "commit-message", model: "deepseek/deepseek-v4-flash", estTokens: 1_050, ok: true, appended: false });
     expect(s.rows).toHaveLength(1);
     expect(s.rows[0]).toMatchObject({ type: "assistant.oneshot", workspaceId: "/ws" });
     expect(s.rows[0].data).toMatchObject({ kind: "commit-message", estTokens: 1_050, ok: true });
@@ -80,7 +80,7 @@ describe("logOneShot", () => {
       outputChars: 100,
       ok: true,
     });
-    expect(Object.keys(s.rows[0].data as object)).toEqual(["kind", "model", "estTokens", "ok"]);
+    expect(Object.keys(s.rows[0].data as object)).toEqual(["kind", "model", "estTokens", "ok", "appended"]);
   });
 
   it("never throws when there is nowhere to log — a draft must not fail on logging", () => {
@@ -235,3 +235,24 @@ describe("agents-md is not a one-shot kind", () => {
     expect(read("src/main/ipc.ts")).not.toMatch(/oneShot\("agents-md"/);
   });
 });
+
+// ── §19 (2026-08-30): an append is recorded, not silent ─────────────────────
+
+describe("the audit row says when the prompt was appended to", () => {
+  const model = { provider: "p", modelId: "m" };
+
+  it("records appended:true so the token estimate is not silently inflated", () => {
+    // oneShotLog measures CHARACTERS, so an append raises estTokens with
+    // nothing on the row explaining why. This flag is that explanation.
+    const s = sink();
+    logOneShot(s, { kind: "title", model, promptChars: 100, outputChars: 20, ok: true, appended: true });
+    expect(s.rows[0].data).toMatchObject({ appended: true });
+  });
+
+  it("defaults to false — an untouched prompt claims nothing", () => {
+    const s = sink();
+    logOneShot(s, { kind: "pr-draft", model, promptChars: 10, outputChars: 5, ok: true });
+    expect(s.rows[0].data).toMatchObject({ appended: false });
+  });
+});
+

@@ -1044,11 +1044,21 @@ export function registerIpc(win: BrowserWindow): void {
     const msg = firstPrompt.get(sessionId);
     if (!meta || meta.titleSource !== "fallback" || !msg) return;
     firstPrompt.delete(sessionId);
+    // §19 (2026-08-30): off means no call at all. The truncated-first-message
+    // fallback title stays, which is exactly what someone who switched this off
+    // asked for — this is the one of the three that fires unasked.
+    const task = getAssistantTasks().title;
+    if (!task.enabled) return;
     // Fire-and-forget — never blocks the chat; fallback title stays on failure.
     void generateTitle(piRuntimeDir(), meta.workspaceId, msg, {
-      // §16: same guarded resolution as a chat spawn — a removed endpoint's
-      // ref must not be handed to a one-shot Pi call either.
-      model: resolveSpawnModel(),
+      // §19 (2026-08-30): session → workspace → global, identically to a chat
+      // spawn. This was `resolveSpawnModel()` with NO arguments, so a workspace
+      // model override was honoured for a commit message and ignored for the
+      // title of the session it belonged to — with both ids already in hand on
+      // the lines above. §16 still holds: the resolution is the guarded one, so
+      // a removed endpoint's ref never reaches a one-shot Pi call either.
+      model: task.model ?? resolveSpawnModel(meta.workspaceId, sessionId),
+      append: task.append,
       // BYOK keys via env; OAuth creds live in auth.json under the agent dir.
       env: { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
       onDone: oneShot("title", meta.workspaceId, sessionId),
@@ -3578,7 +3588,11 @@ export function registerIpc(win: BrowserWindow): void {
   // §2b — the drafted commit message. Never the live session: this is a one-shot
   // print-mode call, so nothing reaches a transcript or a context window.
   ipcMain.handle("hv:git-draft-message", async (_e, workspaceId: string, stagedOnly: boolean) => {
-    const model = getAssistantTasks()["commit-message"].model ?? resolveSpawnModel(workspaceId);
+    // §19 (2026-08-30): the SWITCH is enforced here, in main. The renderer
+    // hiding the wand button is an affordance, never the enforcement.
+    const task = getAssistantTasks()["commit-message"];
+    if (!task.enabled) return null;
+    const model = task.model ?? resolveSpawnModel(workspaceId);
     if (!model) return null;
     const [files, diffs, log20] = await Promise.all([
       gitStatus(workspaceId),
@@ -3601,6 +3615,7 @@ export function registerIpc(win: BrowserWindow): void {
       { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
       undefined,
       oneShot("commit-message", workspaceId),
+      task.append,
     );
   });
 
@@ -3654,8 +3669,13 @@ export function registerIpc(win: BrowserWindow): void {
     // status change to decide whether the button exists, so it must never run
     // the model or read a diff. `draft: true` is the click.
     let drafted: { title: string; body: string } | null = null;
-    if (draft) {
-      const model = getAssistantTasks()["pr-draft"].model ?? resolveSpawnModel(workspaceId);
+    // §19 (2026-08-30): this switch gates the DRAFT, not the button. Turning it
+    // off must still open the forge — the description simply falls back to the
+    // commit list, exactly as it already does when no provider resolves. It is
+    // the one of the three whose "off" is not "the button disappears".
+    const task = getAssistantTasks()["pr-draft"];
+    if (draft && task.enabled) {
+      const model = task.model ?? resolveSpawnModel(workspaceId);
       if (model) {
         const diffs = await gitDiff(workspaceId, "base");
         const diffText = diffs.map((f) => `${f.fileHeader}\n${f.hunks.map((h) => h.raw).join("")}`).join("\n");
@@ -3667,6 +3687,7 @@ export function registerIpc(win: BrowserWindow): void {
           { ...providerEnv(), PI_CODING_AGENT_DIR: agentDir() },
           undefined,
           oneShot("pr-draft", workspaceId),
+          task.append,
         );
       }
     }

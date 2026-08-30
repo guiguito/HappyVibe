@@ -16,16 +16,35 @@ import { PI_CLI_RELPATH, nodeExecPath } from "./pi/spawn";
  * Fire-and-forget: resolves null on any failure; the truncated-first-message
  * fallback title stays in place. Never blocks the chat.
  */
+/**
+ * Pure: the prompt, exported so §19's "On your behalf" page can show it
+ * VERBATIM. A page that rendered its own paraphrase of the prompt would be the
+ * one thing this feature exists to prevent.
+ *
+ * The append is added AFTER the instruction, never replacing it — PRD §13
+ * round 6, and for a concrete reason here: the caller below parses the output
+ * (last non-empty line, decoration stripped), so a rewritten prompt breaks the
+ * parse silently and the user just sees "it stopped working".
+ */
+export function buildTitlePrompt(firstUserMessage: string, append = ""): string {
+  const base =
+    "Write a short title (3 to 6 words, no quotes, no trailing period) for a coding session " +
+    `that starts with this request:\n\n${firstUserMessage.slice(0, 500)}\n\nReply with ONLY the title.`;
+  return append.trim() ? `${base}\n\n${append.trim()}` : base;
+}
+
 export function generateTitle(
   runtimeDir: string,
   workspace: string,
   firstUserMessage: string,
   opts: {
     model?: { provider: string; modelId: string } | null;
+    /** §19: the user's own addition to the prompt, appended never substituted. */
+    append?: string;
     env?: Record<string, string>;
     /** Round 15: where to record that this call happened. Optional — a caller
         without a log still gets its title, it just goes unrecorded. */
-    onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }) => void;
+    onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean; appended: boolean }) => void;
   } = {}
 ): Promise<string | null> {
   // §16 finding 7 (2026-08-29): no configured model means NO call. This used
@@ -35,9 +54,8 @@ export function generateTitle(
   // "no title", which is the honest answer when nothing is set up.
   const model = opts.model;
   if (!model) return Promise.resolve(null);
-  const prompt =
-    "Write a short title (3 to 6 words, no quotes, no trailing period) for a coding session " +
-    `that starts with this request:\n\n${firstUserMessage.slice(0, 500)}\n\nReply with ONLY the title.`;
+  const append = opts.append ?? "";
+  const prompt = buildTitlePrompt(firstUserMessage, append);
   return new Promise((resolve) => {
     const child = spawn(
       nodeExecPath(),
@@ -59,7 +77,7 @@ export function generateTitle(
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (d: string) => (out += d));
     const done = (ok: boolean): void =>
-      opts.onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok });
+      opts.onDone?.({ model, promptChars: prompt.length, outputChars: out.length, ok, appended: !!append.trim() });
     child.on("error", () => {
       done(false);
       resolve(null);
