@@ -8,6 +8,7 @@ import { registerIpc } from './ipc'
 import { loginShellPath, mergePath } from './shellPath'
 import { getGitRulesSeeded, rulesFile, setGitRulesSeeded } from './config'
 import { seedDefaultGitRules } from './gitRules'
+import { navAction } from './navGuard'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
 // AND userData resolves to .../HappyVibe — in dev the process runs inside
@@ -60,11 +61,13 @@ function createWindow(): BrowserWindow {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
+  // The rule is deny-by-default and lives in navGuard.ts — see there for why an
+  // un-prevented relative link could replace the whole app with a dead page.
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (url !== mainWindow.webContents.getURL() && /^(https?|mailto):/.test(url)) {
-      event.preventDefault()
-      void shell.openExternal(url)
-    }
+    const action = navAction(url, mainWindow.webContents.getURL())
+    if (action === 'allow') return
+    event.preventDefault()
+    if (action === 'external') void shell.openExternal(url)
   })
 
   // HMR for renderer base on electron-vite cli.
