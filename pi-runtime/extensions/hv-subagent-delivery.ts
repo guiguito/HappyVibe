@@ -124,10 +124,11 @@ export function substituteDelivery(content: string, store: ChildOutputStore): st
  * Apply the repair across a context message list. Returns a NEW array when
  * anything changed, else null so the caller can leave the context untouched.
  */
-export function substituteDeliveries(
-  messages: DeliveryMessage[] | undefined,
+export function substituteDeliveries<M extends DeliveryMessage>(
+  messages: M[] | undefined,
   store: ChildOutputStore,
-): DeliveryMessage[] | null {
+): M[] | null {
+  // Identity-preserving generic: the bridge passes upstream's AgentMessage[].
   if (!Array.isArray(messages) || store.size === 0) return null;
   let changed = false;
   const out = messages.map((m) => {
@@ -135,7 +136,8 @@ export function substituteDeliveries(
     const next = substituteDelivery(m.content, store);
     if (next === null) return m;
     changed = true;
-    return { ...m, content: next };
+    // Same message, its (measured-string) content swapped for the repaired string.
+    return { ...m, content: next } as M;
   });
   return changed ? out : null;
 }

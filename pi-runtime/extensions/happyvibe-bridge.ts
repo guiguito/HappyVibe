@@ -9,14 +9,14 @@ import {
   serializeTaskMap, stashPendingTask, taskFor, type TaskMapState,
 } from "./hv-subagent-tasks";
 import {
-  createChildOutputStore, rememberChildOutputs, substituteDeliveries, type DeliveryMessage,
+  createChildOutputStore, rememberChildOutputs, substituteDeliveries,
 } from "./hv-subagent-delivery";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER } from "./hv-browser";
 import { unwrapMcpCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
-  type AgentMessage, type MarkKey, type SessionEntry, type ToolSpecLike,
+  type MarkKey, type SessionEntry, type ToolSpecLike,
 } from "./hv-context";
 import { isSlashCommandPath, renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
@@ -32,8 +32,8 @@ import { parseBuiltins } from "./hv-builtins";
 import { registerSubagentCapabilityCeiling } from "pi-subagents/capability-ceiling";
 import { resolveSubagentLaunchContract } from "pi-subagents/preflight";
 import {
-  boundaryRuleName, isReadOnlyBoundary, isWiderThanReadOnly, needsWiderCeiling,
-  READ_ONLY_CHILD_TOOLS, summarizeBoundary, widenBoundary, writeCapableIn,
+  boundaryRuleName, isWiderThanReadOnly, needsWiderCeiling,
+  READ_ONLY_CHILD_TOOLS, summarizeBoundary, widenBoundary,
   type BoundarySummary,
 } from "./hv-subagent-boundary";
 import {
@@ -778,6 +778,7 @@ export default function (pi: ExtensionAPI) {
       agents: agents.map((a) => ({ name: a.name, chars: `- **${a.name}** — ${a.description.slice(0, 200)}`.length })),
     };
     if (section || agentsSection || planSection || skillSection) return { systemPrompt: injected };
+    return undefined; // no injection this turn — resets Pi to the base prompt
   });
 
   // The only place removal takes effect. Non-destructive: session file untouched.
@@ -786,10 +787,10 @@ export default function (pi: ExtensionAPI) {
     // only in that both must be able to run: §9's removal marks, and the
     // sub-agent delivery repair (hv-subagent-delivery.ts) — which would be
     // skipped entirely when no marks exist if this handler still early-returned.
-    let messages = event.messages as unknown as AgentMessage[];
+    let messages = event.messages;
     if (contextMarks.size > 0) messages = filterMessages(messages, contextMarks);
-    const repaired = substituteDeliveries(messages as unknown as DeliveryMessage[], childOutputs);
-    if (repaired) messages = repaired as unknown as AgentMessage[];
+    const repaired = substituteDeliveries(messages, childOutputs);
+    if (repaired) messages = repaired;
     return contextMarks.size > 0 || repaired ? { messages } : undefined;
   });
 
@@ -1707,7 +1708,7 @@ export default function (pi: ExtensionAPI) {
   const browserInput = async (
     ctx: { ui: { input(title: string, initial: string): Promise<unknown> } },
     payload: Record<string, unknown>,
-  ): ReturnType<typeof browserReply> => browserReply(await ctx.ui.input(JSON.stringify(payload), ""));
+  ): Promise<Awaited<ReturnType<typeof browserReply>>> => browserReply(await ctx.ui.input(JSON.stringify(payload), ""));
 
   pi.registerTool({
     name: "browser_open",
