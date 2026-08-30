@@ -21,6 +21,9 @@ describe("settings nav order", () => {
       "tools",
       "permissions",
       "sysprompt",
+      // §19 (2026-08-30): beside System prompt, because both answer the same
+      // question — what does this app tell a model, that I never typed?
+      "onBehalf",
       "terminal",
       "voice",
       // Editable bindings are configuration, so this closes that block rather
@@ -32,9 +35,9 @@ describe("settings nav order", () => {
   });
 
   test("every destination still has exactly one row", () => {
-    expect(NAV).toHaveLength(14);
-    expect(new Set(NAV.map((n) => n.view)).size).toBe(14);
-    expect(new Set(NAV.map((n) => n.label)).size).toBe(14);
+    expect(NAV).toHaveLength(15);
+    expect(new Set(NAV.map((n) => n.view)).size).toBe(15);
+    expect(new Set(NAV.map((n) => n.label)).size).toBe(15);
   });
 
   test("every row has a label and an icon — a blank row is a dead end", () => {

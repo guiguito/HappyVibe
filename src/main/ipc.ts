@@ -16,7 +16,7 @@ import {
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
   getVoiceSettings, setVoiceSettings,
-  getAssistantTasks,
+  getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
 } from "./config";
 import { TerminalManager } from "./terminals";
 import {
@@ -69,7 +69,7 @@ import { pollSubagentStatus, type SubagentStatus } from "./subagentStatus";
 import { readChildTrace } from "./subagentThinking";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
-import { generateTitle } from "./titles";
+import { buildTitlePrompt, generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
@@ -80,7 +80,7 @@ import {
   publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
-import { draftCommitMessage, draftPullRequest } from "./gitMessage";
+import { DEFAULT_DIFF_BUDGET, buildDraftPrompt, buildPrPrompt, draftCommitMessage, draftPullRequest } from "./gitMessage";
 import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
 import {
@@ -3060,6 +3060,57 @@ export function registerIpc(win: BrowserWindow): void {
     // off saves. Descriptions come from the bridge's own registrations.
     if (name === "terminal") return { text: buildTerminalPrompt() };
     return { text: "" };
+  });
+
+  /**
+   * §19 (2026-08-30) — "On your behalf": the three model calls the app makes
+   * without a session. Same read-only-prompt-plus-append contract as
+   * hv:builtin-prompt right above, deliberately: it is PRD §13 round 6's rule,
+   * inherited rather than re-decided.
+   *
+   * The prompt is served as a TEMPLATE, not as a prompt built from empty input.
+   * The two git prompts do not exist until there is a diff, and a prompt
+   * rendered from an empty diff would be a DIFFERENT string from the one that
+   * actually runs — which is precisely the misreport this page exists to end.
+   * So the substitution points are named in the text and explained in `note`.
+   */
+  ipcMain.handle("hv:assistant-task-prompt", (_e, id: AssistantTaskId) => {
+    if (id === "title") {
+      return {
+        text: buildTitlePrompt("<your first message in the session>"),
+        note: "Your first message is inserted where it says so above, trimmed to 500 characters.",
+      };
+    }
+    if (id === "commit-message") {
+      return {
+        text: buildDraftPrompt(
+          { diff: "<your changes, as a diff>", files: [], recentSubjects: ["<your last 20 commit subjects>"] },
+          DEFAULT_DIFF_BUDGET,
+        ),
+        note: "Your diff and your recent commit subjects are inserted where they say so above. A diff over ~24,000 characters degrades to a file list plus the head of each change, so a large commit still drafts something honest.",
+      };
+    }
+    if (id === "pr-draft") {
+      return {
+        text: buildPrPrompt(
+          {
+            commits: ["<the commits on this branch>"],
+            diff: "<this branch's diff against its base>",
+            branch: "<your branch>",
+            base: "<the base branch>",
+          },
+          DEFAULT_DIFF_BUDGET,
+        ),
+        note: "Your branch's commits and its diff against the base are inserted where they say so above.",
+      };
+    }
+    return { text: "", note: "" };
+  });
+
+  ipcMain.handle("hv:assistant-tasks-get", () => getAssistantTasks());
+  ipcMain.handle("hv:assistant-task-set", (_e, id: AssistantTaskId, patch: Partial<AssistantTask>) => {
+    setAssistantTask(id, patch);
+    return getAssistantTasks();
   });
 
   /**

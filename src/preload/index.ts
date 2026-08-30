@@ -263,6 +263,10 @@ contextBridge.exposeInMainWorld("hv", {
   builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }) =>
     ipcRenderer.invoke("hv:builtins-set", t),
   builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
+  // §19: the three model calls the app makes without a session.
+  assistantTasksGet: () => ipcRenderer.invoke("hv:assistant-tasks-get"),
+  assistantTaskSet: (id: string, patch: unknown) => ipcRenderer.invoke("hv:assistant-task-set", id, patch),
+  assistantTaskPrompt: (id: string) => ipcRenderer.invoke("hv:assistant-task-prompt", id),
 
   // Extended prompt-cache retention (PI_CACHE_RETENTION=long) — next spawn.
   getLongCache: () => ipcRenderer.invoke("hv:get-long-cache"),

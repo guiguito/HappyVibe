@@ -95,9 +95,16 @@ export function ChangesPanel({
     // "don't show what cannot work". A configured provider is the precondition;
     // beyond that, failure is quiet and the button hides itself (see the catch
     // on gitDraftMessage below), never an error surface.
-    void window.hv
-      .getProviders()
-      .then((p) => setCanDraft(p.byok.some((b) => b.source !== null) || !!p.defaultModel))
+    // §19 (2026-08-30): and the user's own switch, on Settings -> On your
+    // behalf. This is the AFFORDANCE only — main refuses the call regardless
+    // (hv:git-draft-message returns null when the task is off), because a
+    // hidden button is not an enforcement.
+    void Promise.all([window.hv.getProviders(), window.hv.assistantTasksGet()])
+      .then(([p, tasks]) =>
+        setCanDraft(
+          tasks["commit-message"].enabled && (p.byok.some((b) => b.source !== null) || !!p.defaultModel),
+        ),
+      )
       .catch(() => setCanDraft(false));
   }, [workspace]);
 

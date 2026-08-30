@@ -518,6 +518,17 @@ interface McpServerStatusLike {
   lastChecked: number;
 }
 
+/** §19: the same three ids as main's AssistantTaskId and OneShotKind — one
+    vocabulary, so a settings row and an audit row cannot disagree. */
+type HvAssistantTaskId = "title" | "commit-message" | "pr-draft";
+
+interface HvAssistantTask {
+  enabled: boolean;
+  /** null = "Same as your default model". */
+  model: { provider: string; modelId: string } | null;
+  append: string;
+}
+
 interface HvApi {
   getStats(sessionId?: string): Promise<unknown>;
   /** Billed API calls (oldest first) + their total. Main sums it so the renderer
@@ -758,6 +769,14 @@ interface HvApi {
   builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
+  /** §19 (2026-08-30): the three model calls the app makes without a session. */
+  assistantTasksGet(): Promise<Record<HvAssistantTaskId, HvAssistantTask>>;
+  assistantTaskSet(
+    id: HvAssistantTaskId,
+    patch: Partial<HvAssistantTask>,
+  ): Promise<Record<HvAssistantTaskId, HvAssistantTask>>;
+  /** The prompt as a TEMPLATE — `note` names what is substituted into it. */
+  assistantTaskPrompt(id: HvAssistantTaskId): Promise<{ text: string; note: string }>;
 
   /** Extended prompt-cache retention (PI_CACHE_RETENTION=long). Global, applied
       at the next spawn — live sessions keep the retention they started with. */

@@ -7,6 +7,7 @@ import { ChatView, ChatWelcome } from "./components/ChatView";
 import { ModelsView } from "./components/ModelsView";
 import { PermissionsView } from "./components/PermissionsView";
 import { SystemPromptView } from "./components/SystemPromptView";
+import { OnBehalfView } from "./components/OnBehalfView";
 import { DashboardView } from "./components/DashboardView";
 import { AuditView } from "./components/AuditView";
 import { type TranscriptItem } from "./components/Transcript";
@@ -2268,6 +2269,7 @@ export default function App(): React.JSX.Element {
           />
         )}
         {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
+        {activeView === "onBehalf" && <OnBehalfView />}
         {activeView === "stats" && <DashboardView workspaces={workspaces} />}
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
         {activeView === "skills" && (
