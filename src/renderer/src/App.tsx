@@ -2795,6 +2795,10 @@ export default function App(): React.JSX.Element {
           workspace={wsId}
           relPath={agentsMd}
           sessionId={selectedId}
+          // PRD §15 (2026-08-30): the draft is a delegation, so the Agents page
+          // owns whether it can run at all. Same inventory that page renders —
+          // not a second way to ask.
+          agents={agents}
           onClose={() => setAgentsMd(null)}
         />
       )}
