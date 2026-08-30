@@ -180,7 +180,7 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }): React.
         {live && <span className="size-1.5 rounded-full bg-honey animate-pulse" />}
       </button>
       {open && (
-        <div className="md md-quiet mt-1 rounded-xl border-2 border-line bg-paper-deep/40 px-3.5 py-2.5 text-xs text-ink-soft break-words max-h-64 overflow-y-auto">
+        <div className="md md-quiet mt-1 text-ink-soft break-words max-h-64 overflow-y-auto">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</ReactMarkdown>
         </div>
       )}
@@ -571,7 +571,12 @@ export function Transcript({
   useEffect(() => {
     if (!follow.current) return;
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [items, busy, streaming]);
+    // §7 round 16: `thinking` belongs here for the same reason `streaming` does
+    // — the live reasoning renders OUTSIDE `items`, so without it the effect
+    // never re-runs while a long think grows the container, and the view stops
+    // following until the block commits. Reported as "autoscroll does not work
+    // anymore after a thinking block collapses".
+  }, [items, busy, streaming, thinking]);
 
   // Round 15: land at the bottom when a session's history first arrives.
   //

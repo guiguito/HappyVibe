@@ -108,6 +108,33 @@ describe("Transcript renders it collapsed", () => {
     expect(decl).not.toContain("whitespace-pre-wrap");
   });
 
+  test("the block is set apart by TYPE, not by a panel", () => {
+    // GUI round 2: a border + fill made the reasoning a card competing with the
+    // answer beside it. Differentiation is italic + a smaller size in the same
+    // muted ink, so nothing but type separates them.
+    expect(decl).not.toContain("border-2");
+    expect(decl).not.toContain("bg-paper-deep");
+    expect(decl).toContain("md-quiet");
+    const css = readFileSync(path.join(process.cwd(), "src/renderer/src/styles.css"), "utf8");
+    const quiet = css.slice(css.indexOf(".md-quiet {"), css.indexOf(".md-quiet {") + 400);
+    expect(quiet).toContain("font-style: italic");
+    // The model writes its summaries in **bold** — the one emphasis this
+    // surface must not have.
+    expect(css).toContain(".md-quiet strong");
+    expect(css.slice(css.indexOf(".md-quiet strong"), css.indexOf(".md-quiet strong") + 160)).toContain("font-weight: inherit");
+  });
+
+  test("the live block is followed as it grows, or the view stops scrolling", () => {
+    // Reported: "autoscroll does not work anymore after a thinking block
+    // collapses". The live block renders OUTSIDE `items`, so the follow effect
+    // needs it in its deps for the same reason it needs `streaming`.
+    // Sliced to the effect's real close, not a char budget — the comment
+    // explaining the fix sits between the call and the deps array.
+    const from = src.indexOf("bottom.current?.scrollIntoView");
+    const deps = src.slice(from, src.indexOf("]);", from) + 3);
+    expect(deps).toMatch(/\}, \[items, busy, streaming, thinking\]\);/);
+  });
+
   test("the label is quiet and lowercase — it is subordinate to the answer", () => {
     // The AGENT label's treatment, which this used to borrow and must not.
     expect(decl).not.toContain("uppercase");
