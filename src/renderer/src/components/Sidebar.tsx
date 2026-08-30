@@ -13,7 +13,8 @@ export type View =
   | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools"
   // Round 8: the settings scroll exploded into pages, each its own destination.
   // §19 (2026-08-30): the model calls the app makes without a session.
-  | "models" | "permissions" | "sysprompt" | "onBehalf" | "stats" | "audit" | "shortcuts"
+  // §30: the changelog is product state, like stats and audit.
+  | "models" | "permissions" | "sysprompt" | "onBehalf" | "stats" | "audit" | "changelog" | "shortcuts"
   | "terminal"
   // §27.
   | "voice"
@@ -132,6 +133,17 @@ function AuditIcon(): React.JSX.Element {
     </svg>
   );
 }
+/** §30: the Changelog page — a page with a turned corner, distinct from the
+    audit log's clipboard beside it. */
+function ChangelogIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M8 13h8M8 17h5" />
+    </svg>
+  );
+}
 
 function TerminalIcon(): React.JSX.Element {
   return (
@@ -202,6 +214,10 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   // Consulted, not changed.
   { view: "stats", label: "Stats", Icon: StatsIcon },
   { view: "audit", label: "Audit log", Icon: AuditIcon },
+  // §30: product state like the two above it — what this build is, and what
+  // changed to get here. Not documentation, so this does not reopen round 8's
+  // deletion of the Help entry (§7).
+  { view: "changelog", label: "Changelog", Icon: ChangelogIcon },
 ];
 
 /** Round 8: the collapse affordance — an actual chevron rather than a 10px
@@ -221,6 +237,16 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
       <path d="m9 6 6 6-6 6" />
     </svg>
   );
+}
+
+/**
+ * §30: the unread-changelog marker. Passive by construction — no count, no
+ * colour that reads as an error, and nothing to dismiss but reading the page.
+ * Deliberately NOT the pending-permission badge next door: that one carries a
+ * number because a blocked turn is waiting on you.
+ */
+function UnreadDot(): React.JSX.Element {
+  return <span className="size-2 rounded-full bg-tangerine shrink-0" aria-label="unread" />;
 }
 
 function TrashIcon(): React.JSX.Element {
@@ -396,6 +422,7 @@ export function Sidebar({
   onDeleteSession,
   settingsOpen,
   onToggleSettingsOpen,
+  changelogUnread,
   railCollapsed,
   onToggleCollapsed,
 }: {
@@ -418,6 +445,8 @@ export function Sidebar({
   /** Round 8: the Settings group's open/closed state (persisted in App). */
   settingsOpen: boolean;
   onToggleSettingsOpen: () => void;
+  /** §30: an unread changelog — a passive dot, never a modal. */
+  changelogUnread: boolean;
   /** F6: slim icon-rail mode + its toggle (⌘B); state persisted in App. */
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
@@ -761,6 +790,11 @@ export function Sidebar({
           <span className="text-left">Settings</span>
           <Chevron open={settingsOpen} />
           <span className="flex-1" />
+          {/* §30: the dot bubbles up through collapse the user did not choose.
+              A closed group hides the Changelog row, so the marker surfaces
+              here — but the ⌘B icon rail (handled far above) is an explicit
+              "hide the sidebar" gesture and deliberately shows nothing. */}
+          {changelogUnread && !settingsOpen && <UnreadDot />}
         </button>
         {settingsOpen && (
           <div className="mt-1 flex flex-col min-h-0 overflow-y-auto">
@@ -774,7 +808,8 @@ export function Sidebar({
                   }`}
                 >
                   <n.Icon />
-                  {n.label}
+                  <span className="flex-1 text-left">{n.label}</span>
+                  {n.view === "changelog" && changelogUnread && <UnreadDot />}
                 </button>
               </div>
             ))}
