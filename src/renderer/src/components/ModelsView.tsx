@@ -104,6 +104,15 @@ export function ModelsView({
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
   const [keyProbes, setKeyProbes] = useState<Record<string, HvKeyProbe>>({});
   const [providerQuery, setProviderQuery] = useState("");
+  /**
+   * The provider whose card should be scrolled to after a save. Cannot be done
+   * inline in saveKey: clearing the query unmounts the search-result card and
+   * React re-renders it inside the configured group, so any scroll issued
+   * before that commit targets a node on its way out (measured: the card ended
+   * up 1708px BELOW the fold). An effect runs after the commit, when the card
+   * that will actually be on screen exists.
+   */
+  const [justSaved, setJustSaved] = useState<string | null>(null);
   const [login, setLogin] = useState<{ provider: string; label: string; event: AuthEvent | null } | null>(null);
   // "Add provider" area — expanded during first-run (it IS the onboarding).
   const [adding, setAdding] = useState(firstRun);
@@ -134,6 +143,16 @@ export function ModelsView({
     await window.hv.authStatus(); // status arrives as an hv.auth ui-request
     setModels(await window.hv.listModels());
   };
+
+  useEffect(() => {
+    if (!justSaved) return;
+    // Instant, not smooth: clearing the query removes the search results in the
+    // same commit, so the content above the card shrinks while a smooth scroll
+    // is still animating and it lands against a stale position (measured: the
+    // card stayed 1708px down, well below a 638px viewport).
+    document.querySelector(`[data-provider-card="${justSaved}"]`)?.scrollIntoView({ block: "center" });
+    setJustSaved(null);
+  }, [justSaved, byok]);
 
   useEffect(() => {
     // Deferred: refresh() sets state from async IPC results, not render data.
@@ -201,6 +220,15 @@ export function ModelsView({
     setKeyProbes((p) => ({ ...p, [id]: probe }));
     setKeyInputs((k) => ({ ...k, [id]: "" }));
     await refresh();
+    // Saving a key moves the card OUT of the search results and up into the
+    // configured group — taking its verdict with it. Measured before this
+    // existed: the "rejected this key" notice landed 354px above the viewport
+    // while the search box still read "No provider matches …", so the one
+    // message the user needed was the one they could not see. Clear the query
+    // (the provider is configured now, it does not belong in "more providers")
+    // and bring the card it became to where they are looking.
+    setProviderQuery("");
+    setJustSaved(id);
     if (firstRun) onSaved();
   };
 
@@ -220,7 +248,7 @@ export function ModelsView({
   /** One provider's key input. Used by BOTH the featured cards and the search
    *  results, so a provider found by search behaves exactly like a listed one. */
   const keyCard = (p: HvByokProvider): React.JSX.Element => (
-    <div key={p.id} className="rounded-xl border-2 border-line bg-paper px-4 py-3">
+    <div key={p.id} data-provider-card={p.id} className="rounded-xl border-2 border-line bg-paper px-4 py-3">
       <div className="flex items-center gap-3 mb-2">
         <div className="font-bold text-sm flex-1 min-w-0">{p.label}</div>
         <span className="text-[10px] text-ink-soft font-medium">{p.modelCount} models</span>
@@ -258,8 +286,14 @@ export function ModelsView({
 
   // ── configured-providers summary ──
   const configured: Array<{ key: string; label: string; chip: string; action?: React.ReactNode }> = [
+    // Keys are namespaced by CREDENTIAL KIND, not by provider id: from the
+    // 2026-08-29 round a provider can be BOTH signed in and hold an API key
+    // (OpenRouter ships OAuth beside OPENROUTER_API_KEY), and a bare id then
+    // collides with the BYOK row below — React logged a duplicate-key error and
+    // may drop one of the two rows. Both rows are wanted: they are two real
+    // credentials, told apart by their chip.
     ...oauthProviders.filter((p) => signedIn(p.id)).map((p) => ({
-      key: p.id,
+      key: `oauth:${p.id}`,
       label: p.label,
       chip: "signed in",
       action: (
@@ -288,7 +322,7 @@ export function ModelsView({
     ...byok
       .filter((p) => p.source)
       .map((p) => ({
-        key: p.id,
+        key: `apikey:${p.id}`,
         label: p.label,
         chip: p.source === "env" ? ".env" : "key saved",
         action:

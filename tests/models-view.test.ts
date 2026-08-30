@@ -49,3 +49,23 @@ describe("ModelsView surface (source scans)", () => {
     }
   });
 });
+
+describe("configured-list keys (GUI pass, 2026-08-30)", () => {
+  const src = readFileSync("src/renderer/src/components/ModelsView.tsx", "utf8");
+
+  test("credential rows are keyed by KIND, not by bare provider id", () => {
+    // From this round a provider can be BOTH signed in and hold an API key —
+    // OpenRouter ships OAuth beside OPENROUTER_API_KEY — and a bare id made the
+    // two rows collide. React logged "two children with the same key" 15x and
+    // may drop one of them. Found only in the running app; no unit test could.
+    expect(src).toMatch(/key: `oauth:\$\{p\.id\}`/);
+    expect(src).toMatch(/key: `apikey:\$\{p\.id\}`/);
+  });
+
+  test("the post-save scroll is instant, not smooth", () => {
+    // Clearing the query removes the search results in the same commit, so a
+    // smooth scroll animates against a stale layout and lands 1708px down.
+    expect(src).toMatch(/data-provider-card="\$\{justSaved\}"/);
+    expect(src).not.toMatch(/scrollIntoView\(\{[^}]*behavior:\s*"smooth"/);
+  });
+});
