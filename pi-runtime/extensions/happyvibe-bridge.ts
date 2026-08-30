@@ -32,8 +32,8 @@ import { parseBuiltins } from "./hv-builtins";
 import { registerSubagentCapabilityCeiling } from "pi-subagents/capability-ceiling";
 import { resolveSubagentLaunchContract } from "pi-subagents/preflight";
 import {
-  boundaryRuleName, isReadOnlyBoundary, isWiderThanReadOnly, needsWiderCeiling,
-  READ_ONLY_CHILD_TOOLS, summarizeBoundary, widenBoundary, writeCapableIn,
+  boundaryRuleName, isWiderThanReadOnly, needsWiderCeiling,
+  READ_ONLY_CHILD_TOOLS, summarizeBoundary, widenBoundary,
   type BoundarySummary,
 } from "./hv-subagent-boundary";
 import {
@@ -778,6 +778,7 @@ export default function (pi: ExtensionAPI) {
       agents: agents.map((a) => ({ name: a.name, chars: `- **${a.name}** — ${a.description.slice(0, 200)}`.length })),
     };
     if (section || agentsSection || planSection || skillSection) return { systemPrompt: injected };
+    return undefined; // no injection this turn — resets Pi to the base prompt
   });
 
   // The only place removal takes effect. Non-destructive: session file untouched.
@@ -1707,7 +1708,7 @@ export default function (pi: ExtensionAPI) {
   const browserInput = async (
     ctx: { ui: { input(title: string, initial: string): Promise<unknown> } },
     payload: Record<string, unknown>,
-  ): ReturnType<typeof browserReply> => browserReply(await ctx.ui.input(JSON.stringify(payload), ""));
+  ): Promise<Awaited<ReturnType<typeof browserReply>>> => browserReply(await ctx.ui.input(JSON.stringify(payload), ""));
 
   pi.registerTool({
     name: "browser_open",
