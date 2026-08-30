@@ -249,3 +249,24 @@ test("returns null rather than guessing at an unknown shape", () => {
   expect(describeSubagentArtifact(`${ARTIFACTS}/abc123_agent_0_unknownkind.md`)).toBeNull();
   expect(describeSubagentArtifact("")).toBeNull();
 });
+
+// Housekeeping #6 — the permission modal is the only caller that passes a
+// virtual RULE name (happyvibe-bridge.ts `permTool`) rather than a tool name.
+// The tail is an identifier the user typed, a hostname, or a server's tool id.
+
+test("renders a virtual rule name verbatim instead of prettifying it", () => {
+  // Was "Subagent:code explorer" — title-cased, hyphen eaten — in the headline
+  // of the very prompt that grants the delegation.
+  expect(toolLabel("subagent:code-explorer", undefined).label).toBe("Sub-agent: code-explorer");
+  expect(toolLabel("mcp:github_create_issue", undefined).label).toBe("MCP: github_create_issue");
+  expect(toolLabel("browser:example.org", undefined).label).toBe("Browser: example.org");
+});
+
+test("a rule name keeps its own colons, and the bare tools are unaffected", () => {
+  // Split on the FIRST colon only: an MCP tool id may contain one.
+  expect(toolLabel("mcp:linear_issue:update", undefined).label).toBe("MCP: linear_issue:update");
+  // The bare tool names still take their switch cases (cards, not the modal).
+  expect(toolLabel("subagent", { agent: "code-explorer" }).label).toBe("Delegating to code-explorer");
+  // An unknown prefix is not a rule name — it must not be swallowed by the guard.
+  expect(toolLabel("weird:thing", undefined).label).toBe("Weird:thing");
+});

@@ -185,11 +185,36 @@ const prettify = (name: string): string => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
+/**
+ * The three virtual rule names the bridge gates on: `subagent:<agent>`,
+ * `mcp:<server>_<tool>` and `browser:<host>` (happyvibe-bridge.ts `permTool`).
+ *
+ * They reach here only from PermissionModal — a tool CARD is built from the real
+ * tool name (`subagent`, `mcp`, `browser_navigate`), which the switch below
+ * handles. The tail of a rule name is an identifier the user typed into an agent
+ * file, or a hostname, or a server's own tool id, so it must render verbatim:
+ * `prettify` turned "subagent:code-explorer" into "Subagent:code explorer" in the
+ * headline of the prompt that grants it. Splitting on the FIRST colon keeps an
+ * `mcp:` tool whose own name contains one intact.
+ */
+const VIRTUAL_RULE: Record<string, { icon: IconKind; kind: string }> = {
+  subagent: { icon: "robot", kind: "Sub-agent" },
+  mcp: { icon: "wrench", kind: "MCP" },
+  browser: { icon: "globe", kind: "Browser" },
+};
+
 export function toolLabel(toolName: string, args: unknown): ToolLabel {
   const a = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
   const str = (k: string): string | null =>
     typeof a[k] === "string" && (a[k] as string).trim() ? (a[k] as string) : null;
   const intent = str("intent");
+
+  const colon = toolName.indexOf(":");
+  if (colon > 0) {
+    const v = VIRTUAL_RULE[toolName.slice(0, colon)];
+    const subject = toolName.slice(colon + 1);
+    if (v && subject) return { icon: v.icon, label: `${v.kind}: ${subject}` };
+  }
 
   switch (toolName) {
     case "bash": {
