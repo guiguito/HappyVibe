@@ -188,6 +188,21 @@ interface HvByokProvider {
   id: string;
   label: string;
   source: "env" | "stored" | null;
+  /** One of the cards shown above the "More providers…" search (2026-08-29). */
+  featured: boolean;
+  /** Models this key unlocks, per Pi's registry — shown on a search row. */
+  modelCount: number;
+}
+
+/** Mirrors KeyProbe in src/main/providers.ts. "bad" = the provider said no. */
+type HvKeyProbe = { status: "ok" } | { status: "unverified" } | { status: "bad"; error: string };
+
+/** Mirrors OAUTH_PROVIDERS in src/main/providers.ts (separate tsconfig roots). */
+interface HvOAuthProvider {
+  id: string;
+  label: string;
+  /** Honest billing note, e.g. Claude Pro/Max extra usage. */
+  caveat?: string;
 }
 
 /** §16 (2026-07-30): a user-defined OpenAI-compatible endpoint. Mirrors
@@ -651,11 +666,16 @@ interface HvApi {
   respondInput(id: string, value: string | null): void;
   getProviders(): Promise<{
     byok: HvByokProvider[];
+    /** Sign-in providers. Owned by main (providers.ts) — never re-listed here. */
+    oauth: HvOAuthProvider[];
     defaultModel: { provider: string; modelId: string } | null;
     /** §16: the provider set BOTH main and the renderer filter model refs with. */
     knownProviders: string[];
   }>;
-  setProviderKey(provider: string, key: string): Promise<void>;
+  /** Saves, then reports a free auth check. The key is stored either way. */
+  /** Local OpenAI-compatible runners found listening (LM Studio, llama.cpp). */
+  detectLocalRunners(): Promise<{ id: string; label: string; running: boolean; models: string[] }[]>;
+  setProviderKey(provider: string, key: string): Promise<HvKeyProbe>;
   removeProviderKey(provider: string): Promise<void>;
   authLogin(provider: string): Promise<void>;
   authLoginCancel(provider: string): Promise<void>;

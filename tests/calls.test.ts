@@ -151,6 +151,32 @@ describe("planProvidersFor", () => {
     expect(s.has("openai-codex")).toBe(true);
     expect(s.has("github-copilot")).toBe(true);
   });
+
+  // 2026-08-29 providers round: xAI ships OAuth (Grok/X subscription) BESIDE a
+  // plain XAI_API_KEY, so it is the second provider after anthropic that is
+  // both BYOK and plan — same key-presence resolution, same known ceiling.
+  test("no xai key -> xai billed via the Grok/X subscription", () => {
+    expect(planProvidersFor({ xai: null }).has("xai")).toBe(true);
+  });
+
+  test("an xai key present -> metered, keep dollars", () => {
+    for (const src of ["env", "stored"] as const) {
+      expect(planProvidersFor({ xai: src }).has("xai")).toBe(false);
+    }
+  });
+
+  test("no kimi key -> kimi-coding billed via the Kimi Code subscription", () => {
+    expect(planProvidersFor({ "kimi-coding": null }).has("kimi-coding")).toBe(true);
+    expect(planProvidersFor({ "kimi-coding": "stored" }).has("kimi-coding")).toBe(false);
+  });
+
+  test("openrouter OAuth mints a METERED key — never plan", () => {
+    // The PKCE flow mints a user-controlled key billed from OpenRouter credits.
+    // Treating it as plan would hide real spend, the inverse of the openai-codex
+    // defect this whole set exists to prevent.
+    expect(planProvidersFor({ openrouter: null }).has("openrouter")).toBe(false);
+    expect(planProvidersFor({ openrouter: "stored" }).has("openrouter")).toBe(false);
+  });
 });
 
 describe("ledgerTotal billing split", () => {

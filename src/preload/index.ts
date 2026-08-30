@@ -185,6 +185,7 @@ contextBridge.exposeInMainWorld("hv", {
     return () => ipcRenderer.removeListener("hv:auth-state-changed", h);
   },
   detectOllama: () => ipcRenderer.invoke("hv:detect-ollama"),
+  detectLocalRunners: () => ipcRenderer.invoke("hv:detect-local-runners"),
   getCustomEndpoints: () => ipcRenderer.invoke("hv:get-custom-endpoints"),
   saveCustomEndpoint: (endpoint: unknown, key?: string) =>
     ipcRenderer.invoke("hv:save-custom-endpoint", endpoint, key),

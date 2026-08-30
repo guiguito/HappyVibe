@@ -51,10 +51,10 @@ import {
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDERS, BYOK_PROVIDER_IDS, detectOllama, fetchEndpointModels, isByokProvider, OAUTH_PROVIDERS, syncModelsJson,
-  type ByokProvider,
+  authJsonProviders, BYOK_PROVIDER_IDS, detectLocalRunner, detectOllama, fetchEndpointModels, LOCAL_RUNNERS, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
+import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
 import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
@@ -697,8 +697,20 @@ export function registerIpc(win: BrowserWindow): void {
 
   const manager = new SessionManager({
     pidFile,
-    spawn: (workspace, resumeFile, sessionId) =>
-      new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile, sessionId))),
+    spawn: (workspace, resumeFile, sessionId) => {
+      // §16 finding 7 (2026-08-29): refuse rather than spawn a chat session with
+      // no model. The app used to pin one to a hardcoded deepseek/deepseek-v4-
+      // flash — a provider the user may never have configured. This is the ONE
+      // choke point every chat spawn routes through (create, resume, hibernation
+      // wake), and it is deliberately not in resolvePiSpawn: the utility client
+      // must still spawn model-less to drive /hv-login before any provider
+      // exists. The renderer blocks send on the same condition (ChatView
+      // noModel), so this is the backstop, not the message the user reads.
+      if (!resolveSpawnModel(workspace, sessionId)) {
+        throw new Error("No model configured — add a provider in Settings → Models.");
+      }
+      return new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile, sessionId)));
+    },
     // W1.3: called at the cap — hibernate the oldest idle session (stats
     // captured best-effort like close-session, index marked, renderer told),
     // or return null so the manager refuses honestly.
@@ -2644,24 +2656,40 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:get-providers", () => {
     const status = providerKeyStatus();
     return {
-      byok: (Object.keys(BYOK_PROVIDERS) as ByokProvider[]).map((id) => ({
-        id, label: BYOK_PROVIDERS[id].label, source: status[id],
+      // The generated catalog (2026-08-29): `featured` decides which cards sit
+      // above the "More providers…" search, `modelCount` is what the search rows
+      // show. Both come from Pi's own registry — see providerCatalog.generated.ts.
+      byok: PROVIDER_CATALOG.map((p) => ({
+        id: p.id,
+        label: p.label,
+        source: status[p.id],
+        featured: (FEATURED_PROVIDER_IDS as readonly string[]).includes(p.id),
+        modelCount: p.modelCount,
       })),
+      // The sign-in list travels the same way the key list does. It used to be
+      // hardcoded a SECOND time in ModelsView, and adding a provider to one copy
+      // left the other behind — main owns it now, the renderer just renders it.
+      oauth: OAUTH_PROVIDERS,
       defaultModel: getDefaultModel(),
       // §16: the set BOTH sides filter model refs with (see resolveSpawnModel).
       knownProviders: knownProviders(),
     };
   });
   ipcMain.handle("hv:set-provider-key", async (_e, provider: string, key: string) => {
-    if (!isByokProvider(provider)) throw new Error(`Not a curated provider: ${provider}`);
+    if (!isByokProvider(provider)) throw new Error(`Unknown provider: ${provider}`);
     setProviderKey(provider, key);
+    // The probe INFORMS, it never blocks: the key is already saved above. A
+    // provider that answers 401 to a model listing but works for completions
+    // would otherwise lock the user out of a key that is fine.
+    const probe = await probeProviderKey(provider, key);
     // Keys ride spawn env: the utility client respawns now; running chat
     // sessions keep their env until their next spawn (never yanked mid-turn).
     await restartUtility();
     providersChanged();
+    return probe;
   });
   ipcMain.handle("hv:remove-provider-key", async (_e, provider: string) => {
-    if (!isByokProvider(provider)) throw new Error(`Not a curated provider: ${provider}`);
+    if (!isByokProvider(provider)) throw new Error(`Unknown provider: ${provider}`);
     removeProviderKey(provider);
     await restartUtility();
     providersChanged();
@@ -2689,6 +2717,12 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:auth-state", () => authState);
 
   ipcMain.handle("hv:detect-ollama", () => detectOllama());
+  // The other two local runners (2026-08-29). Same probe the spawn path uses,
+  // so the page and the model picker cannot disagree about what is running.
+  ipcMain.handle("hv:detect-local-runners", async () =>
+    (await Promise.all(
+      LOCAL_RUNNERS.map(async (r) => ({ id: r.id, label: r.label, ...(await detectLocalRunner(r)) })),
+    )).filter((r) => r.running && r.models.length > 0));
 
   // §16 (2026-07-30): user-defined OpenAI-compatible endpoints. Secrets never
   // reach models.json — the file references $HV_CUSTOM_<ID>_KEY and the value

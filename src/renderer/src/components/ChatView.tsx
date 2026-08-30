@@ -498,6 +498,12 @@ export function ChatView({
     dropUnknownProvider(defaultModel, knownProviders),
   );
   const resolved = resolution?.ref ?? null;
+  // §16 finding 7 (2026-08-29): nothing resolved and the provider list HAS
+  // loaded — an empty knownProviders means "not fetched yet" (the same rule
+  // dropUnknownProvider relies on), and main always sends a non-empty set.
+  // The app no longer invents a model here, so the composer says so instead of
+  // sending into a spawn that will be refused.
+  const noModel = resolved === null && knownProviders.length > 0;
   const vision = supportsVision(models, resolved);
   const modelName = resolved
     ? models?.find((m) => m.provider === resolved.provider && m.id === resolved.modelId)?.name ?? resolved.modelId
@@ -1166,6 +1172,11 @@ export function ChatView({
             Model saved — applies when this session restarts.
           </div>
         )}
+        {noModel && (
+          <div className="max-w-3xl mx-auto px-1 pb-1.5 text-[11px] font-semibold text-berry">
+            No model configured — add a provider in Settings → Models to start chatting.
+          </div>
+        )}
         <div className={`max-w-3xl mx-auto flex gap-1.5 ${multiline ? "items-start" : "items-center"} rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-2 py-1.5 focus-within:border-tangerine transition-colors`}>
           {/* W2.1: "+" attach menu — always visible; entries gate honestly. */}
           <div className="relative shrink-0">
@@ -1428,7 +1439,7 @@ export function ChatView({
           )}
           <button
             type="submit"
-            disabled={!input.trim() && !(pageRefs?.length ?? 0)}
+            disabled={noModel || (!input.trim() && !(pageRefs?.length ?? 0))}
             aria-label={busy ? "Steer" : "Send"}
             title={busy ? "Steer — lands between tool calls" : "Send"}
             className="shrink-0 size-8 flex items-center justify-center rounded-xl text-tangerine hover:bg-paper-deep/40 transition-colors enabled:cursor-pointer disabled:opacity-40"

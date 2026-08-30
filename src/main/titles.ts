@@ -28,7 +28,13 @@ export function generateTitle(
     onDone?: (o: { model: { provider: string; modelId: string }; promptChars: number; outputChars: number; ok: boolean }) => void;
   } = {}
 ): Promise<string | null> {
-  const model = opts.model ?? { provider: "deepseek", modelId: "deepseek-v4-flash" };
+  // §16 finding 7 (2026-08-29): no configured model means NO call. This used
+  // to fall back to a hardcoded deepseek/deepseek-v4-flash, so a user with no
+  // DeepSeek key got a silent failure — and one WITH a key was billed for a
+  // provider they had not chosen for this. Callers already treat null as
+  // "no title", which is the honest answer when nothing is set up.
+  const model = opts.model;
+  if (!model) return Promise.resolve(null);
   const prompt =
     "Write a short title (3 to 6 words, no quotes, no trailing period) for a coding session " +
     `that starts with this request:\n\n${firstUserMessage.slice(0, 500)}\n\nReply with ONLY the title.`;

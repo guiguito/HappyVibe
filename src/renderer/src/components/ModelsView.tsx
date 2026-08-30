@@ -12,17 +12,21 @@ import { Section } from "./Section";
  * onboarding.
  */
 
-/** OAuth "sign in with your plan" providers (PRD "Providers & models"). */
-const OAUTH_PROVIDERS: { id: string; label: string; caveat?: string }[] = [
-  {
-    id: "anthropic",
-    label: "Claude",
-    // Honest billing caveat — locked product decision.
-    caveat: "Heads up: on Claude Pro/Max this uses your plan's extra usage.",
-  },
-  { id: "github-copilot", label: "GitHub Copilot" },
-  { id: "openai-codex", label: "ChatGPT (Codex)" },
-];
+
+/**
+ * The "More providers…" search (2026-08-29). Rows that already have a card
+ * above the box — the featured five, plus anything with a key configured — are
+ * excluded, or the same key input would be offered twice. An empty query lists
+ * NOTHING: the point of the box is that 29 providers do not become 29 inputs.
+ */
+export function filterCatalog<T extends { id: string; label: string; source: unknown; featured: boolean }>(
+  rows: T[],
+  query: string,
+): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return rows.filter((r) => !r.featured && !r.source && `${r.label} ${r.id}`.toLowerCase().includes(q));
+}
 
 const smallBtn =
   "rounded-lg border-2 px-3 py-1.5 text-xs font-bold shadow-sticker cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
@@ -85,11 +89,30 @@ export function ModelsView({
   onSaved: () => void;
 }): React.JSX.Element {
   const [byok, setByok] = useState<HvByokProvider[]>([]);
+  /**
+   * The sign-in list comes from MAIN (providers.ts), which derives it from Pi's
+   * own OAuth registry. It used to be hardcoded here too, so a provider added
+   * to one copy silently never appeared in the other.
+   */
+  const [oauthProviders, setOauthProviders] = useState<HvOAuthProvider[]>([]);
   const [auth, setAuth] = useState<Record<string, AuthProviderStatus>>({});
   const [ollama, setOllama] = useState<{ running: boolean; models: string[] } | null>(null);
+  /** LM Studio / llama.cpp found listening — zero-config, same as Ollama. */
+  const [localRunners, setLocalRunners] = useState<{ id: string; label: string; models: string[] }[]>([]);
   const [models, setModels] = useState<HvModel[]>([]);
   const [defaultModel, setDefaultModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [keyProbes, setKeyProbes] = useState<Record<string, HvKeyProbe>>({});
+  const [providerQuery, setProviderQuery] = useState("");
+  /**
+   * The provider whose card should be scrolled to after a save. Cannot be done
+   * inline in saveKey: clearing the query unmounts the search-result card and
+   * React re-renders it inside the configured group, so any scroll issued
+   * before that commit targets a node on its way out (measured: the card ended
+   * up 1708px BELOW the fold). An effect runs after the commit, when the card
+   * that will actually be on screen exists.
+   */
+  const [justSaved, setJustSaved] = useState<string | null>(null);
   const [login, setLogin] = useState<{ provider: string; label: string; event: AuthEvent | null } | null>(null);
   // "Add provider" area — expanded during first-run (it IS the onboarding).
   const [adding, setAdding] = useState(firstRun);
@@ -112,12 +135,24 @@ export function ModelsView({
   const refresh = async (): Promise<void> => {
     const p = await window.hv.getProviders();
     setByok(p.byok);
+    setOauthProviders(p.oauth);
     setDefaultModel(p.defaultModel);
     setOllama(await window.hv.detectOllama());
+    setLocalRunners(await window.hv.detectLocalRunners());
     setCustom(await window.hv.getCustomEndpoints());
     await window.hv.authStatus(); // status arrives as an hv.auth ui-request
     setModels(await window.hv.listModels());
   };
+
+  useEffect(() => {
+    if (!justSaved) return;
+    // Instant, not smooth: clearing the query removes the search results in the
+    // same commit, so the content above the card shrinks while a smooth scroll
+    // is still animating and it lands against a stale position (measured: the
+    // card stayed 1708px down, well below a 638px viewport).
+    document.querySelector(`[data-provider-card="${justSaved}"]`)?.scrollIntoView({ block: "center" });
+    setJustSaved(null);
+  }, [justSaved, byok]);
 
   useEffect(() => {
     // Deferred: refresh() sets state from async IPC results, not render data.
@@ -178,18 +213,87 @@ export function ModelsView({
   const saveKey = async (id: string): Promise<void> => {
     const key = keyInputs[id]?.trim();
     if (!key) return;
-    await window.hv.setProviderKey(id, key);
+    // The key is saved regardless — this only reports what the provider said
+    // when asked. "bad" means it answered 401/403; "unverified" means we could
+    // not tell (no /models route, or the host was unreachable).
+    const probe = await window.hv.setProviderKey(id, key);
+    setKeyProbes((p) => ({ ...p, [id]: probe }));
     setKeyInputs((k) => ({ ...k, [id]: "" }));
     await refresh();
+    // Saving a key moves the card OUT of the search results and up into the
+    // configured group — taking its verdict with it. Measured before this
+    // existed: the "rejected this key" notice landed 354px above the viewport
+    // while the search box still read "No provider matches …", so the one
+    // message the user needed was the one they could not see. Clear the query
+    // (the provider is configured now, it does not belong in "more providers")
+    // and bring the card it became to where they are looking.
+    setProviderQuery("");
+    setJustSaved(id);
     if (firstRun) onSaved();
   };
+
+  /** What the key check said, per provider. Cleared when the key is removed. */
+  const keyProbeNote = (id: string): React.JSX.Element | null => {
+    const probe = keyProbes[id];
+    if (!probe || probe.status === "ok") return null;
+    return probe.status === "bad" ? (
+      <p className="mt-1 text-xs font-bold text-berry">
+        Saved, but {byok.find((b) => b.id === id)?.label ?? id} rejected this key ({probe.error}).
+      </p>
+    ) : (
+      <p className="mt-1 text-xs text-ink-soft">Saved. We couldn&apos;t verify this key here.</p>
+    );
+  };
+
+  /** One provider's key input. Used by BOTH the featured cards and the search
+   *  results, so a provider found by search behaves exactly like a listed one. */
+  const keyCard = (p: HvByokProvider): React.JSX.Element => (
+    <div key={p.id} data-provider-card={p.id} className="rounded-xl border-2 border-line bg-paper px-4 py-3">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="font-bold text-sm flex-1 min-w-0">{p.label}</div>
+        <span className="text-[10px] text-ink-soft font-medium">{p.modelCount} models</span>
+        {p.source === "env" && <Chip tone="honey">.env</Chip>}
+        {p.source === "stored" && <Chip tone="leaf">key saved</Chip>}
+      </div>
+      <form
+        className="flex gap-2"
+        onSubmit={(ev) => {
+          ev.preventDefault();
+          void saveKey(p.id);
+        }}
+      >
+        <input
+          type="password"
+          placeholder={p.source ? "Paste a new key to replace…" : "Paste API key…"}
+          value={keyInputs[p.id] ?? ""}
+          onChange={(e) => setKeyInputs((k) => ({ ...k, [p.id]: e.target.value }))}
+          className="flex-1 min-w-0 font-mono text-xs rounded-lg border-2 border-line bg-card px-3 py-2 focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+        />
+        <button
+          type="submit"
+          disabled={!keyInputs[p.id]?.trim()}
+          className={`${smallBtn} bg-tangerine text-paper border-tangerine-deep enabled:hover:brightness-105 disabled:opacity-40`}
+        >
+          Save
+        </button>
+      </form>
+      {keyProbeNote(p.id)}
+      <p className="text-xs text-ink-soft mt-1.5">Keys are encrypted with your OS keychain.</p>
+    </div>
+  );
 
   const signedIn = (id: string): boolean => isSignedIn(auth[id]);
 
   // ── configured-providers summary ──
   const configured: Array<{ key: string; label: string; chip: string; action?: React.ReactNode }> = [
-    ...OAUTH_PROVIDERS.filter((p) => signedIn(p.id)).map((p) => ({
-      key: p.id,
+    // Keys are namespaced by CREDENTIAL KIND, not by provider id: from the
+    // 2026-08-29 round a provider can be BOTH signed in and hold an API key
+    // (OpenRouter ships OAuth beside OPENROUTER_API_KEY), and a bare id then
+    // collides with the BYOK row below — React logged a duplicate-key error and
+    // may drop one of the two rows. Both rows are wanted: they are two real
+    // credentials, told apart by their chip.
+    ...oauthProviders.filter((p) => signedIn(p.id)).map((p) => ({
+      key: `oauth:${p.id}`,
       label: p.label,
       chip: "signed in",
       action: (
@@ -202,6 +306,11 @@ export function ModelsView({
         </button>
       ),
     })),
+    ...localRunners.map((r) => ({
+      key: r.id,
+      label: `${r.label} (${r.models.length} local model${r.models.length === 1 ? "" : "s"})`,
+      chip: "running",
+    })),
     ...(ollama?.running
       ? [{ key: "ollama", label: `Ollama (${ollama.models.length} local model${ollama.models.length === 1 ? "" : "s"})`, chip: "running" }]
       : []),
@@ -213,7 +322,7 @@ export function ModelsView({
     ...byok
       .filter((p) => p.source)
       .map((p) => ({
-        key: p.id,
+        key: `apikey:${p.id}`,
         label: p.label,
         chip: p.source === "env" ? ".env" : "key saved",
         action:
@@ -229,7 +338,7 @@ export function ModelsView({
       })),
   ];
 
-  const oauthCard = (p: (typeof OAUTH_PROVIDERS)[number]): React.JSX.Element => (
+  const oauthCard = (p: HvOAuthProvider): React.JSX.Element => (
     <div key={p.id} className="rounded-xl border-2 border-line bg-paper px-4 py-3">
       <div className="flex items-center gap-3">
         <div className="font-bold text-sm flex-1 min-w-0">{p.label}</div>
@@ -298,7 +407,7 @@ export function ModelsView({
           {adding && (
             <div>
               <GroupLabel>Sign in with your plan</GroupLabel>
-              <div className="flex flex-col gap-3">{OAUTH_PROVIDERS.map(oauthCard)}</div>
+              <div className="flex flex-col gap-3">{oauthProviders.map(oauthCard)}</div>
 
               <GroupLabel>Local</GroupLabel>
               <div className="rounded-xl border-2 border-line bg-paper px-4 py-3">
@@ -341,38 +450,28 @@ export function ModelsView({
 
               <GroupLabel>Cloud API keys</GroupLabel>
               <div className="flex flex-col gap-3">
-                {byok.map((p) => (
-                  <div key={p.id} className="rounded-xl border-2 border-line bg-paper px-4 py-3">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="font-bold text-sm flex-1 min-w-0">{p.label}</div>
-                      {p.source === "env" && <Chip tone="honey">.env</Chip>}
-                      {p.source === "stored" && <Chip tone="leaf">key saved</Chip>}
-                    </div>
-                    <form
-                      className="flex gap-2"
-                      onSubmit={(ev) => {
-                        ev.preventDefault();
-                        void saveKey(p.id);
-                      }}
-                    >
-                      <input
-                        type="password"
-                        placeholder={p.source ? "Paste a new key to replace…" : "Paste API key…"}
-                        value={keyInputs[p.id] ?? ""}
-                        onChange={(e) => setKeyInputs((k) => ({ ...k, [p.id]: e.target.value }))}
-                        className="flex-1 min-w-0 font-mono text-xs rounded-lg border-2 border-line bg-card px-3 py-2 focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!keyInputs[p.id]?.trim()}
-                        className={`${smallBtn} bg-tangerine text-paper border-tangerine-deep enabled:hover:brightness-105 disabled:opacity-40`}
-                      >
-                        Save
-                      </button>
-                    </form>
-                    <p className="text-xs text-ink-soft mt-1.5">Keys are encrypted with your OS keychain.</p>
+                {byok.filter((p) => p.featured || p.source).map(keyCard)}
+              </div>
+
+              {/* The long tail of Pi's registry. One search box, one input per
+                  pick — never 29 inputs stacked down the page. */}
+              <div className="mt-3">
+                <input
+                  type="search"
+                  value={providerQuery}
+                  onChange={(e) => setProviderQuery(e.target.value)}
+                  placeholder={`More providers… (search ${byok.length} supported by Pi)`}
+                  className="w-full text-sm rounded-lg border-2 border-line bg-card px-3 py-2 focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+                />
+                {providerQuery.trim() && (
+                  <div className="flex flex-col gap-3 mt-3">
+                    {filterCatalog(byok, providerQuery).length === 0 ? (
+                      <p className="text-xs text-ink-soft px-1">No provider matches “{providerQuery}”.</p>
+                    ) : (
+                      filterCatalog(byok, providerQuery).map(keyCard)
+                    )}
                   </div>
-                ))}
+                )}
               </div>
 
               <GroupLabel>Custom endpoint</GroupLabel>

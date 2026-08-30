@@ -394,7 +394,31 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   (blocking = select/input; fire-and-forget = notify); bridge slash-commands `/hv-*` via RPC prompt.
 - JSONL EventLog, frozen envelope `{ts,type,sessionId?,workspaceId?,data?}` — audit + analytics. No SQLite.
 - Model resolution: session → workspace → global, mirrored in ipc.ts `spawnOpts` AND
-  renderer composer.ts `resolveModel` — change both or neither.
+  renderer composer.ts `resolveModel` — change both or neither. **When NOTHING resolves the app
+  now refuses rather than inventing a model** (§16 finding 7, closed 2026-08-29): `resolvePiSpawn`
+  emits no `--provider`/`--model`, the SessionManager `spawn` callback throws, and ChatView
+  disables send with a visible notice. The refusal is at that callback — the ONE choke point for
+  create/resume/hibernation-wake — and deliberately NOT inside `resolvePiSpawn`, because the
+  utility client must still spawn model-less to drive `/hv-login` before any provider exists.
+- **The BYOK provider list is GENERATED, not curated** — `npm run catalog:providers` writes
+  `src/main/providerCatalog.generated.ts` from Pi's own registry (`builtinProviders()`), and
+  `BYOK_PROVIDERS`/`BYOK_PROVIDER_IDS`/`OAUTH_PROVIDERS` are views over it. Re-run it after a Pi
+  pin bump; `tests/provider-catalog.test.ts` RE-DERIVES the catalog from the vendored tree rather
+  than agreeing with the committed file, so a bump that adds a provider fails there instead of
+  drifting. Four things bite. (1) **pi-ai is a NESTED scoped dep**, not a top-level `pi-ai`:
+  `pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/`.
+  (2) The env-var map is a **local const inside a non-exported function** — never re-parse it;
+  `auth.apiKey.resolve()` calls `ctx.env(name)` per candidate, so a RECORDING ctx reads the list
+  off the real implementation. (3) **Providers can SHARE an env var** (`moonshotai` +
+  `moonshotai-cn` are both `MOONSHOT_API_KEY`; also opencode/opencode-go, qwen-token-plan/-individual)
+  — they collapse to ONE row, because the row is what `buildProviderEnv` writes and `keySource`
+  reads, and two rows over one variable makes one key look like two. (4) Every exclusion is
+  DERIVED (no `auth.apiKey`, zero models, >1 env var, no usable base URL), so the PRD-deferred
+  multi-field cloud providers fall out on their own; the only hand-listed id is `github-copilot`
+  (OAuth-only here) and the only pinned env var is `anthropic`'s, which declares three.
+- **`npm test` stays key-free only if `sk-REPLACE` neutralisation covers EVERY catalog env var**,
+  not the original five — `tests/providers.test.ts` asserts it per row. A provider where the
+  placeholder leaked through would silently turn the 40 s non-live suite into a paid ~6 min one.
 
 ## Gotchas
 - One-shot pi CLI calls hang unless stdin is closed (`stdio: ["ignore", …]`). RPC mode unaffected.
@@ -687,13 +711,22 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   (round 15 renamed it `bypass` and nothing rewrites history), so `AuditView` maps both to one
   label and `analytics.ts` folds them into one `bySource` bucket. Forget the fold and one fact
   shows as two half-sized buckets either side of the rename.
-- **The app's own model calls are TOKENS, never dollars (`src/main/oneShotLog.ts`).** The four
-  one-shot `pi -p --no-session` callers (session titles, the AGENTS.md draft, the commit message,
-  the PR draft) carry no usage record at all, so a dollar figure would have to come from a price
-  table main does not have and must not grow a second copy of — §19 ruling 3's "unknown price
-  rendered as a number", one surface over. They log `assistant.oneshot` (estimated tokens), appear
-  as audit rows interleaved by timestamp, and sit BESIDE the Stats cost, never inside it. A test
-  asserts the payload has no cost key.
+- **The app's own model calls are TOKENS, never dollars (`src/main/oneShotLog.ts`).** The
+  one-shot `pi -p --no-session` callers carry no usage record at all, so a dollar figure would have
+  to come from a price table main does not have and must not grow a second copy of — §19 ruling 3's
+  "unknown price rendered as a number", one surface over. They log `assistant.oneshot` (estimated
+  tokens), appear as audit rows interleaved by timestamp, and sit BESIDE the Stats cost, never
+  inside it. A test asserts the payload has no cost key.
+  **There are THREE, not four — this entry and PRD §15/§19 all said four, and the fourth is dead.**
+  Live: session titles (`titles.ts`), the commit message and the PR draft (`gitMessage.ts`).
+  The **AGENTS.md draft is NOT a one-shot** — since 2026-07-12 (`49c12fd`) it is a normal
+  delegation to the `agents-md-maker` sub-agent, prompted from the RENDERER
+  (`AgentsMdPanel.tsx`, `promptSession`), so it runs on the session's own model and is gated and
+  audited like any other delegation. `proposeAgentsMd` (agentsMd.ts) survives as an unreferenced
+  export with a dead IPC handler, and round 15 wired `oneShot("agents-md")` audit logging INTO
+  that dead handler a month later — so no such audit row has ever been emitted, and
+  AuditView's `"drafted AGENTS.md"` label is unreachable. Verify before trusting any list of these
+  callers: `grep -rn "proposeAgentsMd" src/renderer/src` returns nothing.
 - **Git (§29): the panel renders GIT's hunks, and that is not a style preference.** The tool cards
   use the js `diff` library (`diffs.ts`) and keep it — they render an edit's own before/after,
   which git never saw. But git and that library split the same change into DIFFERENT hunks, so a
