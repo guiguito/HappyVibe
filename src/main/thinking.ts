@@ -25,8 +25,10 @@ const known = (l: unknown): ThinkingLevel | null =>
  * default, the rule §16 finding 7 settled for the model.
  *
  * An unrecognised stored value is dropped rather than forwarded: config.json is
- * hand-editable and `--thinking` rejects an invalid level by exiting, which
- * would make a typo unrecoverable from the UI.
+ * hand-editable, and measured against the vendored CLI an invalid level prints
+ * `Warning: Invalid thinking level "x"` on stderr and then runs at the DEFAULT
+ * — so a typo would not crash, it would silently give the user a level they
+ * did not choose, which is the whole failure this feature exists to end.
  */
 export function resolveThinking(
   session: ThinkingLevel | null | undefined,

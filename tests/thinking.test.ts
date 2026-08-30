@@ -1,5 +1,6 @@
 import { expect, test, describe } from "vitest";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { resolvePiSpawn } from "../src/main/pi/spawn";
 import { THINKING_LEVELS, resolveThinking, type ThinkingLevel } from "../src/main/thinking";
 
@@ -9,6 +10,22 @@ describe("THINKING_LEVELS", () => {
   test("is exactly Pi's own union, in order", () => {
     // pi-agent-core dist/types.d.ts:260. A pin bump that changes it fails here.
     expect(THINKING_LEVELS).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+  });
+
+  test("is DERIVED from the vendored CLI, not hand-listed beside it", () => {
+    // The contract-test pattern this repo uses for pin bumps: read upstream's
+    // own list rather than agreeing with our copy of it. Measured against the
+    // real CLI, `--thinking enormous` prints
+    //   Warning: Invalid thinking level "enormous". Valid values: off, minimal, …
+    // so this is the list that message is built from.
+    const args = readFileSync(
+      path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli/args.js"),
+      "utf8",
+    );
+    const upstream = JSON.parse(
+      args.match(/const VALID_THINKING_LEVELS = (\[[^\]]*\])/)![1].replace(/'/g, '"'),
+    );
+    expect([...THINKING_LEVELS]).toEqual(upstream);
   });
 });
 
@@ -29,8 +46,10 @@ describe("resolveThinking", () => {
   });
 
   test("an unknown stored value is ignored rather than passed to Pi", () => {
-    // config.json is hand-editable; --thinking rejects an invalid level and
-    // Pi exits, which would make a bad config unrecoverable from the UI.
+    // config.json is hand-editable. Measured: an invalid level does NOT crash
+    // Pi — it warns on stderr and runs at the default, i.e. it silently gives
+    // the user a level they did not choose. That is the failure this whole
+    // feature exists to end, so garbage is dropped here instead.
     expect(resolveThinking("enormous" as ThinkingLevel, "high")).toBe("high");
     expect(resolveThinking(null, "enormous" as ThinkingLevel)).toBeNull();
   });
