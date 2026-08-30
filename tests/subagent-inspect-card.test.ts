@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { inspectToResults } from "../src/renderer/src/agents";
+import { asyncResultInfo, inspectToResults } from "../src/renderer/src/agents";
+import { delegationSummary, type ToolCardData } from "../src/renderer/src/components/ToolCard";
+import { restoreItems } from "../src/main/restore";
+import { toTranscriptItems } from "../src/renderer/src/restoreMap";
 
 /**
  * §12 (2026-08-30): `window.hv.subagentInspect` was built 2026-08-21 and had
@@ -114,5 +117,71 @@ describe("sessionId reaches the card the same way workspace does", () => {
 
   it("ChatView supplies it", () => {
     expect(chat).toMatch(/<Transcript[\s\S]{0,2000}sessionId=\{sessionId\}/);
+  });
+});
+
+describe("a RESTORED card keeps the id it needs to inspect its child", () => {
+  /**
+   * Captured from a real session file during the 2026-08-30 GUI pass, which is
+   * how this gap was found at all: every unit test fed a LIVE card
+   * (`result.details.asyncId`), while restore.ts flattens the result to its text
+   * blocks. The id is spelled inside `[brackets]` in that text and structured in
+   * the message's `details` sibling — so it is READ, never parsed back out.
+   */
+  const raw = [
+    { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "code-explorer", task: "map it" } }] },
+    {
+      role: "toolResult",
+      toolCallId: "call-1",
+      toolName: "subagent",
+      isError: false,
+      details: { mode: "single", asyncId: "02320d30-c265-40e0-a1d3-c928c0d6cdcf" },
+      content: [{ type: "text", text: "Run fan-out: 1/64 used\nAsync: code-explorer [02320d30-c265-40e0-a1d3-c928c0d6cdcf]" }],
+    },
+  ];
+
+  it("restore.ts carries details.asyncId onto the card", () => {
+    const tool = restoreItems(raw).find((i) => i.kind === "tool");
+    expect(tool).toBeDefined();
+    expect(tool.asyncId).toBe("02320d30-c265-40e0-a1d3-c928c0d6cdcf");
+  });
+
+  it("restoreMap names it, so it is not dropped in silence", () => {
+    // That module's own header: a field main sends which is not listed here is
+    // dropped silently — which is how the images field was lost once already.
+    const items = toTranscriptItems(
+      restoreItems(raw).map((i) => (i.kind === "tool" ? { ...i, subagentCost: undefined } : i)),
+      { sessionId: "s1", workspaceId: null },
+      (() => { let n = 0; return () => ++n; })(),
+    );
+    const card = items.find((i) => i.kind === "tool").card;
+    expect(card.asyncId).toBe("02320d30-c265-40e0-a1d3-c928c0d6cdcf");
+  });
+
+  it("a blocking delegation gets no asyncId", () => {
+    const fg = [
+      raw[0],
+      { ...raw[1], details: { mode: "single" }, content: [{ type: "text", text: "the child said hello" }] },
+    ];
+    expect(restoreItems(fg).find((i) => i.kind === "tool").asyncId).toBeUndefined();
+  });
+
+  it("the restored card still does not claim background work", () => {
+    // asyncResultInfo answers "still in flight" off the STRUCTURED result only.
+    // A restored card is a finished run; teaching that function the restore
+    // shape would re-open the bug this round fixed.
+    const restoredResult = "Run fan-out: 1/64 used\nAsync: code-explorer [02320d30]";
+    expect(asyncResultInfo(restoredResult)).toBeNull();
+    const card: ToolCardData = {
+      toolCallId: "c", toolName: "subagent", args: {}, status: "done",
+      result: restoredResult, asyncId: "02320d30",
+    };
+    expect(delegationSummary(card)).not.toContain("running in the background");
+  });
+
+  it("the card asks with card.asyncId first, then the live structured read", () => {
+    const src2 = readFileSync("src/renderer/src/components/ToolCard.tsx", "utf8");
+    const card = src2.slice(src2.indexOf("function SubagentCard"), src2.indexOf("export function SubagentTraceView"));
+    expect(card).toContain("const asyncId = card.asyncId ?? async?.asyncId ?? null");
   });
 });

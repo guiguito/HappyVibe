@@ -38,6 +38,10 @@ export type RestoreItem =
       error?: boolean;
       images?: string[];
       imagesDropped?: boolean;
+      /** §12 (2026-08-30): an async delegation's run id, so a reopened card can
+          inspect its child. Absent for every non-delegation card and for a
+          blocking (`async:false`) delegation, which has no detached run. */
+      asyncId?: string;
       /** Round 15: epoch ms — the RESULT's stamp where there is one (when the
           tool finished), else the call's. Not rendered on the card; it is what
           lets a turn ending in a tool call measure its true length. */
@@ -59,6 +63,16 @@ export interface RawMessage {
   toolName?: string;
   toolCallId?: string;
   isError?: boolean;
+  /**
+   * §12 (2026-08-30): a toolResult's structured sibling of `content`.
+   *
+   * `messageText` keeps only the text blocks, so an async delegation's
+   * `details.asyncId` was dropped on restore — and that id is the ONLY way a
+   * reopened card can ask upstream for its child's transcript. Measured on a
+   * real session file: the text block spells the id inside `[brackets]` but the
+   * structured field is right here, so it is read rather than parsed back out.
+   */
+  details?: { asyncId?: unknown };
   /**
    * Round 15: epoch ms, written by Pi on every message entry. Measured on a real
    * session file — `entry.timestamp` is an ISO string but `entry.message
@@ -256,6 +270,10 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
         // The result's stamp is when the tool FINISHED — truer than the call's
         // for a turn that ends on a long-running command.
         if (typeof m.timestamp === "number") tool.ts = m.timestamp;
+        // §12 (2026-08-30): read, never parsed back out of the flattened text
+        // (see RawMessage.details). Without it a reopened delegation card has no
+        // id to inspect its child with, and expands to an empty panel.
+        if (typeof m.details?.asyncId === "string" && m.details.asyncId) tool.asyncId = m.details.asyncId;
         // §7 round 12: a screenshot comes back HERE — 7 of the 8 image blocks
         // found in real session files were tool results.
         Object.assign(tool, imagesOf(m.content, budget));

@@ -35,6 +35,16 @@ export interface ToolCardData {
    * the run had finished.
    */
   delegation?: { outcome: "done" | "failed" | "stopped"; summary?: string };
+  /**
+   * §12 (2026-08-30): a detached delegation's run id.
+   *
+   * Live cards read it off `result.details.asyncId`; a RESTORED card cannot,
+   * because restore.ts flattens the result to its text blocks — so main sends it
+   * as its own field (restore.ts → restoreMap.ts). It is what the expanded card
+   * inspects the child's transcript with, and a reopened card had none, which
+   * made that expansion an empty panel.
+   */
+  asyncId?: string;
 }
 
 const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
@@ -508,7 +518,11 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
    */
   const [inspected, setInspected] = useState<SubagentResult[] | null>(null);
   const [inspectError, setInspectError] = useState<string | null>(null);
-  const asyncId = async?.asyncId;
+  // `card.asyncId` first: a RESTORED card has it as its own field, because its
+  // result was flattened to text and `asyncResultInfo` finds nothing there —
+  // and the restore path is the one where this fetch is actually needed, since a
+  // live run streams its own transcript.
+  const asyncId = card.asyncId ?? async?.asyncId ?? null;
   useEffect(() => {
     if (!open || !asyncId || !sessionId || results.length > 0) {
       setInspected(null);
