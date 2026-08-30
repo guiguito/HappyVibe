@@ -90,3 +90,60 @@ describe("the avatar's hue cannot be a Tailwind class", () => {
     expect(rail).not.toMatch(/className=\{`[^`]*\$\{a\.hue\}/);
   });
 });
+
+describe("the card the rail opens IS the expanded state (2026-08-31)", () => {
+  const delCard = chat.slice(chat.indexOf("function DelegationRunCard"), chat.indexOf("function AgentsChip"));
+
+  it("found a DelegationRunCard body to scan", () => {
+    expect(delCard.length).toBeGreaterThan(2000);
+  });
+
+  it("the delegation card has no collapsed state to toggle back to", () => {
+    // The circle is what "collapsed" means now. A card that opened shut was one
+    // click short of showing anything, which is what this replaced.
+    expect(delCard).not.toContain("setOpen((o) => !o)");
+    expect(delCard).toContain("const open = true");
+  });
+
+  it("both cards close with ✕, not a chevron", () => {
+    expect(delCard).toContain("✕");
+    expect(term).toContain("✕");
+    for (const s of [delCard, term]) {
+      expect(s).not.toContain('open ? "▾" : "▸"');
+    }
+  });
+
+  it("✕ closes the overlay rather than collapsing in place", () => {
+    expect(delCard).toContain("onClick={onClose}");
+    expect(term).toContain("onClick={onClose}");
+  });
+
+  it("the rail hands ✕ only to the overlay card, never to a promoted one", () => {
+    // A promoted (needs_attention) card has no circle to return to, and that
+    // state must not be dismissible — PRD §12, 2026-08-30.
+    expect(rail).toContain("cardFor(a.key, false)");
+    expect(rail).toContain("cardFor(open, true)");
+    expect(rail).toContain("onClose={closable ?");
+  });
+
+  it("neither card's header title is a toggle any more", () => {
+    // A stray click on the title used to close the emulator you had just opened.
+    expect(term).not.toContain("onClick={onToggle}");
+    expect(delCard).not.toContain('title={open ? "Collapse');
+  });
+
+  it("the terminal card always hosts its emulator and always offers Open as tab", () => {
+    expect(term).toContain("<LiveTerminal terminalId={run.terminalId} settings={settings} />");
+    expect(term).not.toContain("{open && <LiveTerminal");
+    expect(term).not.toContain("{open && (");
+  });
+
+  it("the three-line tail moved to the rail's hover readout, it did not disappear", () => {
+    // PRD §26 (2026-08-30) says so explicitly; the collapsed card that used to
+    // host it no longer exists.
+    expect(term).toMatch(/export function TerminalTail\b/);
+    expect(rail).toContain('a.kind === "terminal" && <TerminalTail terminalId={a.key} />');
+    // …and it must read MAIN's rendered grid, never re-parse raw PTY bytes.
+    expect(term).toContain("window.hv.termText(terminalId, 3)");
+  });
+});

@@ -15,7 +15,7 @@ import { agentBlurb, delegationHint, formatElapsed, isStoppableChild, sortAgents
 import { promotedKeys, toRunAvatars, RUN_STATE_RING, type RunAvatar } from "../runRail";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
-import { TerminalRunCard, type TerminalRun } from "./TerminalRunCard";
+import { TerminalRunCard, TerminalTail, type TerminalRun } from "./TerminalRunCard";
 import { type IconKind } from "../toolLabel";
 import { insertAtComposer } from "../composerText";
 import { MicButton } from "./MicButton";
@@ -1560,12 +1560,16 @@ function RunRail({
 
   if (avatars.length === 0) return null;
 
-  const cardFor = (key: string): React.JSX.Element | null => {
+  const cardFor = (key: string, closable: boolean): React.JSX.Element | null => {
     const run = runs.find((r) => r.id === key);
     if (run) {
       return (
         <DelegationRunCard
           run={run}
+          // A PROMOTED card has no circle to return to, so it gets no ✕ — the
+          // run needs attention and closing it would hide the one state that
+          // must not be dismissible (PRD §12, 2026-08-30).
+          onClose={closable ? () => setOpen(null) : undefined}
           // Foreground runs stream their child transcript onto the in-flow tool
           // card; async (detached) runs have none — their live progress rides
           // run.live from the status poller instead.
@@ -1581,11 +1585,10 @@ function RunRail({
       <TerminalRunCard
         run={t}
         settings={terminalSettings}
-        // Always `open`: the rail IS the collapsed state, so the card the rail
-        // opens is the expanded one. Exactly one is ever mounted, which is what
-        // makes hosting a live emulator affordable (§26).
-        open
-        onToggle={() => setOpen(null)}
+        // The rail IS the collapsed state, so the card it opens is the expanded
+        // one and ✕ goes back to the circle. Exactly one is ever mounted, which
+        // is what makes hosting a live emulator affordable (§26).
+        onClose={() => setOpen(null)}
         onStop={onStopTerminal}
         onOpenAsTab={onOpenTerminalAsTab}
       />
@@ -1598,7 +1601,7 @@ function RunRail({
       {avatars
         .filter((a) => promoted.has(a.key))
         .map((a) => (
-          <div key={`promoted-${a.key}`}>{cardFor(a.key)}</div>
+          <div key={`promoted-${a.key}`}>{cardFor(a.key, false)}</div>
         ))}
       <div className="pt-3 flex items-center gap-2 flex-wrap">
         {avatars
@@ -1631,6 +1634,11 @@ function RunRail({
                     <span className="text-sm font-black text-tangerine-deep break-words">{a.name}</span>
                     {a.caption && <span className="text-xs text-ink-soft break-words">{a.caption}</span>}
                     <RunFacts avatar={a} runs={runs} terminalRuns={terminalRuns} />
+                    {/* §26 (2026-08-31): what that terminal is actually printing.
+                        This was the collapsed card's body; the circle is the
+                        collapsed state now, so it lives here. Mounted only while
+                        hovered, so it polls in bursts rather than forever. */}
+                    {a.kind === "terminal" && <TerminalTail terminalId={a.key} />}
                     <div className="flex items-center gap-2 pt-0.5">
                       {a.state === "working" && (
                         <button
@@ -1657,7 +1665,7 @@ function RunRail({
             </div>
           ))}
       </div>
-      {open && !promoted.has(open) && <div className={`${RUN_RAIL_OVERLAY} z-20`}>{cardFor(open)}</div>}
+      {open && !promoted.has(open) && <div className={`${RUN_RAIL_OVERLAY} z-20`}>{cardFor(open, true)}</div>}
     </div>
   );
 }
@@ -1728,10 +1736,17 @@ export const GAUGE_TONE: Record<GaugeZone, string> = {
  * brief done/failed state, then a height-collapse slide-away; the in-flow call
  * line + result remain in the transcript as the record.
  */
-function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: DelegationRun; trace?: SubagentTrace; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void }): React.JSX.Element {
+function DelegationRunCard({ run, trace, onClose, onStopRun, onStopChild }: { run: DelegationRun; trace?: SubagentTrace; onClose?: () => void; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void }): React.JSX.Element {
   const running = run.status === "running";
   const attention = running && run.live?.activityState === "needs_attention";
-  const [open, setOpen] = useState(false);
+  /**
+   * §12 (2026-08-31): the card IS the expanded state, so there is no collapsed
+   * one to toggle back to — the rail's circle is what "collapsed" means now, and
+   * a card that opened shut was one click short of showing anything. The header
+   * is therefore inert and the top-right control CLOSES (back to the circle)
+   * rather than collapsing in place.
+   */
+  const open = true;
   const [leaving, setLeaving] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -1798,19 +1813,13 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
         <div className="pt-3">
           <div className={`rounded-xl border-2 bg-card shadow-sticker-lg overflow-hidden ${border}`}>
             <div className="w-full flex items-start gap-3 px-4 py-2.5 text-sm font-semibold">
-              <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                aria-expanded={open}
-                title={open ? "Collapse the subagent details" : "See what the subagent is doing"}
-                className="flex-1 min-w-0 flex items-start gap-3 text-left cursor-pointer"
-              >
+              <span className="flex-1 min-w-0 flex items-start gap-3 text-left">
                 <span className={`mt-1 size-2.5 rounded-full shrink-0 ${dot}`} />
                 <ToolIcon kind="robot" className="mt-0.5 size-4 shrink-0 text-sky" />
                 <span className="flex-1 min-w-0 break-words">
                   <span className="font-black text-tangerine-deep">{run.agent}</span>
                 </span>
-              </button>
+              </span>
               {/* §12 (2026-08-29): how full this sub-agent's head is. Zones are
                   the session gauge's own (subagentGauge.ts reuses zoneOf), so
                   amber means the same thing on both. Absent when the model has
@@ -1855,15 +1864,17 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                   ◼ Stop
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                aria-hidden
-                tabIndex={-1}
-                className="shrink-0 text-[11px] text-ink-soft cursor-pointer"
-              >
-                {open ? "▾" : "▸"}
-              </button>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  title="Close — the run keeps going, and its circle stays in the row"
+                  aria-label="Close this run's card"
+                  className="shrink-0 text-sm leading-none text-ink-soft hover:text-ink cursor-pointer px-0.5"
+                >
+                  ✕
+                </button>
+              )}
             </div>
             {/* §12 (2026-08-29): the intent moved OFF the header row. The header
                 now carries the context gauge alongside elapsed/tokens/cost, and
@@ -1871,17 +1882,10 @@ function DelegationRunCard({ run, trace, onStopRun, onStopChild }: { run: Delega
                 It stays part of the expand control, so the whole card still
                 toggles wherever you click it. */}
             {run.label && (
-              <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                aria-expanded={open}
-                title={open ? "Collapse the subagent details" : "See what the subagent is doing"}
-                className="w-full text-left px-4 pb-2.5 -mt-1 text-sm font-medium text-ink-soft break-words cursor-pointer"
-              >
+              <p className="w-full text-left px-4 pb-2.5 -mt-1 text-sm font-medium text-ink-soft break-words">
                 {run.label}
-              </button>
+              </p>
             )}
-            {running && !open && <div className={`h-1 ${attention ? "bg-tangerine/40" : "hv-shimmer"}`} aria-hidden />}
             {open && (
               <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 max-h-72 overflow-y-auto flex flex-col gap-3">
                 {run.kind === "fg" ? (

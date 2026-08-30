@@ -649,6 +649,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   unstyled. Policy lives in `runRail.ts` (pure, `tests/run-rail.test.ts`); geometry and absences in
   `tests/run-rail-layout.test.ts`. This replaced §26's `STACK_CAP`/`visibleRuns`/`summaryLabel` —
   the rail is the shared cap that rule was written to avoid.
+- **A card the rail opens is ALREADY EXPANDED, and its top-right glyph is a ✕, not a chevron
+  (2026-08-31).** The first cut reused each card's own expand toggle, so a click opened a card that
+  was still shut — one click short of showing anything, which is exactly what the avatar was meant
+  to save. `DelegationRunCard` therefore has `const open = true` and no toggle state; the terminal
+  card mounts `LiveTerminal` unconditionally. **Both header titles are inert `<span>`s now** — on the
+  terminal card a stray click on the title used to dispose the emulator you had just opened. ✕ calls
+  `onClose` (back to the circle), which is deliberately NOT a stop: main owns the PTY and a
+  delegation keeps running. Two rules that look like oversights and are not: a **promoted**
+  (`needs_attention`) card is passed **no** `onClose`, because it has no circle to return to and
+  that state must not be dismissible; and `TerminalRunCard`'s collapsed branch is gone, with §26's
+  three-line tail moved to the rail's hover readout as `TerminalTail` — which must keep reading
+  `window.hv.termText` (main's rendered grid), never re-parse raw PTY bytes, or `sleep 600` renders
+  as `ssleep 600` again. Pinned by `tests/run-rail-layout.test.ts`.
 - **Portalling a dialog to the end of `<body>` does NOT put it on top.** Among POSITIONED elements
   an explicit z-index beats document order, so every `z-20`…`z-50` in the app painted above a Radix
   dialog whose z-index was `auto` — `.hv-overlay`/`.hv-dialog` were animation-only classes with no
