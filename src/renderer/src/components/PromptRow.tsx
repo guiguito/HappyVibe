@@ -19,6 +19,16 @@ import { useEffect, useState, type ReactNode } from "react";
  * not cost N IPC round-trips at mount for text nobody has asked to see.
  */
 
+/**
+ * §19: fired when an assistant task's switch/model/append changes.
+ *
+ * Surfaces that read those settings can outlive a trip to Settings — the
+ * Changes panel does — so a plain refetch-on-mount leaves a control showing a
+ * state the app no longer has. Declared here, beside the row that changes them,
+ * so both sides spell it the same way.
+ */
+export const ASSISTANT_TASKS_CHANGED = "hv:assistant-tasks-changed";
+
 /** The one statement of the append-never-override rule. Exported so a test can
     pin that it exists in exactly one place. */
 export const APPEND_HELP =
@@ -119,21 +129,31 @@ export function PromptRow({
 
   return (
     <div className="border-b border-line last:border-b-0">
-      <div className="w-full px-4 py-3 flex items-center gap-3">
+      {/* A row WITHOUT a picker keeps the original single line (All Tools).
+          A row WITH one drops the controls to their own line: measured in the
+          running app, a 224px picker plus the switch left 190px of a 524px row
+          for the text, which wrapped two sentences to four words a line. */}
+      <div className={`w-full px-4 py-3 ${right ? "" : "flex items-center gap-3"}`}>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className="flex-1 min-w-0 text-left flex items-center gap-2.5 cursor-pointer"
+          className={`${right ? "w-full" : "flex-1 min-w-0"} text-left flex items-start gap-2.5 cursor-pointer`}
         >
-          <span className={`shrink-0 text-ink-soft transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+          <span className={`shrink-0 text-ink-soft transition-transform ${open ? "rotate-90" : ""} leading-6`}>›</span>
           <span className="min-w-0">
             <span className="font-bold block">{title}</span>
             <span className="text-xs text-ink-soft">{subtitle}</span>
           </span>
         </button>
-        {right}
-        <TogglePill on={on} disabled={toggleDisabled} onClick={() => onToggle(!on)} />
+        {right ? (
+          <div className="mt-2 flex items-center justify-end gap-3">
+            {right}
+            <TogglePill on={on} disabled={toggleDisabled} onClick={() => onToggle(!on)} />
+          </div>
+        ) : (
+          <TogglePill on={on} disabled={toggleDisabled} onClick={() => onToggle(!on)} />
+        )}
       </div>
       {(error || saveError) && (
         <p className="px-4 pb-2 -mt-1 text-xs font-semibold text-berry">{error ?? saveError}</p>

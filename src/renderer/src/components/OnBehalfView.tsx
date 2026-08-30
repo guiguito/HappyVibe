@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ModelSelect } from "./ModelSelect";
-import { PromptRow } from "./PromptRow";
+import { ASSISTANT_TASKS_CHANGED, PromptRow } from "./PromptRow";
 import { Section } from "./Section";
 
 /**
@@ -79,6 +79,12 @@ export function OnBehalfView(): React.JSX.Element {
   const patch = async (id: TaskId, p: Partial<Task>): Promise<void> => {
     const next = await window.hv.assistantTaskSet(id, p);
     setTasks(next);
+    // The Changes panel stays MOUNTED behind this page, so without a nudge its
+    // wand button would keep showing until a reload — a control that says one
+    // thing while the app does another, which is the exact dishonesty this page
+    // exists to end. Same idea as Plan mode's onPlanChange keeping the composer
+    // chip in sync (BuiltinToolsBlock), one surface over.
+    window.dispatchEvent(new Event(ASSISTANT_TASKS_CHANGED));
   };
 
   // §16 finding 7: with nothing configured the one-shots return null and simply

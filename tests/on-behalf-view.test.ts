@@ -63,3 +63,32 @@ test("the page keeps the ledger honest — estimates, never a session's cost", (
   expect(src).toMatch(/estimate/i);
   expect(src).not.toMatch(/\$\d/);
 });
+
+test("the pr-draft switch gates the DRAFT, never the URL", () => {
+  /*
+   * The one switch of the three whose "off" is not "the button disappears":
+   * the forge still opens, the description falls back to the commit list.
+   *
+   * Pinned as a source scan because the GUI cannot show it without a repo on a
+   * PR-eligible branch, and because the shape is what protects it: `enabled`
+   * must appear ONLY in the condition guarding the draft, while the title, the
+   * body and the URL are computed after that block and outside it. Move the
+   * url line inside and the button silently vanishes when the switch is off.
+   */
+  const src = read("src/main/ipc.ts");
+  const handler = src.slice(src.indexOf('ipcMain.handle("hv:git-pr-url"'));
+  const body = handler.slice(0, handler.indexOf("\n  });"));
+
+  const guard = body.indexOf("if (draft && task.enabled)");
+  const closeOfGuard = body.indexOf("\n    }", guard);
+  const urlLine = body.indexOf("const url = pullRequestUrl(");
+  const titleLine = body.indexOf("const title = drafted?.title ||");
+
+  expect(guard).toBeGreaterThan(-1);
+  // Everything that decides whether the button EXISTS is after the guard closes.
+  expect(titleLine).toBeGreaterThan(closeOfGuard);
+  expect(urlLine).toBeGreaterThan(closeOfGuard);
+  // And the switch is consulted nowhere else in this handler.
+  expect(body.match(/task\.enabled/g)).toHaveLength(1);
+});
+
