@@ -129,6 +129,8 @@ export default function App(): React.JSX.Element {
   // the top of the chat scroll area — the run lives OUTSIDE the chat flow (PRD
   // "Subagents"). Completed runs linger ~2.5s (outcome + slide-away) before removal.
   const [delegations, setDelegations] = useState<Record<string, Record<string, DelegationRun>>>({});
+  const delegationsRef = useRef<Record<string, Record<string, DelegationRun>>>({});
+  useEffect(() => { delegationsRef.current = delegations; }, [delegations]);
   const [error, setError] = useState<string | null>(null);
   // B7: onboarding wow-flow overlay. Shown once for a brand-new user's first
   // session (no prior sessions), re-openable from the Help affordance.
@@ -371,6 +373,16 @@ export default function App(): React.JSX.Element {
   // Perf: toolCallId → position in transcripts[sid], so tool_execution_update/
   // _end update the card in O(1) instead of mapping the whole array.
   const toolIndex = useRef<Record<string, Map<string, number>>>({});
+  /**
+   * §12 (2026-08-30): asyncId → toolCallId, per session.
+   *
+   * Both ids are in hand at tool_execution_end and used to be discarded there.
+   * The completion notify arrives minutes later carrying only the runId, so this
+   * is the only way back to the transcript card — nothing else ever holds both
+   * ids again. Never persisted: a reopened session's card is rebuilt by
+   * restore.ts, which has the cost instead.
+   */
+  const asyncCards = useRef<Record<string, Map<string, string>>>({});
   /** Sessions with an openSession in flight — see hydrateSession. */
   const hydrating = useRef<Set<string>>(new Set());
   // Id of the in-progress "Compacting context…" notice per session, so
@@ -660,6 +672,31 @@ export default function App(): React.JSX.Element {
           const run = p[sid]?.[sub.runId!];
           return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, status } } } : p;
         });
+        // §12 (2026-08-30): the TRANSCRIPT card too, not only the sticky one. The
+        // sticky card slides away in 2.5s; this one is the permanent record, and
+        // it used to freeze at "running in the background" for the life of the
+        // session — reported from a real session twenty minutes after the run
+        // had finished.
+        const cardId = asyncCards.current[sid]?.get(sub.runId!);
+        if (cardId) {
+          asyncCards.current[sid]?.delete(sub.runId!);
+          const outcome = status === "done" ? ("done" as const) : status === "interrupted" ? ("stopped" as const) : ("failed" as const);
+          // The run's last polled spend, which the sticky card already holds —
+          // read BEFORE that card is torn down below.
+          const finalCost = delegationsRef.current[sid]?.[sub.runId!]?.live?.cost;
+          const idx = (toolIndex.current[sid] ??= new Map());
+          setTranscripts((p) => ({
+            ...p,
+            [sid]: updateToolCard(p[sid] ?? [], idx, cardId, (card) => ({
+              ...card,
+              // A dispatched card is already "done" (the CALL succeeded). Only a
+              // failed run changes it — the outcome word lives on `delegation`.
+              status: outcome === "done" ? card.status : ("error" as const),
+              delegation: { outcome, summary: sub.summary },
+              cost: card.cost ?? finalCost,
+            })),
+          }));
+        }
         // Hand-off notice: the actual result streams in on the triggered turn.
         // `sub.agent` is absent for a 0.50 workflow run (the bridge drops upstream's
         // generic "workflow"), so this reads "Subagent finished" rather than naming
@@ -1083,6 +1120,10 @@ export default function App(): React.JSX.Element {
           // (it still fires for nested/single runs) and is idempotent against this.
           const detached = asyncResultInfo(t.result);
           if (detached) {
+            // §12 (2026-08-30): the ONE moment both ids exist together. The
+            // completion notify carries only the runId, so without this the
+            // transcript card froze at "running in the background" forever.
+            (asyncCards.current[sid] ??= new Map()).set(detached.asyncId, t.toolCallId);
             setDelegations((p) => {
               const fg = p[sid]?.[t.toolCallId];
               if (!fg) return p;

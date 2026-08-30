@@ -328,6 +328,13 @@ export interface SubagentEvent {
   task?: string;
   asyncDir?: string;
   status?: "success" | "error" | "interrupted";
+  /**
+   * The completion's own one-liner, capped at 500 chars by the bridge. This is
+   * the only content the notify carries, and from 2026-08-30 it is what the
+   * TRANSCRIPT card's collapsed line shows once a run has finished — the field
+   * existed on the wire and had no reader.
+   */
+  summary?: string;
   activityState?: "long-running" | "needs_attention";
   runs?: Array<{ runId: string; agent?: string; task?: string; asyncDir?: string }>;
 }

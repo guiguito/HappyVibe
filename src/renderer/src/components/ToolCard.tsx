@@ -25,6 +25,16 @@ export interface ToolCardData {
    *  child: upstream's per-child `usage` carries no provider, so only the run's
    *  own session files can be classified honestly (metered/plan/unknown). */
   cost?: HvLedgerTotal;
+  /**
+   * §12 (2026-08-30): an ASYNC delegation's outcome.
+   *
+   * It cannot come from `result`: an async `tool_execution_end` carries a
+   * dispatch receipt, and the run finishes minutes later on an `hv.subagent`
+   * complete notify keyed by `asyncId`. Without this the card said "running in
+   * the background" forever — reported from a real session twenty minutes after
+   * the run had finished.
+   */
+  delegation?: { outcome: "done" | "failed" | "stopped"; summary?: string };
 }
 
 const STATUS: Record<ToolCardData["status"], { dot: string; label: string }> = {
@@ -409,6 +419,47 @@ function PathActions({
 }
 
 /**
+ * A failed delegation carries its reason in the tool result's text content, not
+ * in the (empty) trace — surfaced so "failed" is explainable, not a dead end.
+ * Module-level because `delegationSummary` needs the same read.
+ */
+function resultErrorText(result: unknown): string {
+  return ((result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content ?? [])
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("\n")
+    .trim();
+}
+
+/**
+ * The collapsed line under a delegation's headline.
+ *
+ * Exported and pure because the renderer suite has no DOM: the copy is pinned
+ * as data (tests/delegation-card-outcome.test.ts) rather than by rendering.
+ *
+ * The ORDER matters. `card.delegation` wins over everything, because it is the
+ * only field that knows an async run has ended — `card.result` is a dispatch
+ * receipt that never changes, which is exactly why this card used to claim
+ * background work forever.
+ */
+export function delegationSummary(card: ToolCardData): string {
+  const d = card.delegation;
+  if (d) {
+    const s = d.summary?.trim().replace(/\s+/g, " ");
+    if (s) return s;
+    return d.outcome === "done"
+      ? "done — the result was folded into the conversation"
+      : `${d.outcome} — nothing was folded into the conversation`;
+  }
+  if (asyncResultInfo(card.result)) return "running in the background — result arrives when it finishes";
+  if (card.status === "error") {
+    const err = resultErrorText(card.result);
+    if (err) return err.replace(/\s+/g, " ");
+  }
+  return card.trace?.results?.[0]?.finalOutput?.trim().replace(/\s+/g, " ") ?? "";
+}
+
+/**
  * W1.2: the in-flow subagent card is a COMPACT call line — "→ asked <agent>:
  * <intent>" plus status and a one-line result summary. Only the call and the
  * final output are what actually occupied the main agent's context (s0.3
@@ -430,28 +481,18 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
   const async = asyncResultInfo(card.result);
   // A failed delegation carries its reason in the tool result's text content, not
   // in the (empty) trace — surface it so "FAILED" is explainable, not a dead end.
-  const errorText =
-    card.status === "error"
-      ? ((card.result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content ?? [])
-          .filter((b) => b.type === "text")
-          .map((b) => b.text ?? "")
-          .join("\n")
-          .trim()
-      : "";
+  const errorText = card.status === "error" ? resultErrorText(card.result) : "";
+  // §12 (2026-08-30): set once the completion notify has landed. Until then an
+  // async run's only recorded state is "dispatched", which is what froze.
+  const outcome = card.delegation?.outcome;
   const delegationStatus = running
     ? "delegating…"
     : denied
       ? "denied"
       : card.status === "error"
         ? "failed"
-        : async
-          ? "dispatched"
-          : "done";
-  const summary = async
-    ? "running in the background — result arrives when it finishes"
-    : errorText
-      ? errorText.replace(/\s+/g, " ")
-      : (results[0]?.finalOutput?.trim().replace(/\s+/g, " ") ?? "");
+        : (outcome ?? (async ? "dispatched" : "done"));
+  const summary = delegationSummary(card);
   return (
     <div className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}>
       <button
@@ -464,7 +505,13 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
           {/* Round 15: the delegation's own status word joins the icon rule —
               same treatment as an ordinary card, so the two read alike. */}
           <span
-            className={`mt-1 size-2.5 rounded-full shrink-0 ${running ? "bg-sky animate-pulse" : denied || card.status === "error" ? "bg-berry" : "bg-leaf"}`}
+            className={`mt-1 size-2.5 rounded-full shrink-0 ${
+              running
+                ? "bg-sky animate-pulse"
+                : denied || card.status === "error" || outcome === "failed" || outcome === "stopped"
+                  ? "bg-berry"
+                  : "bg-leaf"
+            }`}
             title={delegationStatus}
             aria-label={delegationStatus}
             role="img"
@@ -495,7 +542,7 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
           {errorText && results.length === 0 ? (
             <p className="text-xs text-berry whitespace-pre-wrap break-words">{errorText}</p>
           ) : (
-            <SubagentTraceView results={results} cost={card.cost} />
+            <SubagentTraceView results={results} cost={card.cost} outcome={outcome} />
           )}
         </div>
       )}
@@ -511,9 +558,16 @@ function SubagentCard({ card }: { card: ToolCardData }): React.JSX.Element {
 export function SubagentTraceView({
   results,
   cost,
+  outcome,
 }: {
   results: SubagentResult[];
   cost?: HvLedgerTotal;
+  /**
+   * §12 (2026-08-30): set once an async run has finished. "Waiting" would then
+   * be a lie about a run that ended — the same lie `cost` already caught for a
+   * REOPENED session, which is why that guard existed and never fired live.
+   */
+  outcome?: "done" | "failed" | "stopped";
 }): React.JSX.Element {
   return (
     <>
@@ -533,7 +587,7 @@ export function SubagentTraceView({
           notify, which the session file does not record structurally), but it
           DOES have a cost — so "waiting" would be a lie about a run that
           finished long ago. */}
-      {results.length === 0 && !cost && (
+      {results.length === 0 && !cost && !outcome && (
         <p className="text-xs text-ink-soft italic">Waiting for the subagent to respond…</p>
       )}
       {results.map((r, i) => (

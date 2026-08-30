@@ -303,19 +303,23 @@ describe("delegationLabel", () => {
     // rather than dropped. Pinned as a source scan (the renderer suite has no DOM):
     // the old `delete next[t.toolCallId]` with no re-key is the bug.
     const app = readFileSync(path.join(__dirname, "..", "src", "renderer", "src", "App.tsx"), "utf8");
-    const block = app.slice(app.indexOf("const detached = asyncResultInfo(t.result)"));
-    expect(block.slice(0, 1200)).toMatch(/next\[detached\.asyncId\]\s*=/);
+    // The window is generous on purpose: it exists to exclude the REST of the
+    // file, not to measure this branch's length. 2026-08-30 added the
+    // asyncId → toolCallId capture at the top of this same branch and a 1200
+    // char window failed on comment text alone.
+    const block = app.slice(app.indexOf("const detached = asyncResultInfo(t.result)"), app.indexOf("// Foreground (async:false)"));
+    expect(block).toMatch(/next\[detached\.asyncId\]\s*=/);
     // Still idempotent against a `started` notify that DID arrive — but it no
     // longer lets that notify's caption WIN. 2026-08-29: `subagent:async-started`
     // carries no tool call id, so two same-agent delegations in one turn cannot be
     // told apart there, and a real session had a Beat Saber run captioned
     // "Minesweeper". `fg.label`/`fg.agent` come from tool_execution_start's own
     // args and are exact per call, so the merge prefers them over the guess.
-    expect(block.slice(0, 1200), "an already-raised card is merged, not replaced")
+    expect(block, "an already-raised card is merged, not replaced")
       .toMatch(/const raised = next\[detached\.asyncId\]/);
-    expect(block.slice(0, 1200), "the exact label wins over the notify's")
+    expect(block, "the exact label wins over the notify's")
       .toMatch(/label: fg\.label \|\| raised\.label/);
-    expect(block.slice(0, 1200), "and so does the exact agent")
+    expect(block, "and so does the exact agent")
       .toMatch(/agent: fg\.agent \|\| raised\.agent/);
   });
 
