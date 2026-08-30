@@ -16,7 +16,7 @@ import { fontStack } from "../../../main/terminalSettings";
  * its sibling (same anatomy, terminal glyph instead of the robot).
  *
  * Three things differ, because a terminal is not a subagent:
- *   1. it does not end on its own, so the stack is CAPPED (see visibleRuns);
+ *   1. it does not end on its own, so it never leaves the rail by itself;
  *   2. its content is a byte stream, so only the EXPANDED card hosts a live
  *      emulator — collapsed is a cheap text tail;
  *   3. it takes keyboard input, ungated.
@@ -33,99 +33,21 @@ export interface TerminalRun {
 }
 
 /**
- * §26: two cards, then a strip.
+ * §26 (2026-08-30): the cap and the summary strip are gone.
  *
- * The delegation card assumes termination — it lingers after completion and
- * slides away. A terminal card pins INDEFINITELY, which is exactly what a dev
- * server needs and exactly what would eat the transcript at three of them.
+ * They existed because a shared cap would have changed how delegation cards
+ * behave, which was out of that round's scope — the avatar row IS that shared
+ * treatment, arrived at deliberately (PRD §26, 2026-08-30). A row of circles is
+ * already the summary the strip stood in for, and it stays legible past three.
  *
- * Terminal-only, NOT shared with delegation cards: a shared cap would change
- * how subagent cards behave, which is outside this feature and a behaviour
- * people are used to. Worst case is two terminal rows plus live delegations.
+ * `formatElapsed` stays exported: the rail's hover readout uses it.
  */
-export const STACK_CAP = 2;
-
-export function visibleRuns(runs: TerminalRun[]): { cards: TerminalRun[]; collapsed: TerminalRun[] } {
-  const live = runs.filter((r) => r.running);
-  return live.length > STACK_CAP ? { cards: [], collapsed: live } : { cards: live, collapsed: [] };
-}
-
-export function summaryLabel(runs: TerminalRun[]): string {
-  return `${runs.length} running · ${runs.map((r) => r.title).join(", ")}`;
-}
-
 export function formatElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 }
 
-/** The sticky stack. Rendered beside DelegationSection, below it. */
-export function TerminalStack({
-  runs,
-  settings,
-  onStop,
-  onOpenAsTab,
-}: {
-  runs: TerminalRun[];
-  settings: HvTerminalSettings;
-  onStop: (terminalId: string) => void;
-  onOpenAsTab: (terminalId: string) => void;
-}): React.JSX.Element | null {
-  // Only ONE expanded card at a time, so only one emulator is ever mounted.
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [stripOpen, setStripOpen] = useState(false);
-  const { cards, collapsed } = visibleRuns(runs);
-  if (!cards.length && !collapsed.length) return null;
-
-  return (
-    <div className="max-w-3xl mx-auto w-full flex flex-col">
-      {cards.map((run) => (
-        <TerminalRunCard
-          key={run.terminalId}
-          run={run}
-          settings={settings}
-          open={expanded === run.terminalId}
-          onToggle={() => setExpanded((e) => (e === run.terminalId ? null : run.terminalId))}
-          onStop={onStop}
-          onOpenAsTab={onOpenAsTab}
-        />
-      ))}
-      {collapsed.length > 0 && (
-        <div className="pt-3">
-          <button
-            type="button"
-            onClick={() => setStripOpen((o) => !o)}
-            aria-expanded={stripOpen}
-            title="See the running terminals"
-            className="w-full rounded-xl border-2 border-tangerine/60 bg-card shadow-sticker-lg px-4 py-2.5 text-sm font-semibold flex items-center gap-3 text-left cursor-pointer"
-          >
-            <span className="size-2.5 rounded-full shrink-0 bg-tangerine animate-pulse" />
-            <ToolIcon kind="terminal" className="size-4 shrink-0 text-tangerine-deep" />
-            <span className="flex-1 min-w-0 break-words">{summaryLabel(collapsed)}</span>
-            <span className="shrink-0 text-[11px] text-ink-soft">{stripOpen ? "▾" : "▸"}</span>
-          </button>
-          {stripOpen && (
-            <div className="flex flex-col">
-              {collapsed.map((run) => (
-                <TerminalRunCard
-                  key={run.terminalId}
-                  run={run}
-                  settings={settings}
-                  open={expanded === run.terminalId}
-                  onToggle={() => setExpanded((e) => (e === run.terminalId ? null : run.terminalId))}
-                  onStop={onStop}
-                  onOpenAsTab={onOpenAsTab}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TerminalRunCard({
+export function TerminalRunCard({
   run,
   settings,
   open,
