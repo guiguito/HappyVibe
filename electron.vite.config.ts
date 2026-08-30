@@ -1,7 +1,26 @@
 import { resolve } from 'path'
+import { readFileSync } from 'fs'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+
+// §30: ONE version, and it lives in package.json. The renderer receives it as a
+// build-time constant rather than an app.getVersion() IPC round trip, because it
+// IS a build-time fact and the honest representation of one is a constant.
+//
+// The pins come from the vendored runtime's own manifest for the same reason —
+// §3's promise is that the Pi inside is pinned and tested, so the line the
+// Changelog page shows has to be the line that was actually built in, not one
+// someone typed and forgot to update at the next bump.
+const readJson = (rel: string): unknown =>
+  JSON.parse(readFileSync(resolve(__dirname, rel), 'utf8'))
+const pkg = readJson('package.json') as { version: string }
+const pins = (readJson('pi-runtime/package.json') as { dependencies: Record<string, string> })
+  .dependencies
+const runtimePins =
+  `Pi ${pins['@earendil-works/pi-coding-agent']}` +
+  ` · sub-agents ${pins['pi-subagents']}` +
+  ` · MCP adapter ${pins['pi-mcp-adapter']}`
 
 export default defineConfig({
   main: {
@@ -21,6 +40,12 @@ export default defineConfig({
   },
   preload: {},
   renderer: {
+    // §30: injected here rather than imported, so no package.json (with its whole
+    // dependency list) ends up inlined in the renderer bundle.
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      __RUNTIME_PINS__: JSON.stringify(runtimePins)
+    },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src')
