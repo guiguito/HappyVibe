@@ -149,16 +149,23 @@ function thinkingKey(it: TranscriptItem, i: number, nonce?: number): string | nu
 }
 
 /**
- * §7 round 16 — the agent's reasoning, closed.
+ * §7 round 16 — the agent's reasoning.
  *
- * `useState(false)` is the whole safety of reversing §7's old "no raw
- * chain-of-thought" rule: the flow keeps reading as high-level working state,
- * and only a deliberate click shows the reasoning for one turn. Transcript
- * remounts these on every send (the collapseNonce in the key), which is what
- * re-collapses them.
+ * Three things GUI testing corrected on the first cut:
+ *
+ * 1. It renders MARKDOWN. The model writes `**Recommending X**` and the plain
+ *    `whitespace-pre-wrap` showed the asterisks. Same ReactMarkdown + remarkGfm
+ *    + MD_COMPONENTS as the answer bubble, so the two cannot drift.
+ * 2. The label is lowercase and quiet. `THINKING` in the agent label's own
+ *    uppercase treatment read as a peer of the answer; it is subordinate to it.
+ * 3. It streams LIVE and expanded while the model is thinking (`live`), then
+ *    collapses when the turn moves on — App commits it at the next action.
+ *
+ * `useState(live)` is what makes 3 work with 2: a live block opens itself, and
+ * the committed one that replaces it is a fresh component, so it starts closed.
  */
-function ThinkingBlock({ text }: { text: string }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
+function ThinkingBlock({ text, live }: { text: string; live?: boolean }): React.JSX.Element {
+  const [open, setOpen] = useState(!!live);
   return (
     <div className="self-start max-w-3xl w-full">
       <button
@@ -166,14 +173,15 @@ function ThinkingBlock({ text }: { text: string }): React.JSX.Element {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         title={open ? "Hide the agent's reasoning" : "Show the agent's reasoning for this turn"}
-        className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-ink-soft hover:text-ink cursor-pointer"
+        className="flex items-center gap-1.5 text-[11px] font-medium text-ink-soft/60 hover:text-ink-soft cursor-pointer"
       >
         <span className={`transition-transform ${open ? "rotate-90" : ""}`}>›</span>
         thinking
+        {live && <span className="size-1.5 rounded-full bg-honey animate-pulse" />}
       </button>
       {open && (
-        <div className="mt-1 rounded-xl border-2 border-line bg-paper-deep/40 px-3.5 py-2.5 text-xs text-ink-soft whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
-          {text}
+        <div className="md md-quiet mt-1 rounded-xl border-2 border-line bg-paper-deep/40 px-3.5 py-2.5 text-xs text-ink-soft break-words max-h-64 overflow-y-auto">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</ReactMarkdown>
         </div>
       )}
     </div>
@@ -491,6 +499,7 @@ export function Transcript({
   onLoadEarlier,
   scrollNonce,
   collapseNonce,
+  thinking,
 }: {
   items: TranscriptItem[];
   busy: boolean;
@@ -524,6 +533,10 @@ export function Transcript({
   /** §7 round 16: bumped on send; folded into a thinking item's key so an
       expanded block closes again. Nothing else remounts. */
   collapseNonce?: number;
+  /** §7 round 16: the LIVE reasoning, outside `items` for the same perf reason
+      the streaming answer is — see App's thinkRef. Rendered expanded above the
+      answer bubble; App commits it into `items` at the next action. */
+  thinking?: string;
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -704,6 +717,7 @@ export function Transcript({
         })}
         {/* Perf: the in-progress turn renders here, outside `items`, so a delta
             re-renders only this bubble — committed messages stay memoized. */}
+        {thinking && <ThinkingBlock text={thinking} live />}
         {streaming && <AssistantBubble text={streaming} />}
         {busy && (
           <div className="flex items-center gap-2 text-ink-soft text-sm">

@@ -77,6 +77,7 @@ export function ChatView({
   sessionId,
   sessionModel = null,
   items,
+  thinking,
   streaming,
   busy,
   waking = false,
@@ -131,6 +132,8 @@ export function ChatView({
   /** W2.1: this session's persisted model override (from SessionMeta). */
   sessionModel?: ModelRef | null;
   items: TranscriptItem[];
+  /** §7 round 16: this session's live reasoning, if it is thinking now. */
+  thinking?: string;
   streaming?: string;
   busy: boolean;
   /** Round 3 #2: session is resuming from hibernation — show a loader. */
@@ -1064,6 +1067,7 @@ export function ChatView({
         <Transcript
           items={items}
           streaming={streaming}
+          thinking={thinking}
           busy={busy}
           scrollNonce={scrollNonce}
           collapseNonce={collapseNonce}

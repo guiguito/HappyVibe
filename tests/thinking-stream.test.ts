@@ -21,14 +21,31 @@ describe("the thinking buffer reuses the text streaming helper", () => {
 describe("App reads all three thinking events", () => {
   const src = readFileSync(path.join(process.cwd(), "src/renderer/src/App.tsx"), "utf8");
 
-  test("start, delta and end are all handled", () => {
-    for (const t of ["thinking_start", "thinking_delta", "thinking_end"]) {
-      expect(src).toContain(t);
-    }
+  test("start and delta are read, and stream into the live buffer", () => {
+    for (const t of ["thinking_start", "thinking_delta"]) expect(src).toContain(t);
+    expect(src).toContain("thinkRef.current[sid]");
   });
 
   test("the item is committed as its own transcript kind", () => {
     expect(src).toContain('kind: "thinking"');
+  });
+
+  test("it mirrors on the SAME rAF as the answer, not a second one", () => {
+    // A separate flush would be a second render path for the same turn.
+    const flush = src.slice(src.indexOf("const scheduleFlush"), src.indexOf("const scheduleFlush") + 320);
+    expect(flush).toContain("setStreamText");
+    expect(flush).toContain("setThinkingText");
+  });
+
+  test("it settles at the NEXT ACTION, never at thinking_end", () => {
+    // GUI round: the model routinely finishes thinking a beat before it starts
+    // answering, so collapsing at thinking_end made the block vanish while the
+    // user was still reading it. The three next-actions are the first answer
+    // token, the first tool call, and the end of the turn.
+    expect(src).toContain("const commitThinking");
+    expect(src).not.toContain('ame?.type === "thinking_end"');
+    const calls = src.split("commitThinking(sid)").length - 1;
+    expect(calls).toBeGreaterThanOrEqual(3);
   });
 
 });
@@ -63,17 +80,38 @@ describe("sending re-collapses the blocks — per SESSION", () => {
 
 describe("Transcript renders it collapsed", () => {
   const src = readFileSync(path.join(process.cwd(), "src/renderer/src/components/Transcript.tsx"), "utf8");
+  // Sliced to the component's real end, not a char budget: a fixed window was
+  // too short to reach the render body and the assertion failed for the wrong
+  // reason. `\n}` at column 0 is the end of a top-level function here.
+  const from = src.indexOf("function ThinkingBlock");
+  const decl = src.slice(from, src.indexOf("\n}", from) + 2);
 
   test("the item exists and is not an assistant bubble", () => {
     expect(src).toContain('kind: "thinking"');
   });
 
-  test("it is closed by default — the whole safety of reversing §7", () => {
+  test("a COMMITTED block is closed, a LIVE one is open", () => {
     // NOT a bare `useState(false)` scan: Transcript.tsx already contains four
     // of those, so that assertion would pass before the change was written.
-    // Anchor on the component instead.
-    const decl = src.match(/function ThinkingBlock[\s\S]{0,400}/)?.[0] ?? "";
-    expect(decl).toContain("useState(false)");
+    // `useState(!!live)` carries both halves — the live block opens itself, and
+    // the committed one that replaces it is a fresh component, so it starts
+    // closed. That is what keeps §7's "collapsed by default" true after a turn.
+    expect(decl).toContain("useState(!!live)");
     expect(decl).not.toContain("useState(true)");
+  });
+
+  test("it renders MARKDOWN, with the answer bubble's own renderer", () => {
+    // GUI round: the model writes `**Recommending X**` and plain
+    // whitespace-pre-wrap showed the asterisks.
+    expect(decl).toContain("ReactMarkdown");
+    expect(decl).toContain("MD_COMPONENTS");
+    expect(decl).not.toContain("whitespace-pre-wrap");
+  });
+
+  test("the label is quiet and lowercase — it is subordinate to the answer", () => {
+    // The AGENT label's treatment, which this used to borrow and must not.
+    expect(decl).not.toContain("uppercase");
+    expect(decl).not.toContain("tracking-widest");
+    expect(decl).toContain("thinking");
   });
 });
