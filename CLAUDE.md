@@ -607,6 +607,37 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   the tab context menu, FileTree) dismisses with a `fixed inset-0` click-catcher, which closes on
   CLICK and is therefore immune — this was the only blur-dismissed menu. Pinned by
   `tests/tabstrip-menu.test.ts`.
+- **An async delegation's transcript card is updated by the NOTIFY, not by its own tool result — and
+  the link between them exists for one instant.** `tool_execution_end` for `async:true` carries a
+  dispatch receipt (`details.asyncId`, no `results`), and the run finishes minutes later on an
+  `hv.subagent` `complete` notify that carries only the runId and **no toolCallId**. `App.tsx`'s
+  `asyncCards` ref (`asyncId → toolCallId`, per session) is captured at that end event **because
+  nothing else ever holds both ids again** — without it the card froze at "running in the
+  background" forever, which is how it shipped and how it was reported (2026-08-30, twenty minutes
+  after the run finished). Two corollaries, both about fields that existed with no reader. The
+  notify's `summary` (capped at 500 chars in the bridge) is the collapsed line now. And
+  `window.hv.subagentInspect` — built 2026-08-21, **zero renderer callers** until 2026-08-30 — is
+  what the EXPANDED card reads, because that end event never carried a transcript; it costs no model
+  turn, keeps working after delivery, and answers `foreign_session` after a respawn, which the card
+  must NAME rather than spin on. Related: `SubagentTraceView`'s "don't say waiting" guard was written
+  for the RESTORE path (`cost`) and had never once fired live, because nothing set `cost` on a live
+  tool card. Pinned by `tests/delegation-card-outcome.test.ts` + `tests/subagent-inspect-card.test.ts`;
+  measurements in docs/validation/d1.md §The run rail.
+- **The sticky run rail's overlay is `absolute` inside a `sticky` container, and four traps are
+  already paid for.** (1) `absolute` positions against the nearest POSITIONED ancestor, so the
+  sticky wrapper carries `relative` — drop it and the card lands somewhere else entirely. (2) It
+  stays at **z-20**: it is a readout, not a modal, and `.hv-overlay`/`.hv-dialog` own 100 with
+  `tests/modal-layer.test.ts` guarding that scale. (3) There is **no `fixed inset-0` click-catcher**,
+  the idiom every other menu here uses — `browserCoverage.ts` gathers candidates by class word and
+  judges them by BOX, so a full-viewport catcher reads as covering every browser pane; dismissal is
+  toggle-the-same-avatar plus Escape. (4) The hover readout has **no gap** between circle and panel
+  (the `pt-1` is inside the hover target): a gap means the pointer leaves on the way in and the STOP
+  inside is unreachable, and that STOP is the whole point of the panel (§12's 2026-08-22 "spend on
+  the line that stops it", which a circle has no line for). The avatar's hue is an inline `style`,
+  never a computed Tailwind class — the JIT scanner never sees one and every circle renders
+  unstyled. Policy lives in `runRail.ts` (pure, `tests/run-rail.test.ts`); geometry and absences in
+  `tests/run-rail-layout.test.ts`. This replaced §26's `STACK_CAP`/`visibleRuns`/`summaryLabel` —
+  the rail is the shared cap that rule was written to avoid.
 - **Portalling a dialog to the end of `<body>` does NOT put it on top.** Among POSITIONED elements
   an explicit z-index beats document order, so every `z-20`…`z-50` in the app painted above a Radix
   dialog whose z-index was `auto` — `.hv-overlay`/`.hv-dialog` were animation-only classes with no

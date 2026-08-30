@@ -103,7 +103,9 @@ describe("the waiting line cannot outlive the run", () => {
   });
 
   it("the card hands its outcome to the trace view", () => {
-    expect(src).toContain("<SubagentTraceView results={results} cost={card.cost} outcome={outcome} />");
+    // Formatting-agnostic on purpose: the first version of this pinned a
+    // single-line JSX call and broke the moment the same round wrapped it.
+    expect(src).toMatch(/<SubagentTraceView[\s\S]{0,200}outcome=\{outcome\}/);
   });
 });
 
