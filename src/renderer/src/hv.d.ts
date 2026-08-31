@@ -998,8 +998,6 @@ interface HvApi {
   getOnboardingSeen(): Promise<boolean>;
   setOnboardingSeen(seen: boolean): Promise<void>;
   /** §30: the app version whose changelog was last read. `null` = never recorded. */
-  getLastSeenVersion(): Promise<string | null>;
-  setLastSeenVersion(version: string): Promise<void>;
 }
 
   interface Window {

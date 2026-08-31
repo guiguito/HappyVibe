@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { timeago } from "../timeago";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
-import { AUTO, fractionFor, readSplit, writeSplit } from "../sidebarSplit";
+import { AUTO, fractionFor, isSized, readSplit, writeSplit } from "../sidebarSplit";
 import { BrandLogo } from "./BrandLogo";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
@@ -10,7 +10,9 @@ import { BrandLogo } from "./BrandLogo";
 export type View =
   // §24: Commands sits beside Skills — same trust model, its own page.
   // §25: Plugins sits above them — it is where skills/prompts/servers come FROM.
-  | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools"
+  // §13 round 18: "tools" (the gated inventory) and "builtinTools" (the app's
+  // own agent features) were one page that did two unrelated jobs.
+  | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools" | "builtinTools"
   // Round 8: the settings scroll exploded into pages, each its own destination.
   // §19 (2026-08-30): the model calls the app makes without a session.
   // §30: the changelog is product state, like stats and audit.
@@ -52,11 +54,17 @@ function PluginsIcon(): React.JSX.Element {
     </svg>
   );
 }
+/** §24: stacked cards — a prompt template is a REUSABLE saved thing.
+    It used to be the `>_` chevron, byte-identical to `TerminalIcon` two groups
+    down, so two nav rows drew the same glyph; `SysPromptIcon` is a third
+    member of that family. The terminal keeps the chevron (it is a terminal),
+    and this one leaves the family entirely rather than becoming a fourth
+    variation on it. */
 function PromptTemplatesIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 17l6-5-6-5" />
-      <path d="M12 19h8" />
+      <rect x="8" y="3" width="13" height="13" rx="2" />
+      <path d="M16 21H5a2 2 0 0 1-2-2V8" />
     </svg>
   );
 }
@@ -109,12 +117,15 @@ function SysPromptIcon(): React.JSX.Element {
   );
 }
 /** §19: a hand doing something for you — the calls you did not ask for. */
-function OnBehalfIcon(): React.JSX.Element {
+/** §19 round 18: a pencil with a spark — the page WRITES things for you. The
+    old glyph was a hand, drawn when the row read "On your behalf"; under
+    "AI autofill" a hand says nothing. */
+function AutofillIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3v9" />
-      <path d="M8.5 12V6.5M15.5 12V7.5" />
-      <path d="M5 12v3a7 7 0 0 0 14 0v-3" />
+      <path d="M4 20.4l3.4-.8L18 9.1l-2.6-2.6L4.8 17z" />
+      <path d="M14.2 7.7l2.6 2.6" />
+      <path d="M18.6 2.8l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6z" />
     </svg>
   );
 }
@@ -125,22 +136,31 @@ function StatsIcon(): React.JSX.Element {
     </svg>
   );
 }
+/** §11: a CHECKLIST — every row is a decision that was allowed or denied.
+    Paired deliberately against the Changelog's timeline two rows down: both
+    read as lists, but ticks and a spine are different silhouettes at 16px,
+    where two documents-with-lines were not. */
 function AuditIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 12h6M9 16h6M9 8h2" />
-      <path d="M5 4a1 1 0 0 1 1-1h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z" />
+      <path d="M3 6.5l1.6 1.6L7.8 4.9" />
+      <path d="M3 13l1.6 1.6L7.8 11.4" />
+      <path d="M3 19.5l1.6 1.6L7.8 17.9" />
+      <path d="M11.5 6.5H21M11.5 13H21M11.5 19.5h6.5" />
     </svg>
   );
 }
-/** §30: the Changelog page — a page with a turned corner, distinct from the
-    audit log's clipboard beside it. */
+/** §30: a release TIMELINE — versions down a spine. It used to be a page with
+    a turned corner, which at 16px was indistinguishable from the audit log's
+    document two rows above it; the comment claimed they were distinct and they
+    were not. */
 function ChangelogIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6" />
-      <path d="M8 13h8M8 17h5" />
+      <path d="M5 3.5v17" />
+      <circle cx="5" cy="7" r="2.1" />
+      <circle cx="5" cy="17" r="2.1" />
+      <path d="M10 7h10M10 17h6.5" />
     </svg>
   );
 }
@@ -173,52 +193,133 @@ function KeyboardIcon(): React.JSX.Element {
   );
 }
 
-/** Round 8: every configuration destination lives under ONE collapsible group —
-    the flat footer had grown to seven entries. The four round-6 pages keep
-    their order at the top; the exploded settings pages sit below a divider. */
 /**
- * §16 round 12 — ordered by how often it is REACHED, not by where it came from.
+ * §16 round 18 — four groups, and the order still lives in ONE place.
  *
- * Round 8 ordered this by history (the round-6 four, then the ex-Settings
- * scroll), and §26/§27 then appended Terminal and Voice after Keyboard
- * shortcuts — which put two live features below a reference table. Models
- * leads because a beginner can do nothing before it and ⌘, already lands
- * there; the capability pages follow; configuration after them; and the three
- * you consult rather than change sit at the bottom.
+ * Round 12's "one flat group with no sub-headings" was right for fourteen
+ * entries and wrong at sixteen: measured in the running app, 640px of content
+ * in a 423px scroll region, with `MCP`, `All Tools` and `System prompt` as the
+ * first three names a beginner reads in the primary navigation.
  *
- * Still ONE flat group with no sub-headings — round 8's shape was right, only
- * its sequence was an artefact.
+ * §29's rule governs the copy: one panel, two altitudes, one vocabulary. Group
+ * headers speak human, items keep their real names, and no third vocabulary is
+ * invented — nothing is renamed, and a header is not a destination.
+ *
+ * `NAV` stays the single flat exported array and each entry gains a `group`,
+ * because `GoTo.tsx` derives `GOTO_LABELS` from it and `tests/go-to.test.ts`
+ * asserts against this file's SOURCE. A `GROUPS` array listing item names per
+ * group would put the order in two places, which is exactly what §20 round
+ * 17's Principle 11 forbids. So `GROUPS` is headers only, the sidebar renders
+ * `NAV.filter(n => n.group === g.id)`, and a test pins group members as
+ * contiguous so NAV alone decides the order.
  */
-export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
-  { view: "models", label: "Models", Icon: ModelsIcon },
-  // The capability pages. §25 first among them: it is the source the three
-  // below it get their contents from.
-  { view: "plugins", label: "Plugins", Icon: PluginsIcon },
-  { view: "skills", label: "Skills", Icon: SkillsIcon },
-  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon },
-  { view: "mcp", label: "MCP", Icon: McpIcon },
-  { view: "agents", label: "Agents", Icon: AgentsIcon },
-  { view: "tools", label: "All Tools", Icon: ToolsIcon },
-  // Configuration.
-  { view: "permissions", label: "Permissions", Icon: PermissionsIcon },
-  { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon },
-  // §19 (2026-08-30): beside System prompt, because both pages answer the same
-  // question — what does this app tell a model, that I never typed?
-  { view: "onBehalf", label: "On your behalf", Icon: OnBehalfIcon },
-  { view: "terminal", label: "Terminal", Icon: TerminalIcon },
-  { view: "voice", label: "Voice", Icon: VoiceIcon },
-  // Shortcuts closes the configuration block rather than trailing the reports:
-  // since round 8 the bindings are EDITABLE, so it is a settings page, not a
-  // reference table.
-  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
-  // Consulted, not changed.
-  { view: "stats", label: "Stats", Icon: StatsIcon },
-  { view: "audit", label: "Audit log", Icon: AuditIcon },
-  // §30: product state like the two above it — what this build is, and what
-  // changed to get here. Not documentation, so this does not reopen round 8's
-  // deletion of the Help entry (§7).
-  { view: "changelog", label: "Changelog", Icon: ChangelogIcon },
+export type NavGroup = "abilities" | "rules" | "app" | "record";
+
+/**
+ * Headers are short NOUNS, in the same small-caps style as the `WORKSPACES`
+ * label above them — that is the sidebar's existing section idiom, and the
+ * first cut broke it with four different grammatical shapes ("Set up your
+ * agent", "What it's allowed to do", "What it did", "This app": an imperative,
+ * a relative clause, a clause, a demonstrative). A column of mismatched forms
+ * reads as arbitrary however good each name is on its own.
+ *
+ * Order applies round 12's own rule one level up: "the three you consult
+ * rather than change sit at the bottom" — THE RECORD *is* that block (§30
+ * calls it "consulted, not changed"), so it goes last.
+ */
+export const GROUPS: Array<{ id: NavGroup; label: string }> = [
+  { id: "abilities", label: "Abilities" },
+  // The three pages that answer "am I still in charge": what it may do, which
+  // tools it has and whether they are allowed, and what it is told before every
+  // turn. "Ground rules" was tried and read as jargon; "Control" is the word a
+  // nervous beginner actually reaches for, and it covers the system prompt —
+  // which is NOT a permission, so "What it's allowed to do" was filing it
+  // wrongly.
+  { id: "rules", label: "Control" },
+  // What HappyVibe does, as distinct from what the agent does.
+  { id: "app", label: "App features" },
+  { id: "record", label: "The record" },
 ];
+
+/**
+ * §16 round 12 ordered this by how often it is REACHED, not by where it came
+ * from. That rule is NOT superseded by the grouping — it now applies WITHIN
+ * each group, with one deliberate exception noted at `permissions`.
+ */
+export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element; group: NavGroup | null }> = [
+  // PINNED above every group (`group: null`). Round 12 already called it
+  // first-among-equals — "a beginner can do nothing before it and ⌘, already
+  // lands there" — and it is the one member of Abilities that is not one: the
+  // others are capabilities you switch on and off, this is WHO the agent talks
+  // to, and the app refuses to spawn without it (§16 finding 7).
+  { view: "models", label: "Models", Icon: ModelsIcon, group: null },
+  // Everything you GIVE the agent, each with its own on/off — the IPC surface
+  // says so: skills-set-enabled, prompt-templates-set-enabled,
+  // set-agent-enabled, plugins-enable-installed.
+  //
+  // The group reads HAVE → GET → GOT → AUTHOR. Built-in tools leads because it
+  // is the only member that costs nothing to use: plan mode, the agent's
+  // terminal and browser, and asking you a question are on by default and are
+  // HappyVibe's own differentiators (§23, §26, §28, §7). Round 12's frequency
+  // rule would put it last — it is rarely EDITED — but a page nobody opens
+  // because they never learned it exists is a discovery failure, not evidence
+  // it belongs at the bottom; that is §19's own argument for the AI autofill
+  // page, one group over. Plugins then leads the three it can install.
+  { view: "builtinTools", label: "Built-in tools", Icon: BuiltinToolsIcon, group: "abilities" },
+  { view: "plugins", label: "Plugins", Icon: PluginsIcon, group: "abilities" },
+  // Skills · Prompts · MCP sit directly under Plugins and in this order
+  // because they are EXACTLY what a plugin can contain — `ACCEPTED_COMPONENTS`
+  // in plugins/classify.ts is `["commands", "mcpServers", "skills"]`, and the
+  // Plugins page says "composed exclusively of skills, prompts and MCP
+  // servers". Round 12's "the source the three below it get their contents
+  // from" is literal, not a figure of speech, so the run must stay contiguous.
+  { view: "skills", label: "Skills", Icon: SkillsIcon, group: "abilities" },
+  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "abilities" },
+  { view: "mcp", label: "MCP", Icon: McpIcon, group: "abilities" },
+  { view: "agents", label: "Agents", Icon: AgentsIcon, group: "abilities" },
+
+  // Permissions leads ahead of All Tools, inverting round 12's flat order: it
+  // is the more often reached of the two, and it is the group's thesis rather
+  // than an inventory. System prompt closes it — the standing instructions
+  // that shape every session, beside the rules that bound them.
+  // Read top-down as general → specific: the System prompt applies to every
+  // turn of every session, Permissions are the rules, and Agent tools is the
+  // inventory those rules act on. System prompt leads on VALUE rather than on
+  // round 12's frequency rule — it is the highest-leverage page in the group
+  // and the least discovered — and a read-only inventory is the right place to
+  // end. ("All Tools" claimed to be the complete catalogue while the switches
+  // for half of it lived on the same page; it is the gated INVENTORY, so it
+  // now says so.)
+  { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon, group: "rules" },
+  { view: "permissions", label: "Permissions", Icon: PermissionsIcon, group: "rules" },
+  { view: "tools", label: "Agent tools", Icon: ToolsIcon, group: "rules" },
+  // Things the APP does for you. Terminal and Voice are surfaces you use
+  // daily; the two configure-once pages trail. §19's page lives here rather
+  // than with the records because it is not one: it carries a per-task
+  // (model, append, on/off) record, so it CONFIGURES app behaviour.
+  { view: "terminal", label: "Terminal", Icon: TerminalIcon, group: "app" },
+  { view: "voice", label: "Voice", Icon: VoiceIcon, group: "app" },
+  // "AI" is the app's ONLY use of the word, and it earns the exception: it is
+  // an adjective separating GENERATED text from the browser-autofill sense of
+  // remembered text, not a second name for "the agent" or "the model".
+  { view: "onBehalf", label: "AI autofill", Icon: AutofillIcon, group: "app" },
+  // Closes the group: of the four it is the one you set once and never reopen.
+  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon, group: "app" },
+  // Consulted, not changed (§30's own phrase) — the read-only surfaces.
+  { view: "stats", label: "Stats", Icon: StatsIcon, group: "record" },
+  { view: "audit", label: "Audit log", Icon: AuditIcon, group: "record" },
+  { view: "changelog", label: "Changelog", Icon: ChangelogIcon, group: "record" },
+];
+
+/** The group a destination lives in — `null` for the views that are not in the
+    nav at all (`chat`, `workspace`). `App.navigate` uses it so a cross-page
+    pointer can never land on a page whose row is inside a shut group. */
+export function groupFor(view: View): NavGroup | null {
+  return NAV.find((n) => n.view === view)?.group ?? null;
+}
+
+/** Rows that sit ABOVE the groups, always visible. */
+export const PINNED = NAV.filter((n) => n.group === null);
 
 /** Round 8: the collapse affordance — an actual chevron rather than a 10px
     glyph, sitting immediately right of the name it collapses. */
@@ -239,14 +340,27 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
   );
 }
 
-/**
- * §30: the unread-changelog marker. Passive by construction — no count, no
- * colour that reads as an error, and nothing to dismiss but reading the page.
- * Deliberately NOT the pending-permission badge next door: that one carries a
- * number because a blocked turn is waiting on you.
- */
-function UnreadDot(): React.JSX.Element {
-  return <span className="size-2 rounded-full bg-tangerine shrink-0" aria-label="unread" />;
+/** §7 round 18: the search affordance. The INPUT hides at rest; this does not. */
+function SearchIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+/** §13 round 18: sliders, because this page is switches — deliberately NOT the
+    wrench `ToolsIcon` uses, so the two tool pages never read as the same row. */
+function BuiltinToolsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
+      <circle cx="16" cy="6" r="2" />
+      <circle cx="10" cy="12" r="2" />
+      <circle cx="18" cy="18" r="2" />
+    </svg>
+  );
 }
 
 function TrashIcon(): React.JSX.Element {
@@ -421,8 +535,10 @@ export function Sidebar({
   onArchiveSession,
   onDeleteSession,
   settingsOpen,
+  searchNonce,
+  openGroups,
+  onToggleGroup,
   onToggleSettingsOpen,
-  changelogUnread,
   railCollapsed,
   onToggleCollapsed,
 }: {
@@ -445,8 +561,13 @@ export function Sidebar({
   /** Round 8: the Settings group's open/closed state (persisted in App). */
   settingsOpen: boolean;
   onToggleSettingsOpen: () => void;
-  /** §30: an unread changelog — a passive dot, never a modal. */
-  changelogUnread: boolean;
+  /** §7 round 18: bumped by ⌘K to open and focus the session filter. */
+  searchNonce: number;
+  /** §16 round 18: which settings groups are open. Owned by App for the same
+      reason `settingsOpen` is — `navigate()` has to open the group holding its
+      destination, and a second mechanism would be a second thing to sync. */
+  openGroups: ReadonlySet<string>;
+  onToggleGroup: (g: string) => void;
   /** F6: slim icon-rail mode + its toggle (⌘\); state persisted in App. */
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
@@ -470,6 +591,33 @@ export function Sidebar({
   onDeleteSession: (id: string) => void;
 }): React.JSX.Element {
   const [filter, setFilter] = useState("");
+  // §7 round 18: the field was 44px of permanent chrome, empty at rest, with no
+  // keyboard route at all. It renders only while `searching`.
+  const [searching, setSearching] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  /**
+   * Focus is `autoFocus` on the input plus a direct `.focus()` here, and
+   * deliberately NOT a `requestAnimationFrame` callback. Two reasons, one
+   * measured. rAF is PAUSED while the window is occluded (the same trap §28's
+   * coverage check already pays for), so a scheduled focus can simply never
+   * run; and a single rAF can fire BEFORE React has committed the input, in
+   * which case the ref is still null and the focus silently does nothing.
+   * `autoFocus` covers the mount case with no clock at all, and the call below
+   * covers the one case it cannot — ⌘K pressed while the field is already
+   * open, where there is no mount and the ref is already populated.
+   */
+  const openSearch = (): void => {
+    setSearching(true);
+    searchRef.current?.focus();
+  };
+  // A COUNTER, not a boolean: ⌘K pressed twice must re-focus the field, and a
+  // boolean already true fires no effect. App owns it because ⌘K must expand
+  // the rail first, which is App's state.
+  useEffect(() => {
+    if (searchNonce === 0) return;
+    openSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchNonce]);
   const [confirmDelete, setConfirmDelete] = useState<SessionMeta | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   // Round 8: which workspaces are collapsed, remembered across restarts —
@@ -499,8 +647,9 @@ export function Sidebar({
   }, [treeFrac]);
 
   // The split only exists while the group is open: a dragged height with the
-  // group collapsed is a division of nothing.
-  const sized = settingsOpen && treeFrac !== AUTO;
+  // group collapsed is a division of nothing. §16 round 18 put four groups
+  // inside that group, so `isSized` applies the same rule one level down.
+  const sized = isSized(settingsOpen, treeFrac, openGroups.size);
 
   const startResize = (e: React.MouseEvent): void => {
     e.preventDefault(); // else the drag selects sidebar text
@@ -589,6 +738,18 @@ export function Sidebar({
             Happy<span className="text-tangerine">Vibe</span>
           </div>
         </button>
+        {/* §7 round 18: the affordance stays, the input does not. Same idiom
+            as the collapse control beside it — icon button, shortcut in the
+            tooltip. */}
+        <button
+          type="button"
+          onClick={openSearch}
+          title="Find a session (⌘K)"
+          aria-label="Find a session"
+          className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1"
+        >
+          <SearchIcon />
+        </button>
         <button
           type="button"
           onClick={onToggleCollapsed}
@@ -600,15 +761,31 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Session title filter */}
-      <div className="px-4 pb-2">
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter sessions…"
-          className="w-full rounded-lg bg-card border-2 border-line px-2.5 py-1.5 text-sm focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
-        />
-      </div>
+      {/* §7 round 18: hidden at rest, expanding IN PLACE — exactly where it
+          used to live, so nothing moves but its existence. Blur while the
+          filter is non-empty KEEPS it open (losing an active filter because
+          you clicked a result would be hostile), while Esc collapses AND
+          clears. That last clause is what removes a piece of state instead of
+          adding one: the only route to "collapsed with a live filter" is Esc
+          with text in the field, so clearing there makes "a collapsed search
+          can never mean a filtered list" true by construction, where the
+          alternative was a permanent filter-active dot on the icon. */}
+      {searching && (
+        <div className="px-4 pb-2">
+          <input
+            ref={searchRef}
+            autoFocus
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onBlur={() => { if (!filter) setSearching(false); }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { setFilter(""); setSearching(false); }
+            }}
+            placeholder="Filter sessions…"
+            className="w-full rounded-lg bg-card border-2 border-line px-2.5 py-1.5 text-sm focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+          />
+        </div>
+      )}
 
       {/* Workspace tree. An explicit height ONLY while the Settings group is open
           and the user has dragged the handle. Collapsed, the split has nothing to
@@ -791,29 +968,59 @@ export function Sidebar({
           <span className="text-left">Settings</span>
           <Chevron open={settingsOpen} />
           <span className="flex-1" />
-          {/* §30: the dot bubbles up through collapse the user did not choose.
-              A closed group hides the Changelog row, so the marker surfaces
-              here — but the ⌘\ icon rail (handled far above) is an explicit
-              "hide the sidebar" gesture and deliberately shows nothing. */}
-          {changelogUnread && !settingsOpen && <UnreadDot />}
         </button>
         {settingsOpen && (
           <div className="mt-1 flex flex-col min-h-0 overflow-y-auto">
-            {NAV.map((n) => (
-              <div key={n.view}>
-                <button
-                  type="button"
-                  onClick={() => onNavigate(n.view)}
-                  className={`w-full flex items-center gap-2.5 rounded-xl pl-6 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
-                    view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
-                  }`}
-                >
-                  <n.Icon />
-                  <span className="flex-1 text-left">{n.label}</span>
-                  {n.view === "changelog" && changelogUnread && <UnreadDot />}
-                </button>
-              </div>
+            {/* Pinned rows sit ABOVE every header, at the headers' own indent
+                so they read as top-level rather than as a group's first item.
+                Their font is the item font, so they are never mistaken for a
+                header either. */}
+            {PINNED.map((n) => (
+              <button
+                key={n.view}
+                type="button"
+                onClick={() => onNavigate(n.view)}
+                className={`w-full flex items-center gap-2.5 rounded-xl pl-5 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
+                  view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+                }`}
+              >
+                <n.Icon />
+                <span className="flex-1 text-left">{n.label}</span>
+              </button>
             ))}
+            {GROUPS.map((g) => {
+              const open = openGroups.has(g.id);
+              return (
+                <div key={g.id}>
+                  {/* A header TOGGLES. There is no page behind it — the human
+                      altitude sits above the real names, never instead of
+                      them, so a header is not a destination. */}
+                  <button
+                    type="button"
+                    onClick={() => onToggleGroup(g.id)}
+                    aria-expanded={open}
+                    className="w-full flex items-center gap-2 rounded-xl pl-5 pr-3.5 py-2 text-[11px] font-bold uppercase tracking-widest text-ink-soft border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
+                  >
+                    <span className="flex-1 text-left">{g.label}</span>
+                    <Chevron open={open} />
+                  </button>
+                  {open &&
+                    NAV.filter((n) => n.group === g.id).map((n) => (
+                      <button
+                        key={n.view}
+                        type="button"
+                        onClick={() => onNavigate(n.view)}
+                        className={`w-full flex items-center gap-2.5 rounded-xl pl-8 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
+                          view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+                        }`}
+                      >
+                        <n.Icon />
+                        <span className="flex-1 text-left">{n.label}</span>
+                      </button>
+                    ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

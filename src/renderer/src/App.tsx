@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { ChangesPanel } from "./components/ChangesPanel";
 import { RightRail, type DrawerPanel } from "./components/RightRail";
 import { badgeTint, clampDrawer, summarise } from "./gitui";
-import { Sidebar, type View } from "./components/Sidebar";
+import { Sidebar, groupFor, type View } from "./components/Sidebar";
 import { ChatView, ChatWelcome } from "./components/ChatView";
 import { ModelsView } from "./components/ModelsView";
 import { PermissionsView } from "./components/PermissionsView";
@@ -43,6 +43,7 @@ import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
+import { BuiltinToolsView } from "./components/BuiltinToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
@@ -139,22 +140,6 @@ export default function App(): React.JSX.Element {
   // session (no prior sessions). Dismissing it is permanent — §7 round 8
   // deleted the Help entry, and §22 round 17 confirmed no re-open path.
   const [onboarding, setOnboarding] = useState(false);
-  /**
-   * §30: the changelog dot. TRUE only when a version the user has ACTUALLY read
-   * differs from this one — never when nothing has been recorded, because that
-   * is a fresh install (or an existing install meeting this feature for the
-   * first time) and neither has been *updated*. That case is seeded silently
-   * below, which is why 0.1.0 shows a dot to nobody.
-   */
-  const [changelogUnread, setChangelogUnread] = useState(false);
-  // Decided once at startup. `null` = never recorded, so seed it and show
-  // nothing; only a version differing from one actually READ raises the dot.
-  useEffect(() => {
-    void window.hv.getLastSeenVersion().then((seen) => {
-      if (seen === null) void window.hv.setLastSeenVersion(__APP_VERSION__);
-      else setChangelogUnread(seen !== __APP_VERSION__);
-    });
-  }, []);
   // W1.4: workspace whose settings modal is open (gear on a sidebar workspace row).
   const [wsSettings, setWsSettings] = useState<string | null>(null);
   // W2.2: center tabs (chat + open files), PER-WORKSPACE — switching sessions
@@ -288,9 +273,37 @@ export default function App(): React.JSX.Element {
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
   useEffect(() => { localStorage.setItem("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
+  // §7 round 18: ⌘K opens the sidebar's session filter. A COUNTER, not a
+  // boolean — pressing it twice must re-focus the field, and a boolean already
+  // true fires no effect in the sidebar.
+  const [searchNonce, setSearchNonce] = useState(0);
   // Round 8: the sidebar's Settings group, open or not — persisted like the rail.
   const [settingsOpen, setSettingsOpen] = useState(() => localStorage.getItem("hv:settings-open") === "1");
   useEffect(() => { localStorage.setItem("hv:settings-open", settingsOpen ? "1" : "0"); }, [settingsOpen]);
+  /**
+   * §16 round 18: which of the four settings groups are open. INDEPENDENT, not
+   * an accordion — one-open-at-a-time would shut a group whenever `navigate()`
+   * opened another, which is auto-collapse-on-navigation by another name.
+   *
+   * Lives here rather than in the sidebar for the same reason `settingsOpen`
+   * does: `navigate()` has to open the group holding its destination, so a
+   * sidebar-local copy would need a second mechanism to reach it.
+   */
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("hv:settings-groups") ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem("hv:settings-groups", JSON.stringify([...openGroups]));
+  }, [openGroups]);
+  /** Open the group holding a destination, never close one. */
+  const revealGroup = useCallback((v: View) => {
+    const g = groupFor(v);
+    if (g) setOpenGroups((p) => (p.has(g) ? p : new Set([...p, g])));
+  }, []);
   // Round 8: shortcut bindings — defaults until config answers, then whatever
   // the user remapped on the shortcuts page.
   const [bindings, setBindings] = useState<Record<ShortcutId, string>>(() => resolveBindings(null));
@@ -1810,12 +1823,6 @@ export default function App(): React.JSX.Element {
     void window.hv.setOnboardingSeen(true);
   };
 
-  // §30: opening the Changelog page IS reading it.
-  const markChangelogSeen = (): void => {
-    setChangelogUnread(false);
-    void window.hv.setLastSeenVersion(__APP_VERSION__);
-  };
-
   /**
    * Load a session's history (and start/resume its Pi process), once.
    *
@@ -2149,8 +2156,9 @@ export default function App(): React.JSX.Element {
     if (keyState !== "present") return;
     if (t.workspace) setWsSettings(t.workspace);
     if (t.view !== "chat") setSettingsOpen(true);
+    revealGroup(t.view);
     setView(t.view);
-  }, [keyState]);
+  }, [keyState, revealGroup]);
 
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
@@ -2206,8 +2214,18 @@ export default function App(): React.JSX.Element {
       if (ws) void newBrowser(ws);
       return;
     }
-    if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
-    if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
+    if (is("findSession")) {
+      e.preventDefault();
+      // A shortcut that silently does nothing is a bug: the 48px rail has no
+      // filter to focus, so expand it first.
+      if (sidebarCollapsed) setSidebarCollapsed(false);
+      setSearchNonce((n) => n + 1);
+      return;
+    }
+    // ⌘, and ⌘/ set the view directly rather than going through navigate(),
+    // so they need the same group reveal or they land on an invisible row.
+    if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); revealGroup("models"); setView("models"); } return; }
+    if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); revealGroup("shortcuts"); setView("shortcuts"); } return; }
     if (is("closeTab")) {
       // Round 15: ⌘W closes the focused pane's active tab, WHATEVER it is —
       // session, terminal or browser. Window close is ⌘⇧W.
@@ -2344,8 +2362,17 @@ export default function App(): React.JSX.Element {
           });
         }}
         settingsOpen={settingsOpen}
-        changelogUnread={changelogUnread}
         onToggleSettingsOpen={() => setSettingsOpen((o) => !o)}
+        searchNonce={searchNonce}
+        openGroups={openGroups}
+        onToggleGroup={(g) =>
+          setOpenGroups((p) => {
+            const next = new Set(p);
+            if (next.has(g)) next.delete(g);
+            else next.add(g);
+            return next;
+          })
+        }
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
@@ -2406,7 +2433,7 @@ export default function App(): React.JSX.Element {
         {activeView === "onBehalf" && <OnBehalfView />}
         {activeView === "stats" && <DashboardView workspaces={workspaces} />}
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
-        {activeView === "changelog" && <ChangelogView onSeen={markChangelogSeen} />}
+        {activeView === "changelog" && <ChangelogView />}
         {activeView === "skills" && (
           <SkillsView
             sessionId={selectedId}
@@ -2429,13 +2456,9 @@ export default function App(): React.JSX.Element {
         {activeView === "voice" && <VoiceView settings={voiceSettings} onChange={setVoiceSettings} />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
-          <AllToolsView
-            tools={tools}
-            sessionId={selectedId}
-            workspaceId={selected?.workspaceId ?? null}
-            onPlanBuiltinChange={setPlanBuiltinOn}
-          />
+          <AllToolsView tools={tools} sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
+        {activeView === "builtinTools" && <BuiltinToolsView onPlanBuiltinChange={setPlanBuiltinOn} />}
         {/* W2.2: the chat area stays MOUNTED (hidden) on other views so open
             editor buffers and chat state survive a Settings detour. Center is
             tabbed: chat tab + file tabs; the docked file tree sits to the

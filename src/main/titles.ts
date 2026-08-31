@@ -17,7 +17,7 @@ import { PI_CLI_RELPATH, nodeExecPath } from "./pi/spawn";
  * fallback title stays in place. Never blocks the chat.
  */
 /**
- * Pure: the prompt, exported so §19's "On your behalf" page can show it
+ * Pure: the prompt, exported so §19's "AI autofill" page can show it
  * VERBATIM. A page that rendered its own paraphrase of the prompt would be the
  * one thing this feature exists to prevent.
  *

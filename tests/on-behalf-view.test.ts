@@ -22,10 +22,27 @@ const rendered = (rel: string): string =>
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 
-test("it sits after System prompt — both answer 'what does this app tell a model that I never typed'", () => {
-  const ids = NAV.map((n) => n.view);
-  expect(ids).toContain("onBehalf");
-  expect(ids.indexOf("onBehalf")).toBe(ids.indexOf("sysprompt") + 1);
+/**
+ * Round 18 supersedes §19's "sits after System prompt".
+ *
+ * That pairing was argued from the QUESTION the two pages answer ("what does
+ * this app tell a model, that I never typed?"), which is true but is not how
+ * the nav is grouped. The pages differ in KIND: System prompt is a standing
+ * instruction that shapes every session, while this page carries a per-task
+ * `(model, append, on/off)` record — you turn each call OFF here. That makes
+ * it app behaviour you configure, so it sits in "App features" beside
+ * Terminal, Voice and Keyboard shortcuts, and NOT in "The record", whose three
+ * pages are read-only.
+ */
+test("it is an app feature you configure, not a record you read", () => {
+  const n = NAV.find((x) => x.view === "onBehalf");
+  expect(n?.group).toBe("app");
+  // The read-only block must not acquire a page with switches on it.
+  expect(NAV.filter((x) => x.group === "record").map((x) => x.view)).toEqual([
+    "stats",
+    "audit",
+    "changelog",
+  ]);
 });
 
 test("three tasks, and the AGENTS.md draft is NOT one of them (PRD §15)", () => {

@@ -9,7 +9,7 @@ import { resolvePiSpawn } from "./pi/spawn";
 import { THINKING_LEVELS, resolveThinking } from "./thinking";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import {
-  agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLastSeenVersion, setLastSeenVersion, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
+  agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
   childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
@@ -3073,7 +3073,7 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   /**
-   * §19 (2026-08-30) — "On your behalf": the three model calls the app makes
+   * §19 (2026-08-30) — "AI autofill": the three model calls the app makes
    * without a session. Same read-only-prompt-plus-append contract as
    * hv:builtin-prompt right above, deliberately: it is PRD §13 round 6's rule,
    * inherited rather than re-decided.
@@ -3171,8 +3171,6 @@ export function registerIpc(win: BrowserWindow): void {
   // §30: which version's changelog the user has read — the changelog dot's flag.
   // `null` means never recorded; see config.ts for why the renderer seeds that
   // case rather than treating it as "all of it is new".
-  ipcMain.handle("hv:get-last-seen-version", () => getLastSeenVersion());
-  ipcMain.handle("hv:set-last-seen-version", (_e, v: string) => setLastSeenVersion(String(v)));
 
   // macOS dock badge = total pending permission prompts (renderer-computed).
   ipcMain.on("hv:set-badge-count", (_e, n: number) => {

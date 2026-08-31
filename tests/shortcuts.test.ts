@@ -75,3 +75,31 @@ describe("newBrowser (§28)", () => {
     expect(SHORTCUT_ACTIONS.some((a) => a.id === "newBrowser")).toBe(true);
   });
 });
+
+describe("§7 round 18 — finding a session is its own action", () => {
+  it("findSession is registered and defaults to Mod-k", () => {
+    const a = SHORTCUT_ACTIONS.find((x) => x.id === "findSession");
+    expect(a?.defaultKey).toBe("Mod-k");
+  });
+
+  it("it did NOT take Mod-f — that belongs to the conversation search", () => {
+    // Round 8 modelled `search` as one action with two focus-scoped consumers
+    // precisely so the default ⌘F could not conflict with itself. A third
+    // claim on it would reopen that.
+    expect(SHORTCUT_ACTIONS.find((x) => x.id === "findSession")?.defaultKey).not.toBe("Mod-f");
+    expect(SHORTCUT_ACTIONS.find((x) => x.id === "search")?.defaultKey).toBe("Mod-f");
+  });
+
+  it("Mod-k was free — no other action claims it", () => {
+    expect(findConflict(resolveBindings(null), "findSession", "Mod-k")).toBeNull();
+  });
+
+  it("every default binding is still unique", () => {
+    const keys = SHORTCUT_ACTIONS.map((a) => a.defaultKey);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("is an ordinary editable action, so the shortcuts page picks it up for free", () => {
+    expect(SHORTCUT_ACTIONS.some((a) => a.id === "findSession")).toBe(true);
+  });
+});
