@@ -410,3 +410,30 @@ describe("Abilities reads have → get → got → author", () => {
       .toEqual(["skills", "promptTemplates", "mcp"]);
   });
 });
+
+describe("the PRD's own listing matches the shipped nav", () => {
+  /**
+   * This paragraph drifted twice while round 18 was being written — the
+   * membership and the order were both re-typed by hand and both went stale
+   * within the hour. CLAUDE.md records the same failure elsewhere ("the count
+   * in this file has drifted twice; the grep has not"), so the listing is
+   * pinned rather than trusted.
+   */
+  it("§16 round 18 names the same groups, members and order as NAV", () => {
+    const prd = fs.readFileSync(path.join(import.meta.dirname, "..", "docs", "prd.md"), "utf8");
+    for (const g of GROUPS) {
+      const m = prd.match(new RegExp(`\\*\\*${g.label}\\*\\* \\(([^)]*)\\)`));
+      expect(m, `docs/prd.md does not list the "${g.label}" group`).toBeTruthy();
+      const listed = m![1].split("·").map((x) => x.replace(/[*`]/g, "").trim());
+      const actual = NAV.filter((n) => n.group === g.id).map((n) => n.label);
+      expect(listed, `"${g.label}" in docs/prd.md`).toEqual(actual);
+    }
+  });
+
+  it("§16 round 18 records that Models is pinned", () => {
+    const prd = fs.readFileSync(path.join(import.meta.dirname, "..", "docs", "prd.md"), "utf8");
+    for (const p of PINNED) {
+      expect(prd).toContain(`**${p.label}**, pinned above every group`);
+    }
+  });
+});
