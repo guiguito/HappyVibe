@@ -142,3 +142,31 @@ describe("Transcript renders it collapsed", () => {
     expect(decl).toContain("thinking");
   });
 });
+
+// §16 round 16, GUI pass — a session override you cannot remove is a trap.
+describe("the thinking pill can be set back to the default", () => {
+  const chat = readFileSync(path.join(process.cwd(), "src/renderer/src/components/ChatView.tsx"), "utf8");
+  const ipc = readFileSync(path.join(process.cwd(), "src/main/ipc.ts"), "utf8");
+  const pill = chat.slice(chat.indexOf("function ThinkingPill"), chat.indexOf("function SkillsChip"));
+
+  test("the menu offers a `default` row that clears the override", () => {
+    expect(pill).toContain("onPick(null)");
+    expect(pill).toMatch(/>\s*default\s*</);
+    // and the type must permit it, or the row cannot compile
+    expect(pill).toContain("onPick: (level: string | null) => void");
+  });
+
+  test("the pill is seeded from the SESSION, not from nothing", () => {
+    // It used to start at null and only move when picked, so after a reload it
+    // read "default" for a session that had an override.
+    expect(chat).toContain("useState<string | null>(sessionThinking)");
+    expect(chat).toContain("sessionThinking?: string | null;");
+  });
+
+  test("clearing applies the fallback LIVE rather than claiming a restart", () => {
+    const h = ipc.slice(ipc.indexOf('"hv:set-session-thinking"'), ipc.indexOf('"hv:set-session-thinking"') + 1600);
+    expect(h).toContain("valid ?? resolveSpawnThinking(sessionId)");
+    // the old shape bailed out whenever `valid` was null, i.e. on every clear
+    expect(h).not.toContain("if (!client || !valid) return { live: false };");
+  });
+});

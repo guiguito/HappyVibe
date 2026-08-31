@@ -3375,9 +3375,16 @@ export function registerIpc(win: BrowserWindow): void {
       index.update(sessionId, { thinking: valid ?? undefined });
       sessionsChanged();
       const client = manager.get(sessionId) as PiClient | null;
-      if (!client || !valid) return { live: false };
+      if (!client) return { live: false };
+      // CLEARING (`level === null`) still has an effective level — the global
+      // default the session now falls back to — so apply THAT rather than
+      // reporting "applies on restart" for a change that can land now. Only a
+      // clear with no global default set has nothing to send: Pi's own default
+      // then governs, and that really is a spawn-time fact.
+      const effective = valid ?? resolveSpawnThinking(sessionId);
+      if (!effective) return { live: false };
       try {
-        const res = await client.send({ type: "set_thinking_level", level: valid });
+        const res = await client.send({ type: "set_thinking_level", level: effective });
         return { live: res.success !== false };
       } catch {
         return { live: false }; // persisted — applies on next spawn

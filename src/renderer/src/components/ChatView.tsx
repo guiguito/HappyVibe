@@ -76,6 +76,7 @@ export function ChatView({
   workspace,
   sessionId,
   sessionModel = null,
+  sessionThinking = null,
   items,
   thinking,
   streaming,
@@ -131,6 +132,8 @@ export function ChatView({
   sessionId: string | null;
   /** W2.1: this session's persisted model override (from SessionMeta). */
   sessionModel?: ModelRef | null;
+  /** §16 round 16: this session's stored thinking override, null = follow the global default. */
+  sessionThinking?: string | null;
   items: TranscriptItem[];
   /** §7 round 16: this session's live reasoning, if it is thinking now. */
   thinking?: string;
@@ -536,7 +539,13 @@ export function ChatView({
    * no known window, rather than a disabled control standing in for "n/a".
    */
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([]);
-  const [thinkingLevel, setThinkingLevel] = useState<string | null>(null);
+  /**
+   * Seeded from the SESSION, not from nothing: the pill used to start at null
+   * and only move when picked, so after a reload it read "default" for a
+   * session that had an override — the control lying about the state it owns.
+   */
+  const [thinkingLevel, setThinkingLevel] = useState<string | null>(sessionThinking);
+  useEffect(() => { setThinkingLevel(sessionThinking); }, [sessionThinking, sessionId]);
   useEffect(() => {
     if (!sessionId) return;
     let alive = true;
@@ -2084,7 +2093,9 @@ function ThinkingPill({
 }: {
   levels: string[];
   value: string | null;
-  onPick: (level: string) => void;
+  /** `null` clears the session override, so the session follows the global
+   *  default again. Without it a level could be set but never unset. */
+  onPick: (level: string | null) => void;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   return (
@@ -2103,6 +2114,20 @@ function ThinkingPill({
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
           <div className="absolute top-full left-0 mt-1.5 z-30 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+            {/* Round 16 GUI pass: picking a level was one-way — there was no way
+                back to the global default, so a session could only ever be
+                pinned. This row is that way back. */}
+            <button
+              type="button"
+              onClick={() => {
+                onPick(null);
+                setOpen(false);
+              }}
+              title="Follow the default set on the Models page"
+              className={`block w-full text-left px-3 py-1 font-mono text-xs hover:bg-paper-deep cursor-pointer border-b border-line ${value === null ? "font-bold" : ""}`}
+            >
+              default
+            </button>
             {levels.map((l) => (
               <button
                 key={l}

@@ -2681,6 +2681,7 @@ export default function App(): React.JSX.Element {
             workspace={sess?.workspaceId ?? null}
             sessionId={sid}
             sessionModel={sess?.model ?? null}
+            sessionThinking={sess?.thinking ?? null}
             items={transcripts[sid] ?? []}
             streaming={streamText[sid] || undefined}
             thinking={thinkingText[sid] || undefined}
