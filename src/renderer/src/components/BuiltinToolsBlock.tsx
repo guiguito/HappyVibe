@@ -209,7 +209,10 @@ function TerminalRow({
 }): React.JSX.Element {
   return (
     <PromptRow
-      title="Terminal — 3 tools"
+      // "Terminal" is also a nav page — the USER's shell, its font and its
+      // settings. This row is the AGENT's three terminal tools. Same word, two
+      // meanings, so this one says whose.
+      title="Agent terminal — 3 tools"
       // Honest about the trade: this is not a safety improvement. With the group
       // off the model does not stop wanting a dev server — it goes back to
       // `npm run dev &> /tmp/log &`, where you cannot see or stop it. Round 6's
@@ -250,7 +253,7 @@ function BrowserRow({
   return (
     <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
-        <span className="font-bold block">Browser — 10 tools</span>
+        <span className="font-bold block">Agent browser — 10 tools</span>
         <span className="text-xs text-ink-soft">
           Lets the agent open a page in a sandboxed browser tab, read it, screenshot it, click and type in it, and
           watch its console and network traffic. It can reach localhost freely; every other site asks you first,

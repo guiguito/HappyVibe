@@ -10,10 +10,13 @@ import { GoTo } from "./GoTo";
  * permission state. One is destructive configuration, the other is a list you
  * consult — and "Everything the agent can call" described only the second.
  *
- * This half is a CAPABILITY page, so it sits under Abilities beside Skills,
- * MCP and Agents: these are the things HappyVibe itself gives the agent. The
- * inventory stays on `AllToolsView` as "Agent tools", under Control, beside
- * the rules that gate it.
+ * It sits under Control, beside `Agent tools` — every switch here is ON by
+ * default, so nobody opens this page to ENABLE something and every visit is a
+ * restriction. That makes it a control surface rather than a capability one
+ * (it was filed under Abilities first, on the reading that these are abilities
+ * HappyVibe gives the agent — true, but not why anyone comes here). Keeping
+ * the two tool pages adjacent is the other half: it is where a reader hunting
+ * for "tools" looks, and the link between them no longer crosses a group.
  *
  * The name is the app's own: the block's section already reads "Built-in
  * Custom Tools — App-provided tools implemented as ordinary tool calls, not

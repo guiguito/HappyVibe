@@ -62,11 +62,11 @@ describe("the order lives in ONE place", () => {
 
   it("round 12's frequency order survives within each group", () => {
     expect(NAV.map((n) => n.view)).toEqual([
-      "models", "plugins", "skills", "promptTemplates", "mcp", "agents", "builtinTools",
+      "models", "plugins", "skills", "promptTemplates", "mcp", "agents",
       // Permissions leads its group ahead of All Tools: the more often
       // reached of the two, and the group's own thesis. System prompt closes
       // it — a standing instruction is a ground rule, though not a permission.
-      "permissions", "tools", "sysprompt",
+      "permissions", "tools", "builtinTools", "sysprompt",
       // §19's page configures app behaviour (a per-task model/append/on-off
       // record), so it is an app feature, not a record of one.
       "terminal", "voice", "onBehalf", "shortcuts",
@@ -187,7 +187,10 @@ describe("§13 round 18 — the two tool pages are two pages", () => {
     // One page mixed global ON/OFF switches that unregister tools and respawn
     // live sessions with a read-only list you consult. Different jobs, and
     // "Everything the agent can call" described only the second.
-    expect(NAV.find((n) => n.view === "builtinTools")?.group).toBe("abilities");
+    // Both tool pages live in the same group: adjacent is where a reader
+    // hunting for "tools" looks, and every switch on the first is on by
+    // default, so every visit to it is a restriction.
+    expect(NAV.find((n) => n.view === "builtinTools")?.group).toBe("rules");
     expect(NAV.find((n) => n.view === "tools")?.group).toBe("rules");
   });
 
@@ -229,5 +232,24 @@ describe("§13 round 18 — the two tool pages are two pages", () => {
     const a = NAV.find((n) => n.view === "tools")?.Icon;
     const b = NAV.find((n) => n.view === "builtinTools")?.Icon;
     expect(a).not.toBe(b);
+  });
+});
+
+describe("no label means two different things", () => {
+  const B = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "src", "renderer", "src", "components", "BuiltinToolsBlock.tsx"),
+    "utf8",
+  );
+
+  it("the agent's terminal row does not collide with the Terminal page", () => {
+    // The nav has a `Terminal` page — the USER's shell and its settings. This
+    // row is the AGENT's three terminal tools. Same word, two meanings.
+    expect(NAV.map((n) => n.label)).toContain("Terminal");
+    expect(B).toContain('title="Agent terminal — 3 tools"');
+    expect(B).not.toContain('title="Terminal — 3 tools"');
+  });
+
+  it("the browser row says whose browser it is too", () => {
+    expect(B).toContain("Agent browser — 10 tools");
   });
 });

@@ -241,10 +241,7 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "abilities" },
   { view: "mcp", label: "MCP", Icon: McpIcon, group: "abilities" },
   { view: "agents", label: "Agents", Icon: AgentsIcon, group: "abilities" },
-  // Trails its group by round 12's frequency rule: these are on by default and
-  // most users never open the page. It IS a capability page though — these are
-  // abilities HappyVibe gives the agent, like Skills and MCP above it.
-  { view: "builtinTools", label: "Built-in tools", Icon: BuiltinToolsIcon, group: "abilities" },
+
   // Permissions leads ahead of All Tools, inverting round 12's flat order: it
   // is the more often reached of the two, and it is the group's thesis rather
   // than an inventory. System prompt closes it — the standing instructions
@@ -254,6 +251,12 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   // half of it lived on the same page; it is the gated INVENTORY, so it says so
   // and sits beside the rules that gate it.
   { view: "tools", label: "Agent tools", Icon: ToolsIcon, group: "rules" },
+  // Every one of its switches is ON by default, so nobody opens this page to
+  // ENABLE something — every visit is a restriction. That makes it a control
+  // surface, not a capability one, and it puts the two tool pages adjacent,
+  // which is where someone hunting for "tools" looks. Trails Agent tools by
+  // round 12's frequency rule.
+  { view: "builtinTools", label: "Built-in tools", Icon: BuiltinToolsIcon, group: "rules" },
   { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon, group: "rules" },
   // Things the APP does for you. Terminal and Voice are surfaces you use
   // daily; the two configure-once pages trail. §19's page lives here rather
