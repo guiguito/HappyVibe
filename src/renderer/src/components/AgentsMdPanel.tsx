@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
 import { parseAgentsMdOutput, traceFromEnd, type AgentInfo } from "../agents";
 import { EmptyState } from "./EmptyState";
+import { HowItWorks } from "./HowItWorks";
 
 /** Strip an accidental markdown fence around a drafted file. */
 const unfence = (s: string): string =>
@@ -198,6 +199,7 @@ export function AgentsMdPanel({
           ) : (
             <>
               {missing && !dirty && <EmptyState copy="agentsMd" className="mb-3" />}
+              <HowItWorks copy="instructionFiles" />
               <textarea
                 value={content}
                 onChange={(e) => {

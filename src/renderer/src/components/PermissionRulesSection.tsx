@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { EmptyState } from "./EmptyState";
+import { HowItWorks } from "./HowItWorks";
 
 /**
  * B4 rules editor, parameterized by scope (W1.4): no `workspace` prop → the
@@ -107,6 +108,11 @@ export function PermissionRulesSection({ workspace }: { workspace?: string }): R
           ? "Overrides layered on top of the global rules for this workspace — the most restrictive match wins (deny > ask > allow)."
           : "Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). No match falls back to asking you."}
       </p>
+
+      {/* The subtitle above is the short form; this is its long form, in place. */}
+      <div className="-mt-2 mb-4">
+        <HowItWorks copy="rules" />
+      </div>
 
       <div className="flex flex-col gap-2">
         {current.length === 0 && <EmptyState copy="rules" />}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { brandIconFor } from "../toolLabel";
 import { BrandMark } from "./BrandMark";
 import { EmptyState } from "./EmptyState";
+import { HowItWorks } from "./HowItWorks";
 
 interface McpServer {
   scope: "global" | "workspace";
@@ -296,7 +297,10 @@ export function McpServersSection({
       {servers === null ? (
         <p className="text-sm text-ink-soft">Loading…</p>
       ) : servers.length === 0 ? (
-        <EmptyState copy="mcpServers" />
+        <>
+          <EmptyState copy="mcpServers" />
+          <HowItWorks copy="mcpBadge" />
+        </>
       ) : (
         <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden">
           {servers.map((s) => {

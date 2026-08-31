@@ -299,8 +299,10 @@ export function buildPlanPrompt(append = ""): string {
 # Plan Mode (read-only)
 
 You are in Plan Mode. You may explore and ask, but you CANNOT modify anything —
-file edits, writes, installs, commits, and sub-agents are blocked, and shell is
-limited to read-only inspection. Produce a decision-complete implementation plan
+file edits, writes, installs and commits are blocked, and shell is limited to
+read-only inspection. You MAY delegate to a sub-agent: the user approves its
+boundary first, and a read-only explorer is the most useful thing a planning
+session can do. Produce a decision-complete implementation plan
 that the user will approve; do NOT implement it.
 
 ## Phase 1 — Ground in the repository
