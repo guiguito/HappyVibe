@@ -130,22 +130,31 @@ function StatsIcon(): React.JSX.Element {
     </svg>
   );
 }
+/** §11: a CHECKLIST — every row is a decision that was allowed or denied.
+    Paired deliberately against the Changelog's timeline two rows down: both
+    read as lists, but ticks and a spine are different silhouettes at 16px,
+    where two documents-with-lines were not. */
 function AuditIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 12h6M9 16h6M9 8h2" />
-      <path d="M5 4a1 1 0 0 1 1-1h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z" />
+      <path d="M3 6.5l1.6 1.6L7.8 4.9" />
+      <path d="M3 13l1.6 1.6L7.8 11.4" />
+      <path d="M3 19.5l1.6 1.6L7.8 17.9" />
+      <path d="M11.5 6.5H21M11.5 13H21M11.5 19.5h6.5" />
     </svg>
   );
 }
-/** §30: the Changelog page — a page with a turned corner, distinct from the
-    audit log's clipboard beside it. */
+/** §30: a release TIMELINE — versions down a spine. It used to be a page with
+    a turned corner, which at 16px was indistinguishable from the audit log's
+    document two rows above it; the comment claimed they were distinct and they
+    were not. */
 function ChangelogIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6" />
-      <path d="M8 13h8M8 17h5" />
+      <path d="M5 3.5v17" />
+      <circle cx="5" cy="7" r="2.1" />
+      <circle cx="5" cy="17" r="2.1" />
+      <path d="M10 7h10M10 17h6.5" />
     </svg>
   );
 }
@@ -231,33 +240,48 @@ export const GROUPS: Array<{ id: NavGroup; label: string }> = [
  * from. That rule is NOT superseded by the grouping — it now applies WITHIN
  * each group, with one deliberate exception noted at `permissions`.
  */
-export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element; group: NavGroup }> = [
-  // Everything you GIVE the agent. Models leads because a beginner can do
-  // nothing before it and ⌘, already lands there; §25 leads the capability
-  // pages, being the source the three below it get their contents from.
-  { view: "models", label: "Models", Icon: ModelsIcon, group: "abilities" },
+export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element; group: NavGroup | null }> = [
+  // PINNED above every group (`group: null`). Round 12 already called it
+  // first-among-equals — "a beginner can do nothing before it and ⌘, already
+  // lands there" — and it is the one member of Abilities that is not one: the
+  // others are capabilities you switch on and off, this is WHO the agent talks
+  // to, and the app refuses to spawn without it (§16 finding 7).
+  { view: "models", label: "Models", Icon: ModelsIcon, group: null },
+  // Everything you GIVE the agent, each with its own on/off — the IPC surface
+  // says so: skills-set-enabled, prompt-templates-set-enabled,
+  // set-agent-enabled, plugins-enable-installed. §25 leads, being the source
+  // the three below it get their contents from.
   { view: "plugins", label: "Plugins", Icon: PluginsIcon, group: "abilities" },
   { view: "skills", label: "Skills", Icon: SkillsIcon, group: "abilities" },
-  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "abilities" },
   { view: "mcp", label: "MCP", Icon: McpIcon, group: "abilities" },
   { view: "agents", label: "Agents", Icon: AgentsIcon, group: "abilities" },
+  // Prompts trails Skills/MCP/Agents because it is the odd one: those three
+  // are things the AGENT reaches for on its own, while a prompt template is
+  // something YOU type — its own page says "reusable prompts you type as
+  // /name". Keeping the agent-autonomous run unbroken is worth more than the
+  // position it happened to inherit from the old flat list.
+  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "abilities" },
+  // Closes the group by round 12's frequency rule. It belongs here and not in
+  // Control: "you only ever go there to switch something OFF" is true of it
+  // AND of Skills, Prompts, Agents and Plugins, so it does not separate them —
+  // every page in this group is a list of capabilities with an on/off.
+  { view: "builtinTools", label: "Built-in tools", Icon: BuiltinToolsIcon, group: "abilities" },
 
   // Permissions leads ahead of All Tools, inverting round 12's flat order: it
   // is the more often reached of the two, and it is the group's thesis rather
   // than an inventory. System prompt closes it — the standing instructions
   // that shape every session, beside the rules that bound them.
-  { view: "permissions", label: "Permissions", Icon: PermissionsIcon, group: "rules" },
-  // "All Tools" claimed to be the complete catalogue while the switches for
-  // half of it lived on the same page; it is the gated INVENTORY, so it says so
-  // and sits beside the rules that gate it.
-  { view: "tools", label: "Agent tools", Icon: ToolsIcon, group: "rules" },
-  // Every one of its switches is ON by default, so nobody opens this page to
-  // ENABLE something — every visit is a restriction. That makes it a control
-  // surface, not a capability one, and it puts the two tool pages adjacent,
-  // which is where someone hunting for "tools" looks. Trails Agent tools by
-  // round 12's frequency rule.
-  { view: "builtinTools", label: "Built-in tools", Icon: BuiltinToolsIcon, group: "rules" },
+  // Read top-down as general → specific: the System prompt applies to every
+  // turn of every session, Permissions are the rules, and Agent tools is the
+  // inventory those rules act on. System prompt leads on VALUE rather than on
+  // round 12's frequency rule — it is the highest-leverage page in the group
+  // and the least discovered — and a read-only inventory is the right place to
+  // end. ("All Tools" claimed to be the complete catalogue while the switches
+  // for half of it lived on the same page; it is the gated INVENTORY, so it
+  // now says so.)
   { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon, group: "rules" },
+  { view: "permissions", label: "Permissions", Icon: PermissionsIcon, group: "rules" },
+  { view: "tools", label: "Agent tools", Icon: ToolsIcon, group: "rules" },
   // Things the APP does for you. Terminal and Voice are surfaces you use
   // daily; the two configure-once pages trail. §19's page lives here rather
   // than with the records because it is not one: it carries a per-task
@@ -282,6 +306,9 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
 export function groupFor(view: View): NavGroup | null {
   return NAV.find((n) => n.view === view)?.group ?? null;
 }
+
+/** Rows that sit ABOVE the groups, always visible. */
+export const PINNED = NAV.filter((n) => n.group === null);
 
 /** Round 8: the collapse affordance — an actual chevron rather than a 10px
     glyph, sitting immediately right of the name it collapses. */
@@ -933,6 +960,23 @@ export function Sidebar({
         </button>
         {settingsOpen && (
           <div className="mt-1 flex flex-col min-h-0 overflow-y-auto">
+            {/* Pinned rows sit ABOVE every header, at the headers' own indent
+                so they read as top-level rather than as a group's first item.
+                Their font is the item font, so they are never mistaken for a
+                header either. */}
+            {PINNED.map((n) => (
+              <button
+                key={n.view}
+                type="button"
+                onClick={() => onNavigate(n.view)}
+                className={`w-full flex items-center gap-2.5 rounded-xl pl-5 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
+                  view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+                }`}
+              >
+                <n.Icon />
+                <span className="flex-1 text-left">{n.label}</span>
+              </button>
+            ))}
             {GROUPS.map((g) => {
               const open = openGroups.has(g.id);
               return (

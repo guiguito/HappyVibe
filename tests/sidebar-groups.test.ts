@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { GROUPS, NAV, groupFor } from "../src/renderer/src/components/Sidebar";
+import { GROUPS, NAV, PINNED, groupFor } from "../src/renderer/src/components/Sidebar";
 
 /**
  * §16 round 18 — the flat 16-item list becomes four collapsible groups.
@@ -19,6 +19,7 @@ describe("nothing was lost", () => {
     expect(NAV).toHaveLength(17);
     expect(new Set(NAV.map((n) => n.view)).size).toBe(17);
     for (const n of NAV) {
+      if (n.group === null) continue; // pinned above the groups
       expect(GROUPS.map((g) => g.id), `${n.view}`).toContain(n.group);
     }
   });
@@ -56,17 +57,20 @@ describe("the order lives in ONE place", () => {
     // places — §20 round 17 Principle 11. Contiguity is what lets the sidebar
     // render `NAV.filter(...)` while NAV stays the source of truth.
     const runs: string[] = [];
-    for (const n of NAV) if (runs.at(-1) !== n.group) runs.push(n.group);
+    for (const n of NAV) {
+      if (n.group === null) continue;
+      if (runs.at(-1) !== n.group) runs.push(n.group);
+    }
     expect(runs.length).toBe(new Set(runs).size);
   });
 
   it("round 12's frequency order survives within each group", () => {
     expect(NAV.map((n) => n.view)).toEqual([
-      "models", "plugins", "skills", "promptTemplates", "mcp", "agents",
+      "models", "plugins", "skills", "mcp", "agents", "promptTemplates", "builtinTools",
       // Permissions leads its group ahead of All Tools: the more often
       // reached of the two, and the group's own thesis. System prompt closes
       // it — a standing instruction is a ground rule, though not a permission.
-      "permissions", "tools", "builtinTools", "sysprompt",
+      "sysprompt", "permissions", "tools",
       // §19's page configures app behaviour (a per-task model/append/on-off
       // record), so it is an app feature, not a record of one.
       "terminal", "voice", "onBehalf", "shortcuts",
@@ -190,7 +194,12 @@ describe("§13 round 18 — the two tool pages are two pages", () => {
     // Both tool pages live in the same group: adjacent is where a reader
     // hunting for "tools" looks, and every switch on the first is on by
     // default, so every visit to it is a restriction.
-    expect(NAV.find((n) => n.view === "builtinTools")?.group).toBe("rules");
+    // It stays in Abilities: "you only ever go there to switch something OFF"
+    // is equally true of Skills, Prompts, Agents and Plugins — every page in
+    // that group is a list of capabilities with an on/off, which the IPC
+    // surface confirms (skills-set-enabled, prompt-templates-set-enabled,
+    // set-agent-enabled, plugins-enable-installed).
+    expect(NAV.find((n) => n.view === "builtinTools")?.group).toBe("abilities");
     expect(NAV.find((n) => n.view === "tools")?.group).toBe("rules");
   });
 
@@ -251,5 +260,50 @@ describe("no label means two different things", () => {
 
   it("the browser row says whose browser it is too", () => {
     expect(B).toContain("Agent browser — 10 tools");
+  });
+});
+
+describe("Models is pinned above the groups", () => {
+  it("it is the only ungrouped row, and it leads", () => {
+    // Round 12 already called it first-among-equals. It is also the one member
+    // of Abilities that is not one: the others are capabilities you switch on
+    // and off, this is WHO the agent talks to — and the app refuses to spawn
+    // without it (§16 finding 7).
+    expect(PINNED.map((n) => n.view)).toEqual(["models"]);
+    expect(NAV[0]?.view).toBe("models");
+  });
+
+  it("a pinned row needs no group opened to be reachable", () => {
+    // navigate() reveals the group holding its target; for a pinned row there
+    // is none, and there must not be — it is always on screen.
+    expect(groupFor("models")).toBeNull();
+  });
+
+  it("every other destination still lives in a group", () => {
+    expect(NAV.filter((n) => n.group === null)).toHaveLength(1);
+  });
+});
+
+describe("the two record icons are not the same drawing", () => {
+  const SB = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "src", "renderer", "src", "components", "Sidebar.tsx"),
+    "utf8",
+  );
+  const body = (fn: string): string => {
+    const at = SB.indexOf(`function ${fn}()`);
+    return SB.slice(at, SB.indexOf("</svg>", at));
+  };
+
+  it("Audit log is a checklist and Changelog is a timeline", () => {
+    // Both used to be a document-with-lines; at 16px they read as one glyph
+    // repeated, and the old comment claimed they were distinct.
+    expect(body("AuditIcon")).toContain("M3 6.5l1.6 1.6");   // ticks
+    expect(body("ChangelogIcon")).toContain("<circle");       // nodes on a spine
+    expect(body("AuditIcon")).not.toContain("<circle");
+  });
+
+  it("neither is still the old page-with-a-turned-corner", () => {
+    expect(body("ChangelogIcon")).not.toContain("M14 2v6h6");
+    expect(body("AuditIcon")).not.toContain("a1 1 0 0 1 1-1h9l4 4");
   });
 });
