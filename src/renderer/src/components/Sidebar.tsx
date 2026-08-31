@@ -258,15 +258,16 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   // set-agent-enabled, plugins-enable-installed. §25 leads, being the source
   // the three below it get their contents from.
   { view: "plugins", label: "Plugins", Icon: PluginsIcon, group: "abilities" },
+  // Skills · Prompts · MCP sit directly under Plugins and in this order
+  // because they are EXACTLY what a plugin can contain — `ACCEPTED_COMPONENTS`
+  // in plugins/classify.ts is `["commands", "mcpServers", "skills"]`, and the
+  // Plugins page says "composed exclusively of skills, prompts and MCP
+  // servers". Round 12's "the source the three below it get their contents
+  // from" is literal, not a figure of speech, so the run must stay contiguous.
   { view: "skills", label: "Skills", Icon: SkillsIcon, group: "abilities" },
+  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "abilities" },
   { view: "mcp", label: "MCP", Icon: McpIcon, group: "abilities" },
   { view: "agents", label: "Agents", Icon: AgentsIcon, group: "abilities" },
-  // Prompts trails Skills/MCP/Agents because it is the odd one: those three
-  // are things the AGENT reaches for on its own, while a prompt template is
-  // something YOU type — its own page says "reusable prompts you type as
-  // /name". Keeping the agent-autonomous run unbroken is worth more than the
-  // position it happened to inherit from the old flat list.
-  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "abilities" },
   // Closes the group by round 12's frequency rule. It belongs here and not in
   // Control: "you only ever go there to switch something OFF" is true of it
   // AND of Skills, Prompts, Agents and Plugins, so it does not separate them —

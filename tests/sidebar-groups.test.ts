@@ -66,7 +66,7 @@ describe("the order lives in ONE place", () => {
 
   it("round 12's frequency order survives within each group", () => {
     expect(NAV.map((n) => n.view)).toEqual([
-      "models", "plugins", "skills", "mcp", "agents", "promptTemplates", "builtinTools",
+      "models", "plugins", "skills", "promptTemplates", "mcp", "agents", "builtinTools",
       // Permissions leads its group ahead of All Tools: the more often
       // reached of the two, and the group's own thesis. System prompt closes
       // it — a standing instruction is a ground rule, though not a permission.
@@ -369,5 +369,26 @@ describe("section icons are distinct too", () => {
     );
     expect(MV).toContain('icon="providers" title="Providers"');
     expect(SEC).toContain("providers: (");
+  });
+});
+
+describe("Plugins is followed by exactly what a plugin contains", () => {
+  it("the three rows under Plugins are DERIVED from ACCEPTED_COMPONENTS", async () => {
+    // Round 12: "Plugins leads, it is the source the three below it get their
+    // contents from." That is literal — a plugin may contain commands, MCP
+    // servers and skills, and nothing else. Asserted against the classifier
+    // rather than re-typed here, so widening what a plugin may hold fails
+    // this test instead of silently orphaning the sentence (Principle 11).
+    const { ACCEPTED_COMPONENTS } = await import("../src/main/plugins/classify");
+    const COMPONENT_VIEW: Record<string, string> = {
+      commands: "promptTemplates",
+      mcpServers: "mcp",
+      skills: "skills",
+    };
+    const views = NAV.map((n) => n.view);
+    const after = views.slice(views.indexOf("plugins") + 1, views.indexOf("plugins") + 1 + ACCEPTED_COMPONENTS.length);
+    expect(new Set(after)).toEqual(new Set(ACCEPTED_COMPONENTS.map((c) => COMPONENT_VIEW[c])));
+    // Every accepted component must have a nav row, or the mapping above rots.
+    for (const c of ACCEPTED_COMPONENTS) expect(COMPONENT_VIEW[c], c).toBeDefined();
   });
 });
