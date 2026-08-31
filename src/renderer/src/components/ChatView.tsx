@@ -34,6 +34,7 @@ import {
   activeCommandQuery, activeMentionQuery, commandSubtitle, completeCommand, completeMention, composerCommands, extractMentions, filterCommands,
   agentMentionItems, filterEntries, mentionLabel, type MentionEntry, type SlashCommand,
 } from "../mentions";
+import { Banner } from "./Banner";
 
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
 /** §21: the file tree drags this — a tab/file gesture, not an image. */
@@ -811,7 +812,7 @@ export function ChatView({
       )}
       {/* Crash banner */}
       {crashed !== null && (
-        <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/40 text-sm font-semibold text-berry">
+        <Banner tone="danger">
           <span className="flex-1">The agent process stopped (code {crashed}).</span>
           <button
             type="button"
@@ -820,12 +821,15 @@ export function ChatView({
           >
             Restart agent
           </button>
-        </div>
+        </Banner>
       )}
 
       {/* B5: red-zone auto-suggest (once per session, non-blocking). */}
       {suggestCompact && (
-        <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/40 text-sm font-semibold text-berry">
+        <Banner
+          tone="danger"
+          onDismiss={() => sessionId && setSuggestDismissed((p) => new Set(p).add(sessionId))}
+        >
           <span className="flex-1">Context is {gauge!.percent}% full. Open the context panel to review or compact.</span>
           <button
             type="button"
@@ -834,14 +838,7 @@ export function ChatView({
           >
             Review context
           </button>
-          <button
-            type="button"
-            onClick={() => sessionId && setSuggestDismissed((p) => new Set(p).add(sessionId))}
-            className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer"
-          >
-            Dismiss
-          </button>
-        </div>
+        </Banner>
       )}
 
       {/* V2.C1: the delegation run lives OUTSIDE the chat flow — a sticky
