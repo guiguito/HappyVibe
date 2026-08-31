@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
 import { parseAgentsMdOutput, traceFromEnd, type AgentInfo } from "../agents";
+import { EmptyState } from "./EmptyState";
 
 /** Strip an accidental markdown fence around a drafted file. */
 const unfence = (s: string): string =>
@@ -196,6 +197,7 @@ export function AgentsMdPanel({
             <div className="py-10 text-center text-ink-soft">Loading…</div>
           ) : (
             <>
+              {missing && !dirty && <EmptyState copy="agentsMd" className="mb-3" />}
               <textarea
                 value={content}
                 onChange={(e) => {
@@ -204,7 +206,7 @@ export function AgentsMdPanel({
                   setJustCreated(false);
                 }}
                 spellCheck={false}
-                placeholder={missing ? "No AGENTS.md yet. Write one, copy your CLAUDE.md, or let agents-md-maker draft it." : ""}
+                placeholder={missing ? "Markdown…" : ""}
                 className="flex-1 min-h-64 w-full resize-none rounded-xl border-2 border-line-strong bg-paper px-3.5 py-3 font-mono text-xs focus:outline-none focus:border-tangerine"
               />
               <div className="mt-3 flex items-center gap-2">

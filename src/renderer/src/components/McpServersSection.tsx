@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { brandIconFor } from "../toolLabel";
 import { BrandMark } from "./BrandMark";
+import { EmptyState } from "./EmptyState";
 
 interface McpServer {
   scope: "global" | "workspace";
@@ -295,7 +296,7 @@ export function McpServersSection({
       {servers === null ? (
         <p className="text-sm text-ink-soft">Loading…</p>
       ) : servers.length === 0 ? (
-        <p className="text-sm text-ink-soft">No MCP servers yet — install one from the catalog above, or add your own.</p>
+        <EmptyState copy="mcpServers" />
       ) : (
         <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden">
           {servers.map((s) => {

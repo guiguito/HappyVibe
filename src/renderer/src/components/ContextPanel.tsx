@@ -3,6 +3,7 @@ import {
   categoryCount, compositionSegments, computeGauge, groupItems, summarizeGroups, totalEstTokens,
   type CategorySummary, type ContextItem, type ContextSnapshot, type Gauge, type SessionStats,
 } from "../context";
+import { EmptyState } from "./EmptyState";
 
 const estTok = (n: number): string => `≈${n.toLocaleString()} tok`;
 
@@ -161,7 +162,7 @@ export function ContextPanel({
 
           {snapshot && !drilled && (
             summary.length === 0 ? (
-              <div className="text-sm text-ink-soft">Nothing in context yet — it fills in as soon as you send a message.</div>
+              <EmptyState copy="context" />
             ) : (
               <>
               {/* v5: proportional composition surface (a segmented bar), inspired

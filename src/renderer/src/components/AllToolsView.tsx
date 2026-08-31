@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from "../agents";
 import { BuiltinToolsBlock } from "./BuiltinToolsBlock";
 import { Section } from "./Section";
+import { EmptyState } from "./EmptyState";
 
 const PERM_TONE: Record<PermState, string> = {
   deny: "bg-berry-soft text-berry border-berry/50",
@@ -109,7 +110,7 @@ export function AllToolsView({
           {toolRows === null ? (
             <p className="text-sm text-ink-soft">Loading…</p>
           ) : toolRows.length === 0 ? (
-            <p className="text-sm text-ink-soft">No tools yet — start a session and this fills in from the live agent.</p>
+            <EmptyState copy="tools" />
           ) : (
             <>
               <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">

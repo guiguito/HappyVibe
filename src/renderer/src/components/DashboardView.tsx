@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fmtCost, fmtDuration, fmtNum } from "../analytics-format";
 import { Section } from "./Section";
+import { EmptyState } from "./EmptyState";
 
 /** B7 — local-only analytics. Everything here is read from the JSONL event log
  * in main; nothing is ever sent anywhere. Money is labeled as an estimate. */
@@ -21,7 +22,7 @@ function Card({ label, value, sub }: { label: string; value: string; sub?: strin
 
 /** Hand-rolled SVG day bars — no chart dep. Empty days between first/last render as gaps. */
 function DayBars({ data }: { data: HvAnalytics["sessionsPerDay"] }): React.JSX.Element {
-  if (data.length === 0) return <p className="text-sm text-ink-soft">No sessions yet — start one from a workspace in the sidebar.</p>;
+  if (data.length === 0) return <EmptyState copy="statsSessions" />;
   const max = Math.max(...data.map((d) => d.count), 1);
   const w = 22;
   const gap = 6;
@@ -56,7 +57,7 @@ function BreakdownTable({
   rows: HvBreakdown[];
   labelKey?: (k: string) => string;
 }): React.JSX.Element {
-  if (rows.length === 0) return <p className="text-sm text-ink-soft">No data yet — this fills in once you've run a session.</p>;
+  if (rows.length === 0) return <EmptyState copy="statsData" />;
   const max = Math.max(...rows.map((r) => r.tokens), 1);
   return (
     <div className="flex flex-col gap-2">
@@ -206,7 +207,7 @@ export function DashboardView({ workspaces }: { workspaces: string[] }): React.J
 
             <Section icon="permissions" title="Permission activity" subtitle="What the agent asked for, and what you decided.">
               {data.permissions.total === 0 ? (
-                <p className="text-sm text-ink-soft">No permission decisions yet — they appear here once the agent asks for something.</p>
+                <EmptyState copy="statsPermissions" />
               ) : (
                 <div className="flex flex-col gap-3">
                   <div>

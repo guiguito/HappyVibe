@@ -1209,10 +1209,12 @@ Attach with `mcp__electron-debug__attach` (or `/uicheck`). `npm run dev` must be
 | Claim | Observed on |
 |---|---|
 | The Agents page's empty message is a dashed box, not a bare grey line | Agents page **before any session has run** |
-| The sidebar's no-sessions message names the `+` button | sidebar, fresh workspace |
-| AGENTS.md guidance stays visible **after you type a character** | AGENTS.md panel, workspace with no AGENTS.md — type one letter and look again |
+| The sidebar's no-sessions message names the `+` button (inline prose, deliberately not the component) | sidebar, fresh workspace |
+| AGENTS.md guidance is a real dashed box above the editor, not ghost placeholder text | AGENTS.md panel, workspace with no AGENTS.md |
 
-**Absence assertions (named):** the AGENTS.md `<textarea>`'s `placeholder` no longer carries the guidance sentence — it reads `Markdown…` or similar. And there is **no** illustrated/large-icon empty card anywhere: `EmptyState.tsx` has one visual shape, the dashed box.
+**Absence assertions (named):** the AGENTS.md `<textarea>`'s `placeholder` no longer carries the guidance sentence — it reads `Markdown…`. There is **no** illustrated/large-icon empty card anywhere: `EmptyState.tsx` has one visual shape, the dashed box. And `EMPTY_COPY` has **no** `sidebarSessions` or `costs` key at this point — an unused key fails `tests/empty-state.test.ts`, because unreferenced copy is the drift the component exists to end.
+
+**Note on scope, decided during implementation:** the empty state is gated `missing && !dirty`, matching the Copy CLAUDE.md / draft buttons directly beneath it — guidance and its actions appear and leave together. The audit's complaint was that a *placeholder* is grey ghost text reading as "type here" and disappears on the first keystroke; the fix is that it is now a real element sitting with its actions, not that it outlives them.
 
 **Regression to perform:** open a workspace with **no** AGENTS.md, click "Draft it for me", let it finish, and confirm the empty state disappears rather than sitting above a now-populated editor.
 
