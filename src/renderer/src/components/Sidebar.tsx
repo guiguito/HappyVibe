@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { timeago } from "../timeago";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
-import { AUTO, fractionFor, readSplit, writeSplit } from "../sidebarSplit";
+import { AUTO, fractionFor, isSized, readSplit, writeSplit } from "../sidebarSplit";
 import { BrandLogo } from "./BrandLogo";
 
 // W1.4: audit + dashboard moved inside Settings (PRD "Settings" — neither lives in the sidebar).
@@ -550,8 +550,9 @@ export function Sidebar({
   }, [treeFrac]);
 
   // The split only exists while the group is open: a dragged height with the
-  // group collapsed is a division of nothing.
-  const sized = settingsOpen && treeFrac !== AUTO;
+  // group collapsed is a division of nothing. §16 round 18 put four groups
+  // inside that group, so `isSized` applies the same rule one level down.
+  const sized = isSized(settingsOpen, treeFrac, openGroups.size);
 
   const startResize = (e: React.MouseEvent): void => {
     e.preventDefault(); // else the drag selects sidebar text

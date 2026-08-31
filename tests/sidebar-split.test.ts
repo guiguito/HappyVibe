@@ -6,7 +6,7 @@
  * `380` must not be read as a fraction (it would clamp to the maximum and pin
  * the tree open forever), so anything > 1 degrades to auto.
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
   AUTO,
   MAX_FRACTION,
@@ -15,6 +15,7 @@ import {
   fractionFor,
   readSplit,
   writeSplit,
+  isSized,
 } from "../src/renderer/src/sidebarSplit";
 
 describe("readSplit", () => {
@@ -64,5 +65,27 @@ describe("clampFraction", () => {
     expect(clampFraction(0.5)).toBe(0.5);
     expect(clampFraction(0)).toBe(MIN_FRACTION);
     expect(clampFraction(9)).toBe(MAX_FRACTION);
+  });
+});
+
+describe("§7 round 18 — a dragged height divides nothing when every group is shut", () => {
+  it("does not bind when the Settings group is closed", () => {
+    // Round 12's original rule, unchanged.
+    expect(isSized(false, 0.34, 2)).toBe(false);
+  });
+
+  it("does not bind when Settings is open but no group inside it is", () => {
+    // Without this the tree stays pinned at 34% while a ~204px settings block
+    // is handed two thirds of the sidebar — ~420px of dead pegboard, which is
+    // the exact defect round 12 fixed one level up.
+    expect(isSized(true, 0.34, 0)).toBe(false);
+  });
+
+  it("binds when Settings is open, a group is open, and the handle was dragged", () => {
+    expect(isSized(true, 0.34, 1)).toBe(true);
+  });
+
+  it("never binds at AUTO, however many groups are open", () => {
+    expect(isSized(true, AUTO, 4)).toBe(false);
   });
 });

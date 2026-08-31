@@ -51,3 +51,17 @@ export function fractionFor(heightPx: number, sidebarPx: number): number {
   if (sidebarPx <= 0) return AUTO;
   return clampFraction(heightPx / sidebarPx);
 }
+
+/**
+ * Does the dragged fraction apply right now?
+ *
+ * Round 12 established that "a dragged height with the group collapsed is a
+ * division of nothing". §16 round 18 put four collapsible groups INSIDE that
+ * group, so the same is true one level down: an open `Settings` whose four
+ * groups are all shut is ~204px of content, and pinning the tree at its
+ * dragged height there leaves the remainder as dead pegboard — the exact
+ * defect round 12 fixed, reintroduced one level in.
+ */
+export function isSized(settingsOpen: boolean, fraction: number, openGroupCount: number): boolean {
+  return settingsOpen && openGroupCount > 0 && fraction !== AUTO;
+}
