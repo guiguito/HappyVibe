@@ -35,7 +35,7 @@ This worktree has neither `node_modules` — a gate here fails on a missing bina
 - [ ] **Step 1: Install both trees**
 
 ```bash
-cd /Users/guilhemduche/.superset/worktrees/HappyVibe/user-guidance
+# from the repo root
 npm install && (cd pi-runtime && npm ci)
 ```
 
