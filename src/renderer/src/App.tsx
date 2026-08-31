@@ -2134,18 +2134,30 @@ export default function App(): React.JSX.Element {
     void window.hv.contextSnapshot(sid);
   };
 
+  // §20 round 17 — the one nav callback GoTo rides, via NavContext.
+  //
+  // MUST stay above the keyState early return: a hook after it is called on
+  // some renders and not others, and React counts. It reads keyState directly
+  // rather than `needsSetup`, which is declared below the guard.
+  //
+  // Mirrors ⌘, (openSettings): a settings page renders on activeView alone, but
+  // arriving with the sidebar's Settings group collapsed means landing
+  // somewhere with no visible sign of where you are. And a workspace
+  // destination must be selected BEFORE the view, or it renders the previously
+  // selected workspace under the right title.
+  const navigate = useCallback((t: NavTarget) => {
+    if (keyState !== "present") return;
+    if (t.workspace) setWsSettings(t.workspace);
+    if (t.view !== "chat") setSettingsOpen(true);
+    setView(t.view);
+  }, [keyState]);
+
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
   }
 
   const needsSetup = keyState === "missing";
   const activeView: View = needsSetup ? "models" : view;
-  const navigate = useCallback((t: NavTarget) => {
-    if (needsSetup) return;
-    if (t.workspace) setWsSettings(t.workspace);
-    if (t.view !== "chat") setSettingsOpen(true);
-    setView(t.view);
-  }, [needsSetup]);
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
