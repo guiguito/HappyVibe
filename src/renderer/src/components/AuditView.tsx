@@ -1,5 +1,18 @@
 import { useEffect, useState } from "react";
 
+/**
+ * §20 round 17 — the one thing this page never explained.
+ *
+ * Exported as data because the renderer suite has no DOM. Deliberately does NOT
+ * restate what every row already says: with a bypass switched on every row is a
+ * bypass, and round 15 already learned that repeating it per row highlights
+ * nothing (see SOURCE_TONE below).
+ */
+export const AUDIT_COPY = {
+  wouldHave:
+    "When a call was let through by a bypass rather than by your rules, the row also says what your rules would have answered on their own — allow, ask or deny.",
+} as const;
+
 /** hv.audit payload logged by main as permission.decision (docs/validation/d1.md §B4). */
 interface Decision {
   ts: string;
@@ -203,7 +216,8 @@ export function AuditView({
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Audit log</h1>
-        <p className="text-sm text-ink-soft mb-6">Every permission decision — and every model call the app made on your behalf — per session and per workspace.</p>
+        <p className="text-sm text-ink-soft mb-2">Every permission decision — and every model call the app made on your behalf — per session and per workspace.</p>
+        <p className="text-sm text-ink-soft mb-6">{AUDIT_COPY.wouldHave}</p>
 
         <div className="flex gap-3 mb-5">
           <select
@@ -266,7 +280,7 @@ export function AuditView({
           <p className="text-sm text-ink-soft">Loading…</p>
         ) : shown.length === 0 ? (
           <p className="text-sm text-ink-soft">
-            {rows?.length ? "No decisions match these filters." : "No permission decisions logged yet."}
+            {rows?.length ? "No decisions match these filters." : "No permission decisions yet — they appear here once the agent asks for something."}
           </p>
         ) : (
           <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden">

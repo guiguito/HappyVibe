@@ -58,6 +58,10 @@ export const EMPTY_COPY = {
     headline: "No permission decisions yet",
     next: "They appear here once the agent asks for something.",
   },
+  costs: {
+    headline: "No billed calls yet",
+    next: "They appear here as soon as the agent talks to a model.",
+  },
 } as const;
 
 export type EmptyKey = keyof typeof EMPTY_COPY;

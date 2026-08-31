@@ -1,4 +1,43 @@
 import { fmtCost, fmtNum } from "../analytics-format";
+import { EmptyState } from "./EmptyState";
+
+/**
+ * §20 round 17 — doctrine rule 6: a fact the user needs TO DECIDE is inline, a
+ * fact for the curious is a tooltip. The estimate caveat was per-cell hover;
+ * it is one visible line now, where the numbers are actually read.
+ *
+ * Exported as data because the renderer suite has no DOM.
+ */
+export const COST_COPY = {
+  estimates: "Every billed call in this session, newest first. All costs are estimates.",
+  cache:
+    "Cached prompt tokens: read from the provider's cache, or written into it for a later turn to read back cheaply. This is where an estimate and an invoice diverge hardest.",
+} as const;
+
+/**
+ * The ⓘ exists to make the tooltip DISCOVERABLE — a bare title= on a plain
+ * <th> gives no sign that hovering does anything. The tooltip itself is still
+ * the browser's, so this adds no floating surface to fight the z-index scale or
+ * the browser-pane coverage hit-test.
+ */
+function InfoDot({ text }: { text: string }): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="inline-block size-3 ml-1 align-[-1px] text-ink-soft/70"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.6"
+      strokeLinecap="round"
+      role="img"
+      aria-label={text}
+    >
+      <title>{text}</title>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 7.5h.01" />
+    </svg>
+  );
+}
 
 /**
  * Per-call cost breakdown (opened from the CostBubble). A flat, time-ordered
@@ -128,11 +167,12 @@ export function CostPanel({
         )}
 
         {/* Calls */}
+        <div className="px-5 py-2 text-xs text-ink-soft border-b-2 border-line">
+          {COST_COPY.estimates}
+        </div>
         <div className="flex-1 overflow-y-auto">
           {rows.length === 0 ? (
-            <p className="px-5 py-4 text-sm text-ink-soft">
-              No API calls billed to this session yet.
-            </p>
+            <EmptyState copy="costs" className="m-5" />
           ) : (
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-paper">
@@ -141,8 +181,9 @@ export function CostPanel({
                   <th className="text-left px-2 py-1.5 font-bold">Model</th>
                   <th className="text-right px-2 py-1.5 font-bold">In</th>
                   <th className="text-right px-2 py-1.5 font-bold">Out</th>
-                  <th className="text-right px-2 py-1.5 font-bold" title="Cached prompt tokens (cache read / write)">
+                  <th className="text-right px-2 py-1.5 font-bold">
                     Cache
+                    <InfoDot text={COST_COPY.cache} />
                   </th>
                   <th className="text-right px-3 py-1.5 font-bold">Cost</th>
                 </tr>

@@ -442,6 +442,31 @@ git commit -m "feat(guidance): one empty state, one shape, and it always names t
 
 ### Task 3: `InfoDot` + `Section` for Audit and Cost
 
+> **Corrected during implementation (2026-08-31).** Three of this task's four items were
+> mis-specified by the audit, and reading the code rather than building to the spec is what
+> caught it:
+>
+> 1. **The Audit page is a card list, not a table.** It has no `<th>` anywhere, so there are no
+>    column heads to hang `InfoDot`s on. And `sourceText()` (`AuditView.tsx:125`) already RENDERS
+>    `bypass · rules would have asked` as **visible text** — the audit's "meaning lives only in
+>    hover tooltips" is wrong. The one real gap is that nothing ever said what that clause *means*,
+>    so the fix is one sentence in the page intro (`AUDIT_COPY.wouldHave`). The proposed legend
+>    line would have restated what every row already says — the exact mistake round 15 made with
+>    the `SOURCE_TONE` amber and reverted after a GUI pass.
+> 2. **The Agents page's token cost is already inline.** `83f54ac` ("the page reads like the
+>    Skills page — the row is the control") landed *after* the audit was written: the Section
+>    subtitle carries the roster cost and every row shows `~N tok` as visible text
+>    (`AgentsView.tsx:97`, `:128`). Finding 8's Agents half is closed; nothing to do.
+> 3. **`InfoDot` has exactly one honest call site**, the Cost panel's Cache column. Stats already
+>    carries its caveats as visible `sub` text ("estimate — some prices unknown"), and Audit has no
+>    columns. A shared component + copy record + test file for one site is scaffolding for later,
+>    so the glyph is **local to `CostPanel.tsx`** with its copy exported from there. Extract it if a
+>    second site ever appears.
+>
+> What actually shipped: `COST_COPY` (the estimate line + the cache explanation), a discoverable ⓘ
+> on the Cache header, the cost panel's `EmptyState`, and `AUDIT_COPY.wouldHave`. Test is
+> `tests/cost-audit-copy.test.ts`, not `tests/info-dot.test.ts`.
+
 Finding 8: the same class of fact is inline on one page and tooltip-only on another. Fixes the two data-dense surfaces that explain nothing.
 
 **Files:**
