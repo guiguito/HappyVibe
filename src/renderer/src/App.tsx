@@ -14,7 +14,7 @@ import { ChangelogView } from "./components/ChangelogView";
 import { type TranscriptItem } from "./components/Transcript";
 import { type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
-import { describeProviderError } from "./providerError";
+import { describeProviderError, retryNoticeText } from "./providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingOverlay } from "./components/OnboardingOverlay";
@@ -382,7 +382,14 @@ export default function App(): React.JSX.Element {
   // Transcript doesn't re-parse committed markdown. `streamText` is the render
   // mirror (one update per frame via rAF); `streamRef` holds the latest buffer.
   const [streamText, setStreamText] = useState<Record<string, string>>({});
+  /** §7 round 16: the live reasoning's render mirror, flushed by the same rAF
+   *  as streamText — thinking streams token by token like the answer does. */
+  const [thinkingText, setThinkingText] = useState<Record<string, string>>({});
   const streamRef = useRef<Record<string, string>>({});
+  // §7 round 16: the thinking buffer, separate from the text one so a thinking
+  // block and an answer never merge into one bubble. Committed at
+  // thinking_end — the block is collapsed, so nothing repaints per delta.
+  const thinkRef = useRef<Record<string, string>>({});
   const rafRef = useRef<number | null>(null);
   // Stable, monotonic id per committed item (see appendItem) so Transcript can
   // key on identity instead of the array index and skip re-parsing.
@@ -456,11 +463,11 @@ export default function App(): React.JSX.Element {
 
   // Upsert the per-session "Retrying…" notice in place (one notice spans all
   // attempts; text updates each attempt). Mirrors the compaction-notice pattern.
-  const upsertRetryNotice = (sid: string, text: string): void => {
+  const upsertRetryNotice = (sid: string, text: string, title?: string): void => {
     const existing = retryNotice.current[sid];
     if (existing === undefined) {
       retryNotice.current[sid] = idCounter.current; // id appendItem assigns next
-      appendItem(sid, { kind: "notice", text, pending: true });
+      appendItem(sid, { kind: "notice", text, pending: true, title });
       return;
     }
     setTranscripts((p) => {
@@ -469,7 +476,7 @@ export default function App(): React.JSX.Element {
       const i = items.findIndex((it) => it.id === existing && it.kind === "notice");
       if (i < 0) return p;
       const next = items.slice();
-      next[i] = { ...items[i], kind: "notice", text, pending: true };
+      next[i] = { ...items[i], kind: "notice", text, pending: true, title };
       return { ...p, [sid]: next };
     });
   };
@@ -560,7 +567,29 @@ export default function App(): React.JSX.Element {
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null;
       setStreamText({ ...streamRef.current });
+      setThinkingText({ ...thinkRef.current });
     });
+  };
+
+  /**
+   * §7 round 16 — settle the live reasoning into the transcript, collapsed.
+   *
+   * Called at the NEXT ACTION rather than at thinking_end: the model often
+   * finishes thinking a beat before it starts answering, and collapsing in that
+   * gap makes the block vanish while the user is still reading it. So the live
+   * block stays up until the turn actually moves on — first answer token, first
+   * tool call, or the end of the turn.
+   */
+  const commitThinking = (sid: string): void => {
+    const thought = thinkRef.current[sid];
+    delete thinkRef.current[sid];
+    setThinkingText((p) => {
+      if (!(sid in p)) return p;
+      const next = { ...p };
+      delete next[sid];
+      return next;
+    });
+    if (thought?.trim()) appendItem(sid, { kind: "thinking", text: thought, ts: Date.now() });
   };
 
   // Commit the in-progress streaming bubble as ONE assistant transcript item,
@@ -1054,7 +1083,10 @@ export default function App(): React.JSX.Element {
         isSubagentTool((e as { toolName?: string }).toolName)
         && isSubagentQuery((e as { args?: unknown }).args)
       ) return;
+      // §7 round 16: a tool call IS the next action — settle the reasoning that
+      // chose it, so the collapsed block sits above the card it produced.
       if (e.type === "tool_execution_start") {
+        commitThinking(sid);
         const t = e as unknown as { toolCallId: string; toolName: string; args: unknown };
         commitStream(sid); // flush the live bubble before the tool card (order preserved)
         const pending = pendingApproval.current[sid];
@@ -1191,8 +1223,27 @@ export default function App(): React.JSX.Element {
         }
         // Perf: accumulate in the ref (O(1)) and repaint one live bubble per
         // frame — no transcript-array copy, no committed-markdown re-parse.
+        // The turn has moved on to the answer — settle the reasoning first, so
+        // the collapsed block lands ABOVE the bubble it produced.
+        if (!streaming.current[sid]) commitThinking(sid);
         streamRef.current[sid] = applyDelta(streamRef.current, sid, ame.delta, streaming.current[sid]);
         streaming.current[sid] = true;
+        scheduleFlush();
+      }
+      // §7 round 16 — the agent's own reasoning, streamed live.
+      //
+      // Pi already emits these three on the same channel as text_delta
+      // (json-event.js forwards the event untouched); the app simply never read
+      // them. They accumulate in thinkRef and mirror into thinkingText on the
+      // SAME rAF as the answer, so a long think shows its reasoning as it
+      // happens instead of a spinner. thinking_end does NOT commit — see
+      // commitThinking for why the next action does.
+      if (e.type === "message_update" && ame?.type === "thinking_start") {
+        thinkRef.current[sid] = "";
+        scheduleFlush();
+      }
+      if (e.type === "message_update" && (ame?.type === "thinking_delta" || ame?.type === "thinking") && ame.delta) {
+        thinkRef.current[sid] = (thinkRef.current[sid] ?? "") + ame.delta;
         scheduleFlush();
       }
       // A triggered turn (e.g. an async subagent completion delivering its
@@ -1202,6 +1253,8 @@ export default function App(): React.JSX.Element {
         setBusy((p) => (p[sid] ? p : { ...p, [sid]: true }));
       }
       if (e.type === "agent_end") {
+        // A turn that thought and then said nothing still keeps its reasoning.
+        commitThinking(sid);
         commitStream(sid); // finalize the live bubble into the transcript
         stampTurnEnd(sid); // round 15: "· 34s" on that bubble, now that it exists
         delete aborted.current[sid]; // the abort window closes with the turn
@@ -1233,9 +1286,10 @@ export default function App(): React.JSX.Element {
         const r = e as unknown as { attempt?: number; maxAttempts?: number; delayMs?: number; errorMessage?: string };
         delete pendingError.current[sid]; // this failure is being retried, not final
         commitStream(sid);
-        const secs = Math.round((r.delayMs ?? 0) / 1000);
-        const why = r.errorMessage ? ` — ${r.errorMessage}` : "";
-        upsertRetryNotice(sid, `Retrying (attempt ${r.attempt ?? 1}/${r.maxAttempts ?? 3}${secs ? `, next in ${secs}s` : ""})${why}`);
+        // Round 16: the pill carries a bounded chip; the provider's own words
+        // ride the hover title. If the retries exhaust, they land in the error
+        // card at agent_end, which is built to carry them.
+        upsertRetryNotice(sid, retryNoticeText(r), r.errorMessage);
       }
       if (e.type === "auto_retry_end") {
         const r = e as unknown as { success?: boolean; attempt?: number };
@@ -2627,8 +2681,10 @@ export default function App(): React.JSX.Element {
             workspace={sess?.workspaceId ?? null}
             sessionId={sid}
             sessionModel={sess?.model ?? null}
+            sessionThinking={sess?.thinking ?? null}
             items={transcripts[sid] ?? []}
             streaming={streamText[sid] || undefined}
+            thinking={thinkingText[sid] || undefined}
             busy={busy[sid] || false}
             waking={(statuses[sid] === "waking") || false}
             crashed={statuses[sid] === "crashed" ? (crashCodes[sid] ?? -1) : null}

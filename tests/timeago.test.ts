@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, timeago } from "../src/renderer/src/timeago";
+import { formatDuration, timeago, timeagoLong } from "../src/renderer/src/timeago";
 
 // Round 15 — the sidebar's session age and the transcript's "N ago" / turn
 // duration. Pure; `now` is always injected so nothing here reads a real clock.
@@ -55,5 +55,28 @@ describe("formatDuration", () => {
   it("returns empty for nonsense rather than a fake number", () => {
     expect(formatDuration(-1)).toBe("");
     expect(formatDuration(Number.NaN)).toBe("");
+  });
+});
+
+describe("timeagoLong", () => {
+  it("says 'just now' rather than 'now ago'", () => {
+    // Round 16: the transcript appended " ago" unconditionally, so a message
+    // sent a second earlier read "now ago".
+    expect(timeagoLong(NOW, NOW)).toBe("just now");
+    expect(timeagoLong(NOW - 30_000, NOW)).toBe("just now");
+    expect(timeagoLong(NOW + 60_000, NOW)).toBe("just now"); // clock skew
+  });
+
+  it("suffixes every other bucket", () => {
+    expect(timeagoLong(NOW - 60_000, NOW)).toBe("1m ago");
+    expect(timeagoLong(NOW - 3 * 3_600_000, NOW)).toBe("3h ago");
+    expect(timeagoLong(NOW - 2 * 86_400_000, NOW)).toBe("2d ago");
+    expect(timeagoLong(NOW - 70 * 86_400_000, NOW)).toBe("2mo ago");
+  });
+
+  it("never emits the string 'now ago'", () => {
+    for (const ms of [0, 1_000, 59_999, 60_000, 3_600_000, 86_400_000]) {
+      expect(timeagoLong(NOW - ms, NOW)).not.toContain("now ago");
+    }
   });
 });

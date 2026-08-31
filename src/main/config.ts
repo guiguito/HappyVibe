@@ -20,6 +20,8 @@ interface ConfigFile {
   /** per-provider safeStorage-encrypted keys, base64 */
   keys?: Partial<Record<ByokProvider, string>>;
   defaultModel?: { provider: string; modelId: string };
+  /** §16 round 16: global thinking level. Session overrides live on SessionMeta. */
+  defaultThinking?: string;
   /** B7: user has seen (or dismissed) the onboarding wow-flow. */
   onboardingSeen?: boolean;
   /**
@@ -251,6 +253,18 @@ export function setDefaultModel(m: { provider: string; modelId: string } | null)
   const cfg = load();
   if (m) cfg.defaultModel = m;
   else delete cfg.defaultModel;
+  save(cfg);
+}
+
+/** §16 round 16 — the global tier. Same load/save idiom as setDefaultModel. */
+export function getDefaultThinking(): string | null {
+  return load().defaultThinking ?? null;
+}
+
+export function setDefaultThinking(level: string | null): void {
+  const cfg = load();
+  if (level) cfg.defaultThinking = level;
+  else delete cfg.defaultThinking;
   save(cfg);
 }
 

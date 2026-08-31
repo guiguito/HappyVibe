@@ -86,6 +86,26 @@
     font-size: 0.95rem;
     overflow-wrap: anywhere;
   }
+  /* §7 round 16 — the agent's reasoning is set apart by TYPE, not by a panel.
+     A border + fill made it a card competing with the answer beside it; the
+     block is secondary, so it reads italic, a little smaller, in the same
+     muted ink. The model writes its summaries in `**bold**`, which is exactly
+     the emphasis this surface must not have — so strong is folded back to the
+     surrounding weight and leans instead. */
+  .md-quiet {
+    font-size: 0.85rem;
+    font-style: italic;
+    line-height: 1.5;
+  }
+  .md-quiet strong,
+  .md-quiet b {
+    font-weight: inherit;
+    font-style: italic;
+  }
+  .md-quiet > * + * {
+    margin-top: 0.35em;
+  }
+
   .md > * + * {
     margin-top: 0.6em;
   }

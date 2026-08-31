@@ -76,7 +76,9 @@ export function ChatView({
   workspace,
   sessionId,
   sessionModel = null,
+  sessionThinking = null,
   items,
+  thinking,
   streaming,
   busy,
   waking = false,
@@ -130,7 +132,11 @@ export function ChatView({
   sessionId: string | null;
   /** W2.1: this session's persisted model override (from SessionMeta). */
   sessionModel?: ModelRef | null;
+  /** §16 round 16: this session's stored thinking override, null = follow the global default. */
+  sessionThinking?: string | null;
   items: TranscriptItem[];
+  /** §7 round 16: this session's live reasoning, if it is thinking now. */
+  thinking?: string;
   streaming?: string;
   busy: boolean;
   /** Round 3 #2: session is resuming from hibernation — show a loader. */
@@ -409,6 +415,16 @@ export function ChatView({
   // when it changes. Starts at 0, whose initial effect run is what makes a
   // freshly opened session land at the bottom rather than at the top.
   const [scrollNonce, setScrollNonce] = useState(0);
+  /**
+   * §7 round 16 — bumped on send, so Transcript remounts the thinking blocks
+   * and any the user opened close again. The decision is explicitly "collapsed
+   * by default EACH TIME you send", not just on first render.
+   *
+   * It lives HERE rather than in App on purpose: ChatView is mounted per
+   * session, so sending in one session cannot collapse another's reasoning.
+   * A single counter in App would be global and would do exactly that.
+   */
+  const [collapseNonce, setCollapseNonce] = useState(0);
   const showPlanPill = !!activePlan && showsPlanPill(activePlan.status);
   // Stable identity so MessageItem's memo isn't busted on every composer keystroke.
   const openRewind = useCallback((it: TranscriptItem) => setPendingRewind(it), []);
@@ -513,6 +529,29 @@ export function ChatView({
   // Chip shows the bare model name — strip any leading "Provider: " prefix Pi bakes
   // into the display name (e.g. "Z.ai: GLM 5.2" → "GLM 5.2").
   const modelLabel = modelName?.replace(/^[^:]+:\s+/, "") ?? null;
+
+  /**
+   * §16 round 16 — the session's thinking effort.
+   *
+   * `levels` is what THIS session's model supports, re-read whenever the model
+   * changes: an empty list means the model cannot think at all, and the pill
+   * then does not render — the rule the context gauge follows for a model with
+   * no known window, rather than a disabled control standing in for "n/a".
+   */
+  const [thinkingLevels, setThinkingLevels] = useState<string[]>([]);
+  /**
+   * Seeded from the SESSION, not from nothing: the pill used to start at null
+   * and only move when picked, so after a reload it read "default" for a
+   * session that had an override — the control lying about the state it owns.
+   */
+  const [thinkingLevel, setThinkingLevel] = useState<string | null>(sessionThinking);
+  useEffect(() => { setThinkingLevel(sessionThinking); }, [sessionThinking, sessionId]);
+  useEffect(() => {
+    if (!sessionId) return;
+    let alive = true;
+    void window.hv.getThinkingLevels(sessionId).then((l) => { if (alive) setThinkingLevels(l); });
+    return () => { alive = false; };
+  }, [sessionId, resolved?.provider, resolved?.modelId]);
 
   const pickModel = async (m: HvModel): Promise<void> => {
     setModelMenuOpen(false);
@@ -620,6 +659,8 @@ export function ChatView({
     // guarded by isNearBottom — that guard exists to protect a reader scrolling
     // back mid-response, which is a different act from pressing send.
     setScrollNonce((n) => n + 1);
+    setCollapseNonce((n) => n + 1); // §7 round 16: re-collapse this session's thinking
+
     onClearPageRefs?.();
     setInput("");
     setAttachments([]);
@@ -671,6 +712,18 @@ export function ChatView({
               )}
             />
           </div>
+          {/* §16 round 16: the session's thinking level, beside the model it
+              belongs to. It does NOT render when the model supports no levels. */}
+          {thinkingLevels.length > 0 && sessionId && (
+            <ThinkingPill
+              levels={thinkingLevels}
+              value={thinkingLevel}
+              onPick={(l) => {
+                setThinkingLevel(l);
+                void window.hv.setSessionThinking(sessionId, l).then(({ live }) => setRestartHint(!live));
+              }}
+            />
+          )}
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
         {agents && agents.length > 0 && <AgentsChip agents={agents} onPick={(name) => insertText(`Ask ${name} to `)} />}
         {/* §23 round 9: the active-plan pill. A plan card lives at its
@@ -1023,8 +1076,10 @@ export function ChatView({
         <Transcript
           items={items}
           streaming={streaming}
+          thinking={thinking}
           busy={busy}
           scrollNonce={scrollNonce}
+          collapseNonce={collapseNonce}
           header={
             delegations.length > 0 || terminalRuns.length > 0 ? (
               // §12/§26 (2026-08-30): ONE rail for both families, replacing the
@@ -1774,10 +1829,12 @@ function DelegationRunCard({ run, trace, onClose, onStopRun, onStopChild }: { ru
   /**
    * §12 (2026-08-29): the child's own reasoning, fetched only when asked.
    *
-   * This is the app's FIRST thinking surface — the main agent's reasoning is
-   * not rendered anywhere — so it is off by default and costs nothing until
-   * opened. Toggling OFF clears rather than caching, so re-opening a running
-   * child re-reads and shows what it is thinking now, not what it thought.
+   * The sub-agent card was the app's FIRST thinking surface; round 16 gave the
+   * main agent its own (Transcript's ThinkingBlock), so that asymmetry is gone.
+   * This one stays distinct: a child's reasoning lives in its own transcript
+   * file and is read on demand, where the parent's arrives on the stream.
+   * Toggling OFF clears rather than caching, so re-opening a running child
+   * re-reads and shows what it is thinking now, not what it thought.
    */
   /**
    * The child's reasoning, interleaved with the calls it produced — shown
@@ -2016,6 +2073,76 @@ function AgentsChip({ agents, onPick }: { agents: AgentInfo[]; onPick: (name: st
             Or type <span className="font-mono">@</span> in the message box.
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * §16 round 16 — the thinking-effort pill, styled as the model chip's twin so
+ * the two read as one group.
+ *
+ * Dismissal is the `fixed inset-0` click-catcher every other menu in the app
+ * uses, NOT onBlur: pressing a button does not focus it, so a blur-dismissed
+ * menu unmounts between mousedown and mouseup and the click lands on nothing.
+ */
+function ThinkingPill({
+  levels,
+  value,
+  onPick,
+}: {
+  levels: string[];
+  value: string | null;
+  /** `null` clears the session override, so the session follows the global
+   *  default again. Without it a level could be set but never unset. */
+  onPick: (level: string | null) => void;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        aria-label="Change thinking effort for this session"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        title={`Thinking effort: ${value ?? "default"}`}
+        className="font-mono text-[11px] rounded-full border-2 border-line bg-card px-2.5 py-1 text-ink hover:border-honey cursor-pointer transition-colors"
+      >
+        think: {value ?? "default"}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 mt-1.5 z-30 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+            {/* Round 16 GUI pass: picking a level was one-way — there was no way
+                back to the global default, so a session could only ever be
+                pinned. This row is that way back. */}
+            <button
+              type="button"
+              onClick={() => {
+                onPick(null);
+                setOpen(false);
+              }}
+              title="Follow the default set on the Models page"
+              className={`block w-full text-left px-3 py-1 font-mono text-xs hover:bg-paper-deep cursor-pointer border-b border-line ${value === null ? "font-bold" : ""}`}
+            >
+              default
+            </button>
+            {levels.map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => {
+                  onPick(l);
+                  setOpen(false);
+                }}
+                className={`block w-full text-left px-3 py-1 font-mono text-xs hover:bg-paper-deep cursor-pointer ${l === value ? "font-bold" : ""}`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

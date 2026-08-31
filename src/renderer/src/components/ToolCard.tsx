@@ -315,16 +315,55 @@ export function stripImages(result: unknown): unknown {
   return { ...(result as object), content: kept };
 }
 
+/**
+ * Round 16 — a tool result's TEXT, the sibling of `resultImages`.
+ *
+ * A result is `{content:[{type:"text",text}], details, usage}`, and the card
+ * used to hand the whole envelope to JSON.stringify — so a bash command's
+ * output arrived as escaped newlines inside braces. The RESTORE path never had
+ * this bug (`restore.ts` sets a plain string), which is why the same command
+ * read correctly in a reopened session and badly in a live one. This is the
+ * live path adopting what restore already does.
+ */
+export function resultText(result: unknown): string | null {
+  if (typeof result === "string") return result.trim() ? result : null;
+  const content = (result as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return null;
+  const text = content
+    .filter((b) => (b as { type?: string }).type === "text")
+    .map((b) => (b as { text?: string }).text ?? "")
+    .join("\n");
+  return text.trim() ? text : null;
+}
+
+/**
+ * The tools whose result IS command output, and therefore get a tail on the
+ * card itself — the same three-line treatment the terminal run rail uses in its
+ * hover readout, which is the "always the same pattern" half of the feedback.
+ *
+ * `terminal_kill` is deliberately out: it acknowledges, it does not produce
+ * output. `edit`/`write` are out because their payload is the diff, which the
+ * card already renders above this.
+ */
+export const OUTPUT_TOOLS: ReadonlySet<string> = new Set(["bash", "terminal_run", "terminal_read"]);
+
+/** The last `lines` non-blank lines — the run rail's own tail rule. */
+export function outputTail(text: string, lines = 3): string[] {
+  return text.split("\n").filter((l) => l.trim().length > 0).slice(-lines);
+}
+
 /** W1.1: raw tool name + args + result — always behind the "details" toggle. */
 function TechnicalDetails({ card }: { card: ToolCardData }): React.JSX.Element {
   // Images are rendered as pictures above; never dumped as base64 here.
+  // Round 16: a result's TEXT is printed as text. Only a result with no text
+  // block at all (a pure-details tool) falls back to the JSON envelope, which
+  // is the one case where the envelope IS the information.
+  const text = resultText(card.result);
   const shown = stripImages(card.result);
   const result =
-    card.result === undefined
-      ? null
-      : typeof shown === "string"
-        ? shown
-        : JSON.stringify(shown, null, 2);
+    card.result === undefined ? null
+    : text !== null ? text
+    : JSON.stringify(shown, null, 2);
   return (
     <pre className="font-mono text-xs bg-paper-deep/60 border-t-2 border-line px-3.5 py-2.5 overflow-x-auto max-h-64 whitespace-pre-wrap">
       <span className="font-bold">{card.toolName}</span>
@@ -775,6 +814,25 @@ export function ToolCard({
           image not shown (too large to restore)
         </div>
       )}
+      {/* Round 16: a command's output belongs on the card, not three clicks
+          away inside a JSON envelope. Three lines, the same tail the terminal
+          run rail shows on hover — ⋯ still has the whole thing. */}
+      {!details && OUTPUT_TOOLS.has(card.toolName) && card.status !== "error" && (() => {
+        const text = resultText(card.result);
+        const tail = text ? outputTail(text) : [];
+        return tail.length === 0 ? null : (
+          <button
+            type="button"
+            onClick={() => setDetails(true)}
+            title="Show the full output"
+            className="block w-full text-left border-t-2 border-line bg-paper-deep/60 px-3.5 py-2 font-mono text-[11px] leading-snug text-ink-soft hover:bg-paper-deep cursor-pointer"
+          >
+            {tail.map((l, i) => (
+              <span key={i} className="block truncate">{l}</span>
+            ))}
+          </button>
+        );
+      })()}
       {details && <TechnicalDetails card={card} />}
       {/* Round 11: collapsed to one line — the agent usually recovers by itself, so
           an expanded error per attempt is noise. Click (or the details toggle) for

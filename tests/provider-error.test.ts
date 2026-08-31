@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { describeProviderError } from "../src/renderer/src/providerError";
+import { describeProviderError, retryNoticeText } from "../src/renderer/src/providerError";
 
 /**
  * Provider errors reach the transcript as raw wire text ("529 status code (no
@@ -147,5 +147,25 @@ describe("transient classes seen in real logs but previously not retriable", () 
     // Ordering guard: "usage limit ... timeout" must stay non-retriable.
     const d = describeProviderError("402 usage limit exceeded after idle timeout");
     expect(d.retriable).toBe(false);
+  });
+});
+
+describe("retryNoticeText", () => {
+  test("is short and fixed in shape", () => {
+    expect(retryNoticeText({ attempt: 1, maxAttempts: 3, delayMs: 5_000 })).toBe("Retrying 1/3 · 5s");
+  });
+
+  test("drops the delay when there is none", () => {
+    expect(retryNoticeText({ attempt: 2, maxAttempts: 3, delayMs: 0 })).toBe("Retrying 2/3");
+    expect(retryNoticeText({ attempt: 2, maxAttempts: 3 })).toBe("Retrying 2/3");
+  });
+
+  test("falls back rather than printing undefined", () => {
+    expect(retryNoticeText({})).toBe("Retrying 1/3");
+  });
+
+  test("never carries the provider's message — that is what exploded the pill", () => {
+    // Round 16: the old text appended ` — ${errorMessage}`, unbounded.
+    expect(retryNoticeText({ attempt: 1, maxAttempts: 3, delayMs: 5_000 }).length).toBeLessThanOrEqual(24);
   });
 });

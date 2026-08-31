@@ -147,6 +147,8 @@ interface SessionMeta {
   hibernated?: boolean;
   /** W2.1: per-session model override (session → workspace → global). */
   model?: { provider: string; modelId: string };
+  /** §16 round 16: per-session thinking override (session → global). */
+  thinking?: string;
   titleSource: "fallback" | "model" | "user";
 }
 
@@ -701,6 +703,12 @@ interface HvApi {
   fetchEndpointModels(baseUrl: string, key?: string): Promise<{ ok: boolean; models: string[]; error?: string }>;
   listModels(): Promise<HvModel[]>;
   setDefaultModel(provider: string, modelId: string): Promise<void>;
+  /** §16 round 16: per-session thinking override. `live` is false when it only applies on restart. */
+  setSessionThinking(sessionId: string, level: string | null): Promise<{ live: boolean }>;
+  setDefaultThinking(level: string | null): Promise<void>;
+  getDefaultThinking(): Promise<string | null>;
+  /** What THIS session's model supports. Empty = the model cannot think; render nothing. */
+  getThinkingLevels(sessionId?: string): Promise<string[]>;
   hasAnyProvider(): Promise<boolean>;
   openExternal(url: string): Promise<void>;
   // B4: permissions v1

@@ -52,3 +52,16 @@ export function formatDuration(ms: number): string {
   const m = Math.round((ms % HOUR) / MIN);
   return m ? `${h}h ${m}m` : `${h}h`;
 }
+
+/**
+ * The transcript's form: `just now`, `5m ago`, `3h ago`.
+ *
+ * Round 16 — the transcript used to suffix `timeago()` with " ago"
+ * unconditionally, and `timeago` answers "now" under a minute, so a message
+ * sent a second ago read "now ago". Suffixing is the caller's job only for the
+ * buckets that ARE a duration; "now" is not one.
+ */
+export function timeagoLong(tsMs: number, nowMs: number = Date.now()): string {
+  const bare = timeago(tsMs, nowMs);
+  return bare === "now" ? "just now" : `${bare} ago`;
+}

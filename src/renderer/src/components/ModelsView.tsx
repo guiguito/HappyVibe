@@ -4,6 +4,7 @@ import { AuthFlowModal } from "./AuthFlowModal";
 import { BrandLogo } from "./BrandLogo";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
+import { THINKING_LEVELS } from "../../../main/thinking";
 
 /**
  * Round 8: the old "LLM Setup" section of the single Settings scroll, promoted
@@ -101,6 +102,9 @@ export function ModelsView({
   const [localRunners, setLocalRunners] = useState<{ id: string; label: string; models: string[] }[]>([]);
   const [models, setModels] = useState<HvModel[]>([]);
   const [defaultModel, setDefaultModel] = useState<{ provider: string; modelId: string } | null>(null);
+  /** §16 round 16: the global thinking default. Null until loaded, and null is
+   *  also a legitimate stored state — it means Pi's own precedence applies. */
+  const [thinking, setThinking] = useState<string | null>(null);
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
   const [keyProbes, setKeyProbes] = useState<Record<string, HvKeyProbe>>({});
   const [providerQuery, setProviderQuery] = useState("");
@@ -142,6 +146,7 @@ export function ModelsView({
     setCustom(await window.hv.getCustomEndpoints());
     await window.hv.authStatus(); // status arrives as an hv.auth ui-request
     setModels(await window.hv.listModels());
+    setThinking(await window.hv.getDefaultThinking());
   };
 
   useEffect(() => {
@@ -697,6 +702,37 @@ export function ModelsView({
               />
             )}
             <p className="text-xs text-ink-soft mt-2">Only models from configured providers show up.</p>
+
+            {/* §16 round 16 — until this round the app never set a thinking
+                level, so every session silently ran at whatever Pi's own
+                settings file happened to hold. This is the global tier; a
+                session overrides it from the chat top bar. */}
+            <div className="mt-4 border-t-2 border-line pt-4">
+              <div className="font-bold text-sm mb-1">Thinking effort</div>
+              <p className="text-xs text-ink-soft mb-2">
+                How much the agent reasons before answering. More thinking costs more tokens and takes
+                longer. A session can override this from its top bar.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {THINKING_LEVELS.map((l) => (
+                  <button
+                    key={l}
+                    type="button"
+                    onClick={() => {
+                      setThinking(l);
+                      void window.hv.setDefaultThinking(l);
+                    }}
+                    className={`rounded-full border-2 px-3 py-1 text-xs font-bold cursor-pointer ${
+                      thinking === l
+                        ? "bg-tangerine text-paper border-tangerine-deep"
+                        : "bg-card border-line hover:border-honey"
+                    }`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
             <LongCacheToggle />
           </Section>
         )}

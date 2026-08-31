@@ -6,7 +6,7 @@ import { PlanCard, type PlanCardData } from "./PlanCard";
 import { splitMentionSegments, stripInjectedBlocks } from "../mentions";
 import { ZoomableImage } from "./ZoomableImage";
 import { BrandLogo } from "./BrandLogo";
-import { formatDuration, timeago } from "../timeago";
+import { formatDuration, timeagoLong } from "../timeago";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -85,7 +85,13 @@ export type TranscriptItem = { id?: number } & (
   | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string }
   // A neutral, warm status line (not an error). `pending` shows an ongoing
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
-  | { kind: "notice"; text: string; pending?: boolean }
+  // `title` is hover-only detail that must NOT widen the pill — round 16: the
+  // provider's error message lives here, not in `text`.
+  | { kind: "notice"; text: string; pending?: boolean; title?: string }
+  // §7 round 16: the agent's own reasoning. Collapsed by default and
+  // re-collapsed on every send — the flow still reads as high-level working
+  // state, and the reasoning is one click away for the turn you care about.
+  | { kind: "thinking"; text: string; ts?: number }
   // §9 round 9: the compaction boundary. Everything ABOVE it is out of the
   // agent's context; `loaded` flips once the user pulls that history in.
   | { kind: "boundary"; compactions: number; reason: string | null; loaded: boolean }
@@ -121,12 +127,64 @@ function Stamp({ ts, turnMs, tone }: { ts?: number; turnMs?: number; tone: strin
   if (ts == null && turnMs == null) return null;
   return (
     <span className={`text-[10px] tabular-nums ${tone}`} title={ts != null ? new Date(ts).toLocaleString() : undefined}>
-      {ts != null && `${timeago(ts)} ago`}
+      {ts != null && timeagoLong(ts)}
       {ts != null && turnMs != null && " · "}
       {turnMs != null && (
         <span title={`This turn took ${formatDuration(turnMs)}`}>{formatDuration(turnMs)}</span>
       )}
     </span>
+  );
+}
+
+/**
+ * §7 round 16 — a thinking item's key carries the send counter, so sending
+ * remounts it and any block the user opened closes again.
+ *
+ * ONLY thinking items: folding the nonce into every key would remount the
+ * whole transcript on every send, throwing away each card's own open/closed
+ * state and re-parsing every message's markdown.
+ */
+function thinkingKey(it: TranscriptItem, i: number, nonce?: number): string | number {
+  return it.kind === "thinking" ? `${it.id ?? i}-${nonce ?? 0}` : (it.id ?? i);
+}
+
+/**
+ * §7 round 16 — the agent's reasoning.
+ *
+ * Three things GUI testing corrected on the first cut:
+ *
+ * 1. It renders MARKDOWN. The model writes `**Recommending X**` and the plain
+ *    `whitespace-pre-wrap` showed the asterisks. Same ReactMarkdown + remarkGfm
+ *    + MD_COMPONENTS as the answer bubble, so the two cannot drift.
+ * 2. The label is lowercase and quiet. `THINKING` in the agent label's own
+ *    uppercase treatment read as a peer of the answer; it is subordinate to it.
+ * 3. It streams LIVE and expanded while the model is thinking (`live`), then
+ *    collapses when the turn moves on — App commits it at the next action.
+ *
+ * `useState(live)` is what makes 3 work with 2: a live block opens itself, and
+ * the committed one that replaces it is a fresh component, so it starts closed.
+ */
+function ThinkingBlock({ text, live }: { text: string; live?: boolean }): React.JSX.Element {
+  const [open, setOpen] = useState(!!live);
+  return (
+    <div className="self-start max-w-3xl w-full">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        title={open ? "Hide the agent's reasoning" : "Show the agent's reasoning for this turn"}
+        className="flex items-center gap-1.5 text-[11px] font-medium text-ink-soft/60 hover:text-ink-soft cursor-pointer"
+      >
+        <span className={`transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+        thinking
+        {live && <span className="size-1.5 rounded-full bg-honey animate-pulse" />}
+      </button>
+      {open && (
+        <div className="md md-quiet mt-1 text-ink-soft break-words max-h-64 overflow-y-auto">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</ReactMarkdown>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -209,15 +267,21 @@ const MessageItem = memo(function MessageItem({
       </div>
     );
   }
+  if (it.kind === "thinking") return <ThinkingBlock text={it.text} />;
   if (it.kind === "notice") {
     return (
-      <div className="flex items-center gap-2.5 self-center rounded-full border-2 border-line bg-card px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker">
+      <div
+        title={it.title}
+        // Round 16: max-w + truncate is the STRUCTURAL guard — the text is
+        // already short, and this is what stops a future notice re-exploding it.
+        className="flex items-center gap-2.5 self-center max-w-md rounded-full border-2 border-line bg-card px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-sticker"
+      >
         {it.pending ? (
           <span className="size-2 rounded-full bg-honey animate-pulse shrink-0" />
         ) : (
           <span className="size-2 rounded-full bg-leaf shrink-0" />
         )}
-        <span>{it.text}</span>
+        <span className="truncate">{it.text}</span>
       </div>
     );
   }
@@ -434,6 +498,8 @@ export function Transcript({
   onSearchTotal,
   onLoadEarlier,
   scrollNonce,
+  collapseNonce,
+  thinking,
 }: {
   items: TranscriptItem[];
   busy: boolean;
@@ -464,6 +530,13 @@ export function Transcript({
    * must not yank a reader who has scrolled up.
    */
   scrollNonce?: number;
+  /** §7 round 16: bumped on send; folded into a thinking item's key so an
+      expanded block closes again. Nothing else remounts. */
+  collapseNonce?: number;
+  /** §7 round 16: the LIVE reasoning, outside `items` for the same perf reason
+      the streaming answer is — see App's thinkRef. Rendered expanded above the
+      answer bubble; App commits it into `items` at the next action. */
+  thinking?: string;
 }): React.JSX.Element {
   const bottom = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -498,7 +571,12 @@ export function Transcript({
   useEffect(() => {
     if (!follow.current) return;
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [items, busy, streaming]);
+    // §7 round 16: `thinking` belongs here for the same reason `streaming` does
+    // — the live reasoning renders OUTSIDE `items`, so without it the effect
+    // never re-runs while a long think grows the container, and the view stops
+    // following until the block commits. Reported as "autoscroll does not work
+    // anymore after a thinking block collapses".
+  }, [items, busy, streaming, thinking]);
 
   // Round 15: land at the bottom when a session's history first arrives.
   //
@@ -637,13 +715,14 @@ export function Transcript({
           // Dimmed items get a wrapper; everything else stays a direct flex
           // child, so `self-end` / `self-center` positioning is untouched.
           return "outOfContext" in it && it.outOfContext ? (
-            <div key={it.id ?? i} className="flex flex-col opacity-60">{item}</div>
+            <div key={thinkingKey(it, i, collapseNonce)} className="flex flex-col opacity-60">{item}</div>
           ) : (
-            <Fragment key={it.id ?? i}>{item}</Fragment>
+            <Fragment key={thinkingKey(it, i, collapseNonce)}>{item}</Fragment>
           );
         })}
         {/* Perf: the in-progress turn renders here, outside `items`, so a delta
             re-renders only this bubble — committed messages stay memoized. */}
+        {thinking && <ThinkingBlock text={thinking} live />}
         {streaming && <AssistantBubble text={streaming} />}
         {busy && (
           <div className="flex items-center gap-2 text-ink-soft text-sm">
