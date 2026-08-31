@@ -161,7 +161,7 @@ export function ContextPanel({
 
           {snapshot && !drilled && (
             summary.length === 0 ? (
-              <div className="text-sm text-ink-soft">Nothing in context yet.</div>
+              <div className="text-sm text-ink-soft">Nothing in context yet — it fills in as soon as you send a message.</div>
             ) : (
               <>
               {/* v5: proportional composition surface (a segmented bar), inspired

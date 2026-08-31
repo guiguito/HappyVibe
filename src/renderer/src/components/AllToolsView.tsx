@@ -105,11 +105,11 @@ export function AllToolsView({
 
         <BuiltinToolsBlock onPlanChange={onPlanBuiltinChange} />
 
-        <Section icon="tools" title="Tools" subtitle="Everything the agent can call. Permission state comes from your rules (Settings → Permissions).">
+        <Section icon="tools" title="Tools" subtitle="Permission state comes from your rules.">
           {toolRows === null ? (
             <p className="text-sm text-ink-soft">Loading…</p>
           ) : toolRows.length === 0 ? (
-            <p className="text-sm text-ink-soft">No tools reported.</p>
+            <p className="text-sm text-ink-soft">No tools yet — start a session and this fills in from the live agent.</p>
           ) : (
             <>
               <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">

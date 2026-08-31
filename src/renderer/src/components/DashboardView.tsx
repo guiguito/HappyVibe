@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fmtCost, fmtDuration, fmtNum } from "../analytics-format";
+import { Section } from "./Section";
 
 /** B7 — local-only analytics. Everything here is read from the JSONL event log
  * in main; nothing is ever sent anywhere. Money is labeled as an estimate. */
@@ -20,7 +21,7 @@ function Card({ label, value, sub }: { label: string; value: string; sub?: strin
 
 /** Hand-rolled SVG day bars — no chart dep. Empty days between first/last render as gaps. */
 function DayBars({ data }: { data: HvAnalytics["sessionsPerDay"] }): React.JSX.Element {
-  if (data.length === 0) return <p className="text-sm text-ink-soft">No sessions yet.</p>;
+  if (data.length === 0) return <p className="text-sm text-ink-soft">No sessions yet — start one from a workspace in the sidebar.</p>;
   const max = Math.max(...data.map((d) => d.count), 1);
   const w = 22;
   const gap = 6;
@@ -55,7 +56,7 @@ function BreakdownTable({
   rows: HvBreakdown[];
   labelKey?: (k: string) => string;
 }): React.JSX.Element {
-  if (rows.length === 0) return <p className="text-sm text-ink-soft">No data yet.</p>;
+  if (rows.length === 0) return <p className="text-sm text-ink-soft">No data yet — this fills in once you've run a session.</p>;
   const max = Math.max(...rows.map((r) => r.tokens), 1);
   return (
     <div className="flex flex-col gap-2">
@@ -78,7 +79,7 @@ function BreakdownTable({
 
 function Chips({ counts }: { counts: Record<string, number> }): React.JSX.Element {
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  if (entries.length === 0) return <span className="text-sm text-ink-soft">None yet.</span>;
+  if (entries.length === 0) return <span className="text-sm text-ink-soft">Nothing yet — this fills in once you've run a session.</span>;
   return (
     <div className="flex flex-wrap gap-2">
       {entries.map(([k, v]) => (
@@ -90,15 +91,6 @@ function Chips({ counts }: { counts: Record<string, number> }): React.JSX.Elemen
           <span className="text-ink-soft tabular-nums">{v}</span>
         </span>
       ))}
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg p-5 mb-5">
-      <h2 className="font-black text-lg tracking-tight mb-3">{title}</h2>
-      {children}
     </div>
   );
 }
@@ -198,23 +190,23 @@ export function DashboardView({ workspaces }: { workspaces: string[] }): React.J
               </p>
             )}
 
-            <Section title="Sessions over time">
+            <Section icon="stats" title="Sessions over time" subtitle="How much you've used the agent, day by day.">
               <DayBars data={data.sessionsPerDay} />
             </Section>
 
-            <Section title="By workspace">
+            <Section icon="models" title="By workspace" subtitle="Where your sessions happen.">
               <BreakdownTable rows={data.perWorkspace} labelKey={basename} />
             </Section>
 
             {data.perModel.length > 0 && (
-              <Section title="By model">
+              <Section icon="models" title="By model" subtitle="Which models you actually use — and what each one cost.">
                 <BreakdownTable rows={data.perModel} />
               </Section>
             )}
 
-            <Section title="Permission activity">
+            <Section icon="permissions" title="Permission activity" subtitle="What the agent asked for, and what you decided.">
               {data.permissions.total === 0 ? (
-                <p className="text-sm text-ink-soft">No permission decisions logged yet.</p>
+                <p className="text-sm text-ink-soft">No permission decisions yet — they appear here once the agent asks for something.</p>
               ) : (
                 <div className="flex flex-col gap-3">
                   <div>

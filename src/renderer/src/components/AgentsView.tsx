@@ -99,7 +99,7 @@ export function AgentsView({
         {sortedAgents === null ? (
           <p className="text-sm text-ink-soft">Loading…</p>
         ) : sortedAgents.length === 0 ? (
-          <p className="text-sm text-ink-soft">No agents found.</p>
+          <p className="text-sm text-ink-soft">No agents yet — the bundled ones appear after your first session runs.</p>
         ) : (
           <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
             {sortedAgents.map((a) => {

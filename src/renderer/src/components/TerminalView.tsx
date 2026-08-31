@@ -144,7 +144,7 @@ export function TerminalView({
     <div className="p-6 overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold">Terminal</h1>
+          <h1 className="font-black text-3xl tracking-tight mb-1">Terminal</h1>
           <p className="text-sm text-ink-soft">
             A real shell, in a tab, at your project folder. These settings are global.
           </p>

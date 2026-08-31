@@ -108,7 +108,7 @@ export function PermissionRulesSection({ workspace }: { workspace?: string }): R
       </p>
 
       <div className="flex flex-col gap-2">
-        {current.length === 0 && <p className="text-xs text-ink-soft">No {workspace ? "workspace" : "global"} rules yet.</p>}
+        {current.length === 0 && <p className="text-xs text-ink-soft">No {workspace ? "workspace" : "global"} rules yet — add one below, or let the agent ask and choose Always.</p>}
         {current.map((r, i) => (
           <div key={i} className="flex gap-2 items-center">
             <select value={r.layer} onChange={(e) => patch(i, { layer: e.target.value as HvRule["layer"] })} className={`${field} cursor-pointer`}>

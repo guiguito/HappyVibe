@@ -705,7 +705,7 @@ export function Sidebar({
                 <div className="ml-3 flex flex-col gap-0.5">
                   {wsSessions.length === 0 && (
                     <div className="text-xs text-ink-soft/70 px-2 py-0.5">
-                      {q ? "No matching sessions." : "No sessions yet."}
+                      {q ? "No matching sessions." : "No sessions yet — hit + next to a workspace."}
                     </div>
                   )}
                   {wsSessions.map((s) => (

@@ -24,7 +24,7 @@ export function PromptTemplatesView({
         <Section
           icon="sysprompt"
           title="Global prompts"
-          subtitle="Reviewed, gated prompt templates. Typing /name expands the file into your message — nothing runs on its own. Project prompts are managed in each workspace's settings."
+          subtitle="Typing /name expands the file into your message — nothing runs on its own. Project prompts are managed in each workspace's settings."
         >
           <PromptTemplatesSection workspaceId={workspaceId} />
         </Section>

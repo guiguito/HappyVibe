@@ -134,7 +134,8 @@ export default function App(): React.JSX.Element {
   useEffect(() => { delegationsRef.current = delegations; }, [delegations]);
   const [error, setError] = useState<string | null>(null);
   // B7: onboarding wow-flow overlay. Shown once for a brand-new user's first
-  // session (no prior sessions), re-openable from the Help affordance.
+  // session (no prior sessions). Dismissing it is permanent — §7 round 8
+  // deleted the Help entry, and §22 round 17 confirmed no re-open path.
   const [onboarding, setOnboarding] = useState(false);
   /**
    * §30: the changelog dot. TRUE only when a version the user has ACTUALLY read

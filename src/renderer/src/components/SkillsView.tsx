@@ -22,7 +22,7 @@ export function SkillsView({
         <Section
           icon="skills"
           title="Global skills"
-          subtitle="Reviewed, gated capability packs the agent can load. Workspace-specific skills are managed in each workspace's settings."
+          subtitle="Reviewed and gated. Workspace-specific skills are managed in each workspace's settings."
         >
           <SkillsSection workspaceId={workspaceId} sessionId={sessionId} onNewSkillSession={onNewSkillSession} />
         </Section>

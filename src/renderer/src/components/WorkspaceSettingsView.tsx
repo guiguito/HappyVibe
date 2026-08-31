@@ -62,7 +62,11 @@ export function WorkspaceSettingsView({
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-1 truncate">{basename(workspace)}</h1>
-        <p className="text-xs text-ink-soft font-mono truncate mb-8">{workspace}</p>
+        <p className="text-xs text-ink-soft font-mono truncate mb-2">{workspace}</p>
+        <p className="text-sm text-ink-soft mb-8">
+          Everything about this project only — model, permissions, skills, prompts and MCP servers
+          that apply here and nowhere else.
+        </p>
 
         <Section
           icon="models"
