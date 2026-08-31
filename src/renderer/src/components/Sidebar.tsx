@@ -111,12 +111,15 @@ function SysPromptIcon(): React.JSX.Element {
   );
 }
 /** §19: a hand doing something for you — the calls you did not ask for. */
-function OnBehalfIcon(): React.JSX.Element {
+/** §19 round 18: a pencil with a spark — the page WRITES things for you. The
+    old glyph was a hand, drawn when the row read "On your behalf"; under
+    "AI autofill" a hand says nothing. */
+function AutofillIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3v9" />
-      <path d="M8.5 12V6.5M15.5 12V7.5" />
-      <path d="M5 12v3a7 7 0 0 0 14 0v-3" />
+      <path d="M4 20.4l3.4-.8L18 9.1l-2.6-2.6L4.8 17z" />
+      <path d="M14.2 7.7l2.6 2.6" />
+      <path d="M18.6 2.8l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6z" />
     </svg>
   );
 }
@@ -258,11 +261,12 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   // (model, append, on/off) record, so it CONFIGURES app behaviour.
   { view: "terminal", label: "Terminal", Icon: TerminalIcon, group: "app" },
   { view: "voice", label: "Voice", Icon: VoiceIcon, group: "app" },
-  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon, group: "app" },
   // "AI" is the app's ONLY use of the word, and it earns the exception: it is
   // an adjective separating GENERATED text from the browser-autofill sense of
   // remembered text, not a second name for "the agent" or "the model".
-  { view: "onBehalf", label: "AI autofill", Icon: OnBehalfIcon, group: "app" },
+  { view: "onBehalf", label: "AI autofill", Icon: AutofillIcon, group: "app" },
+  // Closes the group: of the four it is the one you set once and never reopen.
+  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon, group: "app" },
   // Consulted, not changed (§30's own phrase) — the read-only surfaces.
   { view: "stats", label: "Stats", Icon: StatsIcon, group: "record" },
   { view: "audit", label: "Audit log", Icon: AuditIcon, group: "record" },

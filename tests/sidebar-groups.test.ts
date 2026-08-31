@@ -69,7 +69,7 @@ describe("the order lives in ONE place", () => {
       "permissions", "tools", "sysprompt",
       // §19's page configures app behaviour (a per-task model/append/on-off
       // record), so it is an app feature, not a record of one.
-      "terminal", "voice", "shortcuts", "onBehalf",
+      "terminal", "voice", "onBehalf", "shortcuts",
       "stats", "audit", "changelog",
     ]);
   });
