@@ -16,6 +16,7 @@ export type ShortcutId =
   | "closeTab"
   | "save"
   | "search"
+  | "findSession"
   | "toggleSidebar"
   | "toggleFileDrawer"
   | "toggleChangesPanel"
@@ -44,6 +45,12 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   // One action, two consumers: whichever of the chat / the editor has focus.
   // Two actions would make the default ⌘F conflict with itself on first render.
   { id: "search", label: "Search the conversation or the open file", defaultKey: "Mod-f" },
+  // §7 round 18. Finding a SESSION is a different action on a different
+  // surface from searching the conversation, so it gets its own key rather
+  // than becoming a third focus-scoped consumer of ⌘F — which is the split
+  // round 8 deliberately refused. Mod-k was free, and it is the "jump to a
+  // thing" key everywhere else.
+  { id: "findSession", label: "Find a session in the sidebar", defaultKey: "Mod-k" },
   { id: "toggleSidebar", label: "Show or hide the workspace panel", defaultKey: "Mod-\\" },
   { id: "toggleFileDrawer", label: "Show or hide the files panel", defaultKey: "Mod-Shift-e" },
   // §7 round 13: Changes is its own panel, so it gets its own key. Mod-Shift-g

@@ -239,6 +239,16 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
   );
 }
 
+/** §7 round 18: the search affordance. The INPUT hides at rest; this does not. */
+function SearchIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
 function TrashIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -411,6 +421,7 @@ export function Sidebar({
   onArchiveSession,
   onDeleteSession,
   settingsOpen,
+  searchNonce,
   onToggleSettingsOpen,
   railCollapsed,
   onToggleCollapsed,
@@ -434,7 +445,8 @@ export function Sidebar({
   /** Round 8: the Settings group's open/closed state (persisted in App). */
   settingsOpen: boolean;
   onToggleSettingsOpen: () => void;
-  /** §30: an unread changelog — a passive dot, never a modal. */
+  /** §7 round 18: bumped by ⌘K to open and focus the session filter. */
+  searchNonce: number;
   /** F6: slim icon-rail mode + its toggle (⌘\); state persisted in App. */
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
@@ -458,6 +470,23 @@ export function Sidebar({
   onDeleteSession: (id: string) => void;
 }): React.JSX.Element {
   const [filter, setFilter] = useState("");
+  // §7 round 18: the field was 44px of permanent chrome, empty at rest, with no
+  // keyboard route at all. It renders only while `searching`.
+  const [searching, setSearching] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const openSearch = (): void => {
+    setSearching(true);
+    // The input does not exist yet on the tick that flips the flag.
+    requestAnimationFrame(() => searchRef.current?.focus());
+  };
+  // A COUNTER, not a boolean: ⌘K pressed twice must re-focus the field, and a
+  // boolean already true fires no effect. App owns it because ⌘K must expand
+  // the rail first, which is App's state.
+  useEffect(() => {
+    if (searchNonce === 0) return;
+    openSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchNonce]);
   const [confirmDelete, setConfirmDelete] = useState<SessionMeta | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   // Round 8: which workspaces are collapsed, remembered across restarts —
@@ -577,6 +606,18 @@ export function Sidebar({
             Happy<span className="text-tangerine">Vibe</span>
           </div>
         </button>
+        {/* §7 round 18: the affordance stays, the input does not. Same idiom
+            as the collapse control beside it — icon button, shortcut in the
+            tooltip. */}
+        <button
+          type="button"
+          onClick={openSearch}
+          title="Find a session (⌘K)"
+          aria-label="Find a session"
+          className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1"
+        >
+          <SearchIcon />
+        </button>
         <button
           type="button"
           onClick={onToggleCollapsed}
@@ -588,15 +629,30 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Session title filter */}
-      <div className="px-4 pb-2">
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter sessions…"
-          className="w-full rounded-lg bg-card border-2 border-line px-2.5 py-1.5 text-sm focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
-        />
-      </div>
+      {/* §7 round 18: hidden at rest, expanding IN PLACE — exactly where it
+          used to live, so nothing moves but its existence. Blur while the
+          filter is non-empty KEEPS it open (losing an active filter because
+          you clicked a result would be hostile), while Esc collapses AND
+          clears. That last clause is what removes a piece of state instead of
+          adding one: the only route to "collapsed with a live filter" is Esc
+          with text in the field, so clearing there makes "a collapsed search
+          can never mean a filtered list" true by construction, where the
+          alternative was a permanent filter-active dot on the icon. */}
+      {searching && (
+        <div className="px-4 pb-2">
+          <input
+            ref={searchRef}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onBlur={() => { if (!filter) setSearching(false); }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { setFilter(""); setSearching(false); }
+            }}
+            placeholder="Filter sessions…"
+            className="w-full rounded-lg bg-card border-2 border-line px-2.5 py-1.5 text-sm focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+          />
+        </div>
+      )}
 
       {/* Workspace tree. An explicit height ONLY while the Settings group is open
           and the user has dragged the handle. Collapsed, the split has nothing to

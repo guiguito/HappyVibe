@@ -272,6 +272,10 @@ export default function App(): React.JSX.Element {
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
   useEffect(() => { localStorage.setItem("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
+  // §7 round 18: ⌘K opens the sidebar's session filter. A COUNTER, not a
+  // boolean — pressing it twice must re-focus the field, and a boolean already
+  // true fires no effect in the sidebar.
+  const [searchNonce, setSearchNonce] = useState(0);
   // Round 8: the sidebar's Settings group, open or not — persisted like the rail.
   const [settingsOpen, setSettingsOpen] = useState(() => localStorage.getItem("hv:settings-open") === "1");
   useEffect(() => { localStorage.setItem("hv:settings-open", settingsOpen ? "1" : "0"); }, [settingsOpen]);
@@ -2184,6 +2188,14 @@ export default function App(): React.JSX.Element {
       if (ws) void newBrowser(ws);
       return;
     }
+    if (is("findSession")) {
+      e.preventDefault();
+      // A shortcut that silently does nothing is a bug: the 48px rail has no
+      // filter to focus, so expand it first.
+      if (sidebarCollapsed) setSidebarCollapsed(false);
+      setSearchNonce((n) => n + 1);
+      return;
+    }
     if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
     if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
     if (is("closeTab")) {
@@ -2323,6 +2335,7 @@ export default function App(): React.JSX.Element {
         }}
         settingsOpen={settingsOpen}
         onToggleSettingsOpen={() => setSettingsOpen((o) => !o)}
+        searchNonce={searchNonce}
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
