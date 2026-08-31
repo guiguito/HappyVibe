@@ -36,6 +36,9 @@ import {
 } from "../mentions";
 import { Banner } from "./Banner";
 
+/** §20 round 17 — red-zone dismissals persist per session (Principle 5: never nag). */
+const REDZONE_KEY = "hv:redzone-dismissed:";
+
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
 /** §21: the file tree drags this — a tab/file gesture, not an image. */
 const FILETREE_DRAG_MIME = "application/x-hv-relpath";
@@ -610,7 +613,12 @@ export function ChatView({
 
   // B5: non-blocking auto-suggest banner, shown once per session when the gauge
   // first hits the red zone. Never auto-compacts.
-  const [suggestDismissed, setSuggestDismissed] = useState<Set<string>>(new Set());
+  const [suggestDismissed, setSuggestDismissed] = useState<Set<string>>(
+    // Seeded from localStorage: an in-memory Set re-nagged after every reload,
+    // which is exactly what the never-nag rule forbids. Per SESSION, because a
+    // different session in the red zone is a warning the user has not seen.
+    () => new Set(Object.keys(localStorage).flatMap((k) => (k.startsWith(REDZONE_KEY) ? [k.slice(REDZONE_KEY.length)] : []))),
+  );
   const gauge = computeGauge(stats, fallbackWindow);
   const suggestCompact = gauge?.zone === "red" && sessionId != null && !suggestDismissed.has(sessionId) && !contextOpen;
 
@@ -828,7 +836,11 @@ export function ChatView({
       {suggestCompact && (
         <Banner
           tone="danger"
-          onDismiss={() => sessionId && setSuggestDismissed((p) => new Set(p).add(sessionId))}
+          onDismiss={() => {
+            if (!sessionId) return;
+            localStorage.setItem(`${REDZONE_KEY}${sessionId}`, "1");
+            setSuggestDismissed((p) => new Set(p).add(sessionId));
+          }}
         >
           <span className="flex-1">Context is {gauge!.percent}% full. Open the context panel to review or compact.</span>
           <button

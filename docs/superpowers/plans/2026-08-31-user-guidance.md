@@ -1093,6 +1093,28 @@ npm run test:live > /tmp/live.log 2>&1; echo "EXIT=$?"; tail -40 /tmp/live.log
 
 ### Task 7: Dismissals that persist
 
+> **Corrected during implementation (2026-08-31).** The `config.json` `hintsSeen` field, the two
+> IPC handlers and the preload additions were all dropped — **no main-process change was needed
+> at all**.
+>
+> 1. **`config.ts` imports `electron`**, so it is not vitest-importable; that is why the repo has
+>    no config tests, only extracted pure modules (`terminalSettings.ts`, `bypass.ts`). A record
+>    lookup has no pure logic worth extracting, so the planned `tests/hints-seen.test.ts` had
+>    nowhere to stand.
+> 2. **Both dismissals are renderer UI preferences**, and localStorage is already this app's home
+>    for those — `hv:agentsmd-dismissed`, `hv:settings-open`, `hv:sidebar-collapsed`, `hv:active-ws`.
+>    The `gitRulesSeeded` precedent lives in main because *main* seeds the rules; nothing here does.
+> 3. **The scope changed, and this one matters.** The plan said per-workspace for the red-zone
+>    banner. The existing code is per-SESSION (`Set<string>` keyed by sessionId), and per-session is
+>    right: a different session hitting the red zone is a warning the user has not seen, and a
+>    workspace-wide flag would swallow it. Persisting the granularity that already existed is the
+>    fix; changing it would have been a second, unrequested decision. Likewise `PlanCard` persists
+>    per PLAN FILE, not globally — dismissing one plan's action row must not hide every future
+>    plan's.
+>
+> Test is `tests/dismissals-persist.test.ts`, and it asserts BOTH halves — seeded from storage AND
+> written on dismiss — because either alone leaves the bug.
+
 **Files:**
 - Modify: `src/main/config.ts` (add `hintsSeen`, get/set pair)
 - Modify: `src/main/ipc.ts` (two handlers), `src/preload/index.ts` + its `.d.ts` (expose them)
