@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { ChangesPanel } from "./components/ChangesPanel";
 import { RightRail, type DrawerPanel } from "./components/RightRail";
 import { badgeTint, clampDrawer, summarise } from "./gitui";
-import { Sidebar, type View } from "./components/Sidebar";
+import { Sidebar, groupFor, type View } from "./components/Sidebar";
 import { ChatView, ChatWelcome } from "./components/ChatView";
 import { ModelsView } from "./components/ModelsView";
 import { PermissionsView } from "./components/PermissionsView";
@@ -279,6 +279,30 @@ export default function App(): React.JSX.Element {
   // Round 8: the sidebar's Settings group, open or not — persisted like the rail.
   const [settingsOpen, setSettingsOpen] = useState(() => localStorage.getItem("hv:settings-open") === "1");
   useEffect(() => { localStorage.setItem("hv:settings-open", settingsOpen ? "1" : "0"); }, [settingsOpen]);
+  /**
+   * §16 round 18: which of the four settings groups are open. INDEPENDENT, not
+   * an accordion — one-open-at-a-time would shut a group whenever `navigate()`
+   * opened another, which is auto-collapse-on-navigation by another name.
+   *
+   * Lives here rather than in the sidebar for the same reason `settingsOpen`
+   * does: `navigate()` has to open the group holding its destination, so a
+   * sidebar-local copy would need a second mechanism to reach it.
+   */
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("hv:settings-groups") ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem("hv:settings-groups", JSON.stringify([...openGroups]));
+  }, [openGroups]);
+  /** Open the group holding a destination, never close one. */
+  const revealGroup = useCallback((v: View) => {
+    const g = groupFor(v);
+    if (g) setOpenGroups((p) => (p.has(g) ? p : new Set([...p, g])));
+  }, []);
   // Round 8: shortcut bindings — defaults until config answers, then whatever
   // the user remapped on the shortcuts page.
   const [bindings, setBindings] = useState<Record<ShortcutId, string>>(() => resolveBindings(null));
@@ -2131,8 +2155,9 @@ export default function App(): React.JSX.Element {
     if (keyState !== "present") return;
     if (t.workspace) setWsSettings(t.workspace);
     if (t.view !== "chat") setSettingsOpen(true);
+    revealGroup(t.view);
     setView(t.view);
-  }, [keyState]);
+  }, [keyState, revealGroup]);
 
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
@@ -2196,8 +2221,10 @@ export default function App(): React.JSX.Element {
       setSearchNonce((n) => n + 1);
       return;
     }
-    if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("models"); } return; }
-    if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); setView("shortcuts"); } return; }
+    // ⌘, and ⌘/ set the view directly rather than going through navigate(),
+    // so they need the same group reveal or they land on an invisible row.
+    if (is("openSettings")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); revealGroup("models"); setView("models"); } return; }
+    if (is("openShortcuts")) { e.preventDefault(); if (!needsSetup) { setSettingsOpen(true); revealGroup("shortcuts"); setView("shortcuts"); } return; }
     if (is("closeTab")) {
       // Round 15: ⌘W closes the focused pane's active tab, WHATEVER it is —
       // session, terminal or browser. Window close is ⌘⇧W.
@@ -2336,6 +2363,15 @@ export default function App(): React.JSX.Element {
         settingsOpen={settingsOpen}
         onToggleSettingsOpen={() => setSettingsOpen((o) => !o)}
         searchNonce={searchNonce}
+        openGroups={openGroups}
+        onToggleGroup={(g) =>
+          setOpenGroups((p) => {
+            const next = new Set(p);
+            if (next.has(g)) next.delete(g);
+            else next.add(g);
+            return next;
+          })
+        }
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />

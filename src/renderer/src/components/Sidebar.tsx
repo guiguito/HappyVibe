@@ -173,52 +173,79 @@ function KeyboardIcon(): React.JSX.Element {
   );
 }
 
-/** Round 8: every configuration destination lives under ONE collapsible group —
-    the flat footer had grown to seven entries. The four round-6 pages keep
-    their order at the top; the exploded settings pages sit below a divider. */
 /**
- * §16 round 12 — ordered by how often it is REACHED, not by where it came from.
+ * §16 round 18 — four groups, and the order still lives in ONE place.
  *
- * Round 8 ordered this by history (the round-6 four, then the ex-Settings
- * scroll), and §26/§27 then appended Terminal and Voice after Keyboard
- * shortcuts — which put two live features below a reference table. Models
- * leads because a beginner can do nothing before it and ⌘, already lands
- * there; the capability pages follow; configuration after them; and the three
- * you consult rather than change sit at the bottom.
+ * Round 12's "one flat group with no sub-headings" was right for fourteen
+ * entries and wrong at sixteen: measured in the running app, 640px of content
+ * in a 423px scroll region, with `MCP`, `All Tools` and `System prompt` as the
+ * first three names a beginner reads in the primary navigation.
  *
- * Still ONE flat group with no sub-headings — round 8's shape was right, only
- * its sequence was an artefact.
+ * §29's rule governs the copy: one panel, two altitudes, one vocabulary. Group
+ * headers speak human, items keep their real names, and no third vocabulary is
+ * invented — nothing is renamed, and a header is not a destination.
+ *
+ * `NAV` stays the single flat exported array and each entry gains a `group`,
+ * because `GoTo.tsx` derives `GOTO_LABELS` from it and `tests/go-to.test.ts`
+ * asserts against this file's SOURCE. A `GROUPS` array listing item names per
+ * group would put the order in two places, which is exactly what §20 round
+ * 17's Principle 11 forbids. So `GROUPS` is headers only, the sidebar renders
+ * `NAV.filter(n => n.group === g.id)`, and a test pins group members as
+ * contiguous so NAV alone decides the order.
  */
-export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element }> = [
-  { view: "models", label: "Models", Icon: ModelsIcon },
-  // The capability pages. §25 first among them: it is the source the three
-  // below it get their contents from.
-  { view: "plugins", label: "Plugins", Icon: PluginsIcon },
-  { view: "skills", label: "Skills", Icon: SkillsIcon },
-  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon },
-  { view: "mcp", label: "MCP", Icon: McpIcon },
-  { view: "agents", label: "Agents", Icon: AgentsIcon },
-  { view: "tools", label: "All Tools", Icon: ToolsIcon },
-  // Configuration.
-  { view: "permissions", label: "Permissions", Icon: PermissionsIcon },
-  { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon },
-  // §19 (2026-08-30): beside System prompt, because both pages answer the same
-  // question — what does this app tell a model, that I never typed?
-  { view: "onBehalf", label: "On your behalf", Icon: OnBehalfIcon },
-  { view: "terminal", label: "Terminal", Icon: TerminalIcon },
-  { view: "voice", label: "Voice", Icon: VoiceIcon },
-  // Shortcuts closes the configuration block rather than trailing the reports:
-  // since round 8 the bindings are EDITABLE, so it is a settings page, not a
-  // reference table.
-  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon },
-  // Consulted, not changed.
-  { view: "stats", label: "Stats", Icon: StatsIcon },
-  { view: "audit", label: "Audit log", Icon: AuditIcon },
-  // §30: product state like the two above it — what this build is, and what
-  // changed to get here. Not documentation, so this does not reopen round 8's
-  // deletion of the Help entry (§7).
-  { view: "changelog", label: "Changelog", Icon: ChangelogIcon },
+export type NavGroup = "setup" | "allowed" | "did" | "app";
+
+export const GROUPS: Array<{ id: NavGroup; label: string }> = [
+  { id: "setup", label: "Set up your agent" },
+  { id: "allowed", label: "What it's allowed to do" },
+  { id: "did", label: "What it did" },
+  { id: "app", label: "This app" },
 ];
+
+/**
+ * §16 round 12 ordered this by how often it is REACHED, not by where it came
+ * from. That rule is NOT superseded by the grouping — it now applies WITHIN
+ * each group, with one deliberate exception noted at `permissions`.
+ */
+export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Element; group: NavGroup }> = [
+  // Everything you GIVE the agent. Models leads because a beginner can do
+  // nothing before it and ⌘, already lands there; §25 leads the capability
+  // pages, being the source the three below it get their contents from.
+  { view: "models", label: "Models", Icon: ModelsIcon, group: "setup" },
+  { view: "plugins", label: "Plugins", Icon: PluginsIcon, group: "setup" },
+  { view: "skills", label: "Skills", Icon: SkillsIcon, group: "setup" },
+  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "setup" },
+  { view: "mcp", label: "MCP", Icon: McpIcon, group: "setup" },
+  { view: "agents", label: "Agents", Icon: AgentsIcon, group: "setup" },
+  // The boundary — grouping these is what makes the product's own thesis
+  // legible in the nav. Permissions leads ahead of All Tools, inverting round
+  // 12's flat order: it is the more often reached of the two, and it is the
+  // group's thesis rather than an inventory.
+  { view: "permissions", label: "Permissions", Icon: PermissionsIcon, group: "allowed" },
+  { view: "tools", label: "All Tools", Icon: ToolsIcon, group: "allowed" },
+  { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon, group: "allowed" },
+  // The retrospective surfaces, which round 12 had scattered across positions
+  // 10, 15 and 16. §19's "On your behalf" leads: it is the one a user reaches
+  // for without already knowing it exists.
+  { view: "onBehalf", label: "On your behalf", Icon: OnBehalfIcon, group: "did" },
+  { view: "stats", label: "Stats", Icon: StatsIcon, group: "did" },
+  { view: "audit", label: "Audit log", Icon: AuditIcon, group: "did" },
+  // Preferences and chrome. Nothing here is about the agent. Shortcuts are
+  // EDITABLE since round 8, so they are configuration rather than a reference
+  // table; §30's changelog is product state, and closes the group as the
+  // least often reached page in the app.
+  { view: "terminal", label: "Terminal", Icon: TerminalIcon, group: "app" },
+  { view: "voice", label: "Voice", Icon: VoiceIcon, group: "app" },
+  { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon, group: "app" },
+  { view: "changelog", label: "Changelog", Icon: ChangelogIcon, group: "app" },
+];
+
+/** The group a destination lives in — `null` for the views that are not in the
+    nav at all (`chat`, `workspace`). `App.navigate` uses it so a cross-page
+    pointer can never land on a page whose row is inside a shut group. */
+export function groupFor(view: View): NavGroup | null {
+  return NAV.find((n) => n.view === view)?.group ?? null;
+}
 
 /** Round 8: the collapse affordance — an actual chevron rather than a 10px
     glyph, sitting immediately right of the name it collapses. */
@@ -422,6 +449,8 @@ export function Sidebar({
   onDeleteSession,
   settingsOpen,
   searchNonce,
+  openGroups,
+  onToggleGroup,
   onToggleSettingsOpen,
   railCollapsed,
   onToggleCollapsed,
@@ -447,6 +476,11 @@ export function Sidebar({
   onToggleSettingsOpen: () => void;
   /** §7 round 18: bumped by ⌘K to open and focus the session filter. */
   searchNonce: number;
+  /** §16 round 18: which settings groups are open. Owned by App for the same
+      reason `settingsOpen` is — `navigate()` has to open the group holding its
+      destination, and a second mechanism would be a second thing to sync. */
+  openGroups: ReadonlySet<string>;
+  onToggleGroup: (g: string) => void;
   /** F6: slim icon-rail mode + its toggle (⌘\); state persisted in App. */
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
@@ -838,20 +872,39 @@ export function Sidebar({
         </button>
         {settingsOpen && (
           <div className="mt-1 flex flex-col min-h-0 overflow-y-auto">
-            {NAV.map((n) => (
-              <div key={n.view}>
-                <button
-                  type="button"
-                  onClick={() => onNavigate(n.view)}
-                  className={`w-full flex items-center gap-2.5 rounded-xl pl-6 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
-                    view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
-                  }`}
-                >
-                  <n.Icon />
-                  <span className="flex-1 text-left">{n.label}</span>
-                </button>
-              </div>
-            ))}
+            {GROUPS.map((g) => {
+              const open = openGroups.has(g.id);
+              return (
+                <div key={g.id}>
+                  {/* A header TOGGLES. There is no page behind it — the human
+                      altitude sits above the real names, never instead of
+                      them, so a header is not a destination. */}
+                  <button
+                    type="button"
+                    onClick={() => onToggleGroup(g.id)}
+                    aria-expanded={open}
+                    className="w-full flex items-center gap-2 rounded-xl pl-5 pr-3.5 py-2 text-[11px] font-bold uppercase tracking-widest text-ink-soft border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
+                  >
+                    <span className="flex-1 text-left">{g.label}</span>
+                    <Chevron open={open} />
+                  </button>
+                  {open &&
+                    NAV.filter((n) => n.group === g.id).map((n) => (
+                      <button
+                        key={n.view}
+                        type="button"
+                        onClick={() => onNavigate(n.view)}
+                        className={`w-full flex items-center gap-2.5 rounded-xl pl-8 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
+                          view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+                        }`}
+                      >
+                        <n.Icon />
+                        <span className="flex-1 text-left">{n.label}</span>
+                      </button>
+                    ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
