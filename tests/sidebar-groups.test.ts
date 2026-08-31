@@ -66,7 +66,7 @@ describe("the order lives in ONE place", () => {
 
   it("round 12's frequency order survives within each group", () => {
     expect(NAV.map((n) => n.view)).toEqual([
-      "models", "plugins", "skills", "promptTemplates", "mcp", "agents", "builtinTools",
+      "models", "builtinTools", "plugins", "skills", "promptTemplates", "mcp", "agents",
       // Permissions leads its group ahead of All Tools: the more often
       // reached of the two, and the group's own thesis. System prompt closes
       // it — a standing instruction is a ground rule, though not a permission.
@@ -390,5 +390,23 @@ describe("Plugins is followed by exactly what a plugin contains", () => {
     expect(new Set(after)).toEqual(new Set(ACCEPTED_COMPONENTS.map((c) => COMPONENT_VIEW[c])));
     // Every accepted component must have a nav row, or the mapping above rots.
     for (const c of ACCEPTED_COMPONENTS) expect(COMPONENT_VIEW[c], c).toBeDefined();
+  });
+});
+
+describe("Abilities reads have → get → got → author", () => {
+  it("Built-in tools leads: it is the only member that costs nothing to use", () => {
+    // Everything else in the group needs work first — install a plugin,
+    // approve a skill, add a server, author an agent or a prompt. These are on
+    // by default, and they are the product's own differentiators, so the page
+    // earns its place on DISCOVERY rather than on round 12's edit-frequency
+    // rule (which would put it last, since it is rarely changed).
+    const inGroup = NAV.filter((n) => n.group === "abilities").map((n) => n.view);
+    expect(inGroup[0]).toBe("builtinTools");
+  });
+
+  it("lifting it did not break the Plugins → its-three-components run", () => {
+    const views = NAV.map((n) => n.view);
+    expect(views.slice(views.indexOf("plugins") + 1, views.indexOf("plugins") + 4))
+      .toEqual(["skills", "promptTemplates", "mcp"]);
   });
 });

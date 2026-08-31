@@ -255,8 +255,17 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   { view: "models", label: "Models", Icon: ModelsIcon, group: null },
   // Everything you GIVE the agent, each with its own on/off — the IPC surface
   // says so: skills-set-enabled, prompt-templates-set-enabled,
-  // set-agent-enabled, plugins-enable-installed. §25 leads, being the source
-  // the three below it get their contents from.
+  // set-agent-enabled, plugins-enable-installed.
+  //
+  // The group reads HAVE → GET → GOT → AUTHOR. Built-in tools leads because it
+  // is the only member that costs nothing to use: plan mode, the agent's
+  // terminal and browser, and asking you a question are on by default and are
+  // HappyVibe's own differentiators (§23, §26, §28, §7). Round 12's frequency
+  // rule would put it last — it is rarely EDITED — but a page nobody opens
+  // because they never learned it exists is a discovery failure, not evidence
+  // it belongs at the bottom; that is §19's own argument for the AI autofill
+  // page, one group over. Plugins then leads the three it can install.
+  { view: "builtinTools", label: "Built-in tools", Icon: BuiltinToolsIcon, group: "abilities" },
   { view: "plugins", label: "Plugins", Icon: PluginsIcon, group: "abilities" },
   // Skills · Prompts · MCP sit directly under Plugins and in this order
   // because they are EXACTLY what a plugin can contain — `ACCEPTED_COMPONENTS`
@@ -268,11 +277,6 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "abilities" },
   { view: "mcp", label: "MCP", Icon: McpIcon, group: "abilities" },
   { view: "agents", label: "Agents", Icon: AgentsIcon, group: "abilities" },
-  // Closes the group by round 12's frequency rule. It belongs here and not in
-  // Control: "you only ever go there to switch something OFF" is true of it
-  // AND of Skills, Prompts, Agents and Plugins, so it does not separate them —
-  // every page in this group is a list of capabilities with an on/off.
-  { view: "builtinTools", label: "Built-in tools", Icon: BuiltinToolsIcon, group: "abilities" },
 
   // Permissions leads ahead of All Tools, inverting round 12's flat order: it
   // is the more often reached of the two, and it is the group's thesis rather
