@@ -232,3 +232,43 @@
   background-size: 200% 100%;
   animation: hv-shimmer 1.8s linear infinite;
 }
+
+/**
+ * §22 onboarding (2026-09-01) — the welcome beat.
+ *
+ * CSS-only on purpose, not for taste: the renderer CSP is `script-src 'self'`
+ * with no `blob:` and no `data:`, so an animation runtime cannot load at all.
+ * That is the same wall §27's audio worklet hit, and it is not being hit twice.
+ */
+@keyframes hv-bounce-in {
+  0%   { transform: translateX(-160%) translateY(-40%) rotate(-24deg); }
+  40%  { transform: translateX(0) translateY(0) rotate(4deg) scaleX(1.18) scaleY(0.78); }
+  56%  { transform: translateY(-26%) rotate(-3deg) scaleX(0.94) scaleY(1.08); }
+  74%  { transform: translateY(0) rotate(3deg) scaleX(1.1) scaleY(0.9); }
+  88%  { transform: translateY(-8%) rotate(-4deg); }
+  100% { transform: translateY(0) rotate(-3deg); }
+}
+@keyframes hv-rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.hv-bounce-in { animation: hv-bounce-in 1150ms cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+.hv-rise-in   { animation: hv-rise-in 340ms ease-out both; }
+.hv-rise-in-late { animation: hv-rise-in 340ms ease-out 260ms both; }
+
+/**
+ * Reduced motion renders the SETTLED FRAME, not a faster animation — a bounce
+ * at 3x speed is still a bounce. `both` fill on the classes above means killing
+ * the animation would leave the element at its authored transform, so the
+ * settled tilt is restated here.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .hv-overlay,
+  .hv-dialog,
+  .hv-bounce-in,
+  .hv-rise-in,
+  .hv-rise-in-late { animation: none !important; }
+  .hv-bounce-in { transform: rotate(-3deg); }
+  .hv-rise-in,
+  .hv-rise-in-late { opacity: 1; transform: none; }
+}

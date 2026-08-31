@@ -78,3 +78,18 @@ describe("the hv:has-any-provider handler", () => {
     expect(handler).toContain("LOCAL_RUNNERS");
   });
 });
+
+describe("a local runner needs MODELS, not just a listening port", () => {
+  const IPC = fs.readFileSync(path.resolve(__dirname, "../src/main/ipc.ts"), "utf8");
+  const handler = IPC.slice(
+    IPC.indexOf('ipcMain.handle("hv:has-any-provider"'),
+    IPC.indexOf('ipcMain.handle("hv:open-external"'),
+  );
+
+  it("reads models.length, never .running", () => {
+    // syncModelsJson only writes an endpoint that HAS models, so a bare server
+    // would pass the gate and leave Pi with nothing to call.
+    expect(handler.includes("models.length > 0"), "models.length").toBe(true);
+    expect(/localRunning:[^,]*\.running/.test(handler), "no bare .running").toBe(false);
+  });
+});

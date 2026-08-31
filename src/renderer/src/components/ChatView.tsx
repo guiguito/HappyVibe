@@ -109,6 +109,8 @@ export function ChatView({
   costTotal = emptyLedger,
   costOpen,
   onCostOpenChange,
+  chips,
+  onChip,
   planEnabled = false,
   sessionSkills,
   onTogglePlan,
@@ -177,6 +179,12 @@ export function ChatView({
   costTotal?: HvLedgerTotal;
   costOpen: boolean;
   onCostOpenChange: (open: boolean) => void;
+  /**
+   * §22 round 19: first-prompt suggestions, shown only while the wizard's
+   * session has never been sent to. They insert at the caret; they never send.
+   */
+  chips?: readonly string[] | null;
+  onChip?: (text: string) => void;
   /** §23: plan-mode toggle state + setter (composer chip). */
   planEnabled?: boolean;
   /** §14 round 6: skills this session loaded, each flagged if the agent used it. */
@@ -1155,6 +1163,24 @@ export function ChatView({
           onStop={dictation.stop}
           docked={visible}
         />
+        {/* §22 round 19: the first prompt, suggested. These INSERT and never
+            send — the send stays human, for the same reason §27 refused
+            auto-send and §29 left the first commit to the user. The row is
+            gone for good after the first send. */}
+        {chips && chips.length > 0 && (
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
+            {chips.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => onChip?.(c)}
+                className="rounded-full border-2 border-line bg-card px-3 py-1 text-xs font-bold text-ink-soft hover:bg-honey-soft hover:text-ink cursor-pointer"
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Queued messages (Pi queue_update). Abort preserves the queue — chips stay after Stop. */}
         {queued > 0 && (
           <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-1.5 px-1 pb-2">

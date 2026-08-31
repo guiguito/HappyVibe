@@ -108,3 +108,161 @@ describe("ONBOARDING_COPY", () => {
     }
   });
 });
+
+const DIALOG = read("components/OnboardingDialog.tsx");
+const DOORS = read("components/OnboardingDoors.tsx");
+const CHAT = read("components/ChatView.tsx");
+const CSS = fs.readFileSync(path.join(R, "styles.css"), "utf8");
+
+describe("the welcome animation obeys the CSP and reduced motion", () => {
+  it("is CSS keyframes, and the settled frame is reachable without motion", () => {
+    expect(has(CSS, "@keyframes hv-bounce-in"), "bounce keyframes").toBe(true);
+    expect(has(CSS, "@media (prefers-reduced-motion: reduce)"), "reduced-motion block").toBe(true);
+  });
+
+  it("reduced motion renders the settled frame rather than a faster bounce", () => {
+    // `both` fill means killing the animation leaves the authored transform, so
+    // the settled tilt has to be restated inside the query.
+    const block = CSS.slice(CSS.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(has(block, "animation: none"), "animation: none").toBe(true);
+    expect(has(block, "rotate(-3deg)"), "the settled tilt").toBe(true);
+  });
+
+  it("brings no animation runtime — the CSP is script-src 'self' with no blob: or data:", () => {
+    const src = flat(DIALOG);
+    expect(/lottie|gsap|framer-motion|createObjectURL|new Blob/i.test(src), "no runtime").toBe(false);
+  });
+});
+
+describe("the dialog is a real modal on the shipped layer", () => {
+  it("uses the two dialog classes rather than inventing a layer", () => {
+    const src = flat(DIALOG);
+    expect(has(src, "hv-overlay"), "hv-overlay").toBe(true);
+    expect(has(src, "hv-dialog"), "hv-dialog").toBe(true);
+  });
+
+  it("the first Escape lands the animation and only the second dismisses", () => {
+    const src = flat(DIALOG);
+    expect(has(src, "if (welcome) { setWelcome(false); return; }"), "escape chain").toBe(true);
+  });
+});
+
+describe("first run suppresses the forced-Models redirect", () => {
+  it("App stops pinning the view while the wizard is up", () => {
+    // Leaving it on would put the SAME three doors behind the scrim the wizard
+    // is already showing, and dismissing would land on a page already there.
+    expect(has(flat(APP), 'needsSetup && !onboarding ? "models" : view'), "conditioned redirect").toBe(true);
+  });
+});
+
+describe("the wizard's provider doors", () => {
+  it("reuse the shipped auth modal rather than a second sign-in UI", () => {
+    const src = flat(DOORS);
+    expect(has(src, "AuthFlowModal"), "AuthFlowModal").toBe(true);
+    expect(has(src, "window.hv.authLogin"), "authLogin").toBe(true);
+  });
+
+  it("never re-list the sign-in providers — main owns that list", () => {
+    const src = flat(DOORS);
+    for (const hardcoded of ["ChatGPT", "GitHub Copilot", "anthropic", "openai-codex"]) {
+      expect(has(src, hardcoded), `hand-listed ${hardcoded}`).toBe(false);
+    }
+  });
+
+  it("offer a local runner only when one holds models", () => {
+    // Don't show what cannot work: a listening port with no models is a button
+    // that fails on click, and the Models page owns the "not found" story.
+    const src = flat(DOORS);
+    expect(has(src, "models.length > 0"), "models gate").toBe(true);
+    expect(/not found|Install from ollama\.com|Check again/.test(src), "no dead rows").toBe(false);
+  });
+
+  it("do not fork ModelsView", () => {
+    expect(has(flat(DOORS), "ModelsView"), "no ModelsView").toBe(false);
+  });
+
+  it("keep the key probe honest at entry", () => {
+    expect(has(flat(DOORS), "window.hv.setProviderKey"), "setProviderKey").toBe(true);
+  });
+});
+
+describe("the first-prompt chips", () => {
+  it("insert into the composer and never send", () => {
+    const src = flat(CHAT);
+    const i = src.indexOf("onChip?.(");
+    expect(i, "onChip call site").toBeGreaterThan(-1);
+    // promptSession IS the send. It must be nowhere near the chip handler.
+    expect(has(src.slice(i - 400, i + 400), "promptSession"), "chip does not send").toBe(false);
+  });
+
+  it("App branches them on what the folder actually holds", () => {
+    const src = flat(APP);
+    expect(has(src, "chipsFor(folderHasCode(entries))"), "derived branch").toBe(true);
+    expect(has(src, "window.hv.fsList"), "fsList probe").toBe(true);
+  });
+
+  it("are cleared by the first send and never restored", () => {
+    const src = flat(APP);
+    expect(has(src, "if (chips) setChips(null);"), "cleared on send").toBe(true);
+    expect((src.match(/setChips\(/g) ?? []).length, "only two writers").toBe(2);
+  });
+});
+
+describe("the two wow notices", () => {
+  it("fire once each, as the existing transcript capsule", () => {
+    const src = flat(APP);
+    expect(has(src, 'kind: "notice", text: ONBOARDING_COPY.noticeTools'), "tools notice").toBe(true);
+    expect(has(src, 'kind: "notice", text: ONBOARDING_COPY.noticeContext'), "context notice").toBe(true);
+    expect(has(src, "wowShown.current.tools = true"), "once").toBe(true);
+    expect(has(src, "wowShown.current.context = true"), "once").toBe(true);
+  });
+
+  it("are scoped to the session the wizard opened, not to any first session", () => {
+    const src = flat(APP);
+    expect((src.match(/sid === firstRunSession\.current/g) ?? []).length, "both gated").toBe(2);
+  });
+});
+
+describe("the bottom-right overlay is gone", () => {
+  it("has no file and no import", () => {
+    expect(fs.existsSync(path.join(R, "components/OnboardingOverlay.tsx")), "file").toBe(false);
+    expect(has(APP, "OnboardingOverlay"), "import").toBe(false);
+  });
+
+  it("takes its four steps with it — the wizard and the notices own them now", () => {
+    const all: string[] = [];
+    const walk = (d: string): void => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const q = path.join(d, e.name);
+        if (e.isDirectory()) walk(q);
+        else if (/\.tsx?$/.test(e.name)) all.push(fs.readFileSync(q, "utf8"));
+      }
+    };
+    walk(R);
+    const src = flat(all.join("\n"));
+    for (const dead of ["Get to the good part", "Ask the agent to explore it", "Watch the live trace"]) {
+      expect(has(src, dead), dead).toBe(false);
+    }
+  });
+});
+
+describe("no dead copy", () => {
+  it("every ONBOARDING_COPY key has a call site in the renderer", () => {
+    // Unreferenced copy is exactly the drift these records exist to end —
+    // the EMPTY_COPY rule (§20 round 17), applied here.
+    const sources: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (/\.tsx$/.test(e.name)) sources.push(fs.readFileSync(p, "utf8"));
+      }
+    };
+    walk(R);
+    const all = sources.join("\n");
+    for (const key of Object.keys(ONBOARDING_COPY)) {
+      const used = all.includes(`C.${key}`) || all.includes(`ONBOARDING_COPY.${key}`);
+      expect(used, `dead copy: ${key}`).toBe(true);
+    }
+  });
+});

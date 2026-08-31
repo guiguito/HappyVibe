@@ -17,12 +17,14 @@ export const ONBOARDING_COPY = {
   step1Body:
     "The brain. Sign in with a plan you already pay for, run a free one on this Mac, or paste an API key.",
   step1SignIn: "Sign in with your plan",
-  step1More: "More ways to sign in",
   step1Local: "Free, on this Mac",
   step1Key: "Paste an API key",
   step1KeySave: "Save key",
   step1KeyUnverified: "Saved — couldn't verify this key.",
-  step1Escape: "Every option lives on the Models page",
+  // Split so the DESTINATION word stays derived from the sidebar's own NAV
+  // (GOTO_LABELS) rather than being re-typed here — §20 round 17 Principle 11.
+  step1EscapeLead: "Every option lives on the",
+  step1EscapeTail: "page.",
 
   step2Title: "Pick a project",
   // Honesty-checked: §10 asks before FILE access outside the workspace root. It

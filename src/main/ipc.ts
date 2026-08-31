@@ -73,7 +73,7 @@ import { aggregate, type AnalyticsFilter } from "./analytics";
 import { buildTitlePrompt, generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
-import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
+import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, createWorkspaceFolder, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
@@ -1970,6 +1970,13 @@ export function registerIpc(win: BrowserWindow): void {
 
   // ── workspaces ───────────────────────────────────────────────────
   ipcMain.handle("hv:list-workspaces", () => workspaces.list());
+  // §22: the "Start fresh…" door. Path-confined by construction — the name is
+  // a segment, never a path (files.ts createWorkspaceFolder).
+  ipcMain.handle("hv:create-workspace-folder", (_e, name: string) => {
+    const dir = createWorkspaceFolder(String(name));
+    workspaces.add(dir);
+    return dir;
+  });
   ipcMain.handle("hv:add-workspace", async () => {
     const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
     if (r.canceled || !r.filePaths[0]) return null;
@@ -3214,7 +3221,10 @@ export function registerIpc(win: BrowserWindow): void {
       authProviders: authJsonProviders(agentDir()),
       customEndpoints: listCustomEndpoints(),
       customKeyStatus: customKeyStatus(),
-      localRunning: ollama.running || runners.some((r) => r.running),
+      // MODELS, not merely a listening port: syncModelsJson only writes an
+      // endpoint that has models, so a bare server would pass the gate and then
+      // leave Pi with nothing to call.
+      localRunning: ollama.models.length > 0 || runners.some((r) => r.models.length > 0),
     });
   });
 
