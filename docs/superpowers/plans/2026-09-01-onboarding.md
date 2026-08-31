@@ -1105,3 +1105,66 @@ Steps 3 and 4 are where "first run owns first run only" either holds or is quiet
 
 1. Trigger a first run, complete step 1 only, quit during step 2.
 2. Relaunch. The wizard **resumes with step 1 already checked** — one checkmark, not a restarted animation-and-both-steps script.
+
+---
+
+## What actually happened (executed 2026-09-01)
+
+All nine tasks shipped, in six commits off `main`. Gate green at every step
+(`230 files / 2837 tests`), and `npm run live:why` prints **nothing** — this round
+touches no `pi-runtime/extensions/`, no `src/main/pi/` and no live test file, so the
+live batch was **not required** and was not run.
+
+**Deviations from the plan, all discovered by the GUI pass:**
+
+1. **`localRunning` needs MODELS, not a listening port.** `syncModelsJson` only writes an
+   endpoint that has models, so a bare server would have passed the gate and left Pi with
+   nothing to call.
+2. **A refused key vanished with the step that saved it.** `setProviderKey` stores the key
+   whatever the probe says, so a typo'd key flips the gate, collapses step 1 and unmounts
+   `ProviderDoors` — taking its inline refusal with it. Measured: a bogus Anthropic key
+   checked step 1 and showed *nothing*. The note is owned by the dialog now.
+3. **A configured provider with no default model was the first-run dead end.** Fresh profile:
+   two keys, 348 models offered, `defaultModel: null` → the auto-created first session died on
+   §16 finding 7's refusal. `ensureDefaultModel()` fills a null default from the user's own
+   providers. Folded into PRD §16 beside finding 7, which it does not reverse.
+4. **The escape link sat 27px below the fold** at the default 900×638 window. It moved into
+   the header — it is the only way out.
+5. **An empty folder was asked to document its codebase.** The AGENTS.md banner was the first
+   sentence after the handover. It now needs real content, sharing `folderHasCode`.
+6. **`ipcMessage`** extracted from `App.surface` — main's refusal was reaching the Start-fresh
+   field wrapped in `Error invoking remote method '<channel>': `.
+
+**Not fixed, recorded instead:** with several providers configured, `ensureDefaultModel` picks by
+registry order and can land on one whose account is empty — observed live, a `402 Insufficient
+Balance` DeepSeek key was picked over a working OpenRouter one. A liveness probe on every launch
+is not worth its startup cost; the provider's own error plus one click in the searchable picker is.
+
+### How the GUI pass was run
+
+Never against the user's own profile or their running dev server. The built artifact from this
+worktree, launched by `electron-debug` with a throwaway profile:
+
+```
+--user-data-dir=/tmp/hv-onboard-<X>
+```
+
+Four profiles: **A** (`.env` parked → no provider, the full two-step wizard), **B** (env key →
+step 1 pre-checked), **C** (the handover), **D** (seeded `config.json` with a live model → a real
+turn, both notices, then the relaunch and existing-install regressions). All four removed
+afterwards, along with `~/Documents/HappyVibe/hv-onboarding-smoke` and its parent.
+
+### Verified on screen
+
+- Welcome beat with the bounce and `Good vibes, real code.`; **backdrop is ChatWelcome, not the
+  Models page** — `Hook up a model provider to wake the agent up` appears nowhere.
+- Six sign-in buttons from main's own list; **no local door at all** with nothing listening —
+  `not found` / `Install from ollama.com` absent.
+- A refused key: step 1 checks, the refusal stays visible under it.
+- Step 1 **pre-checked** from an env key — the wizard honestly one step long.
+- `Start fresh…` refuses `../escape-attempt` with main's own sentence, un-wrapped.
+- Handover: folder created + registered, session open, model chip live, **empty-folder chips**.
+- A chip **inserts and does not send**; chips gone after the first send and never back.
+- Both notices fire **once**, in order: after the first tool result, then after the turn.
+- Relaunch: **no wizard, no chips, no repeated notices**.
+- `onboardingSeen: false` + existing workspace/session → **the Models page, not the wizard**.
