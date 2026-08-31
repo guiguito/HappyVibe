@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { GoTo } from "./GoTo";
 
 /**
  * WS1: the searchable model dropdown, extracted from the chat chip so Settings
@@ -22,7 +23,7 @@ export function ModelSelect({
   onClear,
   clearLabel = "Use global default",
   placeholder = "Pick a model…",
-  emptyHint = "No models — configure a provider in Settings.",
+  emptyHint = <>No models yet — set one up on the <GoTo view="models" /> page.</>,
   loading = false,
   disabled = false,
   direction = "down",
@@ -39,7 +40,7 @@ export function ModelSelect({
   onClear?: () => void;
   clearLabel?: string;
   placeholder?: string;
-  emptyHint?: string;
+  emptyHint?: React.ReactNode;
   /** models still loading — distinguishes "loading" from "none configured". */
   loading?: boolean;
   disabled?: boolean;

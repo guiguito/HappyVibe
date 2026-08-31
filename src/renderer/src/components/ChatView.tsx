@@ -34,6 +34,10 @@ import {
   activeCommandQuery, activeMentionQuery, commandSubtitle, completeCommand, completeMention, composerCommands, extractMentions, filterCommands,
   agentMentionItems, filterEntries, mentionLabel, type MentionEntry, type SlashCommand,
 } from "../mentions";
+import { Banner } from "./Banner";
+
+/** §20 round 17 — red-zone dismissals persist per session (Principle 5: never nag). */
+const REDZONE_KEY = "hv:redzone-dismissed:";
 
 /** Round 3 #3: pasting more than this many characters asks for confirmation. */
 /** §21: the file tree drags this — a tab/file gesture, not an image. */
@@ -609,7 +613,12 @@ export function ChatView({
 
   // B5: non-blocking auto-suggest banner, shown once per session when the gauge
   // first hits the red zone. Never auto-compacts.
-  const [suggestDismissed, setSuggestDismissed] = useState<Set<string>>(new Set());
+  const [suggestDismissed, setSuggestDismissed] = useState<Set<string>>(
+    // Seeded from localStorage: an in-memory Set re-nagged after every reload,
+    // which is exactly what the never-nag rule forbids. Per SESSION, because a
+    // different session in the red zone is a warning the user has not seen.
+    () => new Set(Object.keys(localStorage).flatMap((k) => (k.startsWith(REDZONE_KEY) ? [k.slice(REDZONE_KEY.length)] : []))),
+  );
   const gauge = computeGauge(stats, fallbackWindow);
   const suggestCompact = gauge?.zone === "red" && sessionId != null && !suggestDismissed.has(sessionId) && !contextOpen;
 
@@ -811,7 +820,7 @@ export function ChatView({
       )}
       {/* Crash banner */}
       {crashed !== null && (
-        <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/40 text-sm font-semibold text-berry">
+        <Banner tone="danger">
           <span className="flex-1">The agent process stopped (code {crashed}).</span>
           <button
             type="button"
@@ -820,12 +829,19 @@ export function ChatView({
           >
             Restart agent
           </button>
-        </div>
+        </Banner>
       )}
 
       {/* B5: red-zone auto-suggest (once per session, non-blocking). */}
       {suggestCompact && (
-        <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/40 text-sm font-semibold text-berry">
+        <Banner
+          tone="danger"
+          onDismiss={() => {
+            if (!sessionId) return;
+            localStorage.setItem(`${REDZONE_KEY}${sessionId}`, "1");
+            setSuggestDismissed((p) => new Set(p).add(sessionId));
+          }}
+        >
           <span className="flex-1">Context is {gauge!.percent}% full. Open the context panel to review or compact.</span>
           <button
             type="button"
@@ -834,14 +850,7 @@ export function ChatView({
           >
             Review context
           </button>
-          <button
-            type="button"
-            onClick={() => sessionId && setSuggestDismissed((p) => new Set(p).add(sessionId))}
-            className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer"
-          >
-            Dismiss
-          </button>
-        </div>
+        </Banner>
       )}
 
       {/* V2.C1: the delegation run lives OUTSIDE the chat flow — a sticky

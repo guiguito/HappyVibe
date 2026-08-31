@@ -3,6 +3,8 @@ import {
   categoryCount, compositionSegments, computeGauge, groupItems, summarizeGroups, totalEstTokens,
   type CategorySummary, type ContextItem, type ContextSnapshot, type Gauge, type SessionStats,
 } from "../context";
+import { EmptyState } from "./EmptyState";
+import { HowItWorks } from "./HowItWorks";
 
 const estTok = (n: number): string => `≈${n.toLocaleString()} tok`;
 
@@ -130,6 +132,7 @@ export function ContextPanel({
           <div className="mt-1 text-[11px] text-ink-soft">
             Breakdown sizes are <span className="font-bold">estimated</span> (≈ chars/4).
           </div>
+          <HowItWorks copy="contextNumbers" />
         </div>
 
         {/* v5: compaction is always available (Pi-native compact) — urgent
@@ -161,7 +164,7 @@ export function ContextPanel({
 
           {snapshot && !drilled && (
             summary.length === 0 ? (
-              <div className="text-sm text-ink-soft">Nothing in context yet.</div>
+              <EmptyState copy="context" />
             ) : (
               <>
               {/* v5: proportional composition surface (a segmented bar), inspired

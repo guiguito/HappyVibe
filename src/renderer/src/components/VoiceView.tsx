@@ -134,7 +134,7 @@ export function VoiceView({
   return (
     <div className="h-full overflow-y-auto p-8">
       <div className="max-w-3xl mx-auto">
-        <h1 className="font-black text-2xl tracking-tight mb-1">Voice</h1>
+        <h1 className="font-black text-3xl tracking-tight mb-1">Voice</h1>
         <p className="text-sm text-ink-soft mb-6">
           Dictate into the composer. Speech is transcribed on this machine — your audio is never
           written to disk, never leaves this computer, and no transcript is ever logged.

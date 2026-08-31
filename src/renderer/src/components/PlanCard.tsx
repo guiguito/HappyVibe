@@ -3,6 +3,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ModelSelect } from "./ModelSelect";
 
+/** §20 round 17 — plan-card dismissals persist per plan file. */
+const PLAN_DISMISS_KEY = "hv:plan-dismissed:";
+
 /**
  * §23 Plan Mode — the plan-ready card in the transcript. Self-contained: it
  * reads the plan file, renders it, shows live checklist progress, and drives the
@@ -36,7 +39,11 @@ const STATUS_META: Record<string, { dot: string; label: string }> = {
 export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?: (relPath: string) => void }): React.JSX.Element {
   const [body, setBody] = useState<string>("");
   const [expanded, setExpanded] = useState(true);
-  const [dismissed, setDismissed] = useState(false);
+  // §20 round 17 — persists per PLAN (Principle 5: never nag). Dismissing one
+  // plan's action row must not hide every future plan's.
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(`${PLAN_DISMISS_KEY}${card.path}`) === "1",
+  );
   const [models, setModels] = useState<HvModel[]>([]);
   const [pick, setPick] = useState<{ provider: string; modelId: string } | null>(null);
 
@@ -141,7 +148,10 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
           </button>
           <button
             type="button"
-            onClick={() => setDismissed(true)}
+            onClick={() => {
+              localStorage.setItem(`${PLAN_DISMISS_KEY}${card.path}`, "1");
+              setDismissed(true);
+            }}
             className="rounded-lg border-2 border-line bg-card text-xs font-bold px-2.5 py-1.5 hover:bg-paper cursor-pointer"
           >
             Keep planning

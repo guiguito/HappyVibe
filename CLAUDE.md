@@ -776,6 +776,32 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   in the code editor" link. The guard (`/^[a-z][a-z0-9+.-]*:\/\//i` → null) lives in
   `resolveCardPath` (tabs.ts), not in the card: that function is the single place that answers "is
   this a file of ours", and every caller routes through it. Pinned in `tests/tabs.test.ts`.
+- **Guidance has FOUR shared components and each one's copy is a record with a no-dead-copy test
+  (§20 round 17).** `EmptyState` (one visual tier, the dashed box — there is no illustrated tier and
+  a second would be a second thing to keep consistent), `Banner` (three tones, and a test refuses to
+  let plan mode through it, because Principle 10's banner→pill migration should not be relitigated),
+  `GoTo` (labels DERIVED from the sidebar's `NAV`, asserted against Sidebar's SOURCE so a renamed
+  label fails rather than drifting) and `HowItWorks` (a native `<details>`, never a modal, never a
+  nav entry — round 8 deleted the Help page on purpose). `EMPTY_COPY`/`HOWTO_COPY` keys with no
+  `copy="key"` call site FAIL their test: unreferenced copy is the drift these end, and that rule
+  caught two keys written from the proposal that had no honest home. Two things that look like
+  oversights and are not: the sidebar's session list keeps inline prose (its slot also carries
+  "No matching sessions.", a search result rather than an empty state), and the global MCP page's
+  workspace pointer stays prose (from there no single workspace is the destination, so a link would
+  guess). `GoTo` cannot be a bare `setView` — App's `navigate()` also expands the sidebar's Settings
+  group (the ⌘, pattern) and must `setWsSettings` BEFORE `setView("workspace")`, or it renders the
+  previous workspace under the right title.
+- **Guidance that describes a gate is DERIVED from that gate, never re-typed beside it (§20 round 17,
+  Principle 11).** The cost of re-typing is measured: `buildPlanPrompt` told the model *"sub-agents
+  are blocked"* while `gatePlanCall` deliberately routes `subagent` to `needs-boundary` — §12's
+  capability ceiling made a read-only explorer the most useful thing a planning session can do, and
+  the prompt was never updated. It was wrong for months and NOTHING failed. `tests/how-it-works.test.ts`
+  now pins the plan-mode text against `BLOCKED_PLAN_TOOLS` *and* the prompt itself, and pins the
+  instruction-file order against Pi's own `dist/core/resource-loader.js` (`loadContextFileFromDir`'s
+  candidate list — first match per directory wins, which is why a `CLAUDE.md` beside an `AGENTS.md`
+  is never read — and `loadProjectContextFiles`, which pushes the global file then UNSHIFTS each
+  ancestor, so the project's own folder is read LAST). Re-derive that copy on a Pi pin bump; the
+  test tells you.
 - **The renderer suite has NO DOM — assert on exported data plus a source scan.** `vitest.config.ts`
   includes `tests/**/*.test.ts` only (no `.tsx`), there is no jsdom environment and
   `@testing-library/react` is not a dependency. Tests DO import from `.tsx` components

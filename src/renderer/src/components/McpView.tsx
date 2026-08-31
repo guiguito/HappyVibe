@@ -25,7 +25,7 @@ export function McpView(): React.JSX.Element {
         <h1 className="font-black text-3xl tracking-tight mb-2">MCP</h1>
         <p className="text-sm text-ink-soft mb-8">
           External MCP servers, available in every workspace. To add one for a single project
-          instead, open that workspace&apos;s settings from the sidebar.
+          instead, open that workspace&apos;s own settings.
         </p>
 
         <Section

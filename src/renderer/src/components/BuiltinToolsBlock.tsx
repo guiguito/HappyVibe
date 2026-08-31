@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Section } from "./Section";
 import { PromptRow, TogglePill } from "./PromptRow";
+import { HowItWorks } from "./HowItWorks";
 
 /** Minor 3: same phrase used in the Plan-off confirm modal and in the live
     hv:session-reloading notice (App.tsx) — reused verbatim so every control
@@ -70,6 +71,9 @@ function PlanModeRow({
         }}
         error={error}
       />
+      <div className="px-4 pb-3 -mt-1">
+        <HowItWorks copy="planMode" />
+      </div>
 
       {confirming && (
         <div

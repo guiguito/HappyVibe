@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { agentBlurb, agentTokenCost, rosterTokenCost, sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
+import { EmptyState } from "./EmptyState";
 
 /**
  * §12 (2026-08-29): five sources, because there are five. `bundled` is ours and
@@ -99,7 +100,7 @@ export function AgentsView({
         {sortedAgents === null ? (
           <p className="text-sm text-ink-soft">Loading…</p>
         ) : sortedAgents.length === 0 ? (
-          <p className="text-sm text-ink-soft">No agents found.</p>
+          <EmptyState copy="agents" />
         ) : (
           <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
             {sortedAgents.map((a) => {

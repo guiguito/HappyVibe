@@ -67,6 +67,8 @@ import type { SessionStats } from "./context";
 import { basename as tabBasename } from "./tabs";
 // Shared tool-name knowledge with the bridge (precedent: toolLabel.ts ← hv-mcp).
 import { isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
+import { Banner } from "./components/Banner";
+import { NavContext, type NavTarget } from "./components/GoTo";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -134,7 +136,8 @@ export default function App(): React.JSX.Element {
   useEffect(() => { delegationsRef.current = delegations; }, [delegations]);
   const [error, setError] = useState<string | null>(null);
   // B7: onboarding wow-flow overlay. Shown once for a brand-new user's first
-  // session (no prior sessions), re-openable from the Help affordance.
+  // session (no prior sessions). Dismissing it is permanent — §7 round 8
+  // deleted the Help entry, and §22 round 17 confirmed no re-open path.
   const [onboarding, setOnboarding] = useState(false);
   /**
    * §30: the changelog dot. TRUE only when a version the user has ACTUALLY read
@@ -2131,6 +2134,24 @@ export default function App(): React.JSX.Element {
     void window.hv.contextSnapshot(sid);
   };
 
+  // §20 round 17 — the one nav callback GoTo rides, via NavContext.
+  //
+  // MUST stay above the keyState early return: a hook after it is called on
+  // some renders and not others, and React counts. It reads keyState directly
+  // rather than `needsSetup`, which is declared below the guard.
+  //
+  // Mirrors ⌘, (openSettings): a settings page renders on activeView alone, but
+  // arriving with the sidebar's Settings group collapsed means landing
+  // somewhere with no visible sign of where you are. And a workspace
+  // destination must be selected BEFORE the view, or it renders the previously
+  // selected workspace under the right title.
+  const navigate = useCallback((t: NavTarget) => {
+    if (keyState !== "present") return;
+    if (t.workspace) setWsSettings(t.workspace);
+    if (t.view !== "chat") setSettingsOpen(true);
+    setView(t.view);
+  }, [keyState]);
+
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
   }
@@ -2262,6 +2283,7 @@ export default function App(): React.JSX.Element {
   const gridStyle = buildGridStyle(wsTabs);
 
   return (
+    <NavContext.Provider value={navigate}>
     <div className="h-full flex">
       <Sidebar
         workspaces={workspaces}
@@ -2329,20 +2351,13 @@ export default function App(): React.JSX.Element {
       />
       <main className="flex-1 min-w-0 flex flex-col">
         {error && (
-          <div className="flex items-center gap-3 px-6 py-2.5 bg-honey-soft border-b-2 border-honey/60 text-sm font-semibold">
+          <Banner tone="attention" onDismiss={() => setError(null)}>
             <span className="flex-1">{error}</span>
-            <button
-              type="button"
-              onClick={() => setError(null)}
-              className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer"
-            >
-              Dismiss
-            </button>
-          </div>
+          </Banner>
         )}
         {/* B4: permanent dangerous-mode warning with one-click off. */}
         {activeView === "chat" && selectedId && dangerous[selectedId] && (
-          <div className="flex items-center gap-3 px-6 py-2.5 bg-berry-soft border-b-2 border-berry/60 text-sm font-semibold text-berry">
+          <Banner tone="danger">
             <span className="flex-1">
               Dangerous mode is ON for this session — every tool call runs without asking.
             </span>
@@ -2353,7 +2368,7 @@ export default function App(): React.JSX.Element {
             >
               Turn off
             </button>
-          </div>
+          </Banner>
         )}
         {activeView === "models" && (
           <ModelsView
@@ -2925,6 +2940,7 @@ export default function App(): React.JSX.Element {
         />
       )}
     </div>
+    </NavContext.Provider>
   );
 }
 

@@ -3163,8 +3163,8 @@ export function registerIpc(win: BrowserWindow): void {
     return aggregate(events, filter ?? {}, readCalls);
   });
 
-  // B7 onboarding: "seen the wow-flow" flag lives in config (userData), shown
-  // once, re-openable from the Help affordance.
+  // B7 onboarding: "seen the wow-flow" flag lives in config (userData). Shown
+  // once, and once only — there is no re-open path (§22 round 17).
   ipcMain.handle("hv:get-onboarding-seen", () => getOnboardingSeen());
   ipcMain.handle("hv:set-onboarding-seen", (_e, seen: boolean) => setOnboardingSeen(!!seen));
 

@@ -1,7 +1,8 @@
 /** B7 wow-flow (PRD §22). A dismissible, skippable checklist layered over the
  * REAL app — it points at the live agent trace + context gauge that ARE the
  * product. It never blocks or fakes the UI. Shown once (persisted via
- * hv.setOnboardingSeen), re-openable from the Help affordance. */
+ * hv.setOnboardingSeen), with NO re-open path — §7 round 8 deleted the Help
+ * entry and §22 round 17 confirmed that stands. */
 
 const STEPS: Array<{ n: string; title: string; body: string }> = [
   { n: "①", title: "Open a project", body: "Add a workspace folder in the sidebar, then start a session inside it." },

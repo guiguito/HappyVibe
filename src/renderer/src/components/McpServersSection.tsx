@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { brandIconFor } from "../toolLabel";
 import { BrandMark } from "./BrandMark";
+import { EmptyState } from "./EmptyState";
+import { HowItWorks } from "./HowItWorks";
 
 interface McpServer {
   scope: "global" | "workspace";
@@ -292,10 +294,13 @@ export function McpServersSection({
         every MCP call still goes through your permission rules.
       </p>
       {error && <div className="mb-2 text-sm font-semibold text-berry">{error}</div>}
+      {/* Explains the status badge, so it sits with the list rather than in the
+          empty branch — where there is no badge to explain. */}
+      {servers !== null && servers.length > 0 && <HowItWorks copy="mcpBadge" />}
       {servers === null ? (
         <p className="text-sm text-ink-soft">Loading…</p>
       ) : servers.length === 0 ? (
-        <p className="text-sm text-ink-soft">No MCP servers configured.</p>
+        <EmptyState copy="mcpServers" />
       ) : (
         <div className="rounded-2xl bg-card border-2 border-line shadow-sticker-lg overflow-hidden">
           {servers.map((s) => {
