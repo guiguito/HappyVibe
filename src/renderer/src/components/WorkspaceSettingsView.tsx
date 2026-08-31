@@ -6,6 +6,7 @@ import { ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./Ski
 import { PromptTemplateImportControls, PromptTemplateInspector, PromptTemplateRowPills, PromptTemplateStatusPill } from "./PromptTemplatesSection";
 import { McpServersSection } from "./McpServersSection";
 import { McpCatalogSection } from "./McpCatalogSection";
+import { GoTo } from "./GoTo";
 
 /**
  * Workspace settings (PRD §16 round 8): model override, permission rules +
@@ -395,7 +396,7 @@ function WorkspaceSkillsBlock({
 
       <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Global skills in this workspace</div>
       {globalChecklist.length === 0 ? (
-        <p className="text-xs text-ink-soft">No approved global skills yet. Approve skills in the Global skills view.</p>
+        <p className="text-xs text-ink-soft">No approved global skills yet — approve them on the <GoTo view="skills" /> page.</p>
       ) : (
         <div className="rounded-xl border-2 border-line overflow-hidden">
           {globalChecklist.map((c) => (
@@ -493,7 +494,7 @@ function WorkspacePromptTemplatesBlock({ workspace }: { workspace: string }): Re
 
       <div className="text-[11px] font-semibold text-ink-soft mb-1.5">Global prompts in this workspace</div>
       {globalChecklist.length === 0 ? (
-        <p className="text-xs text-ink-soft">No approved global prompts yet. Approve them in the Prompts view.</p>
+        <p className="text-xs text-ink-soft">No approved global prompts yet — approve them on the <GoTo view="promptTemplates" /> page.</p>
       ) : (
         <div className="rounded-xl border-2 border-line overflow-hidden">
           {globalChecklist.map((c) => (

@@ -68,6 +68,7 @@ import { basename as tabBasename } from "./tabs";
 // Shared tool-name knowledge with the bridge (precedent: toolLabel.ts ← hv-mcp).
 import { isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
 import { Banner } from "./components/Banner";
+import { NavContext, type NavTarget } from "./components/GoTo";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -2139,6 +2140,12 @@ export default function App(): React.JSX.Element {
 
   const needsSetup = keyState === "missing";
   const activeView: View = needsSetup ? "models" : view;
+  const navigate = useCallback((t: NavTarget) => {
+    if (needsSetup) return;
+    if (t.workspace) setWsSettings(t.workspace);
+    if (t.view !== "chat") setSettingsOpen(true);
+    setView(t.view);
+  }, [needsSetup]);
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
@@ -2264,6 +2271,7 @@ export default function App(): React.JSX.Element {
   const gridStyle = buildGridStyle(wsTabs);
 
   return (
+    <NavContext.Provider value={navigate}>
     <div className="h-full flex">
       <Sidebar
         workspaces={workspaces}
@@ -2920,6 +2928,7 @@ export default function App(): React.JSX.Element {
         />
       )}
     </div>
+    </NavContext.Provider>
   );
 }
 

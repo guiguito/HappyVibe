@@ -1,5 +1,6 @@
 import { fmtCost, fmtNum } from "../analytics-format";
 import { EmptyState } from "./EmptyState";
+import { GoTo } from "./GoTo";
 
 /**
  * §20 round 17 — doctrine rule 6: a fact the user needs TO DECIDE is inline, a
@@ -162,7 +163,7 @@ export function CostPanel({
           <div className="px-5 py-2.5 border-b-2 border-honey/40 bg-honey-soft text-xs text-tangerine-deep">
             <strong>{total.unknown}</strong> of {total.calls} call{total.calls === 1 ? "" : "s"} has no
             price for its model, so its cost is unknown — not zero.
-            {hasCustomUnknown && " Set $/Mtok in Settings → Custom endpoint."}
+            {hasCustomUnknown && <> Set $/Mtok on the <GoTo view="models" /> page.</>}
           </div>
         )}
 

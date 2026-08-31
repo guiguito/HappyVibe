@@ -3,6 +3,7 @@ import { joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from
 import { BuiltinToolsBlock } from "./BuiltinToolsBlock";
 import { Section } from "./Section";
 import { EmptyState } from "./EmptyState";
+import { GoTo } from "./GoTo";
 
 const PERM_TONE: Record<PermState, string> = {
   deny: "bg-berry-soft text-berry border-berry/50",
@@ -107,6 +108,11 @@ export function AllToolsView({
         <BuiltinToolsBlock onPlanChange={onPlanBuiltinChange} />
 
         <Section icon="tools" title="Tools" subtitle="Permission state comes from your rules.">
+          {/* Section's subtitle is a plain string, so the pointer lives here —
+              §20 round 17: a pointer to another page is a link that goes there. */}
+          <p className="text-sm text-ink-soft -mt-2 mb-4">
+            Change them on the <GoTo view="permissions" /> page.
+          </p>
           {toolRows === null ? (
             <p className="text-sm text-ink-soft">Loading…</p>
           ) : toolRows.length === 0 ? (

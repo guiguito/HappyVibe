@@ -727,6 +727,18 @@ git add -A && git commit -m "refactor(guidance): one banner, four call sites, co
 
 ### Task 5: `GoTo` — every cross-page pointer is a link
 
+> **Corrected during implementation (2026-08-31).** Two notes.
+>
+> 1. **A sixth phrasing existed** that the audit missed: `CostPanel.tsx`'s unknown-price banner said
+>    *"Set $/Mtok in Settings → Custom endpoint."* It is a link now and is in the retirement scan.
+> 2. **McpView's workspace pointer stays prose, deliberately.** From the GLOBAL MCP page there is no
+>    single workspace to navigate to — the user has to pick one — so a link would have to guess.
+>    "Open that workspace's own settings" names the destination without pretending to know which.
+>    That is the honest form of the rule, not an exception to it.
+> 3. **All Tools' pointer is a child line, not the subtitle.** `Section`'s `subtitle` is typed
+>    `string`, so it cannot carry a link; widening the shared component's API for one call site is
+>    the wrong trade. The link sits as the section's first child instead.
+
 **Files:**
 - Create: `src/renderer/src/components/GoTo.tsx` (component + `NavContext`)
 - Create: `tests/go-to.test.ts`
