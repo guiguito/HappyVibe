@@ -3073,7 +3073,7 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   /**
-   * §19 (2026-08-30) — "On your behalf": the three model calls the app makes
+   * §19 (2026-08-30) — "AI autofill": the three model calls the app makes
    * without a session. Same read-only-prompt-plus-append contract as
    * hv:builtin-prompt right above, deliberately: it is PRD §13 round 6's rule,
    * inherited rather than re-decided.

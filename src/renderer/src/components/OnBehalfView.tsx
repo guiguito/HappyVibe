@@ -4,7 +4,7 @@ import { ASSISTANT_TASKS_CHANGED, PromptRow } from "./PromptRow";
 import { Section } from "./Section";
 
 /**
- * §19 (2026-08-30) — "On your behalf".
+ * §19 (2026-08-30) — "AI autofill" (named "On your behalf" until round 18).
  *
  * HappyVibe makes three model calls the user never asks for by name: it names a
  * session, drafts a commit message, drafts a pull request. Round 15 made them
@@ -94,7 +94,7 @@ export function OnBehalfView(): React.JSX.Element {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
-        <h1 className="font-black text-3xl tracking-tight mb-2">On your behalf</h1>
+        <h1 className="font-black text-3xl tracking-tight mb-2">AI autofill</h1>
         <p className="text-sm text-ink-soft mb-8">
           Three things HappyVibe asks a model to do without being told to: naming a session, drafting a commit
           message, drafting a pull request. Each runs on its own, outside every session — nothing enters a transcript

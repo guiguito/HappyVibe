@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from "../agents";
-import { BuiltinToolsBlock } from "./BuiltinToolsBlock";
 import { Section } from "./Section";
 import { EmptyState } from "./EmptyState";
 import { GoTo } from "./GoTo";
@@ -10,9 +9,6 @@ const PERM_TONE: Record<PermState, string> = {
   ask: "bg-honey-soft text-tangerine-deep border-honey/60",
   allow: "bg-leaf-soft text-leaf border-leaf/50",
 };
-
-/** v5: how many tools to show before the "Show more" toggle. */
-const TOOLS_PREVIEW = 10;
 
 /** Round 4 #5: a tool row that expands to show the full (often-truncated)
     description, source path, and permission state. */
@@ -55,24 +51,23 @@ function ToolRowItem({ t }: { t: ToolRow }): React.JSX.Element {
  * Lists every built-in tool with its current permission state (joined from the
  * B4 rules via hv:eval-rules — read-only here; rules are edited in Settings).
  *
- * §13 round 6: BuiltinToolsBlock (its own file — see BuiltinToolsBlock.tsx)
- * is prepended above this list as a second top-level Section.
+ * §13 round 18: the BuiltinToolsBlock that used to sit above this list moved
+ * to its own page. The two halves were unrelated — destructive global switches
+ * over a read-only inventory — and only this half is "everything the agent can
+ * call". Renamed "Agent tools" for the same reason: "All Tools" read as though
+ * it were the complete catalogue of what HappyVibe offers, which is the OTHER
+ * page.
  */
 export function AllToolsView({
   tools,
   sessionId,
   workspaceId,
-  onPlanBuiltinChange,
 }: {
   tools: ToolInfo[] | null;
   sessionId: string | null;
   workspaceId: string | null;
-  /** Important 1: lets App keep the composer chip's visibility in sync when
-      Plan mode is toggled here, without a page navigation round-trip. */
-  onPlanBuiltinChange?: (on: boolean) => void;
 }): React.JSX.Element {
   const [toolRows, setToolRows] = useState<ToolRow[] | null>(null);
-  const [showAllTools, setShowAllTools] = useState(false); // v5: tools list shows 10, then "Show more"
 
   // Refresh the tool inventory on mount (fire-and-forget; results stream back
   // as an hv.tools notify the parent captures).
@@ -97,15 +92,11 @@ export function AllToolsView({
     };
   }, [tools, workspaceId]);
 
-  const visibleTools = toolRows && !showAllTools ? toolRows.slice(0, TOOLS_PREVIEW) : toolRows;
-
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
-        <h1 className="font-black text-3xl tracking-tight mb-2">All Tools</h1>
-        <p className="text-sm text-ink-soft mb-8">Everything the agent can call.</p>
-
-        <BuiltinToolsBlock onPlanChange={onPlanBuiltinChange} />
+        <h1 className="font-black text-3xl tracking-tight mb-2">Agent tools</h1>
+        <p className="text-sm text-ink-soft mb-8">Everything the agent can call, and whether it is allowed to.</p>
 
         <Section icon="tools" title="Tools" subtitle="Permission state comes from your rules.">
           {/* Section's subtitle is a plain string, so the pointer lives here —
@@ -118,22 +109,14 @@ export function AllToolsView({
           ) : toolRows.length === 0 ? (
             <EmptyState copy="tools" />
           ) : (
-            <>
-              <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
-                {visibleTools!.map((t) => (
-                  <ToolRowItem key={t.name} t={t} />
-                ))}
-              </div>
-              {toolRows.length > TOOLS_PREVIEW && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllTools((s) => !s)}
-                  className="mt-3 text-xs font-bold rounded-lg border-2 border-line px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
-                >
-                  {showAllTools ? "Show fewer" : `Show all ${toolRows.length} tools`}
-                </button>
-              )}
-            </>
+            // Round 18: the whole list, always. A page whose one job is
+            // "everything the agent can call" must not hide most of it behind
+            // a toggle — the rows are cheap and the page already scrolls.
+            <div className="rounded-2xl bg-card border-2 border-line shadow-sticker overflow-hidden">
+              {toolRows.map((t) => (
+                <ToolRowItem key={t.name} t={t} />
+              ))}
+            </div>
           )}
         </Section>
       </div>

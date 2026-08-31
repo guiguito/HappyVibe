@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 /**
  * One expandable row: a switch, a read-only prompt, and an append box.
  *
- * Extracted from BuiltinToolsBlock (§13 round 6) when §19's "On your behalf"
+ * Extracted from BuiltinToolsBlock (§13 round 6) when §19's "AI autofill"
  * page needed the SAME shape for the three model calls the app makes without a
  * session. Two pages, one row — a second copy would drift, and the thing that
  * drifts here is the sentence explaining why the prompt cannot be edited.

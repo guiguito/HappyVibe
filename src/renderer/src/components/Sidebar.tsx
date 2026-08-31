@@ -10,7 +10,9 @@ import { BrandLogo } from "./BrandLogo";
 export type View =
   // §24: Commands sits beside Skills — same trust model, its own page.
   // §25: Plugins sits above them — it is where skills/prompts/servers come FROM.
-  | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools"
+  // §13 round 18: "tools" (the gated inventory) and "builtinTools" (the app's
+  // own agent features) were one page that did two unrelated jobs.
+  | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools" | "builtinTools"
   // Round 8: the settings scroll exploded into pages, each its own destination.
   // §19 (2026-08-30): the model calls the app makes without a session.
   // §30: the changelog is product state, like stats and audit.
@@ -193,13 +195,32 @@ function KeyboardIcon(): React.JSX.Element {
  * `NAV.filter(n => n.group === g.id)`, and a test pins group members as
  * contiguous so NAV alone decides the order.
  */
-export type NavGroup = "setup" | "allowed" | "did" | "app";
+export type NavGroup = "abilities" | "rules" | "app" | "record";
 
+/**
+ * Headers are short NOUNS, in the same small-caps style as the `WORKSPACES`
+ * label above them — that is the sidebar's existing section idiom, and the
+ * first cut broke it with four different grammatical shapes ("Set up your
+ * agent", "What it's allowed to do", "What it did", "This app": an imperative,
+ * a relative clause, a clause, a demonstrative). A column of mismatched forms
+ * reads as arbitrary however good each name is on its own.
+ *
+ * Order applies round 12's own rule one level up: "the three you consult
+ * rather than change sit at the bottom" — THE RECORD *is* that block (§30
+ * calls it "consulted, not changed"), so it goes last.
+ */
 export const GROUPS: Array<{ id: NavGroup; label: string }> = [
-  { id: "setup", label: "Set up your agent" },
-  { id: "allowed", label: "What it's allowed to do" },
-  { id: "did", label: "What it did" },
-  { id: "app", label: "This app" },
+  { id: "abilities", label: "Abilities" },
+  // The three pages that answer "am I still in charge": what it may do, which
+  // tools it has and whether they are allowed, and what it is told before every
+  // turn. "Ground rules" was tried and read as jargon; "Control" is the word a
+  // nervous beginner actually reaches for, and it covers the system prompt —
+  // which is NOT a permission, so "What it's allowed to do" was filing it
+  // wrongly.
+  { id: "rules", label: "Control" },
+  // What HappyVibe does, as distinct from what the agent does.
+  { id: "app", label: "App features" },
+  { id: "record", label: "The record" },
 ];
 
 /**
@@ -211,33 +232,41 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   // Everything you GIVE the agent. Models leads because a beginner can do
   // nothing before it and ⌘, already lands there; §25 leads the capability
   // pages, being the source the three below it get their contents from.
-  { view: "models", label: "Models", Icon: ModelsIcon, group: "setup" },
-  { view: "plugins", label: "Plugins", Icon: PluginsIcon, group: "setup" },
-  { view: "skills", label: "Skills", Icon: SkillsIcon, group: "setup" },
-  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "setup" },
-  { view: "mcp", label: "MCP", Icon: McpIcon, group: "setup" },
-  { view: "agents", label: "Agents", Icon: AgentsIcon, group: "setup" },
-  // The boundary — grouping these is what makes the product's own thesis
-  // legible in the nav. Permissions leads ahead of All Tools, inverting round
-  // 12's flat order: it is the more often reached of the two, and it is the
-  // group's thesis rather than an inventory.
-  { view: "permissions", label: "Permissions", Icon: PermissionsIcon, group: "allowed" },
-  { view: "tools", label: "All Tools", Icon: ToolsIcon, group: "allowed" },
-  { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon, group: "allowed" },
-  // The retrospective surfaces, which round 12 had scattered across positions
-  // 10, 15 and 16. §19's "On your behalf" leads: it is the one a user reaches
-  // for without already knowing it exists.
-  { view: "onBehalf", label: "On your behalf", Icon: OnBehalfIcon, group: "did" },
-  { view: "stats", label: "Stats", Icon: StatsIcon, group: "did" },
-  { view: "audit", label: "Audit log", Icon: AuditIcon, group: "did" },
-  // Preferences and chrome. Nothing here is about the agent. Shortcuts are
-  // EDITABLE since round 8, so they are configuration rather than a reference
-  // table; §30's changelog is product state, and closes the group as the
-  // least often reached page in the app.
+  { view: "models", label: "Models", Icon: ModelsIcon, group: "abilities" },
+  { view: "plugins", label: "Plugins", Icon: PluginsIcon, group: "abilities" },
+  { view: "skills", label: "Skills", Icon: SkillsIcon, group: "abilities" },
+  { view: "promptTemplates", label: "Prompts", Icon: PromptTemplatesIcon, group: "abilities" },
+  { view: "mcp", label: "MCP", Icon: McpIcon, group: "abilities" },
+  { view: "agents", label: "Agents", Icon: AgentsIcon, group: "abilities" },
+  // Trails its group by round 12's frequency rule: these are on by default and
+  // most users never open the page. It IS a capability page though — these are
+  // abilities HappyVibe gives the agent, like Skills and MCP above it.
+  { view: "builtinTools", label: "Built-in tools", Icon: BuiltinToolsIcon, group: "abilities" },
+  // Permissions leads ahead of All Tools, inverting round 12's flat order: it
+  // is the more often reached of the two, and it is the group's thesis rather
+  // than an inventory. System prompt closes it — the standing instructions
+  // that shape every session, beside the rules that bound them.
+  { view: "permissions", label: "Permissions", Icon: PermissionsIcon, group: "rules" },
+  // "All Tools" claimed to be the complete catalogue while the switches for
+  // half of it lived on the same page; it is the gated INVENTORY, so it says so
+  // and sits beside the rules that gate it.
+  { view: "tools", label: "Agent tools", Icon: ToolsIcon, group: "rules" },
+  { view: "sysprompt", label: "System prompt", Icon: SysPromptIcon, group: "rules" },
+  // Things the APP does for you. Terminal and Voice are surfaces you use
+  // daily; the two configure-once pages trail. §19's page lives here rather
+  // than with the records because it is not one: it carries a per-task
+  // (model, append, on/off) record, so it CONFIGURES app behaviour.
   { view: "terminal", label: "Terminal", Icon: TerminalIcon, group: "app" },
   { view: "voice", label: "Voice", Icon: VoiceIcon, group: "app" },
   { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon, group: "app" },
-  { view: "changelog", label: "Changelog", Icon: ChangelogIcon, group: "app" },
+  // "AI" is the app's ONLY use of the word, and it earns the exception: it is
+  // an adjective separating GENERATED text from the browser-autofill sense of
+  // remembered text, not a second name for "the agent" or "the model".
+  { view: "onBehalf", label: "AI autofill", Icon: OnBehalfIcon, group: "app" },
+  // Consulted, not changed (§30's own phrase) — the read-only surfaces.
+  { view: "stats", label: "Stats", Icon: StatsIcon, group: "record" },
+  { view: "audit", label: "Audit log", Icon: AuditIcon, group: "record" },
+  { view: "changelog", label: "Changelog", Icon: ChangelogIcon, group: "record" },
 ];
 
 /** The group a destination lives in — `null` for the views that are not in the
@@ -272,6 +301,19 @@ function SearchIcon(): React.JSX.Element {
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+/** §13 round 18: sliders, because this page is switches — deliberately NOT the
+    wrench `ToolsIcon` uses, so the two tool pages never read as the same row. */
+function BuiltinToolsIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
+      <circle cx="16" cy="6" r="2" />
+      <circle cx="10" cy="12" r="2" />
+      <circle cx="18" cy="18" r="2" />
     </svg>
   );
 }

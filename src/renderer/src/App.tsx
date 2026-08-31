@@ -43,6 +43,7 @@ import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
+import { BuiltinToolsView } from "./components/BuiltinToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
@@ -2455,13 +2456,9 @@ export default function App(): React.JSX.Element {
         {activeView === "voice" && <VoiceView settings={voiceSettings} onChange={setVoiceSettings} />}
         {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
         {activeView === "tools" && (
-          <AllToolsView
-            tools={tools}
-            sessionId={selectedId}
-            workspaceId={selected?.workspaceId ?? null}
-            onPlanBuiltinChange={setPlanBuiltinOn}
-          />
+          <AllToolsView tools={tools} sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
         )}
+        {activeView === "builtinTools" && <BuiltinToolsView onPlanBuiltinChange={setPlanBuiltinOn} />}
         {/* W2.2: the chat area stays MOUNTED (hidden) on other views so open
             editor buffers and chat state survive a Settings detour. Center is
             tabbed: chat tab + file tabs; the docked file tree sits to the

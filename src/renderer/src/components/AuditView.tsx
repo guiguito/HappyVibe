@@ -216,7 +216,7 @@ export function AuditView({
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Audit log</h1>
-        <p className="text-sm text-ink-soft mb-2">Every permission decision — and every model call the app made on your behalf — per session and per workspace.</p>
+        <p className="text-sm text-ink-soft mb-2">Every permission decision — and every model call the app made for you, without being asked — per session and per workspace.</p>
         <p className="text-sm text-ink-soft mb-6">{AUDIT_COPY.wouldHave}</p>
 
         <div className="flex gap-3 mb-5">

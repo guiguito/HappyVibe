@@ -25,7 +25,7 @@ interface Builtins {
 }
 
 /** Plan mode's row. The prompt panel and the append box are PromptRow's, shared
-    with §19's "On your behalf" page; what stays here is the one thing this row
+    with §19's "AI autofill" page; what stays here is the one thing this row
     does differently — turning it OFF asks first, because that unregisters three
     tools and respawns live sessions. */
 function PlanModeRow({
