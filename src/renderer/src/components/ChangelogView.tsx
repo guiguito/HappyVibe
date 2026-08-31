@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 // §30: the bundled notes. `?raw` inlines the file into the renderer bundle at
@@ -21,15 +20,7 @@ import changelog from "../../../../CHANGELOG.md?raw";
  * Explicitly not here: any check for a newer version. That needs a publish feed
  * the app does not have, and claiming to know would be a lie.
  */
-export function ChangelogView({ onSeen }: { onSeen: () => void }): React.JSX.Element {
-  // Opening the page IS reading it — that is what clears the dot. Runs once on
-  // mount; the page has no other state and nothing re-raises the flag while it
-  // is open.
-  useEffect(() => {
-    onSeen();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+export function ChangelogView(): React.JSX.Element {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">

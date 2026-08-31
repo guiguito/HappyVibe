@@ -239,16 +239,6 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
   );
 }
 
-/**
- * §30: the unread-changelog marker. Passive by construction — no count, no
- * colour that reads as an error, and nothing to dismiss but reading the page.
- * Deliberately NOT the pending-permission badge next door: that one carries a
- * number because a blocked turn is waiting on you.
- */
-function UnreadDot(): React.JSX.Element {
-  return <span className="size-2 rounded-full bg-tangerine shrink-0" aria-label="unread" />;
-}
-
 function TrashIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -422,7 +412,6 @@ export function Sidebar({
   onDeleteSession,
   settingsOpen,
   onToggleSettingsOpen,
-  changelogUnread,
   railCollapsed,
   onToggleCollapsed,
 }: {
@@ -446,7 +435,6 @@ export function Sidebar({
   settingsOpen: boolean;
   onToggleSettingsOpen: () => void;
   /** §30: an unread changelog — a passive dot, never a modal. */
-  changelogUnread: boolean;
   /** F6: slim icon-rail mode + its toggle (⌘\); state persisted in App. */
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
@@ -791,11 +779,6 @@ export function Sidebar({
           <span className="text-left">Settings</span>
           <Chevron open={settingsOpen} />
           <span className="flex-1" />
-          {/* §30: the dot bubbles up through collapse the user did not choose.
-              A closed group hides the Changelog row, so the marker surfaces
-              here — but the ⌘\ icon rail (handled far above) is an explicit
-              "hide the sidebar" gesture and deliberately shows nothing. */}
-          {changelogUnread && !settingsOpen && <UnreadDot />}
         </button>
         {settingsOpen && (
           <div className="mt-1 flex flex-col min-h-0 overflow-y-auto">
@@ -810,7 +793,6 @@ export function Sidebar({
                 >
                   <n.Icon />
                   <span className="flex-1 text-left">{n.label}</span>
-                  {n.view === "changelog" && changelogUnread && <UnreadDot />}
                 </button>
               </div>
             ))}

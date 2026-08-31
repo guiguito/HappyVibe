@@ -139,22 +139,6 @@ export default function App(): React.JSX.Element {
   // session (no prior sessions). Dismissing it is permanent — §7 round 8
   // deleted the Help entry, and §22 round 17 confirmed no re-open path.
   const [onboarding, setOnboarding] = useState(false);
-  /**
-   * §30: the changelog dot. TRUE only when a version the user has ACTUALLY read
-   * differs from this one — never when nothing has been recorded, because that
-   * is a fresh install (or an existing install meeting this feature for the
-   * first time) and neither has been *updated*. That case is seeded silently
-   * below, which is why 0.1.0 shows a dot to nobody.
-   */
-  const [changelogUnread, setChangelogUnread] = useState(false);
-  // Decided once at startup. `null` = never recorded, so seed it and show
-  // nothing; only a version differing from one actually READ raises the dot.
-  useEffect(() => {
-    void window.hv.getLastSeenVersion().then((seen) => {
-      if (seen === null) void window.hv.setLastSeenVersion(__APP_VERSION__);
-      else setChangelogUnread(seen !== __APP_VERSION__);
-    });
-  }, []);
   // W1.4: workspace whose settings modal is open (gear on a sidebar workspace row).
   const [wsSettings, setWsSettings] = useState<string | null>(null);
   // W2.2: center tabs (chat + open files), PER-WORKSPACE — switching sessions
@@ -1810,12 +1794,6 @@ export default function App(): React.JSX.Element {
     void window.hv.setOnboardingSeen(true);
   };
 
-  // §30: opening the Changelog page IS reading it.
-  const markChangelogSeen = (): void => {
-    setChangelogUnread(false);
-    void window.hv.setLastSeenVersion(__APP_VERSION__);
-  };
-
   /**
    * Load a session's history (and start/resume its Pi process), once.
    *
@@ -2344,7 +2322,6 @@ export default function App(): React.JSX.Element {
           });
         }}
         settingsOpen={settingsOpen}
-        changelogUnread={changelogUnread}
         onToggleSettingsOpen={() => setSettingsOpen((o) => !o)}
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
@@ -2406,7 +2383,7 @@ export default function App(): React.JSX.Element {
         {activeView === "onBehalf" && <OnBehalfView />}
         {activeView === "stats" && <DashboardView workspaces={workspaces} />}
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
-        {activeView === "changelog" && <ChangelogView onSeen={markChangelogSeen} />}
+        {activeView === "changelog" && <ChangelogView />}
         {activeView === "skills" && (
           <SkillsView
             sessionId={selectedId}

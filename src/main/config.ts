@@ -24,14 +24,10 @@ interface ConfigFile {
   defaultThinking?: string;
   /** B7: user has seen (or dismissed) the onboarding wow-flow. */
   onboardingSeen?: boolean;
-  /**
-   * §30: the app version whose changelog the user has read. `undefined` means
-   * never recorded — which is a fresh install AND an existing install meeting
-   * this feature for the first time. Neither has been *updated*, so both must
-   * show no dot; the renderer seeds it silently rather than treating absence
-   * as "all of it is new".
-   */
-  lastSeenVersion?: string;
+  // §30 round 18: the changelog dot's stored version lived here and is gone
+  // with the dot. A stale key left in an existing config.json is inert —
+  // nothing reads it and `load()` does not validate unknown fields — so there
+  // is no migration.
   /** Round 3 #14: persistent "bypass all permissions" — global default + per-
       workspace override (tri-state: absent = inherit global). */
   bypassAll?: boolean;
@@ -276,19 +272,6 @@ export function getOnboardingSeen(): boolean {
 export function setOnboardingSeen(seen: boolean): void {
   const cfg = load();
   cfg.onboardingSeen = seen;
-  save(cfg);
-}
-
-// §30: the changelog dot's flag. Same chain as onboardingSeen above, holding a
-// string instead of a boolean — "have you read THIS version's notes" is not a
-// yes/no that survives the next release.
-export function getLastSeenVersion(): string | null {
-  return load().lastSeenVersion ?? null;
-}
-
-export function setLastSeenVersion(version: string): void {
-  const cfg = load();
-  cfg.lastSeenVersion = version;
   save(cfg);
 }
 
