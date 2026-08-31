@@ -631,9 +631,27 @@ export default function App(): React.JSX.Element {
     appendItem(sid, { kind: "assistant", text });
   };
 
+  /**
+   * B3: any configured provider (a BYOK key, an OAuth login, a usable custom
+   * endpoint, a local runner listening) passes the gate — main decides, in
+   * anyProviderConfigured().
+   *
+   * §22 round 19: this is a PUSH, not a one-shot read. `hv:providers-changed`
+   * already existed and only ChatView consumed it, so signing in anywhere but
+   * the Models page left this state stale until a reload — and the onboarding
+   * wizard's step-1 checkmark derives from exactly this state, inside a dialog
+   * the user never leaves.
+   */
+  const refreshKeyState = useCallback((): void => {
+    void window.hv.hasAnyProvider().then((ok) => setKeyState(ok ? "present" : "missing"));
+  }, []);
+
   useEffect(() => {
-    // B3: any configured provider (BYOK key, OAuth login, local Ollama) passes the gate.
-    window.hv.hasAnyProvider().then((ok) => setKeyState(ok ? "present" : "missing"));
+    refreshKeyState();
+    return window.hv.onProvidersChanged(refreshKeyState);
+  }, [refreshKeyState]);
+
+  useEffect(() => {
     window.hv.listWorkspaces().then(setWorkspaces);
     window.hv.listSessions().then(setSessions);
     /**
