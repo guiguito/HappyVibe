@@ -383,7 +383,7 @@ export function ModelsView({
           </>
         )}
 
-        <Section icon="models" title="Providers" subtitle="Sign in with a plan, add an API key, or point at a local server.">
+        <Section icon="providers" title="Providers" subtitle="Sign in with a plan, add an API key, or point at a local server.">
           {/* Configured summary */}
           {configured.length === 0 ? (
             <p className="text-sm text-ink-soft mb-3">No providers configured yet — add one below.</p>

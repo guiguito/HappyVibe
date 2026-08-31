@@ -307,3 +307,67 @@ describe("the two record icons are not the same drawing", () => {
     expect(body("AuditIcon")).not.toContain("a1 1 0 0 1 1-1h9l4 4");
   });
 });
+
+describe("no two rows draw the same glyph", () => {
+  const SB = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "src", "renderer", "src", "components", "Sidebar.tsx"),
+    "utf8",
+  );
+  /** The shape data an icon component renders, normalised. */
+  const drawing = (fn: string): string => {
+    const at = SB.indexOf(`function ${fn}()`);
+    if (at < 0) throw new Error(`no icon component ${fn}`);
+    const svg = SB.slice(at, SB.indexOf("</svg>", at));
+    return (svg.match(/(?:d|cx|cy|r|x|y|width|height)="[^"]*"/g) ?? []).join("|");
+  };
+
+  it("every NAV row has a distinct drawing, not merely a distinct function", () => {
+    // `PromptTemplatesIcon` and `TerminalIcon` were byte-identical: two
+    // different components, one picture. Comparing function identity would
+    // have passed, which is why this compares the shapes.
+    const names = (SB.match(/Icon: (\w+)/g) ?? []).map((m) => m.replace("Icon: ", ""));
+    const seen = new Map<string, string>();
+    for (const n of new Set(names)) {
+      const d = drawing(n);
+      const clash = seen.get(d);
+      expect(clash, `${n} draws the same picture as ${clash}`).toBeUndefined();
+      seen.set(d, n);
+    }
+  });
+});
+
+describe("section icons are distinct too", () => {
+  const SEC = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "src", "renderer", "src", "components", "Section.tsx"),
+    "utf8",
+  );
+
+  it("no two SECTION_ICONS entries draw the same picture", () => {
+    const block = SEC.slice(SEC.indexOf("SECTION_ICONS"), SEC.indexOf("\n};", SEC.indexOf("SECTION_ICONS")));
+    const entries = [...block.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]);
+    expect(entries.length).toBeGreaterThan(5);
+    const seen = new Map<string, string>();
+    for (const name of entries) {
+      const at = block.indexOf(`${name}:`);
+      const next = entries
+        .map((e) => block.indexOf(`\n  ${e}:`))
+        .filter((i) => i > at)
+        .sort((a, b) => a - b)[0] ?? block.length;
+      const shapes = (block.slice(at, next).match(/d="[^"]*"/g) ?? []).join("|");
+      if (!shapes) continue;
+      const clash = seen.get(shapes);
+      expect(clash, `section icon "${name}" draws the same picture as "${clash}"`).toBeUndefined();
+      seen.set(shapes, name);
+    }
+  });
+
+  it("Providers and Default model do not share a glyph on the Models page", () => {
+    // They both used `models` — one page, two sections, one picture.
+    const MV = fs.readFileSync(
+      path.join(import.meta.dirname, "..", "src", "renderer", "src", "components", "ModelsView.tsx"),
+      "utf8",
+    );
+    expect(MV).toContain('icon="providers" title="Providers"');
+    expect(SEC).toContain("providers: (");
+  });
+});

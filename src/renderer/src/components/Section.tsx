@@ -21,6 +21,17 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
       <path d="M12 4v4M9 13h.01M15 13h.01M2 12h3M19 12h3" />
     </>
   ),
+  /** §16: a link — a provider is something you CONNECT to, whether by signing
+      in with a plan, pasting a key, or pointing at a local server. The
+      Providers section used `models` (the chip), which meant one page drew the
+      same glyph for "Providers" and "Default model"; the chip stays with the
+      model, where it belongs. */
+  providers: (
+    <>
+      <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+      <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+    </>
+  ),
   models: (
     <>
       <rect x="6" y="6" width="12" height="12" rx="2" />

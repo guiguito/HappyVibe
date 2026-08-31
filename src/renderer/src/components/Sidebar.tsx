@@ -54,11 +54,17 @@ function PluginsIcon(): React.JSX.Element {
     </svg>
   );
 }
+/** §24: stacked cards — a prompt template is a REUSABLE saved thing.
+    It used to be the `>_` chevron, byte-identical to `TerminalIcon` two groups
+    down, so two nav rows drew the same glyph; `SysPromptIcon` is a third
+    member of that family. The terminal keeps the chevron (it is a terminal),
+    and this one leaves the family entirely rather than becoming a fourth
+    variation on it. */
 function PromptTemplatesIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 17l6-5-6-5" />
-      <path d="M12 19h8" />
+      <rect x="8" y="3" width="13" height="13" rx="2" />
+      <path d="M16 21H5a2 2 0 0 1-2-2V8" />
     </svg>
   );
 }
