@@ -52,7 +52,7 @@ import {
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDER_IDS, detectLocalRunner, detectOllama, fetchEndpointModels, LOCAL_RUNNERS, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
+  anyProviderConfigured, authJsonProviders, BYOK_PROVIDER_IDS, detectLocalRunner, detectOllama, fetchEndpointModels, LOCAL_RUNNERS, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
@@ -3199,12 +3199,23 @@ export function registerIpc(win: BrowserWindow): void {
     providersChanged();
   });
 
-  // First-run gate: any BYOK key, any auth.json credential, or local Ollama.
+  // First-run gate: any BYOK key, any auth.json credential, any usable custom
+  // endpoint, or a local runner listening. The last two were missing until the
+  // §22 onboarding round — syncModelsJson writes LM Studio / llama.cpp into
+  // models.json before every spawn, so those users had a working model and were
+  // still told to go and configure one.
   ipcMain.handle("hv:has-any-provider", async () => {
-    const status = providerKeyStatus();
-    if (Object.values(status).some(Boolean)) return true;
-    if (authJsonProviders(agentDir()).length > 0) return true;
-    return (await detectOllama()).running;
+    const [ollama, ...runners] = await Promise.all([
+      detectOllama(),
+      ...LOCAL_RUNNERS.map((r) => detectLocalRunner(r)),
+    ]);
+    return anyProviderConfigured({
+      keyStatus: providerKeyStatus(),
+      authProviders: authJsonProviders(agentDir()),
+      customEndpoints: listCustomEndpoints(),
+      customKeyStatus: customKeyStatus(),
+      localRunning: ollama.running || runners.some((r) => r.running),
+    });
   });
 
   // Explicit renderer request only; auth URLs from Pi's OAuth flows.
