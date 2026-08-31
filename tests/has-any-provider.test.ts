@@ -93,3 +93,37 @@ describe("a local runner needs MODELS, not just a listening port", () => {
     expect(/localRunning:[^,]*\.running/.test(handler), "no bare .running").toBe(false);
   });
 });
+
+describe("a configured provider always resolves to SOME model", () => {
+  const IPC = fs.readFileSync(path.resolve(__dirname, "../src/main/ipc.ts"), "utf8");
+
+  it("providersChanged fills a null default", () => {
+    // Measured on a fresh profile: two keys, 348 models offered, defaultModel
+    // null — so the first session died on §16 finding 7's refusal, which told
+    // the user to add a provider they had just added. ModelsView also HIDES its
+    // Default-model section while firstRun is true, so that path could not set
+    // one at all.
+    const i = IPC.indexOf("const providersChanged");
+    expect(IPC.slice(i, i + 200).includes("ensureDefaultModel()"), "hooked").toBe(true);
+  });
+
+  it("only ever fills a NULL default — it cannot fight the user's choice", () => {
+    const i = IPC.indexOf("const ensureDefaultModel");
+    const body = IPC.slice(i, i + 1400);
+    expect(body.includes("if (getDefaultModel()) return;"), "null guard").toBe(true);
+    // The guard is also what stops it looping back through providersChanged.
+    expect(body.includes("providersChanged()"), "no recursion").toBe(false);
+  });
+
+  it("picks from the user's OWN providers — no hardcoded model id", () => {
+    // This is the line §16 finding 7 forbade. It must not come back.
+    const i = IPC.indexOf("const ensureDefaultModel");
+    const body = IPC.slice(i, i + 1400);
+    expect(/deepseek-v4|gpt-4|claude-3|"anthropic"/.test(body), "no hardcoded model").toBe(false);
+    expect(body.includes("get_available_models"), "asks Pi").toBe(true);
+  });
+
+  it("runs once at boot too — an env key never passes through providersChanged", () => {
+    expect(IPC.includes("await ensureDefaultModel();"), "boot pass").toBe(true);
+  });
+});

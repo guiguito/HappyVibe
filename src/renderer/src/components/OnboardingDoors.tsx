@@ -33,7 +33,22 @@ interface LocalDoor {
   label: string;
 }
 
-export function ProviderDoors({ onChanged }: { onChanged: () => void }): React.JSX.Element {
+export function ProviderDoors({
+  onChanged,
+  onNote,
+}: {
+  onChanged: () => void;
+  /**
+   * What the provider said about the key, lifted OUT of this component.
+   *
+   * `setProviderKey` saves the key whatever the answer, so a typo'd key still
+   * flips `hv:has-any-provider` — step 1 checks, this whole component unmounts,
+   * and the refusal it just rendered disappears with it. Measured: a bogus
+   * Anthropic key checked step 1 and showed nothing at all. The note has to
+   * outlive the collapse, so the dialog owns it.
+   */
+  onNote: (note: string | null) => void;
+}): React.JSX.Element {
   const [oauth, setOauth] = useState<HvOAuthProvider[]>([]);
   const [featured, setFeatured] = useState<HvByokProvider[]>([]);
   const [local, setLocal] = useState<LocalDoor[]>([]);
@@ -103,9 +118,10 @@ export function ProviderDoors({ onChanged }: { onChanged: () => void }): React.J
     const probe = await window.hv.setProviderKey(keyId, key);
     setSaving(false);
     setKeyText("");
-    setKeyNote(
-      probe.status === "bad" ? probe.error : probe.status === "unverified" ? C.step1KeyUnverified : null,
-    );
+    const note =
+      probe.status === "bad" ? probe.error : probe.status === "unverified" ? C.step1KeyUnverified : null;
+    setKeyNote(note);
+    onNote(note);
     onChanged();
   };
 
@@ -122,8 +138,10 @@ export function ProviderDoors({ onChanged }: { onChanged: () => void }): React.J
       {oauth
         .filter((p) => p.caveat)
         .map((p) => (
+          // Main's own string, unprefixed — it already names the plan it is
+          // about, and "Claude: Heads up: on Claude Pro/Max…" said it twice.
           <p key={p.id} className="text-xs text-ink-soft mt-1.5">
-            {p.label}: {p.caveat}
+            {p.caveat}
           </p>
         ))}
 
@@ -152,7 +170,7 @@ export function ProviderDoors({ onChanged }: { onChanged: () => void }): React.J
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={keyId}
-          onChange={(e) => { setKeyId(e.target.value); setKeyNote(null); }}
+          onChange={(e) => { setKeyId(e.target.value); setKeyNote(null); onNote(null); }}
           className="rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm font-bold cursor-pointer"
         >
           {featured.map((p) => (
@@ -162,7 +180,7 @@ export function ProviderDoors({ onChanged }: { onChanged: () => void }): React.J
         <input
           type="password"
           value={keyText}
-          onChange={(e) => { setKeyText(e.target.value); setKeyNote(null); }}
+          onChange={(e) => { setKeyText(e.target.value); setKeyNote(null); onNote(null); }}
           onKeyDown={(e) => { if (e.key === "Enter") void saveKey(); }}
           placeholder="sk-…"
           className="flex-1 min-w-40 rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none placeholder:text-ink-soft/60"

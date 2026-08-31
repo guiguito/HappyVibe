@@ -266,3 +266,60 @@ describe("no dead copy", () => {
     }
   });
 });
+
+describe("a key the provider refused survives step 1 checking itself", () => {
+  it("the note is owned by the dialog, not by the doors that unmount", () => {
+    // setProviderKey SAVES the key whatever the answer, so a typo'd key flips
+    // the gate, collapses step 1 and unmounts ProviderDoors. Measured before
+    // the fix: a bogus Anthropic key checked step 1 and showed nothing at all.
+    expect(has(flat(DIALOG), "note={keyNote}"), "StepRow renders the note").toBe(true);
+    expect(has(flat(DIALOG), "onNote={setKeyNote}"), "the dialog owns it").toBe(true);
+    expect(has(flat(DOORS), "onNote(note)"), "the doors report it up").toBe(true);
+  });
+
+  it("the row renders its note whether or not it is done", () => {
+    const src = flat(DIALOG);
+    const i = src.indexOf("{note && <p");
+    expect(i, "note render").toBeGreaterThan(-1);
+    // It must sit OUTSIDE the `active &&` guard, or it dies with the doors.
+    expect(i, "before the active guard").toBeLessThan(src.indexOf("{active && <div"));
+  });
+});
+
+describe("main's refusal reaches the user as main wrote it", () => {
+  it("the IPC preamble is stripped from one shared definition", () => {
+    // ipcRenderer.invoke wraps a thrown Error in "Error invoking remote method
+    // '<channel>': " — measured leaking verbatim into the Start fresh field.
+    const src = flat(read("ipcError.ts"));
+    expect(has(src, "Error invoking remote method"), "the cleaner").toBe(true);
+    expect(has(flat(DIALOG), "ipcMessage(err)"), "the dialog uses it").toBe(true);
+    expect(has(flat(APP), "ipcMessage(err)"), "surface() uses it").toBe(true);
+    // And nobody re-types the expression.
+    const R2 = path.resolve(__dirname, "../src/renderer/src");
+    const all: string[] = [];
+    const walk = (d: string): void => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const q = path.join(d, e.name);
+        if (e.isDirectory()) walk(q);
+        else if (/\.tsx?$/.test(e.name) && e.name !== "ipcError.ts") all.push(fs.readFileSync(q, "utf8"));
+      }
+    };
+    walk(R2);
+    expect(has(all.join("\n"), "invoking remote method"), "no second copy").toBe(false);
+  });
+});
+
+describe("an empty folder is not asked to document itself", () => {
+  it("the AGENTS.md offer needs actual content, not just a missing file", () => {
+    // After the wizard hands over into a freshly created empty folder, this
+    // banner was the FIRST sentence a new user read: "No AGENTS.md found — add
+    // project context so the agent understands this codebase?" about a codebase
+    // that does not exist yet.
+    const src = flat(CHAT);
+    expect(has(src, "content === null && folderHasCode(entries)"), "gated on content").toBe(true);
+  });
+
+  it("uses the same dotfile rule as the chips, not a second one", () => {
+    expect(has(flat(CHAT), 'folderHasCode } from "../onboarding"'), "shared predicate").toBe(true);
+  });
+});

@@ -18,6 +18,7 @@ import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalRunCard, TerminalTail, type TerminalRun } from "./TerminalRunCard";
 import { type IconKind } from "../toolLabel";
 import { insertAtComposer } from "../composerText";
+import { folderHasCode } from "../onboarding";
 import { MicButton } from "./MicButton";
 import { VoiceActivateModal } from "./VoiceActivateModal";
 import { VoiceOverlay } from "./VoiceOverlay";
@@ -613,9 +614,17 @@ export function ChatView({
     if (!workspace) return;
     if (localStorage.getItem(`hv:agentsmd-dismissed:${workspace}`)) return;
     let live = true;
-    void window.hv.readAgentsMd(workspace).then((c) => {
-      if (live) setOfferAgentsMd(c === null);
-    });
+    void (async () => {
+      const [content, entries] = await Promise.all([
+        window.hv.readAgentsMd(workspace),
+        // §22 round 19: an EMPTY folder has no codebase to describe, and after
+        // the onboarding wizard this banner was the first sentence a new user
+        // read — asking them to document a project that does not exist yet.
+        // Dotfiles do not count, same rule as the first-prompt chips.
+        window.hv.fsList(workspace, ".").catch(() => []),
+      ]);
+      if (live) setOfferAgentsMd(content === null && folderHasCode(entries));
+    })();
     return () => { live = false; };
   }, [workspace]);
 

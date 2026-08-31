@@ -71,6 +71,7 @@ import { isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
 import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
+import { ipcMessage } from "./ipcError";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -1845,8 +1846,7 @@ export default function App(): React.JSX.Element {
     setDirtyMap((p) => (!!p[key] === d ? p : { ...p, [key]: d }));
   }, []);
 
-  const surface = (err: unknown): void =>
-    setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(err));
+  const surface = (err: unknown): void => setError(ipcMessage(err));
 
   const addWorkspace = async (): Promise<void> => {
     const ws = await window.hv.addWorkspace();

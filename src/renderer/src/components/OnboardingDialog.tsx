@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { BrandLogo } from "./BrandLogo";
 import { ModelsEscape, ProviderDoors } from "./OnboardingDoors";
 import { ONBOARDING_COPY as C } from "../onboarding";
+import { ipcMessage } from "../ipcError";
 
 /**
  * §22 onboarding round (2026-09-01). One landscape dialog, three beats:
@@ -33,6 +34,7 @@ function StepRow({
   active,
   title,
   body,
+  note,
   children,
 }: {
   n: string;
@@ -40,6 +42,8 @@ function StepRow({
   active: boolean;
   title: string;
   body: string;
+  /** Survives the collapse — see ProviderDoors' onNote. */
+  note?: string | null;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
@@ -58,6 +62,7 @@ function StepRow({
           {/* A completed row collapses to its checkmark: it has nothing left to
               say, and leaving it open makes the active step harder to find. */}
           {!done && <p className="text-sm text-ink-soft leading-snug mt-0.5">{body}</p>}
+          {note && <p className="text-xs text-berry font-bold mt-1">{note}</p>}
           {active && <div className="mt-3">{children}</div>}
         </div>
       </div>
@@ -90,6 +95,10 @@ export function OnboardingDialog({
   // (styles.css kills the animation rather than speeding it up).
   const [welcome, setWelcome] = useState(true);
   const [fresh, setFresh] = useState<{ name: string; error: string | null } | null>(null);
+  // A key the provider refused. Lives here rather than in ProviderDoors because
+  // saving it CHECKS step 1 (the key is stored whatever the answer), which
+  // unmounts the doors — and took the refusal with it.
+  const [keyNote, setKeyNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -123,7 +132,7 @@ export function OnboardingDialog({
     } catch (err) {
       // Surface what actually went wrong. Collapsing this to "couldn't create
       // the folder" is the §27 "Could not start recording." mistake.
-      setFresh({ ...fresh, error: err instanceof Error ? err.message : String(err) });
+      setFresh({ ...fresh, error: ipcMessage(err) });
     } finally {
       setBusy(false);
     }
@@ -149,7 +158,7 @@ export function OnboardingDialog({
             <div className={welcome ? "hv-bounce-in" : "-rotate-3"}>
               <BrandLogo size="lg" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <Dialog.Title className="font-black text-3xl tracking-tight leading-none">
                 Happy<span className="text-tangerine">Vibe</span>
               </Dialog.Title>
@@ -157,6 +166,18 @@ export function OnboardingDialog({
                 {C.tagline}
               </Dialog.Description>
             </div>
+            {/* The only way out, so it lives where nothing can scroll it away —
+                measured at the default 900x638 window, the same link under the
+                steps sat 27px below the fold. */}
+            {!welcome && !complete && (
+              <button
+                type="button"
+                onClick={onSkip}
+                className="shrink-0 self-start text-sm text-ink-soft hover:text-ink cursor-pointer underline underline-offset-2"
+              >
+                {C.skip}
+              </button>
+            )}
           </div>
 
           {!welcome && !complete && (
@@ -164,8 +185,8 @@ export function OnboardingDialog({
               <h2 className="font-black text-xl tracking-tight mb-3">{C.setupHeader}</h2>
 
               <div className="flex flex-col gap-3">
-                <StepRow n="1" done={modelReady} active={!modelReady} title={C.step1Title} body={C.step1Body}>
-                  <ProviderDoors onChanged={onRefreshModel} />
+                <StepRow n="1" done={modelReady} active={!modelReady} title={C.step1Title} body={C.step1Body} note={keyNote}>
+                  <ProviderDoors onChanged={onRefreshModel} onNote={setKeyNote} />
                   <ModelsEscape onGo={onGoModels} />
                 </StepRow>
 
@@ -209,14 +230,6 @@ export function OnboardingDialog({
                   )}
                 </StepRow>
               </div>
-
-              <button
-                type="button"
-                onClick={onSkip}
-                className="mt-5 text-sm text-ink-soft hover:text-ink cursor-pointer underline underline-offset-2"
-              >
-                {C.skip}
-              </button>
             </div>
           )}
 

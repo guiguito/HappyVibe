@@ -854,7 +854,51 @@ export function registerIpc(win: BrowserWindow): void {
   // remove, OAuth login/logout (main sees every utility hv.auth notify), and
   // default/workspace-model edits. The chat bar refetches its model list and
   // resolution tiers on it, so the chip and menu are never stale.
-  const providersChanged = (): void => send("hv:providers-changed");
+  const providersChanged = (): void => {
+    void ensureDefaultModel();
+    send("hv:providers-changed");
+  };
+
+  /**
+   * §22 round 19 — a configured provider with no default model is a dead end,
+   * and it was the FIRST RUN dead end.
+   *
+   * Measured on a fresh profile: two provider keys, 348 models offered, and
+   * `defaultModel: null`, so the very first session died on §16 finding 7's
+   * refusal — "No model configured — add a provider in Settings → Models" —
+   * which points the user back at the page they just finished. Saving a key has
+   * never set a default, and `ModelsView` HIDES its Default-model section while
+   * `firstRun` is true, so the first-run path could not set one at all.
+   *
+   * This does NOT reverse finding 7. That decision killed a HARDCODED spawn-time
+   * fallback which silently pinned a session to a provider the user might never
+   * have configured. This picks from the models the user's OWN configured
+   * providers list, at the moment they configure one, writes it where the Models
+   * page shows and edits it, and leaves the spawn-time refusal untouched — a
+   * default that is stale or removed still refuses.
+   *
+   * Only ever fills a NULL default, so it cannot fight the user's choice, and
+   * the guard is also what stops it looping through providersChanged().
+   */
+  const ensureDefaultModel = async (): Promise<void> => {
+    if (getDefaultModel()) return;
+    try {
+      const c = await ensureUtility();
+      const res = await c.send({ type: "get_available_models" });
+      const models = (res.data as { models?: { provider: string; id: string }[] })?.models ?? [];
+      // Pi's own registry order, first entry from a provider that is actually
+      // configured. No curated shortlist — §16's generated catalog exists to
+      // kill exactly that, and the Models page's searchable picker is one click
+      // away for anyone who wants a different one.
+      const first = models[0];
+      if (!first) return;
+      setDefaultModel({ provider: first.provider, modelId: first.id });
+      await utility?.send({ type: "set_model", provider: first.provider, modelId: first.id }).catch(() => {});
+      send("hv:providers-changed");
+    } catch {
+      /* no utility, no models, no default — the spawn refusal still explains it */
+    }
+  };
 
   // ── MCP status model ─────────────────────────────────────────────────────
   type McpState = "connected" | "needs-auth" | "failed" | "checking";
@@ -5080,4 +5124,17 @@ export function registerIpc(win: BrowserWindow): void {
   } catch {
     /* watch unsupported — renderer re-fetches on navigation */
   }
+
+  /**
+   * §22 round 19: a provider configured through the ENVIRONMENT never passes
+   * through providersChanged(), so a fresh profile with a key in `.env` starts
+   * up already configured and already default-less. One fire-and-forget pass at
+   * boot closes that, and costs nothing on every later launch because a default
+   * is then set.
+   */
+  void (async () => {
+    if (getDefaultModel()) return;
+    if (!Object.values(providerKeyStatus()).some(Boolean) && authJsonProviders(agentDir()).length === 0) return;
+    await ensureDefaultModel();
+  })().catch(() => { /* the spawn refusal still explains a missing model */ });
 }
