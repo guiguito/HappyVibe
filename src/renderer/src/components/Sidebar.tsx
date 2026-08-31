@@ -508,10 +508,20 @@ export function Sidebar({
   // keyboard route at all. It renders only while `searching`.
   const [searching, setSearching] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  /**
+   * Focus is `autoFocus` on the input plus a direct `.focus()` here, and
+   * deliberately NOT a `requestAnimationFrame` callback. Two reasons, one
+   * measured. rAF is PAUSED while the window is occluded (the same trap §28's
+   * coverage check already pays for), so a scheduled focus can simply never
+   * run; and a single rAF can fire BEFORE React has committed the input, in
+   * which case the ref is still null and the focus silently does nothing.
+   * `autoFocus` covers the mount case with no clock at all, and the call below
+   * covers the one case it cannot — ⌘K pressed while the field is already
+   * open, where there is no mount and the ref is already populated.
+   */
   const openSearch = (): void => {
     setSearching(true);
-    // The input does not exist yet on the tick that flips the flag.
-    requestAnimationFrame(() => searchRef.current?.focus());
+    searchRef.current?.focus();
   };
   // A COUNTER, not a boolean: ⌘K pressed twice must re-focus the field, and a
   // boolean already true fires no effect. App owns it because ⌘K must expand
@@ -677,6 +687,7 @@ export function Sidebar({
         <div className="px-4 pb-2">
           <input
             ref={searchRef}
+            autoFocus
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             onBlur={() => { if (!filter) setSearching(false); }}

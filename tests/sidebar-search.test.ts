@@ -58,3 +58,18 @@ describe("ABSENCE — the rejected alternatives", () => {
     expect(SRC).not.toContain("⌘F");
   });
 });
+
+describe("focus does not depend on a clock the platform can stop", () => {
+  it("the field autoFocuses on mount rather than waiting for a frame", () => {
+    // rAF is PAUSED while the window is occluded — measured in the running
+    // app, where a scheduled focus never ran — and a single frame can also
+    // fire before React has committed the input, leaving the ref null.
+    const at = SRC.indexOf("ref={searchRef}");
+    expect(SRC.slice(at, at + 120)).toContain("autoFocus");
+  });
+
+  it("nothing in the search path schedules focus on a frame", () => {
+    const at = SRC.indexOf("const openSearch");
+    expect(SRC.slice(at, at + 200)).not.toContain("requestAnimationFrame");
+  });
+});
