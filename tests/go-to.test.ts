@@ -8,8 +8,22 @@ import { GOTO_LABELS } from "../src/renderer/src/components/GoTo";
  */
 
 const R = path.resolve(__dirname, "../src/renderer/src");
+/**
+ * Comment-stripped AND whitespace-collapsed.
+ *
+ * The collapse is load-bearing: JSX wraps prose across lines, so a raw
+ * substring scan slides straight past a phrase that happens to break mid-way.
+ * `(the gear in\n  the sidebar)` survived this scan and was found only by
+ * opening the app — which is the failure mode an absence assertion exists to
+ * prevent.
+ */
 const rendered = (f: string): string =>
-  fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  fs
+    .readFileSync(f, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/&apos;/g, "'")
+    .replace(/\s+/g, " ");
 
 function tsxFiles(dir: string, out: string[] = []): string[] {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

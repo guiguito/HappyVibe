@@ -73,8 +73,8 @@ export function PermissionsView(): React.JSX.Element {
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Permissions</h1>
         <p className="text-sm text-ink-soft mb-8">
-          Global rules for every workspace. Per-workspace overrides live in each workspace&apos;s settings (the gear in
-          the sidebar).
+          Global rules for every workspace. Per-workspace overrides live in each workspace&apos;s own
+          settings.
         </p>
 
         <Section icon="permissions" title="Rules" subtitle="Evaluated by the same engine that enforces them.">

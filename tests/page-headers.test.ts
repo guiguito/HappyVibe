@@ -66,7 +66,14 @@ describe("the deleted Help affordance is promised nowhere (§22 round 17)", () =
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p);
-        else if (/\.(ts|tsx|md)$/.test(e.name) && fs.readFileSync(p, "utf8").includes("Help affordance")) {
+        else if (
+          /\.(ts|tsx|md)$/.test(e.name) &&
+          // Whitespace-collapsed: JSX and prose both wrap, and a two-word
+          // phrase that breaks across a line slides past a raw substring scan.
+          // That exact hole hid "(the gear in\n the sidebar)" from
+          // tests/go-to.test.ts until someone opened the app.
+          fs.readFileSync(p, "utf8").replace(/\s+/g, " ").includes("Help affordance")
+        ) {
           hits.push(path.relative(path.resolve(__dirname, ".."), p));
         }
       }
