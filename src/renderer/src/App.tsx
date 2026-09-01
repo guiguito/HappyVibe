@@ -855,13 +855,29 @@ export default function App(): React.JSX.Element {
           if (pr) {
             delete pendingRewind.current[sid];
             const convo = snap.items.filter((i) => i.group === "conversation" && i.removable && i.markKey);
-            const keys = convo.slice(-pr.msgCount).map((i) => i.markKey as string);
+            const msgKeys = convo.slice(-pr.msgCount).map((i) => i.markKey as string);
+            const keys = [...msgKeys];
             for (const i of snap.items) {
               if (i.group === "tool" && i.removable && i.markKey && i.toolCallId && pr.toolIds.has(i.toolCallId)) {
                 keys.push(i.markKey);
               }
             }
             if (keys.length > 0) void window.hv.contextRemove(sid, keys);
+            // SAY SO when the context could not follow the transcript. The gate
+            // refuses anything mid-turn, and this branch used to be a bare
+            // `if (keys.length > 0)` — so a refusal truncated the chat and left
+            // the model remembering every word of it, with nothing on screen
+            // admitting the difference. Partial counts the same way: fewer keys
+            // than messages means part of the tail is still in the window.
+            if (msgKeys.length < pr.msgCount) {
+              appendItem(sid, {
+                kind: "notice",
+                text:
+                  msgKeys.length === 0
+                    ? "Chat rewound, but the agent still remembers that turn — it is mid-turn, so nothing could be removed from its context."
+                    : `Chat rewound, but ${pr.msgCount - msgKeys.length} of ${pr.msgCount} messages stayed in the agent's context (still mid-turn).`,
+              });
+            }
           }
         }
         const ack = parseContextAck(r);

@@ -122,17 +122,35 @@ export function expandSelection(keys: MarkKey[]): MarkKey[] {
 
 /**
  * Mark keys that belong to COMPLETED turns and are therefore safe to remove.
- * "In-flight" = everything at or after the last user message: the turn the
- * model is (or was last) working on. Removing any of its messages risks the
- * runaway re-execution loop from the spike. We treat the last user message and
- * all entries after it as in-flight; everything before is completed.
+ *
+ * "In-flight" = the turn the model is WORKING ON. Removing any of its messages
+ * risks the runaway re-execution loop from the spike, so it is refused.
+ *
+ * The trailing turn is in-flight UNLESS it has SETTLED, i.e. the transcript's
+ * last message is an assistant message carrying no unresolved tool call. That
+ * exception is load-bearing, not a relaxation: the gate originally cut at the
+ * last user message unconditionally, and a rewind targets the last user
+ * message BY DEFINITION — so every ordinary rewind was refused, and refused
+ * silently (the renderer found no removable items and therefore sent no keys
+ * at all). The chat truncated while the model kept the whole turn, and asking
+ * the same question again got "I already answered that". Measured in a live
+ * session 2026-09-01.
+ *
+ * Everything that is genuinely mid-turn still falls back to the old cutoff: a
+ * transcript ending on a user message (about to be worked on), on an assistant
+ * message with a toolCall (result outstanding), or on a toolResult (answer
+ * outstanding).
  */
 export function completedMarkKeys(entries: SessionEntry[]): Set<MarkKey> {
   const msgs = entries.filter((e) => e.type === "message" && e.message);
   let lastUserIdx = -1;
   for (let i = 0; i < msgs.length; i++) if (msgs[i].message!.role === "user") lastUserIdx = i;
+  const last = msgs[msgs.length - 1]?.message;
+  const settled =
+    last?.role === "assistant" && !contentBlocks(last).some((b) => b.type === "toolCall");
   const completed = new Set<MarkKey>();
-  const cutoff = lastUserIdx < 0 ? msgs.length : lastUserIdx; // no user msg → nothing in-flight
+  // no user msg, or the last turn is finished → nothing is in flight
+  const cutoff = settled || lastUserIdx < 0 ? msgs.length : lastUserIdx;
   for (let i = 0; i < cutoff; i++) {
     for (const k of messageMarkKeys(msgs[i].message!)) completed.add(k);
   }

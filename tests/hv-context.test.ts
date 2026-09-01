@@ -63,6 +63,40 @@ test("completedMarkKeys excludes everything at/after the last user message (in-f
   expect(ok.has("tool:call-B")).toBe(false);
 });
 
+// The gate's job is to protect the turn the model is WORKING ON. A session that
+// ends on a settled assistant message has no such turn — and that is exactly the
+// state a rewind runs in. The `session` fixture above ends on a dangling
+// toolResult, so it can never reach this case; the shipped gate refused every
+// ordinary rewind (the whole last turn) and the renderer then sent no keys at
+// all, so the model kept a turn the transcript had dropped.
+const settled: SessionEntry[] = [
+  entry("s1", user(1, "combien de jours ont la lettre d ?")),
+  entry("s2", asst(2, undefined, "4 jours")),
+];
+
+test("completedMarkKeys: a session ending on a settled assistant turn has nothing in flight", () => {
+  const ok = completedMarkKeys(settled);
+  expect(ok.has("msg:1")).toBe(true);
+  expect(ok.has("msg:2")).toBe(true);
+});
+
+test("completedMarkKeys still refuses a trailing turn that has NOT settled", () => {
+  // ends on a user message — the model is about to work on it
+  expect(completedMarkKeys([...settled, entry("s3", user(3, "again"))]).has("msg:3")).toBe(false);
+  // ends on an assistant message with an unresolved tool call
+  const pending = [...settled, entry("s3", user(3, "run ls")), entry("s4", asst(4, "call-C", "running"))];
+  expect(completedMarkKeys(pending).has("msg:3")).toBe(false);
+  expect(completedMarkKeys(pending).has("tool:call-C")).toBe(false);
+  // ends on a toolResult — the assistant has not answered yet
+  const awaiting = [...pending, entry("s5", result(5, "call-C"))];
+  expect(completedMarkKeys(awaiting).has("tool:call-C")).toBe(false);
+});
+
+test("serializeEntries marks a settled trailing turn removable, so rewind sends keys", () => {
+  const convo = serializeEntries(settled).filter((i) => i.group === "conversation" && i.removable && i.markKey);
+  expect(convo.map((i) => i.markKey)).toEqual(["msg:1", "msg:2"]);
+});
+
 test("acceptableMarks refuses in-flight keys, accepts completed ones", () => {
   const { accepted, refused } = acceptableMarks(["tool:call-A", "tool:call-B", "msg:5"], session);
   expect(accepted).toEqual(["tool:call-A"]);
