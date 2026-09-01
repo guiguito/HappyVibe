@@ -1177,7 +1177,7 @@ export function ChatView({
             auto-send and §29 left the first commit to the user. The row is
             gone for good after the first send. */}
         {chips && chips.length > 0 && (
-          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-center gap-2 px-1 pb-2">
             {chips.map((c) => (
               <button
                 key={c}
