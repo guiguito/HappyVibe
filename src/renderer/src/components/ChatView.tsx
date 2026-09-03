@@ -198,7 +198,7 @@ export function ChatView({
    * Only the recording indicator reads it, to choose docked vs viewport-fixed.
    */
   visible?: boolean;
-  onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[], documents?: string[]) => void;
+  onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[], documents?: DocumentAttachment[]) => void;
   /**
    * §28: page-element comments the user picked in the embedded browser. They
    * STACK here and are folded into the next message on send — the user decides
@@ -709,7 +709,10 @@ export function ChatView({
       behavior,
       outgoing.length ? outgoing : undefined,
       mentions.length ? mentions : undefined,
-      documents.length ? documents.filter((d) => !d.error).map((d) => d.path) : undefined,
+      // The whole attachment, not just the path: App needs the name and format
+      // to draw the bubble's chip on the LIVE path, where nothing has been
+      // through main yet.
+      documents.length ? documents.filter((d) => !d.error) : undefined,
     );
     // Round 15: sending is the user saying "I am at the end now", so the view
     // goes to the bottom whatever it was reading. The stream's own follow stays

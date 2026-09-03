@@ -102,3 +102,26 @@ describe("§31 the + row reads the toggle when it OPENS, not once at mount", () 
     expect(src).toMatch(/setAttachMenuOpen\(\(o\) => \{[\s\S]{0,200}refreshDocumentAvailability\(\)/);
   });
 });
+
+describe("§31 the documents argument survives the whole IPC chain", () => {
+  it("preload forwards it — a dropped argument typechecks perfectly and does nothing", () => {
+    // This exact bug shipped for an hour: `documents` was declared in hv.d.ts,
+    // accepted in main, and threaded through App — but preload still invoked
+    // hv:prompt-session with six arguments, so the seventh was silently lost and
+    // the block never injected. Nothing failed; the agent simply never saw the
+    // document. Only the GUI pass caught it, so this is the cheap guard.
+    const preload = fs.readFileSync("src/preload/index.ts", "utf8");
+    const call = /ipcRenderer\.invoke\("hv:prompt-session"[^)]*\)/.exec(preload);
+    expect(call, "hv:prompt-session invoke not found").toBeTruthy();
+    expect(call![0]).toContain("documents");
+
+    // And the parameter list that feeds it declares the same thing.
+    expect(preload).toMatch(/documents\?: string\[\]/);
+  });
+
+  it("main accepts and validates it", () => {
+    const ipc = fs.readFileSync("src/main/ipc.ts", "utf8");
+    expect(ipc).toMatch(/documents\?: string\[\],/);
+    expect(ipc).toContain("Invalid documents payload");
+  });
+});

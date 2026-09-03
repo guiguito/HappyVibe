@@ -56,8 +56,10 @@ contextBridge.exposeInMainWorld("hv", {
     images?: Array<{ type: "image"; data: string; mimeType: string }>,
     mentions?: string[],
     // Round 11: workspace-relative paths of the files open in the editor.
-    openFiles?: string[]
-  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images, mentions, openFiles),
+    openFiles?: string[],
+    // §31: absolute paths of attached documents — main converts and injects them.
+    documents?: string[]
+  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images, mentions, openFiles, documents),
   abortSession: (sessionId: string) => ipcRenderer.invoke("hv:abort-session", sessionId),
 
   // ── W2.1: per-session model override + image attach (additive) ──

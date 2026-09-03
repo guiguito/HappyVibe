@@ -77,6 +77,16 @@ export type TranscriptItem = { id?: number } & (
       /** Round 15: assistant only, and only on a turn's LAST bubble — how long
           the turn took, from the user message that started it. */
       turnMs?: number;
+      /**
+       * §31: documents attached to THIS message, for the live path only.
+       *
+       * The bubble is appended from the text the user TYPED, while the
+       * `<document>` blocks are assembled main-side — so live there is nothing
+       * in `text` to parse, and a restored message has only the file. The chip
+       * therefore reads this when present and falls back to the block headers,
+       * which is what makes both paths show the same thing.
+       */
+      documents?: Array<{ path: string; format: string }>;
     }
   | { kind: "tool"; card: ToolCardData; outOfContext?: boolean }
   // §23: the plan-ready card (read from the workspace plan file).
@@ -323,7 +333,7 @@ function UserBubble({
   // §31: the documents this message carried, read back off the block headers.
   // ONE path for live and restored: live, the renderer never saw the chips main
   // built; restored, only the session file exists. The header answers both.
-  const docChips = parseDocumentChips(raw);
+  const docChips = ("documents" in it && it.documents?.length ? it.documents : parseDocumentChips(raw));
   const images = "images" in it ? it.images : undefined;
   const [expanded, setExpanded] = useState(false);
   // §24: a promptTemplate invocation is exactly the disclosure this bubble already

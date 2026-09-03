@@ -46,7 +46,7 @@ import { AllToolsView } from "./components/AllToolsView";
 import { BuiltinToolsView } from "./components/BuiltinToolsView";
 import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
-import { attachmentUrl, buildImages, type ImageAttachment } from "./composer";
+import { attachmentUrl, buildImages, type ImageAttachment, type DocumentAttachment } from "./composer";
 import {
   activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
   isChatTab, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, sessionOf, setSize, splitAt, splitOptions, termTab, terminalOf,
@@ -2001,11 +2001,15 @@ export default function App(): React.JSX.Element {
     behavior?: "followUp",
     attachments?: ImageAttachment[],
     mentions?: string[],
-    /** §31: absolute paths of attached documents; main converts and injects them. */
-    documents?: string[],
+    /** §31: the attached documents — paths go to main, name/format draw the chip. */
+    documents?: DocumentAttachment[],
   ): Promise<void> => {
     // W2.1: attached images ride the RPC `images` param (ImageContent[]).
     const images = attachments?.length ? buildImages(attachments) : undefined;
+    // §31: main takes paths and converts; the bubble takes name + format, because
+    // on the live path the blocks it would otherwise parse do not exist yet.
+    const documentPaths = documents?.length ? documents.map((d) => d.path) : undefined;
+    const documentChips = documents?.length ? documents.map((d) => ({ path: d.path, format: d.format })) : undefined;
     // F3: @file mention warnings (skipped binaries, over-cap dirs) surface as notices.
     const noteWarnings = (w: string[]): void => w.forEach((text) => appendItem(sid, { kind: "notice", text }));
     // Round 11: the files open in THIS session's workspace, paths only. Main
@@ -2018,7 +2022,7 @@ export default function App(): React.JSX.Element {
     // transcript when Pi delivers it.
     if (busy[sid]) {
       try {
-        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions, openFiles, documents);
+        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions, openFiles, documentPaths);
         noteWarnings(warnings);
       } catch (err) {
         surface(err);
@@ -2027,7 +2031,7 @@ export default function App(): React.JSX.Element {
     }
     // Round 15: stamp when it was sent. This is also what starts the turn
     // clock — turnStart below is read at agent_end to fill the duration.
-    appendItem(sid, { kind: "user", text: msg, ts: Date.now(), images: attachments?.map(attachmentUrl) });
+    appendItem(sid, { kind: "user", text: msg, ts: Date.now(), images: attachments?.map(attachmentUrl), documents: documentChips });
     turnStart.current[sid] = Date.now();
     streaming.current[sid] = false;
     // A fresh prompt ends any abort window: this turn's text belongs to a new
@@ -2035,7 +2039,7 @@ export default function App(): React.JSX.Element {
     delete aborted.current[sid];
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
-      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documents);
+      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documentPaths);
       noteWarnings(warnings);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
