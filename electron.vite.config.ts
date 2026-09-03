@@ -20,7 +20,10 @@ const pins = (readJson('pi-runtime/package.json') as { dependencies: Record<stri
 const runtimePins =
   `Pi ${pins['@earendil-works/pi-coding-agent']}` +
   ` · sub-agents ${pins['pi-subagents']}` +
-  ` · MCP adapter ${pins['pi-mcp-adapter']}`
+  ` · MCP adapter ${pins['pi-mcp-adapter']}` +
+  // §31: the document converter decides what the model reads of a PDF, which
+  // makes it an engine — §3's promise is that which engine you got is user-facing.
+  ` · anydoc ${pins['@firecrawl/anydoc']}`
 
 export default defineConfig({
   main: {
