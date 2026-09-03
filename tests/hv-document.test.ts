@@ -123,3 +123,35 @@ describe("§31 gate placements — read's class (decision D)", () => {
     expect(parseBuiltins("{not json").document).toBe(true);
   });
 });
+
+describe("§31 the Documents settings row", () => {
+  /** Comments stripped: the claim is about what RENDERS, not what is explained. */
+  const src = fs
+    .readFileSync("src/renderer/src/components/BuiltinToolsBlock.tsx", "utf8")
+    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .split("\n")
+    .map((l) => l.replace(/(^|\s)\/\/.*$/, "$1"))
+    .join("\n");
+
+  it("is called Documents, not Agent documents (decision J)", () => {
+    expect(src).toContain("Documents — 1 tool");
+    // The `Agent …` prefix exists only to dodge a nav collision, and there is
+    // no Documents page to collide with.
+    expect(src).not.toContain("Agent documents");
+  });
+
+  it("derives its family list and carries the shared respawn note", () => {
+    expect(src).toContain("DOCUMENT_FAMILY_LIST");
+    expect(src).toMatch(/DocumentsRow[\s\S]{0,1600}RESPAWN_NOTE/);
+  });
+
+  it("writes the one key, so the toggle reaches the bridge at the next spawn", () => {
+    expect(src).toContain("builtinsSet({ document: on })");
+  });
+
+  it("says the conversion is local — the claim §31 makes to the user", () => {
+    expect(src).toMatch(/converted on this machine/);
+    expect(src).toMatch(/nothing is sent/);
+  });
+});
