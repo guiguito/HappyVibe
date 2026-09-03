@@ -159,3 +159,31 @@ describe("bridge wiring for §32", () => {
     expect(bridge).toMatch(/type AuditSource =[^\n]*"web"/);
   });
 });
+
+/**
+ * §32's vocabulary rule, enforced where it is easiest to break: the page a user
+ * actually reads. The backend is named ONCE, in the helper under the custom URL
+ * field, and only after "Your own" is chosen — because a self-hoster has to
+ * know what to run. Everywhere else the words are the app's.
+ */
+describe("the Built-in tools page never names the backend (§32)", () => {
+  const raw = fs.readFileSync(path.resolve(__dirname, "../src/renderer/src/components/BuiltinToolsBlock.tsx"), "utf8");
+  // Comments are the author talking; only the strings are the PRODUCT talking,
+  // and the product is what the rule is about. (Written the other way first,
+  // where the test failed on its own explanation of the rule.)
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  it("says Firecrawl exactly once, in the custom-service helper", () => {
+    expect(src.match(/Firecrawl/g)?.length).toBe(1);
+    expect(src).toContain("Firecrawl-compatible API, v2");
+  });
+
+  it("never says scrape or crawl in the row's own copy", () => {
+    expect(src.toLowerCase()).not.toContain("scrape");
+    expect(src.toLowerCase()).not.toMatch(/\bcrawl\b/);
+  });
+
+  it("discloses that the service setting needs no respawn, unlike its neighbours", () => {
+    expect(src).toMatch(/Applies to the next call/);
+  });
+});

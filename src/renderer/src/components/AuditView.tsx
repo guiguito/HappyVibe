@@ -22,7 +22,7 @@ interface Decision {
   summary: string;
   decision: "allow" | "allow-session" | "deny";
   /** "dangerous" is the pre-round-15 name for "bypass" — old logs keep it. */
-  source: "rule" | "user" | "bypass" | "dangerous" | "safe-default" | "plan" | "terminal" | "subagent";
+  source: "rule" | "user" | "bypass" | "dangerous" | "safe-default" | "plan" | "terminal" | "subagent" | "web";
   /** §12 FR7: set on a decision made INSIDE a sub-agent child. */
   agent?: string;
   runId?: string;
@@ -111,7 +111,7 @@ const ONESHOT_LABEL: Record<OneShot["kind"], string> = {
  * mode it ran under, so bypass reads calm and amber marks it as unusual
  * without shouting.
  */
-const SOURCE_LABEL: Record<string, string> = { dangerous: "bypass", subagent: "sub-agent" };
+const SOURCE_LABEL: Record<string, string> = { dangerous: "bypass", subagent: "sub-agent", web: "web tools" };
 /**
  * No tone at all — every source renders in the same muted ink.
  *
@@ -271,6 +271,7 @@ export function AuditView({
             <option value="bypass">Bypass</option>
             <option value="plan">Plan mode</option>
             <option value="terminal">Terminal</option>
+            <option value="web">Web tools</option>
             <option value="assistant">The app itself</option>
             <option value="model">Model availability</option>
           </select>
