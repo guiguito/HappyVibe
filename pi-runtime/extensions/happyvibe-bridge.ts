@@ -13,6 +13,7 @@ import {
 } from "./hv-subagent-delivery";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER } from "./hv-browser";
+import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
 import { unwrapMcpCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
@@ -74,6 +75,15 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
   // §28: a navigation's factual action IS its URL — same rule, same shape.
   if ((toolName === "browser_navigate" || toolName === "browser_open") && typeof input.url === "string") {
     return input.url.slice(0, 300);
+  }
+  // §32: same rule a third time. A fetch/map/crawl's factual action is its URL,
+  // and a search's is the query that leaves the machine — which is the thing a
+  // deny rule on web_search would be protecting.
+  if (WEB_URL_TOOLS.has(toolName) && typeof input.url === "string") {
+    return input.url.slice(0, 300);
+  }
+  if (toolName === "web_search" && typeof input.query === "string") {
+    return input.query.slice(0, 300);
   }
   // …and for EVERYTHING else, strip `intent` rather than special-casing the
   // tools that happen to carry one.
@@ -553,7 +563,7 @@ type AuditDecision = "allow" | "allow-session" | "deny";
 // logged the old value, in red, so the column stopped distinguishing anything —
 // it named the mode, once per row, forever. Old logs keep the old string and
 // the renderer maps both; red is now reserved for what a command DOES.
-type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "terminal";
+type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "terminal" | "web";
 
 /** Every permission decision emits one hv.audit notify — main's audit channel. */
 function audit(
@@ -756,7 +766,13 @@ export default function (pi: ExtensionAPI) {
     // backgrounded bash call. Only while the group is registered — otherwise
     // the prompt would name a tool the model does not have.
     const terminalSection = builtins.terminal ? "\n\n" + TERMINAL_STEER_LINE : "";
-    const injected = sp + section + agentsSection + planSection + skillSection + terminalSection;
+    // §32: steer web reading to the web tools rather than `bash curl`, which
+    // returns raw HTML, runs through the terminal gate as an arbitrary command
+    // and never tells the user which page was read. Only while the group is
+    // registered — §26's rule: a prompt must never name a tool the model
+    // does not have.
+    const webSection = builtins.web ? "\n\n" + WEB_STEER_LINE : "";
+    const injected = sp + section + agentsSection + planSection + skillSection + terminalSection + webSection;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -924,7 +940,13 @@ export default function (pi: ExtensionAPI) {
     // two lines above. `subagent` as a rule name made "Allow for session" on a
     // read-only explorer cover a bash-wielding agent for the rest of the session.
     const subagentName = tool === "subagent" && typeof input.agent === "string" ? input.agent : null;
-    const permTool = mcp?.ruleTool ?? browserNav ?? (subagentName ? boundaryRuleName(subagentName) : tool);
+    // §32: the three URL web tools gate under the SAME virtual rule as the
+    // browser. One fact — "the agent may reach docs.foo.com" — one allow-list,
+    // so "Allow for session", a pattern rule and the Permissions page all cover
+    // both surfaces. A separate web:<host> list was rejected precisely because
+    // two lists can disagree about the same host.
+    const webHost = WEB_URL_TOOLS.has(tool) && typeof input.url === "string" ? browserRuleName(input.url) : null;
+    const permTool = mcp?.ruleTool ?? browserNav ?? webHost ?? (subagentName ? boundaryRuleName(subagentName) : tool);
 
     // Declared HERE, not further down, because the §12 refusals below audit with
     // it. It used to sit after `grantBoundary`, i.e. AFTER three call sites that
@@ -1034,6 +1056,21 @@ export default function (pi: ExtensionAPI) {
       if (!checked.ok) {
         audit(ctx.ui, { tool, summary, decision: "deny", source: "terminal" });
         return { block: true, reason: checked.reason };
+      }
+    }
+
+    // §32: a private, local or non-http destination is refused BEFORE the gate,
+    // and before the envelope. Ordering matters twice over: the web service
+    // refuses these itself (measured), so asking it would only turn a clear
+    // sentence into a remote error; and prompting the user to approve
+    // `browser:localhost` for a call that cannot work either way is worse than
+    // useless. The refusal NAMES browser_open, which runs on the user's own
+    // machine and is the tool that can actually reach a dev server.
+    if (WEB_URL_TOOLS.has(tool)) {
+      const why = webRefusal(input.url);
+      if (why) {
+        audit(ctx.ui, { tool, summary, decision: "deny", source: "web" });
+        return { block: true, reason: why };
       }
     }
 
@@ -1854,6 +1891,158 @@ export default function (pi: ExtensionAPI) {
     },
   });
   } // builtins.browser
+
+  // ── §32 web tools ────────────────────────────────────────────────────────
+  // ONE group, four thin shells over blocking hv.web-* inputs. Main calls the
+  // web service, so main owns the URL, the encrypted key, the caps, the
+  // deadline and the audit row; the bridge carries the request and turns the
+  // reply into a tool result. browserReply is the mapper — it already prefixes
+  // UNTRUSTED_BANNER on `untrusted:true`, and a page fetched headlessly is
+  // exactly as untrusted as one rendered in the pane.
+  //
+  // Four separate tools rather than one with an action enum: §10's rules must
+  // be able to allow web_search by default while asking per host for the other
+  // three, without the gate growing a branch that reads arguments.
+  if (builtins.web) {
+  /**
+   * The abort path. Pi hands `execute` an AbortSignal; when a turn is
+   * interrupted we tell main by NOTIFY (fire-and-forget — there is no reply to
+   * wait for, and the blocking input is about to be answered anyway) so it can
+   * abort the HTTP request and DELETE a crawl job. Without it an abandoned
+   * crawl holds one of the service's two worker slots for its full two minutes,
+   * and those two are shared by every HappyVibe install.
+   */
+  const webInput = async (
+    ctx: {
+      ui: {
+        input(title: string, initial: string): Promise<unknown>;
+        notify(message: string, type?: "info" | "warning" | "error"): void;
+      };
+    },
+    toolCallId: string,
+    signal: AbortSignal | undefined,
+    payload: Record<string, unknown>,
+  ): Promise<Awaited<ReturnType<typeof browserReply>>> => {
+    const onAbort = (): void => ctx.ui.notify(JSON.stringify({ kind: "hv.web-cancel", toolCallId }), "info");
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      return browserReply(await ctx.ui.input(JSON.stringify({ ...payload, toolCallId }), ""));
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+    }
+  };
+
+  const webIntent = (what: string): ReturnType<typeof Type.String> =>
+    Type.String({ description: `REQUIRED. One short customer-facing sentence: why you need this, then ${what}.` });
+
+  pi.registerTool({
+    name: "web_search",
+    label: "Search the web",
+    description: WEB_TOOL_DESCRIPTIONS.web_search,
+    parameters: Type.Object({
+      intent: webIntent("what you are looking for"),
+      query: Type.String({ description: "The search query. `site:example.com` works." }),
+      limit: Type.Optional(
+        Type.Integer({ description: `Results to return (default ${WEB_CAPS.search.defaultLimit}, max ${WEB_CAPS.search.maxLimit}).` }),
+      ),
+      includeContent: Type.Optional(
+        Type.Boolean({
+          description:
+            `Also return up to ${WEB_CAPS.search.contentChars} chars of each result as markdown. Slower and much ` +
+            "larger — prefer a plain search, then web_fetch the one page you want.",
+        }),
+      ),
+    }),
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      const { query, limit, includeContent } = params as { query?: string; limit?: number; includeContent?: boolean };
+      if (!query) return { content: [{ type: "text", text: "web_search needs a query." }], details: {} };
+      return webInput(ctx, toolCallId, signal, { kind: "hv.web-search", query, limit, includeContent });
+    },
+  });
+
+  pi.registerTool({
+    name: "web_fetch",
+    label: "Read a web page",
+    description: WEB_TOOL_DESCRIPTIONS.web_fetch,
+    parameters: Type.Object({
+      intent: webIntent("what page you are reading"),
+      url: Type.String({ description: "The http(s) URL to read. Not localhost or a private address — use browser_open for those." }),
+      maxChars: Type.Optional(
+        Type.Integer({ description: `Chars to return (default ${WEB_CAPS.fetch.defaultChars}, max ${WEB_CAPS.fetch.maxChars}).` }),
+      ),
+      startIndex: Type.Optional(
+        Type.Integer({ description: "Character offset to start from (default 0). The result header tells you the next one." }),
+      ),
+      fresh: Type.Optional(
+        Type.Boolean({ description: "Skip the service's cache. Only when you specifically need a page that changed just now." }),
+      ),
+    }),
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      const { url, maxChars, startIndex, fresh } = params as {
+        url?: string; maxChars?: number; startIndex?: number; fresh?: boolean;
+      };
+      if (!url) return { content: [{ type: "text", text: "web_fetch needs a url." }], details: {} };
+      return webInput(ctx, toolCallId, signal, { kind: "hv.web-fetch", url, maxChars, startIndex, fresh });
+    },
+  });
+
+  pi.registerTool({
+    name: "web_map",
+    label: "List a site's pages",
+    description: WEB_TOOL_DESCRIPTIONS.web_map,
+    parameters: Type.Object({
+      intent: webIntent("which site you are listing"),
+      url: Type.String({ description: "The site's http(s) URL." }),
+      search: Type.Optional(Type.String({ description: "Only return URLs matching this text." })),
+      limit: Type.Optional(
+        Type.Integer({ description: `URLs to return (default ${WEB_CAPS.map.defaultLimit}, max ${WEB_CAPS.map.maxLimit}).` }),
+      ),
+    }),
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      const { url, search, limit } = params as { url?: string; search?: string; limit?: number };
+      if (!url) return { content: [{ type: "text", text: "web_map needs a url." }], details: {} };
+      return webInput(ctx, toolCallId, signal, { kind: "hv.web-map", url, search, limit });
+    },
+  });
+
+  pi.registerTool({
+    name: "web_crawl",
+    label: "Read a site",
+    description: WEB_TOOL_DESCRIPTIONS.web_crawl,
+    parameters: Type.Object({
+      intent: webIntent("which site you are reading and what you are looking for"),
+      url: Type.String({ description: "The http(s) URL to start from." }),
+      limit: Type.Optional(
+        Type.Integer({ description: `Pages to read (default ${WEB_CAPS.crawl.defaultLimit}, max ${WEB_CAPS.crawl.maxLimit}).` }),
+      ),
+      maxDepth: Type.Optional(
+        Type.Integer({ description: `How many links deep (default ${WEB_CAPS.crawl.defaultDepth}, max ${WEB_CAPS.crawl.maxDepth}).` }),
+      ),
+      includePaths: Type.Optional(Type.Array(Type.String(), { description: "Regexes a page's path must match, e.g. \"^/docs\"." })),
+      excludePaths: Type.Optional(Type.Array(Type.String(), { description: "Regexes a page's path must NOT match." })),
+      maxCharsPerPage: Type.Optional(
+        Type.Integer({
+          description: `Chars per page (default ${WEB_CAPS.crawl.defaultCharsPerPage}, max ${WEB_CAPS.crawl.maxCharsPerPage}).`,
+        }),
+      ),
+    }),
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      const p = params as {
+        url?: string; limit?: number; maxDepth?: number; includePaths?: string[]; excludePaths?: string[]; maxCharsPerPage?: number;
+      };
+      if (!p.url) return { content: [{ type: "text", text: "web_crawl needs a url." }], details: {} };
+      return webInput(ctx, toolCallId, signal, {
+        kind: "hv.web-crawl",
+        url: p.url,
+        limit: p.limit,
+        maxDepth: p.maxDepth,
+        includePaths: p.includePaths,
+        excludePaths: p.excludePaths,
+        maxCharsPerPage: p.maxCharsPerPage,
+      });
+    },
+  });
+  } // builtins.web
 
   // ── §23 Plan Mode: registered tools ──────────────────────────────────────
   // Gated as a whole block: plan_start is the model's own entry point into Plan

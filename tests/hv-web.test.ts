@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import {
   WEB_TOOLS,
   WEB_URL_TOOLS,
@@ -121,5 +123,39 @@ describe("hv-web pure module (§32)", () => {
     expect(WEB_CAPS.deadlineMs).toBe(70_000);
     expect(WEB_CAPS.crawlDeadlineMs).toBe(120_000);
     expect(WEB_CAPS.bodyBytes).toBe(8 * 1024 * 1024);
+  });
+});
+
+/**
+ * The bridge's own wiring, pinned by SOURCE SCAN — `summarize`, `permTool` and
+ * the steer hook are closures inside the extension factory, so there is nothing
+ * to import. This is the tests/modal-layer.test.ts pattern, and it is the right
+ * shape here: what must be true is partly an ABSENCE (intent is never the
+ * prompt's headline), and an absence is exactly what a behavioural test on a
+ * live model does not reliably fail on.
+ */
+describe("bridge wiring for §32", () => {
+  const bridge = fs.readFileSync(path.resolve(__dirname, "../pi-runtime/extensions/happyvibe-bridge.ts"), "utf8");
+
+  it("summarises the URL tools by url and web_search by query — never by intent", () => {
+    expect(bridge).toMatch(/WEB_URL_TOOLS\.has\(toolName\)[\s\S]{0,80}input\.url\.slice/);
+    expect(bridge).toMatch(/toolName === "web_search"[\s\S]{0,80}input\.query\.slice/);
+  });
+
+  it("gates the URL tools under browserRuleName, in permTool", () => {
+    expect(bridge).toMatch(/WEB_URL_TOOLS\.has\(tool\)[\s\S]{0,80}browserRuleName\(input\.url\)/);
+    expect(bridge).toMatch(/webHost/);
+  });
+
+  it("appends the steer line only while the group is on", () => {
+    expect(bridge).toMatch(/builtins\.web \? "\\n\\n" \+ WEB_STEER_LINE/);
+  });
+
+  it("refuses a private host BEFORE the gate, and audits it as source:web", () => {
+    expect(bridge).toMatch(/webRefusal\(input\.url\)/);
+    expect(bridge).toMatch(/source: "web"/);
+    // The AuditSource union must know the value, or the renderer's filter and
+    // the bridge disagree about a row that exists.
+    expect(bridge).toMatch(/type AuditSource =[^\n]*"web"/);
   });
 });
