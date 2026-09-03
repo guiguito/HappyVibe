@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld("hv", {
   // ── B1: workspaces & multi-session ─────────────────────────────
   listWorkspaces: () => ipcRenderer.invoke("hv:list-workspaces"),
   addWorkspace: () => ipcRenderer.invoke("hv:add-workspace"),
+  createWorkspaceFolder: (name: string) => ipcRenderer.invoke("hv:create-workspace-folder", name),
   // Round 11: "forget" archives its sessions, "delete" removes them permanently.
   removeWorkspace: (ws: string, mode: "forget" | "delete") =>
     ipcRenderer.invoke("hv:remove-workspace", ws, mode),

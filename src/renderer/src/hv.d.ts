@@ -540,6 +540,8 @@ interface HvApi {
 
   listWorkspaces(): Promise<string[]>;
   addWorkspace(): Promise<string | null>;
+  /** §22 "Start fresh…": creates <name> under ~/Documents/HappyVibe and registers it. */
+  createWorkspaceFolder(name: string): Promise<string>;
   /** Round 11: "forget" archives its sessions (restorable), "delete" removes them for good. */
   removeWorkspace(ws: string, mode: "forget" | "delete"): Promise<{ sessions: number }>;
   /** How many sessions removal would affect — for the confirm, before anything is written. */

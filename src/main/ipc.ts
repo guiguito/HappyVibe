@@ -52,7 +52,7 @@ import {
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDER_IDS, detectLocalRunner, detectOllama, fetchEndpointModels, LOCAL_RUNNERS, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
+  anyProviderConfigured, authJsonProviders, BYOK_PROVIDER_IDS, detectLocalRunner, detectOllama, fetchEndpointModels, LOCAL_RUNNERS, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
@@ -73,7 +73,7 @@ import { aggregate, type AnalyticsFilter } from "./analytics";
 import { buildTitlePrompt, generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
-import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
+import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, createWorkspaceFolder, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
@@ -813,7 +813,9 @@ export function registerIpc(win: BrowserWindow): void {
           return;
         }
         if (p.stage === "success" || p.stage === "logged_out") {
-          providersChanged();
+          // Tell the renderer straight away — but do NOT try to fill the default
+          // model yet. See below.
+          send("hv:providers-changed");
           // Pi's AuthStorage reads its file ONCE at process start, so the utility
           // must respawn or it keeps serving the pre-login credential set — the
           // api-key path already does this (hv:set-provider-key). Then re-ask for
@@ -821,6 +823,14 @@ export function registerIpc(win: BrowserWindow): void {
           void (async () => {
             await restartUtility();
             await requestAuthStatus();
+            // ORDER IS THE BUG THIS FIXES. ensureDefaultModel used to run inside
+            // the providersChanged() above, i.e. BEFORE the respawn — so it asked
+            // the pre-login client for models, got the pre-login set (nothing),
+            // set no default, and was never asked again. A fresh OAuth sign-in
+            // then finished onboarding and the session it opened for you died on
+            // "No model configured". Asking after the respawn is the whole fix.
+            await ensureDefaultModel();
+            send("hv:providers-changed");
           })().catch(() => {});
         }
       } catch {
@@ -854,7 +864,51 @@ export function registerIpc(win: BrowserWindow): void {
   // remove, OAuth login/logout (main sees every utility hv.auth notify), and
   // default/workspace-model edits. The chat bar refetches its model list and
   // resolution tiers on it, so the chip and menu are never stale.
-  const providersChanged = (): void => send("hv:providers-changed");
+  const providersChanged = (): void => {
+    void ensureDefaultModel();
+    send("hv:providers-changed");
+  };
+
+  /**
+   * §22 round 19 — a configured provider with no default model is a dead end,
+   * and it was the FIRST RUN dead end.
+   *
+   * Measured on a fresh profile: two provider keys, 348 models offered, and
+   * `defaultModel: null`, so the very first session died on §16 finding 7's
+   * refusal — "No model configured — add a provider in Settings → Models" —
+   * which points the user back at the page they just finished. Saving a key has
+   * never set a default, and `ModelsView` HIDES its Default-model section while
+   * `firstRun` is true, so the first-run path could not set one at all.
+   *
+   * This does NOT reverse finding 7. That decision killed a HARDCODED spawn-time
+   * fallback which silently pinned a session to a provider the user might never
+   * have configured. This picks from the models the user's OWN configured
+   * providers list, at the moment they configure one, writes it where the Models
+   * page shows and edits it, and leaves the spawn-time refusal untouched — a
+   * default that is stale or removed still refuses.
+   *
+   * Only ever fills a NULL default, so it cannot fight the user's choice, and
+   * the guard is also what stops it looping through providersChanged().
+   */
+  const ensureDefaultModel = async (): Promise<void> => {
+    if (getDefaultModel()) return;
+    try {
+      const c = await ensureUtility();
+      const res = await c.send({ type: "get_available_models" });
+      const models = (res.data as { models?: { provider: string; id: string }[] })?.models ?? [];
+      // Pi's own registry order, first entry from a provider that is actually
+      // configured. No curated shortlist — §16's generated catalog exists to
+      // kill exactly that, and the Models page's searchable picker is one click
+      // away for anyone who wants a different one.
+      const first = models[0];
+      if (!first) return;
+      setDefaultModel({ provider: first.provider, modelId: first.id });
+      await utility?.send({ type: "set_model", provider: first.provider, modelId: first.id }).catch(() => {});
+      send("hv:providers-changed");
+    } catch {
+      /* no utility, no models, no default — the spawn refusal still explains it */
+    }
+  };
 
   // ── MCP status model ─────────────────────────────────────────────────────
   type McpState = "connected" | "needs-auth" | "failed" | "checking";
@@ -1970,6 +2024,13 @@ export function registerIpc(win: BrowserWindow): void {
 
   // ── workspaces ───────────────────────────────────────────────────
   ipcMain.handle("hv:list-workspaces", () => workspaces.list());
+  // §22: the "Start fresh…" door. Path-confined by construction — the name is
+  // a segment, never a path (files.ts createWorkspaceFolder).
+  ipcMain.handle("hv:create-workspace-folder", (_e, name: string) => {
+    const dir = createWorkspaceFolder(String(name));
+    workspaces.add(dir);
+    return dir;
+  });
   ipcMain.handle("hv:add-workspace", async () => {
     const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
     if (r.canceled || !r.filePaths[0]) return null;
@@ -2019,6 +2080,10 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:list-sessions", () => index.list());
 
   ipcMain.handle("hv:create-session", async (_e, workspaceId: string): Promise<SessionMeta> => {
+    // Backstop for every caller, not just onboarding: a provider can exist while
+    // no default model does, and the spawn callback below refuses synchronously.
+    // Free when a default is already set.
+    await ensureDefaultModel();
     const meta = index.create(workspaceId);
     try {
       await startClient(meta, false);
@@ -3199,12 +3264,26 @@ export function registerIpc(win: BrowserWindow): void {
     providersChanged();
   });
 
-  // First-run gate: any BYOK key, any auth.json credential, or local Ollama.
+  // First-run gate: any BYOK key, any auth.json credential, any usable custom
+  // endpoint, or a local runner listening. The last two were missing until the
+  // §22 onboarding round — syncModelsJson writes LM Studio / llama.cpp into
+  // models.json before every spawn, so those users had a working model and were
+  // still told to go and configure one.
   ipcMain.handle("hv:has-any-provider", async () => {
-    const status = providerKeyStatus();
-    if (Object.values(status).some(Boolean)) return true;
-    if (authJsonProviders(agentDir()).length > 0) return true;
-    return (await detectOllama()).running;
+    const [ollama, ...runners] = await Promise.all([
+      detectOllama(),
+      ...LOCAL_RUNNERS.map((r) => detectLocalRunner(r)),
+    ]);
+    return anyProviderConfigured({
+      keyStatus: providerKeyStatus(),
+      authProviders: authJsonProviders(agentDir()),
+      customEndpoints: listCustomEndpoints(),
+      customKeyStatus: customKeyStatus(),
+      // MODELS, not merely a listening port: syncModelsJson only writes an
+      // endpoint that has models, so a bare server would pass the gate and then
+      // leave Pi with nothing to call.
+      localRunning: ollama.models.length > 0 || runners.some((r) => r.models.length > 0),
+    });
   });
 
   // Explicit renderer request only; auth URLs from Pi's OAuth flows.
@@ -5059,4 +5138,17 @@ export function registerIpc(win: BrowserWindow): void {
   } catch {
     /* watch unsupported — renderer re-fetches on navigation */
   }
+
+  /**
+   * §22 round 19: a provider configured through the ENVIRONMENT never passes
+   * through providersChanged(), so a fresh profile with a key in `.env` starts
+   * up already configured and already default-less. One fire-and-forget pass at
+   * boot closes that, and costs nothing on every later launch because a default
+   * is then set.
+   */
+  void (async () => {
+    if (getDefaultModel()) return;
+    if (!Object.values(providerKeyStatus()).some(Boolean) && authJsonProviders(agentDir()).length === 0) return;
+    await ensureDefaultModel();
+  })().catch(() => { /* the spawn refusal still explains a missing model */ });
 }
