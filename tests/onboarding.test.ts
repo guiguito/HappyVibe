@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "../src/renderer/src/onboarding";
+import { chipsFor, folderHasCode, ONBOARDING_COPY, rankProviders, shouldShowOnboarding } from "../src/renderer/src/onboarding";
 
 /**
  * §22 onboarding round (2026-09-01).
@@ -195,9 +195,9 @@ describe("the dialog is a workbench, and a fixed one", () => {
     const brand = src.indexOf("hv-logo-travel");
     const party = src.indexOf("C.doneTitle");
     expect(party, "celebration after the brand column").toBeGreaterThan(brand);
-    // It renders INSIDE the right panel's card, not as a sibling that replaces
-    // the whole grid — that is what keeps the left column and the frame still.
-    const panel = src.indexOf("rounded-2xl bg-card border-2 border-line shadow-sticker");
+    // It renders INSIDE the right panel, not as a sibling that replaces the
+    // whole grid — that is what keeps the left column and the frame still.
+    const panel = src.indexOf("hv-rise-in h-full overflow-y-auto");
     expect(panel, "the right panel exists").toBeGreaterThan(-1);
     expect(party, "inside the right panel").toBeGreaterThan(panel);
   });
@@ -431,5 +431,95 @@ describe("the frame clips nothing — the panel scrolls instead", () => {
     expect(has(src, "grid-rows-[minmax(0,1fr)]"), "bounded row").toBe(true);
     // min-h-0 on both columns, or the row's children set the floor again.
     expect((src.match(/min-h-0/g) ?? []).length, "both columns").toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("rankProviders", () => {
+  const rows = [
+    { id: "zzz", label: "Zed AI", featured: false },
+    { id: "openai", label: "OpenAI", featured: true },
+    { id: "aaa", label: "Acme", featured: false },
+    { id: "deepseek", label: "DeepSeek", featured: true },
+  ];
+
+  it("puts the popular ones first, then everything else A–Z", () => {
+    expect(rankProviders(rows, "").map((r) => r.id)).toEqual(["deepseek", "openai", "aaa", "zzz"]);
+  });
+
+  it("offers ALL providers, not just the featured five", () => {
+    expect(rankProviders(rows, "")).toHaveLength(rows.length);
+  });
+
+  it("searches label and id, and keeps popular-first inside the results", () => {
+    expect(rankProviders(rows, "e").map((r) => r.id)).toEqual(["deepseek", "openai", "aaa", "zzz"]);
+    expect(rankProviders(rows, "acme").map((r) => r.id)).toEqual(["aaa"]);
+    expect(rankProviders(rows, "zzz").map((r) => r.id)).toEqual(["zzz"]);
+  });
+
+  it("returns nothing for a query that matches nothing — the picker says so", () => {
+    expect(rankProviders(rows, "nothingmatches")).toEqual([]);
+  });
+
+  it("does not mutate its input", () => {
+    const copy = [...rows];
+    rankProviders(rows, "");
+    expect(rows).toEqual(copy);
+  });
+
+  it("'popular' is the catalog's own featured flag, not a list invented here", () => {
+    const src = flat(read("onboarding.ts"));
+    expect(/POPULAR_PROVIDERS|["'](openai|anthropic|deepseek)["']\s*,/.test(src), "no hand-list").toBe(false);
+  });
+});
+
+describe("step 1 is a choice before it is a list", () => {
+  it("opens on §16's three ladder rungs, with no provider list showing", () => {
+    // All three lists at once is what pushed step 2 below the fold.
+    const src = flat(DOORS);
+    expect(has(src, 'type Rung = "plan" | "local" | "key"'), "the rungs").toBe(true);
+    expect(has(src, "useState<Rung | null>(null)"), "nothing chosen at first").toBe(true);
+    for (const gate of ['rung === "plan" &&', 'rung === "local" &&', 'rung === "key" &&']) {
+      expect(has(src, gate), gate).toBe(true);
+    }
+  });
+
+  it("offers the local rung only when a runner is actually there", () => {
+    expect(has(flat(DOORS), "local.length > 0 && ("), "conditional rung").toBe(true);
+  });
+});
+
+describe("the API-key picker", () => {
+  it("offers every catalog provider, not the featured five", () => {
+    // p.byok whole, not p.byok.filter(featured) — the old <select> showed 5 of 29.
+    const src = flat(DOORS);
+    expect(has(src, "setByok(p.byok);"), "all of them").toBe(true);
+    expect(/byok\.filter\(\(b\) => b\.featured\)/.test(src), "not pre-filtered").toBe(false);
+  });
+
+  it("is searchable and ranks popular first", () => {
+    const src = flat(DOORS);
+    expect(has(src, "rankProviders(rows, query)"), "ranked").toBe(true);
+    expect(has(src, "ONBOARDING_COPY.step1Search") || has(src, "C.step1Search"), "search field").toBe(true);
+    expect(has(src, "C.step1Popular"), "popular group").toBe(true);
+  });
+
+  it("dismisses with the click-catcher, never onBlur", () => {
+    // Pressing a button does not focus it, so a blur guard unmounts the menu
+    // BETWEEN mousedown and mouseup and the click lands on nothing.
+    const src = flat(DOORS);
+    expect(has(src, 'className="fixed inset-0 z-10"'), "catcher").toBe(true);
+    expect(/onBlur=/.test(src), "no blur dismissal").toBe(false);
+  });
+
+  it("says so when nothing matches, rather than showing an empty box", () => {
+    expect(has(flat(DOORS), "C.step1NoProvider"), "empty state").toBe(true);
+  });
+});
+
+describe("the right panel has no white sheet", () => {
+  it("the steps sit on the board, like the brand column does", () => {
+    const src = flat(DIALOG);
+    const panel = src.slice(src.indexOf("hv-rise-in h-full"), src.indexOf("hv-rise-in h-full") + 120);
+    expect(/bg-card/.test(panel), "no card background on the panel").toBe(false);
   });
 });

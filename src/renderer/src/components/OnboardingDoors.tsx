@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { AuthFlowModal } from "./AuthFlowModal";
 import { GOTO_LABELS } from "./GoTo";
 import { parseAuth, type AuthEvent } from "../auth";
-import { ONBOARDING_COPY as C } from "../onboarding";
+import { ONBOARDING_COPY as C, rankProviders } from "../onboarding";
 
 /**
- * §22 onboarding round (2026-09-01) — step 1's three doors.
+ * §22 onboarding round — step 1's doors.
  *
  * These are NOT ModelsView. That component is 746 lines carrying its own
  * add/draft/probe state, and the round decided against both ways of reusing it:
@@ -13,9 +13,12 @@ import { ONBOARDING_COPY as C } from "../onboarding";
  * whole would put a full page — its own h1, logo and scroll region — inside a
  * dialog. So the wizard covers the COMMON CASE and links out for the rest.
  *
- * Everything underneath is existing machinery: the same AuthFlowModal, the same
- * detectors, the same key probe. The sign-in list comes from MAIN and is never
- * re-listed here — a provider added upstream appears on its own.
+ * Design round 2 (2026-09-03): the three rungs of §16's ladder are a CHOICE
+ * first, and only the chosen one shows its providers. Rendering all three lists
+ * at once is what pushed step 2 below the fold, so the user could not see the
+ * two things the header promises. Everything underneath is still existing
+ * machinery: the same AuthFlowModal, the same detectors, the same key probe,
+ * and a sign-in list that comes from MAIN and is never re-listed here.
  */
 
 const primaryBtn =
@@ -23,8 +26,121 @@ const primaryBtn =
 const ghostBtn =
   "rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
 
-function DoorLabel({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return <div className="text-[10px] font-bold uppercase tracking-widest text-ink-soft mt-4 mb-2">{children}</div>;
+/** Which rung of the ladder the user opened. `null` = still choosing. */
+type Rung = "plan" | "local" | "key";
+
+function RungChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border-2 px-3.5 py-2 text-sm font-bold shadow-sticker cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${
+        active
+          ? "bg-tangerine text-paper border-tangerine-deep"
+          : "bg-card text-ink border-line hover:bg-paper-deep"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function GroupLabel({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-ink-soft">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * All the API-key providers the catalog knows (29 today), popular first,
+ * searchable.
+ *
+ * Not `ModelSelect`: that is typed to a MODEL (`{provider, modelId}`) and
+ * reusing it here would mean dressing providers up as models. Not
+ * `filterCatalog` either — it returns nothing until you type, because it backs
+ * the Models page's "More providers…" box rather than a picker.
+ *
+ * Dismissal is the app's `fixed inset-0` click-catcher, never onBlur: pressing
+ * a button does not focus it, so a blur guard unmounts the menu BETWEEN
+ * mousedown and mouseup and the click lands on nothing. Inside this dialog the
+ * catcher covers the dialog rather than the viewport — Dialog.Content carries a
+ * transform, which makes it the containing block for `fixed` children — and
+ * that is exactly the area that needs catching.
+ */
+function ProviderPicker({
+  rows,
+  value,
+  onPick,
+}: {
+  rows: HvByokProvider[];
+  value: string;
+  onPick: (id: string) => void;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const shown = rankProviders(rows, query);
+  const selected = rows.find((r) => r.id === value);
+  const grouped = query.trim() === "";
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((o) => !o); setQuery(""); }}
+        className="flex items-center gap-2 rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm font-bold cursor-pointer hover:bg-paper-deep"
+      >
+        <span className="truncate max-w-40">{selected ? selected.label : C.step1PickProvider}</span>
+        <span className="text-ink-soft" aria-hidden>▾</span>
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-1 z-20 w-64 rounded-xl border-2 border-ink/70 bg-card shadow-pop overflow-hidden">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={C.step1Search}
+              className="w-full border-b-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none placeholder:text-ink-soft/60"
+            />
+            <div className="max-h-52 overflow-y-auto">
+              {shown.map((r, i) => (
+                <Fragment key={r.id}>
+                  {grouped && i === 0 && r.featured && <GroupLabel>{C.step1Popular}</GroupLabel>}
+                  {grouped && i > 0 && !r.featured && shown[i - 1].featured && (
+                    <GroupLabel>{C.step1AllProviders}</GroupLabel>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { onPick(r.id); setOpen(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-sm font-semibold cursor-pointer hover:bg-honey-soft ${
+                      r.id === value ? "bg-honey-soft" : ""
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                </Fragment>
+              ))}
+              {shown.length === 0 && (
+                <p className="px-3 py-2 text-sm text-ink-soft">{C.step1NoProvider}</p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** A local runner worth offering: listening AND holding at least one model. */
@@ -49,13 +165,13 @@ export function ProviderDoors({
    */
   onNote: (note: string | null) => void;
 }): React.JSX.Element {
+  const [rung, setRung] = useState<Rung | null>(null);
   const [oauth, setOauth] = useState<HvOAuthProvider[]>([]);
-  const [featured, setFeatured] = useState<HvByokProvider[]>([]);
+  const [byok, setByok] = useState<HvByokProvider[]>([]);
   const [local, setLocal] = useState<LocalDoor[]>([]);
   const [login, setLogin] = useState<{ provider: string; label: string; event: AuthEvent | null } | null>(null);
   const [keyId, setKeyId] = useState<string>("");
   const [keyText, setKeyText] = useState("");
-  const [keyNote, setKeyNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -66,9 +182,8 @@ export function ProviderDoors({
         window.hv.detectLocalRunners(),
       ]);
       setOauth(p.oauth);
-      const cards = p.byok.filter((b) => b.featured);
-      setFeatured(cards);
-      setKeyId((id) => id || (cards[0]?.id ?? ""));
+      setByok(p.byok);
+      setKeyId((id) => id || (p.byok.find((b) => b.featured)?.id ?? p.byok[0]?.id ?? ""));
       // "Don't show what cannot work": a runner with no models gives Pi nothing
       // to call, so it is not a door — it is a row that would fail on click.
       setLocal([
@@ -120,76 +235,77 @@ export function ProviderDoors({
     setKeyText("");
     const note =
       probe.status === "bad" ? probe.error : probe.status === "unverified" ? C.step1KeyUnverified : null;
-    setKeyNote(note);
     onNote(note);
     onChanged();
   };
 
   return (
     <div>
-      <DoorLabel>{C.step1SignIn}</DoorLabel>
+      {/* §16's ladder, in its own order: a plan you already pay for, then a free
+          local one, then bring-your-own-key. */}
       <div className="flex flex-wrap gap-2">
-        {oauth.map((p) => (
-          <button key={p.id} type="button" className={ghostBtn} onClick={() => startLogin(p.id, p.label)}>
-            {p.label}
-          </button>
-        ))}
+        <RungChip active={rung === "plan"} onClick={() => setRung("plan")}>{C.step1SignIn}</RungChip>
+        {local.length > 0 && (
+          <RungChip active={rung === "local"} onClick={() => setRung("local")}>{C.step1Local}</RungChip>
+        )}
+        <RungChip active={rung === "key"} onClick={() => setRung("key")}>{C.step1Key}</RungChip>
       </div>
-      {oauth
-        .filter((p) => p.caveat)
-        .map((p) => (
-          // Main's own string, unprefixed — it already names the plan it is
-          // about, and "Claude: Heads up: on Claude Pro/Max…" said it twice.
-          <p key={p.id} className="text-xs text-ink-soft mt-1.5">
-            {p.caveat}
-          </p>
-        ))}
 
-      {local.length > 0 && (
-        <>
-          <DoorLabel>{C.step1Local}</DoorLabel>
+      {rung === "plan" && (
+        <div className="mt-3">
           <div className="flex flex-wrap gap-2">
-            {local.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                className={primaryBtn}
-                // Nothing to save: syncModelsJson writes the entry before every
-                // spawn. Main emits no event for a detector, so this is the one
-                // door that has to nudge the gate itself.
-                onClick={onChanged}
-              >
-                Use {r.label} — found on this Mac
+            {oauth.map((p) => (
+              <button key={p.id} type="button" className={ghostBtn} onClick={() => startLogin(p.id, p.label)}>
+                {p.label}
               </button>
             ))}
           </div>
-        </>
+          {oauth
+            .filter((p) => p.caveat)
+            .map((p) => (
+              // Main's own string, unprefixed — it already names the plan it is
+              // about, and "Claude: Heads up: on Claude Pro/Max…" said it twice.
+              <p key={p.id} className="text-xs text-ink-soft mt-2">
+                {p.caveat}
+              </p>
+            ))}
+        </div>
       )}
 
-      <DoorLabel>{C.step1Key}</DoorLabel>
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={keyId}
-          onChange={(e) => { setKeyId(e.target.value); setKeyNote(null); onNote(null); }}
-          className="rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm font-bold cursor-pointer"
-        >
-          {featured.map((p) => (
-            <option key={p.id} value={p.id}>{p.label}</option>
+      {rung === "local" && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {local.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              className={primaryBtn}
+              // Nothing to save: syncModelsJson writes the entry before every
+              // spawn. Main emits no event for a detector, so this is the one
+              // door that has to nudge the gate itself.
+              onClick={onChanged}
+            >
+              Use {r.label} — found on this Mac
+            </button>
           ))}
-        </select>
-        <input
-          type="password"
-          value={keyText}
-          onChange={(e) => { setKeyText(e.target.value); setKeyNote(null); onNote(null); }}
-          onKeyDown={(e) => { if (e.key === "Enter") void saveKey(); }}
-          placeholder="sk-…"
-          className="flex-1 min-w-40 rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none placeholder:text-ink-soft/60"
-        />
-        <button type="button" className={ghostBtn} disabled={saving || !keyText.trim()} onClick={() => void saveKey()}>
-          {C.step1KeySave}
-        </button>
-      </div>
-      {keyNote && <p className="text-xs text-berry font-bold mt-1.5">{keyNote}</p>}
+        </div>
+      )}
+
+      {rung === "key" && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <ProviderPicker rows={byok} value={keyId} onPick={(id) => { setKeyId(id); onNote(null); }} />
+          <input
+            type="password"
+            value={keyText}
+            onChange={(e) => { setKeyText(e.target.value); onNote(null); }}
+            onKeyDown={(e) => { if (e.key === "Enter") void saveKey(); }}
+            placeholder="sk-…"
+            className="flex-1 min-w-36 rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none placeholder:text-ink-soft/60"
+          />
+          <button type="button" className={ghostBtn} disabled={saving || !keyText.trim()} onClick={() => void saveKey()}>
+            {C.step1KeySave}
+          </button>
+        </div>
+      )}
 
       {/* AuthFlowModal portals to <body>, and it mounts AFTER the wizard's own
           portal — both carry .hv-dialog, i.e. the SAME layer, so document order
@@ -212,7 +328,7 @@ export function ProviderDoors({
  */
 export function ModelsEscape({ onGo }: { onGo: () => void }): React.JSX.Element {
   return (
-    <p className="text-xs text-ink-soft mt-4">
+    <p className="text-xs text-ink-soft mt-3">
       {C.step1EscapeLead}{" "}
       <button type="button" onClick={onGo} className="font-bold underline underline-offset-2 hover:text-tangerine cursor-pointer">
         {GOTO_LABELS.models}

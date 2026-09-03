@@ -16,11 +16,19 @@ export const ONBOARDING_COPY = {
   step1Title: "Connect a model",
   step1Body:
     "The brain. Sign in with a plan you already pay for, run a free one on this Mac, or paste an API key.",
-  step1SignIn: "Sign in with your plan",
+  // The three rungs of §16's ladder, as the choice that opens step 1. Picking
+  // one is what reveals its providers — showing all three lists at once was
+  // what pushed step 2 below the fold.
+  step1SignIn: "Sign in with a plan",
   step1Local: "Free, on this Mac",
   step1Key: "Paste an API key",
   step1KeySave: "Save key",
   step1KeyUnverified: "Saved — couldn't verify this key.",
+  step1PickProvider: "Choose a provider",
+  step1Search: "Search providers…",
+  step1Popular: "Popular",
+  step1AllProviders: "All providers",
+  step1NoProvider: "No provider matches that.",
   // Split so the DESTINATION word stays derived from the sidebar's own NAV
   // (GOTO_LABELS) rather than being re-typed here — §20 round 17 Principle 11.
   step1EscapeLead: "Every option lives on the",
@@ -95,4 +103,24 @@ export function chipsFor(hasCode: boolean): readonly string[] {
  */
 export function folderHasCode(entries: { name: string }[]): boolean {
   return entries.some((e) => !e.name.startsWith("."));
+}
+
+/**
+ * Order the API-key providers for the picker: popular first, then everything
+ * else A–Z, filtered by what was typed.
+ *
+ * "Popular" is the catalog's own `featured` flag — the five cards §16 already
+ * surfaces (DeepSeek, Anthropic, OpenAI, Google, OpenRouter). It is deliberately
+ * NOT a second popularity list invented here: the catalog is generated from
+ * Pi's registry precisely so nobody hand-maintains provider rankings, and one
+ * sanctioned hand-list is enough.
+ */
+export function rankProviders<T extends { id: string; label: string; featured: boolean }>(
+  rows: readonly T[],
+  query: string,
+): T[] {
+  const q = query.trim().toLowerCase();
+  return rows
+    .filter((r) => !q || `${r.label} ${r.id}`.toLowerCase().includes(q))
+    .sort((a, b) => (a.featured !== b.featured ? (a.featured ? -1 : 1) : a.label.localeCompare(b.label)));
 }

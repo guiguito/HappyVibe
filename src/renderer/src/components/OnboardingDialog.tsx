@@ -186,7 +186,7 @@ export function OnboardingDialog({
               onClick={onSkip}
               title={C.skip}
               aria-label={C.skip}
-              className="absolute top-2.5 right-4 z-10 text-3xl leading-none text-ink-soft hover:text-ink cursor-pointer px-1"
+              className="absolute top-3 right-4 z-10 text-base leading-none text-ink-soft hover:text-ink cursor-pointer p-1.5"
             >
               ✕
             </button>
@@ -224,7 +224,7 @@ export function OnboardingDialog({
                 has the full width to travel across. */}
             <div className="min-w-0 min-h-0">
               {!welcome && (
-                <div className="hv-rise-in h-full overflow-y-auto rounded-2xl bg-card border-2 border-line shadow-sticker p-5">
+                <div className="hv-rise-in h-full overflow-y-auto pr-1 pt-1">
                   {!complete ? (
                     <>
                       <h2 className="font-black text-xl tracking-tight mb-3">{C.setupHeader}</h2>
