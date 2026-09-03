@@ -115,22 +115,102 @@ const CHAT = read("components/ChatView.tsx");
 const CSS = fs.readFileSync(path.join(R, "styles.css"), "utf8");
 
 describe("the welcome animation obeys the CSP and reduced motion", () => {
-  it("is CSS keyframes, and the settled frame is reachable without motion", () => {
-    expect(has(CSS, "@keyframes hv-bounce-in"), "bounce keyframes").toBe(true);
-    expect(has(CSS, "@media (prefers-reduced-motion: reduce)"), "reduced-motion block").toBe(true);
+  it("is CSS keyframes — three beats, in order", () => {
+    for (const k of ["hv-logo-travel", "hv-logo-hop", "hv-word-drop", "hv-tag-in"]) {
+      expect(has(CSS, `@keyframes ${k}`), k).toBe(true);
+    }
+  });
+
+  it("the hop eases per keyframe, or it reads as a slide rather than gravity", () => {
+    // A ball accelerates falling and decelerates rising. One transform cannot
+    // express that without a timing function INSIDE each keyframe — the
+    // interval that starts there. Symmetrical arcs are the tell.
+    const hop = CSS.slice(CSS.indexOf("@keyframes hv-logo-hop"));
+    const block = hop.slice(0, hop.indexOf("\n}"));
+    expect((block.match(/animation-timing-function: ease-in/g) ?? []).length, "falls").toBeGreaterThan(2);
+    expect((block.match(/animation-timing-function: ease-out/g) ?? []).length, "rises").toBeGreaterThan(2);
+  });
+
+  it("travel and hop are separate animations — X and Y need different easing", () => {
+    expect(has(CSS, ".hv-logo-travel { animation:"), "travel").toBe(true);
+    expect(has(CSS, ".hv-logo-hop    { animation:"), "hop").toBe(true);
+  });
+
+  it("the whole film stays inside §22's locked 2.5s budget", () => {
+    // tagline is the last beat: delay + duration must land under 2500ms.
+    const tag = CSS.slice(CSS.indexOf(".hv-tag-in "), CSS.indexOf(".hv-tag-in ") + 80);
+    const [dur, delay] = (tag.match(/(\d+)ms/g) ?? []).map((x) => parseInt(x, 10));
+    expect(dur + delay, `${dur}+${delay}`).toBeLessThanOrEqual(2500);
   });
 
   it("reduced motion renders the settled frame rather than a faster bounce", () => {
-    // `both` fill means killing the animation leaves the authored transform, so
-    // the settled tilt has to be restated inside the query.
     const block = CSS.slice(CSS.indexOf("@media (prefers-reduced-motion: reduce)"));
     expect(has(block, "animation: none"), "animation: none").toBe(true);
     expect(has(block, "rotate(-3deg)"), "the settled tilt").toBe(true);
   });
 
+  it("a click lands the settled frame instead of playing faster", () => {
+    expect(has(CSS, ".hv-logo-settled"), "settled class").toBe(true);
+    expect(has(flat(DIALOG), 'welcome ? "hv-logo-hop" : "hv-logo-settled"'), "swapped on skip").toBe(true);
+  });
+
   it("brings no animation runtime — the CSP is script-src 'self' with no blob: or data:", () => {
     const src = flat(DIALOG);
     expect(/lottie|gsap|framer-motion|createObjectURL|new Blob/i.test(src), "no runtime").toBe(false);
+  });
+});
+
+describe("the dialog is a workbench, and a fixed one", () => {
+  it("wears the sidebar's own surface, not a white sheet", () => {
+    // bg-paper-deep + .pegboard is Sidebar.tsx's surface — the workshop board
+    // the app is built on, reused rather than a fourth background invented.
+    const src = flat(DIALOG);
+    expect(has(src, "bg-paper-deep pegboard"), "pegboard").toBe(true);
+    const SIDEBAR = read("components/Sidebar.tsx");
+    expect(has(flat(SIDEBAR), "bg-paper-deep pegboard"), "same as the sidebar").toBe(true);
+  });
+
+  it("is a FIXED size — beats change the panel, never the frame", () => {
+    // Growing for step 1 and shrinking for the celebration re-anchors the
+    // dialog under the pointer three times in one flow.
+    const src = flat(DIALOG);
+    expect(has(src, "w-[min(58rem,calc(100vw-2.5rem))]"), "fixed width").toBe(true);
+    expect(has(src, "h-[min(35rem,calc(100vh-2.5rem))]"), "fixed height").toBe(true);
+    // No max-h: a max is a size that still moves.
+    expect(/max-h-\[/.test(src), "no max-height").toBe(false);
+  });
+
+  it("is two columns — brand left, work right", () => {
+    expect(has(flat(DIALOG), "grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]"), "two columns").toBe(true);
+  });
+
+  it("clips the logo while it is still off frame", () => {
+    // The travel starts at 60rem. Without overflow-hidden the brand mark is
+    // visible sitting outside the dialog before the film starts.
+    expect(has(flat(DIALOG), "overflow-hidden"), "overflow-hidden").toBe(true);
+  });
+
+  it("the celebration lands in the right panel, so the brand column never moves", () => {
+    const src = flat(DIALOG);
+    const brand = src.indexOf("hv-logo-travel");
+    const party = src.indexOf("C.doneTitle");
+    expect(party, "celebration after the brand column").toBeGreaterThan(brand);
+    // It renders INSIDE the right panel's card, not as a sibling that replaces
+    // the whole grid — that is what keeps the left column and the frame still.
+    const panel = src.indexOf("rounded-2xl bg-card border-2 border-line shadow-sticker");
+    expect(panel, "the right panel exists").toBeGreaterThan(-1);
+    expect(party, "inside the right panel").toBeGreaterThan(panel);
+  });
+
+  it("closes with a subtle cross that still names itself", () => {
+    const src = flat(DIALOG);
+    expect(has(src, "✕"), "the glyph").toBe(true);
+    // text-ink-soft/hover:text-ink is the app's existing close idiom
+    // (TerminalRunCard, ChatView search), not a new colour.
+    expect(has(src, "text-ink-soft hover:text-ink"), "house colours").toBe(true);
+    // A bare glyph must not be the whole explanation.
+    expect(has(src, "title={C.skip}"), "named").toBe(true);
+    expect(has(src, "aria-label={C.skip}"), "labelled").toBe(true);
   });
 });
 
@@ -321,5 +401,35 @@ describe("an empty folder is not asked to document itself", () => {
 
   it("uses the same dotfile rule as the chips, not a second one", () => {
     expect(has(flat(CHAT), 'folderHasCode } from "../onboarding"'), "shared predicate").toBe(true);
+  });
+});
+
+describe("opening the wizard does not focus the way out", () => {
+  it("auto-focus is redirected off the dismiss button", () => {
+    // Radix focuses the first tabbable, which is ✕ — so the dialog opened with
+    // a focus ring around it and Enter cancelled onboarding outright.
+    const src = flat(DIALOG);
+    expect(has(src, "onOpenAutoFocus"), "handled").toBe(true);
+    expect(has(src, "contentRef.current?.focus()"), "focus lands on the dialog").toBe(true);
+  });
+
+  it("keeps a real focus target rather than just suppressing the ring", () => {
+    // Hiding the outline would have cost keyboard users their only indicator.
+    const src = flat(DIALOG);
+    const btn = src.slice(src.indexOf("aria-label={C.skip}"), src.indexOf("aria-label={C.skip}") + 260);
+    expect(/focus:outline-none|focus-visible:outline-none/.test(btn), "ring not suppressed").toBe(false);
+  });
+});
+
+describe("the frame clips nothing — the panel scrolls instead", () => {
+  it("the grid row cannot outgrow the fixed frame", () => {
+    // Measured before the fix: dialog scrollHeight-clientHeight = 121px with
+    // panel scroll 0. An auto grid row grew past h-full, the panel's h-full
+    // resolved to the GROWN height so it never scrolled, and overflow-hidden
+    // ate 121px of step 1 in silence.
+    const src = flat(DIALOG);
+    expect(has(src, "grid-rows-[minmax(0,1fr)]"), "bounded row").toBe(true);
+    // min-h-0 on both columns, or the row's children set the floor again.
+    expect((src.match(/min-h-0/g) ?? []).length, "both columns").toBeGreaterThanOrEqual(2);
   });
 });

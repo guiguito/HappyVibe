@@ -234,41 +234,92 @@
 }
 
 /**
- * §22 onboarding (2026-09-01) — the welcome beat.
+ * §22 onboarding — the welcome beat, round 2 (2026-09-03).
  *
  * CSS-only on purpose, not for taste: the renderer CSP is `script-src 'self'`
  * with no `blob:` and no `data:`, so an animation runtime cannot load at all.
  * That is the same wall §27's audio worklet hit, and it is not being hit twice.
+ *
+ * Three beats, in order: the logo skids in from the RIGHT bouncing on a virtual
+ * ground, the wordmark drops from the top and rebounds, then the tagline fades
+ * up. The whole film ends at ~2.3s, inside §22's locked ≤2.5s budget.
+ *
+ * The bounce is split across TWO elements on purpose. A single transform cannot
+ * carry independent easing on X and Y — a ball travelling sideways decelerates
+ * smoothly while falling under gravity and rising against it — so the travel
+ * lives on a wrapper and the hop on the child. What sells it is the
+ * `animation-timing-function` INSIDE each keyframe: it governs the interval
+ * that STARTS there, so every fall is ease-in and every rise is ease-out.
+ * Without that the arcs are symmetrical and it reads as a slide, not a bounce.
  */
-@keyframes hv-bounce-in {
-  0%   { transform: translateX(-160%) translateY(-40%) rotate(-24deg); }
-  40%  { transform: translateX(0) translateY(0) rotate(4deg) scaleX(1.18) scaleY(0.78); }
-  56%  { transform: translateY(-26%) rotate(-3deg) scaleX(0.94) scaleY(1.08); }
-  74%  { transform: translateY(0) rotate(3deg) scaleX(1.1) scaleY(0.9); }
-  88%  { transform: translateY(-8%) rotate(-4deg); }
+
+/* Travel: off the right edge to its resting place. 60rem clears the widest the
+   dialog can ever be (58rem), so it always starts out of frame and the dialog's
+   own overflow does the clipping. */
+@keyframes hv-logo-travel {
+  from { transform: translateX(60rem); }
+  to   { transform: translateX(0); }
+}
+/* The hop. translateY(0) IS the virtual ground; the squash at each contact is
+   §22's promised squash-and-stretch, and the last keyframe is the sticker tilt
+   the brand mark rests at everywhere else in the app. */
+@keyframes hv-logo-hop {
+  0%   { transform: translateY(-10rem) rotate(-20deg); animation-timing-function: ease-in; }
+  20%  { transform: translateY(0) rotate(-10deg) scale(1.16, 0.84); animation-timing-function: ease-out; }
+  29%  { transform: translateY(-4.6rem) rotate(3deg) scale(0.95, 1.07); animation-timing-function: ease-in; }
+  45%  { transform: translateY(0) rotate(8deg) scale(1.11, 0.89); animation-timing-function: ease-out; }
+  54%  { transform: translateY(-2.3rem) rotate(1deg) scale(0.97, 1.04); animation-timing-function: ease-in; }
+  69%  { transform: translateY(0) rotate(-5deg) scale(1.08, 0.92); animation-timing-function: ease-out; }
+  77%  { transform: translateY(-0.95rem) rotate(-1deg); animation-timing-function: ease-in; }
+  88%  { transform: translateY(0) rotate(-5deg) scale(1.05, 0.95); animation-timing-function: ease-out; }
+  94%  { transform: translateY(-0.28rem) rotate(-2deg); animation-timing-function: ease-in; }
   100% { transform: translateY(0) rotate(-3deg); }
+}
+/* The wordmark falls in after the logo has landed, and rebounds twice. */
+@keyframes hv-word-drop {
+  0%   { opacity: 0; transform: translateY(-3.6rem); animation-timing-function: ease-in; }
+  10%  { opacity: 1; }
+  52%  { transform: translateY(0); animation-timing-function: ease-out; }
+  70%  { transform: translateY(-0.8rem); animation-timing-function: ease-in; }
+  85%  { transform: translateY(0); animation-timing-function: ease-out; }
+  93%  { transform: translateY(-0.22rem); animation-timing-function: ease-in; }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes hv-tag-in {
+  from { opacity: 0; transform: translateY(0.6rem); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes hv-rise-in {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.hv-bounce-in { animation: hv-bounce-in 1150ms cubic-bezier(0.3, 0.7, 0.4, 1) both; }
-.hv-rise-in   { animation: hv-rise-in 340ms ease-out both; }
-.hv-rise-in-late { animation: hv-rise-in 340ms ease-out 260ms both; }
+
+.hv-logo-travel { animation: hv-logo-travel 1250ms cubic-bezier(0.22, 0.58, 0.35, 1) both; }
+.hv-logo-hop    { animation: hv-logo-hop 1250ms linear both; }
+.hv-word-drop   { animation: hv-word-drop 620ms 1180ms linear both; }
+.hv-tag-in      { animation: hv-tag-in 520ms 1780ms ease-out both; }
+.hv-rise-in     { animation: hv-rise-in 340ms ease-out both; }
+/* Where the film ends. Any click or key swaps the animation classes for this,
+   which lands the settled frame instantly instead of playing faster. */
+.hv-logo-settled { transform: rotate(-3deg); }
 
 /**
  * Reduced motion renders the SETTLED FRAME, not a faster animation — a bounce
- * at 3x speed is still a bounce. `both` fill on the classes above means killing
- * the animation would leave the element at its authored transform, so the
- * settled tilt is restated here.
+ * at 3x speed is still a bounce. `both` fill means killing the animation would
+ * leave the element at its authored transform, so every settled value is
+ * restated here.
  */
 @media (prefers-reduced-motion: reduce) {
   .hv-overlay,
   .hv-dialog,
-  .hv-bounce-in,
-  .hv-rise-in,
-  .hv-rise-in-late { animation: none !important; }
-  .hv-bounce-in { transform: rotate(-3deg); }
-  .hv-rise-in,
-  .hv-rise-in-late { opacity: 1; transform: none; }
+  .hv-logo-travel,
+  .hv-logo-hop,
+  .hv-word-drop,
+  .hv-tag-in,
+  .hv-rise-in { animation: none !important; }
+  .hv-logo-travel { transform: none; }
+  .hv-logo-hop { transform: rotate(-3deg); }
+  .hv-word-drop,
+  .hv-tag-in,
+  .hv-rise-in { opacity: 1; transform: none; }
 }

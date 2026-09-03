@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { BrandLogo } from "./BrandLogo";
 import { ModelsEscape, ProviderDoors } from "./OnboardingDoors";
@@ -99,6 +99,7 @@ export function OnboardingDialog({
   // saving it CHECKS step 1 (the key is stored whatever the answer), which
   // unmounts the doors — and took the refusal with it.
   const [keyNote, setKeyNote] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -143,7 +144,20 @@ export function OnboardingDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]" />
         <Dialog.Content
-          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(52rem,calc(100vw-3rem))] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-8 focus:outline-none"
+          ref={contentRef}
+          /**
+           * The size is FIXED for the whole flow — beats change what is in the
+           * right panel, never how big the dialog is. A dialog that grows as
+           * step 1 opens and shrinks again for the celebration re-anchors the
+           * page under the pointer three times in twenty seconds.
+           *
+           * `bg-paper-deep pegboard` is the SIDEBAR's own surface (Sidebar.tsx),
+           * not a new one: the workshop board the app is built on, so first run
+           * looks like the place you are about to work in rather than a form.
+           * `overflow-hidden` is load-bearing — it is what clips the logo while
+           * it is still off frame to the right.
+           */
+          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(58rem,calc(100vw-2.5rem))] h-[min(35rem,calc(100vh-2.5rem))] overflow-hidden rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-6 focus:outline-none"
           onEscapeKeyDown={(e) => {
             // First Esc lands the animation; only a second one dismisses. §27's
             // "last in the Escape chain" care, one dialog over.
@@ -151,95 +165,129 @@ export function OnboardingDialog({
             if (welcome) { setWelcome(false); return; }
             onSkip();
           }}
+          onOpenAutoFocus={(e) => {
+            // Radix focuses the first tabbable, which here is the DISMISS — so
+            // the wizard opened with a browser focus ring around ✕ and Enter
+            // would have cancelled onboarding outright. Focus the dialog itself
+            // instead: the scope is still trapped, Escape still works (Radix
+            // listens on the document, not on focus), and Tab reaches the doors.
+            e.preventDefault();
+            contentRef.current?.focus();
+          }}
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
-          <div className="flex items-center gap-5">
-            <div className={welcome ? "hv-bounce-in" : "-rotate-3"}>
-              <BrandLogo size="lg" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <Dialog.Title className="font-black text-3xl tracking-tight leading-none">
-                Happy<span className="text-tangerine">Vibe</span>
-              </Dialog.Title>
-              <Dialog.Description className="hv-rise-in-late text-ink-soft mt-1.5">
+          {/* The only way out. Subtle by design — it sits over the board rather
+              than in a chrome bar — but never hidden, and named by the tooltip
+              so a bare glyph is not the whole explanation. */}
+          {!complete && (
+            <button
+              type="button"
+              onClick={onSkip}
+              title={C.skip}
+              aria-label={C.skip}
+              className="absolute top-2.5 right-4 z-10 text-3xl leading-none text-ink-soft hover:text-ink cursor-pointer px-1"
+            >
+              ✕
+            </button>
+          )}
+
+          {/* `grid-rows-[minmax(0,1fr)]` is load-bearing, not tidiness. An auto row
+              grows past `h-full` when its content is taller, so the panel's own
+              `h-full` resolved to the GROWN height, it never scrolled, and the
+              dialog's overflow-hidden silently ate 121px of step 1 — measured. A
+              row that cannot exceed the frame is what pushes the scroll inward. */}
+          <div className="grid h-full grid-rows-[minmax(0,1fr)] grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] gap-6">
+            {/* LEFT — the brand. Constant across all three beats, which is what
+                makes the dialog feel like one place rather than three screens. */}
+            <div className="flex flex-col justify-center min-w-0 min-h-0 pl-2">
+              <div className="flex items-center gap-3">
+                <div className={welcome ? "hv-logo-travel" : undefined}>
+                  <div className={welcome ? "hv-logo-hop" : "hv-logo-settled"}>
+                    <BrandLogo size="lg" />
+                  </div>
+                </div>
+                <Dialog.Title
+                  className={`font-black text-4xl tracking-tight leading-none ${welcome ? "hv-word-drop" : ""}`}
+                >
+                  Happy<span className="text-tangerine">Vibe</span>
+                </Dialog.Title>
+              </div>
+              <Dialog.Description
+                className={`mt-7 text-2xl font-bold leading-snug text-ink-soft ${welcome ? "hv-tag-in" : ""}`}
+              >
                 {C.tagline}
               </Dialog.Description>
             </div>
-            {/* The only way out, so it lives where nothing can scroll it away —
-                measured at the default 900x638 window, the same link under the
-                steps sat 27px below the fold. */}
-            {!welcome && !complete && (
-              <button
-                type="button"
-                onClick={onSkip}
-                className="shrink-0 self-start text-sm text-ink-soft hover:text-ink cursor-pointer underline underline-offset-2"
-              >
-                {C.skip}
-              </button>
-            )}
-          </div>
 
-          {!welcome && !complete && (
-            <div className="hv-rise-in mt-7">
-              <h2 className="font-black text-xl tracking-tight mb-3">{C.setupHeader}</h2>
+            {/* RIGHT — the work. Empty board while the film plays, so the logo
+                has the full width to travel across. */}
+            <div className="min-w-0 min-h-0">
+              {!welcome && (
+                <div className="hv-rise-in h-full overflow-y-auto rounded-2xl bg-card border-2 border-line shadow-sticker p-5">
+                  {!complete ? (
+                    <>
+                      <h2 className="font-black text-xl tracking-tight mb-3">{C.setupHeader}</h2>
+                      <div className="flex flex-col gap-3">
+                        <StepRow n="1" done={modelReady} active={!modelReady} title={C.step1Title} body={C.step1Body} note={keyNote}>
+                          <ProviderDoors onChanged={onRefreshModel} onNote={setKeyNote} />
+                          <ModelsEscape onGo={onGoModels} />
+                        </StepRow>
 
-              <div className="flex flex-col gap-3">
-                <StepRow n="1" done={modelReady} active={!modelReady} title={C.step1Title} body={C.step1Body} note={keyNote}>
-                  <ProviderDoors onChanged={onRefreshModel} onNote={setKeyNote} />
-                  <ModelsEscape onGo={onGoModels} />
-                </StepRow>
-
-                <StepRow
-                  n="2"
-                  done={workspaceReady}
-                  active={modelReady && !workspaceReady}
-                  title={C.step2Title}
-                  body={C.step2Body}
-                >
-                  {fresh === null ? (
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" className={primaryBtn} onClick={onOpenFolder}>{C.step2Open}</button>
-                      <button type="button" className={ghostBtn} onClick={() => setFresh({ name: "", error: null })}>
-                        {C.step2Fresh}
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          autoFocus
-                          value={fresh.name}
-                          onChange={(e) => setFresh({ name: e.target.value, error: null })}
-                          onKeyDown={(e) => { if (e.key === "Enter") void createFresh(); }}
-                          placeholder={C.step2FreshLabel}
-                          className="flex-1 min-w-48 rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none placeholder:text-ink-soft/60"
-                        />
-                        <button
-                          type="button"
-                          className={primaryBtn}
-                          disabled={busy || !fresh.name.trim()}
-                          onClick={() => void createFresh()}
+                        <StepRow
+                          n="2"
+                          done={workspaceReady}
+                          active={modelReady && !workspaceReady}
+                          title={C.step2Title}
+                          body={C.step2Body}
                         >
-                          {C.step2FreshCreate}
-                        </button>
+                          {fresh === null ? (
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" className={primaryBtn} onClick={onOpenFolder}>{C.step2Open}</button>
+                              <button type="button" className={ghostBtn} onClick={() => setFresh({ name: "", error: null })}>
+                                {C.step2Fresh}
+                              </button>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <input
+                                  autoFocus
+                                  value={fresh.name}
+                                  onChange={(e) => setFresh({ name: e.target.value, error: null })}
+                                  onKeyDown={(e) => { if (e.key === "Enter") void createFresh(); }}
+                                  placeholder={C.step2FreshLabel}
+                                  className="flex-1 min-w-40 rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none placeholder:text-ink-soft/60"
+                                />
+                                <button
+                                  type="button"
+                                  className={primaryBtn}
+                                  disabled={busy || !fresh.name.trim()}
+                                  onClick={() => void createFresh()}
+                                >
+                                  {C.step2FreshCreate}
+                                </button>
+                              </div>
+                              <p className="text-xs text-ink-soft mt-1.5">{C.step2FreshWhere}</p>
+                              {fresh.error && <p className="text-xs text-berry font-bold mt-1.5">{fresh.error}</p>}
+                            </div>
+                          )}
+                        </StepRow>
                       </div>
-                      <p className="text-xs text-ink-soft mt-1.5">{C.step2FreshWhere}</p>
-                      {fresh.error && <p className="text-xs text-berry font-bold mt-1.5">{fresh.error}</p>}
+                    </>
+                  ) : (
+                    /* The celebration lands in the RIGHT panel, so the brand
+                       column never moves and the dialog never resizes. */
+                    <div className="h-full flex flex-col items-center justify-center text-center">
+                      <div className="text-6xl mb-4" aria-hidden>🎉</div>
+                      <h2 className="font-black text-3xl tracking-tight">{C.doneTitle}</h2>
+                      <p className="text-ink-soft mt-2">{C.doneBody}</p>
                     </div>
                   )}
-                </StepRow>
-              </div>
+                </div>
+              )}
             </div>
-          )}
-
-          {!welcome && complete && (
-            <div className="hv-rise-in mt-10 mb-6 text-center">
-              <div className="text-5xl mb-3" aria-hidden>🎉</div>
-              <h2 className="font-black text-3xl tracking-tight">{C.doneTitle}</h2>
-              <p className="text-ink-soft mt-2">{C.doneBody}</p>
-            </div>
-          )}
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
