@@ -313,9 +313,21 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
     setTest(null);
     void window.hv.webServiceSet({ mode: m }).then(() => setSvc((s) => (s ? { ...s, mode: m } : s)));
   };
+  // "Your own" with nothing typed resolves to HappyVibe's service, by design —
+  // a half-saved setting must not break every web tool. But that makes both
+  // buttons LIE if they act on it: Save would report "Saved." for a service
+  // that is not yours, and Test would answer "Connected." about the default
+  // one. So the row refuses instead, which is the only place that knows the
+  // user picked "Your own" and typed nothing.
+  const missingUrl = mode === "custom" && !url.trim();
+
   const save = (): void => {
     setSaved(false);
     setTest(null);
+    if (missingUrl) {
+      setTest("Enter the address of your service first.");
+      return;
+    }
     void window.hv
       .webServiceSet({ mode: "custom", baseUrl: url, ...(key ? { key } : {}) })
       .then(() => {
@@ -327,6 +339,10 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
   };
   const runTest = (): void => {
     setSaved(false);
+    if (missingUrl) {
+      setTest("Enter the address of your service first.");
+      return;
+    }
     setTest("Testing…");
     // An unsaved URL is testable on purpose: check before committing.
     void window.hv

@@ -187,3 +187,27 @@ describe("the Built-in tools page never names the backend (§32)", () => {
     expect(src).toMatch(/Applies to the next call/);
   });
 });
+
+/**
+ * §32 — "Your own" with nothing typed.
+ *
+ * `resolveWebService` falls back to the default in that case ON PURPOSE, so a
+ * half-saved setting cannot break every web tool. The consequence is that the
+ * row's two buttons would otherwise lie: Save would say "Saved." about a
+ * service that is not yours, and Test would say "Connected." about
+ * HappyVibe's. Found by tracing, not by the type checker — both paths were
+ * type-correct.
+ */
+describe("the web service row refuses a blank custom URL (§32)", () => {
+  const src = fs.readFileSync(path.resolve(__dirname, "../src/renderer/src/components/BuiltinToolsBlock.tsx"), "utf8");
+
+  it("guards BOTH buttons, not just the one that reads", () => {
+    expect(src).toMatch(/const missingUrl = mode === "custom" && !url\.trim\(\)/);
+    // Two call sites: save and runTest. A guard on one of them is the bug.
+    expect(src.match(/if \(missingUrl\)/g)?.length).toBe(2);
+  });
+
+  it("says what to do rather than reporting a success that is not one", () => {
+    expect(src).toContain("Enter the address of your service first.");
+  });
+});
