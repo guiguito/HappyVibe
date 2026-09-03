@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
 import { asyncResultInfo, delegationLabel, inspectToResults, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
-import { resolveCardPath } from "../tabs";
+import { basename, resolveCardPath } from "../tabs";
+import { isDocumentPath } from "../../../../pi-runtime/extensions/hv-document";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { ZoomableImage } from "./ZoomableImage";
 
@@ -420,6 +421,29 @@ function PathActions({
   onOpenFile?: (relPath: string) => void;
 }): React.JSX.Element {
   const rel = workspace ? resolveCardPath(workspace, raw) : null;
+  // §31: resolveCardPath returns null for a document — a .docx in CodeMirror is
+  // zip bytes on screen — so the ONE action it gets is Reveal in Finder, on the
+  // original file rather than on the Markdown the model read.
+  if (!rel && isDocumentPath(raw) && raw.startsWith("/")) {
+    return (
+      <span className="group/path shrink-0 flex items-center gap-1 min-w-0">
+        <span className="max-w-48 truncate font-mono text-[11px] text-ink-soft" title={raw}>
+          {basename(raw)}
+        </span>
+        <button
+          type="button"
+          aria-label="Reveal in Finder"
+          title="Reveal in Finder"
+          onClick={() => void window.hv.revealDocument(raw)}
+          className="hidden group-hover/path:block rounded p-0.5 text-ink-soft hover:text-ink cursor-pointer"
+        >
+          <svg viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+      </span>
+    );
+  }
   if (!rel || !onOpenFile) {
     return (
       <span className="shrink-0 max-w-48 truncate font-mono text-[11px] text-ink-soft" title={raw}>
@@ -758,6 +782,13 @@ export function ToolCard({
   const s = STATUS[card.status];
   const denied = card.status === "denied";
   const { icon, label, path: filePath, destructive, brand } = toolLabel(card.toolName, card.args);
+  // §31: main computes the facts line and sends it structured on `details`, so
+  // the card renders one string rather than re-deriving a format from raw
+  // numbers — the same division of labour the delegation cards use.
+  const factsLine =
+    card.toolName === "document_read"
+      ? ((card.result as { details?: { factsLine?: unknown } } | undefined)?.details?.factsLine as string | undefined)
+      : undefined;
   return (
     <div
       className={`rounded-xl border-2 bg-card shadow-sticker overflow-hidden ${
@@ -784,6 +815,14 @@ export function ToolCard({
           </span>
         </button>
         {filePath && <PathActions raw={filePath} workspace={workspace} onOpenFile={onOpenFile} />}
+        {/* §31: what the model actually got — family, size and the slice it was
+            shown. Muted, beside the path, because it is a receipt rather than a
+            headline. */}
+        {factsLine && (
+          <span className="shrink-0 font-mono text-[11px] text-ink-soft" title={factsLine}>
+            {factsLine}
+          </span>
+        )}
         {/* Round 15: the badges are icons, each carrying the word it replaced in
             `title` + aria-label. Only badges that say something the status DOT
             cannot survive here: who approved the call, why it was skipped, and

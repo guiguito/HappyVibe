@@ -693,3 +693,20 @@ describe("openBrowserTab — the human path", () => {
     expect(paneOf(t, browserTab("b1"))).not.toBe(paneOf(t, chatTab("s1")));
   });
 });
+
+describe("§31: a document path is never an editor path", () => {
+  it("returns null so the card offers Reveal in Finder instead of Open", () => {
+    // A .docx in CodeMirror is zip bytes on screen. resolveCardPath is the ONE
+    // place that answers "is this a file of ours", so the refusal lives here
+    // rather than in the card — same reasoning as the round-15 URL guard above.
+    expect(resolveCardPath("/ws", "/ws/spec.docx")).toBeNull();
+    expect(resolveCardPath("/ws", "notes/deck.PPTX")).toBeNull();
+    expect(resolveCardPath("/ws", "/ws/book.epub")).toBeNull();
+  });
+
+  it("still opens the text files read handles, CSV included", () => {
+    expect(resolveCardPath("/ws", "notes/readme.md")).toBe("notes/readme.md");
+    expect(resolveCardPath("/ws", "data/table.csv")).toBe("data/table.csv");
+    expect(resolveCardPath("/ws", "src/a.ts")).toBe("src/a.ts");
+  });
+});

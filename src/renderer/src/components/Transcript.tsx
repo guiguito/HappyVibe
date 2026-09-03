@@ -3,7 +3,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
 import { PlanCard, type PlanCardData } from "./PlanCard";
-import { splitMentionSegments, stripInjectedBlocks } from "../mentions";
+import { parseDocumentChips, splitMentionSegments, stripInjectedBlocks } from "../mentions";
+import { documentFamily } from "../../../../pi-runtime/extensions/hv-document";
+import { basename } from "../tabs";
 import { ZoomableImage } from "./ZoomableImage";
 import { BrandLogo } from "./BrandLogo";
 import { formatDuration, timeagoLong } from "../timeago";
@@ -316,7 +318,12 @@ function UserBubble({
 }): React.JSX.Element {
   // F3: strip the hidden @file context blocks so the bubble (and copy/search)
   // shows only what the user wrote; @tokens render as chips.
-  const text = stripInjectedBlocks("text" in it ? it.text : "");
+  const raw = "text" in it ? it.text : "";
+  const text = stripInjectedBlocks(raw);
+  // §31: the documents this message carried, read back off the block headers.
+  // ONE path for live and restored: live, the renderer never saw the chips main
+  // built; restored, only the session file exists. The header answers both.
+  const docChips = parseDocumentChips(raw);
   const images = "images" in it ? it.images : undefined;
   const [expanded, setExpanded] = useState(false);
   // §24: a promptTemplate invocation is exactly the disclosure this bubble already
@@ -336,6 +343,21 @@ function UserBubble({
           <div className="flex flex-wrap gap-2 mb-2">
             {images.map((src, i) => (
               <ZoomableImage key={i} src={src} />
+            ))}
+          </div>
+        )}
+        {/* §31: a document rides as a chip, never as its Markdown. The user
+            attached a file; the wall of converted text is for the model. */}
+        {docChips.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {docChips.map((d, i) => (
+              <span
+                key={`${d.path}-${i}`}
+                className="rounded-md bg-paper/25 px-1.5 py-0.5 text-xs font-semibold"
+                title={d.path}
+              >
+                {basename(d.path)} · {documentFamily(d.format)}
+              </span>
             ))}
           </div>
         )}

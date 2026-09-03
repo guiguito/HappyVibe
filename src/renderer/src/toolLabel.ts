@@ -290,6 +290,17 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       const p = str("path");
       return { icon: "file-plus", label: p ? `Creating ${basename(p)}` : "Creating a file", path: p ?? undefined };
     }
+    // §31: the model's own sentence leads, the file name is the fallback. The
+    // path rides `path` so the card can offer Reveal in Finder — resolveCardPath
+    // returns null for a document, which is what stops it offering the editor.
+    case "document_read": {
+      const p = str("path");
+      return {
+        icon: "eye",
+        label: intent ?? (p ? `Reading ${basename(p)}` : "Reading a document"),
+        ...(p ? { path: p } : {}),
+      };
+    }
     case "read": {
       const p = str("path");
       const artifact = p ? describeSubagentArtifact(p) : null;

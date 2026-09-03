@@ -270,3 +270,17 @@ test("a rule name keeps its own colons, and the bare tools are unaffected", () =
   // An unknown prefix is not a rule name — it must not be swallowed by the guard.
   expect(toolLabel("weird:thing", undefined).label).toBe("Weird:thing");
 });
+
+test("§31: document_read leads with the model's sentence and falls back to the file name", () => {
+  expect(toolLabel("document_read", { path: "/x/report.docx", intent: "Looking for the pricing table" }).label)
+    .toBe("Looking for the pricing table");
+  const l = toolLabel("document_read", { path: "/x/report.docx" });
+  expect(l.label).toBe("Reading report.docx");
+  expect(l.icon).toBe("eye");
+  // The path rides through so the card can offer Reveal in Finder.
+  expect(l.path).toBe("/x/report.docx");
+});
+
+test("§31: document_read degrades to a sentence when the model sent no path", () => {
+  expect(toolLabel("document_read", {}).label).toBe("Reading a document");
+});
