@@ -211,3 +211,27 @@ describe("the web service row refuses a blank custom URL (§32)", () => {
     expect(src).toContain("Enter the address of your service first.");
   });
 });
+
+/**
+ * Where the "Web" label actually renders — pinned because the round got this
+ * WRONG in prose first and the GUI pass caught it.
+ *
+ * `toolLabel` is called by the permission modal and the tool cards. The
+ * Permissions page renders `r.pattern` into an editable input and the audit log
+ * renders `r.tool`, both verbatim and both RIGHT to: one is a rule editor
+ * showing the pattern you would type, the other is a record. So a claim that
+ * the label reaches those pages is false, and this is the cheapest way to keep
+ * it false-and-known rather than false-and-documented.
+ */
+describe("the Web label's real reach (§32)", () => {
+  const read = (f: string): string => fs.readFileSync(path.resolve(__dirname, "../src/renderer/src", f), "utf8");
+
+  it("the permission modal uses toolLabel — that is where the headline comes from", () => {
+    expect(read("components/PermissionModal.tsx")).toMatch(/toolLabel/);
+  });
+
+  it("the Permissions rule editor and the audit log deliberately do NOT", () => {
+    expect(read("components/PermissionRulesSection.tsx")).not.toMatch(/toolLabel/);
+    expect(read("components/AuditView.tsx")).not.toMatch(/toolLabel/);
+  });
+});

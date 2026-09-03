@@ -212,9 +212,15 @@ const VIRTUAL_RULE: Record<string, { icon: IconKind; kind: string }> = {
   subagent: { icon: "robot", kind: "Sub-agent" },
   mcp: { icon: "wrench", kind: "MCP" },
   // §32: the rule covers §28's browser AND the web tools, so the label is the
-  // one word that is true of both. It renders in three places — the permission
-  // prompt's headline, the Permissions page and the audit log — and "Browser"
-  // would be a lie in two of them the moment a web_fetch created the grant.
+  // one word that is true of both — "Browser" became a lie the moment a
+  // web_fetch could create the grant.
+  //
+  // Where this actually renders, checked in the running app rather than
+  // assumed: the PERMISSION PROMPT's headline (PermissionModal) and any card
+  // whose tool IS a virtual rule. The Permissions page and the audit log
+  // deliberately do NOT use it — the first is a rule EDITOR showing the
+  // pattern you would type, the second is a RECORD, and both are better off
+  // verbatim. (This entry first claimed all three; the GUI pass disproved it.)
   browser: { icon: "globe", kind: "Web" },
 };
 
