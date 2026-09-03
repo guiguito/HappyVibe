@@ -1,8 +1,8 @@
+import { parseDocumentHeaders } from "../src/main/documents";
 import { describe, expect, it } from "vitest";
 import {
   activeMentionQuery, agentMentionItems, completeMention, extractMentions, filterEntries, mentionLabel,
-  splitMentionSegments, stripInjectedBlocks, type MentionEntry,
-} from "../src/renderer/src/mentions";
+  splitMentionSegments, stripInjectedBlocks, type MentionEntry, parseDocumentChips } from "../src/renderer/src/mentions";
 
 const entries: MentionEntry[] = [
   { rel: "src/a/toto.md", kind: "file" },
@@ -153,5 +153,38 @@ describe("agentMentionItems ordering", () => {
       { name: "z-mine", source: "user" },
     ];
     expect(agentMentionItems(many, "z")[0].name).toBe("z-mine");
+  });
+});
+
+describe("§31 documents in the bubble", () => {
+  it("strips a <document> block like a <file> block — the chip is what the user sees", () => {
+    const t = 'read this\n\n<document path="/x/a.docx" format="docx">\n# A\nbody\n</document>';
+    expect(stripInjectedBlocks(t)).toBe("read this");
+  });
+
+  it("strips whichever injected block comes first when several ride along", () => {
+    const t = 'hi\n\n<document path="/a.docx" format="docx">\nx\n</document>\n\n<file path="b.ts">\ny\n</file>';
+    expect(stripInjectedBlocks(t)).toBe("hi");
+    const other = 'hi\n\n<file path="b.ts">\ny\n</file>\n\n<document path="/a.docx" format="docx">\nx\n</document>';
+    expect(stripInjectedBlocks(other)).toBe("hi");
+  });
+
+  it("reads the chips back off the headers, live and restored alike", () => {
+    const t = 'q\n\n<document path="/x/a.docx" format="docx">\n# A\n</document>\n\n<document path="/c.pdf" format="pdf">\nz\n</document>';
+    expect(parseDocumentChips(t)).toEqual([
+      { path: "/x/a.docx", format: "docx" },
+      { path: "/c.pdf", format: "pdf" },
+    ]);
+    expect(parseDocumentChips("nothing here")).toEqual([]);
+    expect(parseDocumentChips("I opened a <document> yesterday")).toEqual([]);
+  });
+
+  it("agrees with main's parser — two copies of one regex, pinned together", () => {
+    // The renderer cannot import from src/main, so the regex exists twice. This
+    // is the assertion that stops them drifting.
+    const fixture =
+      'x\n\n<document path="/a/b c.docx" format="docx">\nbody\n</document>\n\n' +
+      '<document path="/d.odt" format="odt">\nmore\n</document>';
+    expect(parseDocumentChips(fixture)).toEqual(parseDocumentHeaders(fixture));
   });
 });

@@ -106,7 +106,10 @@ export function stripInjectedBlocks(text: string): string {
   // selector and the markup to act on what was pointed at; the person who
   // pointed at it does not, and putting them in the bubble buried their own
   // sentence under fifteen lines of machinery.
-  for (const mk of ['\n\n<file path="', '\n\n<file-listing path="', "\n\n<open-files>", "\n\n<page-element "]) {
+  // §31: a <document> block joins the same list, and for the same reason — the
+  // user picked a file, they did not type its Markdown, so the bubble shows a
+  // chip and the block stays out of it. Live and restored alike.
+  for (const mk of ['\n\n<file path="', '\n\n<file-listing path="', "\n\n<open-files>", "\n\n<page-element ", "\n\n<document "]) {
     const i = text.indexOf(mk);
     if (i >= 0 && (cut < 0 || i < cut)) cut = i;
   }
@@ -229,4 +232,23 @@ export function agentMentionItems<T extends { name: string; source: string }>(
   // roster chip use — otherwise the five kept here are five arbitrary ones in
   // discovery order, and the same list reads differently on three surfaces.
   return sortAgents(agents.filter((a) => a.name.toLowerCase().includes(q))).slice(0, limit);
+}
+
+/**
+ * §31: the documents a message carried, read back off the block headers.
+ *
+ * The bubble needs this on BOTH paths and cannot tell them apart: live, the
+ * renderer never saw the chips main built; restored, there is only the session
+ * file. Reading the header is the one thing that works for both.
+ *
+ * The renderer cannot import from src/main, so this regex is a second copy of
+ * parseDocumentHeaders' — tests/mentions.test.ts pins them against the same
+ * fixture so they cannot drift apart.
+ */
+export function parseDocumentChips(text: string): Array<{ path: string; format: string }> {
+  const out: Array<{ path: string; format: string }> = [];
+  const re = /^<document path="([^"]*)" format="([^"]*)">$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) out.push({ path: m[1], format: m[2] });
+  return out;
 }

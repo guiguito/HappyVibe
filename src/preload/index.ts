@@ -64,6 +64,12 @@ contextBridge.exposeInMainWorld("hv", {
   setSessionModel: (sessionId: string, m: { provider: string; modelId: string } | null) =>
     ipcRenderer.invoke("hv:set-session-model", sessionId, m),
   pickImage: () => ipcRenderer.invoke("hv:pick-image"),
+  // §31: the picker converts at pick time, so the chip can show the cost.
+  pickDocument: (sessionId?: string) => ipcRenderer.invoke("hv:pick-document", sessionId),
+  describeDocument: (absPath: string, sessionId?: string) =>
+    ipcRenderer.invoke("hv:describe-document", absPath, sessionId),
+  revealDocument: (absPath: string) => ipcRenderer.invoke("hv:reveal-document", absPath),
+  documentsAvailable: () => ipcRenderer.invoke("hv:documents-available"),
 
   // ── W2.2: file tree + editor + card path actions (additive) ─────
   fsList: (workspaceId: string, relDir: string) => ipcRenderer.invoke("hv:fs-list", workspaceId, relDir),

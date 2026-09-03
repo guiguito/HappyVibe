@@ -458,6 +458,21 @@ interface HvVerdict {
 }
 
 /** W2.2 — mirrors FsEntry/ReadResult in src/main/files.ts (separate tsconfig roots). */
+/**
+ * §31: a document attached in the composer. `lines`/`bytes` describe the
+ * MARKDOWN, which is what the model will actually read; `error` carries the
+ * sentence when this one could not be converted, and the chip then shows that
+ * instead of a size.
+ */
+interface HvDocumentChip {
+  path: string;
+  name: string;
+  format: string;
+  lines: number;
+  bytes: number;
+  error?: string;
+}
+
 interface HvFsEntry {
   name: string;
   kind: "dir" | "file";
@@ -574,12 +589,21 @@ interface HvApi {
     /** F3: workspace-relative paths of @file references — content injected main-side. */
     mentions?: string[],
     /** Round 11: paths of the files open in the editor — PATHS ONLY, no content. */
-    openFiles?: string[]
+    openFiles?: string[],
+    /** §31: absolute paths of attached documents — main converts and injects them. */
+    documents?: string[]
   ): Promise<{ warnings: string[] }>;
   abortSession(sessionId: string): Promise<void>;
   // W2.1: per-session model override + image attach
   setSessionModel(sessionId: string, m: { provider: string; modelId: string } | null): Promise<{ live: boolean }>;
   pickImage(): Promise<{ data: string; mimeType: string; name: string } | null>;
+
+  // §31 Documents. The picker CONVERTS at pick time, so the chip shows what the
+  // document costs in context before the user sends it.
+  pickDocument(sessionId?: string): Promise<HvDocumentChip[]>;
+  describeDocument(absPath: string, sessionId?: string): Promise<HvDocumentChip | null>;
+  revealDocument(absPath: string): Promise<void>;
+  documentsAvailable(): Promise<boolean>;
 
   // W2.2: file tree + editor + card path actions
   fsList(workspaceId: string, relDir: string): Promise<HvFsEntry[]>;
@@ -773,8 +797,8 @@ interface HvApi {
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
   // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
-  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean }>;
-  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean }): Promise<void>;
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; document: boolean }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; document?: boolean }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
   /** §19 (2026-08-30): the three model calls the app makes without a session. */
