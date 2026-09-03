@@ -151,3 +151,52 @@ addon, and the difference is structural rather than a version quirk:
 So the Windows-arm64 path is a **real second code path in the sidecar** — init, read, convert from
 bytes, and no `toMarkdown` — not a changed import line. Cheap enough to write when a Windows build
 exists, and worth knowing now that it is not free. Nothing here is wired into the app.
+
+## GUI pass (2026-09-04, dev build, driven over CDP)
+
+Every claim below was observed in the running app, not inferred from a test.
+
+**Composer.** The `+` menu's row reads **Attach document** with the subtext
+*Word, PowerPoint, Excel, PDF, OpenDocument, RTF, EPUB*. The two absences the design is
+about are visible absences: **no `CSV`**, and **no "coming soon"** row.
+
+**Conversion inside the real app**, through `nodeExecPath()` rather than plain node:
+`documentsAvailable()` → true; `sample.docx` → `{format:"docx", lines:78, bytes:1316}`;
+`mixed.pdf` → the scanned-pages sentence; `table.csv` → *Not a document — use `read`…*;
+`encrypted.odt` → *Encrypted — … password-protected*.
+
+**Settings.** *Documents — 1 tool* sits under *Agent browser — 10 tools*, above *Tool intent*,
+with the shared respawn note and the local-conversion claim. There is no *Agent documents* row.
+
+**Agent tools page** (the surface where the switch is observed): `document_read` listed with
+**ALLOW**, which is `SAFE_TOOLS` doing its job.
+
+**The regression sequence, performed:** switch Documents off → the Agent tools page no longer
+lists `document_read` while `browser_get_text` remains → the composer's *Attach document* row is
+**disabled and says "off in Built-in tools"**.
+
+**End to end, with the agent:** a message carrying `sample.docx` produced a
+`<document path="…" format="docx">` block in the session file, and the model answered
+**"Fixture Document"** — the file's actual H1. The bubble shows a **`sample.docx · Word`** chip,
+the typed question, and **neither the markup nor the Markdown**. Reopening the session shows the
+same three things, rebuilt from the block header.
+
+**Plan mode:** `document_read` ran with **no permission modal**, carrying its required intent
+(*"Reading the RTF sample to find its first heading."*) and returning
+`sample.rtf — RTF · 77 lines · 1 KB · showing 1–77`.
+
+### Four bugs the GUI pass caught that the suite did not
+
+1. **preload dropped the `documents` argument.** It invoked `hv:prompt-session` with six
+   arguments while `hv.d.ts`, main and App all declared seven. Nothing failed — the block simply
+   never injected and the agent never saw the document. Typechecks cleanly, because the two sides
+   are separate tsconfig roots kept in sync by hand.
+2. **The live bubble showed no chip.** App appends the bubble from the text the user TYPED, while
+   the blocks are assembled main-side, so only a reopened session had anything to parse. The chips
+   now ride the transcript item live and fall back to the header on restore.
+3. **The `+` row went stale.** ChatView read the toggle once on mount and stays mounted while the
+   user visits Settings, so after switching Documents off the row stayed enabled — offering a tool
+   that was already unregistered. It now reads the value when the menu opens.
+4. **"page 2 is scanned images."** The verb agreed with the page count and the noun did not.
+
+Each is now pinned by a test.
