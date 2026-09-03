@@ -2475,7 +2475,13 @@ export function registerIpc(win: BrowserWindow): void {
         ...(meta?.workspaceId ? docMentions.map((rel) => path.resolve(meta.workspaceId!, rel)) : []),
       ];
       if (docPaths.length) {
-        if (outgoing !== msg && typedByOutgoing.has(outgoing)) {
+        // Ask the SAME question the mention branch asks, directly. Inferring it
+        // from `typedByOutgoing` looked equivalent and was not: that map is only
+        // written when a mention was actually rewritten, so a template command
+        // carrying a document and no mentions would have fallen through here and
+        // injected the blocks it exists to keep out.
+        const expands = !!meta?.workspaceId && willExpand(msg, activePromptTemplateEntries(meta.workspaceId));
+        if (expands) {
           warnings = [...warnings, "Documents are not attached to a prompt-template command — send them in a plain message."];
         } else {
           const hasVision = await sessionCanSeeImages(meta?.workspaceId, sessionId);
