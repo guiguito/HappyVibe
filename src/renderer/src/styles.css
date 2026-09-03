@@ -294,6 +294,27 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/**
+ * The handover beat. The old version faded the whole panel up over 340ms,
+ * which at that size reads as nothing happening at all — you saw "You're in."
+ * already sitting there. Three staggered pops instead: the popper bursts, the
+ * line lands on top of it, the sub-line follows.
+ */
+@keyframes hv-burst {
+  0%   { opacity: 0; transform: scale(0.3) rotate(-24deg); animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1.4); }
+  55%  { opacity: 1; transform: scale(1.28) rotate(6deg); animation-timing-function: ease-out; }
+  75%  { transform: scale(0.94) rotate(-3deg); animation-timing-function: ease-in-out; }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+@keyframes hv-pop-up {
+  0%   { opacity: 0; transform: translateY(0.75rem) scale(0.8); animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1.5); }
+  65%  { opacity: 1; transform: translateY(0) scale(1.06); animation-timing-function: ease-out; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.hv-burst      { animation: hv-burst 700ms both; }
+.hv-done-title { animation: hv-pop-up 460ms 300ms both; }
+.hv-done-body  { animation: hv-rise-in 360ms 560ms ease-out both; }
+
 .hv-logo-travel { animation: hv-logo-travel 1250ms cubic-bezier(0.22, 0.58, 0.35, 1) both; }
 .hv-logo-hop    { animation: hv-logo-hop 1250ms linear both; }
 .hv-word-drop   { animation: hv-word-drop 620ms 1180ms linear both; }
@@ -316,10 +337,16 @@
   .hv-logo-hop,
   .hv-word-drop,
   .hv-tag-in,
-  .hv-rise-in { animation: none !important; }
+  .hv-rise-in,
+  .hv-burst,
+  .hv-done-title,
+  .hv-done-body { animation: none !important; }
   .hv-logo-travel { transform: none; }
   .hv-logo-hop { transform: rotate(-3deg); }
   .hv-word-drop,
   .hv-tag-in,
-  .hv-rise-in { opacity: 1; transform: none; }
+  .hv-rise-in,
+  .hv-burst,
+  .hv-done-title,
+  .hv-done-body { opacity: 1; transform: none; }
 }

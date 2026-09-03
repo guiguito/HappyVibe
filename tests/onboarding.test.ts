@@ -563,3 +563,29 @@ describe("the margin round the content is the same on all four sides", () => {
     expect(/overflow-y-auto pr-\d/.test(src), "no extra right padding").toBe(false);
   });
 });
+
+describe("the handover beat is actually visible", () => {
+  it("pops in three staggered parts rather than fading the whole panel", () => {
+    // 340ms of rise on a whole panel reads as nothing happening — you just
+    // find "You're in." already sitting there.
+    for (const k of ["@keyframes hv-burst", "@keyframes hv-pop-up"]) {
+      expect(has(CSS, k), k).toBe(true);
+    }
+    const src = flat(DIALOG);
+    for (const c of ["hv-burst", "hv-done-title", "hv-done-body"]) {
+      expect(has(src, c), c).toBe(true);
+    }
+  });
+
+  it("holds long enough to be read once the pops finish", () => {
+    // Staggered delays end ~920ms in; the handover must come after that.
+    expect(has(flat(DIALOG), "setTimeout(onDone, 2200)"), "dwell").toBe(true);
+  });
+
+  it("is settled instantly under reduced motion, like every other beat", () => {
+    const block = CSS.slice(CSS.indexOf("@media (prefers-reduced-motion: reduce)"));
+    for (const c of ["hv-burst", "hv-done-title", "hv-done-body"]) {
+      expect(has(block, c), c).toBe(true);
+    }
+  });
+});

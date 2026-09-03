@@ -813,7 +813,9 @@ export function registerIpc(win: BrowserWindow): void {
           return;
         }
         if (p.stage === "success" || p.stage === "logged_out") {
-          providersChanged();
+          // Tell the renderer straight away — but do NOT try to fill the default
+          // model yet. See below.
+          send("hv:providers-changed");
           // Pi's AuthStorage reads its file ONCE at process start, so the utility
           // must respawn or it keeps serving the pre-login credential set — the
           // api-key path already does this (hv:set-provider-key). Then re-ask for
@@ -821,6 +823,14 @@ export function registerIpc(win: BrowserWindow): void {
           void (async () => {
             await restartUtility();
             await requestAuthStatus();
+            // ORDER IS THE BUG THIS FIXES. ensureDefaultModel used to run inside
+            // the providersChanged() above, i.e. BEFORE the respawn — so it asked
+            // the pre-login client for models, got the pre-login set (nothing),
+            // set no default, and was never asked again. A fresh OAuth sign-in
+            // then finished onboarding and the session it opened for you died on
+            // "No model configured". Asking after the respawn is the whole fix.
+            await ensureDefaultModel();
+            send("hv:providers-changed");
           })().catch(() => {});
         }
       } catch {
@@ -2070,6 +2080,10 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:list-sessions", () => index.list());
 
   ipcMain.handle("hv:create-session", async (_e, workspaceId: string): Promise<SessionMeta> => {
+    // Backstop for every caller, not just onboarding: a provider can exist while
+    // no default model does, and the spawn callback below refuses synchronously.
+    // Free when a default is already set.
+    await ensureDefaultModel();
     const meta = index.create(workspaceId);
     try {
       await startClient(meta, false);

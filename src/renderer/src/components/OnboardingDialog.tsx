@@ -120,7 +120,9 @@ export function OnboardingDialog({
     if (!complete || welcome) return;
     // The success path hands over: it does the next thing itself rather than
     // congratulating the user and leaving them on an empty screen.
-    const t = setTimeout(onDone, 1600);
+    // The pops finish at ~920ms. Handing over at 1600 cut the moment short;
+    // this leaves a beat to actually read it.
+    const t = setTimeout(onDone, 2200);
     return () => clearTimeout(t);
   }, [complete, welcome, onDone]);
 
@@ -279,9 +281,9 @@ export function OnboardingDialog({
                     /* The celebration lands in the RIGHT panel, so the brand
                        column never moves and the dialog never resizes. */
                     <div className="h-full flex flex-col items-center justify-center text-center">
-                      <div className="text-6xl mb-4" aria-hidden>🎉</div>
-                      <h2 className="font-black text-3xl tracking-tight">{C.doneTitle}</h2>
-                      <p className="text-ink-soft mt-2">{C.doneBody}</p>
+                      <div className="hv-burst text-6xl mb-4" aria-hidden>🎉</div>
+                      <h2 className="hv-done-title font-black text-3xl tracking-tight">{C.doneTitle}</h2>
+                      <p className="hv-done-body text-ink-soft mt-2">{C.doneBody}</p>
                     </div>
                   )}
                 </div>
