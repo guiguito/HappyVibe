@@ -112,3 +112,18 @@ test.skipIf(!fs.existsSync(CLI))("a corrupt HV_BUILTINS fails OPEN — every bui
   expect(tools).toContain("ask_user");
   expect(commands.some((c) => c.includes("hv-plan"))).toBe(true);
 }, 30_000);
+
+test.skipIf(!fs.existsSync(CLI))(
+  "§31: HV_BUILTINS {\"document\":false} unregisters document_read; the default registers it",
+  async () => {
+    const off = await probe(JSON.stringify({ document: false }));
+    expect(off.tools.length).toBeGreaterThan(0);
+    expect(off.tools).not.toContain("document_read");
+    // The other groups are untouched by this key — one tool, no coupling.
+    expect(off.tools).toContain("ask_user");
+
+    const on = await probe(undefined);
+    expect(on.tools).toContain("document_read");
+  },
+  30_000,
+);
