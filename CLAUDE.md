@@ -494,6 +494,27 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   (folded `description:`, scanned to zero skills). Long descriptions are idiomatic in the Agent Skills
   spec, so this is the common case, not a corner. Match Pi on types too: `disable-model-invocation`
   is `=== true` (a real boolean), and malformed YAML degrades to "no frontmatter" rather than throwing.
+- **`@firecrawl/anydoc` is the FIFTH runtime pin (§31 Documents) and runs in exactly one place —
+  `pi-runtime/bin/anydoc-bridge.mjs`, a one-shot sidecar off `nodeExecPath()`.** Never in main, never
+  in the Pi child: measured, a 200k-row workbook takes the CONVERTING process to **848 MB RSS** and
+  produces 4.1 MB of Markdown, while the parent stays flat (upstream #155 as a number). **The sidecar
+  imports the NATIVE BINDING, `index.js`, NOT the package's own `main`** — `main` is `anydoc.js`, a
+  wrapper carrying the hosted-OCR path and `https://api.firecrawl.dev` in its source, so importing the
+  binding means the code that could send a document off the machine is never loaded. That is §31's
+  privacy claim, and `tests/anydoc-contract.test.ts` asserts both halves against the real package;
+  a bump that renames that file silently restores the wrapper.
+  **The pin is 0.2.4 and the reason is not the one the proposal predicted:** on a mixed PDF (one image
+  page, one text page) *neither* 0.2.3 nor 0.2.4 returns the text pages — 0.2.3 rejects the file as an
+  undifferentiated `unsupported` with no page numbers, 0.2.4 rejects it as `needsOcr` carrying `pages`
+  and `pageCount`. What the pin buys is the page LIST that lets the sentence name the scanned pages
+  (#144/#162 is a live limitation in both). **There is NO page count on a successful conversion
+  anywhere in the API** — `toMarkdown` returns a bare string, `toDocument` is unsupported for PDF —
+  so the facts line, the chip and the block header omit it rather than invent one; `pageCount` rides
+  the `needsOcr` error only. **CSV is deliberately NOT a document** though anydoc converts it fine:
+  it is a text file, `read` handles it, and the contract test keeps proving anydoc *would* convert it
+  so the exclusion stays a decision rather than an accident. The extension set is **20**, not the 13
+  or 14 earlier prose claimed — derive it from `DOCUMENT_FAMILIES`, never hand-list. Measurements:
+  `docs/validation/ad1.md`.
 - **A PLUGIN's `.mcp.json` is not our `.mcp.json`.** Two shapes exist upstream — measured across the
   278-entry official marketplace: **169 wrapped** in `{mcpServers:{…}}` and **26 bare**, a straight
   `name → config` map, and the bare set is `github`, `linear`, `context7`, `playwright`, `asana`,
