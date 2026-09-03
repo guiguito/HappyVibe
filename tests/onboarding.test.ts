@@ -174,8 +174,10 @@ describe("the dialog is a workbench, and a fixed one", () => {
     // Growing for step 1 and shrinking for the celebration re-anchors the
     // dialog under the pointer three times in one flow.
     const src = flat(DIALOG);
-    expect(has(src, "w-[min(58rem,calc(100vw-2.5rem))]"), "fixed width").toBe(true);
-    expect(has(src, "h-[min(35rem,calc(100vh-2.5rem))]"), "fixed height").toBe(true);
+    // The SHAPE, not the numbers: a tweak to the size is a design call, but
+    // going back to a max/auto height is the regression this guards.
+    expect(/w-\[min\(\d+rem,calc\(100vw-[\d.]+rem\)\)\]/.test(src), "fixed width").toBe(true);
+    expect(/h-\[min\(\d+rem,calc\(100vh-[\d.]+rem\)\)\]/.test(src), "fixed height").toBe(true);
     // No max-h: a max is a size that still moves.
     expect(/max-h-\[/.test(src), "no max-height").toBe(false);
   });
@@ -473,14 +475,27 @@ describe("rankProviders", () => {
 });
 
 describe("step 1 is a choice before it is a list", () => {
-  it("opens on §16's three ladder rungs, with no provider list showing", () => {
-    // All three lists at once is what pushed step 2 below the fold.
+  it("offers §16's three ladder rungs and opens on rung 1", () => {
+    // All three LISTS at once is what pushed step 2 below the fold; the rungs
+    // are the choice, and the recommended one is already open.
     const src = flat(DOORS);
     expect(has(src, 'type Rung = "plan" | "local" | "key"'), "the rungs").toBe(true);
-    expect(has(src, "useState<Rung | null>(null)"), "nothing chosen at first").toBe(true);
-    for (const gate of ['rung === "plan" &&', 'rung === "local" &&', 'rung === "key" &&']) {
+    expect(has(src, 'useState<Rung>("plan")'), "opens on rung 1").toBe(true);
+    for (const gate of ['show={rung === "plan"}', 'show={rung === "local"}', 'show={rung === "key"}']) {
       expect(has(src, gate), gate).toBe(true);
     }
+  });
+
+  it("switching rungs cannot resize the card", () => {
+    // Every rung sits in the SAME grid cell, so the card is always as tall as
+    // the tallest one. A fixed pixel height would do this too and then be wrong
+    // the day a provider is added.
+    const src = flat(DOORS);
+    expect(has(src, "col-start-1 row-start-1"), "one cell").toBe(true);
+    // `invisible`, not `hidden`: a hidden panel must still be MEASURED, or the
+    // cell shrinks to the visible one and the blink comes back.
+    expect(has(src, "invisible pointer-events-none"), "measurable when hidden").toBe(true);
+    expect(/\bhidden\b/.test(src.slice(src.indexOf("function RungPanel"), src.indexOf("function RungPanel") + 400)), "not display:none").toBe(false);
   });
 
   it("offers the local rung only when a runner is actually there", () => {
@@ -521,5 +536,30 @@ describe("the right panel has no white sheet", () => {
     const src = flat(DIALOG);
     const panel = src.slice(src.indexOf("hv-rise-in h-full"), src.indexOf("hv-rise-in h-full") + 120);
     expect(/bg-card/.test(panel), "no card background on the panel").toBe(false);
+  });
+});
+
+describe("the setup panel is clean", () => {
+  it("has no header — the numbered cards already say it", () => {
+    expect(has(flat(DIALOG), "setupHeader"), "no header").toBe(false);
+    expect(Object.keys(ONBOARDING_COPY), "and its copy is gone").not.toContain("setupHeader");
+  });
+
+  it("centres the stack rather than pinning it to the top", () => {
+    // Top-anchored left a dead strip along the bottom of the panel; the left
+    // column centres too, so this is the pair agreeing.
+    expect(has(flat(DIALOG), "h-full flex flex-col justify-center gap-3"), "centred").toBe(true);
+  });
+});
+
+describe("the margin round the content is the same on all four sides", () => {
+  it("one padding value, and the column gap matches it", () => {
+    // Measured before: 48/44 vertical against 32/28 horizontal. The dialog's
+    // own padding is now the whole margin — no per-column padding on top.
+    const src = flat(DIALOG);
+    expect(has(src, "shadow-pop p-7"), "one padding").toBe(true);
+    expect(has(src, "gap-7"), "gap matches it").toBe(true);
+    expect(/min-w-0 min-h-0 pl-\d/.test(src), "no extra left padding").toBe(false);
+    expect(/overflow-y-auto pr-\d/.test(src), "no extra right padding").toBe(false);
   });
 });

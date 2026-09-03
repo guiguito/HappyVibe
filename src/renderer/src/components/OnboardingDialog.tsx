@@ -157,7 +157,7 @@ export function OnboardingDialog({
            * `overflow-hidden` is load-bearing — it is what clips the logo while
            * it is still off frame to the right.
            */
-          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(58rem,calc(100vw-2.5rem))] h-[min(35rem,calc(100vh-2.5rem))] overflow-hidden rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-6 focus:outline-none"
+          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(54rem,calc(100vw-3rem))] h-[min(30rem,calc(100vh-3rem))] overflow-hidden rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-7 focus:outline-none"
           onEscapeKeyDown={(e) => {
             // First Esc lands the animation; only a second one dismisses. §27's
             // "last in the Escape chain" care, one dialog over.
@@ -186,7 +186,7 @@ export function OnboardingDialog({
               onClick={onSkip}
               title={C.skip}
               aria-label={C.skip}
-              className="absolute top-3 right-4 z-10 text-base leading-none text-ink-soft hover:text-ink cursor-pointer p-1.5"
+              className="absolute top-2.5 right-2.5 z-10 text-base leading-none text-ink-soft hover:text-ink cursor-pointer p-1.5"
             >
               ✕
             </button>
@@ -197,10 +197,10 @@ export function OnboardingDialog({
               `h-full` resolved to the GROWN height, it never scrolled, and the
               dialog's overflow-hidden silently ate 121px of step 1 — measured. A
               row that cannot exceed the frame is what pushes the scroll inward. */}
-          <div className="grid h-full grid-rows-[minmax(0,1fr)] grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] gap-6">
+          <div className="grid h-full grid-rows-[minmax(0,1fr)] grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] gap-7">
             {/* LEFT — the brand. Constant across all three beats, which is what
                 makes the dialog feel like one place rather than three screens. */}
-            <div className="flex flex-col justify-center min-w-0 min-h-0 pl-2">
+            <div className="flex flex-col justify-center min-w-0 min-h-0">
               <div className="flex items-center gap-3">
                 <div className={welcome ? "hv-logo-travel" : undefined}>
                   <div className={welcome ? "hv-logo-hop" : "hv-logo-settled"}>
@@ -224,11 +224,12 @@ export function OnboardingDialog({
                 has the full width to travel across. */}
             <div className="min-w-0 min-h-0">
               {!welcome && (
-                <div className="hv-rise-in h-full overflow-y-auto pr-1 pt-1">
+                <div className="hv-rise-in h-full overflow-y-auto">
                   {!complete ? (
-                    <>
-                      <h2 className="font-black text-xl tracking-tight mb-3">{C.setupHeader}</h2>
-                      <div className="flex flex-col gap-3">
+                    // Centred, not top-anchored: the stack is shorter than the
+                    // panel and pinning it to the top left a dead strip along
+                    // the bottom. The left column centres too, so they agree.
+                    <div className="h-full flex flex-col justify-center gap-3">
                         <StepRow n="1" done={modelReady} active={!modelReady} title={C.step1Title} body={C.step1Body} note={keyNote}>
                           <ProviderDoors onChanged={onRefreshModel} onNote={setKeyNote} />
                           <ModelsEscape onGo={onGoModels} />
@@ -273,8 +274,7 @@ export function OnboardingDialog({
                             </div>
                           )}
                         </StepRow>
-                      </div>
-                    </>
+                    </div>
                   ) : (
                     /* The celebration lands in the RIGHT panel, so the brand
                        column never moves and the dialog never resizes. */

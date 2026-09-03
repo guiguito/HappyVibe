@@ -11,7 +11,6 @@
 
 export const ONBOARDING_COPY = {
   tagline: "Good vibes, real code.",
-  setupHeader: "Two things and you're in.",
 
   step1Title: "Connect a model",
   step1Body:

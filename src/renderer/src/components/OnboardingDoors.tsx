@@ -26,8 +26,25 @@ const primaryBtn =
 const ghostBtn =
   "rounded-xl bg-card text-ink font-bold text-sm px-4 py-2 border-2 border-line shadow-sticker cursor-pointer hover:bg-paper-deep active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
 
-/** Which rung of the ladder the user opened. `null` = still choosing. */
+/** Which rung of §16's ladder is open. Starts on rung 1, the recommended one. */
 type Rung = "plan" | "local" | "key";
+
+/**
+ * All rungs occupy the SAME grid cell, so the card is always as tall as the
+ * tallest one and switching rungs cannot resize it.
+ *
+ * A fixed pixel height would do the same thing and then be wrong the day a
+ * provider is added — this derives the height from the content that is actually
+ * there. `invisible` (not `hidden`) is what keeps the hidden panels measurable,
+ * and it also takes them out of the tab order.
+ */
+function RungPanel({ show, children }: { show: boolean; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className={`col-start-1 row-start-1 ${show ? "" : "invisible pointer-events-none"}`}>
+      {children}
+    </div>
+  );
+}
 
 function RungChip({
   active,
@@ -165,7 +182,7 @@ export function ProviderDoors({
    */
   onNote: (note: string | null) => void;
 }): React.JSX.Element {
-  const [rung, setRung] = useState<Rung | null>(null);
+  const [rung, setRung] = useState<Rung>("plan");
   const [oauth, setOauth] = useState<HvOAuthProvider[]>([]);
   const [byok, setByok] = useState<HvByokProvider[]>([]);
   const [local, setLocal] = useState<LocalDoor[]>([]);
@@ -251,8 +268,8 @@ export function ProviderDoors({
         <RungChip active={rung === "key"} onClick={() => setRung("key")}>{C.step1Key}</RungChip>
       </div>
 
-      {rung === "plan" && (
-        <div className="mt-3">
+      <div className="mt-3 grid">
+        <RungPanel show={rung === "plan"}>
           <div className="flex flex-wrap gap-2">
             {oauth.map((p) => (
               <button key={p.id} type="button" className={ghostBtn} onClick={() => startLogin(p.id, p.label)}>
@@ -269,11 +286,10 @@ export function ProviderDoors({
                 {p.caveat}
               </p>
             ))}
-        </div>
-      )}
+        </RungPanel>
 
-      {rung === "local" && (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <RungPanel show={rung === "local"}>
+          <div className="flex flex-wrap gap-2">
           {local.map((r) => (
             <button
               key={r.id}
@@ -286,12 +302,12 @@ export function ProviderDoors({
             >
               Use {r.label} — found on this Mac
             </button>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        </RungPanel>
 
-      {rung === "key" && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <RungPanel show={rung === "key"}>
+          <div className="flex flex-wrap items-center gap-2">
           <ProviderPicker rows={byok} value={keyId} onPick={(id) => { setKeyId(id); onNote(null); }} />
           <input
             type="password"
@@ -303,9 +319,10 @@ export function ProviderDoors({
           />
           <button type="button" className={ghostBtn} disabled={saving || !keyText.trim()} onClick={() => void saveKey()}>
             {C.step1KeySave}
-          </button>
-        </div>
-      )}
+            </button>
+          </div>
+        </RungPanel>
+      </div>
 
       {/* AuthFlowModal portals to <body>, and it mounts AFTER the wizard's own
           portal — both carry .hv-dialog, i.e. the SAME layer, so document order
