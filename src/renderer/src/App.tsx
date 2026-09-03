@@ -2001,6 +2001,8 @@ export default function App(): React.JSX.Element {
     behavior?: "followUp",
     attachments?: ImageAttachment[],
     mentions?: string[],
+    /** §31: absolute paths of attached documents; main converts and injects them. */
+    documents?: string[],
   ): Promise<void> => {
     // W2.1: attached images ride the RPC `images` param (ImageContent[]).
     const images = attachments?.length ? buildImages(attachments) : undefined;
@@ -2016,7 +2018,7 @@ export default function App(): React.JSX.Element {
     // transcript when Pi delivers it.
     if (busy[sid]) {
       try {
-        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions, openFiles);
+        const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions, openFiles, documents);
         noteWarnings(warnings);
       } catch (err) {
         surface(err);
@@ -2033,7 +2035,7 @@ export default function App(): React.JSX.Element {
     delete aborted.current[sid];
     setBusy((p) => ({ ...p, [sid]: true }));
     try {
-      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles);
+      const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documents);
       noteWarnings(warnings);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
@@ -2798,7 +2800,7 @@ export default function App(): React.JSX.Element {
             } : undefined}
             composerInsert={composerInsert?.sid === sid ? composerInsert : undefined}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
-            onSend={(msg, behavior, images, mentions) => void send(sid, msg, behavior, images, mentions)}
+            onSend={(msg, behavior, images, mentions, documents) => void send(sid, msg, behavior, images, mentions, documents)}
             pageRefs={pageRefs[sid]}
             onDropPageRef={(i) =>
               setPageRefs((p) => ({ ...p, [sid]: (p[sid] ?? []).filter((_, j) => j !== i) }))
