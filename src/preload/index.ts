@@ -270,6 +270,11 @@ contextBridge.exposeInMainWorld("hv", {
   builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean }) =>
     ipcRenderer.invoke("hv:builtins-set", t),
   builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
+  // ── §32: the web service the web tools call (read per call, no respawn) ────
+  webServiceGet: () => ipcRenderer.invoke("hv:web-service-get"),
+  webServiceSet: (p: { mode: "default" | "custom"; baseUrl?: string; key?: string | null }) =>
+    ipcRenderer.invoke("hv:web-service-set", p),
+  webServiceTest: (p: { baseUrl?: string; key?: string }) => ipcRenderer.invoke("hv:web-service-test", p),
   // §19: the three model calls the app makes without a session.
   assistantTasksGet: () => ipcRenderer.invoke("hv:assistant-tasks-get"),
   assistantTaskSet: (id: string, patch: unknown) => ipcRenderer.invoke("hv:assistant-task-set", id, patch),
