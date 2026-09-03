@@ -11,6 +11,7 @@ import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
 import { disabledAgentOverrides } from "./subagentSettings";
 import { EXTERNAL_CLI_AGENTS, UNSUPPORTED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
+import { resolveWebService } from "./webTools";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -48,6 +49,11 @@ interface ConfigFile {
       and §26's grouped Terminal entry). Global only — no per-workspace tier.
       Absent key = on (fail-open default). */
   builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean };
+  /** §32: the web service main calls for the web tools. Absent = HappyVibe's
+      default. Global only, like builtinTools, and read PER CALL rather than at
+      spawn — the Pi child never sees the URL or the key, so a change needs no
+      respawn. */
+  webService?: { mode: "default" | "custom"; baseUrl?: string; keyEnc?: string };
   /** Extended prompt-cache retention (PI_CACHE_RETENTION=long). Global only,
       absent = off — the default is cheaper for short-gap sessions, see
       getLongCache. */
@@ -344,6 +350,44 @@ export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppe
   const cfg = load();
   cfg.builtinTools = { ...cfg.builtinTools, ...t };
   save(cfg);
+}
+
+/**
+ * §32 — the web service, for the settings row. `hasKey` rather than the key:
+ * the renderer needs to know whether to say "saved" in the placeholder, and
+ * nothing more. A decrypted key exists in exactly one place, the request
+ * itself (resolveWebServiceForCall below).
+ */
+export function getWebService(): { mode: "default" | "custom"; baseUrl?: string; hasKey: boolean } {
+  const w = load().webService;
+  return { mode: w?.mode ?? "default", ...(w?.baseUrl ? { baseUrl: w.baseUrl } : {}), hasKey: Boolean(w?.keyEnc) };
+}
+
+/**
+ * `key: string` sets, `null` clears, `undefined` KEEPS what is stored — so the
+ * settings row can save a changed URL without the user re-typing a key it never
+ * shows them. Encrypted exactly like customKeys.
+ */
+export function setWebService(p: { mode: "default" | "custom"; baseUrl?: string; key?: string | null }): void {
+  const cfg = load();
+  const prev = cfg.webService ?? { mode: "default" as const };
+  const next: NonNullable<ConfigFile["webService"]> = { mode: p.mode };
+  const base = (p.baseUrl ?? prev.baseUrl)?.trim();
+  if (base) next.baseUrl = base;
+  if (p.key === null) {
+    /* cleared on purpose */
+  } else if (typeof p.key === "string" && p.key.trim()) {
+    next.keyEnc = safeStorage.encryptString(p.key.trim()).toString("base64");
+  } else if (prev.keyEnc) {
+    next.keyEnc = prev.keyEnc;
+  }
+  cfg.webService = next;
+  save(cfg);
+}
+
+/** The one place a web-service key is decrypted. Called per tool call. */
+export function resolveWebServiceForCall(): { baseUrl: string; key?: string; service: "default" | "custom" } {
+  return resolveWebService(load().webService, (b64) => safeStorage.decryptString(Buffer.from(b64, "base64")));
 }
 
 /**
