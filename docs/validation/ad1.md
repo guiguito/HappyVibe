@@ -27,7 +27,7 @@ unrecognised file gets. Upstream #144/#162 (one image page rejecting the whole P
 0.2.4 and was already present in 0.2.3**; the issue is a real limitation for both, and the fixture
 in `tests/anydoc-contract.test.ts` is what tells us the day it is fixed.
 
-## 2. Conversion, all 13 extensions plus the two refusals (0.2.4)
+## 2. Conversion, one fixture per family plus the two refusals (0.2.4)
 
 `ms` is the conversion alone, in-process, warm.
 
@@ -51,7 +51,7 @@ in `tests/anydoc-contract.test.ts` is what tells us the day it is fixed.
 
 Upstream's 4.4–4.7 ms median is consistent with this: everything but PDF is sub-millisecond here.
 
-**`formatFromExtension` accepts all 13 we expose**, mapping container variants onto the parser
+**`formatFromExtension` accepts all 20 extensions we expose**, mapping container variants onto the parser
 family exactly as the API docs claim: `docm→docx` · `pps/pot→ppt` · `pptm/ppsx/ppsm→pptx` ·
 `xls/xlsm/xlsb→xlsx`. `txt` and `md` return `null`. `formatFromPath` returns a **plain lower-case
 string** (`"docx"`, `"pdf"`; `y.xls → "xlsx"`), which is what the facts line's family lookup takes.
