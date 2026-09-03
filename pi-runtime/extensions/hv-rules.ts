@@ -62,7 +62,10 @@ export interface Verdict {
 // evaluate) are deliberately NOT here: navigation gates per host as
 // `browser:<host>`, and evaluate is the one call that turns "the page can reach
 // X" into "the agent can exfiltrate through X".
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close"]);
+export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close",
+  // §31: reading a document exercises no power — it is Pi's own `read`, one
+  // format further on. Spelled, not imported: this module is zero-import.
+  "document_read"]);
 
 /**
  * pi-subagents' parent-blocking wait tool, under EVERY name it has shipped under.

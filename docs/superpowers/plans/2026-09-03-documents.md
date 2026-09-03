@@ -8,11 +8,13 @@
 
 **Tech Stack:** Electron 43 / Node 22, TypeScript, React, vitest, `@firecrawl/anydoc` (napi-rs native addon, exact-pinned in `pi-runtime/package.json`), Pi 0.84.2's `truncateHead`.
 
+**Pin (measured, Task 0 complete): `@firecrawl/anydoc` 0.2.4.** Two spike findings changed the design and are folded into §31: (a) **no page count exists on a successful conversion** — `toMarkdown` returns a bare string, `toDocument` is unsupported for PDF, `pageCount` lives only on the `needsOcr` rejection — so `pages` is carried ONLY on the error path and is absent from the facts line, the chip and the block header; (b) the sidecar imports the **native binding** `index.js`, never the package `main` (`anydoc.js`), which carries the hosted-OCR path and `https://api.firecrawl.dev`. Full numbers: `docs/validation/ad1.md`.
+
 **Spec:** Notion "📋 AnyDoc" (page `3d0d33dfffca80a7b56ad02d7bb2984a`, locked 2026-09-03) and `docs/prd.md` §31 "Documents" plus the round-19 decisions in §6, §7, §13, §30. Read §31 first; every decision below is argued there.
 
 ## Global Constraints
 
-- **13 extensions, 7 families, no CSV:** `doc docx docm · ppt pps pot pptx pptm ppsx ppsm · xls xlsx xlsm xlsb · odt ods odp · rtf · epub · pdf`. One constant, `DOCUMENT_EXTENSIONS`; every list the user or model sees derives from it (Principle 11).
+- **20 extensions, 7 families, no CSV:** `doc docx docm · ppt pps pot pptx pptm ppsx ppsm · xls xlsx xlsm xlsb · odt ods odp · rtf · epub · pdf`. One constant, `DOCUMENT_EXTENSIONS`; every list the user or model sees derives from it (Principle 11).
 - **One tool, `document_read`,** params `path`, `offset?`, `limit?`, required `intent` (declared in the schema like `browser_get_text`; `stripIntent` handles the global switch).
 - **Permission class = Pi's `read`:** in `SAFE_TOOLS` and `PLAN_PASS_TOOLS`, absolute paths allowed, no workspace check, no `UNTRUSTED_BANNER`.
 - **Slice contract = Pi's `read`:** 2 000 lines / 50 KB via Pi's own `truncateHead` from `pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/core/tools/truncate.js`, `offset`/`limit` in lines, 1-indexed, mirroring `dist/core/tools/read.js:30-60`.
@@ -143,7 +145,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```ts
 export const DOCUMENT_TOOL = "document_read";
 export const DOCUMENT_FAMILIES: ReadonlyArray<{ label: string; ext: readonly string[] }>; // 7 entries, order = display order
-export const DOCUMENT_EXTENSIONS: readonly string[];            // 13, lower-case, no dot
+export const DOCUMENT_EXTENSIONS: readonly string[];            // 20, lower-case, no dot
 export const DOCUMENT_FAMILY_LIST: string;                       // "Word, PowerPoint, Excel, PDF, OpenDocument, RTF, EPUB"
 export function documentExtension(p: string): string | null;    // lower-cased ext without dot, or null
 export function isDocumentPath(p: string): boolean;
@@ -153,8 +155,8 @@ export type DocumentErrorCode = "unsupported" | "needsOcr" | "malformed" | "encr
 export interface DocumentError { code: DocumentErrorCode; message?: string; pages?: number[]; pageCount?: number; detail?: string }
 export function documentErrorSentence(err: DocumentError, opts: { hasVision: boolean; name?: string }): string;
 export function documentReadRefusal(tool: string, input: Record<string, unknown>, enabled: boolean): string | null;
-export interface DocumentFacts { format: string; pages?: number; totalLines: number; totalBytes: number; from: number; to: number }
-export function documentFactsLine(f: DocumentFacts): string;   // "Word · 12 pages · 1 240 lines · 88 KB · showing 1–2000"
+export interface DocumentFacts { format: string; totalLines: number; totalBytes: number; from: number; to: number }
+export function documentFactsLine(f: DocumentFacts): string;   // "Word · 1 240 lines · 88 KB · showing 1–2000" — NO page count exists (Task 0)
 ```
 
 - [ ] **Step 1: Write the failing test**

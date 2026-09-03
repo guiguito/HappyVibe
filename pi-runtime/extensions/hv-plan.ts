@@ -188,6 +188,10 @@ const PLAN_PASS_TOOLS = new Set([
   // removes power. These must be NAMED — an unnamed tool floor-asks, which for a
   // poll is the friction that makes a model stop using the tool at all.
   "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close",
+  // §31: a document read is a read. NAMED for the same reason as the browser
+  // reads — an unnamed tool falls to floor-ask, which clamps allow→ask and
+  // would raise a modal on every `offset` step through a long document.
+  "document_read",
 ]);
 
 import { isReadOnlyBoundary, writeCapableIn } from "./hv-subagent-boundary";
