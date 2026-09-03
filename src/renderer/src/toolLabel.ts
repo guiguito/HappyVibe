@@ -180,6 +180,17 @@ const prettyUrl = (raw: string): string => {
   }
 };
 
+/** Just the host. `web_map`/`web_crawl` act on a SITE, so showing a path would
+ * suggest they only read that one page. `web_fetch` uses prettyUrl instead,
+ * because a page is what it reads. */
+const hostOnly = (raw: string): string => {
+  try {
+    return new URL(raw).host || truncate(raw, 48);
+  } catch {
+    return truncate(raw, 48);
+  }
+};
+
 const prettify = (name: string): string => {
   const words = name.replace(/[_-]+/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -200,7 +211,11 @@ const prettify = (name: string): string => {
 const VIRTUAL_RULE: Record<string, { icon: IconKind; kind: string }> = {
   subagent: { icon: "robot", kind: "Sub-agent" },
   mcp: { icon: "wrench", kind: "MCP" },
-  browser: { icon: "globe", kind: "Browser" },
+  // §32: the rule covers §28's browser AND the web tools, so the label is the
+  // one word that is true of both. It renders in three places — the permission
+  // prompt's headline, the Permissions page and the audit log — and "Browser"
+  // would be a lie in two of them the moment a web_fetch created the grant.
+  browser: { icon: "globe", kind: "Web" },
 };
 
 export function toolLabel(toolName: string, args: unknown): ToolLabel {
@@ -280,6 +295,40 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       return { icon: "globe", label: intent ?? "Running JavaScript in the page" };
     case "browser_close":
       return { icon: "globe", label: intent ?? "Closing the browser" };
+    // §32 web tools. The card leads with the model's intent (§7); the fallbacks
+    // are the app's own vocabulary — Search / Read / Site map / Read a site —
+    // and never "scrape" or "crawl", which the UI does not say. The URL rides
+    // `path` so ToolCard renders its chip; resolveCardPath already refuses to
+    // treat a URL as a file, so the chip cannot offer to open a web page in the
+    // code editor.
+    case "web_search": {
+      const q = str("query");
+      return { icon: "search", label: intent ?? (q ? `Searched the web for "${truncate(q, 48)}"` : "Searched the web") };
+    }
+    case "web_fetch": {
+      const url = str("url");
+      return {
+        icon: "globe",
+        label: intent ?? (url ? `Read ${prettyUrl(url)}` : "Read a web page"),
+        ...(url ? { path: url } : {}),
+      };
+    }
+    case "web_map": {
+      const url = str("url");
+      return {
+        icon: "globe",
+        label: intent ?? (url ? `Listed pages on ${hostOnly(url)}` : "Listed a site's pages"),
+        ...(url ? { path: url } : {}),
+      };
+    }
+    case "web_crawl": {
+      const url = str("url");
+      return {
+        icon: "globe",
+        label: intent ?? (url ? `Read pages from ${hostOnly(url)}` : "Read pages from a site"),
+        ...(url ? { path: url } : {}),
+      };
+    }
     case "edit": {
       const p = str("path");
       // W2.2: the path itself moved out of the label into the card's
