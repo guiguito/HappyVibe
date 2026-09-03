@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { AuthEvent } from "../auth";
 
@@ -43,6 +43,32 @@ export function AuthFlowModal({
   const stage = event?.stage;
   const terminal = stage === "success" || stage === "error";
 
+  /**
+   * The sign-in URL, LATCHED — and opened for you.
+   *
+   * `event` is only ever the newest notify, and several providers send
+   * `auth_url` immediately followed by `manual_code` ("paste the authorization
+   * code"). Measured: Claude and OpenRouter both do. So the Open button and the
+   * URL appeared for a moment and were then replaced by a bare input, leaving
+   * the user told to finish in a browser that had never opened and holding no
+   * address to go to. Keeping the last URL means the way out survives the next
+   * stage.
+   *
+   * Opening it is not a convenience: clicking "Sign in with X" IS the request
+   * to go there. The button stays for the cases the OS refuses, or when the
+   * user closes the tab and wants it back.
+   */
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (event?.stage !== "auth_url" || !event.url) return;
+    setAuthUrl(event.url);
+    // Once per URL: this effect re-runs on every re-render of the same event.
+    if (opened.current === event.url) return;
+    opened.current = event.url;
+    void window.hv.openExternal(event.url);
+  }, [event?.stage, event?.url]);
+
   return (
     <Dialog.Root open>
       <Dialog.Portal>
@@ -71,16 +97,21 @@ export function AuthFlowModal({
             </div>
           )}
 
-          {event?.stage === "auth_url" && event.url && (
+          {/* Rendered off the LATCHED url, not off the current event, so it
+              outlives the `manual_code` stage that lands right after it. */}
+          {authUrl && !terminal && (
             <div className="mb-4">
-              <p className="text-sm mb-3">{event.instructions ?? "Finish signing in from your browser. This window updates automatically."}</p>
+              <p className="text-sm mb-3">
+                {(event?.stage === "auth_url" && event.instructions) ||
+                  "Your browser should have opened. Finish signing in there — this window updates automatically."}
+              </p>
               <div className="flex items-center gap-2">
-                <button type="button" className={primaryBtn} onClick={() => void window.hv.openExternal(event.url!)}>
+                <button type="button" className={primaryBtn} onClick={() => void window.hv.openExternal(authUrl)}>
                   Open browser
                 </button>
-                <CopyButton text={event.url} />
+                <CopyButton text={authUrl} />
               </div>
-              <p className="font-mono text-[11px] text-ink-soft break-all mt-3">{event.url}</p>
+              <p className="font-mono text-[11px] text-ink-soft break-all mt-3">{authUrl}</p>
             </div>
           )}
 
