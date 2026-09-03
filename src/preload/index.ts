@@ -267,7 +267,7 @@ contextBridge.exposeInMainWorld("hv", {
 
   // ── §13 round 6: configurable built-in custom tools (additive) ────
   builtinsGet: () => ipcRenderer.invoke("hv:builtins-get"),
-  builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean }) =>
+  builtinsSet: (t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean }) =>
     ipcRenderer.invoke("hv:builtins-set", t),
   builtinPrompt: (name: string) => ipcRenderer.invoke("hv:builtin-prompt", name),
   // §19: the three model calls the app makes without a session.
