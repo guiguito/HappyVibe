@@ -109,13 +109,17 @@ export function documentErrorSentence(err: DocumentError, opts: { hasVision: boo
       const n = err.pageCount ?? err.pages?.length ?? 0;
       const listed = err.pages ?? [];
       const head = n ? `This PDF has ${n} page${n === 1 ? "" : "s"}; ` : "";
-      const which = !listed.length || listed.length === n
-        ? "all of its pages are"
-        : `page${listed.length === 1 ? "" : "s"} ${listed.join(", ")} ${listed.length === 1 ? "is" : "are"}`;
+      // The noun has to agree as well as the verb: an earlier version produced
+      // "page 2 is scanned images", which the app's own GUI pass caught.
+      const clause = !listed.length || listed.length === n
+        ? "all of its pages are scanned images"
+        : listed.length === 1
+          ? `page ${listed[0]} is a scanned image`
+          : `pages ${listed.join(", ")} are scanned images`;
       const next = opts.hasVision
         ? "Ask the user to attach screenshots of those pages."
         : "This model has no vision, so screenshots will not help either — ask the user for a text export.";
-      return `${head}${which} scanned images and could not be read locally. ${next}`;
+      return `${head}${clause} and could not be read locally. ${next}`;
     }
     case "encrypted":
       return `Encrypted — ${who} is password-protected and cannot be opened locally.`;

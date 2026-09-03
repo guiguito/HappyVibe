@@ -582,13 +582,25 @@ export function ChatView({
     if (img) setAttachments((p) => [...p, img]);
   };
 
-  // §31: whether the row is offered at all. The toggle is a setting the user can
-  // change on another page, and the probe answers "does the converter load on
-  // this platform" — a row that fails on first use is the thing §20 forbids.
-  useEffect(() => {
+  /**
+   * §31: whether the Attach document row is offered, and why not when it isn't.
+   *
+   * Read when the MENU OPENS rather than once on mount. ChatView stays mounted
+   * while the user walks to Built-in tools and back, so a mount-only fetch left
+   * the row enabled after the switch was turned off — caught in the GUI pass,
+   * with the tool already unregistered and the row still inviting a click.
+   * Fetching where the value is USED is both correct and less plumbing than
+   * pushing the change down from App (the route Plan mode needs, because its
+   * pill is on screen continuously).
+   *
+   * The platform probe rides along; it is memoised in main, so it costs one IPC
+   * round trip and never changes at runtime.
+   */
+  const refreshDocumentAvailability = (): void => {
     void window.hv.builtinsGet().then((b) => setDocumentsOn(b.document));
     void window.hv.documentsAvailable().then(setDocumentsHere);
-  }, []);
+  };
+  useEffect(refreshDocumentAvailability, []);
 
   const attachDocument = async (): Promise<void> => {
     setAttachMenuOpen(false);
@@ -1321,7 +1333,13 @@ export function ChatView({
               type="button"
               aria-label="Attach"
               aria-expanded={attachMenuOpen}
-              onClick={() => { setAttachMenuOpen((o) => !o); setModelMenuOpen(false); }}
+              onClick={() => {
+                setAttachMenuOpen((o) => {
+                  if (!o) refreshDocumentAvailability(); // §31: fresh at the moment it is read
+                  return !o;
+                });
+                setModelMenuOpen(false);
+              }}
               className="size-8 rounded-xl text-ink-soft font-black text-lg leading-none hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
             >
               +

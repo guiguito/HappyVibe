@@ -52,7 +52,7 @@ describe("hv-document pure module (§31)", () => {
   it("turns needsOcr into a sentence that names the pages, and knows about vision (decision H)", () => {
     const withVision = documentErrorSentence({ code: "needsOcr", pages: [1, 7], pageCount: 31 }, { hasVision: true });
     expect(withVision).toContain("31 pages");
-    expect(withVision).toContain("pages 1, 7");
+    expect(withVision).toContain("pages 1, 7 are scanned images");
     expect(withVision).toMatch(/screenshots/);
     const noVision = documentErrorSentence({ code: "needsOcr", pages: [1], pageCount: 1 }, { hasVision: false });
     expect(noVision).toMatch(/no vision/);
@@ -60,7 +60,12 @@ describe("hv-document pure module (§31)", () => {
     expect(noVision).not.toMatch(/attach screenshots/i);
     // Every page scanned reads as "all of its pages", never "pages 1, 2".
     const all = documentErrorSentence({ code: "needsOcr", pages: [1, 2], pageCount: 2 }, { hasVision: true });
-    expect(all).toMatch(/all of its pages/);
+    expect(all).toMatch(/all of its pages are scanned images/);
+    // The NOUN has to agree too — "page 2 is scanned images" shipped once and
+    // the GUI pass caught it, so the singular gets its own assertion.
+    const one = documentErrorSentence({ code: "needsOcr", pages: [2], pageCount: 2 }, { hasVision: true });
+    expect(one).toContain("page 2 is a scanned image and could not be read");
+    expect(one).not.toMatch(/is scanned images/);
   });
 
   it("has a sentence for every error code it declares — a bare code must never reach the user", () => {

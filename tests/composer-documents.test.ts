@@ -87,3 +87,18 @@ describe("§31 composer copy is derived, never re-typed (Principle 11)", () => {
     expect(src).toContain("not available on this platform");
   });
 });
+
+describe("§31 the + row reads the toggle when it OPENS, not once at mount", () => {
+  const src = chatViewCode();
+
+  it("refreshes availability from the menu's own open handler", () => {
+    // Caught in the GUI pass: ChatView stays mounted while the user walks to
+    // Built-in tools and back, so a mount-only fetch left the row ENABLED after
+    // the switch was turned off — inviting a click on a tool that no longer
+    // existed. Fetching where the value is READ is correct and needs no state
+    // pushed down from App.
+    expect(src).toContain("refreshDocumentAvailability");
+    // the open handler calls it, guarded so closing does not
+    expect(src).toMatch(/setAttachMenuOpen\(\(o\) => \{[\s\S]{0,200}refreshDocumentAvailability\(\)/);
+  });
+});
