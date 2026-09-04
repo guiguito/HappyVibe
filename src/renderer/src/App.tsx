@@ -51,6 +51,7 @@ import {
   activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
   isChatTab, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, sessionOf, setSize, splitAt, splitOptions, termTab, terminalOf,
   allBrowsers, browserOf, browserTab, isBrowserTab, openBrowserTab,
+  crossDividerSpans,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
@@ -3106,7 +3107,6 @@ function PaneDividers({
 }): React.JSX.Element | null {
   if (!tabs.split) return null;
   const vertical = tabs.split === "v";
-  const anyCross = tabs.subSplit[0] || tabs.subSplit[1];
 
   const drag = (which: "main" | "cross", alongX: boolean) => (e: React.MouseEvent): void => {
     e.preventDefault();
@@ -3147,18 +3147,29 @@ function PaneDividers({
       >
         <div className={`${tint} ${vertical ? "inset-y-0 left-1/2 w-[5px] -translate-x-1/2" : "inset-x-0 top-1/2 h-[5px] -translate-y-1/2"}`} />
       </div>
-      {anyCross && (
+      {/* §28 round 21: ONE strip per sub-split half, never one across the whole
+          grid. A full-width strip lay over a browser pane that was not split at
+          all, and the browser hid from it — see crossDividerSpans. Along the
+          primary axis each strip is bounded by its own half; across it, the
+          SHARED cross ratio positions both. `drag` measures the grid container
+          either way, so one ratio still moves both. */}
+      {crossDividerSpans(tabs).map(({ half, from, to }) => (
         <div
+          key={`cross-${half}`}
           role="separator"
           aria-orientation={vertical ? "horizontal" : "vertical"}
           title="Drag to resize"
           onMouseDown={drag("cross", !vertical)}
-          className={`${hit} ${vertical ? "left-0 right-0 h-2.5 cursor-row-resize -translate-y-1/2" : "top-0 bottom-0 w-2.5 cursor-col-resize -translate-x-1/2"}`}
-          style={vertical ? { top: pct(tabs.sizes.cross) } : { left: pct(tabs.sizes.cross) }}
+          className={`${hit} ${vertical ? "h-2.5 cursor-row-resize -translate-y-1/2" : "w-2.5 cursor-col-resize -translate-x-1/2"}`}
+          style={
+            vertical
+              ? { left: pct(from), right: pct(1 - to), top: pct(tabs.sizes.cross) }
+              : { top: pct(from), bottom: pct(1 - to), left: pct(tabs.sizes.cross) }
+          }
         >
           <div className={`${tint} ${vertical ? "inset-x-0 top-1/2 h-[5px] -translate-y-1/2" : "inset-y-0 left-1/2 w-[5px] -translate-x-1/2"}`} />
         </div>
-      )}
+      ))}
     </>
   );
 }
