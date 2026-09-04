@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -206,20 +206,37 @@ export function invalidateAllProbes(): void {
 
 /**
  * §33 — the absolute, realpath'd `.git` common directory, or null when this folder is not a
- * repo (or git is missing). `--git-common-dir` is the one that answers the same path from every
- * worktree of a clone, where `--git-dir` answers each worktree's own private directory; that
- * difference IS the feature — memory follows the clone, not the checkout.
+ * repo (or git is missing). This is the basis of the memory key, so that every worktree of one
+ * clone shares one memory folder: `--git-common-dir` answers the SAME path from every worktree,
+ * where `--git-dir` answers each worktree's own private directory. That difference is the
+ * feature — memory follows the clone, not the checkout.
  *
- * Answers null rather than throwing, so a git-less workspace simply keys by its path.
+ * SYNCHRONOUS on purpose, and it is the one sync git call in this file. `spawnOpts` is sync and
+ * is reached from several places; making the key async would mean an `await` before each of
+ * them, and a single forgotten one would silently key a worktree by its path instead — the two
+ * halves of a clone would then keep separate memories with nothing on screen saying so. One
+ * ~10 ms subprocess, cached per workspace for the app's life, buys that away.
+ *
+ * It does not consult `probeWorkspace`: `rev-parse` already fails for a non-repo, so asking
+ * twice would only add a way for the two answers to disagree.
  */
-export async function gitCommonDir(workspace: string): Promise<string | null> {
+export function gitCommonDir(workspace: string): string | null {
   const cached = commonDirCache.get(workspace);
   if (cached !== undefined) return cached;
   let out: string | null = null;
-  const state = await probeWorkspace(workspace);
-  if (state.kind === "repo") {
-    const r = await run(workspace, ["rev-parse", "--git-common-dir"]);
-    if (r.ok && r.stdout.trim()) out = safeReal(path.resolve(workspace, r.stdout.trim()));
+  try {
+    const raw = execFileSync(gitBinary, ["--no-optional-locks", "rev-parse", "--git-common-dir"], {
+      cwd: workspace,
+      env: gitEnv(),
+      encoding: "utf8",
+      timeout: 5_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    // Relative (".git") from a main worktree, absolute from a linked one — resolve BOTH or the
+    // two halves of a clone key differently and worktree sharing silently does not happen.
+    if (raw) out = safeReal(path.resolve(workspace, raw));
+  } catch {
+    /* not a repo, no git, or an unreadable cwd — key by path instead */
   }
   commonDirCache.set(workspace, out);
   return out;

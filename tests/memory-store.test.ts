@@ -83,7 +83,7 @@ describe.skipIf(!HAVE_GIT)("gitCommonDir over a real repo and a real worktree", 
     execFileSync("git", args, { cwd, stdio: "pipe" });
   };
 
-  it("both worktrees answer the same common dir, so both key the same", async () => {
+  it("both worktrees answer the same common dir, so both key the same", () => {
     resetGitAvailability();
     const root = mk("hv-mem-git-");
     const main = path.join(root, "main");
@@ -97,8 +97,8 @@ describe.skipIf(!HAVE_GIT)("gitCommonDir over a real repo and a real worktree", 
     const wt = path.join(root, "wt");
     git(main, "worktree", "add", "-q", wt, "-b", "side");
 
-    const c1 = await gitCommonDir(main);
-    const c2 = await gitCommonDir(wt);
+    const c1 = gitCommonDir(main);
+    const c2 = gitCommonDir(wt);
     expect(c1).not.toBeNull();
     expect(path.isAbsolute(c1!)).toBe(true); // the relative ".git" was resolved
     expect(c2).toBe(c1);
@@ -107,22 +107,22 @@ describe.skipIf(!HAVE_GIT)("gitCommonDir over a real repo and a real worktree", 
     expect(workspaceMemoryKey(wt, c2)).not.toBe(workspaceMemoryKey(wt, null));
   });
 
-  it("a subdirectory of a repo keys to the same clone — memory follows the clone", async () => {
+  it("a subdirectory of a repo keys to the same clone — memory follows the clone", () => {
     resetGitAvailability();
     const root = mk("hv-mem-sub-");
     git(root, "init", "-q");
     const sub = path.join(root, "packages", "app");
     fs.mkdirSync(sub, { recursive: true });
-    const c1 = await gitCommonDir(root);
-    const c2 = await gitCommonDir(sub);
+    const c1 = gitCommonDir(root);
+    const c2 = gitCommonDir(sub);
     expect(c1).not.toBeNull();
     expect(workspaceMemoryKey(sub, c2)).toBe(workspaceMemoryKey(root, c1));
   });
 
-  it("a folder that is not a repo answers null, and still gets a key", async () => {
+  it("a folder that is not a repo answers null, and still gets a key", () => {
     resetGitAvailability();
     const plain = mk("hv-mem-plain-");
-    expect(await gitCommonDir(plain)).toBeNull();
+    expect(gitCommonDir(plain)).toBeNull();
     expect(workspaceMemoryKey(plain, null)).toMatch(/^[0-9a-f]{16}$/);
   });
 });

@@ -66,7 +66,17 @@ export interface PiSpawnOptions {
       and §26's grouped Terminal entry), resolved at spawn → HV_BUILTINS (same
       pattern as HV_BYPASS). The keys are listed EXPLICITLY below, so a new
       toggle that is not added there never reaches the bridge. */
-  builtinTools?: { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean };
+  builtinTools?: { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string };
+  /** §33: the global memory scope's directory → HV_MEMORY_GLOBAL_DIR. Absent when the Memory
+      built-in is off (and always for the utility client), and then the bridge registers no
+      memory tool and injects nothing — off costs 0. */
+  memoryGlobalDir?: string;
+  /** §33: this workspace's memory directory → HV_MEMORY_WORKSPACE_DIR. ABSENT means "workspace
+      memory is off here" (the per-workspace toggle, or no workspace at all) and the bridge must
+      then omit the workspace block entirely rather than render an empty one. Never an empty
+      string — an empty env var is a value, and `if (dir)` would read it as off anyway, but the
+      absence is what the spawn test pins. */
+  memoryWorkspaceDir?: string;
   /** §14 Skills: absolute skill-dir paths this session is allowed to load
       (approved ∩ enabled ∩ active-for-workspace). Enforced with `--no-skills`
       (kills Pi's own discovery — Pi never sees an unapproved skill) plus one
@@ -261,9 +271,15 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
             browser: opts.builtinTools.browser,
             web: opts.builtinTools.web,
             document: opts.builtinTools.document,
+            memory: opts.builtinTools.memory,
+            memoryAppend: opts.builtinTools.memoryAppend,
           }) }
         : {}),
       ...(opts.skillsFile ? { HV_SKILLS_FILE: opts.skillsFile } : {}),
+      // §33: the two memory scopes. Explicit keys, like every other one here — a scope main
+      // does not name is a scope the bridge cannot read, which is exactly the off behaviour.
+      ...(opts.memoryGlobalDir ? { HV_MEMORY_GLOBAL_DIR: opts.memoryGlobalDir } : {}),
+      ...(opts.memoryWorkspaceDir ? { HV_MEMORY_WORKSPACE_DIR: opts.memoryWorkspaceDir } : {}),
       ...(opts.longCache ? { PI_CACHE_RETENTION: "long" } : {}),
       // 0.51 / #1225: a respawned session must still own its detached runs.
       ...(opts.sessionId ? { HV_SUBAGENT_OWNER: `hv-${opts.sessionId}` } : {}),

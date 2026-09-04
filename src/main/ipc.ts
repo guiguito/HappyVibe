@@ -84,10 +84,12 @@ import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, c
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
-  gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, probeWorkspace,
+  gitCommonDir, gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, probeWorkspace,
   publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
+// §33 Memory — main is the ONE writer (agent envelopes + human edits, one serialized queue).
+import { memoryRoot, workspaceMemoryDir, workspaceMemoryKey } from "./memory";
 import { DEFAULT_DIFF_BUDGET, buildDraftPrompt, buildPrPrompt, draftCommitMessage, draftPullRequest } from "./gitMessage";
 import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
@@ -758,6 +760,25 @@ export function registerIpc(win: BrowserWindow): void {
     // write the per-session manifest the bridge reads (HV_SKILLS_FILE). Only for
     // real chat sessions — the utility client ($HOME, no workspace/id) loads none.
     const entries = workspace && sessionId ? activeSkillEntries(workspace) : [];
+    // §33: the two memory scopes, resolved per spawn like every other tier here.
+    //
+    // The utility client has no workspace and no session id and gets NEITHER — it drives
+    // /hv-login, never a conversation, so a memory policy in its prompt would be pure cost.
+    //
+    // The workspace dir is omitted when the per-workspace toggle is off, and the bridge then
+    // renders no workspace block at all (renderMemorySection's `workspace: null`). Both dirs
+    // are created eagerly so the bridge's first read cannot race the first save.
+    const builtins = getBuiltinTools();
+    let memoryGlobalDir: string | undefined;
+    let memoryWorkspaceDir: string | undefined;
+    if (builtins.memory && sessionId) {
+      memoryGlobalDir = memoryRoot(agentDir());
+      fs.mkdirSync(memoryGlobalDir, { recursive: true });
+      if (workspace && workspaces.getMemoryActive(workspace)) {
+        memoryWorkspaceDir = workspaceMemoryDir(agentDir(), workspaceMemoryKey(workspace, gitCommonDir(workspace)));
+        fs.mkdirSync(memoryWorkspaceDir, { recursive: true });
+      }
+    }
     return {
       model: resolveSpawnModel(workspace, sessionId),
       thinking: resolveSpawnThinking(sessionId),
@@ -771,7 +792,9 @@ export function registerIpc(win: BrowserWindow): void {
       bypass: resolveBypass(workspace ?? null),
       // §13 round 6: global on/off for built-in custom tools, re-applied on
       // every (re)spawn — mirrors bypass, but global-only (no workspace tier).
-      builtinTools: getBuiltinTools(),
+      builtinTools: builtins,
+      memoryGlobalDir,
+      memoryWorkspaceDir,
       // Prompt-cache retention: global, spawn-time (PI_CACHE_RETENTION).
       longCache: getLongCache(),
       // 0.51 / #1225: pi-subagents scopes completion delivery to the launching
