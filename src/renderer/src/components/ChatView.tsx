@@ -33,7 +33,7 @@ import {
 } from "../composer";
 import {
   activeCommandQuery, activeMentionQuery, commandSubtitle, completeCommand, completeMention, composerCommands, extractMentions, filterCommands,
-  agentMentionItems, filterEntries, mentionLabel, type MentionEntry, type SlashCommand,
+  agentMentionItems, filterEntries, mentionLabel, parseDocumentChips, stripInjectedBlocks, type MentionEntry, type SlashCommand,
 } from "../mentions";
 import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-document";
 import { Banner } from "./Banner";
@@ -1060,7 +1060,22 @@ export function ChatView({
                   // "Files only" leaves the conversation alone, so the composer
                   // must not be repopulated with a message that is still there.
                   if (rewindScope !== "files") {
-                    setInput("text" in it && typeof it.text === "string" ? it.text : "");
+                    const raw = "text" in it && typeof it.text === "string" ? it.text : "";
+                    // STRIP, because a RESTORED message still carries the app's
+                    // own blocks: restore.ts only removes open-files /
+                    // open-terminals / open-browser, so a reopened session's
+                    // `<document>` and `<file>` blocks were handed back verbatim
+                    // and the composer filled with markup and a whole converted
+                    // document. The bubble above it was already stripping for
+                    // display, which is why this looked fine until you rewound.
+                    setInput(stripInjectedBlocks(raw));
+                    // §31: and put the documents BACK, or edit-and-resend
+                    // silently drops the attachment and the answer quietly
+                    // changes meaning. Re-attaching by path runs the ordinary
+                    // flow, so a file that has since moved or changed reports
+                    // that instead of vanishing.
+                    const docs = parseDocumentChips(raw).map((d) => d.path);
+                    if (docs.length) void attachDocumentPaths(docs);
                   }
                   setPendingRewind(null);
                 }}
