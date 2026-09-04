@@ -16,6 +16,7 @@ import { PiClient } from "../src/main/pi/PiClient";
  */
 
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
+import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 
@@ -29,7 +30,7 @@ function makeClient(cwd: string, sessionDir: string, env: Record<string, string>
   const client = new PiClient({
     execPath: process.execPath,
     args: [
-      path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
+      path.join(runtime, PI_CLI_RELPATH),
       "--mode", "rpc", "--session-dir", sessionDir,
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--provider", MODEL.provider, "--model", MODEL.modelId,

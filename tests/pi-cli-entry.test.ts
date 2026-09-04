@@ -51,6 +51,39 @@ describe("the embedded Pi CLI entry tracks upstream's own bin", () => {
     expect(out.trim()).toBe(json(PI_PKG).version);
   });
 
+  it("nothing spawns Pi by a hardcoded path — 21 files did", () => {
+    // The class, not the instance. Every test that spawns Pi held its own literal
+    // "node_modules/@earendil-works/pi-coding-agent/dist/cli.js", so the whole
+    // suite went on exercising the modular entry after the app moved to the
+    // bundle — green, against a binary HappyVibe no longer runs. Five of them
+    // also gated on `existsSync` of that literal, which would have skipped the
+    // resource-gate, skills and builtins contract tests in SILENCE the day Pi
+    // deletes the file. Sources must build the path from PI_CLI_RELPATH.
+    const dirs = ["tests", path.join("src", "main"), path.join("pi-runtime", "extensions")];
+    const offenders: string[] = [];
+    for (const d of dirs) {
+      const root = path.join(ROOT, d);
+      const walk = (p: string) => {
+        for (const e of fs.readdirSync(p, { withFileTypes: true })) {
+          const full = path.join(p, e.name);
+          if (e.isDirectory()) walk(full);
+          else if (/\.(ts|tsx|mjs|js)$/.test(e.name) && full !== __filename) {
+            for (const [i, line] of read(full).split("\n").entries()) {
+              // Comments may name the dead path — the CLAUDE.md entry and the
+              // spawn.ts docblock both do, deliberately.
+              if (/^\s*(\/\/|\*|#)/.test(line)) continue;
+              if (line.includes("pi-coding-agent/dist/cli.js")) {
+                offenders.push(`${path.relative(ROOT, full)}:${i + 1}`);
+              }
+            }
+          }
+        }
+      };
+      walk(root);
+    }
+    expect(offenders, "build the path from PI_CLI_RELPATH instead").toEqual([]);
+  });
+
   it("pi-node.sh runs the SAME entry as the parent", () => {
     // pi-node.sh is PI_SUBAGENT_PI_BINARY — the children-only route that injects
     // hv-child-guard.ts. It held its own hardcoded copy of the path, so the two

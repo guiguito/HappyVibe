@@ -4,7 +4,10 @@ import path from "node:path";
 import readline from "node:readline";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const cli = path.join(root, "pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+// dist/bundle/cli.js is upstream's own bin.pi since Pi 0.84.3, and the modular
+// dist/cli.js is broken at 0.85.0 — see PI_CLI_RELPATH in src/main/pi/spawn.ts.
+// Hardcoded here because .mjs cannot import the TypeScript constant.
+const cli = path.join(root, "pi-runtime/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
 const ext = path.join(root, "scripts/d1-probe-ext.ts");
 
 console.log("[info] Spawning Pi RPC with probe extension:", ext);

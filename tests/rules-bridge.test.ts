@@ -16,6 +16,7 @@ import { askUntil } from "./reask";
 
 // Tiny .env loader — keeps tests dependency-free (same as bridge.test.ts).
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
+import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-rules-cwd-"));
@@ -50,7 +51,7 @@ function makeClient(env: Record<string, string>): PiClient {
   const client = new PiClient({
     execPath: process.execPath,
     args: [
-      path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
+      path.join(runtime, PI_CLI_RELPATH),
       "--mode", "rpc", "--no-session",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--provider", MODEL.provider, "--model", MODEL.modelId,

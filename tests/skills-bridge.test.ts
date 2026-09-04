@@ -12,6 +12,7 @@ import { PiClient } from "../src/main/pi/PiClient";
  */
 
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
+import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 const runtime = path.join(process.cwd(), "pi-runtime");
 let client: PiClient;
 afterEach(() => client?.stop());
@@ -50,7 +51,7 @@ test.skipIf(!KEY)(
     client = new PiClient({
       execPath: process.execPath,
       args: [
-        path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
+        path.join(runtime, PI_CLI_RELPATH),
         "--mode", "rpc", "--no-session",
         "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
         "--no-skills", "--skill", approvedDir,

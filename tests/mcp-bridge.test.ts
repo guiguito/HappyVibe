@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
-import { PI_MCP_ADAPTER_RELPATH } from "../src/main/pi/spawn";
+import { PI_CLI_RELPATH, PI_MCP_ADAPTER_RELPATH } from "../src/main/pi/spawn";
 
 // Tiny .env loader — keeps tests dependency-free
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
@@ -23,7 +23,7 @@ test.skipIf(!KEY)("mcp proxy call surfaces an unwrapped hv.permission prompt; Al
   client = new PiClient({
     execPath: process.execPath,
     args: [
-      path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
+      path.join(runtime, PI_CLI_RELPATH),
       "--mode", "rpc", "--no-session",
       // Bridge LAST, mirroring production (spawn.ts): the permission gate must
       // be the final tool_call handler so it sees mutated input. Pinned by

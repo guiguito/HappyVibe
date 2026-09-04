@@ -7,6 +7,7 @@ import { askUntil } from "./reask";
 
 // Tiny .env loader — keeps tests dependency-free
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
+import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 let client: PiClient;
 afterEach(() => client?.stop());
 
@@ -33,7 +34,7 @@ function start(opts: { builtins?: Record<string, unknown>; allow?: boolean } = {
   client = new PiClient({
     execPath: process.execPath,
     args: [
-      path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
+      path.join(runtime, PI_CLI_RELPATH),
       "--mode", "rpc", "--no-session",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--provider", MODEL.provider, "--model", MODEL.modelId,

@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
+import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 
 /**
  * §14 CONTRACT TEST — the enforcement primitive, part of the Pi pin-bump gate
@@ -15,7 +16,11 @@ import { PiClient } from "../src/main/pi/PiClient";
  */
 
 const runtime = path.join(process.cwd(), "pi-runtime");
-const CLI = path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+// Built from PI_CLI_RELPATH, never hardcoded: the entry moved to dist/bundle/cli.js
+// and the old dist/cli.js is broken at Pi 0.85.0 (tests/pi-cli-entry.test.ts). A
+// literal here would spawn a different binary than the app does, and the
+// existsSync guard below would skip these tests in SILENCE the day it is deleted.
+const CLI = path.join(runtime, PI_CLI_RELPATH);
 let client: PiClient;
 afterEach(() => client?.stop());
 
