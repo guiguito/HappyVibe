@@ -21,6 +21,7 @@ import path from "node:path";
 import { PiClient } from "../src/main/pi/PiClient";
 import { resolvePiSpawn } from "../src/main/pi/spawn";
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
+import { askUntil } from "./reask";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
 
@@ -180,22 +181,57 @@ test.skipIf(!KEY)(
         .flatMap((l) => { try { return [JSON.parse(l) as Record<string, unknown>]; } catch { return []; } });
     try {
       await c2.start();
-      await c2.send({
-        type: "prompt",
-        message:
-          "Use the subagent tool right now with async false to delegate to the agent named 'writer'. " +
-          "Give it exactly this task: 'create a file called ok.txt containing the word HI'. " +
-          "Do not do anything else yourself.",
-      });
-      await waitFor(() => rows2().some((r) => r.tool === "write"), 240_000, "the child attempted a write");
+      const writePath = (r: Record<string, unknown>): string => {
+        try {
+          return (JSON.parse(String(r.summary)) as { path?: unknown }).path as string ?? "";
+        } catch {
+          return "";
+        }
+      };
+      const inWorkspace = (r: Record<string, unknown>): boolean => {
+        const p = writePath(r);
+        if (!p) return false;
+        const abs = path.resolve(cwd2, p);
+        return abs === cwd2 || abs.startsWith(cwd2 + path.sep);
+      };
+      const writes = (): Array<Record<string, unknown>> => rows2().filter((r) => r.tool === "write");
 
-      const write = rows2().find((r) => r.tool === "write")!;
+      // RE-ASK rather than wait longer (tests/reask.ts): where the child aims its
+      // write is the MODEL's choice, and since 0.63 delivers the task from a
+      // tempdir the model sometimes writes next to the task instead of into the
+      // workspace. Confinement refuses that (correctly — see
+      // child-write-confine.test.ts), but a refused first attempt is not the
+      // contract this test is about, and a longer timeout cannot change a choice
+      // the model has already made. Assertions below stay exactly as strict.
+      const asked = await askUntil(
+        () =>
+          c2.send({
+            type: "prompt",
+            message:
+              "Use the subagent tool right now with async false to delegate to the agent named 'writer'. " +
+              "Give it exactly this task: 'create a file called ok.txt containing the word HI'. " +
+              "Do not do anything else yourself.",
+          }),
+        () => writes().some(inWorkspace),
+        { attempts: 3, waitMs: 90_000 },
+      );
+      expect(asked, `no in-workspace write was attempted; rows: ${JSON.stringify(rows2())}`).toBe(true);
+
+      const write = writes().find(inWorkspace)!;
       expect(write.decision, `the guard must ALLOW an explicitly allowed write; rows: ${JSON.stringify(rows2())}`).toBe("allow");
       expect(write.wouldHave).toBe("allow");
       // And it must actually have happened. If a layer beneath the guard denied
       // it, the row says allow and the file is still missing — which is exactly
       // the failure this test exists to catch.
       expect(fs.existsSync(path.join(cwd2, "ok.txt")), "an approved write must really write").toBe(true);
+      // PRD §12, and the invariant that replaced the old first-row assertion:
+      // confinement may refuse an out-of-workspace write, but it must never
+      // ALLOW one. That is strictly stronger than what this test checked before.
+      for (const r of writes()) {
+        if (r.decision === "allow") {
+          expect(inWorkspace(r), `an allowed write escaped the workspace: ${writePath(r)}`).toBe(true);
+        }
+      }
     } finally {
       c2.stop();
     }
