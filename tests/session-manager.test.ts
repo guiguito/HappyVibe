@@ -168,7 +168,7 @@ test("orphan sweep kills only tracked pids whose command matches our runtime", (
   );
   const killed: number[] = [];
   const cmds: Record<number, string | null> = {
-    101: "/usr/bin/node .../pi-coding-agent/dist/cli.js --mode rpc", // ours
+    101: "/usr/bin/node .../pi-coding-agent/dist/bundle/cli.js --mode rpc", // ours
     102: "vim important.txt", // pid recycled by another process — must NOT kill
     103: null, // already dead
   };

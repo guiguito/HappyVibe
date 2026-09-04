@@ -5,6 +5,7 @@ import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
 import { mergeOllamaModelsJson } from "../src/main/providers";
 import { isSignedIn } from "../src/renderer/src/auth";
+import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 
 /**
  * B3 contract test — hv-auth-status / hv-login emit hv.auth-shaped
@@ -65,7 +66,7 @@ beforeAll(async () => {
   client = new PiClient({
     execPath: process.execPath,
     args: [
-      path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
+      path.join(runtime, PI_CLI_RELPATH),
       "--mode", "rpc", "--no-session",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--provider", "deepseek", "--model", "deepseek-v4-flash",

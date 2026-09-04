@@ -1118,7 +1118,10 @@ describe("the agent inventory comes from upstream's own discovery", () => {
   });
 
   it("upstream still exports discoverAgentsAll with the four scopes we render", () => {
-    expect(agentsSrc).toMatch(/export function discoverAgentsAll\(cwd: string\)/);
+    // `cwd` stays FIRST and required; 0.59.0 (#1597, "layer agent overrides by the
+    // active parent model provider") appended an OPTIONAL second parameter, so the
+    // match must not pin the closing paren or a benign addition reads as a break.
+    expect(agentsSrc).toMatch(/export function discoverAgentsAll\(cwd: string[,)]/);
     for (const scope of ["builtin", "package", "user", "project"]) {
       expect(agentsSrc).toMatch(new RegExp(`${scope}: AgentConfig\\[\\]`));
     }

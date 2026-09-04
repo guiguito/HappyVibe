@@ -41,13 +41,14 @@ test("emits exit on crash", async () => {
 
 import fs from "node:fs";
 import os from "node:os";
+import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 
 test("real vendored pi answers get_session_stats over RPC", async () => {
   const runtime = path.join(process.cwd(), "pi-runtime");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-"));
   client = new PiClient({
     execPath: process.execPath,
-    args: [path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"), "--mode", "rpc", "--no-session"],
+    args: [path.join(runtime, PI_CLI_RELPATH), "--mode", "rpc", "--no-session"],
     env: { ...process.env } as Record<string, string>,
     cwd: tmp,
   });

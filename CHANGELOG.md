@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **The bundled coding agent moved up a version**, and with it more models to choose from on
+  most providers. Sub-agents pick up watchdog reviews, per-agent tool deny-lists and quieter
+  progress reporting.
+
+Runtime: Pi 0.85.0 · sub-agents 0.64.0 · MCP adapter 2.32.1
+
 ## [0.1.0] — 2026-08-30
 
 The first build of HappyVibe: vibe coding you can actually watch.

@@ -6,6 +6,7 @@ import { PiClient } from "../src/main/pi/PiClient";
 import { askUntil } from "./reask";
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 import { UNTRUSTED_BANNER } from "../pi-runtime/extensions/hv-browser";
+import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 
 let client: PiClient;
 afterEach(() => client?.stop());
@@ -40,7 +41,7 @@ function start(opts: { builtins?: Record<string, unknown>; answer?: "Allow" | "A
   client = new PiClient({
     execPath: process.execPath,
     args: [
-      path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
+      path.join(runtime, PI_CLI_RELPATH),
       "--mode", "rpc", "--no-session",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--provider", MODEL.provider, "--model", MODEL.modelId,
@@ -284,7 +285,7 @@ test.skipIf(!KEY)("an interrupted turn cancels the in-flight web call", async ()
   client = new PiClient({
     execPath: process.execPath,
     args: [
-      path.join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
+      path.join(runtime, PI_CLI_RELPATH),
       "--mode", "rpc", "--no-session",
       "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
       "--provider", MODEL.provider, "--model", MODEL.modelId,

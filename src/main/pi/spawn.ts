@@ -19,7 +19,15 @@ export function nodeExecPath(): string {
   return existsSync(helper) ? helper : process.execPath;
 }
 
-export const PI_CLI_RELPATH = "node_modules/@earendil-works/pi-coding-agent/dist/cli.js";
+/** The embedded Pi CLI entry.
+    `dist/bundle/cli.js`, NOT `dist/cli.js`: Pi moved its own `bin.pi` to the
+    bundled runtime at 0.84.3, and by 0.85.0 the modular `dist/cli.js` no longer
+    runs at all — it statically imports `dist/experimental/server.js`, which
+    imports `@earendil-works/pi-server`, a package Pi declares in NO dependency
+    field. `node dist/cli.js --version` dies with ERR_MODULE_NOT_FOUND, which
+    takes every Pi-spawning test red at once. Track upstream's `bin.pi`;
+    tests/pi-cli-entry.test.ts derives it from the installed package. */
+export const PI_CLI_RELPATH = "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js";
 /** pi-subagents extension entry (its package.json `pi.extensions`) — B6. */
 export const PI_SUBAGENTS_RELPATH = "node_modules/pi-subagents/src/extension/index.ts";
 /** Embedded pi CLI the pi-subagents child spawn must use (no global `pi`; s0.3).
@@ -233,6 +241,16 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
       ...(opts.childAuditDir ? { HV_CHILD_AUDIT_DIR: opts.childAuditDir } : {}),
+      // pi-subagents tells every child to write its output to
+      // `<sessionDir>/subagent-artifacts/outputs/<runId>/context.md` and calls
+      // that path "authoritative for this run. Ignore any other output path".
+      // It is outside the workspace, so hv-child-guard's confinement refused it
+      // and the child burned a turn recovering (measured in the running app).
+      // Handed over explicitly rather than derived inside the guard: main owns
+      // this location, already sweeps it on session delete, and a guard that
+      // guessed it would be guessing about a permission boundary. Absent ⇒ no
+      // exemption, which is the confined behaviour, so it fails SAFE.
+      HV_ARTIFACTS_DIR: path.join(sessionDir, "subagent-artifacts"),
       ...(opts.builtinTools
         ? { HV_BUILTINS: JSON.stringify({
             plan: opts.builtinTools.plan,

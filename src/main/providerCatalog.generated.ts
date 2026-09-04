@@ -48,7 +48,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Anthropic",
     "envVar": "ANTHROPIC_API_KEY",
     "baseUrl": "https://api.anthropic.com",
-    "modelCount": 13,
+    "modelCount": 14,
     "providerIds": [
       "anthropic"
     ]
@@ -58,7 +58,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Baseten",
     "envVar": "BASETEN_API_KEY",
     "baseUrl": "https://inference.baseten.co/v1",
-    "modelCount": 17,
+    "modelCount": 20,
     "providerIds": [
       "baseten"
     ]
@@ -68,7 +68,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Cerebras",
     "envVar": "CEREBRAS_API_KEY",
     "baseUrl": "https://api.cerebras.ai/v1",
-    "modelCount": 3,
+    "modelCount": 2,
     "providerIds": [
       "cerebras"
     ]
@@ -78,7 +78,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "DeepSeek",
     "envVar": "DEEPSEEK_API_KEY",
     "baseUrl": "https://api.deepseek.com",
-    "modelCount": 2,
+    "modelCount": 3,
     "providerIds": [
       "deepseek"
     ]
@@ -88,7 +88,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Fireworks",
     "envVar": "FIREWORKS_API_KEY",
     "baseUrl": "https://api.fireworks.ai/inference",
-    "modelCount": 23,
+    "modelCount": 19,
     "providerIds": [
       "fireworks"
     ]
@@ -108,7 +108,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Groq",
     "envVar": "GROQ_API_KEY",
     "baseUrl": "https://api.groq.com/openai/v1",
-    "modelCount": 6,
+    "modelCount": 7,
     "providerIds": [
       "groq"
     ]
@@ -118,7 +118,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Hugging Face",
     "envVar": "HF_TOKEN",
     "baseUrl": "https://router.huggingface.co/v1",
-    "modelCount": 62,
+    "modelCount": 71,
     "providerIds": [
       "huggingface"
     ]
@@ -158,7 +158,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Mistral",
     "envVar": "MISTRAL_API_KEY",
     "baseUrl": "https://api.mistral.ai",
-    "modelCount": 31,
+    "modelCount": 32,
     "providerIds": [
       "mistral"
     ]
@@ -179,7 +179,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "NVIDIA",
     "envVar": "NVIDIA_API_KEY",
     "baseUrl": "https://integrate.api.nvidia.com/v1",
-    "modelCount": 30,
+    "modelCount": 20,
     "providerIds": [
       "nvidia"
     ]
@@ -199,7 +199,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "OpenCode Zen",
     "envVar": "OPENCODE_API_KEY",
     "baseUrl": "https://opencode.ai/zen",
-    "modelCount": 80,
+    "modelCount": 90,
     "providerIds": [
       "opencode",
       "opencode-go"
@@ -210,7 +210,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "OpenRouter",
     "envVar": "OPENROUTER_API_KEY",
     "baseUrl": "https://openrouter.ai/api/v1",
-    "modelCount": 346,
+    "modelCount": 362,
     "providerIds": [
       "openrouter"
     ]
@@ -220,7 +220,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Qwen Token Plan",
     "envVar": "QWEN_TOKEN_PLAN_API_KEY",
     "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
-    "modelCount": 23,
+    "modelCount": 27,
     "providerIds": [
       "qwen-token-plan",
       "qwen-token-plan-individual"
@@ -231,7 +231,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Qwen Token Plan CN",
     "envVar": "QWEN_TOKEN_PLAN_CN_API_KEY",
     "baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-    "modelCount": 16,
+    "modelCount": 18,
     "providerIds": [
       "qwen-token-plan-cn"
     ]
@@ -241,7 +241,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Together",
     "envVar": "TOGETHER_API_KEY",
     "baseUrl": "https://api.together.ai/v1",
-    "modelCount": 18,
+    "modelCount": 21,
     "providerIds": [
       "together"
     ]
@@ -251,7 +251,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Vercel AI Gateway",
     "envVar": "AI_GATEWAY_API_KEY",
     "baseUrl": "https://ai-gateway.vercel.sh",
-    "modelCount": 201,
+    "modelCount": 233,
     "providerIds": [
       "vercel-ai-gateway"
     ]
@@ -261,7 +261,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "xAI",
     "envVar": "XAI_API_KEY",
     "baseUrl": "https://api.x.ai/v1",
-    "modelCount": 4,
+    "modelCount": 3,
     "providerIds": [
       "xai"
     ]
@@ -271,7 +271,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Xiaomi",
     "envVar": "XIAOMI_API_KEY",
     "baseUrl": "https://api.xiaomimimo.com/v1",
-    "modelCount": 6,
+    "modelCount": 3,
     "providerIds": [
       "xiaomi"
     ]
@@ -281,7 +281,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Xiaomi Token Plan AMS",
     "envVar": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
     "baseUrl": "https://token-plan-ams.xiaomimimo.com/v1",
-    "modelCount": 3,
+    "modelCount": 2,
     "providerIds": [
       "xiaomi-token-plan-ams"
     ]
@@ -291,7 +291,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Xiaomi Token Plan CN",
     "envVar": "XIAOMI_TOKEN_PLAN_CN_API_KEY",
     "baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
-    "modelCount": 3,
+    "modelCount": 2,
     "providerIds": [
       "xiaomi-token-plan-cn"
     ]
@@ -301,7 +301,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Xiaomi Token Plan SGP",
     "envVar": "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
     "baseUrl": "https://token-plan-sgp.xiaomimimo.com/v1",
-    "modelCount": 3,
+    "modelCount": 2,
     "providerIds": [
       "xiaomi-token-plan-sgp"
     ]
@@ -311,7 +311,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Z.AI",
     "envVar": "ZAI_API_KEY",
     "baseUrl": "https://api.z.ai/api/coding/paas/v4",
-    "modelCount": 5,
+    "modelCount": 7,
     "providerIds": [
       "zai"
     ]
@@ -321,7 +321,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Z.AI Coding CN",
     "envVar": "ZAI_CODING_CN_API_KEY",
     "baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
-    "modelCount": 5,
+    "modelCount": 10,
     "providerIds": [
       "zai-coding-cn"
     ]
