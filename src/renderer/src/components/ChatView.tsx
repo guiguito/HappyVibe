@@ -48,6 +48,29 @@ const FILETREE_DRAG_MIME = "application/x-hv-relpath";
 
 const PASTE_CONFIRM_CHARS = 100_000;
 
+/**
+ * §7 round 21 — the session-resource chips: skills, agents, MCP.
+ *
+ * Exported as DATA because the renderer suite has no DOM: the mapping is
+ * pinned by tests/chip-colours.test.ts, which also checks each colour is
+ * actually DEFINED in styles.css (a Tailwind class for an undefined variable
+ * renders with no fill and no error — that is how `bg-plum` shipped unstyled).
+ *
+ * The model and thinking chips are deliberately NOT here. They are the two you
+ * READ; these three are things you EXPLORE, and keeping the read-me pair
+ * neutral mono is what lets three fills coexist without a carnival.
+ *
+ * This reverses the 2026-08-30 decision to keep the agents chip a quiet
+ * outline. That was right when it was the only coloured chip's neighbour; with
+ * three coloured siblings it made agents the odd one out rather than the
+ * restrained one.
+ */
+export const CHIP_TONE = {
+  skills: "bg-plum-soft text-plum",
+  agents: "bg-teal-soft text-teal",
+  mcp: "bg-rose-soft text-rose",
+} as const;
+
 /** Stable empty ledger so the pill renders before the first fetch lands. */
 const emptyLedger: HvLedgerTotal = {
   calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, metered: 0, plan: 0, unknown: 0,
@@ -2278,11 +2301,12 @@ function AgentsChip({ agents, onPick }: { agents: AgentInfo[]; onPick: (name: st
         type="button"
         onClick={() => setOpen((v) => !v)}
         title={`${agents.length} subagent${agents.length === 1 ? "" : "s"} you can delegate to`}
-        // Quiet by design (2026-08-30): the composer row already carries three
-        // filled pills. This one rests as a bare outline and fills on hover, so
-        // the model pill stays the loud one. The glyph is the app's own robot —
-        // the same one the run card uses — rather than an emoji.
-        className="flex items-center gap-1 rounded-full border border-line text-ink-soft text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:bg-honey-soft hover:text-tangerine-deep hover:border-honey/60 transition-colors"
+        // §7 round 21: filled, like its two siblings. It was a bare outline
+        // (2026-08-30) while it was the only uncoloured chip beside one
+        // coloured one; with skills, agents and MCP all coloured, an outline
+        // reads as disabled rather than as restrained. The glyph is the app's
+        // own robot — the same one the run card uses — rather than an emoji.
+        className={`flex items-center gap-1 rounded-full ${CHIP_TONE.agents} text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:brightness-105`}
       >
         <ToolIcon kind="robot" className="size-3 shrink-0" /> {agents.length} agents
       </button>
@@ -2389,7 +2413,7 @@ function SkillsChip({ skills }: { skills: Array<{ name: string; scope: string; u
         type="button"
         onClick={() => setOpen((v) => !v)}
         title={`${skills.length} skill${skills.length === 1 ? "" : "s"} loaded for this session, ${used} used so far`}
-        className="flex items-center gap-1 rounded-full bg-plum-soft text-plum text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:brightness-105"
+        className={`flex items-center gap-1 rounded-full ${CHIP_TONE.skills} text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:brightness-105`}
       >
         <span aria-hidden>🧠</span> {used}/{skills.length} skills
       </button>
