@@ -7,13 +7,31 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 ## Commands
 - `npm install && (cd pi-runtime && npm ci)` — BOTH installs required (pi-runtime is a separate vendored tree; fresh worktrees fail live tests without it)
 - `npm run dev` · `npm test` (= the non-live suite, see §Tests) · `npm run build`
-- `npm run typecheck` (node + web + ext; the first two pass `--composite false` — don't hand-roll the raw `tsc` calls)
+- `npm run typecheck` (node + web + ext; the first two pass `--composite false` — don't hand-roll the raw `tsc` calls).
+  Runs on **TypeScript 7**, the native compiler — 1.2 s for all three passes (5.9 took ~7 s).
+  TS 7 **REMOVED `baseUrl`**, so every `paths` entry is `./`-relative to its own tsconfig: never
+  re-add `baseUrl`, and never set `ignoreDeprecations` — a deprecation red is the list of work, not
+  noise. `--composite false` on the CLI still overrides a `composite: true` config (measured).
 - `npm run lint` / `npm run format` are SCAFFOLD LEFTOVERS — don't run them casually.
   `eslint.config.mjs` is untouched electron-vite boilerplate from the initial commit: lint reports
   86 errors + 19,839 warnings (mostly `prettier/prettier`) and walks `release/` build output, and
   `npm run format` rewrites 281 of 329 tracked files — an 85%-of-repo diff that buries whatever
   you actually changed. Neither is in `gate` or CI. Leave them alone unless you are deliberately
   doing a formatting pass, on its own branch.
+  **Since the TypeScript 7 bump (2026-09-04) `npm run lint` does not run AT ALL**, and the refusal
+  is loud: typescript-eslint detects the version and throws *"typescript-eslint does not support
+  TS 7.0"* before linting a single file, naming Microsoft's side-by-side recipe and its own
+  tracking issue (#10940). That is decided, not neglected — the gate is the only consumer of the
+  `typescript` package (electron-vite transpiles with esbuild, jiti runs the catalog scripts), so
+  carrying a second TypeScript purely to keep an already-unusable lint alive was refused. If lint
+  is ever revived, the recipe is `"typescript": "npm:@typescript/typescript6@^6"` plus
+  `"@typescript/native": "npm:typescript@^7"` with the three `typecheck:*` scripts pointed at the
+  native binary — check typescript-eslint's peer range first (8.69 peers `<6.1.0`).
+  **The trap to know if you ever script against the package:** `require("typescript")` does NOT
+  throw at 7.x. It resolves to `lib/version.cjs` and exports exactly `["version",
+  "versionMajorMinor"]` — every compiler function (`createProgram`, `transpileModule`,
+  `parseJsonConfigFileContent`, …) is `undefined`. So a version probe SUCCEEDS and the failure
+  lands later, at the first real call. Spec: Notion "TypeScript 6 → 7 migration".
 - Full gate = `npm run gate` (= `build` → non-live suite, ONE command), plus `npm run test:live`
   when `npm run live:why` prints anything. `build` runs BOTH typechecks first and fast-fails on
   them, so never run `npm run typecheck` before `gate` or `build` — that is the same check twice
