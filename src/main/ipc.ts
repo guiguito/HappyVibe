@@ -3604,10 +3604,48 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:list-models", async () => {
     const c = await ensureUtility();
     const res = await c.send({ type: "get_available_models" });
-    const models = ((res.data as { models?: { provider: string; id: string; name?: string; contextWindow?: number; input?: string[] }[] })?.models ?? []);
-    // contextWindow feeds B5's estimated-gauge fallback (when Pi didn't measure).
-    // input (W2.1) gates the image-attach button: only vision models accept images.
-    return models.map((m) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id, contextWindow: m.contextWindow, input: m.input }));
+    type RegistryModel = {
+      provider: string;
+      id: string;
+      name?: string;
+      contextWindow?: number;
+      input?: string[];
+      cost?: { input?: number; output?: number; tiers?: { inputTokensAbove?: number }[] };
+    };
+    const models = (res.data as { models?: RegistryModel[] })?.models ?? [];
+    // §16 round 21: price is classified HERE, with the ledger's own resolver.
+    // The renderer must never re-derive "is this a subscription" — two answers
+    // to one question is how a page comes to disagree with the cost pill.
+    const plans = planProvidersFor(providerKeyStatus());
+    return models.map((m) => {
+      const priceIn = m.cost?.input;
+      const priceOut = m.cost?.output;
+      // All-zero rates mean UNPRICED, not free: Pi's provider composer defaults
+      // an unpriced model to zeros (PRD §19 ruling 3).
+      const billing = plans.has(m.provider)
+        ? "plan"
+        : (priceIn ?? 0) > 0 || (priceOut ?? 0) > 0
+          ? "metered"
+          : "unknown";
+      // Lowest threshold: the first tier the user could actually cross.
+      const above = (m.cost?.tiers ?? [])
+        .map((t) => t.inputTokensAbove)
+        .filter((n): n is number => typeof n === "number" && n > 0)
+        .sort((a, b) => a - b)[0];
+      return {
+        provider: m.provider,
+        id: m.id,
+        name: m.name ?? m.id,
+        // contextWindow feeds B5's estimated-gauge fallback (when Pi didn't measure).
+        contextWindow: m.contextWindow,
+        // input (W2.1) gates the image-attach button: only vision models accept images.
+        input: m.input,
+        billing,
+        priceIn,
+        priceOut,
+        ...(above ? { priceTierAbove: above } : {}),
+      };
+    });
   });
   ipcMain.handle("hv:set-default-model", async (_e, provider: string, modelId: string) => {
     setDefaultModel({ provider, modelId });

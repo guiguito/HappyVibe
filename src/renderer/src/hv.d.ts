@@ -269,6 +269,13 @@ interface HvModel {
   contextWindow?: number;
   /** W2.1: accepted input kinds (e.g. ["text","image"]) — gates image attach. */
   input?: string[];
+  /** §16 round 21: §19's three billing states, classified in main. */
+  billing?: "metered" | "plan" | "unknown";
+  /** USD per MILLION tokens, straight from Pi's registry (no conversion). */
+  priceIn?: number;
+  priceOut?: number;
+  /** Input-token threshold above which a higher pricing tier applies. */
+  priceTierAbove?: number;
 }
 
 /** MCP server config file shape (renderer-local; do not import from src/main). */

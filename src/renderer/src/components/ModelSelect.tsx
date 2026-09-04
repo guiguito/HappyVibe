@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { GoTo } from "./GoTo";
+import { formatModelPrice, modelPriceTitle } from "../modelPrice";
 
 /**
  * WS1: the searchable model dropdown, extracted from the chat chip so Settings
@@ -14,6 +15,11 @@ interface HvModelLike {
   provider: string;
   id: string;
   name: string;
+  /** §16 round 21: what it costs, classified in main under §19's rule. */
+  billing?: "metered" | "plan" | "unknown";
+  priceIn?: number;
+  priceOut?: number;
+  priceTierAbove?: number;
 }
 
 export function ModelSelect({
@@ -31,7 +37,7 @@ export function ModelSelect({
   onOpenChange,
   renderTrigger,
   triggerClassName,
-  menuWidthClassName = "w-72",
+  menuWidthClassName = "w-80",
 }: {
   models: HvModelLike[];
   value: { provider: string; modelId: string } | null;
@@ -131,7 +137,19 @@ export function ModelSelect({
                     className={`w-full text-left px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer ${active ? "font-bold text-tangerine-deep" : "font-medium"}`}
                   >
                     <span className="block truncate">{m.name}</span>
-                    <span className="block truncate font-mono text-[10px] text-ink-soft">{m.provider}/{m.id}</span>
+                    {/* §16 round 21: the id and the price share the second line.
+                        An unpriced model is amber — the ONE colour §19 reserves
+                        for money the app cannot stand behind. A plan row stays
+                        calm: a covered call is a fact, not a gap. */}
+                    <span className="flex items-baseline gap-2 font-mono text-[10px] text-ink-soft">
+                      <span className="truncate">{m.provider}/{m.id}</span>
+                      <span
+                        className={`shrink-0 ml-auto ${m.billing === "unknown" ? "text-tangerine-deep" : ""}`}
+                        title={modelPriceTitle(m)}
+                      >
+                        {formatModelPrice(m)}
+                      </span>
+                    </span>
                   </button>
                 );
               })}
