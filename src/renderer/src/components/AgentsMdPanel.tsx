@@ -1,12 +1,14 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useRef, useState } from "react";
-import { parseAgentsMdOutput, traceFromEnd, type AgentInfo } from "../agents";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { type AgentInfo } from "../agents";
 import { EmptyState } from "./EmptyState";
 import { HowItWorks } from "./HowItWorks";
+import { CodeGlyph, EyeGlyph } from "./FileTab";
 
-/** Strip an accidental markdown fence around a drafted file. */
-const unfence = (s: string): string =>
-  s.trim().replace(/^```(?:markdown|md)?\n?/, "").replace(/\n?```$/, "").trim();
+// Code-split: CodeMirror lives in its own chunk, exactly as it does for file tabs.
+const CodeEditor = lazy(() => import("./EditorPane"));
 
 /**
  * Editor for <workspace>/AGENTS.md. Pi loads context files at session start
@@ -24,6 +26,8 @@ export function AgentsMdPanel({
   sessionId,
   agents,
   onClose,
+  saveKey,
+  searchKey,
 }: {
   workspace: string;
   /** WS7: which AGENTS.md — root by default, or any nested one opened from the tree. */
@@ -33,6 +37,10 @@ export function AgentsMdPanel({
       delegation, so that page decides whether it can run. null = not loaded. */
   agents?: AgentInfo[] | null;
   onClose: () => void;
+  /** §15 round 21: resolved bindings from the shortcut registry, forwarded to
+      the CodeMirror keymap — the same ones a file tab gets. */
+  saveKey: string;
+  searchKey: string;
 }): React.JSX.Element {
   /**
    * PRD §15 (2026-08-30): drafting is a delegation to ONE agent, and that agent
@@ -57,6 +65,18 @@ export function AgentsMdPanel({
   const [error, setError] = useState<string | null>(null);
   const [justCreated, setJustCreated] = useState(false); // #6: auto-save acknowledgement
   const [savedFiles, setSavedFiles] = useState<string[]>([]); // WS5: root + nested written
+  // The editor is uncontrolled between versions, so a drafted file must bump
+  // this or CodeMirror keeps showing the buffer it already had.
+  const [docVersion, setDocVersion] = useState(0);
+  /**
+   * §15 round 21: the same source/preview switch a `.md` file tab has.
+   *
+   * Preview is the default for a file that already EXISTS; a missing or
+   * freshly-drafted one opens on source, because there is nothing to preview
+   * and something to write. Seeded once `missing` is known, which is why this
+   * is set in the load effect rather than in the initializer.
+   */
+  const [view, setView] = useState<"rendered" | "raw">("raw");
   // Live pi-event listener for the in-flight draft (unsubscribed on capture/close).
   const offDraft = useRef<(() => void) | null>(null);
 
@@ -67,13 +87,17 @@ export function AgentsMdPanel({
         .then((c) => {
           setMissing(c === null);
           setContent(c ?? "");
+          setView(c === null ? "raw" : "rendered");
         })
         .catch((e) => setError(String(e)));
       window.hv.hasClaudeMd(workspace).then(setClaudeMd).catch(() => setClaudeMd(false));
     } else {
       window.hv
         .fsRead(workspace, relPath)
-        .then((r) => setContent(r.kind === "text" ? r.content : ""))
+        .then((r) => {
+          setContent(r.kind === "text" ? r.content : "");
+          setView("rendered"); // a nested file opened from the tree always exists
+        })
         .catch((e) => setError(String(e)));
     }
     return () => offDraft.current?.();
@@ -105,52 +129,41 @@ export function AgentsMdPanel({
     }
   };
 
+  /**
+   * §15 round 21: main writes the draft; this only waits for it.
+   *
+   * The old listener watched `tool_execution_end` for a BLOCKING delegation's
+   * results. Delegations are async by default, so that event carries a dispatch
+   * receipt with no results — nothing ever matched, `agent_end` then fired, and
+   * the user got "No draft was produced this turn" while the run was still
+   * going. Waiting for the WRITE is correct on both paths and needs no
+   * knowledge of how the delegation was dispatched.
+   *
+   * There is deliberately no timeout: an async delegation has no bounded end,
+   * and a timeout would claim failure while a run is still working. The run
+   * rail is where a live delegation is watched and stopped.
+   */
   const draft = (): void => {
     if (!sessionId) return; // draft needs a live session to delegate on
     setDrafting(true);
     setError(null);
-    const stop = (): void => {
+    offDraft.current?.();
+    offDraft.current = window.hv.onAgentsMdWritten(({ workspaceId, files }) => {
+      if (workspaceId !== workspace) return;
       offDraft.current?.();
       offDraft.current = null;
       setDrafting(false);
-    };
-    offDraft.current = window.hv.onPiEvent((e) => {
-      if (e.sessionId !== sessionId) return;
-      if (e.type === "tool_execution_end" && e.toolName === "subagent") {
-        const run = traceFromEnd(e.result).results.find((r) => r.agent === "agents-md-maker");
-        if (!run) return;
-        stop();
-        const raw = run.finalOutput ?? "";
-        // WS5: preferred path — structured {path → content} for root + nested,
-        // written by MAIN (path-confined + audited). Fallback: treat the whole
-        // output as a single root draft (old behavior) for a non-compliant model.
-        const structured = parseAgentsMdOutput(raw);
-        const files = structured ?? (unfence(raw) ? { "AGENTS.md": unfence(raw) } : null);
-        if (!files) {
-          setError("The draft came back empty — try again or write it by hand.");
-          return;
-        }
-        window.hv
-          .writeAgentsMdFiles(workspace, files)
-          .then((written) => {
-            // Editor shows the saved ROOT file; nested files are noted in the toast.
-            setContent(files["AGENTS.md"] ?? Object.values(files)[0]);
-            setMissing(false);
-            setDirty(false);
-            setError(null);
-            setSavedFiles(written);
-            setJustCreated(true);
-          })
-          .catch((err) => {
-            setContent(files["AGENTS.md"] ?? Object.values(files)[0]);
-            setDirty(true);
-            setError(String(err));
-          });
-      } else if (e.type === "agent_end") {
-        // Turn finished without a captured draft (model didn't delegate / errored).
-        stop();
-        setError("No draft was produced this turn — try again or write it by hand.");
-      }
+      setSavedFiles(files);
+      setJustCreated(true);
+      setError(null);
+      // Reload from disk rather than trusting an echo: main is the writer, so
+      // the file is the truth about what was written.
+      void window.hv.readAgentsMd(workspace).then((c) => {
+        setMissing(c === null);
+        setContent(c ?? "");
+        setDocVersion((v) => v + 1); // replace the editor's whole document
+        setDirty(false);
+      });
     });
     void window.hv
       .promptSession(
@@ -162,7 +175,9 @@ export function AgentsMdPanel({
           "confirming the draft is ready — do not repeat its output.",
       )
       .catch((e) => {
-        stop();
+        offDraft.current?.();
+        offDraft.current = null;
+        setDrafting(false);
         setError(String(e));
       });
   };
@@ -200,17 +215,61 @@ export function AgentsMdPanel({
             <>
               {missing && !dirty && <EmptyState copy="agentsMd" className="mb-3" />}
               <HowItWorks copy="instructionFiles" />
-              <textarea
-                value={content}
-                onChange={(e) => {
-                  setContent(e.target.value);
-                  setDirty(true);
-                  setJustCreated(false);
-                }}
-                spellCheck={false}
-                placeholder={missing ? "Markdown…" : ""}
-                className="flex-1 min-h-64 w-full resize-none rounded-xl border-2 border-line-strong bg-paper px-3.5 py-3 font-mono text-xs focus:outline-none focus:border-tangerine"
-              />
+              {/* The switcher LEADS, as a two-icon pill with the current view
+                  lit — the file tab's exact control, reused rather than
+                  restyled. A single button labelled with the OTHER state
+                  ("Source" while showing source) is a riddle; a switch is not. */}
+              <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center rounded-lg border-2 border-line-strong overflow-hidden shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setView("raw")}
+                    aria-pressed={view === "raw"}
+                    aria-label="Edit source"
+                    title="Edit source"
+                    className={`flex items-center px-2 py-1 cursor-pointer ${
+                      view === "raw" ? "bg-tangerine text-paper" : "text-ink-soft hover:bg-paper-deep/40"
+                    }`}
+                  >
+                    <CodeGlyph />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView("rendered")}
+                    aria-pressed={view === "rendered"}
+                    aria-label="Preview rendered"
+                    title="Preview rendered"
+                    className={`flex items-center px-2 py-1 cursor-pointer border-l-2 border-line-strong ${
+                      view === "rendered" ? "bg-tangerine text-paper" : "text-ink-soft hover:bg-paper-deep/40"
+                    }`}
+                  >
+                    <EyeGlyph />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 min-h-64 rounded-xl border-2 border-line-strong bg-paper overflow-hidden">
+                {view === "rendered" ? (
+                  <div className="h-full overflow-y-auto px-6 py-4">
+                    <div className="md max-w-3xl mx-auto">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                    </div>
+                  </div>
+                ) : (
+                  <Suspense
+                    fallback={<div className="h-full flex items-center justify-center text-sm text-ink-soft">Opening editor…</div>}
+                  >
+                    <CodeEditor
+                      path={relPath}
+                      doc={content}
+                      docVersion={docVersion}
+                      onChange={(t) => { setContent(t); setDirty(true); setJustCreated(false); }}
+                      onSave={() => void save()}
+                      saveKey={saveKey}
+                      searchKey={searchKey}
+                    />
+                  </Suspense>
+                )}
+              </div>
               <div className="mt-3 flex items-center gap-2">
                 {missing && !dirty && (
                   <>

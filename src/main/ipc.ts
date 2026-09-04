@@ -79,7 +79,7 @@ import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
 import { buildTitlePrompt, generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
-import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
+import { copyClaudeMdToAgentsMd, finalTextFromSessionFile, hasClaudeMd, parseAgentsMdOutput, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
 import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, createWorkspaceFolder, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
@@ -1456,6 +1456,38 @@ export function registerIpc(win: BrowserWindow): void {
               ...(childSessionsByRun.has(sub.runId) ? { children: childSessionsByRun.get(sub.runId) } : {}),
             },
           });
+          // §15 round 21: the agents-md-maker's draft is written HERE, not by a
+          // dialog. Delegations are async by default, so `tool_execution_end`
+          // carries a dispatch receipt with no results at all — the renderer's
+          // listener never matched, and from chat there was no listener. This is
+          // the one moment main holds both halves: which agent the run was, and
+          // where its child wrote. Done BEFORE the delete below, because that
+          // map is the only record of the child's session file.
+          const finishedAgent = sub.agent ?? delegatedAgentByRun.get(sub.runId);
+          if (finishedAgent === "agents-md-maker" && sub.status === "success" && meta?.workspaceId) {
+            const ws = meta.workspaceId;
+            // The child's OWN session file, untruncated — the notify's summary
+            // is capped at 500 chars in the bridge and would cut a draft
+            // mid-string, which is the failure this replaces.
+            const files = (childSessionsByRun.get(sub.runId) ?? [])
+              .map((k) => parseAgentsMdOutput(finalTextFromSessionFile(readSessionFile(sessionDir(), k.sessionFile))))
+              .find((f) => f !== null);
+            if (files) {
+              try {
+                const written = writeAgentsMdFiles(workspaces.list(), ws, files);
+                void log.append({ type: "agents_md.written", workspaceId: ws, data: { files: written, runId: sub.runId } });
+                send("hv:agents-md-written", { workspaceId: ws, files: written });
+              } catch (e) {
+                // A confinement refusal or an unwritable path must be a ROW, not
+                // a silent nothing — the panel is waiting for this event.
+                void log.append({
+                  type: "agents_md.write_failed",
+                  workspaceId: ws,
+                  data: { runId: sub.runId, error: String(e) },
+                });
+              }
+            }
+          }
           childSessionsByRun.delete(sub.runId);
           // §12 FR7: fold the child guard's own decisions into the audit log.
           // Drained at completion rather than streamed: the guard appends from a

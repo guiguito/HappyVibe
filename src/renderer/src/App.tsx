@@ -3110,6 +3110,8 @@ export default function App(): React.JSX.Element {
           // not a second way to ask.
           agents={agents}
           onClose={() => setAgentsMd(null)}
+          saveKey={bindings.save}
+          searchKey={bindings.search}
         />
       )}
     </div>

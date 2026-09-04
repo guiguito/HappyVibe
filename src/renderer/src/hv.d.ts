@@ -1015,6 +1015,8 @@ interface HvApi {
   ): Promise<{ ok: true; tools: { name: string; description?: string }[] } | { ok: false; error: string }>;
   mcpLogout(name: string): Promise<void>;
   onMcpStatusChanged(cb: (s: McpServerStatusLike[]) => void): () => void;
+  /** §15 round 21: main wrote an AGENTS.md draft (root and any nested). */
+  onAgentsMdWritten(cb: (p: { workspaceId: string; files: string[] }) => void): () => void;
   // §13 round 8: curated catalog. Install by KEY — main owns the catalog and the
   // secrets, so the renderer never sends a config object.
   mcpInstallCatalog(

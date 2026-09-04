@@ -484,6 +484,19 @@ contextBridge.exposeInMainWorld("hv", {
     return () => ipcRenderer.removeListener("hv:mcp-status-changed", h);
   },
 
+  /**
+   * §15 round 21: main wrote an AGENTS.md draft (root and any nested).
+   *
+   * The payload is forwarded EXPLICITLY — a preload bridge that drops its
+   * argument is a silent failure this repo has shipped once already (§31's
+   * document chips).
+   */
+  onAgentsMdWritten: (cb: (p: { workspaceId: string; files: string[] }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p as { workspaceId: string; files: string[] });
+    ipcRenderer.on("hv:agents-md-written", h);
+    return () => ipcRenderer.removeListener("hv:agents-md-written", h);
+  },
+
   // Each on* returns an unsubscribe function. Without it, React StrictMode's
   // dev double-mount registers listeners twice and every stream delta renders
   // twice ("the the heading heading ...").
