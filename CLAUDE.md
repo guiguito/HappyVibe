@@ -87,6 +87,15 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   **Never add an exclude list back — the list is the thing that drifted.**
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
+  **But check `pgrep -fl "npm run dev"` FIRST — before the isolation re-run, not after.** A live app
+  session is a third concurrent provider consumer, and isolation does not clear a competitor that
+  is not the batch: a contended isolation run reproduces the failure and reads exactly like a real
+  one. Round 21 lost ~25 min and several paid runs to this — three isolation timeouts on
+  `subagent-async-bridge` (121 s / 141 s / 142 s, one of them with `main`'s `spawn.ts` restored)
+  were written up as a pre-existing red, and the test then **passed in 18.0 s** once the dev server
+  was accounted for. **The batch WALL TIME is the tell** and it is already in the output: 840 s
+  against a ~360 s baseline. Never raise this test's bound — 60 s → 120 s bought exactly one batch
+  (docs/validation/live-runs.md, and d1.md §Round 21's two live reds).
 - **NEVER pipe a test run to `tail`/`grep`.** Two bugs in one habit: `| tail` returns *tail's*
   exit code, so a red suite reads green; and the output is gone, so looking at a different slice
   costs a whole re-run. Those two are the WHOLE case — redirecting saves no tokens, measured:
