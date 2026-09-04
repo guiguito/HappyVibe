@@ -943,6 +943,24 @@ export function ToolCard({
 }
 
 /**
+ * §33 — a LIVE memory card's fields, off the tool result's structured `details` sibling.
+ *
+ * Exported so a test can drive it with the real wire shape: the renderer suite has no DOM, so
+ * the only way to pin the live path is to assert on this function rather than on the card.
+ */
+export function memoryFromResult(result: unknown): ToolCardData["memory"] | undefined {
+  const d = (result as { details?: Record<string, unknown> } | undefined)?.details;
+  if (!d || typeof d.name !== "string" || !d.name) return undefined;
+  return {
+    scope: d.scope === "workspace" ? "workspace" : "global",
+    name: d.name,
+    ...(typeof d.type === "string" ? { type: d.type } : {}),
+    ...(typeof d.description === "string" ? { description: d.description } : {}),
+    ...(typeof d.replaced === "boolean" ? { replaced: d.replaced } : {}),
+  };
+}
+
+/**
  * §33 — a memory card's body: the fact, and a Forget that undoes it in one click.
  *
  * Forget is the UNDO for a save, and it is why rewind says nothing about memory: memory lives
@@ -956,7 +974,14 @@ function MemoryCardBody({ card, workspaceId }: { card: ToolCardData; workspaceId
   // wants and the `workspace` prop the card already receives are the same string.
   const [forgotten, setForgotten] = useState(false);
   const [busy, setBusy] = useState(false);
-  const mem = card.memory;
+  // TWO sources, and needing both is the whole lesson of this card.
+  //
+  // A RESTORED card has only what restore.ts named (`card.memory`); a LIVE one has never been
+  // through restore and carries the tool result itself, with the same fields on its `details`.
+  // The first cut read only the structured field, so the live card — the one you see the moment
+  // you approve a save — rendered its headline and nothing else: no body, no Forget. Every unit
+  // test fed a restored card and passed. Found in the GUI, exactly as §12's delegation card was.
+  const mem = card.memory ?? memoryFromResult(card.result);
   if (!mem || !card.toolName.startsWith("memory_")) return null;
   // Nothing was saved, so there is nothing to show or undo.
   if (card.status === "error" || card.status === "denied") return null;
@@ -969,7 +994,10 @@ function MemoryCardBody({ card, workspaceId }: { card: ToolCardData; workspaceId
     <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5">
       <div className="flex items-center gap-2 flex-wrap mb-1.5">
         <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-ink/20 bg-ink/5 px-2 py-0.5 text-ink-soft">
-          {mem.scope === "workspace" ? "this project" : "about you"}
+          {/* "everywhere", not "about you": the KIND pill beside this one already says "About
+              you" for a `user` memory, and the GUI pass showed the two rendering as ABOUT YOU ·
+              ABOUT YOU. The scope answers WHERE it applies; the kind answers WHAT it is. */}
+          {mem.scope === "workspace" ? "this project" : "everywhere"}
         </span>
         {mem.type && (
           <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-ink/20 bg-ink/5 px-2 py-0.5 text-ink-soft">

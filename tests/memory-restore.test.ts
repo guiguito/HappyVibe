@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { restoreItems } from "../src/main/restore";
 import { toTranscriptItems } from "../src/renderer/src/restoreMap";
+import { memoryFromResult } from "../src/renderer/src/components/ToolCard";
 
 const save = (details: Record<string, unknown>) => [
   { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "memory_save", arguments: { scope: "global", name: "x" } }] },
@@ -57,5 +58,40 @@ describe("the lift is gated on the TOOL NAME, not on the fields", () => {
   it("a memory result with no name in details carries nothing rather than half a card", () => {
     const items = restoreItems(save({ scope: "global", type: "user" }) as never);
     expect((items.find((m) => m.kind === "tool") as { memory?: unknown }).memory).toBeUndefined();
+  });
+});
+
+/**
+ * §33 — the LIVE card, which is a different source from the restored one and was the second
+ * GUI-only bug of this round.
+ *
+ * A live card never goes through restore: it carries the tool RESULT, whose `details` sibling
+ * holds the same fields. Reading only `card.memory` meant the card you see the instant you
+ * approve a save rendered its headline and nothing else — no body, no Forget — while every
+ * test here fed a restored card and passed.
+ */
+describe("a LIVE memory card reads the tool result's details", () => {
+  it("lifts the same fields the restored path names", () => {
+    const live = memoryFromResult({
+      content: [{ type: "text", text: 'Remembered "x" (global).' }],
+      details: { scope: "global", type: "user", name: "test-output-in-french", description: "d", replaced: false },
+    });
+    expect(live).toEqual({ scope: "global", type: "user", name: "test-output-in-french", description: "d", replaced: false });
+  });
+
+  it("agrees with the RESTORED path field for field — one card, two sources", () => {
+    const details = { scope: "workspace", type: "project", name: "n", description: "d", replaced: true };
+    const live = memoryFromResult({ details });
+    const restored = restoreItems([
+      { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "memory_save", arguments: {} }] },
+      { role: "toolResult", toolCallId: "t1", toolName: "memory_save", content: [{ type: "text", text: "ok" }], details },
+    ] as never).find((m) => m.kind === "tool") as { memory?: unknown };
+    expect(live).toEqual(restored.memory);
+  });
+
+  it("is undefined for a result with no details, or none carrying a name", () => {
+    expect(memoryFromResult(undefined)).toBeUndefined();
+    expect(memoryFromResult({ content: [] })).toBeUndefined();
+    expect(memoryFromResult({ details: { scope: "global" } })).toBeUndefined();
   });
 });

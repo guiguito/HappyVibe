@@ -11,6 +11,7 @@ import { memoryText, toAuditRow } from "../src/renderer/src/components/AuditView
 import { toolLabel } from "../src/renderer/src/toolLabel";
 import { NAV } from "../src/renderer/src/components/Sidebar";
 import { MEMORY_EVENT_TYPES } from "../src/main/ipc";
+import { MEMORY_TYPE_LABEL, memoryFactFrom, memoryPromptTitle } from "../src/renderer/src/memoryFact";
 
 const R = path.resolve(import.meta.dirname, "../src/renderer/src");
 
@@ -147,4 +148,104 @@ describe("absences a screenshot cannot prove", () => {
   it("§19's one-use rule for the word AI still holds with a new page in the nav", () => {
     expect(NAV.filter((n) => /\bAI\b/.test(n.label))).toHaveLength(1);
   });
+});
+
+/**
+ * §33 — the permission summary must stay PARSEABLE.
+ *
+ * This is the bug the GUI pass found and no unit test could: the bridge's generic `summarize`
+ * slices the SERIALIZED JSON at 300 chars, which for a memory save cuts mid-string. The modal
+ * then failed to parse it, rendered no memory fact at all, and the prompt read "The agent wants
+ * to run something / Saving a memory" — a durable change to every future session, approved
+ * against nothing. Every unit test fed well-formed args and passed throughout.
+ *
+ * Pinned as a SOURCE contract (the bridge is not importable here) plus a behavioural check of
+ * the modal's own parser against a realistic, oversized payload.
+ */
+describe("the permission summary survives a real memory payload", () => {
+  const bridge = fs.readFileSync(path.resolve(import.meta.dirname, "../pi-runtime/extensions/happyvibe-bridge.ts"), "utf8");
+
+  it("summarize has a memory arm that caps the FIELD, never the serialized string", () => {
+    const arm = bridge.slice(bridge.indexOf('if (toolName.startsWith("memory_"))'), bridge.indexOf("// …and for EVERYTHING else"));
+    expect(arm).toContain("factual.content = factual.content.slice(0, 4096)");
+    // The give-away: no `.slice(0, 300)` on the stringify in this arm.
+    expect(arm).not.toMatch(/JSON\.stringify\(factual\)\.slice/);
+    // …and `intent` is still stripped, because §13's rule is absolute.
+    expect(arm).toContain("intent: _words");
+  });
+
+  it("a 4 KB body still parses back to a renderable fact", () => {
+    const payload = {
+      scope: "global",
+      type: "user",
+      name: "test-output-in-french",
+      description: "User wants test output written in French.",
+      content: "x".repeat(4096),
+    };
+    const summary = JSON.stringify(payload); // what the memory arm now produces
+    const parsed = JSON.parse(summary) as Record<string, unknown>;
+    const fact = memoryFactFrom("memory_save", parsed);
+    expect(fact).not.toBeNull();
+    expect(fact!.name).toBe("test-output-in-french");
+    expect(memoryPromptTitle("memory_save", false)).toContain("remember");
+  });
+
+  it("…where the OLD 300-char slice produced nothing at all", () => {
+    const truncated = JSON.stringify({ scope: "global", type: "user", name: "n", description: "d", content: "x".repeat(500) }).slice(0, 300);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(truncated);
+    } catch {
+      parsed = undefined;
+    }
+    expect(parsed).toBeUndefined();
+    expect(memoryFactFrom("memory_save", parsed)).toBeNull(); // → the generic prompt the GUI showed
+  });
+});
+
+/**
+ * §33 — the card's two pills answer DIFFERENT questions, and must not render the same word.
+ * The GUI pass showed "ABOUT YOU · ABOUT YOU" for a global `user` memory: the scope pill said
+ * where it applies, the kind pill said what it is, and both landed on the same phrase.
+ */
+it("the card's scope pill never repeats the kind pill's wording", () => {
+  const card = fs.readFileSync(path.join(R, "components/ToolCard.tsx"), "utf8");
+  const pill = card.slice(card.indexOf('mem.scope === "workspace"'), card.indexOf('mem.scope === "workspace"') + 90);
+  expect(pill).toContain("everywhere");
+  expect(pill).not.toContain("about you");
+  // …and the kind labels are the other axis, unchanged.
+  expect(MEMORY_TYPE_LABEL.user).toBe("About you");
+});
+
+/**
+ * §33 — the prompt and the record want different lengths, and the round's fix to one silently
+ * changed the other.
+ *
+ * `summarize` capped every tool at 300 chars, so the audit row was bounded by accident. Lifting
+ * that cap for memory (the prompt must show and diff the whole memory) made every JSONL audit
+ * row carry up to 4 KB. The cap now lives in `audit()` — one choke point, every caller — so the
+ * record stays bounded no matter what a future summary does.
+ */
+it("the audit row's summary is capped at ONE choke point, not per call site", () => {
+  const bridge = fs.readFileSync(path.resolve(import.meta.dirname, "../pi-runtime/extensions/happyvibe-bridge.ts"), "utf8");
+  const fn = bridge.slice(bridge.indexOf("function audit("), bridge.indexOf("// ── B3 auth"));
+  expect(fn).toMatch(/summary: o\.summary\.length > 300 \? `\$\{o\.summary\.slice\(0, 300\)\}…` : o\.summary/);
+  // …and the notify sends the capped row, not the raw one.
+  expect(fn).toContain('...row }');
+  expect(fn).not.toMatch(/kind: "hv\.audit"[^}]*\.\.\.o \}/);
+});
+
+/**
+ * §33 — the pointer to workspace settings must carry the WORKSPACE.
+ *
+ * `GoTo` takes `{view, workspace}` and App's navigate() selects the workspace before switching
+ * views. The first cut passed only the view: the link rendered, was clickable, and landed on
+ * whatever page was last open. A dead pointer is worse than none (§20 round 17), so with no
+ * workspace in play the page states the fact instead of offering a link.
+ */
+it("the workspace pointer passes a workspace, and degrades to prose without one", () => {
+  const view = fs.readFileSync(path.join(R, "components/MemoryView.tsx"), "utf8");
+  expect(view).toContain('<GoTo view="workspace" workspace={workspaceId}');
+  expect(view).toMatch(/workspaceId \? \(/); // the guarded branch exists
+  expect(view).toContain("open a project to see them");
 });

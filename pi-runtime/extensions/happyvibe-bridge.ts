@@ -87,6 +87,20 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
   if (toolName === "web_search" && typeof input.query === "string") {
     return input.query.slice(0, 300);
   }
+  // §33: a memory call's summary is the WHOLE QUESTION being asked — the prompt renders it as
+  // the fact it is (scope, kind, name, summary, body) and diffs it against what is already
+  // stored. So it must stay PARSEABLE, and the generic arm below cannot deliver that: it slices
+  // the SERIALIZED JSON at 300 chars, which for a memory cuts mid-string and leaves the modal
+  // with nothing to parse. Found only in the GUI — the prompt said "Saving a memory" and showed
+  // no memory at all, while every unit test fed it well-formed args and passed.
+  //
+  // Cap the FIELD, never the serialized string, and cap it at the store's own body limit so a
+  // memory that is legal to save is always legal to show in full.
+  if (toolName.startsWith("memory_")) {
+    const { intent: _words, ...factual } = input;
+    if (typeof factual.content === "string") factual.content = factual.content.slice(0, 4096);
+    return JSON.stringify(factual);
+  }
   // …and for EVERYTHING else, strip `intent` rather than special-casing the
   // tools that happen to carry one.
   //
@@ -619,7 +633,16 @@ function audit(
     wouldHave?: RuleAction;
   },
 ): void {
-  ui.notify(JSON.stringify({ kind: "hv.audit", ts: new Date().toISOString(), ...o }), "info");
+  // §33: the audit row's summary is CAPPED here, at the one choke point every caller routes
+  // through, rather than at each call site.
+  //
+  // `summarize` used to cap every tool at 300 chars, so this was implicit. §33 lifted that cap
+  // for memory calls — the permission PROMPT has to show the whole memory and diff it — and
+  // that silently made the audit row unbounded too: a 4 KB body in every JSONL row, on a log
+  // that is long-lived and exportable. The prompt and the record want different things, so they
+  // get different lengths, and the record's is bounded by construction.
+  const row = { ...o, summary: o.summary.length > 300 ? `${o.summary.slice(0, 300)}…` : o.summary };
+  ui.notify(JSON.stringify({ kind: "hv.audit", ts: new Date().toISOString(), ...row }), "info");
 }
 
 // ── B3 auth (docs/validation/s0.2.md) ──────────────────────────────────────
