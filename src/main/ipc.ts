@@ -786,6 +786,10 @@ export function registerIpc(win: BrowserWindow): void {
       // §19: a path we own, so main can read the cached model exclusions rather
       // than re-deriving upstream's tmp layout (modelExclusions.ts).
       modelExclusionsFile: modelExclusionsPath(),
+      // §16 round 21: the identity paragraph is unconditional (spawn.ts), and
+      // passing it REPLACES Pi's discovery of APPEND_SYSTEM.md — so the user's
+      // own additions must be handed over explicitly or they stop applying.
+      appendFile: globalAppendFile(agentDir()),
     };
   };
 
