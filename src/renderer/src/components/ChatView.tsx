@@ -826,7 +826,14 @@ export function ChatView({
       {/* v5.1: search + context bubble live IN the chat (a thin right-aligned bar
           at the top of this pane) — not a floating overlay that could bleed over
           an adjacent split pane. */}
-      <div className="flex items-center justify-end gap-1.5 px-3 h-11 border-b-2 border-line bg-paper shrink-0">
+      {/* §7 round 21: the bar WRAPS. It was a fixed-height single row, so in a
+          narrow split pane the model, thinking, skills, agents, MCP and plan
+          chips squeezed each other rather than taking a second line. The height
+          is a MINIMUM: with `h-11` a wrapped row overflows the bar's own box and
+          paints over the transcript, so the fixed height was the actual bug.
+          No overflow menu — a control hidden behind an ellipsis is worse than a
+          taller bar, and this bar is read at a glance. */}
+      <div className="flex flex-wrap items-center justify-end gap-1.5 px-3 py-1.5 min-h-11 border-b-2 border-line bg-paper shrink-0">
         {/* §23: compact plan-mode indicator (left) — read-only badge with a
             wrap-up nudge and one-click exit. Replaces the full-width banner. */}
         {/* §7 round 12: the MODEL chip lives here, left of the metrics, and the
@@ -834,7 +841,7 @@ export function ChatView({
             now, because the chip is always present. The Plan toggle deliberately
             stayed in the composer: it is something you flip before typing, not a
             property of the session you read. */}
-        <div className="mr-auto flex items-center gap-1.5">
+        <div className="mr-auto min-w-0 flex flex-wrap items-center gap-1.5">
           {/* W2.1: current-model chip + per-session override dropdown (session → workspace → global).
               WS1: shared ModelSelect (controlled open so a session switch force-closes it). */}
           <div className="shrink-0">
