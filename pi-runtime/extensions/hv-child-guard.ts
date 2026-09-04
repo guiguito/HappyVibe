@@ -33,6 +33,45 @@ export interface ChildAuditRow {
   summary: string;
 }
 
+/**
+ * The child's OWN task file, taken from its own argv — never a pattern.
+ *
+ * pi-subagents hands the task to a child as a trailing `@<abs path>` positional
+ * pointing at `<tmpdir>/pi-subagent-<rand>/task.md`. That used to happen only
+ * for tasks over 8,000 chars, so we never met it; 0.63.0 (#1793, "keep macOS
+ * subagent tasks out of argv") added `platform === "darwin"` to
+ * `shouldDeliverTaskViaFile`, which makes it UNCONDITIONAL for every HappyVibe
+ * user. There is no opt-out — `SubagentTaskDelivery` is `"auto" | "file"` and
+ * `auto` resolves to file on darwin.
+ *
+ * The file lives outside the workspace, so the parent's rules resolve a read of
+ * it to `ask`, and `ask` means deny in here — the child was refused its own
+ * task and did nothing, while the audit row read as if the agent had tried to
+ * snoop a temp file. Whether it surfaced at all depended on whether Pi expanded
+ * the `@` itself or the model called `read` on the literal, so this failed
+ * intermittently (measured 2 of 3 runs), which is worse than failing always.
+ *
+ * Read from argv rather than matched by shape ON PURPOSE. This exempts exactly
+ * the one file this child was told to read: a sibling run's task.md is still
+ * refused, and if upstream stops passing the positional the exemption never
+ * arms rather than silently widening. Measured argv (child-guard-bridge, 0.64):
+ *   … --system-prompt /var/…/pi-subagent-ltj8yX/writer.md
+ *     @/var/…/pi-subagent-ltj8yX/task.md
+ * Exported for the contract test.
+ */
+export function taskFileFromArgv(argv: readonly string[]): string | undefined {
+  const arg = argv.find((a) => a.startsWith("@/") && a.endsWith("/task.md"));
+  return arg ? path.resolve(arg.slice(1)) : undefined;
+}
+
+/** True for the one `read` that is pi-subagents' delivery mechanism, not agent behaviour. */
+export function isOwnTaskRead(tool: string, input: Record<string, unknown>, taskFile: string | undefined): boolean {
+  if (tool !== "read" || !taskFile) return false;
+  const p = input.path;
+  if (typeof p !== "string" || p === "") return false;
+  return path.resolve(p) === taskFile;
+}
+
 export default function hvChildGuard(pi: {
   on: (event: string, handler: (event: { toolName?: string; input?: unknown }) => unknown) => void;
 }): void {
@@ -68,9 +107,15 @@ export default function hvChildGuard(pi: {
     }
   };
 
+  const taskFile = taskFileFromArgv(process.argv);
+
   pi.on("tool_call", (event) => {
     const tool = typeof event.toolName === "string" ? event.toolName : "tool";
     const input = (event.input ?? {}) as Record<string, unknown>;
+    // Not a permission event: this is how the child RECEIVES its instructions.
+    // Unaudited on purpose — a row per delegation saying "read task.md, allow"
+    // is infrastructure noise in a log a user reads to see what the agent did.
+    if (isOwnTaskRead(tool, input, taskFile)) return undefined;
     const d = childDecision(rules, { tool, input, workspace: process.cwd() }, { bypass, rulesReadable });
     record({
       ts: new Date().toISOString(),
