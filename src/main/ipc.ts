@@ -89,7 +89,9 @@ import {
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
 // §33 Memory — main is the ONE writer (agent envelopes + human edits, one serialized queue).
-import { memoryRoot, workspaceMemoryDir, workspaceMemoryKey } from "./memory";
+import {
+  forgetMemory, memoryRoot, readMemory, saveMemory, slugify, workspaceMemoryDir, workspaceMemoryKey,
+} from "./memory";
 import { DEFAULT_DIFF_BUDGET, buildDraftPrompt, buildPrPrompt, draftCommitMessage, draftPullRequest } from "./gitMessage";
 import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
@@ -99,6 +101,7 @@ import {
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { buildTerminalPrompt } from "../../pi-runtime/extensions/hv-terminal";
+import { buildMemoryPrompt } from "../../pi-runtime/extensions/hv-memory";
 import { expandedHash, pairPromptTemplateItems, restoreItems, type RestoreItem } from "./restore";
 import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
@@ -418,6 +421,48 @@ function parseDocumentReq(r: { method?: string; title?: string }):
   } catch {
     return null;
   }
+}
+
+/**
+ * §33: the three blocking memory envelopes. Main writes, main answers — ALWAYS, or the bridge
+ * hangs on a promise nothing resolves.
+ *
+ * Validation here is shape only (is this one of ours, and are the fields the right type). The
+ * store owns the slug, the caps and the secret scan, so the rules cannot differ between an
+ * agent save and a human edit.
+ */
+export type MemoryEnvelope =
+  | { kind: "hv.memory-save"; scope: MemoryScopeName; type: string; name: string; description: string; content: string }
+  | { kind: "hv.memory-recall"; scope: MemoryScopeName; name: string }
+  | { kind: "hv.memory-forget"; scope: MemoryScopeName; name: string };
+
+export type MemoryScopeName = "global" | "workspace";
+
+export function parseMemoryEnvelope(r: { method?: string; title?: string }): MemoryEnvelope | null {
+  if (r.method !== "input") return null;
+  let p: Record<string, unknown>;
+  try {
+    p = JSON.parse(r.title ?? "") as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const kind = p?.kind;
+  const scope = p?.scope;
+  if (scope !== "global" && scope !== "workspace") return null;
+  const str = (k: string): string | null => (typeof p[k] === "string" && (p[k] as string).length > 0 ? (p[k] as string) : null);
+  const name = str("name");
+  if (!name) return null;
+  if (kind === "hv.memory-recall") return { kind, scope, name };
+  if (kind === "hv.memory-forget") return { kind, scope, name };
+  if (kind === "hv.memory-save") {
+    const type = str("type");
+    const description = str("description");
+    // An empty content is a real refusal reason, so let it through as "" and let the store say so.
+    const content = typeof p.content === "string" ? p.content : null;
+    if (type === null || description === null || content === null) return null;
+    return { kind, scope, type, name, description, content };
+  }
+  return null;
 }
 
 /** §23: the blocking plan-write input payload (main writes the file, answers with the path), else null. */
@@ -752,6 +797,23 @@ export function registerIpc(win: BrowserWindow): void {
       getDefaultThinking() as never,
     );
 
+  /**
+   * §33 — the ONE place a scope becomes a directory. The envelope handler, the Memory page's
+   * IPC and spawnOpts all route through it, so an agent save and a human edit can never land in
+   * different folders.
+   *
+   * Returns null when the scope is unavailable: memory off globally, no workspace for a
+   * workspace-scoped call, or that workspace's own toggle off. Null is a refusal with a reason,
+   * never a silent fallback to the other scope.
+   */
+  const memoryDirFor = (scope: "global" | "workspace", workspaceId?: string | null): string | null => {
+    if (!getBuiltinTools().memory) return null;
+    if (scope === "global") return memoryRoot(agentDir());
+    if (!workspaceId) return null;
+    if (!workspaces.getMemoryActive(workspaceId)) return null;
+    return workspaceMemoryDir(agentDir(), workspaceMemoryKey(workspaceId, gitCommonDir(workspaceId)));
+  };
+
   /** Everything a Pi spawn needs from provider config (B3) + rules delivery (B4).
    *  Model resolution (W2.1, full PRD hierarchy): session override → workspace
    *  override → global default. Mirrors resolveModel in renderer composer.ts. */
@@ -771,13 +833,11 @@ export function registerIpc(win: BrowserWindow): void {
     const builtins = getBuiltinTools();
     let memoryGlobalDir: string | undefined;
     let memoryWorkspaceDir: string | undefined;
-    if (builtins.memory && sessionId) {
-      memoryGlobalDir = memoryRoot(agentDir());
-      fs.mkdirSync(memoryGlobalDir, { recursive: true });
-      if (workspace && workspaces.getMemoryActive(workspace)) {
-        memoryWorkspaceDir = workspaceMemoryDir(agentDir(), workspaceMemoryKey(workspace, gitCommonDir(workspace)));
-        fs.mkdirSync(memoryWorkspaceDir, { recursive: true });
-      }
+    if (sessionId) {
+      memoryGlobalDir = memoryDirFor("global") ?? undefined;
+      memoryWorkspaceDir = (workspace ? memoryDirFor("workspace", workspace) : null) ?? undefined;
+      // Created eagerly so the bridge's first per-turn read cannot race the first save.
+      for (const d of [memoryGlobalDir, memoryWorkspaceDir]) if (d) fs.mkdirSync(d, { recursive: true });
     }
     return {
       model: resolveSpawnModel(workspace, sessionId),
@@ -1914,6 +1974,87 @@ export function registerIpc(win: BrowserWindow): void {
             });
           } catch (e) {
             reply({ ok: false, path: abs, name, text: e instanceof Error ? e.message : String(e) });
+          }
+        })();
+        return;
+      }
+      // §33 Memory. Blocking inputs, exactly the plan-write contract: main writes, main
+      // answers, an error still RESOLVES with a message rather than leaving the bridge stuck.
+      // The renderer never sees these — it learns about the change from hv:memory-changed and
+      // from the tool card the bridge's own result produces.
+      const memEnv = parseMemoryEnvelope(r as { method?: string; title?: string });
+      if (memEnv) {
+        void (async () => {
+          const rid = r.id;
+          const wsId = meta?.workspaceId;
+          let answer = "ERROR: memory is unavailable.";
+          try {
+            const dir = memoryDirFor(memEnv.scope, wsId);
+            if (!dir) {
+              answer = `ERROR: memory is turned off for this ${memEnv.scope === "workspace" ? "workspace" : "app"}.`;
+            } else if (memEnv.kind === "hv.memory-save") {
+              const res = await saveMemory(dir, {
+                name: memEnv.name,
+                description: memEnv.description,
+                type: memEnv.type,
+                content: memEnv.content,
+                // The saving session, so the Memory page's inspector can say WHERE it came
+                // from without an audit lookup. Cleared on a human edit (that is what makes
+                // "edited by you" honest) and never set on an import.
+                originSessionId: sessionId,
+              });
+              if (res.ok) {
+                answer = `${res.replaced ? "replaced" : "ok"}:${res.slug}`;
+                void log.append({
+                  type: "memory.saved",
+                  sessionId,
+                  workspaceId: wsId,
+                  // NEVER the body (§19: telemetry without content). Scope, type, name and the
+                  // one-line description are what a reader of the audit log needs.
+                  data: { scope: memEnv.scope, type: memEnv.type, name: res.slug, description: memEnv.description, replaced: res.replaced, who: "agent" },
+                });
+              } else {
+                answer = `ERROR: ${res.reason}`;
+                void log.append({
+                  type: "memory.refused",
+                  sessionId,
+                  workspaceId: wsId,
+                  data: { scope: memEnv.scope, type: memEnv.type, name: memEnv.name, reason: res.reason },
+                });
+              }
+            } else if (memEnv.kind === "hv.memory-recall") {
+              const slug = slugify(memEnv.name);
+              const doc = slug ? readMemory(dir, slug) : null;
+              if (doc) {
+                answer = doc.body;
+                void log.append({ type: "memory.recalled", sessionId, workspaceId: wsId, data: { scope: memEnv.scope, type: doc.type, name: slug } });
+              } else {
+                answer = `ERROR: there is no ${memEnv.scope} memory named "${memEnv.name}". The memory index in your instructions lists the names.`;
+              }
+            } else {
+              const slug = slugify(memEnv.name);
+              const doc = slug ? readMemory(dir, slug) : null;
+              const gone = slug ? await forgetMemory(dir, slug) : false;
+              if (gone) {
+                answer = "ok";
+                void log.append({
+                  type: "memory.forgotten",
+                  sessionId,
+                  workspaceId: wsId,
+                  data: { scope: memEnv.scope, type: doc?.type, name: slug, who: "agent" },
+                });
+              } else {
+                answer = `ERROR: there is no ${memEnv.scope} memory named "${memEnv.name}".`;
+              }
+            }
+          } catch (e) {
+            answer = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+          }
+          client.respondUi(rid, { value: answer });
+          // A recall changes nothing, and an error changed nothing — only push when the store
+          // actually moved, or the Memory page re-fetches on every read the agent does.
+          if (!answer.startsWith("ERROR:") && memEnv.kind !== "hv.memory-recall") {
+            send("hv:memory-changed", { scope: memEnv.scope, workspaceId: wsId });
           }
         })();
         return;
@@ -3543,6 +3684,12 @@ export function registerIpc(win: BrowserWindow): void {
     // schemas, so showing only the steer line would understate what turning it
     // off saves. Descriptions come from the bridge's own registrations.
     if (name === "terminal") return { text: buildTerminalPrompt() };
+    // §33: the resting cost is the policy PLUS the two index blocks PLUS three tool schemas, so
+    // showing the policy alone would understate what turning memory off saves. The indexes are
+    // shown as PLACEHOLDERS, not as this machine's actual memories: the panel is a read-only
+    // view of the prompt shape, and pasting the user's own memories into a settings page they
+    // did not ask to see them on is a different feature (the Memory page is that).
+    if (name === "memory") return { text: buildMemoryPrompt(getBuiltinTools().memoryAppend) };
     return { text: "" };
   });
 

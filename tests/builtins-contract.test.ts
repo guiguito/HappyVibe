@@ -34,7 +34,7 @@ let client: PiClient;
 afterEach(() => client?.stop());
 
 /** Spawn the bridge with a given HV_BUILTINS and report what it registered. */
-async function probe(builtins: string | undefined): Promise<{ tools: string[]; commands: string[] }> {
+async function probe(builtins: string | undefined, extraEnv: Record<string, string> = {}): Promise<{ tools: string[]; commands: string[] }> {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-builtins-"));
   const home = path.join(tmp, "home");
   const work = path.join(tmp, "work");
@@ -55,6 +55,7 @@ async function probe(builtins: string | undefined): Promise<{ tools: string[]; c
       HOME: home,
       XDG_CONFIG_HOME: path.join(home, ".config"),
       ...(builtins === undefined ? {} : { HV_BUILTINS: builtins }),
+      ...extraEnv,
     } as Record<string, string>,
     cwd: work,
   });
@@ -155,3 +156,30 @@ test.skipIf(!fs.existsSync(CLI))(
   },
   30_000,
 );
+
+/**
+ * §33: the memory group, proven against a real Pi at startup with no key. The tools are gated
+ * on HV_MEMORY_GLOBAL_DIR as well as the toggle — main not naming a scope IS how "off" reaches
+ * the bridge — so the on-arm has to supply one, and the off-arm proves the toggle alone
+ * suppresses them even when the scope is there.
+ */
+const MEMORY_TOOLS_EXPECTED = ["memory_save", "memory_recall", "memory_forget"];
+
+test.skipIf(!fs.existsSync(CLI))("§33: the three memory tools register by default", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-mem-contract-"));
+  const { tools } = await probe(undefined, { HV_MEMORY_GLOBAL_DIR: dir });
+  for (const t of MEMORY_TOOLS_EXPECTED) expect(tools).toContain(t);
+});
+
+test.skipIf(!fs.existsSync(CLI))('HV_BUILTINS {"memory":false} ⇒ no memory tool exists, and its neighbours are untouched', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-mem-contract-off-"));
+  const { tools } = await probe(JSON.stringify({ memory: false }), { HV_MEMORY_GLOBAL_DIR: dir });
+  for (const t of MEMORY_TOOLS_EXPECTED) expect(tools).not.toContain(t);
+  expect(tools).toContain("document_read");
+  expect(tools).toContain("web_search");
+});
+
+test.skipIf(!fs.existsSync(CLI))("no memory scope named by main ⇒ no memory tool, even with the toggle on", async () => {
+  const { tools } = await probe(undefined);
+  for (const t of MEMORY_TOOLS_EXPECTED) expect(tools).not.toContain(t);
+});

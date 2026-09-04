@@ -90,3 +90,27 @@ export function memoryTokenLines(
     policy: tok(MEMORY_POLICY),
   };
 }
+
+/**
+ * The Built-in tools page's read-only prompt panel (§13 round 6's contract: the prompt in full,
+ * plus an append box, never an override).
+ *
+ * The indexes are PLACEHOLDERS — the panel shows the SHAPE of what is injected, not this
+ * machine's memories, which belong on the Memory page. The three tool descriptions are included
+ * because the resting cost is the policy plus the schemas, and a panel that showed only the
+ * policy would understate what turning the row off saves.
+ */
+export function buildMemoryPrompt(append: string): string {
+  const section = renderMemorySection({
+    append,
+    global: "- <one line per global memory>",
+    workspace: "- <one line per memory about this project>",
+  }).trim();
+  return (
+    section +
+    "\n\n## The three tools this registers\n\n" +
+    "- **memory_save** — save a durable memory (scope, type, name, description, content). The same name replaces the existing memory. Asks you first.\n" +
+    "- **memory_recall** — open one memory in full by name. Never asks: it returns text you can already read on the Memory page.\n" +
+    "- **memory_forget** — delete one memory by name. Asks you first."
+  );
+}

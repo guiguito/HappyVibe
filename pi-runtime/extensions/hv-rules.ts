@@ -71,7 +71,11 @@ export interface Verdict {
 //
 // §31: reading a document exercises no power — it is Pi's own `read`, one
 // format further on. Spelled, not imported: this module is zero-import.
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read"]);
+// §33: `memory_recall` is here and memory_save/memory_forget deliberately are NOT. Recall
+// returns text the user has already reviewed on the Memory page and can read there any time —
+// the use_skill doctrine. Saving and forgetting CHANGE what every future session is told, so
+// they default to ask like any other write.
+export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall"]);
 
 /**
  * pi-subagents' parent-blocking wait tool, under EVERY name it has shipped under.

@@ -4,6 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MEMORY_POLICY, MEMORY_TOOLS, memoryTokenLines, readIndex, renderMemorySection } from "../pi-runtime/extensions/hv-memory";
+import { evaluate, SAFE_TOOLS } from "../pi-runtime/extensions/hv-rules";
+import { gatePlanCall } from "../pi-runtime/extensions/hv-plan";
 
 describe("renderMemorySection", () => {
   it("policy, then global, then workspace — the more specific voice is read LAST (§15's rule)", () => {
@@ -89,5 +91,35 @@ describe("readIndex / memoryTokenLines fail soft", () => {
     fs.writeFileSync(path.join(d, "MEMORY.md"), "## user\n## project\n- only-one — d\n");
     expect(memoryTokenLines(d, undefined).global.count).toBe(1);
     fs.rmSync(d, { recursive: true, force: true });
+  });
+});
+
+/**
+ * §33 — the two gate sets, asserted through the PUBLIC functions rather than the sets, so the
+ * test survives a refactor of either and fails on a change in BEHAVIOUR.
+ */
+describe("gates", () => {
+  it("memory_recall is a safe default; save and forget are NOT", () => {
+    expect(SAFE_TOOLS.has("memory_recall")).toBe(true);
+    expect(SAFE_TOOLS.has("memory_save")).toBe(false);
+    expect(SAFE_TOOLS.has("memory_forget")).toBe(false);
+  });
+
+  it("a bare memory_save resolves to ASK, and memory_recall to allow", () => {
+    const noRules = { global: [], workspaces: {} };
+    expect(evaluate(noRules, { tool: "memory_save" }).action).toBe("ask");
+    expect(evaluate(noRules, { tool: "memory_forget" }).action).toBe("ask");
+    const recall = evaluate(noRules, { tool: "memory_recall" });
+    expect(recall.action).toBe("allow");
+    expect(recall.source).toBe("safe-default");
+  });
+
+  it("all three PASS plan mode's clamp — memory is not the workspace", () => {
+    for (const t of MEMORY_TOOLS) expect(gatePlanCall(t, {}).kind, t).toBe("pass");
+  });
+
+  it("…and passing means the RULE ENGINE still decides, so plan mode neither widens nor narrows", () => {
+    // The contrast that makes "pass" meaningful: a write is blocked outright.
+    expect(gatePlanCall("write", {}).kind).toBe("block");
   });
 });

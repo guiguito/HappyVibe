@@ -188,6 +188,11 @@ const PLAN_PASS_TOOLS = new Set([
   // removes power. These must be NAMED — an unnamed tool floor-asks, which for a
   // poll is the friction that makes a model stop using the tool at all.
   "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close",
+  // §33: all three memory tools pass. Memory is not the workspace, and a planning session
+  // learning "the user prefers X" is exactly when memory earns its keep. Passing means the RULE
+  // ENGINE decides, so save and forget still ask — plan mode neither widens nor narrows them.
+  // They must be NAMED: an unnamed tool floor-asks, which would prompt on every recall.
+  "memory_save", "memory_recall", "memory_forget",
   // §32: headless reads of the public web — no cookies, no side effects, and
   // nothing in the workspace is touched. "pass" leaves the verdict alone, so
   // the browser:<host> gate still runs INSIDE plan mode; it only means the
