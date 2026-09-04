@@ -59,3 +59,47 @@ files. The test's own comment already records the same thing happening at a 60 s
 before touching anything. If it passes in seconds, it is class A. Do not raise its bound again —
 raising 60 s to 120 s bought one batch, and the next one exceeded that too; the bound is not the
 variable.
+
+## §33 Memory — three batches to green, and one of the two reds was real (2026-09-04)
+
+| Run | Result | Wall |
+| --- | --- | --- |
+| 1 | killed by system memory pressure mid-batch | — |
+| 2 | 67/68 — `rules-bridge` rule-deny | 755 s |
+| 3 | **68/68 green** | 483 s |
+
+**Red 1, `child-guard-bridge` — REAL, and it was the TEST.** Both the first two runs failed
+*"an allowed write escaped the workspace: /private/var/…/hv-guard-cwd2-…/ok.txt"*. That path IS
+the workspace, spelled the way macOS resolves it; `mkdtempSync` had handed the test `/var/…`.
+The guard resolved both sides (`resolveThroughLinks`) and allowed it correctly — the test's own
+compare did not, and then blamed the guard. It only fires when the model happens to pick an
+ABSOLUTE path, which is why it read as a flake.
+
+**The thing that made this diagnosable was the PATHS IN THE MESSAGE, not the pass/fail counts.**
+It passed on main in 13 s immediately before failing on the branch, which is n=1 against n=1 and
+would have supported either conclusion. Fixed by resolving both sides from the nearest EXISTING
+ancestor (the target and its parent are usually both absent, so a single realpath throws), and
+verified case by case rather than by a green run: the absolute path now reads inside, while
+`/etc/hosts` and the `<root>-evil` sibling-prefix trap are still caught.
+
+**Red 2, `rules-bridge` rule-deny — class A, the documented one.** Failed at exactly its own
+240 s budget (3 × 45 s of re-asking plus spawn), i.e. the model produced no `bash` call at all.
+Two independent checks, because the first instinct — "it can't be mine" — had already been wrong
+once that day:
+
+1. **Measured the session rather than reasoning about it.** A probe spawned exactly as that test
+   spawns registered **31 tools and zero `memory_*`**: the test sets no `HV_MEMORY_*`, so
+   `memoryOn` is false, no memory tool loads and `memorySection` is `""`, leaving the injected
+   prompt byte-identical to main's. The one shared change, the cap inside `audit()`, only fires
+   above 300 chars and that row's summary is `touch forbidden.txt` — 19.
+2. **Interleaved the arms** (this doc's rule, and CLAUDE.md's on behavioural claims): main /
+   branch / main / branch, single-test and then whole-file. **Eight consecutive passes, four on
+   the branch**, 6–35 s each.
+
+Both reds landed during the long batches and neither reproduced afterwards. Same class as the
+`subagent-async-bridge` entry above: the provider degrades under sustained serial load, and the
+bound is not the variable.
+
+**Cost, for the record:** a full batch is now ~8 min and 21 files. Run 1's kill also produced a
+187 s timeout that looked like a third red and was simply the machine out of memory — check
+`vm_stat` before believing a batch that dies partway.
