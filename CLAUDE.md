@@ -438,6 +438,38 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   benefit, measured on our own suite: the bundled entry boots faster, 152 s → 42 s for the same
   264 files.
 
+- **A sub-agent's task arrives as a FILE on macOS from pi-subagents 0.63, and that one clause set
+  off a two-bug chain.** `shouldDeliverTaskViaFile` gained `platform === "darwin"` (#1793), so what
+  used to fire only for tasks over 8,000 chars now fires for EVERY delegation on our only platform:
+  the child gets a trailing `@<tmpdir>/pi-subagent-<rand>/task.md` positional. There is no opt-out —
+  `SubagentTaskDelivery` is `"auto" | "file"`, there is no `"argv"` value, and the internal override
+  only ever moves TOWARDS file. **Bug 1:** that file is outside the workspace, so the parent's rules
+  resolve a read of it to `ask`, and `ask` means DENY in the child guard — the child was refused its
+  own instructions and did nothing, while the audit row read like an agent snooping a temp file. It
+  surfaced only when the model read the literal instead of Pi expanding the `@`, so it failed **2
+  runs in 3** — intermittent, which is worse than always, and invisible to every non-live test.
+  `taskFileFromArgv`/`isOwnTaskRead` (hv-child-guard.ts) exempt exactly the path in the child's OWN
+  argv: not a shape match, because the same tempdir also holds `writer.md` (passed as
+  `--system-prompt`, so a directory pattern would exempt the system prompt too) and because a
+  `pi-subagent-*/task.md` pattern would let a child read a CONCURRENT run's prompt. Reading argv
+  fails safe — if upstream drops the positional the exemption never arms. **Bug 2, which the fix
+  CAUSED:** once the child could read that path, the model started writing its OUTPUT next to the
+  task. Measured by audit-row mtime against the fix commit — 13 runs before, every write relative or
+  in-workspace; 6 runs after, two into the tempdir, `decision:"allow"` and the user's file simply
+  absent. The hole underneath was structural and older than any pin: **`childDecision` matches on
+  the TOOL NAME only**, so an allowed `write` reached the whole filesystem. `escapesWorkspace` now
+  confines `write`/`edit` (a DERIVED set — both declare `path: Type.String()` in Pi's schemas; the
+  test re-scans every builtin so a future path-taking writer fails there), resolving symlinks
+  through the nearest EXISTING ancestor because the target file is usually absent and a string check
+  passes a planted link. Containment is `=== root || startsWith(root + sep)`, never a bare
+  startsWith, or `/tmp/ws-evil` reads as inside `/tmp/ws`. Applied AFTER `childDecision` so
+  `wouldHave` still reports the RULES and `decision` reports confinement; yields to bypass. **The
+  lesson worth more than either fix: a permission exemption changes what the model can SEE, and
+  therefore what it tries next.** Widening a read moved the failure to a write nobody was watching.
+  `tests/child-task-file.test.ts` + `tests/child-write-confine.test.ts` (both key-free).
+  Residual, not fixed: a refused child does not always retry, so a delegation can still end with no
+  file — loud now instead of silent. Product question, not a pin one.
+
 - **A pin bump can now fail TYPECHECK, with errors pointing under `node_modules` — never patch
   vendored source.** `tsconfig.extensions.json` typechecks a slice of pi-subagents' raw `.ts`
   source under our flags, and its `paths` encode the nested `pi-ai`/`pi-agent-core` layout. If a
