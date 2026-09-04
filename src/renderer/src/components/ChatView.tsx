@@ -18,6 +18,7 @@ import { SubagentTraceView, ToolIcon } from "./ToolCard";
 import { TerminalRunCard, TerminalTail, type TerminalRun } from "./TerminalRunCard";
 import { type IconKind } from "../toolLabel";
 import { insertAtComposer } from "../composerText";
+import { mcpChipLabel, serversForWorkspace } from "../mcpChip";
 import { folderHasCode } from "../onboarding";
 import { MicButton } from "./MicButton";
 import { VoiceActivateModal } from "./VoiceActivateModal";
@@ -504,8 +505,13 @@ export function ChatView({
   };
   const [offerAgentsMd, setOfferAgentsMd] = useState(false); // #7: one-time AGENTS.md banner
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
-  const [mcpSubOpen, setMcpSubOpen] = useState(false); // v5: "+" menu MCP submenu
-  const [mcpServers, setMcpServers] = useState<{ name: string; state: string }[] | null>(null);
+  /**
+   * §7 round 21: MCP is a top-bar chip, so the list is LIVE rather than fetched
+   * when a submenu opens — a count is only worth glancing at if it is right
+   * before you look. `onMcpStatusChanged` already existed: a startup sweep, an
+   * authentication, and adding or removing a server all push through it.
+   */
+  const [mcpServers, setMcpServers] = useState<McpServerStatusLike[] | null>(null);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   // §31: documents are converted AT PICK TIME, so a chip already knows its cost.
   const [documents, setDocuments] = useState<DocumentAttachment[]>([]);
@@ -522,11 +528,9 @@ export function ChatView({
   const [documentsHere, setDocumentsHere] = useState(true);
   // v5: pull the cached MCP status when the submenu opens (read-only; no re-sweep).
   useEffect(() => {
-    if (!mcpSubOpen) return;
-    window.hv.mcpStatus()
-      .then((list) => setMcpServers(list.map((s) => ({ name: s.name, state: s.state }))))
-      .catch(() => setMcpServers([]));
-  }, [mcpSubOpen]);
+    window.hv.mcpStatus().then(setMcpServers).catch(() => setMcpServers([]));
+    return window.hv.onMcpStatusChanged(setMcpServers);
+  }, []);
   // Honest fallback: live set_model failed → override persisted, applies on next spawn.
   const [restartHint, setRestartHint] = useState(false);
   /** §16: provider set main filters spawn refs with — see resolveSpawnModel. */
@@ -582,6 +586,13 @@ export function ChatView({
   // Chip shows the bare model name — strip any leading "Provider: " prefix Pi bakes
   // into the display name (e.g. "Z.ai: GLM 5.2" → "GLM 5.2").
   const modelLabel = modelName?.replace(/^[^:]+:\s+/, "") ?? null;
+  /**
+   * §7 round 21: the servers THIS session can actually call — global plus this
+   * workspace's own. The `+` menu's submenu this replaces listed every
+   * configured server, so a session offered servers belonging to a workspace it
+   * has nothing to do with.
+   */
+  const mcpRows = mcpServers ? serversForWorkspace(mcpServers, workspace ?? null) : null;
 
   /**
    * §16 round 16 — the session's thinking effort.
@@ -868,6 +879,7 @@ export function ChatView({
           )}
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
         {agents && agents.length > 0 && <AgentsChip agents={agents} onPick={(name) => insertText(`Ask ${name} to `)} />}
+        {mcpRows && mcpRows.length > 0 && <McpChip rows={mcpRows} onManage={onOpenMcp} />}
         {/* §23 round 9: the active-plan pill. A plan card lives at its
             plan_complete position in history, so a compaction that ate that
             position would otherwise leave an implementable plan with no way to
@@ -1490,7 +1502,7 @@ export function ChatView({
             </button>
             {attachMenuOpen && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => { setAttachMenuOpen(false); setMcpSubOpen(false); }} />
+                <div className="fixed inset-0 z-10" onClick={() => setAttachMenuOpen(false)} />
                 <div className="absolute bottom-full left-0 mb-2 z-20 w-60 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
                   <button
                     type="button"
@@ -1527,54 +1539,6 @@ export function ChatView({
                           : "off in Built-in tools"}
                     </span>
                   </button>
-                  {/* WS7: AGENTS.md editor (replaces the removed header chip). */}
-                  <button
-                    type="button"
-                    onClick={() => { setAttachMenuOpen(false); onOpenAgentsMd(); }}
-                    className="w-full text-left px-3 py-2 hover:bg-paper-deep/40 cursor-pointer"
-                  >
-                    Edit AGENTS.md
-                    <span className="block text-[10px] font-medium text-ink-soft">project context for the agent</span>
-                  </button>
-                  {/* v5: MCP submenu — connected servers (read-only) + Manage shortcut. */}
-                  <button
-                    type="button"
-                    onClick={() => setMcpSubOpen((o) => !o)}
-                    aria-expanded={mcpSubOpen}
-                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-paper-deep/40 cursor-pointer"
-                  >
-                    <span className="flex-1 text-left">MCP</span>
-                    <span className="text-[11px] text-ink-soft" aria-hidden>{mcpSubOpen ? "▾" : "▸"}</span>
-                  </button>
-                  {mcpSubOpen && (
-                    <div className="border-t border-line bg-paper-deep/30 py-1">
-                      {mcpServers === null ? (
-                        <div className="px-3 py-1.5 text-[11px] font-medium text-ink-soft">Loading…</div>
-                      ) : mcpServers.length === 0 ? (
-                        <div className="px-3 py-1.5 text-[11px] font-medium text-ink-soft">No MCP servers connected.</div>
-                      ) : (
-                        mcpServers.map((s) => (
-                          <div key={s.name} className="flex items-center gap-2 px-3 py-1.5">
-                            <span
-                              className={`size-2 rounded-full shrink-0 ${
-                                s.state === "connected" ? "bg-leaf" : s.state === "checking" ? "bg-honey" : "bg-berry"
-                              }`}
-                              title={s.state}
-                            />
-                            <span className="flex-1 min-w-0 truncate text-[12px] font-medium">{s.name}</span>
-                            <span className="text-[9px] uppercase tracking-wide text-ink-soft">{s.state}</span>
-                          </div>
-                        ))
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => { setAttachMenuOpen(false); setMcpSubOpen(false); onOpenMcp?.(); }}
-                        className="w-full text-left px-3 py-1.5 text-[12px] font-bold text-tangerine-deep hover:bg-paper-deep/40 cursor-pointer"
-                      >
-                        Manage…
-                      </button>
-                    </div>
-                  )}
                 </div>
               </>
             )}
@@ -2399,6 +2363,67 @@ function ThinkingPill({
             ))}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * §7 round 21 — MCP joins skills and agents in the top bar.
+ *
+ * It replaces the `+` menu's submenu wholesale: `+` is for attaching things,
+ * and a list of connected servers is not something you attach.
+ *
+ * Dismissal is the `fixed inset-0` click-catcher every other menu here uses,
+ * NOT onBlur — pressing a button does not focus it, so a blur-dismissed menu
+ * unmounts between mousedown and mouseup and loses its own clicks (the
+ * TabStrip `+` menu was reported twice for exactly that).
+ */
+function McpChip({
+  rows,
+  onManage,
+}: {
+  rows: McpServerStatusLike[];
+  onManage?: () => void;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const up = rows.filter((r) => r.state === "connected").length;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={`${up} of ${rows.length} MCP server${rows.length === 1 ? "" : "s"} connected for this session`}
+        className={`flex items-center gap-1 rounded-full ${CHIP_TONE.mcp} text-[11px] font-bold px-2 py-0.5 cursor-pointer hover:brightness-105`}
+      >
+        <span aria-hidden>🔌</span> {mcpChipLabel(rows)}
+      </button>
+      {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
+      {open && (
+        <div className="absolute top-full left-0 mt-1.5 z-30 w-64 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
+          {rows.map((srv) => (
+            <div key={`${srv.scope}:${srv.name}`} className="flex items-center gap-2 px-3 py-1">
+              <span
+                className={`size-2 rounded-full shrink-0 ${
+                  srv.state === "connected" ? "bg-leaf" : srv.state === "checking" ? "bg-honey" : "bg-berry"
+                }`}
+                title={srv.state}
+              />
+              <span className="flex-1 min-w-0 truncate font-medium">{srv.name}</span>
+              <span className="text-[9px] uppercase tracking-wide text-ink-soft shrink-0">{srv.state}</span>
+            </div>
+          ))}
+          {onManage && (
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); setOpen(false); onManage(); }}
+              className="w-full text-left px-3 py-1.5 text-[12px] font-bold text-tangerine-deep hover:bg-paper-deep/40 cursor-pointer"
+            >
+              Manage…
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
