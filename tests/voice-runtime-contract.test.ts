@@ -16,8 +16,8 @@ const sherpaPkg = JSON.parse(
 
 describe("sherpa-onnx runtime contract", () => {
   it("is pinned EXACTLY — a caret here would move the engine under a shipped app", () => {
-    expect(pkg.dependencies["sherpa-onnx-node"]).toBe("1.13.4");
-    expect(sherpaPkg.version).toBe("1.13.4");
+    expect(pkg.dependencies["sherpa-onnx-node"]).toBe("1.13.7");
+    expect(sherpaPkg.version).toBe("1.13.7");
   });
 
   it("ships a platform package for every target §27 commits to", () => {
