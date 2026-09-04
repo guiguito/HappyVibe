@@ -66,3 +66,16 @@ describe("the modal layer (§28 round 1)", () => {
     expect(Math.max(...used)).toBeLessThanOrEqual(50);
   });
 });
+
+it("keeps the z-100 layer classes on a pane-scoped dialog", () => {
+  // `.hv-overlay` / `.hv-dialog` are what put a dialog above the app's z-50
+  // ceiling. Switching `fixed` to `absolute` (§7 round 21) must not drop them,
+  // or every z-20 sticky card in the pane paints over the scrim again — which
+  // is the defect the layer rule above was written for.
+  for (const f of ["src/renderer/src/components/PermissionModal.tsx", "src/renderer/src/components/AskUserModal.tsx"]) {
+    const src = fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+    expect(src).toContain("SCOPED_OVERLAY");
+    expect(src).toContain("VIEWPORT_OVERLAY");
+    expect(src).not.toContain("hv-overlay fixed inset-0");
+  }
+});

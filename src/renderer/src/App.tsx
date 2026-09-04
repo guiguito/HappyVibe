@@ -41,6 +41,7 @@ import { PromptTemplatesView } from "./components/PromptTemplatesView";
 import { PluginsView } from "./components/PluginsView";
 import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
+import { dialogHost } from "./paneDialog";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { BuiltinToolsView } from "./components/BuiltinToolsView";
@@ -366,8 +367,23 @@ export default function App(): React.JSX.Element {
   // stats (see the effect below). Total comes from main, never re-summed here.
   const [costOpen, setCostOpen] = useState(false);
   const [selCalls, setSelCalls] = useState<{ calls: HvApiCall[]; total: HvLedgerTotal } | null>(null);
-  // AGENTS.md editor — opened from the "+" menu (root) or the file tree (any path).
+  // AGENTS.md editor — opened from the file tree (any path), or the "no
+  // AGENTS.md here" banner (root). Round 21 removed the "+" menu route.
   const [agentsMd, setAgentsMd] = useState<string | null>(null); // relPath, or null = closed
+  /**
+   * §7 round 21: each chat pane's element, so a session's own dialogs can
+   * portal into the pane that raised them rather than lying across every pane
+   * — which is what blanked a browser beside a session.
+   *
+   * A ref rather than state: the panes mount long before any prompt arrives,
+   * and re-rendering App just to store a DOM node would be churn for nothing.
+   */
+  const paneHosts = useRef(new Map<string, HTMLDivElement>());
+  const paneHost = useCallback(
+    (sessionId: string | undefined): HTMLElement | null =>
+      dialogHost(sessionId ? paneHosts.current.get(sessionId) : null),
+    [],
+  );
   // bufferKey(ws, rel) → unsaved edits (feeds the tab-strip dirty dot; the
   // buffers themselves live in the always-mounted FileTab components).
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
@@ -2810,7 +2826,16 @@ export default function App(): React.JSX.Element {
                 if (wsId && slot >= 0) updateTabs(wsId, (t) => focusPane(t, slot));
                 if (selectedId !== sid) setSelectedId(sid);
               }}
-              className={`min-h-0 min-w-0 flex-col ${paneDivider(area)} ${activeView === "chat" && area ? "flex" : "hidden"}`}
+              // §7 round 21: `relative` positions the pane-scoped session
+              // dialogs, which are `absolute inset-0` within it. Without it an
+              // absolute dialog resolves against some ancestor and lands
+              // somewhere else entirely.
+              data-hv-pane-session={sid}
+              ref={(el) => {
+                if (el) paneHosts.current.set(sid, el);
+                else paneHosts.current.delete(sid);
+              }}
+              className={`relative min-h-0 min-w-0 flex-col ${paneDivider(area)} ${activeView === "chat" && area ? "flex" : "hidden"}`}
             >
               <ChatView
             // Same expression as the wrapper's flex/hidden above — the recording
@@ -3007,9 +3032,15 @@ export default function App(): React.JSX.Element {
           </div>
         </div>
       </main>
-      {uiReq?.kind === "permission" && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
+      {/* §7 round 21: over the pane that raised it. `paneHost` answers null
+          whenever that pane is hidden (the user is on a settings page), and the
+          modal then falls back to the viewport — a prompt that never times out
+          must never be invisible. */}
+      {uiReq?.kind === "permission" && (
+        <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} container={paneHost(uiReq.req.sessionId)} />
+      )}
       {uiReq?.kind === "askUser" && (
-        <AskUserModal key={uiReq.req.id} ask={uiReq.ask} onSubmit={respondAskUser} onDismiss={() => respondAskUser(null)} />
+        <AskUserModal key={uiReq.req.id} ask={uiReq.ask} onSubmit={respondAskUser} onDismiss={() => respondAskUser(null)} container={paneHost(uiReq.req.sessionId)} />
       )}
       {/* §26 part 2: two NAMED outcomes, reusing the workspace-removal confirm
           pattern. Never silently kill (hostile — a dev server dies because a

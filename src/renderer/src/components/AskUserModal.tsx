@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SCOPED_CONTENT, SCOPED_OVERLAY, VIEWPORT_CONTENT, VIEWPORT_OVERLAY } from "../paneDialog";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { AskAnswer, AskQuestion, AskUserInfo } from "../askUser";
 
@@ -141,10 +142,17 @@ export function AskUserModal({
   ask,
   onSubmit,
   onDismiss,
+  container,
 }: {
   ask: AskUserInfo;
   onSubmit: (answers: AskAnswer[]) => void;
   onDismiss: () => void;
+  /**
+   * §7 round 21: the pane of the session that raised this, or null for the
+   * viewport. Null is the honest fallback whenever that pane is hidden — this
+   * dialog blocks the turn exactly like a permission prompt does.
+   */
+  container?: HTMLElement | null;
 }): React.JSX.Element {
   const [states, setStates] = useState<QState[]>(() => ask.questions.map(emptyQ));
   const [active, setActive] = useState(0);
@@ -165,10 +173,10 @@ export function AskUserModal({
 
   return (
     <Dialog.Root open>
-      <Dialog.Portal>
-        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]" />
+      <Dialog.Portal container={container ?? undefined}>
+        <Dialog.Overlay className={container ? SCOPED_OVERLAY : VIEWPORT_OVERLAY} />
         <Dialog.Content
-          className={`hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${
+          className={`${container ? SCOPED_CONTENT : VIEWPORT_CONTENT} ${
             wide ? "w-[min(44rem,calc(100vw-3rem))]" : "w-[min(32rem,calc(100vw-3rem))]"
           } max-h-[calc(100vh-4rem)] overflow-y-auto rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6 focus:outline-none`}
           // Blocking like permission prompts: only Submit or Dismiss get you out.
