@@ -47,3 +47,23 @@ test("the agent still declares it never writes — the app does", () => {
     expect(md.match(/^tools:.*$/m)?.[0]).not.toMatch(new RegExp(`\\b${forbidden}\\b`));
   }
 });
+
+test("the + menu no longer opens the AGENTS.md editor", () => {
+  const src = read("src/renderer/src/components/ChatView.tsx");
+  const menu = src.slice(src.indexOf("attachMenuOpen && ("), src.indexOf("§23: plan-mode toggle — read-only"));
+  expect(menu).not.toContain("Edit AGENTS.md");
+  expect(menu).not.toContain("project context for the agent");
+});
+
+test("but the editor is still reachable — the banner and the file tree both open it", () => {
+  // Removing the menu row must not orphan the panel. These are the two
+  // surviving routes and they are both source-pinned, because the no-DOM suite
+  // cannot click either one.
+  const chat = read("src/renderer/src/components/ChatView.tsx");
+  // The "no AGENTS.md here" banner's Generate one button.
+  expect(chat).toMatch(/setOfferAgentsMd\(false\); onOpenAgentsMd\(\)/);
+  // Clicking any AGENTS.md in the file tree opens the dialog, not a plain tab.
+  const app = read("src/renderer/src/App.tsx");
+  expect(app).toMatch(/tabBasename\(rel\) === "AGENTS\.md"/);
+  expect(app).toMatch(/setAgentsMd\(rel\)/);
+});

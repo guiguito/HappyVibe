@@ -805,25 +805,33 @@ describe("agentBlurb", () => {
   });
 });
 
-describe("the agents pill is quiet at rest", () => {
+describe("the agents pill (2026-08-30's quiet outline, REVERSED in round 21)", () => {
+  // The 2026-08-30 decision made this pill a bare outline so the model chip
+  // stayed the loud one. §7 round 21 reversed it: MCP joined skills and agents
+  // as a third session-resource chip, all three are now filled, and an outline
+  // among three fills reads as DISABLED rather than as restrained. The two
+  // assertions that pinned the outline are superseded and replaced by the ones
+  // below; the glyph rule survives untouched, because it was never about fill.
   const CHAT4 = path.join(__dirname, "..", "src", "renderer", "src", "components", "ChatView.tsx");
   const chat4 = readFileSync(CHAT4, "utf8");
-  const chip = chat4.slice(chat4.indexOf("function AgentsChip"), chat4.indexOf("function SkillsChip"));
+  const chip = chat4.slice(chat4.indexOf("function AgentsChip"), chat4.indexOf("function McpChip"));
 
-  test("no fill and no emoji at rest; the app's own glyph instead", () => {
-    expect(chip).not.toContain("bg-honey-soft text-tangerine-deep text-[11px]");
+  test("no emoji; the app's own glyph instead", () => {
     expect(chip).not.toContain("🤖");
     expect(chip).toContain('<ToolIcon kind="robot"');
   });
 
-  test("it still looks pressable — a border at rest, a fill on hover", () => {
-    expect(chip).toContain("border border-line");
-    expect(chip).toContain("hover:bg-honey-soft");
+  test("it is filled from the shared tone map, not from a literal of its own", () => {
+    // The colours live in CHIP_TONE (tests/chip-colours.test.ts pins the map
+    // and checks each token is actually defined in styles.css). A literal here
+    // is how one chip comes to drift from its siblings.
+    expect(chip).toContain("CHIP_TONE.agents");
+    expect(chip).not.toContain("border border-line");
   });
 
-  test("the skills pill keeps its fill — the point was one loud pill, not none", () => {
+  test("the skills pill keeps its fill, through the same map", () => {
     const skills = chat4.slice(chat4.indexOf("function SkillsChip"));
-    expect(skills).toContain("bg-plum-soft");
+    expect(skills).toContain("CHIP_TONE.skills");
   });
 });
 

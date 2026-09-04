@@ -435,7 +435,9 @@ export function FileTab({
 }
 
 /** F6: preview toggle glyphs (inline SVG — strict self CSP, no icon lib). */
-function EyeGlyph(): React.JSX.Element {
+/** Exported for the AGENTS.md dialog's switcher (§15 round 21) — one icon set
+ *  for one control, so the two surfaces cannot drift apart. */
+export function EyeGlyph(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
@@ -469,7 +471,9 @@ function DiffGlyph(): React.JSX.Element {
     </svg>
   );
 }
-function CodeGlyph(): React.JSX.Element {
+/** Exported for the AGENTS.md dialog's switcher (§15 round 21) — one icon set
+ *  for one control, so the two surfaces cannot drift apart. */
+export function CodeGlyph(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="m16 18 6-6-6-6" />

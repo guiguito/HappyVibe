@@ -1,5 +1,6 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
+import { HV_IDENTITY } from "../appendSystem";
 
 /**
  * Node-capable exec path for Electron-as-node children. On macOS, LaunchServices
@@ -90,6 +91,22 @@ export interface PiSpawnOptions {
       result, silently. Stable across respawn by construction, which is the whole
       requirement. Absent for the utility client, which never delegates. */
   sessionId?: string;
+  /**
+   * §16 round 21: the global APPEND_SYSTEM.md, passed EXPLICITLY.
+   *
+   * `--append-system-prompt` REPLACES Pi's own discovery of this file rather
+   * than adding to it (resource-loader.js only discovers `if (!appendSources)`),
+   * so once we pass the identity we must pass the user's file too or their
+   * additions silently vanish. Absent or non-existent ⇒ not passed at all: a
+   * missing path is appended as LITERAL TEXT (resolvePromptInput returns a
+   * non-path input verbatim), which would put a filesystem path in the prompt.
+   *
+   * Consequence, accepted as an improvement (PRD §16 round 21): passing the
+   * flag also stops Pi discovering a WORKSPACE `.pi/APPEND_SYSTEM.md`. That
+   * file used to REPLACE the global additions with nothing in the UI saying so;
+   * it now has no effect, so a cloned repo cannot rewrite the system prompt.
+   */
+  appendFile?: string;
 }
 
 /**
@@ -191,6 +208,10 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       // §24 Commands: add back exactly the approved+active ones, by FILE.
       ...(opts.promptTemplates ?? []).flatMap((f) => ["--prompt-template", f]),
       "--no-themes",
+      // §16 round 21: identity first, the user's own additions LAST — Pi joins
+      // the sources with "\n\n" in argv order, so last wins on a conflict.
+      "--append-system-prompt", HV_IDENTITY,
+      ...(opts.appendFile && existsSync(opts.appendFile) ? ["--append-system-prompt", opts.appendFile] : []),
       "--session-dir", sessionDir,
       ...(model ? ["--provider", model.provider, "--model", model.modelId] : []),
       ...(opts.thinking ? ["--thinking", opts.thinking] : []),

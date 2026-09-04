@@ -561,3 +561,36 @@ export function resolveCardPath(workspace: string, raw: string): string | null {
   }
   return out.length ? out.join("/") : null;
 }
+
+/** One cross-divider strip: which half it belongs to, and its extent as a
+ *  fraction of the grid along the PRIMARY split's axis. */
+export interface CrossSpan {
+  half: 0 | 1;
+  from: number;
+  to: number;
+}
+
+/**
+ * §28 round 21 — where the second-level divider is allowed to be drawn.
+ *
+ * It used to be ONE strip spanning the whole grid (`left-0 right-0`), rendered
+ * as soon as EITHER half was sub-split. With a session on the left and a
+ * browser on the right, splitting the left column drew a 10px `absolute` strip
+ * straight across the browser — the geometric coverage check found it
+ * overlapping and the page hid, which is correct behaviour for a rectangle
+ * drawn over a composited view that has no business being there. Reported as
+ * "the browser content disappears, and comes back when I unsplit".
+ *
+ * So: one strip per sub-split half, both driven by the same shared ratio. Two
+ * strips rather than a full-width one even when both halves are split, so the
+ * rule has no special case — and in that case the divider sits at the browser's
+ * own edge, where `DIVIDER_INSET` already keeps the strip grabbable and the
+ * page visible.
+ */
+export function crossDividerSpans(t: Pick<WorkspaceTabs, "split" | "subSplit" | "sizes">): CrossSpan[] {
+  if (!t.split) return [];
+  const spans: CrossSpan[] = [];
+  if (t.subSplit[0]) spans.push({ half: 0, from: 0, to: t.sizes.main });
+  if (t.subSplit[1]) spans.push({ half: 1, from: t.sizes.main, to: 1 });
+  return spans;
+}

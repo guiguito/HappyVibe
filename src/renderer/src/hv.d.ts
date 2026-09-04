@@ -269,6 +269,13 @@ interface HvModel {
   contextWindow?: number;
   /** W2.1: accepted input kinds (e.g. ["text","image"]) — gates image attach. */
   input?: string[];
+  /** §16 round 21: §19's three billing states, classified in main. */
+  billing?: "metered" | "plan" | "unknown";
+  /** USD per MILLION tokens, straight from Pi's registry (no conversion). */
+  priceIn?: number;
+  priceOut?: number;
+  /** Input-token threshold above which a higher pricing tier applies. */
+  priceTierAbove?: number;
 }
 
 /** MCP server config file shape (renderer-local; do not import from src/main). */
@@ -1008,6 +1015,8 @@ interface HvApi {
   ): Promise<{ ok: true; tools: { name: string; description?: string }[] } | { ok: false; error: string }>;
   mcpLogout(name: string): Promise<void>;
   onMcpStatusChanged(cb: (s: McpServerStatusLike[]) => void): () => void;
+  /** §15 round 21: main wrote an AGENTS.md draft (root and any nested). */
+  onAgentsMdWritten(cb: (p: { workspaceId: string; files: string[] }) => void): () => void;
   // §13 round 8: curated catalog. Install by KEY — main owns the catalog and the
   // secrets, so the renderer never sends a config object.
   mcpInstallCatalog(

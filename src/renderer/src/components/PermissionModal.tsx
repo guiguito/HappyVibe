@@ -1,4 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { SCOPED_CONTENT, SCOPED_OVERLAY, VIEWPORT_CONTENT, VIEWPORT_OVERLAY } from "../paneDialog";
 import type { PermissionChoice, PermissionInfo, UiRequest } from "../permission";
 import type { BoundarySummary } from "../../../../pi-runtime/extensions/hv-subagent-boundary";
 import { toolLabel } from "../toolLabel";
@@ -85,10 +86,18 @@ export function PermissionModal({
   req,
   info,
   onChoice,
+  container,
 }: {
   req: UiRequest;
   info: PermissionInfo;
   onChoice: (c: PermissionChoice) => void;
+  /**
+   * §7 round 21: the pane of the session that raised this, or null for the
+   * viewport. Null is the honest fallback whenever that pane is hidden (the
+   * user is on a settings page) — a prompt that never times out must never be
+   * invisible.
+   */
+  container?: HTMLElement | null;
 }): React.JSX.Element {
   const { icon, label } = toolLabel(info.tool, argsFromSummary(info.tool, info.summary));
   // Standard allow/deny prompt → offer the expanded persistent-grant choices (#13);
@@ -97,10 +106,10 @@ export function PermissionModal({
   const shown = wire.includes("Allow") && wire.includes("Deny") ? EXPANDED_CHOICES : (wire as PermissionChoice[]);
   return (
     <Dialog.Root open>
-      <Dialog.Portal>
-        <Dialog.Overlay className="hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]" />
+      <Dialog.Portal container={container ?? undefined}>
+        <Dialog.Overlay className={container ? SCOPED_OVERLAY : VIEWPORT_OVERLAY} />
         <Dialog.Content
-          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(30rem,calc(100vw-3rem))] rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6 focus:outline-none"
+          className={`${container ? SCOPED_CONTENT : VIEWPORT_CONTENT} w-[min(30rem,calc(100vw-3rem))] rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6 focus:outline-none`}
           // Prompts never auto-allow and never time out: the only way out is a button.
           onEscapeKeyDown={(e) => e.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}

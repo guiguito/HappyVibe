@@ -38,3 +38,27 @@ export function writeAppend(file: string, content: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, content, "utf8");
 }
+
+/**
+ * PRD §16 round 21: the paragraph that makes the agent HappyVibe.
+ *
+ * Pi's base prompt opens "You are an expert coding assistant operating inside
+ * pi, a coding agent harness", so with nothing appended the agent introduces
+ * itself as pi. This lands AFTER the base prompt and is therefore the last
+ * word, which is all an identity needs — the base prompt itself is not
+ * replaced, because it is tool-aware (its guidelines vary with which tools are
+ * switched on) and replacing it means inheriting a prompt Pi keeps improving.
+ *
+ * Fixed app copy, deliberately not editable: the user's own additions layer is
+ * the editable one, and both already show up in the read-only "Resolved prompt"
+ * readout, so making this visible costs no new surface.
+ *
+ * It does NOT disown pi. Pi's own documentation block in the base prompt stays
+ * the right answer for questions about extensions, skills or the SDK, because
+ * that block describes the RUNTIME, which really is pi.
+ */
+export const HV_IDENTITY = [
+  "You are the coding agent inside HappyVibe, a desktop app for coding with an agent.",
+  "When you name yourself, you are HappyVibe — pi is the runtime you happen to run on, not what you are.",
+  "The pi documentation this prompt points at is still the right source for questions about the runtime itself (extensions, skills, prompt templates, the SDK); it does not describe HappyVibe's own product surface.",
+].join(" ");

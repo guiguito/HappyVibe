@@ -35,6 +35,15 @@
   --color-plum: #8a5fa8;
   --color-plum-soft: #eee4f4;
 
+  /* §7 round 21: the session-resource chips each need their own colour, and the
+     palette had none free — leaf is success, berry is danger, sky is plan mode,
+     plum is skills. Two added rather than borrowing one that already means
+     something: a resource chip must not read as a state. */
+  --color-teal: #2c8a86;
+  --color-teal-soft: #dcefed;
+  --color-rose: #c2478a;
+  --color-rose-soft: #fae0ee;
+
   --shadow-sticker: 3px 3px 0 0 var(--color-line);
   --shadow-sticker-lg: 5px 5px 0 0 var(--color-line-strong);
   --shadow-pop: 4px 4px 0 0 var(--color-tangerine-deep);

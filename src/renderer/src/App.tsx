@@ -41,6 +41,7 @@ import { PromptTemplatesView } from "./components/PromptTemplatesView";
 import { PluginsView } from "./components/PluginsView";
 import { applyPromptTemplatePair } from "./promptTemplatePair";
 import { toTranscriptItems } from "./restoreMap";
+import { dialogHost } from "./paneDialog";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { BuiltinToolsView } from "./components/BuiltinToolsView";
@@ -51,6 +52,7 @@ import {
   activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
   isChatTab, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, sessionOf, setSize, splitAt, splitOptions, termTab, terminalOf,
   allBrowsers, browserOf, browserTab, isBrowserTab, openBrowserTab,
+  crossDividerSpans,
   type TabId, type WorkspaceTabs,
 } from "./tabs";
 import { TabStrip } from "./components/TabStrip";
@@ -365,8 +367,23 @@ export default function App(): React.JSX.Element {
   // stats (see the effect below). Total comes from main, never re-summed here.
   const [costOpen, setCostOpen] = useState(false);
   const [selCalls, setSelCalls] = useState<{ calls: HvApiCall[]; total: HvLedgerTotal } | null>(null);
-  // AGENTS.md editor — opened from the "+" menu (root) or the file tree (any path).
+  // AGENTS.md editor — opened from the file tree (any path), or the "no
+  // AGENTS.md here" banner (root). Round 21 removed the "+" menu route.
   const [agentsMd, setAgentsMd] = useState<string | null>(null); // relPath, or null = closed
+  /**
+   * §7 round 21: each chat pane's element, so a session's own dialogs can
+   * portal into the pane that raised them rather than lying across every pane
+   * — which is what blanked a browser beside a session.
+   *
+   * A ref rather than state: the panes mount long before any prompt arrives,
+   * and re-rendering App just to store a DOM node would be churn for nothing.
+   */
+  const paneHosts = useRef(new Map<string, HTMLDivElement>());
+  const paneHost = useCallback(
+    (sessionId: string | undefined): HTMLElement | null =>
+      dialogHost(sessionId ? paneHosts.current.get(sessionId) : null),
+    [],
+  );
   // bufferKey(ws, rel) → unsaved edits (feeds the tab-strip dirty dot; the
   // buffers themselves live in the always-mounted FileTab components).
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
@@ -2809,7 +2826,16 @@ export default function App(): React.JSX.Element {
                 if (wsId && slot >= 0) updateTabs(wsId, (t) => focusPane(t, slot));
                 if (selectedId !== sid) setSelectedId(sid);
               }}
-              className={`min-h-0 min-w-0 flex-col ${paneDivider(area)} ${activeView === "chat" && area ? "flex" : "hidden"}`}
+              // §7 round 21: `relative` positions the pane-scoped session
+              // dialogs, which are `absolute inset-0` within it. Without it an
+              // absolute dialog resolves against some ancestor and lands
+              // somewhere else entirely.
+              data-hv-pane-session={sid}
+              ref={(el) => {
+                if (el) paneHosts.current.set(sid, el);
+                else paneHosts.current.delete(sid);
+              }}
+              className={`relative min-h-0 min-w-0 flex-col ${paneDivider(area)} ${activeView === "chat" && area ? "flex" : "hidden"}`}
             >
               <ChatView
             // Same expression as the wrapper's flex/hidden above — the recording
@@ -3006,9 +3032,15 @@ export default function App(): React.JSX.Element {
           </div>
         </div>
       </main>
-      {uiReq?.kind === "permission" && <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} />}
+      {/* §7 round 21: over the pane that raised it. `paneHost` answers null
+          whenever that pane is hidden (the user is on a settings page), and the
+          modal then falls back to the viewport — a prompt that never times out
+          must never be invisible. */}
+      {uiReq?.kind === "permission" && (
+        <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} container={paneHost(uiReq.req.sessionId)} />
+      )}
       {uiReq?.kind === "askUser" && (
-        <AskUserModal key={uiReq.req.id} ask={uiReq.ask} onSubmit={respondAskUser} onDismiss={() => respondAskUser(null)} />
+        <AskUserModal key={uiReq.req.id} ask={uiReq.ask} onSubmit={respondAskUser} onDismiss={() => respondAskUser(null)} container={paneHost(uiReq.req.sessionId)} />
       )}
       {/* §26 part 2: two NAMED outcomes, reusing the workspace-removal confirm
           pattern. Never silently kill (hostile — a dev server dies because a
@@ -3078,6 +3110,8 @@ export default function App(): React.JSX.Element {
           // not a second way to ask.
           agents={agents}
           onClose={() => setAgentsMd(null)}
+          saveKey={bindings.save}
+          searchKey={bindings.search}
         />
       )}
     </div>
@@ -3106,7 +3140,6 @@ function PaneDividers({
 }): React.JSX.Element | null {
   if (!tabs.split) return null;
   const vertical = tabs.split === "v";
-  const anyCross = tabs.subSplit[0] || tabs.subSplit[1];
 
   const drag = (which: "main" | "cross", alongX: boolean) => (e: React.MouseEvent): void => {
     e.preventDefault();
@@ -3147,18 +3180,29 @@ function PaneDividers({
       >
         <div className={`${tint} ${vertical ? "inset-y-0 left-1/2 w-[5px] -translate-x-1/2" : "inset-x-0 top-1/2 h-[5px] -translate-y-1/2"}`} />
       </div>
-      {anyCross && (
+      {/* §28 round 21: ONE strip per sub-split half, never one across the whole
+          grid. A full-width strip lay over a browser pane that was not split at
+          all, and the browser hid from it — see crossDividerSpans. Along the
+          primary axis each strip is bounded by its own half; across it, the
+          SHARED cross ratio positions both. `drag` measures the grid container
+          either way, so one ratio still moves both. */}
+      {crossDividerSpans(tabs).map(({ half, from, to }) => (
         <div
+          key={`cross-${half}`}
           role="separator"
           aria-orientation={vertical ? "horizontal" : "vertical"}
           title="Drag to resize"
           onMouseDown={drag("cross", !vertical)}
-          className={`${hit} ${vertical ? "left-0 right-0 h-2.5 cursor-row-resize -translate-y-1/2" : "top-0 bottom-0 w-2.5 cursor-col-resize -translate-x-1/2"}`}
-          style={vertical ? { top: pct(tabs.sizes.cross) } : { left: pct(tabs.sizes.cross) }}
+          className={`${hit} ${vertical ? "h-2.5 cursor-row-resize -translate-y-1/2" : "w-2.5 cursor-col-resize -translate-x-1/2"}`}
+          style={
+            vertical
+              ? { left: pct(from), right: pct(1 - to), top: pct(tabs.sizes.cross) }
+              : { top: pct(from), bottom: pct(1 - to), left: pct(tabs.sizes.cross) }
+          }
         >
           <div className={`${tint} ${vertical ? "inset-x-0 top-1/2 h-[5px] -translate-y-1/2" : "inset-y-0 left-1/2 w-[5px] -translate-x-1/2"}`} />
         </div>
-      )}
+      ))}
     </>
   );
 }

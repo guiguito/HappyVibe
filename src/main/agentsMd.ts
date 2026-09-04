@@ -90,3 +90,86 @@ export function writeAgentsMdFiles(
   }
   return written;
 }
+
+/**
+ * WS5: parse the agents-md-maker subagent's structured output into a
+ * {relPath → content} map (root + nested AGENTS.md). The agent stays read-only
+ * (§15); the app writes the files.
+ *
+ * MOVED here from the renderer in §15 round 21. It lived there while the
+ * renderer was the writer — and the renderer's copy had exactly ONE caller, a
+ * dialog, which is why a draft asked for in chat was parsed by nobody and
+ * written by nobody.
+ *
+ * Contract: exactly one fenced block tagged `json agents-md` whose body is
+ * {"files": {"AGENTS.md": "...", "pkg/AGENTS.md": "..."}}. Malformed → null.
+ * Lenient about surrounding prose, strict about paths — and
+ * `writeAgentsMdFiles` confines them again, so this is the first of two gates
+ * rather than the only one.
+ */
+const AGENTS_MD_FENCE = /```json\s+agents-md\s*\n([\s\S]*?)\n?```/;
+
+export function parseAgentsMdOutput(finalOutput: string): Record<string, string> | null {
+  const m = AGENTS_MD_FENCE.exec(finalOutput ?? "");
+  if (!m) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(m[1]);
+  } catch {
+    return null;
+  }
+  const files = (parsed as { files?: unknown })?.files;
+  if (!files || typeof files !== "object" || Array.isArray(files)) return null;
+  const out: Record<string, string> = {};
+  for (const [rel, content] of Object.entries(files as Record<string, unknown>)) {
+    if (typeof content !== "string") continue;
+    const norm = rel.replace(/\\/g, "/").replace(/^\.\//, "");
+    if (norm.startsWith("/") || norm.split("/").includes("..")) continue;
+    if (norm.split("/").pop() !== "AGENTS.md") continue;
+    out[norm] = content;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * A child sub-agent's final answer, out of its own Pi session file.
+ *
+ * This is the UNTRUNCATED source, and that matters: upstream caps the
+ * completion payload at 1,000 chars, the bridge caps the notify's summary at
+ * 500, and pi-subagents' inspect RPC caps `finalOutput` at 8,000 — a real
+ * multi-file draft exceeds all three. Pi's own session record has no such cap.
+ *
+ * The LAST assistant message WITH TEXT wins, not simply the last one: a child
+ * whose final turn was pure tool calls still gave its answer a message earlier.
+ *
+ * Tolerant by design, the same contract as `parseCalls`: the file is appended
+ * live, so the last line can be torn mid-write. A bad line is skipped, never
+ * thrown.
+ */
+export function finalTextFromSessionFile(jsonl: string | null | undefined): string {
+  if (!jsonl) return "";
+  const texts: string[] = [];
+  for (const raw of jsonl.split("\n")) {
+    if (!raw.trim()) continue;
+    let entry: { type?: string; message?: { role?: unknown; content?: unknown } };
+    try {
+      entry = JSON.parse(raw) as typeof entry;
+    } catch {
+      continue;
+    }
+    const m = entry.type === "message" ? entry.message : undefined;
+    if (!m || m.role !== "assistant") continue;
+    if (typeof m.content === "string") {
+      if (m.content.trim()) texts.push(m.content);
+      continue;
+    }
+    if (!Array.isArray(m.content)) continue;
+    const text = m.content
+      .map((b) => b as { type?: unknown; text?: unknown })
+      .filter((b) => b.type === "text" && typeof b.text === "string")
+      .map((b) => b.text as string)
+      .join("");
+    if (text.trim()) texts.push(text);
+  }
+  return texts.length ? texts[texts.length - 1] : "";
+}
