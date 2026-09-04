@@ -69,6 +69,9 @@ const emptyTreeCache = new Map<string, string>();
 let gitBinary = "git";
 let availability: boolean | null = null;
 const probeCache = new Map<string, RepoState>();
+/** §33: the memory key's basis — the parent of --git-common-dir, so worktrees of one clone
+ *  share one memory folder. Cached beside the probe and cleared with it. */
+const commonDirCache = new Map<string, string | null>();
 
 /** Test seam: point the runner at a binary that does not exist, to exercise §5a. */
 export function setGitBinaryForTest(bin: string | null): void {
@@ -79,6 +82,7 @@ export function resetGitAvailability(): void {
   availability = null;
   probeCache.clear();
   emptyTreeCache.clear();
+  commonDirCache.clear();
 }
 
 function gitEnv(): NodeJS.ProcessEnv {
@@ -192,10 +196,33 @@ function safeReal(p: string): string {
 
 export function invalidateProbe(workspace: string): void {
   probeCache.delete(workspace);
+  commonDirCache.delete(workspace);
 }
 
 export function invalidateAllProbes(): void {
   probeCache.clear();
+  commonDirCache.clear();
+}
+
+/**
+ * §33 — the absolute, realpath'd `.git` common directory, or null when this folder is not a
+ * repo (or git is missing). `--git-common-dir` is the one that answers the same path from every
+ * worktree of a clone, where `--git-dir` answers each worktree's own private directory; that
+ * difference IS the feature — memory follows the clone, not the checkout.
+ *
+ * Answers null rather than throwing, so a git-less workspace simply keys by its path.
+ */
+export async function gitCommonDir(workspace: string): Promise<string | null> {
+  const cached = commonDirCache.get(workspace);
+  if (cached !== undefined) return cached;
+  let out: string | null = null;
+  const state = await probeWorkspace(workspace);
+  if (state.kind === "repo") {
+    const r = await run(workspace, ["rev-parse", "--git-common-dir"]);
+    if (r.ok && r.stdout.trim()) out = safeReal(path.resolve(workspace, r.stdout.trim()));
+  }
+  commonDirCache.set(workspace, out);
+  return out;
 }
 
 /** §5c — every read and write is confined to the workspace subtree by pathspec. */
