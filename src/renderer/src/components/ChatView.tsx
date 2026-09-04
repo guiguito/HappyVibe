@@ -477,6 +477,15 @@ export function ChatView({
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   // §31: documents are converted AT PICK TIME, so a chip already knows its cost.
   const [documents, setDocuments] = useState<DocumentAttachment[]>([]);
+  /**
+   * §31: a document that would not convert is a MESSAGE, not a chip.
+   *
+   * It went out as a red pill first, and that was reported as useless: the chip
+   * truncates at a fixed width, so the sentence explaining what to do was
+   * unreadable, and there is nothing to send anyway. These render in full on the
+   * composer's own notice line, beside "No model configured".
+   */
+  const [documentErrors, setDocumentErrors] = useState<string[]>([]);
   const [documentsOn, setDocumentsOn] = useState(true);
   const [documentsHere, setDocumentsHere] = useState(true);
   // v5: pull the cached MCP status when the submenu opens (read-only; no re-sweep).
@@ -509,6 +518,7 @@ export function ChatView({
   useEffect(() => {
     setAttachments([]);
     setDocuments([]);
+    setDocumentErrors([]);
     setRestartHint(false);
     setModelMenuOpen(false);
     setAttachMenuOpen(false);
@@ -604,15 +614,43 @@ export function ChatView({
 
   const attachDocument = async (): Promise<void> => {
     setAttachMenuOpen(false);
-    const picked = await window.hv.pickDocument(sessionId ?? undefined);
-    if (picked?.length) setDocuments((p) => [...p, ...picked]);
+    const paths = await window.hv.pickDocument();
+    if (paths?.length) void attachDocumentPaths(paths);
   };
 
-  /** Drop/paste: the renderer already has an OS path, so main only has to convert. */
+  /**
+   * The one attach path, for the picker and for a drop alike.
+   *
+   * A chip goes up IMMEDIATELY with its name and a spinner, then each answer
+   * replaces its own chip — keyed by path, because two documents can be
+   * converting at once and they do not finish in order. A failure removes the
+   * chip and adds a readable message instead.
+   */
   const attachDocumentPaths = async (paths: string[]): Promise<void> => {
-    const chips = await Promise.all(paths.map((abs) => window.hv.describeDocument(abs, sessionId ?? undefined)));
-    const kept = chips.filter((c): c is DocumentAttachment => !!c);
-    if (kept.length) setDocuments((p) => [...p, ...kept]);
+    setDocuments((p) => [
+      ...p,
+      ...paths
+        .filter((abs) => !p.some((d) => d.path === abs))
+        .map((abs) => ({ path: abs, name: abs.split("/").pop() || abs, format: "", lines: 0, bytes: 0, pending: true })),
+    ]);
+    await Promise.all(
+      paths.map(async (abs) => {
+        const chip = await window.hv.describeDocument(abs, sessionId ?? undefined);
+        if (chip?.error) {
+          setDocuments((p) => p.filter((d) => d.path !== abs));
+          setDocumentErrors((e) => [...e, `${chip.error}`]);
+          return;
+        }
+        // A chip main could not describe at all still goes, rather than spinning
+        // forever on a promise that answered null.
+        if (!chip) {
+          setDocuments((p) => p.filter((d) => d.path !== abs));
+          setDocumentErrors((e) => [...e, `${abs.split("/").pop() || abs} could not be read.`]);
+          return;
+        }
+        setDocuments((p) => p.map((d) => (d.path === abs ? { ...chip } : d)));
+      }),
+    );
   };
 
   /** §7 round 12: shared by paste and drop — the picker's own path is the only
@@ -712,7 +750,9 @@ export function ChatView({
       // The whole attachment, not just the path: App needs the name and format
       // to draw the bubble's chip on the LIVE path, where nothing has been
       // through main yet.
-      documents.length ? documents.filter((d) => !d.error) : undefined,
+      // A chip still converting is fine to send: main converts from the PATH at
+      // send time regardless, so the pick-time conversion is only the preview.
+      documents.length ? documents : undefined,
     );
     // Round 15: sending is the user saying "I am at the end now", so the view
     // goes to the bottom whatever it was reading. The stream's own follow stays
@@ -725,6 +765,7 @@ export function ChatView({
     setInput("");
     setAttachments([]);
     setDocuments([]);
+    setDocumentErrors([]);
     mentionMap.current = new Map();
     setMention(null);
   };
@@ -1274,10 +1315,21 @@ export function ChatView({
             {documents.map((d, i) => (
               <span
                 key={`${d.path}-${i}`}
-                className={`flex items-center gap-1.5 rounded-xl border-2 border-line-strong bg-card px-2 py-1 shadow-sticker text-xs font-semibold ${d.error ? "text-berry" : ""}`}
+                className="flex items-center gap-1.5 rounded-xl border-2 border-line-strong bg-card px-2 py-1 shadow-sticker text-xs font-semibold"
                 title={d.path}
               >
-                <span className="max-w-96 truncate">{documentChipLabel(d)}</span>
+                {/* The same CSS spinner the mic button and the MCP rows use —
+                    no library, and it sits INSIDE the chip so the thing that is
+                    working is the thing you are looking at. */}
+                {d.pending && (
+                  <span
+                    className="size-3 shrink-0 rounded-full border-2 border-current border-t-transparent animate-spin text-ink-soft"
+                    aria-hidden
+                  />
+                )}
+                <span className={`max-w-96 truncate ${d.pending ? "text-ink-soft" : ""}`}>
+                  {documentChipLabel(d)}
+                </span>
                 <button
                   type="button"
                   aria-label={`Remove ${d.name}`}
@@ -1324,6 +1376,22 @@ export function ChatView({
             Model saved — applies when this session restarts.
           </div>
         )}
+        {/* §31: a document that would not convert, said in full and in the
+            user's own terms — the chip could only truncate it. Dismissible,
+            because it is advice about a file that is no longer attached. */}
+        {documentErrors.map((msg, i) => (
+          <div key={i} className="max-w-3xl mx-auto px-1 pb-1.5 flex items-start gap-1.5 text-[11px] font-semibold text-berry">
+            <span className="flex-1">{msg}</span>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => setDocumentErrors((e) => e.filter((_, j) => j !== i))}
+              className="shrink-0 text-ink-soft hover:text-berry font-bold leading-none cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+        ))}
         {noModel && (
           <div className="max-w-3xl mx-auto px-1 pb-1.5 text-[11px] font-semibold text-berry">
             No model configured — add a provider in Settings → Models to start chatting.

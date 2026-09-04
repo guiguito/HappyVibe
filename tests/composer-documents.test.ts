@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import { documentChipLabel, estimateTokens, filesToDocumentPaths } from "../src/renderer/src/composer";
-import { DOCUMENT_FAMILY_LIST } from "../pi-runtime/extensions/hv-document";
+import { DOCUMENT_FAMILY_LIST, documentErrorSentence, documentErrorUserMessage } from "../pi-runtime/extensions/hv-document";
 
 describe("§31 composer chips", () => {
   it("shows what the document costs in context, before send", () => {
@@ -19,13 +19,12 @@ describe("§31 composer chips", () => {
     expect(label).toBe("a.pdf · PDF · 2 KB as Markdown (~1k tokens)");
   });
 
-  it("shows the sentence instead of a size when conversion failed", () => {
-    const label = documentChipLabel({
-      path: "/x/a.pdf", name: "a.pdf", format: "pdf", lines: 0, bytes: 0,
-      error: "This PDF has 12 pages; all of its pages are scanned images and could not be read locally. Ask the user to attach screenshots of those pages.",
-    });
-    expect(label).toMatch(/^a\.pdf · This PDF has 12 pages/);
-    expect(label).not.toMatch(/0 KB/);
+  it("shows only the name while the conversion is still running", () => {
+    // The spinner beside it carries "working", so the label must not invent a
+    // size to fill the space.
+    const label = documentChipLabel({ path: "/x/big.xlsx", name: "big.xlsx", format: "", lines: 0, bytes: 0, pending: true });
+    expect(label).toBe("big.xlsx");
+    expect(label).not.toMatch(/0 KB|tokens/);
   });
 
   it("uses the family the CONVERTER reports, so a .xls still reads as Excel", () => {
@@ -123,5 +122,66 @@ describe("§31 the documents argument survives the whole IPC chain", () => {
     const ipc = fs.readFileSync("src/main/ipc.ts", "utf8");
     expect(ipc).toMatch(/documents\?: string\[\],/);
     expect(ipc).toContain("Invalid documents payload");
+  });
+});
+
+describe("§31 a failed document is a message, not a red pill", () => {
+  const src = chatViewCode();
+
+  it("removes the chip and raises a readable notice instead", () => {
+    // Reported 2026-09-04: a red chip truncates at a fixed width, so the
+    // sentence telling the user what to do was unreadable — and there was
+    // nothing to send anyway.
+    expect(src).toContain("setDocumentErrors");
+    expect(src).toMatch(/chip\?\.error[\s\S]{0,200}setDocuments\(\(p\) => p\.filter/);
+    // …rendered on the composer's own notice line, beside "No model configured"
+    expect(src).toMatch(/documentErrors\.map/);
+    // …and no longer styled as an error chip
+    expect(src).not.toMatch(/d\.error \? "text-berry"/);
+  });
+
+  it("shows a spinner in the chip while a document converts", () => {
+    expect(src).toContain("animate-spin");
+    expect(src).toMatch(/d\.pending && \(/);
+  });
+
+  it("puts a chip up before the conversion starts, keyed by path", () => {
+    // Two documents can convert at once and they do not finish in order, so
+    // each answer has to replace its OWN chip.
+    expect(src).toMatch(/pending: true/);
+    expect(src).toMatch(/d\.path === abs/);
+  });
+});
+
+describe("§31 the error text is written for whoever is reading it", () => {
+  it("tells the model to ask the user, and the user to do it themselves", () => {
+    const err = { code: "needsOcr" as const, pages: [1, 7], pageCount: 31 };
+    const toModel = documentErrorSentence(err, { hasVision: true, name: "report.pdf" });
+    const toUser = documentErrorUserMessage(err, { hasVision: true, name: "report.pdf" });
+    // Same description…
+    for (const s of [toModel, toUser]) {
+      expect(s).toContain("31 pages");
+      expect(s).toContain("pages 1, 7 are scanned images");
+    }
+    // …different instruction. "Ask the user" on the user's own screen is the
+    // bug this split exists to fix.
+    expect(toModel).toMatch(/Ask the user to attach screenshots/);
+    expect(toUser).not.toMatch(/ask the user/i);
+    expect(toUser).toMatch(/Attach screenshots of those pages instead/);
+  });
+
+  it("never tells the user to call a tool", () => {
+    for (const code of ["notDocument", "encrypted", "malformed", "unsupported", "timeout", "crash", "io", "resourceLimit", "missingPart", "hosted", "disabled", "unavailable"] as const) {
+      const msg = documentErrorUserMessage({ code }, { hasVision: true, name: "a.docx" });
+      expect(msg, code).toBeTruthy();
+      expect(msg, code).not.toMatch(/`read`|document_read|Ask the user/);
+      expect(msg, code).not.toMatch(/undefined/);
+    }
+  });
+
+  it("gives the no-vision case a next step that can actually work", () => {
+    const msg = documentErrorUserMessage({ code: "needsOcr", pages: [1], pageCount: 1 }, { hasVision: false, name: "scan.pdf" });
+    expect(msg).toMatch(/cannot read images either/);
+    expect(msg).toMatch(/export the PDF as text/);
   });
 });

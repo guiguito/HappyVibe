@@ -67,7 +67,7 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:set-session-model", sessionId, m),
   pickImage: () => ipcRenderer.invoke("hv:pick-image"),
   // §31: the picker converts at pick time, so the chip can show the cost.
-  pickDocument: (sessionId?: string) => ipcRenderer.invoke("hv:pick-document", sessionId),
+  pickDocument: () => ipcRenderer.invoke("hv:pick-document"),
   describeDocument: (absPath: string, sessionId?: string) =>
     ipcRenderer.invoke("hv:describe-document", absPath, sessionId),
   revealDocument: (absPath: string) => ipcRenderer.invoke("hv:reveal-document", absPath),

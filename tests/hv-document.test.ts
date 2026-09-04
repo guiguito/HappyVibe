@@ -76,8 +76,12 @@ describe("hv-document pure module (§31)", () => {
       expect(s, code).toBeTruthy();
       expect(s, code).not.toMatch(/undefined/);
     }
-    expect(documentErrorSentence({ code: "encrypted" }, { hasVision: true, name: "a.odt" })).toMatch(/Encrypted/);
-    expect(documentErrorSentence({ code: "notDocument" }, { hasVision: true })).toMatch(/use `read`/);
+    expect(documentErrorSentence({ code: "encrypted" }, { hasVision: true, name: "a.odt" })).toMatch(/password-protected/);
+    expect(documentErrorSentence({ code: "notDocument" }, { hasVision: true })).toMatch(/Use `read`/);
+    // The library's name is an implementation detail the user must never read.
+    for (const code of ["encrypted", "malformed", "unsupported", "resourceLimit"] as const) {
+      expect(documentErrorSentence({ code }, { hasVision: true, name: "a.docx" }), code).not.toMatch(/anydoc|firecrawl/i);
+    }
     expect(documentErrorSentence({ code: "disabled" }, { hasVision: true })).toMatch(/Built-in tools/);
     expect(documentErrorSentence({ code: "unavailable" }, { hasVision: true })).toMatch(/not available on this platform/);
   });

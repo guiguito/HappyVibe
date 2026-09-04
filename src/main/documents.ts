@@ -15,7 +15,8 @@ import path from "node:path";
 import { nodeExecPath } from "./pi/spawn";
 import { MAX_FILE_BYTES, MENTION_CONTEXT_CAP } from "./files";
 import {
-  DOCUMENT_TOOL, documentErrorSentence, documentExtension, isDocumentPath, type DocumentError,
+  DOCUMENT_TOOL, documentErrorSentence, documentErrorUserMessage, documentExtension, isDocumentPath,
+  type DocumentError,
 } from "../../pi-runtime/extensions/hv-document";
 
 export const ANYDOC_BRIDGE_RELPATH = "bin/anydoc-bridge.mjs";
@@ -185,21 +186,14 @@ export function probeDocuments(runtimeDir: string, execPath?: string): Promise<b
   return probed;
 }
 
-/** What the composer chip shows, and what an attached document costs. */
-export interface DocumentChip {
-  path: string;
-  name: string;
-  format: string;
-  lines: number;
-  bytes: number;
-  /** The sentence, when this one could not be converted. */
-  error?: string;
-}
-
 export interface DocumentBlocks {
   blocks: string;
+  /**
+   * What the USER is told, in their own voice — these become transcript
+   * notices. The block above carries the model's version of the same failure;
+   * one description, two next-steps (hv-document's documentProblem).
+   */
   warnings: string[];
-  chips: DocumentChip[];
 }
 
 const header = (p: string, format: string): string =>
@@ -233,17 +227,19 @@ export async function buildDocumentBlocks(
   let total = opts.used ?? 0;
   const parts: string[] = [];
   const warnings: string[] = [];
-  const chips: DocumentChip[] = [];
 
   for (const p of absPaths) {
     const r = await convertDocument(p, { runtimeDir: opts.runtimeDir, execPath: opts.execPath });
     const ext = documentExtension(p) ?? "";
     if (!r.ok) {
-      const sentence = documentErrorSentence(r.error, { hasVision: opts.hasVision, name: r.name });
-      chips.push({ path: p, name: r.name, format: ext, lines: 0, bytes: 0, error: sentence });
-      warnings.push(`${r.name}: ${sentence}`);
+      // The BLOCK gets the model's sentence (it tells the model what to do next);
+      // the WARNING gets the user's, because a warning becomes a transcript
+      // notice that the person reads. Handing the model's copy to both is how
+      // "Ask the user to attach screenshots" ended up on the user's own screen.
+      const forModel = documentErrorSentence(r.error, { hasVision: opts.hasVision, name: r.name });
+      warnings.push(documentErrorUserMessage(r.error, { hasVision: opts.hasVision, name: r.name }));
       if (r.error.code !== "notDocument") {
-        const block = `${header(p, ext)}\n${sentence}\n</document>`;
+        const block = `${header(p, ext)}\n${forModel}\n</document>`;
         parts.push(block);
         total += block.length + 2;
       }
@@ -265,10 +261,9 @@ export async function buildDocumentBlocks(
     const block = `${header(p, r.format)}\n${body}\n</document>`;
     parts.push(block);
     total += block.length + 2;
-    chips.push({ path: p, name: r.name, format: r.format, lines: r.totalLines, bytes: r.totalBytes });
   }
 
-  return { blocks: parts.join("\n\n"), warnings, chips };
+  return { blocks: parts.join("\n\n"), warnings };
 }
 
 /**

@@ -598,9 +598,10 @@ interface HvApi {
   setSessionModel(sessionId: string, m: { provider: string; modelId: string } | null): Promise<{ live: boolean }>;
   pickImage(): Promise<{ data: string; mimeType: string; name: string } | null>;
 
-  // §31 Documents. The picker CONVERTS at pick time, so the chip shows what the
-  // document costs in context before the user sends it.
-  pickDocument(sessionId?: string): Promise<HvDocumentChip[]>;
+  // §31 Documents, in two steps so a loader can show: the picker answers with
+  // PATHS the instant the dialog closes, then each one is described (converted)
+  // to fill in what it costs in context.
+  pickDocument(): Promise<string[]>;
   describeDocument(absPath: string, sessionId?: string): Promise<HvDocumentChip | null>;
   revealDocument(absPath: string): Promise<void>;
   documentsAvailable(): Promise<boolean>;

@@ -9,7 +9,7 @@ import { resolvePiSpawn } from "./pi/spawn";
 import { THINKING_LEVELS, resolveThinking } from "./thinking";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import { buildDocumentBlocks, convertDocument, probeDocuments } from "./documents";
-import { DOCUMENT_EXTENSIONS, documentErrorSentence, isDocumentPath } from "../../pi-runtime/extensions/hv-document";
+import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, documentExtension, isDocumentPath } from "../../pi-runtime/extensions/hv-document";
 import {
   agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
@@ -3567,28 +3567,43 @@ export function registerIpc(win: BrowserWindow): void {
   });
 
   // ── §31 Documents: pick, describe, reveal, probe ───────────────────────────
-  // The picker CONVERTS at pick time, which is the whole of decision B: the
-  // chip can then show what the document costs in context BEFORE send, which is
-  // §9's promise one surface earlier. sessionId is passed so the scanned-pages
-  // sentence knows whether THIS session's model could use screenshots.
-  const documentChipFor = async (file: string, sessionId?: string): Promise<unknown> => {
-    const meta = sessionId ? index.get(sessionId) : undefined;
-    const hasVision = await sessionCanSeeImages(meta?.workspaceId, sessionId);
-    const { chips } = await buildDocumentBlocks([file], { runtimeDir: piRuntimeDir(), hasVision });
-    return chips[0] ?? null;
-  };
-  ipcMain.handle("hv:pick-document", async (_e, sessionId?: string) => {
+  // The picker returns PATHS ONLY and converts nothing, so the renderer can put
+  // a chip on screen with a spinner in it the instant the dialog closes and then
+  // fill in the cost. Converting here instead meant the composer showed nothing
+  // at all until the conversion finished — fine for a 60 ms .docx, a silent
+  // second on a big workbook, and reported as such (2026-09-04).
+  //
+  // It also means picking and dropping take the SAME second step, rather than
+  // one path that converts in the dialog handler and one that does not.
+  ipcMain.handle("hv:pick-document", async () => {
     const r = await dialog.showOpenDialog(win, {
       properties: ["openFile", "multiSelections"],
       filters: [{ name: "Documents", extensions: [...DOCUMENT_EXTENSIONS] }],
     });
-    if (r.canceled || !r.filePaths.length) return [];
-    return Promise.all(r.filePaths.map((f) => documentChipFor(f, sessionId)));
+    return r.canceled ? [] : r.filePaths;
   });
-  // Drag-and-drop and paste: the renderer already has an OS path (preload's
-  // getPathForFile), so it needs the same chip without the dialog.
-  ipcMain.handle("hv:describe-document", (_e, absPath: string, sessionId?: string) =>
-    typeof absPath === "string" && absPath ? documentChipFor(absPath, sessionId) : null);
+  // Step two for both paths: convert one document and answer with its chip —
+  // sizes on success, the user-facing SENTENCE on failure. sessionId is passed
+  // so a scanned-PDF message knows whether THIS session's model could do
+  // anything with screenshots.
+  ipcMain.handle("hv:describe-document", async (_e, absPath: string, sessionId?: string) => {
+    if (typeof absPath !== "string" || !absPath) return null;
+    const meta = sessionId ? index.get(sessionId) : undefined;
+    const hasVision = await sessionCanSeeImages(meta?.workspaceId, sessionId);
+    const name = path.basename(absPath);
+    const res = await convertDocument(absPath, { runtimeDir: piRuntimeDir() });
+    if (!res.ok) {
+      return {
+        path: absPath,
+        name,
+        format: documentExtension(absPath) ?? "",
+        lines: 0,
+        bytes: 0,
+        error: documentErrorUserMessage(res.error, { hasVision, name }),
+      };
+    }
+    return { path: absPath, name, format: res.format, lines: res.totalLines, bytes: res.totalBytes };
+  });
   // A document is NOT opened in the editor (a .docx in CodeMirror is garbage) —
   // the card and the chip reveal it in the OS file manager instead. Unconfined
   // like the tool itself, but narrowed to document paths so this cannot become

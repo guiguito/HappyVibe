@@ -100,7 +100,14 @@ export function attachmentUrl(a: { data: string; mimeType: string }): string {
  * purpose — the IPC hands one straight over, so a second shape would be a
  * translation layer with nothing to translate.
  */
-export type DocumentAttachment = HvDocumentChip;
+export type DocumentAttachment = HvDocumentChip & {
+  /**
+   * Still converting. The chip is on screen with its name and a spinner, and
+   * the size arrives when main answers — the alternative was an empty composer
+   * for however long the conversion took.
+   */
+  pending?: boolean;
+};
 
 /** The app's chars→tokens rule, the same one the context panel uses. */
 export function estimateTokens(chars: number): number {
@@ -120,7 +127,12 @@ function documentSize(n: number): string {
  * instead of a size, so the user reads the same words the model will.
  */
 export function documentChipLabel(d: DocumentAttachment): string {
-  if (d.error) return `${d.name} · ${d.error}`;
+  // A pending chip says only what is known: the file name. The spinner beside
+  // it carries "working", so the label must not invent a size to fill space.
+  if (d.pending) return d.name;
+  // A failed document is NOT a chip — its message goes to the composer's notice
+  // line, in full (documentErrorUserMessage). A chip truncates at a fixed
+  // width, so a red pill was an unreadable sentence and no way to act on it.
   return [
     d.name,
     documentFamily(d.format),

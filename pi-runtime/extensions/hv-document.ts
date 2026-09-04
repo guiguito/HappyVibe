@@ -95,15 +95,15 @@ export interface DocumentError {
 }
 
 /**
- * The sentence a failure becomes — on the tool result AND on the composer chip,
- * so the user and the model read the same words.
+ * What went wrong, in words — the half that is the same whoever is reading.
  *
- * `hasVision` is load-bearing rather than decorative: telling a text-only
- * session to ask for screenshots sends it down a path that cannot work, which
- * is the one thing §20's "don't show what cannot work" forbids.
+ * Split from the next-step deliberately: the model and the user need the same
+ * DESCRIPTION and different INSTRUCTIONS. §31 decision C said the chip shows
+ * "the same" sentence, which produced "Ask the user to attach screenshots" ON
+ * the user's own screen. One description, two next-steps, is what that decision
+ * actually wanted.
  */
-export function documentErrorSentence(err: DocumentError, opts: { hasVision: boolean; name?: string }): string {
-  const who = opts.name ?? "This document";
+function documentProblem(err: DocumentError, name: string): string {
   switch (err.code) {
     case "needsOcr": {
       const n = err.pageCount ?? err.pages?.length ?? 0;
@@ -116,35 +116,92 @@ export function documentErrorSentence(err: DocumentError, opts: { hasVision: boo
         : listed.length === 1
           ? `page ${listed[0]} is a scanned image`
           : `pages ${listed.join(", ")} are scanned images`;
-      const next = opts.hasVision
-        ? "Ask the user to attach screenshots of those pages."
-        : "This model has no vision, so screenshots will not help either — ask the user for a text export.";
-      return `${head}${clause} and could not be read locally. ${next}`;
+      return `${head}${clause} and could not be read locally.`;
     }
     case "encrypted":
-      return `Encrypted — ${who} is password-protected and cannot be opened locally.`;
+      return `${name} is password-protected, so it cannot be opened.`;
     case "resourceLimit":
-      return `${who} crosses the converter's built-in safety limits (decompression, nesting or node count) and was refused.`;
+      return `${name} crosses the converter's built-in safety limits (decompression, nesting or node count) and was refused.`;
     case "malformed":
-      return `${who} is structurally unusable — no meaningful content could be extracted.`;
+      return `${name} could not be parsed — there is no readable content in it.`;
     case "missingPart":
-      return `${who} is missing an internal part it needs for any meaningful output.`;
+      return `${name} is missing an internal part it needs for any readable output.`;
     case "unsupported":
-      return `${who} is not a document format this can convert.`;
+      return `${name} is not a document format this can convert.`;
     case "notDocument":
-      return `Not a document — use \`read\` for text and CSV files. Documents are ${DOCUMENT_FAMILY_LIST}.`;
+      return `${name} is not a document.`;
     case "disabled":
-      return "The Documents tool is off in Built-in tools, so this cannot be read in this session.";
+      return "The Documents tool is off in Built-in tools.";
     case "unavailable":
       return "Reading documents is not available on this platform.";
     case "timeout":
-      return `Converting ${who} took longer than 30 seconds and was stopped.`;
+      return `Converting ${name} took longer than 30 seconds and was stopped.`;
     case "crash":
-      return `Converting ${who} failed${err.detail ? `: ${err.detail}` : "."}`;
+      return `Converting ${name} failed${err.detail ? `: ${err.detail}` : "."}`;
     case "io":
-      return `${who} could not be read${err.message ? ` (${err.message})` : "."}`;
+      return `${name} could not be read${err.message ? ` (${err.message})` : "."}`;
+    case "hosted":
+      return "Hosted conversion was needed and is not enabled.";
+  }
+}
+
+/**
+ * The sentence the MODEL gets on a failed or partial conversion.
+ *
+ * `hasVision` is load-bearing rather than decorative: telling a text-only
+ * session to ask for screenshots sends it down a path that cannot work, which
+ * is the one thing §20's "don't show what cannot work" forbids.
+ */
+export function documentErrorSentence(err: DocumentError, opts: { hasVision: boolean; name?: string }): string {
+  const name = opts.name ?? "This document";
+  const problem = documentProblem(err, name);
+  switch (err.code) {
+    case "needsOcr":
+      return `${problem} ${
+        opts.hasVision
+          ? "Ask the user to attach screenshots of those pages."
+          : "This model has no vision, so screenshots will not help either — ask the user for a text export."
+      }`;
+    case "notDocument":
+      return `${problem} Use \`read\` for text and CSV files; documents are ${DOCUMENT_FAMILY_LIST}.`;
+    case "disabled":
+      return `${problem} It cannot be read in this session.`;
     case "hosted":
       return "Hosted conversion is not enabled — this app converts documents locally only.";
+    default:
+      return problem;
+  }
+}
+
+/**
+ * The same failure, addressed to the PERSON who just attached the file.
+ *
+ * Shown in full on the composer's notice line rather than inside a chip: the
+ * chip truncates at a fixed width, so a red pill with an unreadable sentence in
+ * it told the user only that something was wrong (reported 2026-09-04).
+ */
+export function documentErrorUserMessage(err: DocumentError, opts: { hasVision: boolean; name?: string }): string {
+  const name = opts.name ?? "That file";
+  const problem = documentProblem(err, name);
+  switch (err.code) {
+    case "needsOcr":
+      return `${problem} ${
+        opts.hasVision
+          ? "Attach screenshots of those pages instead, or export the PDF as text."
+          : "This model cannot read images either, so export the PDF as text and attach that."
+      }`;
+    case "encrypted":
+      return `${problem} Remove the password, or export an unprotected copy.`;
+    case "notDocument":
+      return `${problem} ${DOCUMENT_FAMILY_LIST} files convert to Markdown here; text and CSV files can be opened in the editor instead.`;
+    case "disabled":
+      return `${problem} Turn it back on to attach documents.`;
+    case "unavailable":
+      return problem;
+    case "hosted":
+      return "This app converts documents locally only.";
+    default:
+      return problem;
   }
 }
 

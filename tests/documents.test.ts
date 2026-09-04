@@ -69,8 +69,8 @@ describe("documents.ts (§31) — main's side of the sidecar", () => {
 });
 
 describe("buildDocumentBlocks (§31) — what reaches the model and the chip", () => {
-  it("builds one <document> block per document, and a chip beside it", async () => {
-    const { blocks, chips, warnings } = await buildDocumentBlocks([fix("sample.docx")], {
+  it("builds one <document> block per document", async () => {
+    const { blocks, warnings } = await buildDocumentBlocks([fix("sample.docx")], {
       ...opts,
       hasVision: true,
     });
@@ -78,10 +78,6 @@ describe("buildDocumentBlocks (§31) — what reaches the model and the chip", (
     expect(blocks).toMatch(/\n<\/document>$/);
     // No page count is claimed: none exists on a success (ad1.md §3.1).
     expect(blocks).not.toMatch(/pages="/);
-    expect(chips).toHaveLength(1);
-    expect(chips[0]).toMatchObject({ name: "sample.docx", format: "docx" });
-    expect(chips[0].bytes).toBeGreaterThan(0);
-    expect(chips[0].error).toBeUndefined();
     expect(warnings).toEqual([]);
     // The marker stripInjectedBlocks cuts on must be exactly what a prompt
     // carrying these blocks contains — that join is the whole contract.
@@ -89,15 +85,17 @@ describe("buildDocumentBlocks (§31) — what reaches the model and the chip", (
     expect(`the user's message\n\n${blocks}`).toContain(DOCUMENT_BLOCK_MARK);
   });
 
-  it("a CSV gets a chip and a warning but NO block — read's job, so nothing is injected", async () => {
-    const { blocks, chips, warnings } = await buildDocumentBlocks([fix("table.csv")], {
+  it("a CSV warns but injects NO block — read's job, so the model is told nothing", async () => {
+    const { blocks, warnings } = await buildDocumentBlocks([fix("table.csv")], {
       ...opts,
       hasVision: true,
     });
     expect(blocks).toBe("");
-    expect(chips).toHaveLength(1);
-    expect(chips[0].error).toMatch(/use `read`/);
     expect(warnings.some((w) => w.includes("table.csv"))).toBe(true);
+    // A warning becomes a transcript notice, so it is the USER's copy: it must
+    // never tell them to call a tool.
+    expect(warnings.join(" ")).not.toMatch(/`read`|document_read/);
+    expect(warnings.join(" ")).toMatch(/can be opened in the editor/);
   });
 
   it("a scanned PDF still attaches, carrying its sentence, and the sentence knows about vision", async () => {
@@ -106,11 +104,14 @@ describe("buildDocumentBlocks (§31) — what reaches the model and the chip", (
     // Decision H: attach the sentence rather than refusing, so the model's next
     // move is to ask the user — and don't send a text-only model after images.
     expect(withV.blocks).toMatch(/scanned images/);
-    expect(withV.blocks).toMatch(/screenshots/);
-    expect(withV.chips[0].error).toMatch(/scanned images/);
+    // The BLOCK is the model's copy: it is told to ask the user.
+    expect(withV.blocks).toMatch(/Ask the user to attach screenshots/);
     expect(noV.blocks).toMatch(/no vision/);
-    expect(noV.blocks).toMatch(/text export/);
     expect(withV.blocks).not.toMatch(/no vision/);
+    // The WARNING is the user's copy, and must not tell them to ask themselves.
+    expect(withV.warnings.join(" ")).toMatch(/Attach screenshots of those pages instead/);
+    expect(withV.warnings.join(" ")).not.toMatch(/ask the user/i);
+    expect(noV.warnings.join(" ")).toMatch(/cannot read images either/);
   });
 
   it("truncates at the shared cap and says where to continue from", async () => {
@@ -128,11 +129,10 @@ describe("buildDocumentBlocks (§31) — what reaches the model and the chip", (
   });
 
   it("keeps several documents in the order they were given", async () => {
-    const { blocks, chips } = await buildDocumentBlocks([fix("sample.docx"), fix("sample.rtf")], {
+    const { blocks } = await buildDocumentBlocks([fix("sample.docx"), fix("sample.rtf")], {
       ...opts,
       hasVision: true,
     });
-    expect(chips.map((c) => c.name)).toEqual(["sample.docx", "sample.rtf"]);
     expect(blocks.indexOf("sample.docx")).toBeLessThan(blocks.indexOf("sample.rtf"));
   });
 });
