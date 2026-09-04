@@ -555,6 +555,8 @@ interface HvApi {
 
   listWorkspaces(): Promise<string[]>;
   addWorkspace(): Promise<string | null>;
+  /** §22 "Start fresh…": creates <name> under ~/Documents/HappyVibe and registers it. */
+  createWorkspaceFolder(name: string): Promise<string>;
   /** Round 11: "forget" archives its sessions (restorable), "delete" removes them for good. */
   removeWorkspace(ws: string, mode: "forget" | "delete"): Promise<{ sessions: number }>;
   /** How many sessions removal would affect — for the confirm, before anything is written. */
@@ -798,10 +800,15 @@ interface HvApi {
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
   // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
-  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; document: boolean }>;
-  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; document?: boolean }): Promise<void>;
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
+
+  /** §32: the web service the web tools call. `hasKey` only — never the key. */
+  webServiceGet(): Promise<{ mode: "default" | "custom"; baseUrl?: string; hasKey: boolean }>;
+  webServiceSet(p: { mode: "default" | "custom"; baseUrl?: string; key?: string | null }): Promise<void>;
+  webServiceTest(p: { baseUrl?: string; key?: string }): Promise<{ ok: true } | { ok: false; reason: string }>;
   /** §19 (2026-08-30): the three model calls the app makes without a session. */
   assistantTasksGet(): Promise<Record<HvAssistantTaskId, HvAssistantTask>>;
   assistantTaskSet(

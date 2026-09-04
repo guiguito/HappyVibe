@@ -17,7 +17,7 @@ import { PermissionModal } from "./components/PermissionModal";
 import { describeProviderError, retryNoticeText } from "./providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
-import { OnboardingOverlay } from "./components/OnboardingOverlay";
+import { OnboardingDialog } from "./components/OnboardingDialog";
 import { ShortcutsView } from "./components/ShortcutsView";
 import { eventToBinding, formatBinding, resolveBindings, type ShortcutId } from "./shortcuts";
 import {
@@ -70,6 +70,8 @@ import { basename as tabBasename } from "./tabs";
 import { isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
 import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
+import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
+import { ipcMessage } from "./ipcError";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -136,10 +138,16 @@ export default function App(): React.JSX.Element {
   const delegationsRef = useRef<Record<string, Record<string, DelegationRun>>>({});
   useEffect(() => { delegationsRef.current = delegations; }, [delegations]);
   const [error, setError] = useState<string | null>(null);
-  // B7: onboarding wow-flow overlay. Shown once for a brand-new user's first
-  // session (no prior sessions). Dismissing it is permanent — §7 round 8
-  // deleted the Help entry, and §22 round 17 confirmed no re-open path.
+  // §22 round 19: the first-run wizard. Shown on an untouched install only
+  // (shouldShowOnboarding — the flag alone is not a migration), and dismissing
+  // it is permanent: §7 round 8 deleted the Help entry and §22 round 17
+  // confirmed no re-open path.
   const [onboarding, setOnboarding] = useState(false);
+  // First-prompt suggestion chips. They INSERT and never send (§27's refused
+  // auto-send), live only until the first send, and are branched on what the
+  // folder actually holds — an empty one gets prompts that CREATE a codebase,
+  // which is why no sample project is bundled.
+  const [chips, setChips] = useState<readonly string[] | null>(null);
   // W1.4: workspace whose settings modal is open (gear on a sidebar workspace row).
   const [wsSettings, setWsSettings] = useState<string | null>(null);
   // W2.2: center tabs (chat + open files), PER-WORKSPACE — switching sessions
@@ -363,6 +371,13 @@ export default function App(): React.JSX.Element {
   // buffers themselves live in the always-mounted FileTab components).
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
   const seenOnboarding = useRef(true); // assume seen until config says otherwise
+  /**
+   * The session the wizard opened, if any. The two wow notices fire once, for
+   * THIS session only — a second session on day one must not repeat them, and
+   * neither must a reopened one.
+   */
+  const firstRunSession = useRef<string | null>(null);
+  const wowShown = useRef<{ tools: boolean; context: boolean }>({ tools: false, context: false });
   const streaming = useRef<Record<string, boolean>>({});
   // Round 11: sessions whose turn the user aborted. Stop closes the bubble
   // immediately, but deltas still in flight land after that — while this is set
@@ -631,9 +646,27 @@ export default function App(): React.JSX.Element {
     appendItem(sid, { kind: "assistant", text });
   };
 
+  /**
+   * B3: any configured provider (a BYOK key, an OAuth login, a usable custom
+   * endpoint, a local runner listening) passes the gate — main decides, in
+   * anyProviderConfigured().
+   *
+   * §22 round 19: this is a PUSH, not a one-shot read. `hv:providers-changed`
+   * already existed and only ChatView consumed it, so signing in anywhere but
+   * the Models page left this state stale until a reload — and the onboarding
+   * wizard's step-1 checkmark derives from exactly this state, inside a dialog
+   * the user never leaves.
+   */
+  const refreshKeyState = useCallback((): void => {
+    void window.hv.hasAnyProvider().then((ok) => setKeyState(ok ? "present" : "missing"));
+  }, []);
+
   useEffect(() => {
-    // B3: any configured provider (BYOK key, OAuth login, local Ollama) passes the gate.
-    window.hv.hasAnyProvider().then((ok) => setKeyState(ok ? "present" : "missing"));
+    refreshKeyState();
+    return window.hv.onProvidersChanged(refreshKeyState);
+  }, [refreshKeyState]);
+
+  useEffect(() => {
     window.hv.listWorkspaces().then(setWorkspaces);
     window.hv.listSessions().then(setSessions);
     /**
@@ -692,7 +725,19 @@ export default function App(): React.JSX.Element {
       }
     })();
     // B7: has the user seen the wow-flow? (drives auto-show on first session)
-    void window.hv.getOnboardingSeen().then((seen) => { seenOnboarding.current = seen; });
+    void (async () => {
+      const [seen, ws, sess] = await Promise.all([
+        window.hv.getOnboardingSeen(),
+        window.hv.listWorkspaces(),
+        window.hv.listSessions(),
+      ]);
+      seenOnboarding.current = seen;
+      // Derived, not migrated. onboardingSeen was only ever written when the
+      // OLD bottom-right overlay was dismissed, and that overlay only appeared
+      // at the instant of first-session creation — so every install already
+      // past that moment still reads false and would meet a brand-new wizard.
+      setOnboarding(shouldShowOnboarding({ seen, workspaces: ws.length, sessions: sess.length }));
+    })();
 
     // B5: default model's context window feeds the estimated-gauge fallback.
     void (async () => {
@@ -1159,6 +1204,12 @@ export default function App(): React.JSX.Element {
         }
       }
       if (e.type === "tool_execution_end") {
+        // §22: the first wow, once. The old overlay's step 3 said this in a
+        // card in the corner; it says it here, where the cards actually are.
+        if (sid === firstRunSession.current && !wowShown.current.tools) {
+          wowShown.current.tools = true;
+          appendItem(sid, { kind: "notice", text: ONBOARDING_COPY.noticeTools });
+        }
         const t = e as unknown as { toolCallId: string; toolName?: string; result: unknown; isError: boolean };
         const isSub = isSubagentTool(t.toolName);
         // §23: a plan-mode block arrives as an error end — keep it calm ("skipped").
@@ -1285,6 +1336,12 @@ export default function App(): React.JSX.Element {
         setBusy((p) => (p[sid] ? p : { ...p, [sid]: true }));
       }
       if (e.type === "agent_end") {
+        // §22: the second wow, once — after a whole turn, when there is
+        // something in the window worth opening the gauge for.
+        if (sid === firstRunSession.current && !wowShown.current.context) {
+          wowShown.current.context = true;
+          appendItem(sid, { kind: "notice", text: ONBOARDING_COPY.noticeContext });
+        }
         // A turn that thought and then said nothing still keeps its reasoning.
         commitThinking(sid);
         commitStream(sid); // finalize the live bubble into the transcript
@@ -1805,18 +1862,14 @@ export default function App(): React.JSX.Element {
     setDirtyMap((p) => (!!p[key] === d ? p : { ...p, [key]: d }));
   }, []);
 
-  const surface = (err: unknown): void =>
-    setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(err));
+  const surface = (err: unknown): void => setError(ipcMessage(err));
 
   const addWorkspace = async (): Promise<void> => {
     const ws = await window.hv.addWorkspace();
     if (ws) setWorkspaces(await window.hv.listWorkspaces());
   };
 
-  const newSession = async (workspaceId: string): Promise<void> => {
-    // B7: this user's very first session (nothing in the index yet) + they've
-    // never seen the wow-flow → surface it, layered over the real chat.
-    const firstEver = sessions.length === 0 && !seenOnboarding.current;
+  const newSession = async (workspaceId: string): Promise<string | null> => {
     try {
       const meta = await window.hv.createSession(workspaceId);
       setStatuses((p) => ({ ...p, [meta.id]: "running" }));
@@ -1827,9 +1880,10 @@ export default function App(): React.JSX.Element {
       setActiveWs(workspaceId);
       setTabsByWs((p) => ({ ...p, [workspaceId]: openChat(p[workspaceId] ?? emptyTabs, meta.id) }));
       setError(null);
-      if (firstEver) setOnboarding(true);
+      return meta.id;
     } catch (err) {
       surface(err);
+      return null;
     }
   };
 
@@ -1837,6 +1891,23 @@ export default function App(): React.JSX.Element {
     setOnboarding(false);
     seenOnboarding.current = true;
     void window.hv.setOnboardingSeen(true);
+  };
+
+  /**
+   * The wizard's handover (§22 round 19). It closes by DOING the next thing:
+   * creating the session it just set the user up for, with chips chosen from
+   * what the folder actually holds.
+   */
+  const finishOnboarding = async (): Promise<void> => {
+    const ws = workspaces[0];
+    dismissOnboarding();
+    if (!ws) return;
+    const entries = await window.hv.fsList(ws, ".").catch(() => []);
+    setChips(chipsFor(folderHasCode(entries)));
+    const sid = await newSession(ws);
+    // The two wow notices belong to THIS session only — a second session on day
+    // one must not repeat them.
+    if (sid) firstRunSession.current = sid;
   };
 
   /**
@@ -2004,6 +2075,9 @@ export default function App(): React.JSX.Element {
     /** §31: the attached documents — paths go to main, name/format draw the chip. */
     documents?: DocumentAttachment[],
   ): Promise<void> => {
+    // §22: the suggestion chips have done their job the moment anything is
+    // sent — they never come back, in this session or any other.
+    if (chips) setChips(null);
     // W2.1: attached images ride the RPC `images` param (ImageContent[]).
     const images = attachments?.length ? buildImages(attachments) : undefined;
     // §31: main takes paths and converts; the bubble takes name + format, because
@@ -2187,7 +2261,12 @@ export default function App(): React.JSX.Element {
   }
 
   const needsSetup = keyState === "missing";
-  const activeView: View = needsSetup ? "models" : view;
+  // §22 round 19: on first run the WIZARD is the setup surface, so the redirect
+  // stands down — leaving it on would put the same three doors behind the scrim
+  // the wizard is already showing, and dismissing would land on a page that was
+  // already there. Dismissing re-arms it, which is what keeps `I'll set up
+  // myself` with no model landing on Models.
+  const activeView: View = needsSetup && !onboarding ? "models" : view;
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──
@@ -2803,6 +2882,8 @@ export default function App(): React.JSX.Element {
               setBusy((p) => ({ ...p, [sid]: false }));
             } : undefined}
             composerInsert={composerInsert?.sid === sid ? composerInsert : undefined}
+            chips={firstRunSession.current === sid ? chips : null}
+            onChip={(text) => setComposerInsert((prev) => ({ sid, text, nonce: (prev?.nonce ?? 0) + 1 }))}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
             onSend={(msg, behavior, images, mentions, documents) => void send(sid, msg, behavior, images, mentions, documents)}
             pageRefs={pageRefs[sid]}
@@ -2970,7 +3051,22 @@ export default function App(): React.JSX.Element {
           </div>
         </div>
       )}
-      {onboarding && <OnboardingOverlay onDismiss={dismissOnboarding} />}
+      {onboarding && (
+        <OnboardingDialog
+          modelReady={keyState === "present"}
+          workspaceReady={workspaces.length > 0}
+          onRefreshModel={refreshKeyState}
+          onOpenFolder={() => void addWorkspace()}
+          onStartFresh={async (name) => {
+            const dir = await window.hv.createWorkspaceFolder(name);
+            if (dir) setWorkspaces(await window.hv.listWorkspaces());
+            return dir;
+          }}
+          onGoModels={() => { dismissOnboarding(); navigate({ view: "models" }); }}
+          onSkip={dismissOnboarding}
+          onDone={() => void finishOnboarding()}
+        />
+      )}
       {/* WS7: AGENTS.md editor — root from the "+" menu, any AGENTS.md from the tree. */}
       {agentsMd && wsId && (
         <AgentsMdPanel

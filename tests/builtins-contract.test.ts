@@ -113,6 +113,29 @@ test.skipIf(!fs.existsSync(CLI))("a corrupt HV_BUILTINS fails OPEN — every bui
   expect(commands.some((c) => c.includes("hv-plan"))).toBe(true);
 }, 30_000);
 
+/**
+ * §32: the web group, proven against a real Pi at startup with no key and no
+ * model turn — the same shape as the plan arms above.
+ *
+ * The absence half is the load-bearing one. A switch that leaves its tools
+ * registered is a switch that lies on the Built-in tools page, and there is no
+ * renderer test that can see a Pi registration.
+ */
+const WEB_TOOLS_EXPECTED = ["web_search", "web_fetch", "web_map", "web_crawl"];
+
+test.skipIf(!fs.existsSync(CLI))("§32: the four web tools register by default", async () => {
+  const { tools } = await probe(undefined);
+  for (const t of WEB_TOOLS_EXPECTED) expect(tools, t).toContain(t);
+}, 30_000);
+
+test.skipIf(!fs.existsSync(CLI))('HV_BUILTINS {"web":false} ⇒ no web tool exists, and its neighbours are untouched', async () => {
+  const { tools } = await probe(JSON.stringify({ web: false }));
+  expect(tools.length).toBeGreaterThan(0);
+  for (const t of WEB_TOOLS_EXPECTED) expect(tools, t).not.toContain(t);
+  // One switch, one group: §28's ten and §26's three are not collateral.
+  expect(tools).toContain("browser_open");
+  expect(tools).toContain("terminal_run");
+}, 30_000);
 test.skipIf(!fs.existsSync(CLI))(
   "§31: HV_BUILTINS {\"document\":false} unregisters document_read; the default registers it",
   async () => {

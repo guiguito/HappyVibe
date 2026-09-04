@@ -80,6 +80,37 @@ export function keySource(
   return stored[id] ? "stored" : null;
 }
 
+/**
+ * The first-run gate's decision, separated from its facts so it is testable —
+ * §22 onboarding round (2026-09-01).
+ *
+ * Four ways a model can already exist. The last two were missing: `syncModelsJson`
+ * injects LM Studio / llama.cpp into models.json before EVERY spawn, and a
+ * hand-added endpoint is a provider too — so a user with a working model was
+ * pinned to the forced-Models page forever, with nothing on screen saying why.
+ * The onboarding wizard's step-1 checkmark derives from this predicate, and a
+ * derived checkmark is only as honest as what it derives from.
+ *
+ * A custom endpoint counts only if it can actually authenticate: `placeholder`
+ * auth IS the keyless-local-server case (see CustomEndpoint.auth — Pi needs SOME
+ * auth present before a provider's models are listed), anything else needs its
+ * stored key.
+ */
+export function anyProviderConfigured(facts: {
+  keyStatus: Record<string, unknown>;
+  authProviders: string[];
+  customEndpoints: { id: string; auth: { kind: string } }[];
+  customKeyStatus: Record<string, boolean>;
+  localRunning: boolean;
+}): boolean {
+  if (Object.values(facts.keyStatus).some(Boolean)) return true;
+  if (facts.authProviders.length > 0) return true;
+  if (facts.localRunning) return true;
+  return facts.customEndpoints.some(
+    (e) => e.auth?.kind === "placeholder" || facts.customKeyStatus[e.id] === true,
+  );
+}
+
 // ── Ollama (rung 2 — local, zero keys) ─────────────────────────────────────
 
 export const OLLAMA_BASE_URL = "http://localhost:11434";

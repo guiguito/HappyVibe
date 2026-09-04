@@ -3,6 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
+import { WEB_CAPS } from "../../pi-runtime/extensions/hv-web";
+import { hostOf } from "../../pi-runtime/extensions/hv-browser";
+import { clampInt, formatCrawl, formatFetch, formatMap, formatSearch, SERVICE_UNAVAILABLE_TEXT } from "./webTools";
+import { crawl as webCrawl, mapSite as webMapSite, probe as webProbe, scrape as webScrape, search as webSearch, WebServiceError } from "./webService";
 import { PiClient } from "./pi/PiClient";
 import { spawn } from "node:child_process";
 import { resolvePiSpawn } from "./pi/spawn";
@@ -19,6 +23,7 @@ import {
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings, getLayout, setLayout,
   getVoiceSettings, setVoiceSettings,
+  getWebService, setWebService, resolveWebServiceForCall,
   getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
 } from "./config";
 import { TerminalManager } from "./terminals";
@@ -54,7 +59,7 @@ import {
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
-  authJsonProviders, BYOK_PROVIDER_IDS, detectLocalRunner, detectOllama, fetchEndpointModels, LOCAL_RUNNERS, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
+  anyProviderConfigured, authJsonProviders, BYOK_PROVIDER_IDS, detectLocalRunner, detectOllama, fetchEndpointModels, LOCAL_RUNNERS, isByokProvider, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
 } from "./providers";
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
@@ -75,7 +80,7 @@ import { aggregate, type AnalyticsFilter } from "./analytics";
 import { buildTitlePrompt, generateTitle } from "./titles";
 import { promptCommand, type PromptBehavior, type PromptImage } from "./pi/commands";
 import { copyClaudeMdToAgentsMd, hasClaudeMd, readAgentsMd, writeAgentsMd, writeAgentsMdFiles } from "./agentsMd";
-import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
+import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, createFile, createWorkspaceFolder, importEntries, listDir, listRecursive, moveEntry, readWorkspaceFile, resolveInWorkspace, statDetails, statMtime, writeWorkspaceFile } from "./files";
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
@@ -302,6 +307,89 @@ function parseBrowserReq(r: { method?: string; title?: string }): BrowserReq | n
       default:
         return null;
     }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * §32: the blocking web-tool inputs, and the one notify that cancels one.
+ *
+ * Payload in `title` because these are blocking INPUTS (a notify uses
+ * `message`; §26 records what getting that backwards costs). `toolCallId` rides
+ * along so `hv.web-cancel` can find the in-flight request — Pi hands
+ * `execute()` an AbortSignal, and an abandoned crawl otherwise holds one of the
+ * service's two worker slots for its full two minutes.
+ */
+type WebReq =
+  | { kind: "search"; toolCallId: string; query: string; limit?: number; includeContent?: boolean }
+  | { kind: "fetch"; toolCallId: string; url: string; maxChars?: number; startIndex?: number; fresh?: boolean }
+  | { kind: "map"; toolCallId: string; url: string; search?: string; limit?: number }
+  | {
+      kind: "crawl";
+      toolCallId: string;
+      url: string;
+      limit?: number;
+      maxDepth?: number;
+      includePaths?: string[];
+      excludePaths?: string[];
+      maxCharsPerPage?: number;
+    };
+
+/** In-flight web calls by toolCallId, so a cancel notify can abort one. */
+const webInflight = new Map<string, AbortController>();
+
+function parseWebReq(r: { method?: string; title?: string }): WebReq | null {
+  if (r.method !== "input") return null;
+  try {
+    const p = JSON.parse(r.title ?? "") as Record<string, unknown>;
+    const kind = typeof p.kind === "string" ? p.kind : "";
+    if (!kind.startsWith("hv.web-")) return null;
+    const str = (k: string): string | undefined => (typeof p[k] === "string" ? (p[k] as string) : undefined);
+    const num = (k: string): number | undefined => (typeof p[k] === "number" ? (p[k] as number) : undefined);
+    const bool = (k: string): boolean | undefined => (typeof p[k] === "boolean" ? (p[k] as boolean) : undefined);
+    const strs = (k: string): string[] | undefined =>
+      Array.isArray(p[k]) ? (p[k] as unknown[]).filter((x): x is string => typeof x === "string") : undefined;
+    const toolCallId = str("toolCallId") ?? "";
+    const url = str("url");
+    switch (kind) {
+      case "hv.web-search": {
+        const query = str("query");
+        return query ? { kind: "search", toolCallId, query, limit: num("limit"), includeContent: bool("includeContent") } : null;
+      }
+      case "hv.web-fetch":
+        return url
+          ? { kind: "fetch", toolCallId, url, maxChars: num("maxChars"), startIndex: num("startIndex"), fresh: bool("fresh") }
+          : null;
+      case "hv.web-map":
+        return url ? { kind: "map", toolCallId, url, search: str("search"), limit: num("limit") } : null;
+      case "hv.web-crawl":
+        return url
+          ? {
+              kind: "crawl",
+              toolCallId,
+              url,
+              limit: num("limit"),
+              maxDepth: num("maxDepth"),
+              includePaths: strs("includePaths"),
+              excludePaths: strs("excludePaths"),
+              maxCharsPerPage: num("maxCharsPerPage"),
+            }
+          : null;
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/** §32: the model's turn was aborted — stop the HTTP call and the crawl job. */
+function parseWebCancel(r: { method?: string; message?: string }): { toolCallId: string } | null {
+  if (r.method !== "notify") return null;
+  try {
+    const p = JSON.parse(r.message ?? "") as { kind?: string; toolCallId?: string };
+    return p?.kind === "hv.web-cancel" && typeof p.toolCallId === "string" ? { toolCallId: p.toolCallId } : null;
   } catch {
     return null;
   }
@@ -838,7 +926,9 @@ export function registerIpc(win: BrowserWindow): void {
           return;
         }
         if (p.stage === "success" || p.stage === "logged_out") {
-          providersChanged();
+          // Tell the renderer straight away — but do NOT try to fill the default
+          // model yet. See below.
+          send("hv:providers-changed");
           // Pi's AuthStorage reads its file ONCE at process start, so the utility
           // must respawn or it keeps serving the pre-login credential set — the
           // api-key path already does this (hv:set-provider-key). Then re-ask for
@@ -846,6 +936,14 @@ export function registerIpc(win: BrowserWindow): void {
           void (async () => {
             await restartUtility();
             await requestAuthStatus();
+            // ORDER IS THE BUG THIS FIXES. ensureDefaultModel used to run inside
+            // the providersChanged() above, i.e. BEFORE the respawn — so it asked
+            // the pre-login client for models, got the pre-login set (nothing),
+            // set no default, and was never asked again. A fresh OAuth sign-in
+            // then finished onboarding and the session it opened for you died on
+            // "No model configured". Asking after the respawn is the whole fix.
+            await ensureDefaultModel();
+            send("hv:providers-changed");
           })().catch(() => {});
         }
       } catch {
@@ -879,7 +977,51 @@ export function registerIpc(win: BrowserWindow): void {
   // remove, OAuth login/logout (main sees every utility hv.auth notify), and
   // default/workspace-model edits. The chat bar refetches its model list and
   // resolution tiers on it, so the chip and menu are never stale.
-  const providersChanged = (): void => send("hv:providers-changed");
+  const providersChanged = (): void => {
+    void ensureDefaultModel();
+    send("hv:providers-changed");
+  };
+
+  /**
+   * §22 round 19 — a configured provider with no default model is a dead end,
+   * and it was the FIRST RUN dead end.
+   *
+   * Measured on a fresh profile: two provider keys, 348 models offered, and
+   * `defaultModel: null`, so the very first session died on §16 finding 7's
+   * refusal — "No model configured — add a provider in Settings → Models" —
+   * which points the user back at the page they just finished. Saving a key has
+   * never set a default, and `ModelsView` HIDES its Default-model section while
+   * `firstRun` is true, so the first-run path could not set one at all.
+   *
+   * This does NOT reverse finding 7. That decision killed a HARDCODED spawn-time
+   * fallback which silently pinned a session to a provider the user might never
+   * have configured. This picks from the models the user's OWN configured
+   * providers list, at the moment they configure one, writes it where the Models
+   * page shows and edits it, and leaves the spawn-time refusal untouched — a
+   * default that is stale or removed still refuses.
+   *
+   * Only ever fills a NULL default, so it cannot fight the user's choice, and
+   * the guard is also what stops it looping through providersChanged().
+   */
+  const ensureDefaultModel = async (): Promise<void> => {
+    if (getDefaultModel()) return;
+    try {
+      const c = await ensureUtility();
+      const res = await c.send({ type: "get_available_models" });
+      const models = (res.data as { models?: { provider: string; id: string }[] })?.models ?? [];
+      // Pi's own registry order, first entry from a provider that is actually
+      // configured. No curated shortlist — §16's generated catalog exists to
+      // kill exactly that, and the Models page's searchable picker is one click
+      // away for anyone who wants a different one.
+      const first = models[0];
+      if (!first) return;
+      setDefaultModel({ provider: first.provider, modelId: first.id });
+      await utility?.send({ type: "set_model", provider: first.provider, modelId: first.id }).catch(() => {});
+      send("hv:providers-changed");
+    } catch {
+      /* no utility, no models, no default — the spawn refusal still explains it */
+    }
+  };
 
   // ── MCP status model ─────────────────────────────────────────────────────
   type McpState = "connected" | "needs-auth" | "failed" | "checking";
@@ -1240,6 +1382,13 @@ export function registerIpc(win: BrowserWindow): void {
         void log.append({ type: "permission.decision", sessionId, workspaceId: meta?.workspaceId, data: audit });
         return;
       }
+      // §32: an aborted turn. Fire-and-forget, never forwarded: abort the HTTP
+      // call so a dropped crawl stops holding one of the service's two slots.
+      const webCancel = parseWebCancel(r);
+      if (webCancel) {
+        webInflight.get(webCancel.toolCallId)?.abort();
+        return;
+      }
       // §14: skill invocation — audit it and forward to the renderer (invocation
       // card). Raw-read fallbacks are flagged heuristic (detected:true).
       const skill = parseSkillNotify(r);
@@ -1540,8 +1689,112 @@ export function registerIpc(win: BrowserWindow): void {
         })();
         return;
       }
-      // §31: the blocking document read. Same never-hang contract as the two
-      // blocks above. The conversion itself carries the deadline (documents.ts
+      // §32: the blocking web-tool inputs. Main calls the web service, applies
+      // the caps, formats what the model reads, logs one web.call row, and
+      // ALWAYS answers — the browser block's idiom above, for the same reason:
+      // a bridge left waiting on ctx.ui.input hangs the turn with no way out.
+      const wr = parseWebReq(r as { method?: string; title?: string });
+      if (wr) {
+        void (async () => {
+          const rid = r.id;
+          const t0 = Date.now();
+          const wsId = meta?.workspaceId;
+          const svc = resolveWebServiceForCall();
+          const o = { baseUrl: svc.baseUrl, ...(svc.key ? { key: svc.key } : {}) };
+          const ac = new AbortController();
+          if (wr.toolCallId) webInflight.set(wr.toolCallId, ac);
+          let answered = false;
+          const finish = (v: Record<string, unknown>, logData: Record<string, unknown>): void => {
+            if (answered) return;
+            answered = true;
+            clearTimeout(deadline);
+            if (wr.toolCallId) webInflight.delete(wr.toolCallId);
+            client.respondUi(rid, { value: JSON.stringify(v) });
+            // §19: telemetry without content — never the page text, never the
+            // query itself, just its length.
+            void log.append({
+              type: "web.call",
+              sessionId,
+              workspaceId: wsId,
+              data: { tool: `web_${wr.kind}`, ms: Date.now() - t0, ok: v.ok === true, service: svc.service, ...logData },
+            });
+          };
+          // A crawl gets the longer budget; +5 s so the client's own deadline
+          // fires first and gets to DELETE the job rather than being cut off.
+          const budget = (wr.kind === "crawl" ? WEB_CAPS.crawlDeadlineMs : WEB_CAPS.deadlineMs) + 5_000;
+          const deadline = setTimeout(() => {
+            ac.abort();
+            finish(
+              { ok: false, reason: `The web service did not answer within ${Math.round(budget / 1000)} s. Try again, or ask for less.` },
+              { code: "DEADLINE" },
+            );
+          }, budget);
+          try {
+            if (wr.kind === "search") {
+              const limit = clampInt(wr.limit, WEB_CAPS.search.defaultLimit, WEB_CAPS.search.maxLimit);
+              const hits = await webSearch(o, wr.query, { limit, includeContent: wr.includeContent === true }, ac.signal);
+              const text = formatSearch(wr.query, hits, wr.includeContent === true);
+              finish(
+                { ok: true, text, untrusted: true, meta: { results: hits.length } },
+                { queryChars: wr.query.length, resultChars: text.length },
+              );
+            } else if (wr.kind === "fetch") {
+              const maxChars = clampInt(wr.maxChars, WEB_CAPS.fetch.defaultChars, WEB_CAPS.fetch.maxChars);
+              const startIndex = clampInt(wr.startIndex, 0, Number.MAX_SAFE_INTEGER, 0);
+              const page = await webScrape(o, wr.url, { fresh: wr.fresh === true }, ac.signal);
+              const { text, meta: m } = formatFetch(page, startIndex, maxChars);
+              finish(
+                { ok: true, text, untrusted: true, meta: { ...m, ...(page.title ? { title: page.title } : {}) } },
+                { host: m.host, resultChars: text.length, ...(m.status ? { status: m.status } : {}) },
+              );
+            } else if (wr.kind === "map") {
+              const limit = clampInt(wr.limit, WEB_CAPS.map.defaultLimit, WEB_CAPS.map.maxLimit);
+              const links = await webMapSite(o, wr.url, { search: wr.search, limit }, ac.signal);
+              const text = formatMap(wr.url, links);
+              finish(
+                { ok: true, text, untrusted: true, meta: { host: hostOf(wr.url), count: links.length } },
+                { host: hostOf(wr.url), resultChars: text.length },
+              );
+            } else {
+              const limit = clampInt(wr.limit, WEB_CAPS.crawl.defaultLimit, WEB_CAPS.crawl.maxLimit);
+              const maxDepth = clampInt(wr.maxDepth, WEB_CAPS.crawl.defaultDepth, WEB_CAPS.crawl.maxDepth, 0);
+              const perPage = clampInt(wr.maxCharsPerPage, WEB_CAPS.crawl.defaultCharsPerPage, WEB_CAPS.crawl.maxCharsPerPage);
+              const res = await webCrawl(
+                o,
+                wr.url,
+                { limit, maxDepth, includePaths: wr.includePaths, excludePaths: wr.excludePaths },
+                ac.signal,
+                WEB_CAPS.crawlDeadlineMs,
+              );
+              const { text, meta: m } = formatCrawl(wr.url, res.pages, perPage, res.stopped);
+              finish(
+                { ok: true, text, untrusted: true, meta: { ...m, stopped: res.stopped } },
+                { host: m.host, resultChars: text.length, pages: m.pages, included: m.included },
+              );
+            }
+          } catch (e) {
+            const err = e instanceof WebServiceError ? e : new WebServiceError("UNAVAILABLE", e instanceof Error ? e.message : String(e));
+            // UNAVAILABLE on the DEFAULT service is the shared-box case, and it
+            // gets the sentence that names the way out. On a custom service the
+            // user owns the box, so they get the raw reason instead.
+            const reason =
+              err.code === "CANCELLED"
+                ? "That request was cancelled."
+                : err.code === "UNAVAILABLE" && svc.service === "default"
+                  ? SERVICE_UNAVAILABLE_TEXT
+                  : err.code === "UNAVAILABLE"
+                    ? `Your web service did not answer: ${err.message}`
+                    : err.message;
+            finish(
+              { ok: false, reason },
+              { code: err.code, ...(wr.kind === "search" ? { queryChars: wr.query.length } : { host: hostOf(wr.url) }) },
+            );
+          }
+        })();
+        return;
+      }
+      // §31: the blocking document read. Same never-hang contract as the blocks
+      // above. The conversion itself carries the deadline (documents.ts
       // SIGKILLs at 30 s), so this needs no second timer — but the reply stays
       // idempotent, because "always answers" has to survive a throw as well.
       const dr = parseDocumentReq(r as { method?: string; title?: string });
@@ -2061,6 +2314,13 @@ export function registerIpc(win: BrowserWindow): void {
 
   // ── workspaces ───────────────────────────────────────────────────
   ipcMain.handle("hv:list-workspaces", () => workspaces.list());
+  // §22: the "Start fresh…" door. Path-confined by construction — the name is
+  // a segment, never a path (files.ts createWorkspaceFolder).
+  ipcMain.handle("hv:create-workspace-folder", (_e, name: string) => {
+    const dir = createWorkspaceFolder(String(name));
+    workspaces.add(dir);
+    return dir;
+  });
   ipcMain.handle("hv:add-workspace", async () => {
     const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
     if (r.canceled || !r.filePaths[0]) return null;
@@ -2110,6 +2370,10 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.handle("hv:list-sessions", () => index.list());
 
   ipcMain.handle("hv:create-session", async (_e, workspaceId: string): Promise<SessionMeta> => {
+    // Backstop for every caller, not just onboarding: a provider can exist while
+    // no default model does, and the spawn callback below refuses synchronously.
+    // Free when a default is already set.
+    await ensureDefaultModel();
     const meta = index.create(workspaceId);
     try {
       await startClient(meta, false);
@@ -3057,9 +3321,24 @@ export function registerIpc(win: BrowserWindow): void {
   // Takes effect at next spawn only — reuse the existing debounced, idle-only,
   // resume-preserving reload path (same mechanism as MCP/skills config changes).
   ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
-  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; document?: boolean }) => {
+  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean }) => {
     setBuiltinTools(t);
     scheduleRuntimeReload("skills", "global", null);
+  });
+  // §32: the web service. Main reads it PER CALL, so a change applies to the
+  // next tool call with no respawn — the row says so. Test is the only call
+  // main ever makes that no tool asked for, which is why it is a button and
+  // not a boot probe (the keychain-at-boot rule, one privacy notch over).
+  ipcMain.handle("hv:web-service-get", () => getWebService());
+  ipcMain.handle("hv:web-service-set", (_e, p: { mode: "default" | "custom"; baseUrl?: string; key?: string | null }) => {
+    setWebService(p);
+  });
+  ipcMain.handle("hv:web-service-test", async (_e, p: { baseUrl?: string; key?: string }) => {
+    // An unsaved URL is testable: the row lets you check before committing.
+    const svc = p?.baseUrl
+      ? { baseUrl: p.baseUrl.trim().replace(/\/+$/, ""), ...(p.key ? { key: p.key } : {}) }
+      : resolveWebServiceForCall();
+    return webProbe(svc, AbortSignal.timeout(10_000));
   });
   // Extended prompt-cache retention. Deliberately NO live reload: the only gain
   // is a longer cache TTL on later turns, which is not worth respawning live
@@ -3335,12 +3614,26 @@ export function registerIpc(win: BrowserWindow): void {
     providersChanged();
   });
 
-  // First-run gate: any BYOK key, any auth.json credential, or local Ollama.
+  // First-run gate: any BYOK key, any auth.json credential, any usable custom
+  // endpoint, or a local runner listening. The last two were missing until the
+  // §22 onboarding round — syncModelsJson writes LM Studio / llama.cpp into
+  // models.json before every spawn, so those users had a working model and were
+  // still told to go and configure one.
   ipcMain.handle("hv:has-any-provider", async () => {
-    const status = providerKeyStatus();
-    if (Object.values(status).some(Boolean)) return true;
-    if (authJsonProviders(agentDir()).length > 0) return true;
-    return (await detectOllama()).running;
+    const [ollama, ...runners] = await Promise.all([
+      detectOllama(),
+      ...LOCAL_RUNNERS.map((r) => detectLocalRunner(r)),
+    ]);
+    return anyProviderConfigured({
+      keyStatus: providerKeyStatus(),
+      authProviders: authJsonProviders(agentDir()),
+      customEndpoints: listCustomEndpoints(),
+      customKeyStatus: customKeyStatus(),
+      // MODELS, not merely a listening port: syncModelsJson only writes an
+      // endpoint that has models, so a bare server would pass the gate and then
+      // leave Pi with nothing to call.
+      localRunning: ollama.models.length > 0 || runners.some((r) => r.models.length > 0),
+    });
   });
 
   // Explicit renderer request only; auth URLs from Pi's OAuth flows.
@@ -3570,7 +3863,7 @@ export function registerIpc(win: BrowserWindow): void {
   // The picker returns PATHS ONLY and converts nothing, so the renderer can put
   // a chip on screen with a spinner in it the instant the dialog closes and then
   // fill in the cost. Converting here instead meant the composer showed nothing
-  // at all until the conversion finished — fine for a 60 ms .docx, a silent
+  // at all until the conversion finished — fine for a 90 ms .docx, a silent
   // second on a big workbook, and reported as such (2026-09-04).
   //
   // It also means picking and dropping take the SAME second step, rather than
@@ -5244,4 +5537,17 @@ export function registerIpc(win: BrowserWindow): void {
   } catch {
     /* watch unsupported — renderer re-fetches on navigation */
   }
+
+  /**
+   * §22 round 19: a provider configured through the ENVIRONMENT never passes
+   * through providersChanged(), so a fresh profile with a key in `.env` starts
+   * up already configured and already default-less. One fire-and-forget pass at
+   * boot closes that, and costs nothing on every later launch because a default
+   * is then set.
+   */
+  void (async () => {
+    if (getDefaultModel()) return;
+    if (!Object.values(providerKeyStatus()).some(Boolean) && authJsonProviders(agentDir()).length === 0) return;
+    await ensureDefaultModel();
+  })().catch(() => { /* the spawn refusal still explains a missing model */ });
 }

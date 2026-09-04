@@ -213,7 +213,7 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     // simple-icons ships no si-firecrawl — generic MCP glyph.
     tagline: "Scrape JavaScript-heavy pages the agent otherwise can't read",
     blurb:
-      "Firecrawl fetches and cleans modern web pages, including ones that only render through JavaScript, and hands the agent readable text instead of raw markup. Useful when you want it to research a site rather than guess at it. Needs a free API key. This connects to Firecrawl Cloud — self-hosting runs a local server instead, so add it with \u201cAdd server\u201d below.",
+      "Firecrawl fetches and cleans modern web pages, including ones that only render through JavaScript, and hands the agent readable text instead of raw markup. Useful when you want it to research a site rather than guess at it. Needs a free API key. HappyVibe’s built-in Web tools already search the web and read pages as clean text with no key at all — add this only for the cloud-only extras (screenshots, clicking, and structured extraction). This connects to Firecrawl Cloud — self-hosting runs a local server instead, so add it with \u201cAdd server\u201d below.",
     docsUrl: "https://docs.firecrawl.dev/mcp-server/connect",
     transport: "remote",
     auth: "key",

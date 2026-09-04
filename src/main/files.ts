@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 /**
@@ -348,4 +349,32 @@ export function openFilesChanged(prev: string[] | undefined, next: string[]): bo
   const a = [...prev].sort();
   const b = [...next].sort();
   return a.some((v, i) => v !== b[i]);
+}
+
+/**
+ * §22 onboarding round (2026-09-01) — the "Start fresh…" door.
+ *
+ * The north-star persona ("an AI-curious person who is scared to vibe code")
+ * has no repo, and an onboarding that assumes one excludes exactly the user §22
+ * is written for.
+ *
+ * `name` is a single path SEGMENT, never a path: that is what makes this safe
+ * without a registry to confine against, since nothing here can resolve outside
+ * `parent`. A rejected name is an error the user reads, never a name silently
+ * sanitised into a folder they did not ask for.
+ */
+export function createWorkspaceFolder(
+  name: string,
+  parent = path.join(os.homedir(), "Documents", "HappyVibe"),
+): string {
+  const clean = name.trim();
+  if (!clean) throw new Error("Give the project a name.");
+  if (clean === "." || clean === "..") throw new Error("That name won't work — try a word or two.");
+  if (clean !== path.basename(clean) || clean.includes("/") || clean.includes("\\")) {
+    throw new Error("A project name can't contain a slash.");
+  }
+  const dir = path.join(parent, clean);
+  if (fs.existsSync(dir)) throw new Error(`“${clean}” already exists in that folder.`);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }

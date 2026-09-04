@@ -18,8 +18,8 @@ const rendered = (f: string): string =>
   fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 describe("HOWTO_COPY", () => {
-  it("has all five entries, each a real explanation", () => {
-    const keys = ["planMode", "rules", "mcpBadge", "contextNumbers", "instructionFiles"];
+  it("has all six entries, each a real explanation", () => {
+    const keys = ["planMode", "rules", "mcpBadge", "contextNumbers", "instructionFiles", "webTools"];
     expect(Object.keys(HOWTO_COPY).sort()).toEqual([...keys].sort());
     for (const [k, v] of Object.entries(HOWTO_COPY)) {
       expect(v.title, k).toMatch(/^(How|What) /);
@@ -145,5 +145,39 @@ describe("the disclosures add no floating surface and no modal", () => {
     // Scoped to className: the word "fixed" legitimately appears in the prose
     // ("in a fixed order"), and browserCoverage.ts only ever reads class words.
     expect(src).not.toMatch(/className="[^"]*\b(absolute|fixed)\b/);
+  });
+});
+
+// §32 — the copy has to carry the four things a user cannot discover by looking:
+// where the fetching happens, that the grant is shared with the browser, that
+// results are untrusted, and what the tools cannot do at all.
+describe("HOWTO_COPY.webTools (§32)", () => {
+  const b = HOWTO_COPY.webTools.body;
+
+  it("says where pages are fetched, and who can see the URLs", () => {
+    expect(b).toMatch(/not by your computer/i);
+    expect(b).toMatch(/server HappyVibe operates/i);
+    expect(b).toMatch(/your own service/i);
+  });
+
+  it("names the shared grant AND the narrower pane button, because they differ", () => {
+    expect(b).toMatch(/same rules as the agent's browser/i);
+    expect(b).toMatch(/Allow for this session/);
+    // The asymmetry is deliberate (PRD §28 round 20) and is the one thing a
+    // user could reasonably read as a bug, so the copy states it.
+    expect(b).toMatch(/that one page's site for that browser pane only/i);
+  });
+
+  it("says results are untrusted, and what these tools cannot do", () => {
+    expect(b).toMatch(/untrusted/i);
+    expect(b).toMatch(/screenshots/i);
+    expect(b).toMatch(/signed in/i);
+    expect(b).toMatch(/recent results/i);
+  });
+
+  it("never names the backend — §32's vocabulary rule", () => {
+    expect(b.toLowerCase()).not.toContain("firecrawl");
+    expect(b.toLowerCase()).not.toContain("scrape");
+    expect(b.toLowerCase()).not.toContain("crawl");
   });
 });

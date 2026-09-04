@@ -259,7 +259,9 @@ test("renders a virtual rule name verbatim instead of prettifying it", () => {
   // of the very prompt that grants the delegation.
   expect(toolLabel("subagent:code-explorer", undefined).label).toBe("Sub-agent: code-explorer");
   expect(toolLabel("mcp:github_create_issue", undefined).label).toBe("MCP: github_create_issue");
-  expect(toolLabel("browser:example.org", undefined).label).toBe("Browser: example.org");
+  // §32 renamed this kind to "Web": the rule now covers the embedded browser
+  // AND the web tools, and a grant created by a web_fetch prompt renders here.
+  expect(toolLabel("browser:example.org", undefined).label).toBe("Web: example.org");
 });
 
 test("a rule name keeps its own colons, and the bare tools are unaffected", () => {
@@ -269,6 +271,48 @@ test("a rule name keeps its own colons, and the bare tools are unaffected", () =
   expect(toolLabel("subagent", { agent: "code-explorer" }).label).toBe("Delegating to code-explorer");
   // An unknown prefix is not a rule name — it must not be swallowed by the guard.
   expect(toolLabel("weird:thing", undefined).label).toBe("Weird:thing");
+});
+
+// §32 web tools. The card leads with intent (§7); the fallback is the app's own
+// vocabulary. The rule label is the one word true of BOTH surfaces, because a
+// grant created by web_fetch renders through the same map as a browser one.
+test("§32: the shared host rule reads Web, not Browser", () => {
+  expect(toolLabel("browser:docs.foo.com", {})).toEqual({ icon: "globe", label: "Web: docs.foo.com" });
+  // A host is not prettified — it must render verbatim, like every virtual rule.
+  expect(toolLabel("browser:api.stripe.com", {}).label).toBe("Web: api.stripe.com");
+});
+
+test("§32: web cards lead with intent and fall back to the app's words", () => {
+  expect(toolLabel("web_search", { query: "vitest mock fetch" })).toEqual({
+    icon: "search",
+    label: 'Searched the web for "vitest mock fetch"',
+  });
+  expect(toolLabel("web_search", { intent: "Finding the docs", query: "x" }).label).toBe("Finding the docs");
+  // A page: host AND path, like browser_open. The URL rides `path` for the chip.
+  expect(toolLabel("web_fetch", { url: "https://docs.foo.com/guide" })).toEqual({
+    icon: "globe",
+    label: "Read docs.foo.com/guide",
+    path: "https://docs.foo.com/guide",
+  });
+  expect(toolLabel("web_fetch", { intent: "Reading the guide", url: "https://docs.foo.com/guide" })).toEqual({
+    icon: "globe",
+    label: "Reading the guide",
+    path: "https://docs.foo.com/guide",
+  });
+  // A SITE: host only, or the label would suggest one page was read.
+  expect(toolLabel("web_map", { url: "https://docs.foo.com/guide" }).label).toBe("Listed pages on docs.foo.com");
+  expect(toolLabel("web_crawl", { url: "https://docs.foo.com/guide" }).label).toBe("Read pages from docs.foo.com");
+});
+
+test("§32: no web card ever says scrape or crawl, and none breaks without args", () => {
+  for (const t of ["web_search", "web_fetch", "web_map", "web_crawl"]) {
+    const bare = toolLabel(t, {});
+    expect(bare.label, t).toBeTruthy();
+    expect(bare.label.toLowerCase(), t).not.toMatch(/scrape|crawl/);
+    // No args ⇒ no path, so the card draws no chip pointing at nothing.
+    expect(bare.path, t).toBeUndefined();
+    expect(toolLabel(t, { url: "not a url" }).label.toLowerCase(), t).not.toMatch(/scrape|crawl/);
+  }
 });
 
 test("§31: document_read leads with the model's sentence and falls back to the file name", () => {

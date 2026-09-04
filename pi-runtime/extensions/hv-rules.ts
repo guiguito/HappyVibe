@@ -62,10 +62,16 @@ export interface Verdict {
 // evaluate) are deliberately NOT here: navigation gates per host as
 // `browser:<host>`, and evaluate is the one call that turns "the page can reach
 // X" into "the agent can exfiltrate through X".
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close",
-  // §31: reading a document exercises no power — it is Pi's own `read`, one
-  // format further on. Spelled, not imported: this module is zero-import.
-  "document_read"]);
+// §32: web_search is the only WEB tool here, and the split is the point — a
+// search query has no target host a user could meaningfully approve, while
+// web_fetch/web_map/web_crawl each name one and gate under browser:<host>.
+// Recorded honestly: the query still leaves the machine, to the web service,
+// so a deny rule on web_search must still bite (it does — a safe default is a
+// DEFAULT, not a bypass).
+//
+// §31: reading a document exercises no power — it is Pi's own `read`, one
+// format further on. Spelled, not imported: this module is zero-import.
+export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read"]);
 
 /**
  * pi-subagents' parent-blocking wait tool, under EVERY name it has shipped under.

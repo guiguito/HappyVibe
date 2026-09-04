@@ -188,9 +188,18 @@ const PLAN_PASS_TOOLS = new Set([
   // removes power. These must be NAMED — an unnamed tool floor-asks, which for a
   // poll is the friction that makes a model stop using the tool at all.
   "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close",
-  // §31: a document read is a read. NAMED for the same reason as the browser
-  // reads — an unnamed tool falls to floor-ask, which clamps allow→ask and
-  // would raise a modal on every `offset` step through a long document.
+  // §32: headless reads of the public web — no cookies, no side effects, and
+  // nothing in the workspace is touched. "pass" leaves the verdict alone, so
+  // the browser:<host> gate still runs INSIDE plan mode; it only means the
+  // plan clamp does not override it. Deliberately unlike browser_navigate,
+  // which keeps its floor-ask because that pane is a persistent, possibly
+  // logged-in Chromium where a navigation can act. NAMED, because an unnamed
+  // tool floor-asks and a paged read that prompts per page is a tool the
+  // model abandons (§26/§28 both record it).
+  "web_search", "web_fetch", "web_map", "web_crawl",
+  // §31: a document read is a read. NAMED for the same reason — an unnamed
+  // tool falls to floor-ask, which clamps allow→ask and would raise a modal on
+  // every `offset` step through a long document.
   "document_read",
 ]);
 

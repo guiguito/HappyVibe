@@ -346,11 +346,41 @@ export function resultText(result: unknown): string | null {
  * output. `edit`/`write` are out because their payload is the diff, which the
  * card already renders above this.
  */
-export const OUTPUT_TOOLS: ReadonlySet<string> = new Set(["bash", "terminal_run", "terminal_read"]);
+export const OUTPUT_TOOLS: ReadonlySet<string> = new Set([
+  "bash",
+  "terminal_run",
+  "terminal_read",
+  // §32: a web result IS the thing the user wants to see, and its FIRST line
+  // carries the fact §32 asks the card face to show — "41,203 chars total,
+  // showing 0–16,000" — so they preview from the head (see previewLines).
+  "web_search",
+  "web_fetch",
+  "web_map",
+  "web_crawl",
+]);
+
+/** Tools whose preview reads from the TOP. A command's interesting output is
+ * its end; a page's is its header line and first words. */
+const HEAD_PREVIEW_TOOLS: ReadonlySet<string> = new Set(["web_search", "web_fetch", "web_map", "web_crawl"]);
 
 /** The last `lines` non-blank lines — the run rail's own tail rule. */
 export function outputTail(text: string, lines = 3): string[] {
   return text.split("\n").filter((l) => l.trim().length > 0).slice(-lines);
+}
+
+/**
+ * The card-face preview for one tool's output.
+ *
+ * Two things it must get right for §32. The direction is per tool (above), and
+ * the UNTRUSTED banner is dropped: that line is addressed to the MODEL, and
+ * spending one of three preview lines telling the user their page is untrusted
+ * pushes the char count — the reason the preview exists — off the card.
+ */
+export function previewLines(toolName: string, text: string, lines = 3): string[] {
+  const kept = text
+    .split("\n")
+    .filter((l) => l.trim().length > 0 && !l.startsWith("[UNTRUSTED"));
+  return HEAD_PREVIEW_TOOLS.has(toolName) ? kept.slice(0, lines) : kept.slice(-lines);
 }
 
 /** W1.1: raw tool name + args + result — always behind the "details" toggle. */
@@ -858,7 +888,7 @@ export function ToolCard({
           run rail shows on hover — ⋯ still has the whole thing. */}
       {!details && OUTPUT_TOOLS.has(card.toolName) && card.status !== "error" && (() => {
         const text = resultText(card.result);
-        const tail = text ? outputTail(text) : [];
+        const tail = text ? previewLines(card.toolName, text) : [];
         return tail.length === 0 ? null : (
           <button
             type="button"
