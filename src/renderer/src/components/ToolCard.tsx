@@ -37,6 +37,14 @@ export interface ToolCardData {
    */
   delegation?: { outcome: "done" | "failed" | "stopped"; summary?: string };
   /**
+   * §33: a memory card's structured fields — scope, type, name, description.
+   *
+   * On a LIVE card these also sit in `result`'s details, but a RESTORED one has only what
+   * restore.ts named (restoreMap.ts's rule), and the Forget button needs the scope and the slug
+   * to call anything at all. Carried as a field so both paths render the same card.
+   */
+  memory?: { scope: "global" | "workspace"; type?: string; name: string; description?: string; replaced?: boolean };
+  /**
    * §12 (2026-08-30): a detached delegation's run id.
    *
    * Live cards read it off `result.details.asyncId`; a RESTORED card cannot,
@@ -230,6 +238,15 @@ const ICON_PATHS: Record<IconKind, React.JSX.Element> = {
     <>
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </>
+  ),
+  // §33: two interlocking rings — the knot you tie to remember something. Chosen over a brain
+  // (every product's memory icon, and it says "AI" where §19 pins that word to one use) and
+  // over a bookmark (too close to the book that already means Skills).
+  memory: (
+    <>
+      <circle cx="8.5" cy="12" r="5" />
+      <circle cx="15.5" cy="12" r="5" />
     </>
   ),
 };

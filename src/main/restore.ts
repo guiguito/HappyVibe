@@ -53,6 +53,11 @@ export type RestoreItem =
           session files, so a reopened card shows the live run's numbers. Absent
           for every non-delegation card and for runs whose files are gone. */
       subagentCost?: LedgerTotal;
+      /** §33: what a memory card shows when expanded, and what its Forget button needs. Carried
+          STRUCTURALLY from the tool result's `details` — the flattened text says the slug in
+          prose, and a card rebuilt by parsing prose is a card that breaks on a copy edit.
+          Absent for every non-memory card. */
+      memory?: { scope: "global" | "workspace"; type?: string; name: string; description?: string; replaced?: boolean };
     }
   // §23: the plan card, emitted at its plan_complete position (not the bottom).
   // planPath comes from the plan_complete tool RESULT; status/done/total are
@@ -75,7 +80,16 @@ export interface RawMessage {
    * real session file: the text block spells the id inside `[brackets]` but the
    * structured field is right here, so it is read rather than parsed back out.
    */
-  details?: { asyncId?: unknown };
+  details?: {
+    asyncId?: unknown;
+    /** §33: the memory card's fields. Same reasoning as asyncId directly above — read from the
+     *  structured sibling, never parsed back out of the text. */
+    scope?: unknown;
+    type?: unknown;
+    name?: unknown;
+    description?: unknown;
+    replaced?: unknown;
+  };
   /**
    * Round 15: epoch ms, written by Pi on every message entry. Measured on a real
    * session file — `entry.timestamp` is an ISO string but `entry.message
@@ -283,6 +297,19 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
         // (see RawMessage.details). Without it a reopened delegation card has no
         // id to inspect its child with, and expands to an empty panel.
         if (typeof m.details?.asyncId === "string" && m.details.asyncId) tool.asyncId = m.details.asyncId;
+        // §33: the same lift for a memory card. Gated on the TOOL NAME rather than on the
+        // fields, because `name` and `type` are common words that other tools' details could
+        // carry — this must never turn some future tool's result into a memory card.
+        if (m.toolName?.startsWith("memory_") && typeof m.details?.name === "string" && m.details.name) {
+          const sc = m.details.scope === "workspace" ? "workspace" : "global";
+          tool.memory = {
+            scope: sc,
+            name: m.details.name,
+            ...(typeof m.details.type === "string" ? { type: m.details.type } : {}),
+            ...(typeof m.details.description === "string" ? { description: m.details.description } : {}),
+            ...(typeof m.details.replaced === "boolean" ? { replaced: m.details.replaced } : {}),
+          };
+        }
         // §7 round 12: a screenshot comes back HERE — 7 of the 8 image blocks
         // found in real session files were tool results.
         Object.assign(tool, imagesOf(m.content, budget));

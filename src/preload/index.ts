@@ -387,6 +387,20 @@ contextBridge.exposeInMainWorld("hv", {
   // list returns {global, workspace}; approve/enable/activate apply live via
   // respawn-resume. Invocation cards arrive as hv.skill notifies through
   // onUiRequest; on-disk / config changes push hv:skills-changed.
+  // §33 Memory — the page, the workspace section and the card's Forget button.
+  memoryList: (scope: "global" | "workspace", workspaceId?: string | null) => ipcRenderer.invoke("hv:memory-list", scope, workspaceId ?? null),
+  memoryRead: (scope: "global" | "workspace", workspaceId: string | null, slug: string) => ipcRenderer.invoke("hv:memory-read", scope, workspaceId, slug),
+  memoryEdit: (scope: "global" | "workspace", workspaceId: string | null, slug: string, patch: { description?: string; content?: string }) =>
+    ipcRenderer.invoke("hv:memory-edit", scope, workspaceId, slug, patch),
+  memoryForget: (scope: "global" | "workspace", workspaceId: string | null, slug: string) => ipcRenderer.invoke("hv:memory-forget", scope, workspaceId, slug),
+  memoryForgetAll: (scope: "global" | "workspace", workspaceId: string | null) => ipcRenderer.invoke("hv:memory-forget-all", scope, workspaceId),
+  memoryGetActive: (workspaceId: string) => ipcRenderer.invoke("hv:memory-get-active", workspaceId),
+  memorySetActive: (workspaceId: string, on: boolean) => ipcRenderer.invoke("hv:memory-set-active", workspaceId, on),
+  memoryHousekeeping: () => ipcRenderer.invoke("hv:memory-housekeeping"),
+  memoryForgetFolder: (key: string) => ipcRenderer.invoke("hv:memory-forget-folder", key),
+  memoryImportScan: () => ipcRenderer.invoke("hv:memory-import-scan"),
+  memoryImport: (files: string[], scope: "global" | "workspace", workspaceId: string | null) =>
+    ipcRenderer.invoke("hv:memory-import", files, scope, workspaceId),
   skillsList: (workspaceId?: string) => ipcRenderer.invoke("hv:skills-list", workspaceId),
   skillsRead: (id: string) => ipcRenderer.invoke("hv:skills-read", id),
   skillsApprove: (id: string) => ipcRenderer.invoke("hv:skills-approve", id),

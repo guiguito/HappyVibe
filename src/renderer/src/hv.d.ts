@@ -301,6 +301,56 @@ interface HvTool {
 }
 
 /** §14 — mirrors SkillView in src/main/skills/view.ts (from hv:skills-list). */
+/** §33 Memory. */
+type HvMemoryScope = "global" | "workspace";
+
+interface HvMemorySummary {
+  slug: string;
+  name: string;
+  description: string;
+  type: "user" | "feedback" | "project" | "reference";
+  modified?: string;
+  originSessionId?: string;
+  bytes: number;
+}
+
+interface HvMemoryList {
+  items: HvMemorySummary[];
+  /** The whole scope's per-turn index weight, the same estimate the context panel shows. */
+  tokens: number;
+  /** Where the files are, shown on the page. null when the scope is unavailable. */
+  dir: string | null;
+  /** false = memory is off globally, or off for this workspace. */
+  available: boolean;
+  cap?: number;
+}
+
+interface HvMemoryDoc {
+  name: string;
+  description: string;
+  type: "user" | "feedback" | "project" | "reference";
+  originSessionId?: string;
+  modified?: string;
+  body: string;
+  /** Resolved from originSessionId by main — null once a human has edited it. */
+  sessionTitle: string | null;
+}
+
+interface HvMemoryImportScan {
+  projects: Array<{
+    key: string;
+    dir: string;
+    guessedPath: string;
+    memories: Array<{ file: string; slug: string; name: string; description: string; type: string }>;
+    skipped: Array<{ file: string; reason: string }>;
+  }>;
+}
+
+interface HvMemoryImportResult {
+  imported: string[];
+  skipped: Array<{ file: string; reason: string }>;
+}
+
 interface HvSkillView {
   id: string;
   name: string;
@@ -909,6 +959,23 @@ interface HvApi {
   onVoiceStatusChanged(cb: (s: HvVoiceStatus) => void): () => void;
 
   // §14 Skills (additive)
+  // §33 Memory.
+  memoryList(scope: HvMemoryScope, workspaceId?: string | null): Promise<HvMemoryList>;
+  memoryRead(scope: HvMemoryScope, workspaceId: string | null, slug: string): Promise<HvMemoryDoc | null>;
+  memoryEdit(
+    scope: HvMemoryScope,
+    workspaceId: string | null,
+    slug: string,
+    patch: { description?: string; content?: string },
+  ): Promise<{ ok: true; slug: string; replaced: boolean } | { ok: false; reason: string }>;
+  memoryForget(scope: HvMemoryScope, workspaceId: string | null, slug: string): Promise<boolean>;
+  memoryForgetAll(scope: HvMemoryScope, workspaceId: string | null): Promise<number>;
+  memoryGetActive(workspaceId: string): Promise<boolean>;
+  memorySetActive(workspaceId: string, on: boolean): Promise<boolean>;
+  memoryHousekeeping(): Promise<{ folders: Array<{ key: string; count: number }> }>;
+  memoryForgetFolder(key: string): Promise<boolean>;
+  memoryImportScan(): Promise<HvMemoryImportScan>;
+  memoryImport(files: string[], scope: HvMemoryScope, workspaceId: string | null): Promise<HvMemoryImportResult>;
   skillsList(workspaceId?: string): Promise<HvSkillsList>;
   skillsRead(id: string): Promise<HvSkillDetail>;
   skillsApprove(id: string): Promise<void>;
