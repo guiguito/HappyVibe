@@ -122,9 +122,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   2 runs in 3 on an 8 s bound). If it never arrives, it's the prose-turn class above — re-ask.
 - Contract tests are the Pi upgrade gate: any pi/pi-subagents pin bump must pass them.
   Wire shapes are documented in docs/validation/d1.md — new bridge shapes go there too.
-- **You cannot force a tool call by passing `toolChoice` — it is silently DISCARDED.** pi-coding-agent
-  only calls `streamSimple`, whose `buildBaseOptions` allowlist (19 fields) omits it; no throw, no
-  warning, and `toolChoice` IS a real typed pi-ai option elsewhere, so this looks like it works.
+- **You cannot force a tool call by passing `toolChoice` — it is silently DISCARDED. HALF of this
+  is stale from Pi 0.85.0; re-measure before acting on tc1.md.** The original finding was that
+  pi-coding-agent only calls `streamSimple`, whose `buildBaseOptions` allowlist (19 fields) omits it;
+  no throw, no warning, and `toolChoice` IS a real typed pi-ai option elsewhere, so this looks like
+  it works. **At 0.85.0 `buildBaseOptions` STILL omits it (verified, still 19 fields) — but the
+  per-provider `streamSimple` implementations now read `options?.toolChoice` directly, bypassing the
+  allowlist entirely** (0.84.3, "provider-neutral `toolChoice` support to simple stream requests").
+  Measured on OUR route: `pi-ai/dist/api/openai-completions.js:537` forwards it and `:626` sets
+  `params.tool_choice`, so it reaches the wire for OpenRouter/DeepSeek. What was NOT re-measured is
+  the half that mattered: whether HappyVibe has any route to SET it (there was no CLI flag and no
+  RPC param). So the conclusion "the only route in is a `before_provider_request` hook" may still
+  hold for a different reason than tc1.md gives — the allowlist argument is dead, the absence of a
+  setter is unverified at this pin. Re-measure both before re-opening this.
   There is also no CLI flag and no RPC param for it. The only route in is a `before_provider_request`
   extension hook, whose return value replaces the raw request body. Full citations + the three
   constraints (hook fails OPEN, arm-per-turn or `agent_end` hangs, keep `askUntil`) in
@@ -142,14 +152,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   design (`rpc.ts:76` "never a run or async identifier") while `/hv-subagent-list` needs
   `{runId, agent, asyncDir}`. Gate: `tests/pi-subagents-contract.test.ts` (key-free) pins the
   relative form, the exports map, and the three fields. Bumped 0.34.0 → 0.40.0 on 2026-08-02,
-  0.40.0 → 0.50.0 on 2026-08-17, 0.53.0 → 0.58.0 on 2026-08-28. At 0.58 the map lists **13** subpaths
+  0.40.0 → 0.50.0 on 2026-08-17, 0.53.0 → 0.58.0 on 2026-08-28, 0.58.0 → 0.64.0 on 2026-09-04
+  (0.65.0 deliberately skipped — see the native-AgentSession entry below). At 0.58 the map lists **13** subpaths
   (11 at 0.50) and `./shared-types`
   looks like ASYNC_DIR's home but re-exports TYPES ONLY — re-derive, never hand-list.
 - **Two PRD §12 invariants are enforced by matching an upstream NAME or SHAPE, and 0.40.0 broke
   both silently — no test failed.** (1) The "never block on a delegation" guard matched the literal
-  `"wait"`; 0.35.0 renamed the tool `subagent_wait` with no alias. Both names now live in
+  `"wait"`; 0.35.0 renamed the tool `subagent_wait` with no alias, and **0.61.0 renamed it again to
+  `bg_wait`** ("Remove the deprecated compatibility wait alias", #1729) — also with no alias, so
+  assume a THIRD rename rather than that this has settled. All three names live in
   `WAIT_TOOLS`/`isWaitTool` (hv-rules.ts), imported by the bridge (blocks the call) AND the renderer
-  (hides the card) — never re-inline a literal. (2) The subagent card read the child transcript from
+  (hides the card) — never re-inline a literal. The contract test derives the name upstream actually
+  registers from its own `src/runs/background/wait-tool.ts` and asserts it is in the set; that
+  tripwire is the ONLY thing that caught 0.61, so never weaken it to a hand-listed name. (2) The subagent card read the child transcript from
   `tool_execution_update…results[].messages`; 0.40.0 sets it `undefined` and substitutes compact
   `toolCalls` (same commit as the deep-fan-out protocol-limit fix). Renderer maps `toolCalls` → the
   same rows and renders `finalOutput`. Both pinned in `tests/pi-subagents-contract.test.ts` +
@@ -349,7 +364,8 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   probe extension before believing anything else.
   Sharpened 2026-08-19, measured in Pi's own dist: the RPC uiContext is real PER METHOD, not
   wholesale. `input`/`select`/`setTitle`/`setEditorText` emit `extension_ui_request` (the bridge's
-  channel), but `rpc-mode.js:152` is `async custom() { return undefined; }` — so an awaited
+  channel), but `rpc-mode.js:152` is `async custom() { return undefined; }` (the file moved to
+  `dist/modes/rpc/rpc-mode.js` at Pi 0.85.0 and is still line 152) — so an awaited
   `ctx.ui.custom()` panel never settles. pi-mcp-adapter 2.26.1 (#365) fixed exactly that class of
   hang by adding its own discriminator, `ctx.hasUI && ctx.mode === "tui"` (`isTuiMode` in init.ts,
   `canRenderPanel` in commands.ts) — i.e. upstream now agrees with this entry. That makes the
@@ -399,6 +415,28 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   Schema was byte-identical across 1.1.38/1.3.7 for all seven constructors we use, and typebox
   attaches no Symbol-keyed metadata, so there is no dual-package hazard — the alignment is for
   future-proofing, not a live bug.)
+
+- **Which FILE is "the Pi CLI" is pin-tracked, and it is `dist/bundle/cli.js` — NOT `dist/cli.js`.**
+  Pi moved its own `bin.pi` to the bundled runtime at 0.84.3 and by 0.85.0 the modular entry does
+  not run at all: `dist/cli.js` statically imports `dist/experimental/server.js`, which imports
+  `@earendil-works/pi-server` — a package Pi PUBLISHES but declares in **no** dependency field
+  (`dependencies`, `peer`, `optional`: all absent). Measured: `node dist/cli.js --version` dies with
+  `ERR_MODULE_NOT_FOUND`. So `pi-runtime` declares that dep itself, pinned lockstep to Pi like
+  `pi-tui`. **The blast radius is bigger than the CLI**, which is what makes this hard to read from
+  the symptom: `dist/index.js` — the `.` export, i.e. Pi's public library — re-exports `main.js`,
+  which imports the same file, so ANY vendored extension importing Pi's library at runtime dies too.
+  pi-subagents does (`src/extension/index.ts:20` imports `keyText`, a real value), so the break
+  arrives as **18 test files red at once** with the real cause buried one level down in
+  `[pi:stderr]` — the same "extension LOAD failure looks like a mystery" shape as the exports-map
+  entry above. **Two hardcoded copies of the path existed**: `PI_CLI_RELPATH` (spawn.ts, serving the
+  session spawn plus all three one-shot callers) and `pi-runtime/bin/pi-node.sh` (the children-only
+  §12 child-guard route), so the parent and its sub-agents could break independently.
+  `tests/pi-cli-entry.test.ts` derives the entry from the installed package's own `bin.pi`, BOOTS it
+  rather than stat-ing it (the whole failure was a file that resolves on disk and dies on import),
+  pins the two paths together, and asserts Pi still does NOT declare pi-server — so that assertion
+  INVERTS when upstream fixes it and the workaround gets removed instead of carried. Free side
+  benefit, measured on our own suite: the bundled entry boots faster, 152 s → 42 s for the same
+  264 files.
 
 - **A pin bump can now fail TYPECHECK, with errors pointing under `node_modules` — never patch
   vendored source.** `tsconfig.extensions.json` typechecks a slice of pi-subagents' raw `.ts`
@@ -463,7 +501,12 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   through `<Bundle> Helper (Plugin).app` (LSUIElement=1) — never raw `process.execPath`.
 - Built-in Pi tools cannot take extra schema params (stripped before tool_call) — `intent`
   goes on registered tools only; built-ins get derived labels (toolLabel.ts / describeCommand.ts).
-- Pi has NO dequeue RPC; abort preserves the queue.
+- **Pi HAS a dequeue RPC from 0.84.4 — `clear_queue`.** This line read "Pi has NO dequeue RPC" for
+  the app's whole life and was true until then. Verified at 0.85.0: `dist/modes/rpc/rpc-mode.js:333`
+  handles `clear_queue` by calling `session.clearQueue()`, and it is in the typed RPC surface
+  (`rpc-types.d.ts`). Abort still preserves the queue — that part is unchanged — so a user who
+  aborts and wants the queue gone now has a mechanism the app does not yet expose. Nothing calls it
+  (`grep -rn clear_queue src/` returns nothing); wiring it is a product decision, not a pin fix.
 - Context removal: completed turns only (removing the in-flight pair causes a runaway
   re-execution loop); toolCall/toolResult always removed atomically.
 - `contextUsage.tokens` is null right after compaction; `stats.tokens` is cumulative-since-
@@ -492,7 +535,8 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   forever, while a real edit inside the 1 ms tolerance read as unedited and got clobbered. Legacy
   `{version, installedMtime}` stamps can't prove authorship, so they are repaired towards the
   bundle leaving a one-time `<agent>.md.bak`. Pinned by `tests/builtin-agents-uninstall.test.ts`.
-- **`yaml` is a ROOT dep pinned to what Pi depends on (2.8.3) — move it with the Pi pin.** Same
+- **`yaml` is a ROOT dep pinned to what Pi depends on (2.9.0 at Pi 0.85.0; verify, do not trust
+  this number — it read 2.8.3 here for two pins after Pi had moved on) — move it with the Pi pin.** Same
   relationship as pi-runtime's typebox, for a sharper reason: Pi decides what loads, and Pi's
   frontmatter reader IS `yaml.parse` (`dist/utils/frontmatter.js`). Both `parseSkillFrontmatter`
   (skills/discovery.ts) and `parsePromptTemplateFrontmatter` (promptTemplates/discovery.ts) hand-rolled
