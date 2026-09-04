@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { CONFINED_WRITE_TOOLS, escapesWorkspace } from "../pi-runtime/extensions/hv-child-guard";
+import { resolvePiSpawn } from "../src/main/pi/spawn";
 
 /**
  * CONTRACT TEST — PRD §12, key-free.
@@ -103,6 +104,39 @@ describe("a child write is confined to the workspace", () => {
     }
   });
 
+  it("ALLOWS pi-subagents' own per-run artifacts dir when spawn.ts hands it over", () => {
+    // Upstream calls this path "authoritative for this run. Ignore any other
+    // output path", and it is outside the workspace by design. Measured in the
+    // running app: without the exemption the child's write was DENIED and it
+    // burned a turn recovering. Main creates and sweeps this location, so it is
+    // app state, not somewhere the agent chose.
+    const artifacts = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art-")));
+    try {
+      const out = path.join(artifacts, "outputs", "run-1", "context.md");
+      expect(escapesWorkspace("write", { path: out }, ws, [artifacts])).toBeUndefined();
+      // …and only that subtree. A sibling of it is still outside.
+      expect(escapesWorkspace("write", { path: `${artifacts}-evil/x.md` }, ws, [artifacts])).toBeTruthy();
+      // Unset ⇒ no exemption. Absent config must fail SAFE, i.e. stay confined.
+      expect(escapesWorkspace("write", { path: out }, ws, [])).toBeTruthy();
+      expect(escapesWorkspace("write", { path: out }, ws)).toBeTruthy();
+      // Junk roots are ignored rather than widening anything.
+      expect(escapesWorkspace("write", { path: out }, ws, ["", undefined as unknown as string])).toBeTruthy();
+    } finally {
+      fs.rmSync(artifacts, { recursive: true, force: true });
+    }
+  });
+
+  it("still refuses the TASK tempdir even with the artifacts root allowed", () => {
+    // The two exemptions must not blur: the task dir is readable, never writable.
+    const artifacts = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art2-")));
+    try {
+      const temp = path.join(os.tmpdir(), "pi-subagent-TDh4HY", "ok.txt");
+      expect(escapesWorkspace("write", { path: temp }, ws, [artifacts])).toBeTruthy();
+    } finally {
+      fs.rmSync(artifacts, { recursive: true, force: true });
+    }
+  });
+
   it("covers edit exactly like write", () => {
     expect(escapesWorkspace("edit", { path: "ok.txt", edits: [] }, ws)).toBeUndefined();
     expect(escapesWorkspace("edit", { path: "/etc/hosts", edits: [] }, ws)).toBeTruthy();
@@ -145,5 +179,21 @@ describe("the confined set is derived from Pi's own tool schemas", () => {
       .filter((f) => /path:\s*Type\.String\(/.test(src(f)))
       .map((f) => f.replace(/\.js$/, ""));
     expect(writers.sort()).toEqual([...CONFINED_WRITE_TOOLS].sort());
+  });
+});
+
+describe("spawn.ts hands the artifacts root to the guard", () => {
+  it("sets HV_ARTIFACTS_DIR under the session dir, where upstream actually writes", () => {
+    // Observed on a real delegation:
+    //   <sessionDir>/subagent-artifacts/outputs/<runId>/context.md
+    // so the root has to be <sessionDir>/subagent-artifacts and nothing shorter —
+    // handing over the sessionDir itself would exempt every session file too.
+    const spec = resolvePiSpawn("/ws", "/sessions", path.join(__dirname, "..", "pi-runtime"), {});
+    expect(spec.env?.HV_ARTIFACTS_DIR).toBe(path.join("/sessions", "subagent-artifacts"));
+  });
+
+  it("is always set, so the exemption never depends on an optional flag", () => {
+    const spec = resolvePiSpawn("/ws", "/sessions", path.join(__dirname, "..", "pi-runtime"), { bypass: true });
+    expect(spec.env?.HV_ARTIFACTS_DIR).toBeTruthy();
   });
 });

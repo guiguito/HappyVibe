@@ -123,14 +123,38 @@ export function escapesWorkspace(
   tool: string,
   input: Record<string, unknown>,
   workspace: string,
+  alsoAllowed: readonly string[] = [],
 ): string | undefined {
   if (!CONFINED_WRITE_TOOLS.has(tool)) return undefined;
   const p = input.path;
   if (typeof p !== "string" || p === "") return undefined;
   const target = resolveThroughLinks(path.resolve(workspace, p));
-  const root = resolveThroughLinks(path.resolve(workspace));
-  if (target === root || target.startsWith(root + path.sep)) return undefined;
+  const roots = [workspace, ...alsoAllowed]
+    .filter((r) => typeof r === "string" && r !== "")
+    .map((r) => resolveThroughLinks(path.resolve(r)));
+  for (const root of roots) {
+    if (target === root || target.startsWith(root + path.sep)) return undefined;
+  }
   return target;
+}
+
+/**
+ * Audit summary: the acted-on path first, then the rest, capped at 300.
+ *
+ * Exported for the contract test. Never reorders anything else — the row stays
+ * factual JSON, this only guarantees the path survives the cap.
+ */
+export function summarise(input: Record<string, unknown>, cap = 300): string {
+  const p = input.path;
+  if (typeof p !== "string" || p === "") return JSON.stringify(input).slice(0, cap);
+  const rest = { ...input };
+  delete rest.path;
+  const head = JSON.stringify({ path: p });
+  if (head.length >= cap) return head.slice(0, cap);
+  const tail = JSON.stringify(rest);
+  // Splice the two objects back into one, so the row is still parseable JSON
+  // whenever it fits, and a truncated one still begins with the path.
+  return (tail === "{}" ? head : `${head.slice(0, -1)},${tail.slice(1)}`).slice(0, cap);
 }
 
 export default function hvChildGuard(pi: {
@@ -169,6 +193,11 @@ export default function hvChildGuard(pi: {
   };
 
   const taskFile = taskFileFromArgv(process.argv);
+  // pi-subagents' own per-run output location, handed over by spawn.ts. It is
+  // outside the workspace by design and main both creates and sweeps it, so it
+  // is app state rather than a place the agent chose. Unset ⇒ no exemption.
+  const artifactsDir = process.env.HV_ARTIFACTS_DIR;
+  const writeRoots = artifactsDir ? [artifactsDir] : [];
 
   pi.on("tool_call", (event) => {
     const tool = typeof event.toolName === "string" ? event.toolName : "tool";
@@ -185,7 +214,8 @@ export default function hvChildGuard(pi: {
     // reports what confinement did. Yields to bypass, like every other gate
     // here — "bypass means bypass" (PRD §10), and a bypassed child already has
     // bash.
-    const escaped = bypass || d.action === "deny" ? undefined : escapesWorkspace(tool, input, workspace);
+    const escaped =
+      bypass || d.action === "deny" ? undefined : escapesWorkspace(tool, input, workspace, writeRoots);
     record({
       ts: new Date().toISOString(),
       runId,
@@ -195,7 +225,14 @@ export default function hvChildGuard(pi: {
       source: bypass ? "bypass" : "child",
       // Factual, and capped: the parent's audit summary convention (§13 — a user
       // reviews what RAN, never the model's own words about it).
-      summary: JSON.stringify(input).slice(0, 300),
+      //
+      // `path` is hoisted to the FRONT. The cap is 300 chars and a write's
+      // `content` can be thousands, so a plain JSON.stringify put the one field
+      // a reviewer needs — WHICH FILE — past the cut every time. Observed on a
+      // real delegation: two write rows, one allowed and one denied, and neither
+      // showed a path. An audit row that cannot say what it acted on is not an
+      // audit row.
+      summary: summarise(input),
     });
     if (escaped) {
       // Names the workspace, not just the refusal. Pi feeds a block reason back

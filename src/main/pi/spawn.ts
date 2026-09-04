@@ -241,6 +241,16 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
       ...(opts.childAuditDir ? { HV_CHILD_AUDIT_DIR: opts.childAuditDir } : {}),
+      // pi-subagents tells every child to write its output to
+      // `<sessionDir>/subagent-artifacts/outputs/<runId>/context.md` and calls
+      // that path "authoritative for this run. Ignore any other output path".
+      // It is outside the workspace, so hv-child-guard's confinement refused it
+      // and the child burned a turn recovering (measured in the running app).
+      // Handed over explicitly rather than derived inside the guard: main owns
+      // this location, already sweeps it on session delete, and a guard that
+      // guessed it would be guessing about a permission boundary. Absent ⇒ no
+      // exemption, which is the confined behaviour, so it fails SAFE.
+      HV_ARTIFACTS_DIR: path.join(sessionDir, "subagent-artifacts"),
       ...(opts.builtinTools
         ? { HV_BUILTINS: JSON.stringify({
             plan: opts.builtinTools.plan,
