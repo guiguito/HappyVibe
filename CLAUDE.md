@@ -1026,6 +1026,49 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   exists so the negative assertions can't pass vacuously). `--no-context-files` is deliberately NOT
   passed (AGENTS.md loading is wanted). See docs/validation/sk1.md.
 
+- **A full-width `absolute` strip is what blanks a browser pane, and the cross divider was one.**
+  §7 round 11's second-level pane divider was drawn `left-0 right-0` across the WHOLE grid as
+  soon as *either* half was sub-split — so splitting a session on the left drew a 10px strip
+  across a browser on the right, `paneIsCovered` found it overlapping, and the page hid.
+  Reported as *"the browser content disappears and comes back when I unsplit"*.
+  `crossDividerSpans` (tabs.ts) now emits **one strip per sub-split half**, both driven by the
+  same shared `sizes.cross`. The lesson generalises and is the thing to remember: **the coverage
+  check has no false positives, only honest ones** — when a pane goes blank, find the
+  `absolute`/`fixed` rectangle that is overlapping it rather than loosening the check. Pinned by
+  `tests/pane-dividers.test.ts`.
+- **`--append-system-prompt` REPLACES Pi's discovery of `APPEND_SYSTEM.md`, it does not add to
+  it**, and `resolvePromptInput` returns a **non-existent path VERBATIM**. Both fail silently, in
+  opposite directions: pass the identity flag alone and the user's own additions stop applying;
+  pass their file unconditionally and a filesystem path lands in the system prompt. So spawn.ts
+  passes the flag TWICE — `HV_IDENTITY` first, then the global `APPEND_SYSTEM.md` and only when
+  `existsSync` says so (Pi joins the sources with `\n\n` in argv order, so the user's words are
+  last and win). `tests/identity-prompt.test.ts` pins both cases AND the two upstream behaviours,
+  so a pin bump that makes the flag additive fails there. Consequence, deliberate (PRD §16 round
+  21): Pi no longer discovers a workspace `.pi/APPEND_SYSTEM.md`, which used to *replace* the
+  global additions with nothing in the UI saying so — a cloned repo can no longer rewrite the
+  system prompt.
+- **A dialog portalled into a pane must fall back to the viewport when that pane is HIDDEN.**
+  A chat pane wrapper is `hidden` whenever the user is on a settings page, and a permission
+  prompt rendered inside a hidden element is invisible while the agent waits forever — prompts
+  never time out by design. `dialogHost` (paneDialog.ts) therefore returns null for
+  `offsetParent === null` or a zero-rect element, and only the two SESSION dialogs (permission,
+  ask_user — the ones carrying a `sessionId`) are scoped at all; an app-level dialog has no pane
+  to sit over. The pane wrapper needs `relative` or an `absolute` dialog resolves against some
+  other ancestor. Pinned by `tests/pane-dialog.test.ts`.
+- **The AGENTS.md draft is written by MAIN at run completion, and the reason is the async
+  default.** The dialog used to listen for `tool_execution_end` + `traceFromEnd(...).results`,
+  but delegations are async by default and an async dispatch carries a receipt with **no
+  `results`** — so nothing matched, `agent_end` then fired, and the user got *"No draft was
+  produced this turn"* while the run was still going. Asked for in chat it was worse: the agent's
+  own contract says *the app writes them* and the only listener was a dialog a chat user never
+  opened. Main now writes in the `stage === "complete"` branch (ipc.ts), which is the one moment
+  it holds both halves — `delegatedAgentByRun` (runId→agent) and `childSessionsByRun` (the
+  child's session file) — and it reads the answer from **that session file**, the only
+  untruncated source: upstream caps the completion payload at 1,000 chars, the bridge caps the
+  notify `summary` at 500, and pi-subagents' inspect RPC caps `finalOutput` at 8,000. It must run
+  BEFORE `childSessionsByRun.delete`. `parseAgentsMdOutput` moved to `src/main/agentsMd.ts` with
+  it; the maker stays read-only. Pinned by `tests/agents-md-capture.test.ts`.
+
 ## Releasing (PRD §30)
 - **`package.json` `version` is the ONLY version.** electron-builder derives `Info.plist` from it,
   the renderer gets it as a build-time constant, the tag is `v<version>`. Never a second copy.
