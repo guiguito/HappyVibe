@@ -55,6 +55,29 @@ describe("mcp adapter auth format contract", () => {
     expect(src).toMatch(/TEST_AUTH_STORE_ENV\] === 'memory'/);
   });
 
+  it("moves the MCP SDK WITH the adapter — main and the agent must speak one version", () => {
+    // Same relationship as typebox/yaml to Pi: the adapter DECIDES the version,
+    // main follows. Main's own client (mcpClient.ts, mcpOAuth.ts) speaks to the
+    // same servers the agent does and shares the credential shapes in
+    // shared/auth.js, so two SDK majors either side of one keychain entry is the
+    // drift this file exists to catch — and it had already happened once,
+    // silently: the root pin sat at 1.29.0 while the vendored adapter resolved
+    // 1.30.0, with nothing failing. DERIVED from the adapter's own tree, never a
+    // hand-typed number, so a pin bump fails here instead of drifting.
+    const root = JSON.parse(
+      readFileSync(join(__dirname, "..", "package.json"), "utf-8"),
+    ) as { dependencies: Record<string, string> };
+    const vendored = JSON.parse(
+      readFileSync(join(__dirname, "..", "pi-runtime", "package-lock.json"), "utf-8"),
+    ) as { packages: Record<string, { version: string }> };
+
+    const theirs = vendored.packages["node_modules/@modelcontextprotocol/sdk"]?.version;
+    expect(theirs, "the adapter's SDK is not in pi-runtime's lockfile").toBeTruthy();
+    // Exact, not a range: a caret here would let npm move main's SDK under a
+    // shipped app while the agent stayed put.
+    expect(root.dependencies["@modelcontextprotocol/sdk"]).toBe(theirs);
+  });
+
   it("exposes the pi-mcp-adapter/oauth subpath main depends on", () => {
     const pkg = JSON.parse(readFileSync(join(ADAPTER, "package.json"), "utf-8")) as {
       exports?: Record<string, unknown>;
