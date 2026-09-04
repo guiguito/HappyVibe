@@ -34,6 +34,11 @@ export const HOWTO_COPY = {
     body:
       "Two kinds of number live here. The gauge is measured — it is what the model itself reported for the last turn. Everything in the breakdown is estimated, at roughly one token per four characters, because nothing reports a per-item cost. Right after the conversation is compacted there is no measured figure at all, so the gauge says “measuring…” rather than showing you a zero it would have made up.",
   },
+  webTools: {
+    title: "How web tools work",
+    body:
+      "Four tools let the agent use the public web as text. Search finds pages, Read returns one page as clean markdown, Site map lists a site's URLs, and Read a site reads up to 30 pages in one go. Long pages come back in pieces, and the card tells you how much of the page you got. The pages are fetched by a web service, not by your computer, so sites see the service's address rather than yours. With the default service that is a server HappyVibe operates, which can see the URLs and the searches the agent sends — point the app at your own service below if that matters to you. Reading a new site asks you first, using the same rules as the agent's browser: “Allow for this session”, or a rule for that site, covers both from then on. The Allow button on a blocked browser page is narrower — it clears that one page's site for that browser pane only. Everything a page returns is marked as untrusted, so words on a web page can never pose as instructions from you. What these tools cannot do: take screenshots, click anything, or open pages that need you to be signed in — the agent's browser does all three. And there is no way to ask for recent results only.",
+  },
   instructionFiles: {
     title: "How instruction files combine",
     body:

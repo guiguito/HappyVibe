@@ -22,6 +22,8 @@ interface Builtins {
   intent: boolean;
   /** §28: the grouped Browser entry — all ten tools or none. */
   browser: boolean;
+  /** §32: the grouped Web tools entry — all four tools or none. */
+  web: boolean;
 }
 
 /** Plan mode's row. The prompt panel and the append box are PromptRow's, shared
@@ -277,6 +279,157 @@ function BrowserRow({
   );
 }
 
+/**
+ * §32's row. The **Web service** sub-block lives here because this is where the
+ * web tools are DISCUSSED — the §28 precedent, where Clear browsing data sits
+ * beside the browser switch for the same reason.
+ *
+ * It is also the one control on this page that does NOT need a respawn: main
+ * reads the service per call, because the Pi child never sees the URL or the
+ * key. The row says so, since every other control here discloses the opposite.
+ *
+ * The word "Firecrawl" appears exactly once in this file, in the helper text
+ * under the custom URL, and only once "Your own" is chosen — §32's vocabulary
+ * rule, with its one deliberate exception for the person who has to know what
+ * to run.
+ */
+function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }): React.JSX.Element {
+  const [svc, setSvc] = useState<{ mode: "default" | "custom"; baseUrl?: string; hasKey: boolean } | null>(null);
+  const [url, setUrl] = useState("");
+  const [key, setKey] = useState("");
+  const [test, setTest] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    void window.hv.webServiceGet().then((s) => {
+      setSvc(s);
+      setUrl(s.baseUrl ?? "");
+    });
+  }, []);
+
+  const mode = svc?.mode ?? "default";
+  const setMode = (m: "default" | "custom"): void => {
+    setSaved(false);
+    setTest(null);
+    void window.hv.webServiceSet({ mode: m }).then(() => setSvc((s) => (s ? { ...s, mode: m } : s)));
+  };
+  // "Your own" with nothing typed resolves to HappyVibe's service, by design —
+  // a half-saved setting must not break every web tool. But that makes both
+  // buttons LIE if they act on it: Save would report "Saved." for a service
+  // that is not yours, and Test would answer "Connected." about the default
+  // one. So the row refuses instead, which is the only place that knows the
+  // user picked "Your own" and typed nothing.
+  const missingUrl = mode === "custom" && !url.trim();
+
+  const save = (): void => {
+    setSaved(false);
+    setTest(null);
+    if (missingUrl) {
+      setTest("Enter the address of your service first.");
+      return;
+    }
+    void window.hv
+      .webServiceSet({ mode: "custom", baseUrl: url, ...(key ? { key } : {}) })
+      .then(() => {
+        setSaved(true);
+        // Never keep a secret in renderer state after it is stored.
+        setKey("");
+        setSvc((s) => (s ? { ...s, baseUrl: url, hasKey: s.hasKey || Boolean(key) } : s));
+      });
+  };
+  const runTest = (): void => {
+    setSaved(false);
+    if (missingUrl) {
+      setTest("Enter the address of your service first.");
+      return;
+    }
+    setTest("Testing…");
+    // An unsaved URL is testable on purpose: check before committing.
+    void window.hv
+      .webServiceTest(mode === "custom" ? { baseUrl: url, ...(key ? { key } : {}) } : {})
+      .then((r) => setTest(r.ok ? "Connected." : r.reason));
+  };
+
+  return (
+    <div className="border-b border-line last:border-b-0 px-4 py-3">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <span className="font-bold block">Web tools — 4 tools</span>
+          <span className="text-xs text-ink-soft">
+            Lets the agent search the web and read any public page as clean text, list a site&apos;s pages, or read a
+            whole section of one. Reading a new site asks you first, under the same rules as the agent&apos;s browser.
+            Turning this off saves the context cost of four tool schemas.
+          </span>
+          <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
+        </div>
+        <TogglePill on={on} onClick={() => onChange(!on)} />
+      </div>
+      {/* ponytail: native <details> — the HowItWorks / McpCatalogSection idiom,
+          no disclosure state to manage. */}
+      <details className="mt-2">
+        <summary className="cursor-pointer select-none text-xs font-bold text-ink-soft hover:text-ink">
+          Web service
+        </summary>
+        <div className="mt-2 space-y-2 text-xs">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" checked={mode === "default"} onChange={() => setMode("default")} />
+            HappyVibe&apos;s service
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" checked={mode === "custom"} onChange={() => setMode("custom")} />
+            Your own
+          </label>
+          {mode === "custom" && (
+            <div className="pl-5 space-y-1.5">
+              <input
+                className="w-full rounded-lg border-2 border-line bg-paper px-2 py-1"
+                placeholder="API URL"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                spellCheck={false}
+              />
+              <input
+                className="w-full rounded-lg border-2 border-line bg-paper px-2 py-1"
+                type="password"
+                placeholder={svc?.hasKey ? "API key (saved — type to replace)" : "API key (optional)"}
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+              />
+              <p className="text-ink-soft">
+                Firecrawl-compatible API, v2 — e.g. https://firecrawl.example.com. Applies to the next call, so
+                nothing restarts.
+              </p>
+              <button
+                type="button"
+                onClick={save}
+                className="rounded-lg border-2 border-line bg-paper px-2 py-1 font-bold cursor-pointer hover:bg-paper-deep"
+              >
+                Save
+              </button>
+              {saved && <span className="ml-2 font-semibold text-leaf">Saved.</span>}
+            </div>
+          )}
+          <div>
+            <button
+              type="button"
+              onClick={runTest}
+              className="rounded-lg border-2 border-line bg-paper px-2 py-1 font-bold cursor-pointer hover:bg-paper-deep"
+            >
+              Test
+            </button>
+            {test && (
+              <span className={`ml-2 font-semibold ${test === "Connected." ? "text-leaf" : test === "Testing…" ? "text-ink-soft" : "text-berry"}`}>
+                {test}
+              </span>
+            )}
+          </div>
+        </div>
+      </details>
+      <HowItWorks copy="webTools" />
+    </div>
+  );
+}
+
 export function BuiltinToolsBlock({
   onPlanChange,
 }: {
@@ -337,6 +490,16 @@ export function BuiltinToolsBlock({
             setAskUserError(null);
             void window.hv.builtinsSet({ browser: on }).then(
               () => patch({ browser: on }),
+              (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
+            );
+          }}
+        />
+        <WebRow
+          on={builtins.web}
+          onChange={(on) => {
+            setAskUserError(null);
+            void window.hv.builtinsSet({ web: on }).then(
+              () => patch({ web: on }),
               (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
             );
           }}
