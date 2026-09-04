@@ -25,19 +25,26 @@ export interface BuiltinToggles {
    * action rather than the model's sentence.
    */
   intent: boolean;
+  /**
+   * §31: the Documents entry — `document_read` plus the `read` hint. One tool,
+   * so no grouping question arises; off also disables the composer's Attach
+   * document row (with the reason) and stops the hint.
+   */
+  document: boolean;
 }
 
 export function parseBuiltins(raw: string | undefined): BuiltinToggles {
-  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true };
+  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true };
   if (!raw) return out;
   try {
-    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean }>;
+    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean }>;
     if (p.plan === false) out.plan = false;
     if (p.askUser === false) out.askUser = false;
     if (p.terminal === false) out.terminal = false;
     if (p.intent === false) out.intent = false;
     if (p.browser === false) out.browser = false;
     if (p.web === false) out.web = false;
+    if (p.document === false) out.document = false;
     if (typeof p.planAppend === "string") out.planAppend = p.planAppend;
     // Defence in depth (Important 3): Plan mode's prompt and applyPlanTools'
     // `required` array both hard-require ask_user — a hand-edited config with

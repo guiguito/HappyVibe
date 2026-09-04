@@ -6,6 +6,8 @@
  * sync by hand like hv.d.ts (separate tsconfig roots).
  */
 
+import { documentFamily, isDocumentPath } from "../../../pi-runtime/extensions/hv-document";
+
 export interface ModelRef {
   provider: string;
   modelId: string;
@@ -93,6 +95,64 @@ export function attachmentUrl(a: { data: string; mimeType: string }): string {
 /** True for the file types the composer will attach. Non-images are ignored
  *  rather than refused: pasting a screenshot alongside text is normal, and the
  *  text half must still land. */
+/**
+ * §31: a document the user attached. Same shape main's DocumentChip returns, on
+ * purpose — the IPC hands one straight over, so a second shape would be a
+ * translation layer with nothing to translate.
+ */
+export type DocumentAttachment = HvDocumentChip & {
+  /**
+   * Still converting. The chip is on screen with its name and a spinner, and
+   * the size arrives when main answers — the alternative was an empty composer
+   * for however long the conversion took.
+   */
+  pending?: boolean;
+};
+
+/** The app's chars→tokens rule, the same one the context panel uses. */
+export function estimateTokens(chars: number): number {
+  return Math.ceil(chars / 4);
+}
+
+function documentSize(n: number): string {
+  return n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * What the composer chip says BEFORE send — §9's cost promise, one surface
+ * earlier (decision B).
+ *
+ * No page count: none exists on a successful conversion (docs/validation/ad1.md
+ * §3.1). When the document could not be converted the chip shows the SENTENCE
+ * instead of a size, so the user reads the same words the model will.
+ */
+export function documentChipLabel(d: DocumentAttachment): string {
+  // A pending chip says only what is known: the file name. The spinner beside
+  // it carries "working", so the label must not invent a size to fill space.
+  if (d.pending) return d.name;
+  // A failed document is NOT a chip — its message goes to the composer's notice
+  // line, in full (documentErrorUserMessage). A chip truncates at a fixed
+  // width, so a red pill was an unreadable sentence and no way to act on it.
+  return [
+    d.name,
+    documentFamily(d.format),
+    `${documentSize(d.bytes)} as Markdown (~${Math.round(estimateTokens(d.bytes) / 1000)}k tokens)`,
+  ].join(" · ");
+}
+
+/**
+ * The document files in a drop or paste, as OS paths.
+ *
+ * Non-documents are skipped rather than refused, exactly like the image path
+ * above: dropping a folder of mixed files should attach what it can.
+ */
+export function filesToDocumentPaths(files: ArrayLike<File>, pathOf: (f: File) => string): string[] {
+  return Array.from(files)
+    .filter((f) => isDocumentPath(f.name))
+    .map(pathOf)
+    .filter((p) => !!p);
+}
+
 export function isAttachableImage(file: { type?: string }): boolean {
   return typeof file.type === "string" && file.type.startsWith("image/");
 }

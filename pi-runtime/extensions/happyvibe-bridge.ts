@@ -14,6 +14,7 @@ import {
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
+import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
 import { unwrapMcpCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
@@ -161,6 +162,38 @@ function terminalReply(raw: unknown): {
       return { content: [{ type: "text", text: p.reason ?? "The terminal request was refused." }], details: p };
     }
     return { content: [{ type: "text", text: p.text ?? JSON.stringify(p) }], details: p };
+  } catch {
+    return { content: [{ type: "text", text: raw }], details: {} };
+  }
+}
+
+/**
+ * §31: main ALWAYS answers a hv.document-read input — same never-hang contract
+ * as terminalReply and browserReply.
+ *
+ * `text` arrives ready for the model either way: the Markdown slice on success,
+ * the SENTENCE on failure (hv-document's documentErrorSentence), so a scanned
+ * PDF reads as an instruction to ask the user rather than as an error code.
+ * `facts` becomes the card's facts line, on `details` where the renderer reads
+ * structured fields.
+ */
+function documentReply(raw: unknown): {
+  content: Array<{ type: "text"; text: string }>;
+  details: Record<string, unknown>;
+} {
+  if (typeof raw !== "string" || !raw) {
+    return { content: [{ type: "text", text: "The document could not be read." }], details: {} };
+  }
+  try {
+    const p = JSON.parse(raw) as {
+      ok?: boolean; text?: string; name?: string; path?: string; facts?: DocumentFacts;
+    } & Record<string, unknown>;
+    const factsLine = p.ok === true && p.facts ? documentFactsLine(p.facts) : "";
+    const body = p.text ?? "The document could not be read.";
+    return {
+      content: [{ type: "text", text: factsLine ? `${p.name ?? "document"} — ${factsLine}\n\n${body}` : body }],
+      details: { ...p, ...(factsLine ? { factsLine } : {}) },
+    };
   } catch {
     return { content: [{ type: "text", text: raw }], details: {} };
   }
@@ -563,7 +596,7 @@ type AuditDecision = "allow" | "allow-session" | "deny";
 // logged the old value, in red, so the column stopped distinguishing anything —
 // it named the mode, once per row, forever. Old logs keep the old string and
 // the renderer maps both; red is now reserved for what a command DOES.
-type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "terminal" | "web";
+type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "terminal" | "web" | "document";
 
 /** Every permission decision emits one hv.audit notify — main's audit channel. */
 function audit(
@@ -1088,6 +1121,19 @@ export default function (pi: ExtensionAPI) {
           "Use terminal_run instead — the same long-running command becomes a card they can watch, " +
           "type into and kill, and you can poll it with terminal_read.",
       };
+    }
+
+    // §31: `read` on a .docx hands the model zip bytes and it burns a turn
+    // discovering that. Point it at the right tool instead. NOT gated on
+    // builtins.document — with the group off the refusal still saves the wasted
+    // turn, it just names a different reason. .csv and .txt are not documents,
+    // so read keeps working on them untouched.
+    {
+      const hint = documentReadRefusal(tool, input, builtins.document);
+      if (hint) {
+        audit(ctx.ui, { tool, summary, decision: "deny", source: "document" });
+        return { block: true, reason: hint };
+      }
     }
 
     // §23 Plan Mode clamp — runs BEFORE dangerous/bypass and the rule engine, so
@@ -2043,6 +2089,30 @@ export default function (pi: ExtensionAPI) {
     },
   });
   } // builtins.web
+
+  // §31 Documents: ONE tool over ONE blocking envelope, the browser_get_text
+  // shape exactly. Main owns conversion (a one-shot sidecar), path resolution
+  // and the audit row; this is a thin shell. The payload rides `title` because
+  // this is a blocking INPUT — a notify carries its payload in `message`, and
+  // getting that backwards is how a card silently never appears.
+  if (builtins.document) {
+    pi.registerTool({
+      name: DOCUMENT_TOOL,
+      label: "Read document",
+      description: DOCUMENT_TOOL_DESCRIPTIONS[DOCUMENT_TOOL],
+      parameters: Type.Object({
+        path: Type.String({ description: "Path to the document (workspace-relative or absolute, like read)." }),
+        offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed), like read." })),
+        limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read, like read." })),
+        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are looking for in this document." }),
+      }),
+      async execute(_id, params, _signal, _onUpdate, ctx) {
+        const { path, offset, limit } = params as { path: string; offset?: number; limit?: number };
+        const raw = await ctx.ui.input(JSON.stringify({ kind: "hv.document-read", path, offset, limit }), "");
+        return documentReply(raw);
+      },
+    });
+  } // builtins.document
 
   // ── §23 Plan Mode: registered tools ──────────────────────────────────────
   // Gated as a whole block: plan_start is the model's own entry point into Plan

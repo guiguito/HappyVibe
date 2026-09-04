@@ -340,3 +340,20 @@ describe("the agent's thinking survives a reopen", () => {
     expect(items.map((i) => i.kind)).toEqual(["assistant"]);
   });
 });
+
+test("§31: stripInjectedContext leaves a <document> block alone — the CHIP is read from it", () => {
+  // The renderer strips it for DISPLAY and parses the header for the chip, so
+  // both halves need the block still present in the restored text. Adding
+  // `document` to TRAILING_CONTEXT_BLOCK would silently delete the chip from
+  // every reopened session — this is the test that would catch it.
+  const text = 'summarise this\n\n<document path="/a/report.docx" format="docx">\n# Q3\nbody\n</document>';
+  expect(stripInjectedContext(text)).toBe(text);
+});
+
+test("§31: the blocks stripInjectedContext WAS written for still go, with a document beside them", () => {
+  const text =
+    'go\n\n<document path="/a/r.docx" format="docx">\n# Q3\n</document>\n\n<open-files>\nsrc/a.ts\n</open-files>';
+  const out = stripInjectedContext(text);
+  expect(out).not.toMatch(/<open-files>/);
+  expect(out).toMatch(/<document path="\/a\/r\.docx"/);
+});

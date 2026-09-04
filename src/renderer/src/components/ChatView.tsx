@@ -28,13 +28,15 @@ import { useDictation } from "../voice/useDictation";
 // exactly the kind of thing that drifts from what actually downloads.
 import { VOICE_MODEL_SIZE_LABEL } from "../../../main/voice/manifest";
 import {
-  attachmentUrl, dropUnknownProvider, filesToAttachments, isAttachableImage, resolveModelTier, supportsVision,
-  type ImageAttachment, type ModelRef, type ModelTier,
+  attachmentUrl, documentChipLabel, dropUnknownProvider, filesToAttachments, filesToDocumentPaths,
+  isAttachableImage, resolveModelTier, supportsVision,
+  type DocumentAttachment, type ImageAttachment, type ModelRef, type ModelTier,
 } from "../composer";
 import {
   activeCommandQuery, activeMentionQuery, commandSubtitle, completeCommand, completeMention, composerCommands, extractMentions, filterCommands,
-  agentMentionItems, filterEntries, mentionLabel, type MentionEntry, type SlashCommand,
+  agentMentionItems, filterEntries, mentionLabel, parseDocumentChips, stripInjectedBlocks, type MentionEntry, type SlashCommand,
 } from "../mentions";
+import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-document";
 import { Banner } from "./Banner";
 
 /** §20 round 17 — red-zone dismissals persist per session (Principle 5: never nag). */
@@ -205,7 +207,7 @@ export function ChatView({
    * Only the recording indicator reads it, to choose docked vs viewport-fixed.
    */
   visible?: boolean;
-  onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[]) => void;
+  onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[], documents?: DocumentAttachment[]) => void;
   /**
    * §28: page-element comments the user picked in the embedded browser. They
    * STACK here and are folded into the next message on send — the user decides
@@ -482,6 +484,19 @@ export function ChatView({
   const [mcpSubOpen, setMcpSubOpen] = useState(false); // v5: "+" menu MCP submenu
   const [mcpServers, setMcpServers] = useState<{ name: string; state: string }[] | null>(null);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  // §31: documents are converted AT PICK TIME, so a chip already knows its cost.
+  const [documents, setDocuments] = useState<DocumentAttachment[]>([]);
+  /**
+   * §31: a document that would not convert is a MESSAGE, not a chip.
+   *
+   * It went out as a red pill first, and that was reported as useless: the chip
+   * truncates at a fixed width, so the sentence explaining what to do was
+   * unreadable, and there is nothing to send anyway. These render in full on the
+   * composer's own notice line, beside "No model configured".
+   */
+  const [documentErrors, setDocumentErrors] = useState<string[]>([]);
+  const [documentsOn, setDocumentsOn] = useState(true);
+  const [documentsHere, setDocumentsHere] = useState(true);
   // v5: pull the cached MCP status when the submenu opens (read-only; no re-sweep).
   useEffect(() => {
     if (!mcpSubOpen) return;
@@ -511,6 +526,8 @@ export function ChatView({
   // Session switch: attachments and the restart hint belong to the old session.
   useEffect(() => {
     setAttachments([]);
+    setDocuments([]);
+    setDocumentErrors([]);
     setRestartHint(false);
     setModelMenuOpen(false);
     setAttachMenuOpen(false);
@@ -584,6 +601,67 @@ export function ChatView({
     if (img) setAttachments((p) => [...p, img]);
   };
 
+  /**
+   * §31: whether the Attach document row is offered, and why not when it isn't.
+   *
+   * Read when the MENU OPENS rather than once on mount. ChatView stays mounted
+   * while the user walks to Built-in tools and back, so a mount-only fetch left
+   * the row enabled after the switch was turned off — caught in the GUI pass,
+   * with the tool already unregistered and the row still inviting a click.
+   * Fetching where the value is USED is both correct and less plumbing than
+   * pushing the change down from App (the route Plan mode needs, because its
+   * pill is on screen continuously).
+   *
+   * The platform probe rides along; it is memoised in main, so it costs one IPC
+   * round trip and never changes at runtime.
+   */
+  const refreshDocumentAvailability = (): void => {
+    void window.hv.builtinsGet().then((b) => setDocumentsOn(b.document));
+    void window.hv.documentsAvailable().then(setDocumentsHere);
+  };
+  useEffect(refreshDocumentAvailability, []);
+
+  const attachDocument = async (): Promise<void> => {
+    setAttachMenuOpen(false);
+    const paths = await window.hv.pickDocument();
+    if (paths?.length) void attachDocumentPaths(paths);
+  };
+
+  /**
+   * The one attach path, for the picker and for a drop alike.
+   *
+   * A chip goes up IMMEDIATELY with its name and a spinner, then each answer
+   * replaces its own chip — keyed by path, because two documents can be
+   * converting at once and they do not finish in order. A failure removes the
+   * chip and adds a readable message instead.
+   */
+  const attachDocumentPaths = async (paths: string[]): Promise<void> => {
+    setDocuments((p) => [
+      ...p,
+      ...paths
+        .filter((abs) => !p.some((d) => d.path === abs))
+        .map((abs) => ({ path: abs, name: abs.split("/").pop() || abs, format: "", lines: 0, bytes: 0, pending: true })),
+    ]);
+    await Promise.all(
+      paths.map(async (abs) => {
+        const chip = await window.hv.describeDocument(abs, sessionId ?? undefined);
+        if (chip?.error) {
+          setDocuments((p) => p.filter((d) => d.path !== abs));
+          setDocumentErrors((e) => [...e, `${chip.error}`]);
+          return;
+        }
+        // A chip main could not describe at all still goes, rather than spinning
+        // forever on a promise that answered null.
+        if (!chip) {
+          setDocuments((p) => p.filter((d) => d.path !== abs));
+          setDocumentErrors((e) => [...e, `${abs.split("/").pop() || abs} could not be read.`]);
+          return;
+        }
+        setDocuments((p) => p.map((d) => (d.path === abs ? { ...chip } : d)));
+      }),
+    );
+  };
+
   /** §7 round 12: shared by paste and drop — the picker's own path is the only
    *  one that needs a trip through main. */
   const addFiles = async (files: ArrayLike<File>): Promise<void> => {
@@ -653,7 +731,9 @@ export function ChatView({
     // §28 round 1: a picked element is a message on its own. The comment and the
     // markup carry the whole intent, so requiring typed text as well would make
     // the popup's paper-plane hand you a composer that then refuses to send.
-    if (!input.trim() && !(pageRefs?.length ?? 0)) return;
+    // §31: a document with no typed text is a real message — the user picked a
+    // file precisely so the agent would read it.
+    if (!input.trim() && !(pageRefs?.length ?? 0) && !documents.length) return;
     const mentions = extractMentions(input, mentionMap.current);
     // §28: picked elements ride along as fenced blocks — the user's comment
     // first (it is what they mean), the markup after (it is how the agent finds
@@ -679,7 +759,18 @@ export function ChatView({
       .flatMap((r) => (r.thumbnail ? [{ name: r.label.slice(0, 40) || "element", mimeType: "image/png", data: r.thumbnail.split(",")[1] ?? "" }] : []))
       .filter((a) => a.data);
     const outgoing = [...attachments, ...refImages];
-    onSend(withRefs, behavior, outgoing.length ? outgoing : undefined, mentions.length ? mentions : undefined);
+    onSend(
+      withRefs,
+      behavior,
+      outgoing.length ? outgoing : undefined,
+      mentions.length ? mentions : undefined,
+      // The whole attachment, not just the path: App needs the name and format
+      // to draw the bubble's chip on the LIVE path, where nothing has been
+      // through main yet.
+      // A chip still converting is fine to send: main converts from the PATH at
+      // send time regardless, so the pick-time conversion is only the preview.
+      documents.length ? documents : undefined,
+    );
     // Round 15: sending is the user saying "I am at the end now", so the view
     // goes to the bottom whatever it was reading. The stream's own follow stays
     // guarded by isNearBottom — that guard exists to protect a reader scrolling
@@ -690,6 +781,8 @@ export function ChatView({
     onClearPageRefs?.();
     setInput("");
     setAttachments([]);
+    setDocuments([]);
+    setDocumentErrors([]);
     mentionMap.current = new Map();
     setMention(null);
   };
@@ -984,7 +1077,22 @@ export function ChatView({
                   // "Files only" leaves the conversation alone, so the composer
                   // must not be repopulated with a message that is still there.
                   if (rewindScope !== "files") {
-                    setInput("text" in it && typeof it.text === "string" ? it.text : "");
+                    const raw = "text" in it && typeof it.text === "string" ? it.text : "";
+                    // STRIP, because a RESTORED message still carries the app's
+                    // own blocks: restore.ts only removes open-files /
+                    // open-terminals / open-browser, so a reopened session's
+                    // `<document>` and `<file>` blocks were handed back verbatim
+                    // and the composer filled with markup and a whole converted
+                    // document. The bubble above it was already stripping for
+                    // display, which is why this looked fine until you rewound.
+                    setInput(stripInjectedBlocks(raw));
+                    // §31: and put the documents BACK, or edit-and-resend
+                    // silently drops the attachment and the answer quietly
+                    // changes meaning. Re-attaching by path runs the ordinary
+                    // flow, so a file that has since moved or changed reports
+                    // that instead of vanishing.
+                    const docs = parseDocumentChips(raw).map((d) => d.path);
+                    if (docs.length) void attachDocumentPaths(docs);
                   }
                   setPendingRewind(null);
                 }}
@@ -1157,6 +1265,13 @@ export function ChatView({
           if (!ev.dataTransfer.files.length) return;
           ev.preventDefault();
           void addFiles(ev.dataTransfer.files);
+          // §31: a dropped document attaches like one picked from the + menu.
+          // Skipped silently when the group is off — the + row is where the
+          // reason is shown, and a drop has nowhere to put a sentence.
+          if (documentsOn && documentsHere) {
+            const docs = filesToDocumentPaths(ev.dataTransfer.files, (f) => window.hv.getPathForFile(f));
+            if (docs.length) void attachDocumentPaths(docs);
+          }
         }}
         className="relative px-6 pb-5 pt-2"
       >
@@ -1242,6 +1357,41 @@ export function ChatView({
             ))}
           </div>
         )}
+        {/* §31: document chips. Same shelf and same promise as the images — and
+            the label carries the CONTEXT COST, because this is the surface where
+            the user decides whether to spend it (§9, one step earlier). */}
+        {documents.length > 0 && (
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center gap-2 px-1 pb-2">
+            {documents.map((d, i) => (
+              <span
+                key={`${d.path}-${i}`}
+                className="flex items-center gap-1.5 rounded-xl border-2 border-line-strong bg-card px-2 py-1 shadow-sticker text-xs font-semibold"
+                title={d.path}
+              >
+                {/* The same CSS spinner the mic button and the MCP rows use —
+                    no library, and it sits INSIDE the chip so the thing that is
+                    working is the thing you are looking at. */}
+                {d.pending && (
+                  <span
+                    className="size-3 shrink-0 rounded-full border-2 border-current border-t-transparent animate-spin text-ink-soft"
+                    aria-hidden
+                  />
+                )}
+                <span className={`max-w-96 truncate ${d.pending ? "text-ink-soft" : ""}`}>
+                  {documentChipLabel(d)}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${d.name}`}
+                  onClick={() => setDocuments((p) => p.filter((_, j) => j !== i))}
+                  className="text-ink-soft hover:text-berry font-bold text-sm leading-none cursor-pointer"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         {/* §28: picked-element chips. Same shelf as the image attachments and the
             same promise — nothing is sent until the user sends it. */}
         {(pageRefs?.length ?? 0) > 0 && (
@@ -1276,6 +1426,22 @@ export function ChatView({
             Model saved — applies when this session restarts.
           </div>
         )}
+        {/* §31: a document that would not convert, said in full and in the
+            user's own terms — the chip could only truncate it. Dismissible,
+            because it is advice about a file that is no longer attached. */}
+        {documentErrors.map((msg, i) => (
+          <div key={i} className="max-w-3xl mx-auto px-1 pb-1.5 flex items-start gap-1.5 text-[11px] font-semibold text-berry">
+            <span className="flex-1">{msg}</span>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => setDocumentErrors((e) => e.filter((_, j) => j !== i))}
+              className="shrink-0 text-ink-soft hover:text-berry font-bold leading-none cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+        ))}
         {noModel && (
           <div className="max-w-3xl mx-auto px-1 pb-1.5 text-[11px] font-semibold text-berry">
             No model configured — add a provider in Settings → Models to start chatting.
@@ -1288,7 +1454,13 @@ export function ChatView({
               type="button"
               aria-label="Attach"
               aria-expanded={attachMenuOpen}
-              onClick={() => { setAttachMenuOpen((o) => !o); setModelMenuOpen(false); }}
+              onClick={() => {
+                setAttachMenuOpen((o) => {
+                  if (!o) refreshDocumentAvailability(); // §31: fresh at the moment it is read
+                  return !o;
+                });
+                setModelMenuOpen(false);
+              }}
               className="size-8 rounded-xl text-ink-soft font-black text-lg leading-none hover:bg-paper-deep/40 hover:text-ink cursor-pointer transition-colors"
             >
               +
@@ -1307,14 +1479,30 @@ export function ChatView({
                     Attach image
                     {!vision && <span className="block text-[10px] font-medium text-ink-soft">model has no vision</span>}
                   </button>
+                  {/* §31: this row replaces "Attach file — coming soon". Disabled
+                      states carry their REASON rather than hiding, which is how a
+                      user learns the Built-in tools setting exists at all. */}
                   <button
                     type="button"
-                    disabled
-                    title="File import is coming soon"
-                    className="w-full text-left px-3 py-2 opacity-40"
+                    disabled={!documentsOn || !documentsHere}
+                    onClick={attachDocument}
+                    title={
+                      !documentsHere
+                        ? "Document conversion is not available on this platform"
+                        : documentsOn
+                          ? "Attach a document — converted to Markdown on this machine"
+                          : "Turn Documents on in Built-in tools to attach one"
+                    }
+                    className="w-full text-left px-3 py-2 enabled:hover:bg-paper-deep/40 enabled:cursor-pointer disabled:opacity-40"
                   >
-                    Attach file
-                    <span className="block text-[10px] font-medium text-ink-soft">coming soon</span>
+                    Attach document
+                    <span className="block text-[10px] font-medium text-ink-soft">
+                      {!documentsHere
+                        ? "not available on this platform"
+                        : documentsOn
+                          ? DOCUMENT_FAMILY_LIST
+                          : "off in Built-in tools"}
+                    </span>
                   </button>
                   {/* WS7: AGENTS.md editor (replaces the removed header chip). */}
                   <button

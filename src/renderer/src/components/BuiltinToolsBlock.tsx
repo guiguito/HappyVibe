@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-document";
 import { Section } from "./Section";
 import { PromptRow, TogglePill } from "./PromptRow";
 import { HowItWorks } from "./HowItWorks";
@@ -24,6 +25,8 @@ interface Builtins {
   browser: boolean;
   /** §32: the grouped Web tools entry — all four tools or none. */
   web: boolean;
+  /** §31: Documents — `document_read` plus the `read` hint. */
+  document: boolean;
 }
 
 /** Plan mode's row. The prompt panel and the append box are PromptRow's, shared
@@ -430,6 +433,42 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
   );
 }
 
+/**
+ * §31 — ONE entry for one tool, so none of the grouping arguments above apply.
+ *
+ * The row reads "Documents", not "Agent documents": the `Agent …` prefix on the
+ * terminal and browser rows exists only to dodge a nav collision (Terminal is a
+ * page, Browser is a tab kind), and there is no Documents page to collide with.
+ *
+ * Turning it off does three things, and the description says all three because
+ * only one of them is on this page: the tool unregisters at the next spawn, the
+ * composer's Attach document row disables WITH ITS REASON, and the `read` hint
+ * stops firing. Where it is OBSERVED is the Agent tools page, which lists what
+ * the session actually registered.
+ */
+function DocumentsRow({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (on: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <span className="font-bold block">Documents — 1 tool</span>
+        <span className="text-xs text-ink-soft">
+          Lets the agent read {DOCUMENT_FAMILY_LIST} files as Markdown, converted on this machine — nothing is sent
+          anywhere. Also turns on <span className="font-semibold">Attach document</span> in the chat bar. Scanned PDF
+          pages can&apos;t be read, and the agent is told which ones they are. Saves the context cost of one tool schema.
+        </span>
+        <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
+      </div>
+      <TogglePill on={on} onClick={() => onChange(!on)} />
+    </div>
+  );
+}
+
 export function BuiltinToolsBlock({
   onPlanChange,
 }: {
@@ -500,6 +539,16 @@ export function BuiltinToolsBlock({
             setAskUserError(null);
             void window.hv.builtinsSet({ web: on }).then(
               () => patch({ web: on }),
+              (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
+            );
+          }}
+        />
+        <DocumentsRow
+          on={builtins.document}
+          onChange={(on) => {
+            setAskUserError(null);
+            void window.hv.builtinsSet({ document: on }).then(
+              () => patch({ document: on }),
               (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
             );
           }}

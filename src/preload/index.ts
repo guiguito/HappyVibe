@@ -57,14 +57,22 @@ contextBridge.exposeInMainWorld("hv", {
     images?: Array<{ type: "image"; data: string; mimeType: string }>,
     mentions?: string[],
     // Round 11: workspace-relative paths of the files open in the editor.
-    openFiles?: string[]
-  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images, mentions, openFiles),
+    openFiles?: string[],
+    // §31: absolute paths of attached documents — main converts and injects them.
+    documents?: string[]
+  ) => ipcRenderer.invoke("hv:prompt-session", sessionId, msg, behavior, images, mentions, openFiles, documents),
   abortSession: (sessionId: string) => ipcRenderer.invoke("hv:abort-session", sessionId),
 
   // ── W2.1: per-session model override + image attach (additive) ──
   setSessionModel: (sessionId: string, m: { provider: string; modelId: string } | null) =>
     ipcRenderer.invoke("hv:set-session-model", sessionId, m),
   pickImage: () => ipcRenderer.invoke("hv:pick-image"),
+  // §31: the picker converts at pick time, so the chip can show the cost.
+  pickDocument: () => ipcRenderer.invoke("hv:pick-document"),
+  describeDocument: (absPath: string, sessionId?: string) =>
+    ipcRenderer.invoke("hv:describe-document", absPath, sessionId),
+  revealDocument: (absPath: string) => ipcRenderer.invoke("hv:reveal-document", absPath),
+  documentsAvailable: () => ipcRenderer.invoke("hv:documents-available"),
 
   // ── W2.2: file tree + editor + card path actions (additive) ─────
   fsList: (workspaceId: string, relDir: string) => ipcRenderer.invoke("hv:fs-list", workspaceId, relDir),

@@ -12,6 +12,8 @@ import { spawn } from "node:child_process";
 import { resolvePiSpawn } from "./pi/spawn";
 import { THINKING_LEVELS, resolveThinking } from "./thinking";
 import { piRuntimeDir } from "./pi/runtimeDir";
+import { buildDocumentBlocks, convertDocument, probeDocuments } from "./documents";
+import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, documentExtension, isDocumentPath } from "../../pi-runtime/extensions/hv-document";
 import {
   agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
@@ -388,6 +390,29 @@ function parseWebCancel(r: { method?: string; message?: string }): { toolCallId:
   try {
     const p = JSON.parse(r.message ?? "") as { kind?: string; toolCallId?: string };
     return p?.kind === "hv.web-cancel" && typeof p.toolCallId === "string" ? { toolCallId: p.toolCallId } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * §31: the blocking document-read input. Main ALWAYS answers one.
+ *
+ * Payload on `title` because this is an INPUT — the same trap hv.terminal-* and
+ * hv.browser-* record, one envelope over.
+ */
+function parseDocumentReq(r: { method?: string; title?: string }):
+  | { path: string; offset?: number; limit?: number }
+  | null {
+  if (r.method !== "input") return null;
+  try {
+    const p = JSON.parse(r.title ?? "") as Record<string, unknown>;
+    if (p.kind !== "hv.document-read" || typeof p.path !== "string") return null;
+    return {
+      path: p.path,
+      offset: typeof p.offset === "number" ? p.offset : undefined,
+      limit: typeof p.limit === "number" ? p.limit : undefined,
+    };
   } catch {
     return null;
   }
@@ -1768,6 +1793,72 @@ export function registerIpc(win: BrowserWindow): void {
         })();
         return;
       }
+      // §31: the blocking document read. Same never-hang contract as the blocks
+      // above. The conversion itself carries the deadline (documents.ts
+      // SIGKILLs at 30 s), so this needs no second timer — but the reply stays
+      // idempotent, because "always answers" has to survive a throw as well.
+      const dr = parseDocumentReq(r as { method?: string; title?: string });
+      if (dr) {
+        void (async () => {
+          const rid = r.id;
+          let answered = false;
+          const reply = (v: unknown): void => {
+            if (answered) return;
+            answered = true;
+            client.respondUi(rid, { value: JSON.stringify(v) });
+          };
+          const wsId = meta?.workspaceId;
+          // Absolute paths are allowed and relative ones resolve against the
+          // workspace — `read`'s rule (decision D). Deliberately NOT confined:
+          // a contract.pdf in Downloads is exactly the case this exists for, and
+          // read has no such check to mirror.
+          const abs = path.isAbsolute(dr.path) ? dr.path : path.resolve(wsId ?? process.cwd(), dr.path);
+          const name = path.basename(abs);
+          try {
+            if (!getBuiltinTools().document) {
+              reply({ ok: false, path: abs, name, text: documentErrorSentence({ code: "disabled" }, { hasVision: false }) });
+              return;
+            }
+            const hasVision = await sessionCanSeeImages(wsId, sessionId);
+            const res = await convertDocument(abs, { runtimeDir: piRuntimeDir(), offset: dr.offset, limit: dr.limit });
+            // The audit row carries the path and the sizes, never the content —
+            // §31's privacy line, and the same rule §11 applies to every row.
+            void log.append({
+              type: "document.read",
+              sessionId,
+              workspaceId: wsId,
+              data: {
+                path: abs,
+                ok: res.ok,
+                format: res.ok ? res.format : undefined,
+                bytes: res.ok ? res.totalBytes : 0,
+                shown: res.ok ? res.to - res.from + 1 : 0,
+                code: res.ok ? undefined : res.error.code,
+              },
+            });
+            if (!res.ok) {
+              reply({ ok: false, path: abs, name, text: documentErrorSentence(res.error, { hasVision, name: res.name }) });
+              return;
+            }
+            reply({
+              ok: true,
+              path: abs,
+              name: res.name,
+              text: res.text,
+              facts: {
+                format: res.format,
+                totalLines: res.totalLines,
+                totalBytes: res.totalBytes,
+                from: res.from,
+                to: res.to,
+              },
+            });
+          } catch (e) {
+            reply({ ok: false, path: abs, name, text: e instanceof Error ? e.message : String(e) });
+          }
+        })();
+        return;
+      }
       // §23 Plan Mode. plan-write is a BLOCKING input: main writes the workspace
       // file and answers with its path (never forwards to the renderer, never
       // leaves the bridge hanging — an error still resolves with a message).
@@ -2571,6 +2662,7 @@ export function registerIpc(win: BrowserWindow): void {
       images?: PromptImage[],
       mentions?: string[],
       openFiles?: string[],
+      documents?: string[],
     ) => {
     if (behavior !== undefined && behavior !== "steer" && behavior !== "followUp") {
       throw new Error("Invalid prompt behavior");
@@ -2585,6 +2677,9 @@ export function registerIpc(win: BrowserWindow): void {
     }
     if (openFiles !== undefined && !(Array.isArray(openFiles) && openFiles.every((m) => typeof m === "string"))) {
       throw new Error("Invalid openFiles payload");
+    }
+    if (documents !== undefined && !(Array.isArray(documents) && documents.every((m) => typeof m === "string"))) {
+      throw new Error("Invalid documents payload");
     }
     let client = manager.get(sessionId) as PiClient | null;
     const meta = index.get(sessionId);
@@ -2602,7 +2697,14 @@ export function registerIpc(win: BrowserWindow): void {
     }
     let outgoing = msg;
     let warnings: string[] = [];
-    if (mentions && mentions.length && meta?.workspaceId) {
+    // §31: a MENTIONED document (@report.docx, or a drag from the file tree) is
+    // partitioned out of buildMentionBlocks, which is synchronous and would
+    // report it as "binary". It converts below, on the same seam and under the
+    // same shared cap — decision I, and the asymmetry it accepts is that a
+    // mention shows no size chip, exactly as @file behaves for text today.
+    const docMentions = (mentions ?? []).filter(isDocumentPath);
+    const textMentions = (mentions ?? []).filter((m) => !isDocumentPath(m));
+    if (textMentions.length && meta?.workspaceId) {
       // §24 × F3: a message Pi will expand as a prompt template must NOT carry
       // the inline <file> blocks. The template's `${ARGUMENTS}` captures
       // everything after the command name, so the blocks would be substituted
@@ -2612,15 +2714,49 @@ export function registerIpc(win: BrowserWindow): void {
       // Skills are deliberately excluded (they APPEND args, so blocks already
       // land correctly) — see commandMentions.ts.
       if (willExpand(msg, activePromptTemplateEntries(meta.workspaceId))) {
-        outgoing = inlineMentionPaths(msg, mentions);
+        outgoing = inlineMentionPaths(msg, textMentions);
         if (outgoing !== msg) {
           if (typedByOutgoing.size > 64) typedByOutgoing.clear();
           typedByOutgoing.set(outgoing, msg);
         }
       } else {
-        const { blocks, warnings: w } = buildMentionBlocks(workspaces.list(), meta.workspaceId, mentions);
+        const { blocks, warnings: w } = buildMentionBlocks(workspaces.list(), meta.workspaceId, textMentions);
         if (blocks) outgoing = `${msg}\n\n${blocks}`;
         warnings = w;
+      }
+    }
+    // §31: attached documents (absolute paths from the composer chips) and
+    // mentioned ones convert here, after the mention blocks and under the SAME
+    // shared cap — `used` is what those blocks already spent (decision E).
+    //
+    // A prompt-template expansion gets none: `${ARGUMENTS}` would substitute a
+    // whole document into the middle of the generated prompt, which is the very
+    // thing the mention branch above rewrites paths to avoid. Say so rather
+    // than silently dropping them.
+    {
+      const docPaths = [
+        ...(documents ?? []),
+        ...(meta?.workspaceId ? docMentions.map((rel) => path.resolve(meta.workspaceId!, rel)) : []),
+      ];
+      if (docPaths.length) {
+        // Ask the SAME question the mention branch asks, directly. Inferring it
+        // from `typedByOutgoing` looked equivalent and was not: that map is only
+        // written when a mention was actually rewritten, so a template command
+        // carrying a document and no mentions would have fallen through here and
+        // injected the blocks it exists to keep out.
+        const expands = !!meta?.workspaceId && willExpand(msg, activePromptTemplateEntries(meta.workspaceId));
+        if (expands) {
+          warnings = [...warnings, "Documents are not attached to a prompt-template command — send them in a plain message."];
+        } else {
+          const hasVision = await sessionCanSeeImages(meta?.workspaceId, sessionId);
+          const { blocks, warnings: dw } = await buildDocumentBlocks(docPaths, {
+            runtimeDir: piRuntimeDir(),
+            hasVision,
+            used: outgoing.length - msg.length,
+          });
+          if (blocks) outgoing = `${outgoing}\n\n${blocks}`;
+          warnings = [...warnings, ...dw];
+        }
       }
     }
     // Round 11: which files the user has open, PATHS ONLY, appended after any
@@ -3185,7 +3321,7 @@ export function registerIpc(win: BrowserWindow): void {
   // Takes effect at next spawn only — reuse the existing debounced, idle-only,
   // resume-preserving reload path (same mechanism as MCP/skills config changes).
   ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
-  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean }) => {
+  ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean }) => {
     setBuiltinTools(t);
     scheduleRuntimeReload("skills", "global", null);
   });
@@ -3722,6 +3858,55 @@ export function registerIpc(win: BrowserWindow): void {
     if (!mimeType) return null; // filter should prevent this — stay honest if bypassed
     return { data: fs.readFileSync(file).toString("base64"), mimeType, name: path.basename(file) };
   });
+
+  // ── §31 Documents: pick, describe, reveal, probe ───────────────────────────
+  // The picker returns PATHS ONLY and converts nothing, so the renderer can put
+  // a chip on screen with a spinner in it the instant the dialog closes and then
+  // fill in the cost. Converting here instead meant the composer showed nothing
+  // at all until the conversion finished — fine for a 90 ms .docx, a silent
+  // second on a big workbook, and reported as such (2026-09-04).
+  //
+  // It also means picking and dropping take the SAME second step, rather than
+  // one path that converts in the dialog handler and one that does not.
+  ipcMain.handle("hv:pick-document", async () => {
+    const r = await dialog.showOpenDialog(win, {
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Documents", extensions: [...DOCUMENT_EXTENSIONS] }],
+    });
+    return r.canceled ? [] : r.filePaths;
+  });
+  // Step two for both paths: convert one document and answer with its chip —
+  // sizes on success, the user-facing SENTENCE on failure. sessionId is passed
+  // so a scanned-PDF message knows whether THIS session's model could do
+  // anything with screenshots.
+  ipcMain.handle("hv:describe-document", async (_e, absPath: string, sessionId?: string) => {
+    if (typeof absPath !== "string" || !absPath) return null;
+    const meta = sessionId ? index.get(sessionId) : undefined;
+    const hasVision = await sessionCanSeeImages(meta?.workspaceId, sessionId);
+    const name = path.basename(absPath);
+    const res = await convertDocument(absPath, { runtimeDir: piRuntimeDir() });
+    if (!res.ok) {
+      return {
+        path: absPath,
+        name,
+        format: documentExtension(absPath) ?? "",
+        lines: 0,
+        bytes: 0,
+        error: documentErrorUserMessage(res.error, { hasVision, name }),
+      };
+    }
+    return { path: absPath, name, format: res.format, lines: res.totalLines, bytes: res.totalBytes };
+  });
+  // A document is NOT opened in the editor (a .docx in CodeMirror is garbage) —
+  // the card and the chip reveal it in the OS file manager instead. Unconfined
+  // like the tool itself, but narrowed to document paths so this cannot become
+  // a general "reveal anything" hole.
+  ipcMain.handle("hv:reveal-document", (_e, absPath: string) => {
+    if (typeof absPath === "string" && path.isAbsolute(absPath) && isDocumentPath(absPath)) {
+      shell.showItemInFolder(absPath);
+    }
+  });
+  ipcMain.handle("hv:documents-available", () => probeDocuments(piRuntimeDir()));
 
   // ── W2.2: workspace file tree + editor (additive; files.ts confinement) ──
   ipcMain.handle("hv:fs-list", (_e, workspaceId: string, relDir: string) =>

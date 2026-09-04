@@ -197,6 +197,10 @@ const PLAN_PASS_TOOLS = new Set([
   // tool floor-asks and a paged read that prompts per page is a tool the
   // model abandons (§26/§28 both record it).
   "web_search", "web_fetch", "web_map", "web_crawl",
+  // §31: a document read is a read. NAMED for the same reason — an unnamed
+  // tool falls to floor-ask, which clamps allow→ask and would raise a modal on
+  // every `offset` step through a long document.
+  "document_read",
 ]);
 
 import { isReadOnlyBoundary, writeCapableIn } from "./hv-subagent-boundary";

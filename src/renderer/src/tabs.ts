@@ -36,6 +36,8 @@
  */
 
 /** A tab is a workspace-relative file path, `:chat:<sessionId>`, `:term:<id>` or `:browser:<id>`. */
+import { isDocumentPath } from "../../../pi-runtime/extensions/hv-document";
+
 export type TabId = string;
 
 /** Paths never start with ":", so this cannot collide with one. */
@@ -536,6 +538,10 @@ export function resolveCardPath(workspace: string, raw: string): string | null {
   // page in the code editor. Rejected here rather than in the card, because
   // this function is the single place that answers "is this a file of ours".
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return null;
+  // §31: a document is not a file of OURS in the editor sense — a .docx opened
+  // in CodeMirror is zip bytes on screen. The card reveals it in the OS file
+  // manager instead, which is why this returns null rather than a path.
+  if (isDocumentPath(raw)) return null;
   let rel: string;
   if (raw.startsWith("/")) {
     if (!raw.startsWith(ws + "/")) return null;

@@ -136,3 +136,17 @@ test.skipIf(!fs.existsSync(CLI))('HV_BUILTINS {"web":false} ⇒ no web tool exis
   expect(tools).toContain("browser_open");
   expect(tools).toContain("terminal_run");
 }, 30_000);
+test.skipIf(!fs.existsSync(CLI))(
+  "§31: HV_BUILTINS {\"document\":false} unregisters document_read; the default registers it",
+  async () => {
+    const off = await probe(JSON.stringify({ document: false }));
+    expect(off.tools.length).toBeGreaterThan(0);
+    expect(off.tools).not.toContain("document_read");
+    // The other groups are untouched by this key — one tool, no coupling.
+    expect(off.tools).toContain("ask_user");
+
+    const on = await probe(undefined);
+    expect(on.tools).toContain("document_read");
+  },
+  30_000,
+);

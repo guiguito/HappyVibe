@@ -22,7 +22,7 @@ interface Decision {
   summary: string;
   decision: "allow" | "allow-session" | "deny";
   /** "dangerous" is the pre-round-15 name for "bypass" — old logs keep it. */
-  source: "rule" | "user" | "bypass" | "dangerous" | "safe-default" | "plan" | "terminal" | "subagent" | "web";
+  source: "rule" | "user" | "bypass" | "dangerous" | "safe-default" | "plan" | "terminal" | "subagent" | "web" | "document";
   /** §12 FR7: set on a decision made INSIDE a sub-agent child. */
   agent?: string;
   runId?: string;
