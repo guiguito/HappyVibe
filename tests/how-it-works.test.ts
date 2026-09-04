@@ -18,8 +18,8 @@ const rendered = (f: string): string =>
   fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 describe("HOWTO_COPY", () => {
-  it("has all six entries, each a real explanation", () => {
-    const keys = ["planMode", "rules", "mcpBadge", "contextNumbers", "instructionFiles", "webTools"];
+  it("has all seven entries, each a real explanation", () => {
+    const keys = ["planMode", "rules", "mcpBadge", "contextNumbers", "instructionFiles", "webTools", "memory"];
     expect(Object.keys(HOWTO_COPY).sort()).toEqual([...keys].sort());
     for (const [k, v] of Object.entries(HOWTO_COPY)) {
       expect(v.title, k).toMatch(/^(How|What) /);

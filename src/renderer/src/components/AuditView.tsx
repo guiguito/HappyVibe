@@ -72,10 +72,31 @@ interface ModelExcluded {
   expiresAt?: number;
 }
 
+/**
+ * §33 — a memory event. Never carries the body: the audit log is readable, exportable and
+ * long-lived, and §19's rule is telemetry without content. Scope, kind, name and (for a save)
+ * the one-line description are what a reader needs to know what changed.
+ */
+interface MemoryEvent {
+  ts: string;
+  workspaceId?: string;
+  sessionId?: string;
+  kind: "saved" | "refused" | "recalled" | "forgotten" | "edited" | "imported";
+  scope?: "global" | "workspace";
+  type?: string;
+  name?: string;
+  description?: string;
+  reason?: string;
+  replaced?: boolean;
+  who?: "agent" | "human";
+  count?: number;
+}
+
 export type Row =
   | ({ row: "decision" } & Decision)
   | ({ row: "oneshot" } & OneShot)
-  | ({ row: "excluded" } & ModelExcluded);
+  | ({ row: "excluded" } & ModelExcluded)
+  | ({ row: "memory" } & MemoryEvent);
 
 /**
  * One EventLog row → one display row.
@@ -92,7 +113,39 @@ export function toAuditRow(e: HvAuditEvent): Row {
   const base = { ts: e.ts, sessionId: e.sessionId, workspaceId: e.workspaceId };
   if (e.type === "assistant.oneshot") return { row: "oneshot", ...(e.data as unknown as OneShot), ...base };
   if (e.type === "model.excluded") return { row: "excluded", ...(e.data as unknown as ModelExcluded), ...base };
+  // §33: discriminate on the event TYPE, like every row above — the data payload carries a
+  // `kind` field too, and reading THAT is the bug this function was extracted to fix.
+  if (e.type.startsWith("memory.")) {
+    return { row: "memory", kind: e.type.slice("memory.".length) as MemoryEvent["kind"], ...(e.data as unknown as Omit<MemoryEvent, "kind">), ...base };
+  }
   return { row: "decision", ...(e.data as unknown as Decision), ...base };
+}
+
+/**
+ * §33 — the app's own words for the six memory events. "Remembered" and "forgot" are the UI's
+ * vocabulary everywhere (§33's word list), so the log says the same thing the card said.
+ *
+ * Exported for tests: the renderer suite has no DOM, so wording is pinned as data.
+ */
+export function memoryText(r: MemoryEvent): string {
+  const who = r.who === "human" ? "you " : "";
+  const scope = r.scope === "workspace" ? " (this project)" : "";
+  switch (r.kind) {
+    case "saved":
+      return `${r.replaced ? "updated a memory" : "remembered"}${scope}`;
+    case "refused":
+      return `refused to remember${scope}`;
+    case "recalled":
+      return `recalled a memory${scope}`;
+    case "forgotten":
+      return `${who}forgot a memory${scope}`;
+    case "edited":
+      return "you edited a memory";
+    case "imported":
+      return `imported ${r.count ?? 0} memories from Claude Code`;
+    default:
+      return r.kind;
+  }
 }
 
 const ONESHOT_LABEL: Record<OneShot["kind"], string> = {
@@ -205,6 +258,10 @@ export function AuditView({
     if (r.row === "oneshot") return !decision && (!source || source === "assistant");
     // Not a decision either: it answers to the source filter under its own name.
     if (r.row === "excluded") return !decision && (!source || source === "model");
+    // §33: a memory event is not a permission decision either — the DECISION that let it
+    // happen is its own row, right beside this one. It answers to the source filter under its
+    // own name so it can be isolated or excluded.
+    if (r.row === "memory") return !decision && (!source || source === "memory");
     return (!decision || r.decision === decision) && (!source || (SOURCE_LABEL[r.source] ?? r.source) === source);
   };
   const shown = rows?.filter(matches) ?? null;
@@ -274,6 +331,7 @@ export function AuditView({
             <option value="web">Web tools</option>
             <option value="assistant">The app itself</option>
             <option value="model">Model availability</option>
+            <option value="memory">Memory</option>
           </select>
         </div>
 
@@ -305,6 +363,23 @@ export function AuditView({
                         {r.workspaceId ? basename(r.workspaceId) : ""}
                       </span>
                     </div>
+                  </>
+                ) : r.row === "memory" ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block rounded-full border border-line bg-paper-deep px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 text-ink-soft">
+                        memory
+                      </span>
+                      <span className="font-bold shrink-0">{memoryText(r)}</span>
+                      <span className="text-xs text-ink-soft truncate min-w-0">{r.name}</span>
+                      <span className="flex-1" />
+                      <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
+                        {new Date(r.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    {(r.description || r.reason) && (
+                      <div className="text-xs text-ink-soft mt-0.5 truncate">{r.reason ?? r.description}</div>
+                    )}
                   </>
                 ) : r.row === "oneshot" ? (
                   <>

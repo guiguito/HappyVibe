@@ -15,9 +15,9 @@ const SRC = fs.readFileSync(path.join(R, "components", "Sidebar.tsx"), "utf8");
 const APP = fs.readFileSync(path.join(R, "App.tsx"), "utf8");
 
 describe("nothing was lost", () => {
-  it("all 16 destinations survive, each in exactly one group", () => {
-    expect(NAV).toHaveLength(17);
-    expect(new Set(NAV.map((n) => n.view)).size).toBe(17);
+  it("all 17 destinations survive, each in exactly one group", () => {
+    expect(NAV).toHaveLength(18);
+    expect(new Set(NAV.map((n) => n.view)).size).toBe(18);
     for (const n of NAV) {
       if (n.group === null) continue; // pinned above the groups
       expect(GROUPS.map((g) => g.id), `${n.view}`).toContain(n.group);
@@ -66,7 +66,10 @@ describe("the order lives in ONE place", () => {
 
   it("round 12's frequency order survives within each group", () => {
     expect(NAV.map((n) => n.view)).toEqual([
-      "models", "builtinTools", "plugins", "skills", "promptTemplates", "mcp", "agents",
+      // §33 round 22: Memory is second, on Built-in tools' own argument — on by default and
+      // free to reach. It cannot go lower without splitting the Plugins → Skills · Prompts ·
+      // MCP run that the classifier-derived test below requires to stay contiguous.
+      "models", "builtinTools", "memory", "plugins", "skills", "promptTemplates", "mcp", "agents",
       // Permissions leads its group ahead of All Tools: the more often
       // reached of the two, and the group's own thesis. System prompt closes
       // it — a standing instruction is a ground rule, though not a permission.
@@ -91,7 +94,7 @@ describe("every row is reachable and legible", () => {
   });
 
   it("no two rows share a label", () => {
-    expect(new Set(NAV.map((n) => n.label)).size).toBe(17);
+    expect(new Set(NAV.map((n) => n.label)).size).toBe(18);
   });
 });
 

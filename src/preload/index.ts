@@ -419,6 +419,11 @@ contextBridge.exposeInMainWorld("hv", {
   skillsDelete: (skillId: string, workspaceId: string | null) => ipcRenderer.invoke("hv:skills-delete", skillId, workspaceId),
   skillsSession: (sessionId: string) => ipcRenderer.invoke("hv:skills-session", sessionId),
   listCommands: (sessionId: string) => ipcRenderer.invoke("hv:list-commands", sessionId),
+  onMemoryChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on("hv:memory-changed", listener);
+    return () => ipcRenderer.removeListener("hv:memory-changed", listener);
+  },
   onSkillsChanged: (cb: () => void): (() => void) => {
     const listener = (): void => cb();
     ipcRenderer.on("hv:skills-changed", listener);

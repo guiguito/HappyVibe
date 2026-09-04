@@ -440,6 +440,17 @@ export type MemoryEnvelope =
 
 export type MemoryScopeName = "global" | "workspace";
 
+/** §33: every memory audit type, named once. The Audit page reads these and `memoryText`
+ *  renders them; a type added in one place and not the other is a row nobody ever sees. */
+export const MEMORY_EVENT_TYPES = [
+  "memory.saved",
+  "memory.refused",
+  "memory.recalled",
+  "memory.forgotten",
+  "memory.edited",
+  "memory.imported",
+] as const;
+
 export function parseMemoryEnvelope(r: { method?: string; title?: string }): MemoryEnvelope | null {
   if (r.method !== "input") return null;
   let p: Record<string, unknown>;
@@ -3755,15 +3766,19 @@ export function registerIpc(win: BrowserWindow): void {
    * two lists that happen to share a screen.
    */
   ipcMain.handle("hv:read-audit", async (_e, filter?: { sessionId?: string; workspaceId?: string }) => {
-    const [decisions, oneShots, excluded] = await Promise.all([
+    const [decisions, oneShots, excluded, ...memory] = await Promise.all([
       log.read({ type: "permission.decision", ...filter }),
       log.read({ type: "assistant.oneshot", ...filter }),
       // §19: a model the app is silently NOT using is the third thing this page
       // answers for — it is neither a decision nor a call, but it IS something
       // the app did on the user's behalf.
       log.read({ type: "model.excluded", ...filter }),
+      // §33: what the agent remembered, recalled, forgot or was refused, plus your own edits
+      // and imports. Read per type, because `log.read` filters on an exact type — a prefix
+      // match would be a second filter idiom in a file that has exactly one.
+      ...MEMORY_EVENT_TYPES.map((t) => log.read({ type: t, ...filter })),
     ]);
-    return [...decisions, ...oneShots, ...excluded].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    return [...decisions, ...oneShots, ...excluded, ...memory.flat()].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   });
 
   // ── B7: local analytics (read + aggregate in main, never leaves the machine) ──

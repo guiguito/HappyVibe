@@ -58,6 +58,13 @@ const SECTION_ICONS: Record<string, React.JSX.Element> = {
     </>
   ),
   stats: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  // §33: the sidebar's MemoryIcon, same picture — one glyph per idea across the app.
+  memory: (
+    <>
+      <circle cx="8.5" cy="12" r="5" />
+      <circle cx="15.5" cy="12" r="5" />
+    </>
+  ),
   voice: (
     <>
       <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />

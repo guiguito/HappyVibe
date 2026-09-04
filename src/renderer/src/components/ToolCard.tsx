@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { MEMORY_TYPE_LABEL } from "../memoryFact";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
 import { asyncResultInfo, delegationLabel, inspectToResults, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
@@ -885,6 +886,10 @@ export function ToolCard({
         <DetailsToggle open={details} onClick={() => setDetails(!details)} />
       </div>
       {diff && openDiff && <DiffView lines={diff.lines} />}
+      {/* §33: what was remembered, on the card itself rather than behind `details`.
+          The whole promise is that nothing is saved behind your back, so the memory has to be
+          visible where the save happened — a JSON envelope three clicks away is not that. */}
+      <MemoryCardBody card={card} workspaceId={workspace ?? null} />
       {/* §7 round 12: a screenshot is a picture, not a base64 wall. Shown on the
           card itself rather than behind `details` — the agent took it TO be
           looked at, and hiding it is what made the feature read as missing. */}
@@ -933,6 +938,75 @@ export function ToolCard({
           {errorSummary(card.result)}
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * §33 — a memory card's body: the fact, and a Forget that undoes it in one click.
+ *
+ * Forget is the UNDO for a save, and it is why rewind says nothing about memory: memory lives
+ * outside the workspace, so a rewind never touches it, and this button is the way back.
+ *
+ * Reads `card.memory` (the structured field) rather than the result text, so a RESTORED card —
+ * which has only what restore.ts named — renders exactly the same as a live one.
+ */
+function MemoryCardBody({ card, workspaceId }: { card: ToolCardData; workspaceId: string | null }): React.JSX.Element | null {
+  // `workspaceId` is the workspace PATH: WorkspaceRegistry keys by path, so the id the IPC
+  // wants and the `workspace` prop the card already receives are the same string.
+  const [forgotten, setForgotten] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const mem = card.memory;
+  if (!mem || !card.toolName.startsWith("memory_")) return null;
+  // Nothing was saved, so there is nothing to show or undo.
+  if (card.status === "error" || card.status === "denied") return null;
+
+  const body = resultText(card.result);
+  const isSave = card.toolName === "memory_save";
+  const isRecall = card.toolName === "memory_recall";
+
+  return (
+    <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5">
+      <div className="flex items-center gap-2 flex-wrap mb-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-ink/20 bg-ink/5 px-2 py-0.5 text-ink-soft">
+          {mem.scope === "workspace" ? "this project" : "about you"}
+        </span>
+        {mem.type && (
+          <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-ink/20 bg-ink/5 px-2 py-0.5 text-ink-soft">
+            {MEMORY_TYPE_LABEL[mem.type] ?? mem.type}
+          </span>
+        )}
+        <span className="font-bold text-sm break-words">{mem.name}</span>
+      </div>
+      {mem.description && <p className="text-sm text-ink-soft mb-1.5 break-words">{mem.description}</p>}
+      {/* On a recall the RESULT is the memory; on a save the body is what the model sent, which
+          the result line does not repeat. Either way, show what is now remembered. */}
+      {isRecall && body && (
+        <pre className="rounded-lg border-2 border-line bg-paper px-3 py-2 text-xs whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+          {body}
+        </pre>
+      )}
+      {isSave &&
+        (forgotten ? (
+          <p className="text-xs font-bold text-ink-soft">Forgotten.</p>
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void window.hv
+                .memoryForget(mem.scope, mem.scope === "workspace" ? workspaceId : null, mem.name)
+                .then((ok) => {
+                  setForgotten(ok);
+                  setBusy(false);
+                });
+            }}
+            className="rounded-lg border-2 border-line bg-card px-2.5 py-1 text-xs font-bold text-berry shadow-sticker cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-none disabled:opacity-50"
+          >
+            Forget this
+          </button>
+        ))}
     </div>
   );
 }

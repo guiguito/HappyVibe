@@ -1,0 +1,61 @@
+/**
+ * PRD §33 — a REOPENED memory card.
+ *
+ * This is the path where §12's delegation card lost its id: a live card reads the tool result
+ * it still holds, while a restored one has only what restore.ts NAMED and restoreMap.ts carried
+ * through. Every unit test of a live card kept passing while the reopened one rendered empty.
+ */
+import { describe, expect, it } from "vitest";
+import { restoreItems } from "../src/main/restore";
+import { toTranscriptItems } from "../src/renderer/src/restoreMap";
+
+const save = (details: Record<string, unknown>) => [
+  { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "memory_save", arguments: { scope: "global", name: "x" } }] },
+  { role: "toolResult", toolCallId: "t1", toolName: "memory_save", content: [{ type: "text", text: 'Remembered "talk-like-a-young-engineer" (global).' }], details },
+];
+
+describe("restore carries a memory card's fields STRUCTURALLY", () => {
+  it("lifts scope, type, name and description off details", () => {
+    const items = restoreItems(save({ scope: "global", type: "user", name: "talk-like-a-young-engineer", description: "straight, explain jargon", replaced: false }) as never);
+    const tool = items.find((m) => m.kind === "tool")!;
+    expect(tool.memory).toEqual({
+      scope: "global",
+      type: "user",
+      name: "talk-like-a-young-engineer",
+      description: "straight, explain jargon",
+      replaced: false,
+    });
+  });
+
+  it("…and restoreMap NAMES it, or it is dropped in silence", () => {
+    const items = restoreItems(save({ scope: "workspace", type: "project", name: "n", description: "d" }) as never);
+    const card = toTranscriptItems(items as never, { sessionId: "s", workspaceId: "/ws" }, (() => { let i = 0; return () => ++i; })())
+      .map((t) => (t as { card?: { memory?: unknown } }).card)
+      .find((c) => c?.memory);
+    // The whole point: the Forget button needs the SCOPE and the SLUG, and neither survives a
+    // flatten-to-text. If this is undefined, a reopened card renders with no way back.
+    expect(card!.memory).toMatchObject({ scope: "workspace", name: "n" });
+  });
+
+  it("defaults an odd scope to global rather than inventing a third one", () => {
+    const items = restoreItems(save({ scope: "elsewhere", name: "n" }) as never);
+    expect((items.find((m) => m.kind === "tool") as { memory?: { scope?: string } }).memory!.scope).toBe("global");
+  });
+});
+
+describe("the lift is gated on the TOOL NAME, not on the fields", () => {
+  it("another tool whose details happen to carry name/type never becomes a memory card", () => {
+    // `name` and `type` are common words. Gating on the fields would turn some future tool's
+    // result into a memory card with a Forget button that deletes nothing.
+    const items = restoreItems([
+      { role: "assistant", content: [{ type: "toolCall", id: "t9", name: "write", arguments: { path: "a.txt" } }] },
+      { role: "toolResult", toolCallId: "t9", toolName: "write", content: [{ type: "text", text: "ok" }], details: { name: "a.txt", type: "file", scope: "global" } },
+    ] as never);
+    expect((items.find((m) => m.kind === "tool") as { memory?: unknown }).memory).toBeUndefined();
+  });
+
+  it("a memory result with no name in details carries nothing rather than half a card", () => {
+    const items = restoreItems(save({ scope: "global", type: "user" }) as never);
+    expect((items.find((m) => m.kind === "tool") as { memory?: unknown }).memory).toBeUndefined();
+  });
+});
