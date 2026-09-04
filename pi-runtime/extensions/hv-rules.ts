@@ -82,12 +82,15 @@ export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_us
  *
  * PRD §12 ("never block on the result") is enforced by matching this name: async
  * results auto-deliver as their own turn, but pi-subagents still steers the model
- * to wait, which would re-block the turn. 0.35.0 renamed `wait` → `subagent_wait`
- * with NO alias, silently disarming a guard that matched the literal string — so
- * both names stay listed, and tests/pi-subagents-contract.test.ts asserts the name
- * upstream actually registers is in this set.
+ * to wait, which would re-block the turn. Upstream has renamed it TWICE with no
+ * alias either time, silently disarming a guard that matched the literal string:
+ * 0.35.0 did `wait` → `subagent_wait`, and 0.61.0 did `subagent_wait` → `bg_wait`
+ * ("Remove the deprecated compatibility wait alias", #1729). All three names stay
+ * listed so the guard spans every pin we have shipped, and
+ * tests/pi-subagents-contract.test.ts asserts the name upstream ACTUALLY
+ * registers is in this set — that tripwire is the only thing that caught 0.61.
  */
-export const WAIT_TOOLS = new Set(["wait", "subagent_wait"]);
+export const WAIT_TOOLS = new Set(["wait", "subagent_wait", "bg_wait"]);
 
 export function isWaitTool(tool: unknown): boolean {
   return typeof tool === "string" && WAIT_TOOLS.has(tool);
