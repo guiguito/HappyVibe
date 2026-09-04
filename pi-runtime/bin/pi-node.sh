@@ -7,7 +7,10 @@
 # nodeExecPath() in src/main/pi/spawn.ts). In dev there is no bundle around
 # pi-runtime, so fall back to `node` on PATH.
 RUNTIME="$(cd "$(dirname "$0")/.." && pwd)"
-CLI="$RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+# dist/bundle/cli.js is upstream's own bin.pi since Pi 0.84.3; the modular
+# dist/cli.js is broken from 0.85.0 (undeclared @earendil-works/pi-server).
+# Keep in step with PI_CLI_RELPATH in src/main/pi/spawn.ts.
+CLI="$RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
 
 # PRD §12: every sub-agent child loads HappyVibe's permission guard. This script
 # IS PI_SUBAGENT_PI_BINARY, so it is children-only — the parent session spawns
