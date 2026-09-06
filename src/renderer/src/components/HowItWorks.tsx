@@ -49,7 +49,7 @@ export const HOWTO_COPY = {
       "Notes are hints, not facts: the agent is told to check anything that might have changed before acting on it. " +
       "It will not save anything that looks like a password, a key or a token — that is refused with a reason rather than trusted to good manners. " +
       "Each set holds at most 100 notes, so when one fills up the agent has to merge or drop before it can add. " +
-      "They are plain text files on this computer, in the folder named above, and nothing is sent anywhere or shared with anyone you work with — use AGENTS.md for what a team should know.",
+      "They are ordinary text files kept on this computer, and nothing is sent anywhere or shared with anyone you work with — use AGENTS.md for what a team should know.",
   },
   instructionFiles: {
     title: "How instruction files combine",

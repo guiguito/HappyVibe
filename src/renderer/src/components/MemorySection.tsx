@@ -194,12 +194,6 @@ export function MemorySection({
         </>
       )}
 
-      {list?.dir && (
-        <p className="mt-4 text-xs text-ink-soft break-all">
-          These live on this computer, in <span className="font-mono">{list.dir}</span>.
-        </p>
-      )}
-
       {inspecting && (
         <MemoryInspector scope={scope} workspaceId={workspaceId} slug={inspecting} onClose={() => setInspecting(null)} onChanged={refresh} />
       )}

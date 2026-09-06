@@ -11,6 +11,7 @@ import { memoryText, toAuditRow } from "../src/renderer/src/components/AuditView
 import { toolLabel } from "../src/renderer/src/toolLabel";
 import { NAV } from "../src/renderer/src/components/Sidebar";
 import { MEMORY_EVENT_TYPES } from "../src/main/ipc";
+import { HOWTO_COPY } from "../src/renderer/src/components/HowItWorks";
 import { MEMORY_TYPE_LABEL, memoryFactFrom, memoryPromptTitle } from "../src/renderer/src/memoryFact";
 
 const R = path.resolve(import.meta.dirname, "../src/renderer/src");
@@ -134,6 +135,26 @@ describe("absences a screenshot cannot prove", () => {
     const chat = read("components/ChatView.tsx");
     const rewindBlock = chat.slice(chat.indexOf("rewind"), chat.indexOf("rewind") + 8000);
     expect(rewindBlock.toLowerCase()).not.toContain("memor");
+  });
+
+  it("neither memory surface prints a raw filesystem path", () => {
+    // Reported 2026-09-06: "/Users/…/Library/Application Support/HappyVibe/pi-agent/memory/
+    // workspaces/75e1d737f94b3fc0" is not something a reader can use, and a 16-char hash on a
+    // settings page reads as a fault rather than a location. Both surfaces render the SAME
+    // component, so this is one assertion for two pages.
+    const shared = read("components/MemorySection.tsx") + read("components/MemoryView.tsx");
+    expect(shared).not.toContain("These live on this computer");
+    expect(shared).not.toMatch(/\{list[?.]*\.dir\}/);
+    expect(shared).not.toMatch(/Application Support|\/Users\//);
+  });
+
+  it("…and the disclosure no longer points at a folder that is not shown", () => {
+    // It used to read "in the folder named above", which only made sense while the path was
+    // printed above it. The privacy claim it carries has to survive without the path.
+    const howto = read("components/HowItWorks.tsx");
+    expect(howto).not.toContain("folder named above");
+    expect(HOWTO_COPY.memory.body).toMatch(/kept on this computer/);
+    expect(HOWTO_COPY.memory.body).toMatch(/nothing is sent anywhere/);
   });
 
   it("the Memory page never uses the words the UI is not allowed to say", () => {
