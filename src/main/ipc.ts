@@ -4850,6 +4850,24 @@ export function registerIpc(win: BrowserWindow): void {
     return { items: listMemories(dir), tokens: est.tokens, dir, available: true, cap: MEMORY_CAPS.perScope };
   });
 
+  /**
+   * §33 — does this memory still exist? Asked by a memory tool card when it mounts, so a
+   * REOPENED transcript does not offer Forget for something already forgotten.
+   *
+   * THREE answers, not two, and the third is the point. `hv:memory-read` returns null both for
+   * "no such memory" and for "the scope is unavailable" (memory off globally, or off for this
+   * workspace), and a card cannot tell those apart — it would print "Forgotten." about a file
+   * that is still sitting on disk. "unavailable" makes the card say nothing instead.
+   */
+  ipcMain.handle(
+    "hv:memory-exists",
+    (_e, scope: "global" | "workspace", workspaceId: string | null, slug: string): "yes" | "no" | "unavailable" => {
+      const dir = memoryDirFor(scope, workspaceId);
+      if (!dir) return "unavailable";
+      return readMemory(dir, slug) ? "yes" : "no";
+    },
+  );
+
   ipcMain.handle("hv:memory-read", (_e, scope: "global" | "workspace", workspaceId: string | null, slug: string) => {
     const dir = memoryDirFor(scope, workspaceId);
     const doc = dir ? readMemory(dir, slug) : null;

@@ -390,6 +390,7 @@ contextBridge.exposeInMainWorld("hv", {
   // §33 Memory — the page, the workspace section and the card's Forget button.
   memoryList: (scope: "global" | "workspace", workspaceId?: string | null) => ipcRenderer.invoke("hv:memory-list", scope, workspaceId ?? null),
   memoryRead: (scope: "global" | "workspace", workspaceId: string | null, slug: string) => ipcRenderer.invoke("hv:memory-read", scope, workspaceId, slug),
+  memoryExists: (scope: "global" | "workspace", workspaceId: string | null, slug: string) => ipcRenderer.invoke("hv:memory-exists", scope, workspaceId, slug),
   memoryEdit: (scope: "global" | "workspace", workspaceId: string | null, slug: string, patch: { description?: string; content?: string }) =>
     ipcRenderer.invoke("hv:memory-edit", scope, workspaceId, slug, patch),
   memoryForget: (scope: "global" | "workspace", workspaceId: string | null, slug: string) => ipcRenderer.invoke("hv:memory-forget", scope, workspaceId, slug),

@@ -961,6 +961,27 @@ export function memoryFromResult(result: unknown): ToolCardData["memory"] | unde
 }
 
 /**
+ * §33 — what a memory card may offer, given what the store says.
+ *
+ * Exported and pure because the renderer suite has no DOM: the rule is pinned here, and the
+ * component only lays it out.
+ *
+ * "checking" is not a loading spinner — it is the state in which the card MAKES NO CLAIM. It
+ * covers both the moment before the answer arrives and the case where memory is switched off,
+ * because in neither does the card know whether the memory is still there. Saying "Forgotten."
+ * about a file that is still on disk would be the same class of lie this whole feature is
+ * built to avoid.
+ */
+export type MemoryCardState = "checking" | "present" | "gone";
+
+export function memoryCardState(presence: HvMemoryPresence | null, forgottenHere: boolean): MemoryCardState {
+  // A Forget clicked on THIS card wins outright: the answer below may predate it.
+  if (forgottenHere) return "gone";
+  if (presence === null || presence === "unavailable") return "checking";
+  return presence === "yes" ? "present" : "gone";
+}
+
+/**
  * §33 — a memory card's body: the fact, and a Forget that undoes it in one click.
  *
  * Forget is the UNDO for a save, and it is why rewind says nothing about memory: memory lives
@@ -974,6 +995,14 @@ function MemoryCardBody({ card, workspaceId }: { card: ToolCardData; workspaceId
   // wants and the `workspace` prop the card already receives are the same string.
   const [forgotten, setForgotten] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Does it still exist? A REOPENED transcript otherwise offers Forget for a memory that is
+  // already gone — reported after a memory saved in one session had been forgotten later, and
+  // the card still showed the button. The transcript is right to keep the card (a save DID
+  // happen); it is the affordance that has to tell the truth.
+  //
+  // A memory re-saved under the same name is deliberately treated as present: upsert-by-name is
+  // the model's whole identity rule, so the same name IS that memory, updated.
+  const [presence, setPresence] = useState<HvMemoryPresence | null>(null);
   // TWO sources, and needing both is the whole lesson of this card.
   //
   // A RESTORED card has only what restore.ts named (`card.memory`); a LIVE one has never been
@@ -982,13 +1011,31 @@ function MemoryCardBody({ card, workspaceId }: { card: ToolCardData; workspaceId
   // you approve a save — rendered its headline and nothing else: no body, no Forget. Every unit
   // test fed a restored card and passed. Found in the GUI, exactly as §12's delegation card was.
   const mem = card.memory ?? memoryFromResult(card.result);
+  const isSaveCard = card.toolName === "memory_save";
+  const scope = mem?.scope;
+  const name = mem?.name;
+  useEffect(() => {
+    // Only a SAVE card offers Forget, so only it needs to ask. One local read on mount; the
+    // answer is not re-polled, because the card is a record of a past turn, not a live view.
+    if (!isSaveCard || !scope || !name) return;
+    let live = true;
+    void window.hv
+      .memoryExists(scope, scope === "workspace" ? workspaceId : null, name)
+      .then((p) => {
+        if (live) setPresence(p);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [isSaveCard, scope, name, workspaceId]);
   if (!mem || !card.toolName.startsWith("memory_")) return null;
   // Nothing was saved, so there is nothing to show or undo.
   if (card.status === "error" || card.status === "denied") return null;
 
   const body = resultText(card.result);
-  const isSave = card.toolName === "memory_save";
   const isRecall = card.toolName === "memory_recall";
+  const state = memoryCardState(presence, forgotten);
 
   return (
     <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5">
@@ -1014,10 +1061,10 @@ function MemoryCardBody({ card, workspaceId }: { card: ToolCardData; workspaceId
           {body}
         </pre>
       )}
-      {isSave &&
-        (forgotten ? (
-          <p className="text-xs font-bold text-ink-soft">Forgotten.</p>
-        ) : (
+      {isSaveCard && state === "gone" && <p className="text-xs font-bold text-ink-soft">Forgotten.</p>}
+      {isSaveCard &&
+        state === "present" &&
+        (
           <button
             type="button"
             disabled={busy}
@@ -1034,7 +1081,7 @@ function MemoryCardBody({ card, workspaceId }: { card: ToolCardData; workspaceId
           >
             Forget this
           </button>
-        ))}
+        )}
     </div>
   );
 }

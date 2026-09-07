@@ -8,7 +8,9 @@
 import { describe, expect, it } from "vitest";
 import { restoreItems } from "../src/main/restore";
 import { toTranscriptItems } from "../src/renderer/src/restoreMap";
-import { memoryFromResult } from "../src/renderer/src/components/ToolCard";
+import { memoryCardState, memoryFromResult } from "../src/renderer/src/components/ToolCard";
+import fs from "node:fs";
+import path from "node:path";
 
 const save = (details: Record<string, unknown>) => [
   { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "memory_save", arguments: { scope: "global", name: "x" } }] },
@@ -93,5 +95,63 @@ describe("a LIVE memory card reads the tool result's details", () => {
     expect(memoryFromResult(undefined)).toBeUndefined();
     expect(memoryFromResult({ content: [] })).toBeUndefined();
     expect(memoryFromResult({ details: { scope: "global" } })).toBeUndefined();
+  });
+});
+
+/**
+ * §33 — a REOPENED card must not offer Forget for a memory that is already gone.
+ *
+ * Reported 2026-09-06: a transcript still showed "Forget this" for a memory forgotten in a
+ * later session. Keeping the CARD is right — a save did happen, and the transcript records what
+ * happened — but the affordance has to tell the truth about now.
+ */
+describe("memoryCardState", () => {
+  it("present ⇒ the button; absent ⇒ Forgotten", () => {
+    expect(memoryCardState("yes", false)).toBe("present");
+    expect(memoryCardState("no", false)).toBe("gone");
+  });
+
+  it("makes NO claim before the answer arrives", () => {
+    // Not a spinner: the card simply says nothing rather than guessing either way.
+    expect(memoryCardState(null, false)).toBe("checking");
+  });
+
+  it("makes no claim when memory is switched OFF — the file is still there", () => {
+    // The trap this state exists for. `hv:memory-read` answers null both for "no such memory"
+    // and for "scope unavailable"; collapsing them would print "Forgotten." about a memory
+    // sitting on disk, which is exactly the class of lie this feature is built to avoid.
+    expect(memoryCardState("unavailable", false)).toBe("checking");
+  });
+
+  it("a Forget clicked on THIS card wins over any earlier answer", () => {
+    expect(memoryCardState("yes", true)).toBe("gone");
+    expect(memoryCardState(null, true)).toBe("gone");
+    expect(memoryCardState("unavailable", true)).toBe("gone");
+  });
+
+  it("only these three states exist, so no branch renders both", () => {
+    const all = (["yes", "no", "unavailable", null] as const).flatMap((p) =>
+      [true, false].map((f) => memoryCardState(p, f)),
+    );
+    expect(new Set(all)).toEqual(new Set(["checking", "present", "gone"]));
+  });
+});
+
+describe("the card asks, and asks the right question", () => {
+  const src = fs.readFileSync(path.resolve(import.meta.dirname, "../src/renderer/src/components/ToolCard.tsx"), "utf8");
+
+  it("uses the three-valued memoryExists, never the ambiguous memoryRead", () => {
+    expect(src).toContain("window.hv\n      .memoryExists(");
+    // memoryRead cannot distinguish "gone" from "memory is off", so the card must not use it.
+    expect(src).not.toMatch(/memoryRead\(/);
+  });
+
+  it("only a SAVE card asks — recall and forget cards have no button to guard", () => {
+    expect(src).toContain("if (!isSaveCard || !scope || !name) return;");
+  });
+
+  it("the Forget button is rendered ONLY in the present state", () => {
+    const block = src.slice(src.indexOf('state === "gone"'), src.indexOf("Forget this"));
+    expect(block).toContain('state === "present"');
   });
 });

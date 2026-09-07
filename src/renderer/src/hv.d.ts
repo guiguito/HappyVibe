@@ -303,6 +303,7 @@ interface HvTool {
 /** §14 — mirrors SkillView in src/main/skills/view.ts (from hv:skills-list). */
 /** §33 Memory. */
 type HvMemoryScope = "global" | "workspace";
+type HvMemoryPresence = "yes" | "no" | "unavailable";
 
 interface HvMemorySummary {
   slug: string;
@@ -962,6 +963,8 @@ interface HvApi {
   // §33 Memory.
   memoryList(scope: HvMemoryScope, workspaceId?: string | null): Promise<HvMemoryList>;
   memoryRead(scope: HvMemoryScope, workspaceId: string | null, slug: string): Promise<HvMemoryDoc | null>;
+  /** §33: "unavailable" = memory is off here, which is NOT the same as forgotten. */
+  memoryExists(scope: HvMemoryScope, workspaceId: string | null, slug: string): Promise<HvMemoryPresence>;
   memoryEdit(
     scope: HvMemoryScope,
     workspaceId: string | null,
