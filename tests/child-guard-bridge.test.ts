@@ -188,11 +188,38 @@ test.skipIf(!KEY)(
           return "";
         }
       };
+      // REALPATH BOTH SIDES. `mkdtempSync` under os.tmpdir() hands back `/var/folders/…` while
+      // macOS resolves that to `/private/var/folders/…`, so the moment the model writes an
+      // ABSOLUTE path this compare called a file in the workspace an escape — and then blamed
+      // the guard, which had resolved both sides (hv-child-guard's escapesWorkspace →
+      // resolveThroughLinks) and allowed it correctly. Whether it fires at all depends on
+      // whether the model chose a relative or an absolute path that run, which is why it looked
+      // like a flake. Same rule as git.ts's root compare, and the reason CLAUDE.md states it.
+      // Resolve through links from the nearest EXISTING ancestor: the target is often absent
+      // (never created, or already cleaned up) and so is its parent, so a single realpath — or
+      // a realpath of the parent — throws. Mirrors hv-child-guard's own resolveThroughLinks.
+      const realish = (raw: string): string => {
+        let cur = path.resolve(raw);
+        const rest: string[] = [];
+        for (;;) {
+          try {
+            return path.join(fs.realpathSync(cur), ...rest);
+          } catch {
+            const parent = path.dirname(cur);
+            if (parent === cur) return path.resolve(raw);
+            rest.unshift(path.basename(cur));
+            cur = parent;
+          }
+        }
+      };
+      const realCwd2 = realish(cwd2);
       const inWorkspace = (r: Record<string, unknown>): boolean => {
         const p = writePath(r);
         if (!p) return false;
-        const abs = path.resolve(cwd2, p);
-        return abs === cwd2 || abs.startsWith(cwd2 + path.sep);
+        const abs = realish(path.resolve(realCwd2, p));
+        // `=== root || startsWith(root + sep)`, never a bare startsWith, or a sibling named
+        // `<root>-evil` reads as inside `<root>` — the guard's own rule.
+        return abs === realCwd2 || abs.startsWith(realCwd2 + path.sep);
       };
       const writes = (): Array<Record<string, unknown>> => rows2().filter((r) => r.tool === "write");
 

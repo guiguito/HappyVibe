@@ -27,6 +27,7 @@ import {
   type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
 import { parseBuiltins } from "./hv-builtins";
+import { memoryTokenLines, readIndex, renderMemorySection } from "./hv-memory";
 // PRD §12 (2026-08-21): the sub-agent boundary. `capability-ceiling` IS in
 // pi-subagents' exports map, so it takes the BARE specifier — unlike
 // listAsyncRuns/ASYNC_DIR above, which are absent from the map and therefore
@@ -85,6 +86,20 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
   }
   if (toolName === "web_search" && typeof input.query === "string") {
     return input.query.slice(0, 300);
+  }
+  // §33: a memory call's summary is the WHOLE QUESTION being asked — the prompt renders it as
+  // the fact it is (scope, kind, name, summary, body) and diffs it against what is already
+  // stored. So it must stay PARSEABLE, and the generic arm below cannot deliver that: it slices
+  // the SERIALIZED JSON at 300 chars, which for a memory cuts mid-string and leaves the modal
+  // with nothing to parse. Found only in the GUI — the prompt said "Saving a memory" and showed
+  // no memory at all, while every unit test fed it well-formed args and passed.
+  //
+  // Cap the FIELD, never the serialized string, and cap it at the store's own body limit so a
+  // memory that is legal to save is always legal to show in full.
+  if (toolName.startsWith("memory_")) {
+    const { intent: _words, ...factual } = input;
+    if (typeof factual.content === "string") factual.content = factual.content.slice(0, 4096);
+    return JSON.stringify(factual);
   }
   // …and for EVERYTHING else, strip `intent` rather than special-casing the
   // tools that happen to carry one.
@@ -618,7 +633,16 @@ function audit(
     wouldHave?: RuleAction;
   },
 ): void {
-  ui.notify(JSON.stringify({ kind: "hv.audit", ts: new Date().toISOString(), ...o }), "info");
+  // §33: the audit row's summary is CAPPED here, at the one choke point every caller routes
+  // through, rather than at each call site.
+  //
+  // `summarize` used to cap every tool at 300 chars, so this was implicit. §33 lifted that cap
+  // for memory calls — the permission PROMPT has to show the whole memory and diff it — and
+  // that silently made the audit row unbounded too: a 4 KB body in every JSONL row, on a log
+  // that is long-lived and exportable. The prompt and the record want different things, so they
+  // get different lengths, and the record's is bounded by construction.
+  const row = { ...o, summary: o.summary.length > 300 ? `${o.summary.slice(0, 300)}…` : o.summary };
+  ui.notify(JSON.stringify({ kind: "hv.audit", ts: new Date().toISOString(), ...row }), "info");
 }
 
 // ── B3 auth (docs/validation/s0.2.md) ──────────────────────────────────────
@@ -642,6 +666,16 @@ export default function (pi: ExtensionAPI) {
   // §13 round 6: global on/off for plan mode + ask_user, resolved by main at
   // spawn (same pattern as HV_BYPASS). Fail-open on a corrupt value.
   const builtins = parseBuiltins(process.env.HV_BUILTINS);
+  // §33: the two memory scopes main resolved at spawn. Read HERE, beside builtins, rather than
+  // beside the tool registrations 1,400 lines down: `before_agent_start` is registered above
+  // that point and reads them, and this file already has one scar from a const that sat after
+  // its own readers (the §12 refusal paths' `summary`).
+  //
+  // An ABSENT global dir is how "memory is off" arrives; an absent WORKSPACE dir is how "off
+  // for this workspace" does — never an empty string, which would read as a value.
+  const memoryGlobalDir = process.env.HV_MEMORY_GLOBAL_DIR;
+  const memoryWorkspaceDir = process.env.HV_MEMORY_WORKSPACE_DIR;
+  const memoryOn = Boolean(builtins.memory && memoryGlobalDir);
 
   // ── B5 context visibility ──────────────────────────────────────────────
   // System-prompt block captured once per turn (NOT a session entry — read via
@@ -655,6 +689,9 @@ export default function (pi: ExtensionAPI) {
     toolDefs: Array<{ name: string; chars: number }>;
     /** Discoverability: the injected "Available subagents" roster, per agent. */
     agents: Array<{ name: string; chars: number }>;
+    /** §33: the two memory scopes and the policy's own weight, so the context panel can price
+     *  memory as three named rows instead of hiding it inside "System prompt". */
+    memory?: { global: { count: number; tokens: number; items: { name: string; tokens: number }[] }; workspace: { count: number; tokens: number; items: { name: string; tokens: number }[] }; policy: number };
   } | null = null;
   // W1.4: full resolved system prompt text (read-only Settings display).
   // null until the first turn runs — before_agent_start is the capture point.
@@ -805,7 +842,19 @@ export default function (pi: ExtensionAPI) {
     // registered — §26's rule: a prompt must never name a tool the model
     // does not have.
     const webSection = builtins.web ? "\n\n" + WEB_STEER_LINE : "";
-    const injected = sp + section + agentsSection + planSection + skillSection + terminalSection + webSection;
+    // §33: the policy plus both scope indexes, RE-READ FROM DISK every turn. That is what makes
+    // a save or a Memory-page edit live on the very next turn with no respawn — the whole
+    // reason the index is a generated file rather than in-bridge state.
+    const memorySection = memoryOn
+      ? renderMemorySection({
+          append: builtins.memoryAppend,
+          global: readIndex(memoryGlobalDir),
+          // null (not "") when the workspace toggle is off — no block at all, rather than an
+          // empty one that would tell the model a scope exists which it cannot write to.
+          workspace: memoryWorkspaceDir ? readIndex(memoryWorkspaceDir) : null,
+        })
+      : "";
+    const injected = sp + section + agentsSection + planSection + skillSection + terminalSection + webSection + memorySection;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -825,8 +874,13 @@ export default function (pi: ExtensionAPI) {
       toolDefs,
       // Per-agent weight of the injected roster (name line ≈ chars/4 tokens).
       agents: agents.map((a) => ({ name: a.name, chars: `- **${a.name}** — ${a.description.slice(0, 200)}`.length })),
+      // Absent when memory is off, so the panel shows no Memory category at all — the 0-cost claim.
+      memory: memoryOn ? memoryTokenLines(memoryGlobalDir, memoryWorkspaceDir) : undefined,
     };
-    if (section || agentsSection || planSection || skillSection) return { systemPrompt: injected };
+    // memorySection is named here for the same reason as the others: an injection that is
+    // computed and then not returned is silently absent, and memory can be the ONLY thing a
+    // turn injects (no nested AGENTS.md, no agents, no plan, no skills).
+    if (section || agentsSection || planSection || skillSection || memorySection) return { systemPrompt: injected };
     return undefined; // no injection this turn — resets Pi to the base prompt
   });
 
@@ -2113,6 +2167,130 @@ export default function (pi: ExtensionAPI) {
       },
     });
   } // builtins.document
+
+  // ── §33 Memory: three thin shells over blocking envelopes ────────────────
+  //
+  // MAIN IS THE ONE WRITER. The bridge validates nothing beyond "is this scope even available"
+  // — main owns the slug, the caps, the secret scan, the atomic write, the index regeneration
+  // and the audit row, so a human edit from the Memory page and an agent save cannot diverge.
+  //
+  // A registered tool rather than letting the model `write` into the folder (Claude Code's way):
+  // a write there is indistinguishable from any other file edit, escapes the workspace, and
+  // gives no card, no scope badge, no secret scan, no index regeneration and no audit type.
+  //
+  // The whole block is gated on the global dir being present, which is how "memory is off"
+  // reaches here — main simply does not name the scope. Off costs 0.
+  if (memoryOn) {
+    const MemoryScope = Type.Union([Type.Literal("global"), Type.Literal("workspace")], {
+      description: "global = about the user, in every project; workspace = about this project only.",
+    });
+    const memoryError = (text: string): { content: [{ type: "text"; text: string }]; details: Record<string, unknown> } => ({
+      content: [{ type: "text", text }],
+      details: {},
+    });
+    /** Every envelope is answered by main — a non-string here means the round trip broke, and
+     *  the model must be told rather than left with an empty result it reads as success. */
+    const memoryAsk = async (
+      ctx: { ui: { input: (title: string, value: string) => Promise<unknown> } },
+      payload: Record<string, unknown>,
+    ): Promise<string | null> => {
+      const raw = await ctx.ui.input(JSON.stringify(payload), "");
+      return typeof raw === "string" && raw ? raw : null;
+    };
+
+    pi.registerTool({
+      name: "memory_save",
+      label: "Remember",
+      description:
+        "Save a durable memory for future sessions. Ask yourself first: will a future session need this, and is it " +
+        "absent from the code, git history and AGENTS.md? Saving the same `name` REPLACES the existing memory — prefer " +
+        "that over creating a near-duplicate. Never save secrets, task state or anything you can look up.",
+      parameters: Type.Object({
+        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are remembering and why." }),
+        scope: MemoryScope,
+        type: Type.Union([Type.Literal("user"), Type.Literal("feedback"), Type.Literal("project"), Type.Literal("reference")], {
+          description: "user = who they are and how they like to work; feedback = a correction or a confirmed approach (say WHY and HOW TO APPLY); project = a fact about this codebase you cannot recover from it; reference = a pointer to something external.",
+        }),
+        name: Type.String({ description: "Short stable name, e.g. 'talk like a young engineer'. The same name replaces the existing memory." }),
+        description: Type.String({ description: "One line, at most 150 characters — this is what you see in the index every turn." }),
+        content: Type.String({ description: "The fact itself, at most 4 KB of markdown." }),
+      }),
+      async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+        const p = params as { scope: string; type: string; name: string; description: string; content: string };
+        if (p.scope === "workspace" && !memoryWorkspaceDir) {
+          return memoryError("Memory is turned off for this workspace. Save it as a global memory, or leave it unsaved.");
+        }
+        const raw = await memoryAsk(ctx, {
+          kind: "hv.memory-save",
+          scope: p.scope,
+          type: p.type,
+          name: p.name,
+          description: p.description,
+          content: p.content,
+          toolCallId,
+        });
+        if (raw === null) return memoryError("ERROR: the memory could not be saved.");
+        if (raw.startsWith("ERROR:")) return memoryError(raw);
+        // "ok:<slug>" or "replaced:<slug>" — main owns the slug, so the model learns the real
+        // name it must use to recall or forget this later.
+        const sep = raw.indexOf(":");
+        const verb = sep < 0 ? "ok" : raw.slice(0, sep);
+        const slug = sep < 0 ? p.name : raw.slice(sep + 1);
+        return {
+          content: [{ type: "text", text: `${verb === "replaced" ? "Updated memory" : "Remembered"} "${slug}" (${p.scope}).` }],
+          details: { scope: p.scope, type: p.type, name: slug, description: p.description, replaced: verb === "replaced" },
+        };
+      },
+    });
+
+    pi.registerTool({
+      name: "memory_recall",
+      label: "Recall",
+      description:
+        "Open one memory in full, by the name shown in the memory index in your instructions. Use it when the index " +
+        "line suggests the memory is relevant to what you are doing.",
+      parameters: Type.Object({
+        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are looking up and why." }),
+        scope: MemoryScope,
+        name: Type.String({ description: "The memory's name, exactly as it appears in the index." }),
+      }),
+      async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+        const p = params as { scope: string; name: string };
+        if (p.scope === "workspace" && !memoryWorkspaceDir) {
+          return memoryError("Memory is turned off for this workspace, so there are no workspace memories to recall.");
+        }
+        const raw = await memoryAsk(ctx, { kind: "hv.memory-recall", scope: p.scope, name: p.name, toolCallId });
+        if (raw === null) return memoryError("ERROR: the memory could not be read.");
+        return { content: [{ type: "text", text: raw }], details: { scope: p.scope, name: p.name } };
+      },
+    });
+
+    pi.registerTool({
+      name: "memory_forget",
+      label: "Forget",
+      description:
+        'Delete one memory. Use it when the user says "forget …", or when a memory has turned out to be wrong or ' +
+        "obsolete. To CORRECT a memory, save it again under the same name instead — that replaces it.",
+      parameters: Type.Object({
+        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are forgetting and why." }),
+        scope: MemoryScope,
+        name: Type.String({ description: "The memory's name, exactly as it appears in the index." }),
+      }),
+      async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+        const p = params as { scope: string; name: string };
+        if (p.scope === "workspace" && !memoryWorkspaceDir) {
+          return memoryError("Memory is turned off for this workspace, so there is nothing to forget there.");
+        }
+        const raw = await memoryAsk(ctx, { kind: "hv.memory-forget", scope: p.scope, name: p.name, toolCallId });
+        if (raw === null) return memoryError("ERROR: the memory could not be forgotten.");
+        if (raw.startsWith("ERROR:")) return memoryError(raw);
+        return {
+          content: [{ type: "text", text: `Forgot "${p.name}" (${p.scope}).` }],
+          details: { scope: p.scope, name: p.name },
+        };
+      },
+    });
+  } // builtins.memory
 
   // ── §23 Plan Mode: registered tools ──────────────────────────────────────
   // Gated as a whole block: plan_start is the model's own entry point into Plan

@@ -36,6 +36,7 @@ import { AskUserModal } from "./components/AskUserModal";
 import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
+import { MemoryView } from "./components/MemoryView";
 import { SkillsView } from "./components/SkillsView";
 import { PromptTemplatesView } from "./components/PromptTemplatesView";
 import { PluginsView } from "./components/PluginsView";
@@ -2552,6 +2553,7 @@ export default function App(): React.JSX.Element {
         {activeView === "stats" && <DashboardView workspaces={workspaces} />}
         {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
         {activeView === "changelog" && <ChangelogView />}
+        {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
         {activeView === "skills" && (
           <SkillsView
             sessionId={selectedId}
@@ -3037,7 +3039,7 @@ export default function App(): React.JSX.Element {
           modal then falls back to the viewport — a prompt that never times out
           must never be invisible. */}
       {uiReq?.kind === "permission" && (
-        <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} container={paneHost(uiReq.req.sessionId)} />
+        <PermissionModal req={uiReq.req} info={uiReq.info} onChoice={respondPermission} workspaceId={sessions.find((x) => x.id === uiReq.req.sessionId)?.workspaceId ?? null} container={paneHost(uiReq.req.sessionId)} />
       )}
       {uiReq?.kind === "askUser" && (
         <AskUserModal key={uiReq.req.id} ask={uiReq.ask} onSubmit={respondAskUser} onDismiss={() => respondAskUser(null)} container={paneHost(uiReq.req.sessionId)} />

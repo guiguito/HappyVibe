@@ -108,6 +108,13 @@ export interface SystemBlock {
     global: { tokens: number; count: number; items?: { name: string; tokens: number }[] };
     workspace: { tokens: number; count: number; items?: { name: string; tokens: number }[] };
   };
+  /** §33: the two memory indexes and the policy paragraph's own weight. ABSENT when memory is
+   *  off, which is what makes the panel show no Memory category at all — the 0-cost claim. */
+  memory?: {
+    global: { tokens: number; count: number; items?: { name: string; tokens: number }[] };
+    workspace: { tokens: number; count: number; items?: { name: string; tokens: number }[] };
+    policy: number;
+  };
 }
 
 export interface ContextSnapshot {
@@ -190,7 +197,7 @@ export function groupItems(items: ContextItem[]): ContextGroupView[] {
 // ── W2.4: summary-first panel ────────────────────────────────────────────────
 
 export interface CategorySummary {
-  key: "system" | "files" | "tools" | "skills-global" | "skills-workspace" | ContextItem["group"];
+  key: "system" | "files" | "tools" | "skills-global" | "skills-workspace" | "memory-global" | "memory-workspace" | "memory-policy" | ContextItem["group"];
   label: string;
   count: number;
   chars: number;
@@ -261,6 +268,25 @@ export function summarizeGroups(
         rows.push({ key: "skills-workspace", label: "Workspace skills", count: sk.workspace.count, chars: sk.workspace.tokens * 4, estTokens: sk.workspace.tokens, removedCount: 0, share: 0, skills: sk.workspace.items ?? [] });
       }
     }
+    // §33: memory, as THREE named rows — the two indexes plus the policy paragraph. The policy
+    // is its own row rather than folded into "System prompt" because the panel's whole job is
+    // that the total stays honest: a paragraph the user can read and edit on the Built-in tools
+    // page should be priced where they can see it.
+    //
+    // A scope with no memories shows NO row (the skills rule): a "0 memories · 0 tokens" line
+    // is noise on every panel of every session that has not used the feature.
+    const mem = system.memory;
+    if (mem) {
+      if (mem.global.count > 0) {
+        rows.push({ key: "memory-global", label: "Global memories", count: mem.global.count, chars: mem.global.tokens * 4, estTokens: mem.global.tokens, removedCount: 0, share: 0, skills: mem.global.items ?? [] });
+      }
+      if (mem.workspace.count > 0) {
+        rows.push({ key: "memory-workspace", label: "Workspace memories", count: mem.workspace.count, chars: mem.workspace.tokens * 4, estTokens: mem.workspace.tokens, removedCount: 0, share: 0, skills: mem.workspace.items ?? [] });
+      }
+      if (mem.policy > 0) {
+        rows.push({ key: "memory-policy", label: "Memory instructions", count: 1, chars: mem.policy * 4, estTokens: mem.policy, removedCount: 0, share: 0 });
+      }
+    }
   }
   for (const g of groupItems(items)) {
     rows.push({
@@ -292,6 +318,9 @@ const CATEGORY_NOUN: Record<string, { one: string; many: string }> = {
   branch: { one: "summary", many: "summaries" },
   "skills-global": { one: "skill", many: "skills" },
   "skills-workspace": { one: "skill", many: "skills" },
+  "memory-global": { one: "memory", many: "memories" },
+  "memory-workspace": { one: "memory", many: "memories" },
+  "memory-policy": { one: "paragraph", many: "paragraphs" },
 };
 const DEFAULT_NOUN = { one: "item", many: "items" };
 
@@ -313,6 +342,9 @@ export const CATEGORY_COLOR: Record<string, string> = {
   other: "bg-line-strong",
   "skills-global": "bg-plum/70",
   "skills-workspace": "bg-berry/70",
+  "memory-global": "bg-sky/70",
+  "memory-workspace": "bg-leaf/70",
+  "memory-policy": "bg-ink/40",
   free: "bg-line/40", // v5.1: empty/free context window
 };
 

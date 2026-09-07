@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { MEMORY_TYPE_LABEL } from "../memoryFact";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
 import { asyncResultInfo, delegationLabel, inspectToResults, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
@@ -36,6 +37,14 @@ export interface ToolCardData {
    * the run had finished.
    */
   delegation?: { outcome: "done" | "failed" | "stopped"; summary?: string };
+  /**
+   * §33: a memory card's structured fields — scope, type, name, description.
+   *
+   * On a LIVE card these also sit in `result`'s details, but a RESTORED one has only what
+   * restore.ts named (restoreMap.ts's rule), and the Forget button needs the scope and the slug
+   * to call anything at all. Carried as a field so both paths render the same card.
+   */
+  memory?: { scope: "global" | "workspace"; type?: string; name: string; description?: string; replaced?: boolean };
   /**
    * §12 (2026-08-30): a detached delegation's run id.
    *
@@ -230,6 +239,15 @@ const ICON_PATHS: Record<IconKind, React.JSX.Element> = {
     <>
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </>
+  ),
+  // §33: two interlocking rings — the knot you tie to remember something. Chosen over a brain
+  // (every product's memory icon, and it says "AI" where §19 pins that word to one use) and
+  // over a bookmark (too close to the book that already means Skills).
+  memory: (
+    <>
+      <circle cx="8.5" cy="12" r="5" />
+      <circle cx="15.5" cy="12" r="5" />
     </>
   ),
 };
@@ -868,6 +886,10 @@ export function ToolCard({
         <DetailsToggle open={details} onClick={() => setDetails(!details)} />
       </div>
       {diff && openDiff && <DiffView lines={diff.lines} />}
+      {/* §33: what was remembered, on the card itself rather than behind `details`.
+          The whole promise is that nothing is saved behind your back, so the memory has to be
+          visible where the save happened — a JSON envelope three clicks away is not that. */}
+      <MemoryCardBody card={card} workspaceId={workspace ?? null} />
       {/* §7 round 12: a screenshot is a picture, not a base64 wall. Shown on the
           card itself rather than behind `details` — the agent took it TO be
           looked at, and hiding it is what made the feature read as missing. */}
@@ -916,6 +938,150 @@ export function ToolCard({
           {errorSummary(card.result)}
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * §33 — a LIVE memory card's fields, off the tool result's structured `details` sibling.
+ *
+ * Exported so a test can drive it with the real wire shape: the renderer suite has no DOM, so
+ * the only way to pin the live path is to assert on this function rather than on the card.
+ */
+export function memoryFromResult(result: unknown): ToolCardData["memory"] | undefined {
+  const d = (result as { details?: Record<string, unknown> } | undefined)?.details;
+  if (!d || typeof d.name !== "string" || !d.name) return undefined;
+  return {
+    scope: d.scope === "workspace" ? "workspace" : "global",
+    name: d.name,
+    ...(typeof d.type === "string" ? { type: d.type } : {}),
+    ...(typeof d.description === "string" ? { description: d.description } : {}),
+    ...(typeof d.replaced === "boolean" ? { replaced: d.replaced } : {}),
+  };
+}
+
+/**
+ * §33 — what a memory card may offer, given what the store says.
+ *
+ * Exported and pure because the renderer suite has no DOM: the rule is pinned here, and the
+ * component only lays it out.
+ *
+ * "checking" is not a loading spinner — it is the state in which the card MAKES NO CLAIM. It
+ * covers both the moment before the answer arrives and the case where memory is switched off,
+ * because in neither does the card know whether the memory is still there. Saying "Forgotten."
+ * about a file that is still on disk would be the same class of lie this whole feature is
+ * built to avoid.
+ */
+export type MemoryCardState = "checking" | "present" | "gone";
+
+export function memoryCardState(presence: HvMemoryPresence | null, forgottenHere: boolean): MemoryCardState {
+  // A Forget clicked on THIS card wins outright: the answer below may predate it.
+  if (forgottenHere) return "gone";
+  if (presence === null || presence === "unavailable") return "checking";
+  return presence === "yes" ? "present" : "gone";
+}
+
+/**
+ * §33 — a memory card's body: the fact, and a Forget that undoes it in one click.
+ *
+ * Forget is the UNDO for a save, and it is why rewind says nothing about memory: memory lives
+ * outside the workspace, so a rewind never touches it, and this button is the way back.
+ *
+ * Reads `card.memory` (the structured field) rather than the result text, so a RESTORED card —
+ * which has only what restore.ts named — renders exactly the same as a live one.
+ */
+function MemoryCardBody({ card, workspaceId }: { card: ToolCardData; workspaceId: string | null }): React.JSX.Element | null {
+  // `workspaceId` is the workspace PATH: WorkspaceRegistry keys by path, so the id the IPC
+  // wants and the `workspace` prop the card already receives are the same string.
+  const [forgotten, setForgotten] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Does it still exist? A REOPENED transcript otherwise offers Forget for a memory that is
+  // already gone — reported after a memory saved in one session had been forgotten later, and
+  // the card still showed the button. The transcript is right to keep the card (a save DID
+  // happen); it is the affordance that has to tell the truth.
+  //
+  // A memory re-saved under the same name is deliberately treated as present: upsert-by-name is
+  // the model's whole identity rule, so the same name IS that memory, updated.
+  const [presence, setPresence] = useState<HvMemoryPresence | null>(null);
+  // TWO sources, and needing both is the whole lesson of this card.
+  //
+  // A RESTORED card has only what restore.ts named (`card.memory`); a LIVE one has never been
+  // through restore and carries the tool result itself, with the same fields on its `details`.
+  // The first cut read only the structured field, so the live card — the one you see the moment
+  // you approve a save — rendered its headline and nothing else: no body, no Forget. Every unit
+  // test fed a restored card and passed. Found in the GUI, exactly as §12's delegation card was.
+  const mem = card.memory ?? memoryFromResult(card.result);
+  const isSaveCard = card.toolName === "memory_save";
+  const scope = mem?.scope;
+  const name = mem?.name;
+  useEffect(() => {
+    // Only a SAVE card offers Forget, so only it needs to ask. One local read on mount; the
+    // answer is not re-polled, because the card is a record of a past turn, not a live view.
+    if (!isSaveCard || !scope || !name) return;
+    let live = true;
+    void window.hv
+      .memoryExists(scope, scope === "workspace" ? workspaceId : null, name)
+      .then((p) => {
+        if (live) setPresence(p);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [isSaveCard, scope, name, workspaceId]);
+  if (!mem || !card.toolName.startsWith("memory_")) return null;
+  // Nothing was saved, so there is nothing to show or undo.
+  if (card.status === "error" || card.status === "denied") return null;
+
+  const body = resultText(card.result);
+  const isRecall = card.toolName === "memory_recall";
+  const state = memoryCardState(presence, forgotten);
+
+  return (
+    <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5">
+      <div className="flex items-center gap-2 flex-wrap mb-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-ink/20 bg-ink/5 px-2 py-0.5 text-ink-soft">
+          {/* "everywhere", not "about you": the KIND pill beside this one already says "About
+              you" for a `user` memory, and the GUI pass showed the two rendering as ABOUT YOU ·
+              ABOUT YOU. The scope answers WHERE it applies; the kind answers WHAT it is. */}
+          {mem.scope === "workspace" ? "this project" : "everywhere"}
+        </span>
+        {mem.type && (
+          <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-ink/20 bg-ink/5 px-2 py-0.5 text-ink-soft">
+            {MEMORY_TYPE_LABEL[mem.type] ?? mem.type}
+          </span>
+        )}
+        <span className="font-bold text-sm break-words">{mem.name}</span>
+      </div>
+      {mem.description && <p className="text-sm text-ink-soft mb-1.5 break-words">{mem.description}</p>}
+      {/* On a recall the RESULT is the memory; on a save the body is what the model sent, which
+          the result line does not repeat. Either way, show what is now remembered. */}
+      {isRecall && body && (
+        <pre className="rounded-lg border-2 border-line bg-paper px-3 py-2 text-xs whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+          {body}
+        </pre>
+      )}
+      {isSaveCard && state === "gone" && <p className="text-xs font-bold text-ink-soft">Forgotten.</p>}
+      {isSaveCard &&
+        state === "present" &&
+        (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void window.hv
+                .memoryForget(mem.scope, mem.scope === "workspace" ? workspaceId : null, mem.name)
+                .then((ok) => {
+                  setForgotten(ok);
+                  setBusy(false);
+                });
+            }}
+            className="rounded-lg border-2 border-line bg-card px-2.5 py-1 text-xs font-bold text-berry shadow-sticker cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px] active:shadow-none disabled:opacity-50"
+          >
+            Forget this
+          </button>
+        )}
     </div>
   );
 }

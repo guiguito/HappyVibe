@@ -84,10 +84,16 @@ import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, c
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
-  gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, probeWorkspace,
+  gitCommonDir, gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, probeWorkspace,
   publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
+// §33 Memory — main is the ONE writer (agent envelopes + human edits, one serialized queue).
+import {
+  CAPS as MEMORY_CAPS, estimateTokens as estimateMemoryTokens, forgetAll, forgetMemory, importMemories,
+  listMemories, memoryRoot, readMemory, saveMemory, scanClaudeCodeMemory, slugify, workspaceMemoryDir,
+  workspaceMemoryKey,
+} from "./memory";
 import { DEFAULT_DIFF_BUDGET, buildDraftPrompt, buildPrPrompt, draftCommitMessage, draftPullRequest } from "./gitMessage";
 import { humaniseBranch, parseRemote, pullRequestUrl } from "./gitForge";
 import { listPlanProgress, readPlan, setPlanStatus, writePlanFile, PLAN_DIR } from "./plans";
@@ -97,6 +103,7 @@ import {
 } from "./snapshots";
 import { buildPlanPrompt, shouldReconcilePlanOff, type PlanStatus } from "../../pi-runtime/extensions/hv-plan";
 import { buildTerminalPrompt } from "../../pi-runtime/extensions/hv-terminal";
+import { buildMemoryPrompt } from "../../pi-runtime/extensions/hv-memory";
 import { expandedHash, pairPromptTemplateItems, restoreItems, type RestoreItem } from "./restore";
 import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
@@ -416,6 +423,59 @@ function parseDocumentReq(r: { method?: string; title?: string }):
   } catch {
     return null;
   }
+}
+
+/**
+ * §33: the three blocking memory envelopes. Main writes, main answers — ALWAYS, or the bridge
+ * hangs on a promise nothing resolves.
+ *
+ * Validation here is shape only (is this one of ours, and are the fields the right type). The
+ * store owns the slug, the caps and the secret scan, so the rules cannot differ between an
+ * agent save and a human edit.
+ */
+export type MemoryEnvelope =
+  | { kind: "hv.memory-save"; scope: MemoryScopeName; type: string; name: string; description: string; content: string }
+  | { kind: "hv.memory-recall"; scope: MemoryScopeName; name: string }
+  | { kind: "hv.memory-forget"; scope: MemoryScopeName; name: string };
+
+export type MemoryScopeName = "global" | "workspace";
+
+/** §33: every memory audit type, named once. The Audit page reads these and `memoryText`
+ *  renders them; a type added in one place and not the other is a row nobody ever sees. */
+export const MEMORY_EVENT_TYPES = [
+  "memory.saved",
+  "memory.refused",
+  "memory.recalled",
+  "memory.forgotten",
+  "memory.edited",
+  "memory.imported",
+] as const;
+
+export function parseMemoryEnvelope(r: { method?: string; title?: string }): MemoryEnvelope | null {
+  if (r.method !== "input") return null;
+  let p: Record<string, unknown>;
+  try {
+    p = JSON.parse(r.title ?? "") as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const kind = p?.kind;
+  const scope = p?.scope;
+  if (scope !== "global" && scope !== "workspace") return null;
+  const str = (k: string): string | null => (typeof p[k] === "string" && (p[k] as string).length > 0 ? (p[k] as string) : null);
+  const name = str("name");
+  if (!name) return null;
+  if (kind === "hv.memory-recall") return { kind, scope, name };
+  if (kind === "hv.memory-forget") return { kind, scope, name };
+  if (kind === "hv.memory-save") {
+    const type = str("type");
+    const description = str("description");
+    // An empty content is a real refusal reason, so let it through as "" and let the store say so.
+    const content = typeof p.content === "string" ? p.content : null;
+    if (type === null || description === null || content === null) return null;
+    return { kind, scope, type, name, description, content };
+  }
+  return null;
 }
 
 /** §23: the blocking plan-write input payload (main writes the file, answers with the path), else null. */
@@ -750,6 +810,23 @@ export function registerIpc(win: BrowserWindow): void {
       getDefaultThinking() as never,
     );
 
+  /**
+   * §33 — the ONE place a scope becomes a directory. The envelope handler, the Memory page's
+   * IPC and spawnOpts all route through it, so an agent save and a human edit can never land in
+   * different folders.
+   *
+   * Returns null when the scope is unavailable: memory off globally, no workspace for a
+   * workspace-scoped call, or that workspace's own toggle off. Null is a refusal with a reason,
+   * never a silent fallback to the other scope.
+   */
+  const memoryDirFor = (scope: "global" | "workspace", workspaceId?: string | null): string | null => {
+    if (!getBuiltinTools().memory) return null;
+    if (scope === "global") return memoryRoot(agentDir());
+    if (!workspaceId) return null;
+    if (!workspaces.getMemoryActive(workspaceId)) return null;
+    return workspaceMemoryDir(agentDir(), workspaceMemoryKey(workspaceId, gitCommonDir(workspaceId)));
+  };
+
   /** Everything a Pi spawn needs from provider config (B3) + rules delivery (B4).
    *  Model resolution (W2.1, full PRD hierarchy): session override → workspace
    *  override → global default. Mirrors resolveModel in renderer composer.ts. */
@@ -758,6 +835,23 @@ export function registerIpc(win: BrowserWindow): void {
     // write the per-session manifest the bridge reads (HV_SKILLS_FILE). Only for
     // real chat sessions — the utility client ($HOME, no workspace/id) loads none.
     const entries = workspace && sessionId ? activeSkillEntries(workspace) : [];
+    // §33: the two memory scopes, resolved per spawn like every other tier here.
+    //
+    // The utility client has no workspace and no session id and gets NEITHER — it drives
+    // /hv-login, never a conversation, so a memory policy in its prompt would be pure cost.
+    //
+    // The workspace dir is omitted when the per-workspace toggle is off, and the bridge then
+    // renders no workspace block at all (renderMemorySection's `workspace: null`). Both dirs
+    // are created eagerly so the bridge's first read cannot race the first save.
+    const builtins = getBuiltinTools();
+    let memoryGlobalDir: string | undefined;
+    let memoryWorkspaceDir: string | undefined;
+    if (sessionId) {
+      memoryGlobalDir = memoryDirFor("global") ?? undefined;
+      memoryWorkspaceDir = (workspace ? memoryDirFor("workspace", workspace) : null) ?? undefined;
+      // Created eagerly so the bridge's first per-turn read cannot race the first save.
+      for (const d of [memoryGlobalDir, memoryWorkspaceDir]) if (d) fs.mkdirSync(d, { recursive: true });
+    }
     return {
       model: resolveSpawnModel(workspace, sessionId),
       thinking: resolveSpawnThinking(sessionId),
@@ -771,7 +865,9 @@ export function registerIpc(win: BrowserWindow): void {
       bypass: resolveBypass(workspace ?? null),
       // §13 round 6: global on/off for built-in custom tools, re-applied on
       // every (re)spawn — mirrors bypass, but global-only (no workspace tier).
-      builtinTools: getBuiltinTools(),
+      builtinTools: builtins,
+      memoryGlobalDir,
+      memoryWorkspaceDir,
       // Prompt-cache retention: global, spawn-time (PI_CACHE_RETENTION).
       longCache: getLongCache(),
       // 0.51 / #1225: pi-subagents scopes completion delivery to the launching
@@ -1891,6 +1987,87 @@ export function registerIpc(win: BrowserWindow): void {
             });
           } catch (e) {
             reply({ ok: false, path: abs, name, text: e instanceof Error ? e.message : String(e) });
+          }
+        })();
+        return;
+      }
+      // §33 Memory. Blocking inputs, exactly the plan-write contract: main writes, main
+      // answers, an error still RESOLVES with a message rather than leaving the bridge stuck.
+      // The renderer never sees these — it learns about the change from hv:memory-changed and
+      // from the tool card the bridge's own result produces.
+      const memEnv = parseMemoryEnvelope(r as { method?: string; title?: string });
+      if (memEnv) {
+        void (async () => {
+          const rid = r.id;
+          const wsId = meta?.workspaceId;
+          let answer = "ERROR: memory is unavailable.";
+          try {
+            const dir = memoryDirFor(memEnv.scope, wsId);
+            if (!dir) {
+              answer = `ERROR: memory is turned off for this ${memEnv.scope === "workspace" ? "workspace" : "app"}.`;
+            } else if (memEnv.kind === "hv.memory-save") {
+              const res = await saveMemory(dir, {
+                name: memEnv.name,
+                description: memEnv.description,
+                type: memEnv.type,
+                content: memEnv.content,
+                // The saving session, so the Memory page's inspector can say WHERE it came
+                // from without an audit lookup. Cleared on a human edit (that is what makes
+                // "edited by you" honest) and never set on an import.
+                originSessionId: sessionId,
+              });
+              if (res.ok) {
+                answer = `${res.replaced ? "replaced" : "ok"}:${res.slug}`;
+                void log.append({
+                  type: "memory.saved",
+                  sessionId,
+                  workspaceId: wsId,
+                  // NEVER the body (§19: telemetry without content). Scope, type, name and the
+                  // one-line description are what a reader of the audit log needs.
+                  data: { scope: memEnv.scope, type: memEnv.type, name: res.slug, description: memEnv.description, replaced: res.replaced, who: "agent" },
+                });
+              } else {
+                answer = `ERROR: ${res.reason}`;
+                void log.append({
+                  type: "memory.refused",
+                  sessionId,
+                  workspaceId: wsId,
+                  data: { scope: memEnv.scope, type: memEnv.type, name: memEnv.name, reason: res.reason },
+                });
+              }
+            } else if (memEnv.kind === "hv.memory-recall") {
+              const slug = slugify(memEnv.name);
+              const doc = slug ? readMemory(dir, slug) : null;
+              if (doc) {
+                answer = doc.body;
+                void log.append({ type: "memory.recalled", sessionId, workspaceId: wsId, data: { scope: memEnv.scope, type: doc.type, name: slug } });
+              } else {
+                answer = `ERROR: there is no ${memEnv.scope} memory named "${memEnv.name}". The memory index in your instructions lists the names.`;
+              }
+            } else {
+              const slug = slugify(memEnv.name);
+              const doc = slug ? readMemory(dir, slug) : null;
+              const gone = slug ? await forgetMemory(dir, slug) : false;
+              if (gone) {
+                answer = "ok";
+                void log.append({
+                  type: "memory.forgotten",
+                  sessionId,
+                  workspaceId: wsId,
+                  data: { scope: memEnv.scope, type: doc?.type, name: slug, who: "agent" },
+                });
+              } else {
+                answer = `ERROR: there is no ${memEnv.scope} memory named "${memEnv.name}".`;
+              }
+            }
+          } catch (e) {
+            answer = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+          }
+          client.respondUi(rid, { value: answer });
+          // A recall changes nothing, and an error changed nothing — only push when the store
+          // actually moved, or the Memory page re-fetches on every read the agent does.
+          if (!answer.startsWith("ERROR:") && memEnv.kind !== "hv.memory-recall") {
+            send("hv:memory-changed", { scope: memEnv.scope, workspaceId: wsId });
           }
         })();
         return;
@@ -3520,6 +3697,12 @@ export function registerIpc(win: BrowserWindow): void {
     // schemas, so showing only the steer line would understate what turning it
     // off saves. Descriptions come from the bridge's own registrations.
     if (name === "terminal") return { text: buildTerminalPrompt() };
+    // §33: the resting cost is the policy PLUS the two index blocks PLUS three tool schemas, so
+    // showing the policy alone would understate what turning memory off saves. The indexes are
+    // shown as PLACEHOLDERS, not as this machine's actual memories: the panel is a read-only
+    // view of the prompt shape, and pasting the user's own memories into a settings page they
+    // did not ask to see them on is a different feature (the Memory page is that).
+    if (name === "memory") return { text: buildMemoryPrompt(getBuiltinTools().memoryAppend) };
     return { text: "" };
   });
 
@@ -3583,15 +3766,19 @@ export function registerIpc(win: BrowserWindow): void {
    * two lists that happen to share a screen.
    */
   ipcMain.handle("hv:read-audit", async (_e, filter?: { sessionId?: string; workspaceId?: string }) => {
-    const [decisions, oneShots, excluded] = await Promise.all([
+    const [decisions, oneShots, excluded, ...memory] = await Promise.all([
       log.read({ type: "permission.decision", ...filter }),
       log.read({ type: "assistant.oneshot", ...filter }),
       // §19: a model the app is silently NOT using is the third thing this page
       // answers for — it is neither a decision nor a call, but it IS something
       // the app did on the user's behalf.
       log.read({ type: "model.excluded", ...filter }),
+      // §33: what the agent remembered, recalled, forgot or was refused, plus your own edits
+      // and imports. Read per type, because `log.read` filters on an exact type — a prefix
+      // match would be a second filter idiom in a file that has exactly one.
+      ...MEMORY_EVENT_TYPES.map((t) => log.read({ type: t, ...filter })),
     ]);
-    return [...decisions, ...oneShots, ...excluded].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    return [...decisions, ...oneShots, ...excluded, ...memory.flat()].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   });
 
   // ── B7: local analytics (read + aggregate in main, never leaves the machine) ──
@@ -4645,6 +4832,168 @@ export function registerIpc(win: BrowserWindow): void {
     return readSkillDir(id, source);
   };
 
+  // ── §33 Memory — the page's IPC ────────────────────────────────────────────
+  // Every handler routes through memoryDirFor, so the Memory page, the workspace section and
+  // the agent's own tools can never write to different folders for the same scope.
+  //
+  // A null dir is a REFUSAL with a reason ("memory is off here"), never a silent fallback to
+  // the other scope — a global memory quietly appearing because the workspace was off would be
+  // the worst possible failure for a feature whose whole promise is that you can see what it
+  // remembers.
+  const memoryChanged = (scope: "global" | "workspace", workspaceId?: string | null): void =>
+    send("hv:memory-changed", { scope, workspaceId: workspaceId ?? null });
+
+  ipcMain.handle("hv:memory-list", (_e, scope: "global" | "workspace", workspaceId?: string | null) => {
+    const dir = memoryDirFor(scope, workspaceId);
+    if (!dir) return { items: [], tokens: 0, dir: null, available: false };
+    const est = estimateMemoryTokens(dir);
+    return { items: listMemories(dir), tokens: est.tokens, dir, available: true, cap: MEMORY_CAPS.perScope };
+  });
+
+  /**
+   * §33 — does this memory still exist? Asked by a memory tool card when it mounts, so a
+   * REOPENED transcript does not offer Forget for something already forgotten.
+   *
+   * THREE answers, not two, and the third is the point. `hv:memory-read` returns null both for
+   * "no such memory" and for "the scope is unavailable" (memory off globally, or off for this
+   * workspace), and a card cannot tell those apart — it would print "Forgotten." about a file
+   * that is still sitting on disk. "unavailable" makes the card say nothing instead.
+   */
+  ipcMain.handle(
+    "hv:memory-exists",
+    (_e, scope: "global" | "workspace", workspaceId: string | null, slug: string): "yes" | "no" | "unavailable" => {
+      const dir = memoryDirFor(scope, workspaceId);
+      if (!dir) return "unavailable";
+      return readMemory(dir, slug) ? "yes" : "no";
+    },
+  );
+
+  ipcMain.handle("hv:memory-read", (_e, scope: "global" | "workspace", workspaceId: string | null, slug: string) => {
+    const dir = memoryDirFor(scope, workspaceId);
+    const doc = dir ? readMemory(dir, slug) : null;
+    if (!doc) return null;
+    // Provenance from the FILE (originSessionId), resolved to a title here because only main
+    // has the session index. "edited by you" is the absence of that field, which is what makes
+    // clearing it on a human edit honest rather than cosmetic.
+    const sessionTitle = doc.originSessionId ? index.get(doc.originSessionId)?.title : undefined;
+    return { ...doc, sessionTitle: sessionTitle ?? null };
+  });
+
+  ipcMain.handle(
+    "hv:memory-edit",
+    async (_e, scope: "global" | "workspace", workspaceId: string | null, slug: string, patch: { description?: string; content?: string }) => {
+      const dir = memoryDirFor(scope, workspaceId);
+      if (!dir) return { ok: false, reason: "Memory is turned off here." };
+      const doc = readMemory(dir, slug);
+      if (!doc) return { ok: false, reason: "That memory no longer exists." };
+      const res = await saveMemory(dir, {
+        name: slug,
+        description: patch.description ?? doc.description,
+        type: doc.type,
+        content: patch.content ?? doc.body,
+        // originSessionId deliberately OMITTED: a human edit makes the agent's authorship no
+        // longer true, and the inspector then says "edited by you".
+      });
+      if (res.ok) {
+        void log.append({ type: "memory.edited", workspaceId: workspaceId ?? undefined, data: { scope, type: doc.type, name: slug } });
+        memoryChanged(scope, workspaceId);
+      }
+      return res;
+    },
+  );
+
+  ipcMain.handle("hv:memory-forget", async (_e, scope: "global" | "workspace", workspaceId: string | null, slug: string) => {
+    const dir = memoryDirFor(scope, workspaceId);
+    if (!dir) return false;
+    const doc = readMemory(dir, slug);
+    const gone = await forgetMemory(dir, slug);
+    if (gone) {
+      void log.append({ type: "memory.forgotten", workspaceId: workspaceId ?? undefined, data: { scope, type: doc?.type, name: slug, who: "human" } });
+      memoryChanged(scope, workspaceId);
+    }
+    return gone;
+  });
+
+  ipcMain.handle("hv:memory-forget-all", async (_e, scope: "global" | "workspace", workspaceId: string | null) => {
+    const dir = memoryDirFor(scope, workspaceId);
+    if (!dir) return 0;
+    const n = await forgetAll(dir);
+    if (n > 0) {
+      void log.append({ type: "memory.forgotten", workspaceId: workspaceId ?? undefined, data: { scope, name: `<all ${n}>`, who: "human" } });
+      memoryChanged(scope, workspaceId);
+    }
+    return n;
+  });
+
+  ipcMain.handle("hv:memory-get-active", (_e, workspaceId: string) => workspaces.getMemoryActive(workspaceId));
+
+  ipcMain.handle("hv:memory-set-active", (_e, workspaceId: string, on: boolean) => {
+    workspaces.setMemoryActive(workspaceId, on);
+    // Spawn-resolved, so live sessions must respawn to pick it up — the same idle-only,
+    // resume-preserving reload the MCP and skills settings use, and the same disclosure.
+    scheduleMcpReload("workspace", workspaceId);
+    memoryChanged("workspace", workspaceId);
+    return true;
+  });
+
+  /**
+   * Folders under memory/workspaces/ that no OPEN workspace keys to.
+   *
+   * Derived by KEY, never by name-matching: the key is a hash, so the only honest way to ask
+   * "is this folder still someone's" is to recompute every open workspace's key and diff. A
+   * folder appears here after its workspace is removed, and also after a folder moves into or
+   * out of git (which changes its key) — both are cases where the memories are still on disk
+   * and the user should be told rather than have them silently orphaned.
+   */
+  ipcMain.handle("hv:memory-housekeeping", () => {
+    const root = path.join(memoryRoot(agentDir()), "workspaces");
+    let names: string[];
+    try {
+      names = fs.readdirSync(root);
+    } catch {
+      return { folders: [] };
+    }
+    const live = new Set(workspaces.list().map((wsPath) => workspaceMemoryKey(wsPath, gitCommonDir(wsPath))));
+    const folders = names
+      .filter((k) => /^[0-9a-f]{16}$/.test(k) && !live.has(k))
+      .map((k) => ({ key: k, count: listMemories(path.join(root, k)).length }))
+      .filter((f) => f.count > 0);
+    return { folders };
+  });
+
+  ipcMain.handle("hv:memory-forget-folder", (_e, key: string) => {
+    // Containment: the key SHAPE is the check. A hash is 16 hex characters and nothing else,
+    // so no traversal string can reach this, and the join can only land under our own root.
+    if (!/^[0-9a-f]{16}$/.test(key)) return false;
+    const dir = path.join(memoryRoot(agentDir()), "workspaces", key);
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      return false;
+    }
+    void log.append({ type: "memory.forgotten", data: { scope: "workspace", name: `<folder ${key}>`, who: "human" } });
+    memoryChanged("workspace", null);
+    return true;
+  });
+
+  ipcMain.handle("hv:memory-import-scan", () => scanClaudeCodeMemory(app.getPath("home")));
+
+  ipcMain.handle("hv:memory-import", async (_e, files: string[], scope: "global" | "workspace", workspaceId: string | null) => {
+    const dir = memoryDirFor(scope, workspaceId);
+    if (!dir) return { imported: [], skipped: files.map((f) => ({ file: f, reason: "memory is turned off here" })) };
+    const res = await importMemories(files, dir);
+    if (res.imported.length > 0) {
+      void log.append({
+        type: "memory.imported",
+        workspaceId: workspaceId ?? undefined,
+        // The SOURCE folder and a count — never the memories themselves (§19).
+        data: { scope, count: res.imported.length, skipped: res.skipped.length, source: path.dirname(files[0] ?? "") },
+      });
+      memoryChanged(scope, workspaceId);
+    }
+    return res;
+  });
+
   ipcMain.handle("hv:skills-list", (_e, workspaceId?: string) => {
     const global = discoverGlobalSkills().map((s) => toSkillView(s, skillRegistry));
     if (!workspaceId) return { global, workspace: null };
@@ -4972,6 +5321,23 @@ export function registerIpc(win: BrowserWindow): void {
   // Live on-disk change detection for the managed global dir (workspace skill
   // dirs ride the existing workspace watcher below). A change may flip an
   // approved skill back to needs-review (hash mismatch) — recompute + notify.
+  // §33: an edit made OUTSIDE the app (a text editor, a sync tool) must reach the page too —
+  // main's own writes already push hv:memory-changed. Recursive so the per-workspace scopes are
+  // covered by the one watcher; unsupported on Linux, where the page re-fetches on navigation.
+  try {
+    const memDir = memoryRoot(agentDir());
+    fs.mkdirSync(memDir, { recursive: true });
+    let memWatchTimer: ReturnType<typeof setTimeout> | undefined;
+    const mw = fs.watch(memDir, { recursive: true }, () => {
+      clearTimeout(memWatchTimer);
+      // Debounced: one save writes the memory AND regenerates the index, which is two events.
+      memWatchTimer = setTimeout(() => send("hv:memory-changed", { scope: "global", workspaceId: null }), 200);
+    });
+    app.on("will-quit", () => { try { mw.close(); } catch { /* already closed */ } });
+  } catch {
+    /* recursive watch unsupported (Linux) — the page re-fetches on navigation */
+  }
+
   const managedDir = managedSkillsDir(agentDir());
   fs.mkdirSync(managedDir, { recursive: true });
   try {

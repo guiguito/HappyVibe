@@ -27,6 +27,10 @@ interface Builtins {
   web: boolean;
   /** §31: Documents — `document_read` plus the `read` hint. */
   document: boolean;
+  /** §33: Memory — the three tools, the policy and both indexes. */
+  memory: boolean;
+  /** §33: the user's append to the memory policy (never an override — PromptRow's rule). */
+  memoryAppend: string;
 }
 
 /** Plan mode's row. The prompt panel and the append box are PromptRow's, shared
@@ -296,6 +300,53 @@ function BrowserRow({
  * rule, with its one deliberate exception for the person who has to know what
  * to run.
  */
+/**
+ * §33 — Memory. Three tools plus a POLICY the model reads every turn, which is why this row
+ * carries the prompt panel and an append box (Plan mode's shape) where Terminal, Browser, Web
+ * and Documents only carry a switch: those inject a one-line steer, this injects a paragraph.
+ *
+ * The prompt panel shows the three tool DESCRIPTIONS beside the policy, and that is not
+ * decoration — measured, the policy is 242 tokens and the three schemas are 743, so a panel
+ * showing only the policy would understate the saving by three quarters.
+ *
+ * The switch is the same `builtinTools.memory` key the Memory page switches. One source, two
+ * surfaces, so they cannot disagree about whether memory is on.
+ */
+function MemoryRow({
+  on,
+  append,
+  onChange,
+  onAppend,
+}: {
+  on: boolean;
+  append: string;
+  onChange: (on: boolean) => void;
+  onAppend: (v: string) => Promise<void>;
+}): React.JSX.Element {
+  return (
+    <>
+      <PromptRow
+        title="Memory — 3 tools"
+        subtitle={
+          <>
+            Lets the agent remember durable facts about you and about each project, across sessions. Saving and
+            forgetting ask you first; you can read, edit and delete every memory on the Memory page. Turning this off
+            saves the policy and three tool schemas from every turn. {RESPAWN_NOTE}
+          </>
+        }
+        on={on}
+        onToggle={onChange}
+        loadPrompt={() => window.hv.builtinPrompt("memory").then((r) => r.text)}
+        append={append}
+        onSaveAppend={onAppend}
+      />
+      <div className="px-4 pb-3 -mt-1">
+        <HowItWorks copy="memory" />
+      </div>
+    </>
+  );
+}
+
 function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }): React.JSX.Element {
   const [svc, setSvc] = useState<{ mode: "default" | "custom"; baseUrl?: string; hasKey: boolean } | null>(null);
   const [url, setUrl] = useState("");
@@ -541,6 +592,21 @@ export function BuiltinToolsBlock({
               () => patch({ web: on }),
               (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
             );
+          }}
+        />
+        <MemoryRow
+          on={builtins.memory}
+          append={builtins.memoryAppend}
+          onChange={(on) => {
+            setAskUserError(null);
+            void window.hv.builtinsSet({ memory: on }).then(
+              () => patch({ memory: on }),
+              (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
+            );
+          }}
+          onAppend={async (v) => {
+            await window.hv.builtinsSet({ memoryAppend: v });
+            patch({ memoryAppend: v });
           }}
         />
         <DocumentsRow

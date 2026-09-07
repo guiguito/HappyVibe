@@ -1,9 +1,12 @@
+import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { SCOPED_CONTENT, SCOPED_OVERLAY, VIEWPORT_CONTENT, VIEWPORT_OVERLAY } from "../paneDialog";
 import type { PermissionChoice, PermissionInfo, UiRequest } from "../permission";
 import type { BoundarySummary } from "../../../../pi-runtime/extensions/hv-subagent-boundary";
 import { toolLabel } from "../toolLabel";
 import { ToolIcon } from "./ToolCard";
+import { SkillDiff } from "./SkillsSection";
+import { memoryFactFrom, memoryFactRows, memoryPromptTitle } from "../memoryFact";
 
 /**
  * W1.1: rebuild enough args from the bridge's summary to feed toolLabel — the
@@ -86,11 +89,17 @@ export function PermissionModal({
   req,
   info,
   onChoice,
+  workspaceId,
   container,
 }: {
   req: UiRequest;
   info: PermissionInfo;
   onChoice: (c: PermissionChoice) => void;
+  /**
+   * §33: the workspace this session belongs to, so a workspace-scoped memory can be looked up
+   * to show what a save is about to REPLACE. Null is fine — the diff is then simply not shown.
+   */
+  workspaceId?: string | null;
   /**
    * §7 round 21: the pane of the session that raised this, or null for the
    * viewport. Null is the honest fallback whenever that pane is hidden (the
@@ -99,7 +108,28 @@ export function PermissionModal({
    */
   container?: HTMLElement | null;
 }): React.JSX.Element {
-  const { icon, label } = toolLabel(info.tool, argsFromSummary(info.tool, info.summary));
+  const args = argsFromSummary(info.tool, info.summary);
+  const { icon, label } = toolLabel(info.tool, args);
+  // §33: a memory is approved as the FACT it is — scope, kind, name, summary and the body —
+  // never as raw JSON. The user is agreeing to change what every future session is told.
+  const fact = memoryFactFrom(info.tool, args);
+  // …and when the name already exists, they see WHAT CHANGES rather than a wall of text that
+  // differs somewhere. `previous` stays null until the lookup answers, so the prompt renders
+  // immediately and gains the diff a moment later — a permission prompt must never wait on IO.
+  const [previous, setPrevious] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fact || info.tool !== "memory_save") return;
+    let live = true;
+    void window.hv
+      .memoryRead(fact.scope, fact.scope === "workspace" ? (workspaceId ?? null) : null, fact.name)
+      .then((d) => {
+        if (live) setPrevious(d?.body ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [fact?.name, fact?.scope, info.tool, workspaceId]);
   // Standard allow/deny prompt → offer the expanded persistent-grant choices (#13);
   // any non-standard option set from the bridge is shown verbatim.
   const wire = req.options ?? ["Allow", "Allow for session", "Deny"];
@@ -123,7 +153,9 @@ export function PermissionModal({
               </svg>
             </div>
             <div className="min-w-0">
-              <Dialog.Title className="font-bold text-lg leading-tight">The agent wants to run something</Dialog.Title>
+              <Dialog.Title className="font-bold text-lg leading-tight">
+                {fact ? memoryPromptTitle(info.tool, previous !== null) : "The agent wants to run something"}
+              </Dialog.Title>
               {/* W1.1: human summary line (same toolLabel as the tool cards). */}
               <Dialog.Description className="text-sm text-ink flex items-center gap-1.5">
                 <ToolIcon kind={icon} className="size-4 shrink-0 text-ink-soft" />
@@ -131,6 +163,31 @@ export function PermissionModal({
               </Dialog.Description>
             </div>
           </div>
+          {/* §33: the memory itself. Above `details`, never inside it — a user does not open a
+              disclosure before clicking Allow, and this IS the question being asked. */}
+          {fact && (
+            <div className="mb-4 rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                {memoryFactRows(fact).map(([k, v]) => (
+                  <React.Fragment key={k}>
+                    <dt className="text-[11px] font-bold uppercase tracking-wide text-ink-soft pt-0.5">{k}</dt>
+                    <dd className="font-semibold break-words">{v}</dd>
+                  </React.Fragment>
+                ))}
+              </dl>
+              {fact.content && previous === null && (
+                <pre className="mt-2 rounded-lg border-2 border-line bg-card px-3 py-2 text-xs whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+                  {fact.content}
+                </pre>
+              )}
+              {fact.content && previous !== null && (
+                <div className="mt-2">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-ink-soft mb-1">what changes</p>
+                  <SkillDiff before={previous} after={fact.content} />
+                </div>
+              )}
+            </div>
+          )}
           {/* v5: the call reaches outside the workspace — surface the factual path. */}
           {info.reason === "outside-workspace" && (
             <div className="mb-4 rounded-xl border-2 border-berry/50 bg-berry-soft px-3 py-2 text-xs font-semibold text-berry break-all">

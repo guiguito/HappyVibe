@@ -1024,6 +1024,30 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   the most time: the failure surfaced as a generic "Could not start recording." because the handler
   collapsed non-`CaptureError`s and threw away the message that named the problem — always surface
   the underlying `err.message`.
+- **§33 Memory: the model supplies a NAME, never a path, and `MEMORY.md` is GENERATED — never
+  let anything write it by hand.** Main is the one writer (agent envelopes + Memory-page edits,
+  one serialized queue in `src/main/memory/store.ts`), and the index is regenerated from the
+  files' frontmatter on every change, so it cannot drift and a forgotten memory leaves no
+  dangling pointer. **Frontmatter is Claude Code's NESTED `metadata: {type, originSessionId,
+  modified}`** — the flat `type:` the proposal drew is refused on purpose, because zero of the
+  124 memories on disk use it and accepting it would create a second format to keep alive
+  forever. **The workspace key is the PARENT of `git rev-parse --git-common-dir`**, so every
+  worktree of one clone shares one memory folder; `--git-common-dir` answers a RELATIVE `.git`
+  from the main worktree and an ABSOLUTE path from a linked one, so the `path.resolve(workspace,
+  …)` in `gitCommonDir` is load-bearing — without it the two halves of a clone hash differently
+  and sharing silently does not happen. That function is SYNC on purpose (the one sync git call
+  in `git.ts`): `spawnOpts` is sync and reached from several places, and one forgotten `await`
+  would key a worktree by path with nothing on screen saying so. **An ABSENT `HV_MEMORY_*` env
+  var is how "off" reaches the bridge** — absent global dir = memory off, absent workspace dir =
+  off for this workspace, and the bridge must then render NO workspace block rather than an
+  empty one. Two things that look like polish and are not: `memorySection` must be NAMED in
+  `before_agent_start`'s return condition (memory can be the only thing a turn injects, and a
+  computed-but-unreturned section is silently absent), and a memory card must read BOTH
+  `card.memory` (restored) and the live result's `details` (`memoryFromResult`) — testing one is
+  how §12's delegation card lost its id and how this card shipped empty on the live path. Costs,
+  measured: off 5,873 tok/turn, on-and-empty 6,908, at the 100-memory cap 9,425 — and the three
+  tool SCHEMAS are 743 of that against the policy's 242, which is why the settings panel shows
+  both. Full wire shapes + the GUI findings: docs/validation/d1.md §33.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array

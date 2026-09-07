@@ -301,6 +301,57 @@ interface HvTool {
 }
 
 /** §14 — mirrors SkillView in src/main/skills/view.ts (from hv:skills-list). */
+/** §33 Memory. */
+type HvMemoryScope = "global" | "workspace";
+type HvMemoryPresence = "yes" | "no" | "unavailable";
+
+interface HvMemorySummary {
+  slug: string;
+  name: string;
+  description: string;
+  type: "user" | "feedback" | "project" | "reference";
+  modified?: string;
+  originSessionId?: string;
+  bytes: number;
+}
+
+interface HvMemoryList {
+  items: HvMemorySummary[];
+  /** The whole scope's per-turn index weight, the same estimate the context panel shows. */
+  tokens: number;
+  /** Where the files are, shown on the page. null when the scope is unavailable. */
+  dir: string | null;
+  /** false = memory is off globally, or off for this workspace. */
+  available: boolean;
+  cap?: number;
+}
+
+interface HvMemoryDoc {
+  name: string;
+  description: string;
+  type: "user" | "feedback" | "project" | "reference";
+  originSessionId?: string;
+  modified?: string;
+  body: string;
+  /** Resolved from originSessionId by main — null once a human has edited it. */
+  sessionTitle: string | null;
+}
+
+interface HvMemoryImportScan {
+  projects: Array<{
+    key: string;
+    dir: string;
+    guessedPath: string;
+    memories: Array<{ file: string; slug: string; name: string; description: string; type: string }>;
+    skipped: Array<{ file: string; reason: string }>;
+  }>;
+}
+
+interface HvMemoryImportResult {
+  imported: string[];
+  skipped: Array<{ file: string; reason: string }>;
+}
+
 interface HvSkillView {
   id: string;
   name: string;
@@ -807,8 +858,8 @@ interface HvApi {
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
   // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
-  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean }>;
-  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean }): Promise<void>;
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
 
@@ -909,6 +960,25 @@ interface HvApi {
   onVoiceStatusChanged(cb: (s: HvVoiceStatus) => void): () => void;
 
   // §14 Skills (additive)
+  // §33 Memory.
+  memoryList(scope: HvMemoryScope, workspaceId?: string | null): Promise<HvMemoryList>;
+  memoryRead(scope: HvMemoryScope, workspaceId: string | null, slug: string): Promise<HvMemoryDoc | null>;
+  /** §33: "unavailable" = memory is off here, which is NOT the same as forgotten. */
+  memoryExists(scope: HvMemoryScope, workspaceId: string | null, slug: string): Promise<HvMemoryPresence>;
+  memoryEdit(
+    scope: HvMemoryScope,
+    workspaceId: string | null,
+    slug: string,
+    patch: { description?: string; content?: string },
+  ): Promise<{ ok: true; slug: string; replaced: boolean } | { ok: false; reason: string }>;
+  memoryForget(scope: HvMemoryScope, workspaceId: string | null, slug: string): Promise<boolean>;
+  memoryForgetAll(scope: HvMemoryScope, workspaceId: string | null): Promise<number>;
+  memoryGetActive(workspaceId: string): Promise<boolean>;
+  memorySetActive(workspaceId: string, on: boolean): Promise<boolean>;
+  memoryHousekeeping(): Promise<{ folders: Array<{ key: string; count: number }> }>;
+  memoryForgetFolder(key: string): Promise<boolean>;
+  memoryImportScan(): Promise<HvMemoryImportScan>;
+  memoryImport(files: string[], scope: HvMemoryScope, workspaceId: string | null): Promise<HvMemoryImportResult>;
   skillsList(workspaceId?: string): Promise<HvSkillsList>;
   skillsRead(id: string): Promise<HvSkillDetail>;
   skillsApprove(id: string): Promise<void>;
@@ -933,6 +1003,7 @@ interface HvApi {
       against its own scan by NAME to add description/argumentHint, which
       get_commands does not carry. */
   listCommands(sessionId: string): Promise<Array<{ name: string; source: string; description?: string; argumentHint?: string }>>;
+  onMemoryChanged(cb: () => void): () => void;
   onSkillsChanged(cb: () => void): () => void;
 
   // §24 Commands (prompt templates) — the §14 surface, channel for channel.

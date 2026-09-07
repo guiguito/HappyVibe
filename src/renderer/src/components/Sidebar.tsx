@@ -12,7 +12,7 @@ export type View =
   // §25: Plugins sits above them — it is where skills/prompts/servers come FROM.
   // §13 round 18: "tools" (the gated inventory) and "builtinTools" (the app's
   // own agent features) were one page that did two unrelated jobs.
-  | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools" | "builtinTools"
+  | "chat" | "plugins" | "skills" | "promptTemplates" | "mcp" | "agents" | "tools" | "builtinTools" | "memory"
   // Round 8: the settings scroll exploded into pages, each its own destination.
   // §19 (2026-08-30): the model calls the app makes without a session.
   // §30: the changelog is product state, like stats and audit.
@@ -266,6 +266,12 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   // it belongs at the bottom; that is §19's own argument for the AI autofill
   // page, one group over. Plugins then leads the three it can install.
   { view: "builtinTools", label: "Built-in tools", Icon: BuiltinToolsIcon, group: "abilities" },
+  // §33: Memory sits SECOND, on exactly the argument that put Built-in tools first — it is on
+  // by default and costs nothing to use, where every row below needs work before it does
+  // anything (install a plugin, approve a skill, add a server, author an agent or a prompt).
+  // It cannot go lower without breaking the Plugins → Skills · Prompts · MCP run, which the
+  // classifier-derived test requires to stay contiguous.
+  { view: "memory", label: "Memory", Icon: MemoryIcon, group: "abilities" },
   { view: "plugins", label: "Plugins", Icon: PluginsIcon, group: "abilities" },
   // Skills · Prompts · MCP sit directly under Plugins and in this order
   // because they are EXACTLY what a plugin can contain — `ACCEPTED_COMPONENTS`
@@ -352,6 +358,16 @@ function SearchIcon(): React.JSX.Element {
 
 /** §13 round 18: sliders, because this page is switches — deliberately NOT the
     wrench `ToolsIcon` uses, so the two tool pages never read as the same row. */
+// §33: two interlocking rings — the knot you tie to remember. Deliberately not a brain: every
+// product draws one, and it says "AI" where §19 pins that word to exactly one use in this app.
+function MemoryIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8.5" cy="12" r="5" />
+      <circle cx="15.5" cy="12" r="5" />
+    </svg>
+  );
+}
 function BuiltinToolsIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

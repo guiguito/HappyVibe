@@ -44,6 +44,10 @@ export type RestoredMessage =
       /** §12 (2026-08-30): an async delegation's run id, so a reopened card can
        *  inspect its child's transcript. */
       asyncId?: string;
+      /** §33: a memory card's scope/type/name/description. NAMED here deliberately — this
+       *  file's own rule is that a field main sends which is not named here is dropped in
+       *  silence, which is how a reopened delegation card once lost its id. */
+      memory?: { scope: "global" | "workspace"; type?: string; name: string; description?: string; replaced?: boolean };
     }
   | { kind: "plan"; planPath: string; status?: string; done?: number; total?: number };
 
@@ -82,6 +86,7 @@ export function toTranscriptItems(
           // reopened delegation expands to an empty panel — it has no id to ask
           // upstream for its child's transcript with.
           asyncId: m.asyncId,
+          memory: m.memory,
         },
       };
     }

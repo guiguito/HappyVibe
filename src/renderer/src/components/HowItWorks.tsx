@@ -39,6 +39,18 @@ export const HOWTO_COPY = {
     body:
       "Four tools let the agent use the public web as text. Search finds pages, Read returns one page as clean markdown, Site map lists a site's URLs, and Read a site reads up to 30 pages in one go. Long pages come back in pieces, and the card tells you how much of the page you got. The pages are fetched by a web service, not by your computer, so sites see the service's address rather than yours. With the default service that is a server HappyVibe operates, which can see the URLs and the searches the agent sends — point the app at your own service below if that matters to you. Reading a new site asks you first, using the same rules as the agent's browser: “Allow for this session”, or a rule for that site, covers both from then on. The Allow button on a blocked browser page is narrower — it clears that one page's site for that browser pane only. Everything a page returns is marked as untrusted, so words on a web page can never pose as instructions from you. What these tools cannot do: take screenshots, click anything, or open pages that need you to be signed in — the agent's browser does all three. And there is no way to ask for recent results only.",
   },
+  memory: {
+    title: "How memory works",
+    body:
+      "The agent keeps two sets of notes: global ones about you, which apply in every project, and workspace ones about a single project. " +
+      "Every turn it is shown a one-line summary of each note — that is all the notes cost until it opens one, which it does only when the summary looks relevant. " +
+      "Saving a memory and forgetting one both ask you first, and the question shows the note itself rather than raw data; if it is replacing a note you already have, you see what changes. " +
+      "Opening a note never asks, because you can read every one of them on this page anyway. " +
+      "Notes are hints, not facts: the agent is told to check anything that might have changed before acting on it. " +
+      "It will not save anything that looks like a password, a key or a token — that is refused with a reason rather than trusted to good manners. " +
+      "Each set holds at most 100 notes, so when one fills up the agent has to merge or drop before it can add. " +
+      "They are ordinary text files kept on this computer, and nothing is sent anywhere or shared with anyone you work with — use AGENTS.md for what a team should know.",
+  },
   instructionFiles: {
     title: "How instruction files combine",
     body:

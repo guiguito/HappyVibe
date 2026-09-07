@@ -326,7 +326,7 @@ export function ContextPanel({
                 </ul>
               )}
 
-              {(drilled.key === "skills-global" || drilled.key === "skills-workspace") && (
+              {(drilled.key === "skills-global" || drilled.key === "skills-workspace" || drilled.key === "memory-global" || drilled.key === "memory-workspace") && (
                 <div className="space-y-1">
                   {(drilled.skills ?? []).map((s) => (
                     <div key={s.name} className="flex items-baseline justify-between text-xs">

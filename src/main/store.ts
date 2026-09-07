@@ -496,6 +496,10 @@ export interface WorkspaceEntry {
    *  (absolute FILE path — approval is per file, never per directory). Absent id
    *  = default, resolved in resolveActivePromptTemplates. Only stores explicit overrides. */
   promptTemplatesActive?: Record<string, boolean>;
+  /** §33: "Use memory in this workspace". Absent = ON — only an explicit opt-out is stored,
+   *  the skillsActive convention. Off ⇒ this workspace's sessions get no workspace index and
+   *  no workspace scope (resolved at spawn, so it costs a respawn). */
+  memoryActive?: boolean;
 }
 
 /** V2.A: workspace paths are dialog-provided strings — compare them
@@ -585,6 +589,19 @@ export class WorkspaceRegistry {
   }
 
   /** §24: the explicit command-activation overrides for a workspace (empty if none). */
+  /** §33: absent = on. */
+  getMemoryActive(p: string): boolean {
+    return this.find(p)?.memoryActive ?? true;
+  }
+
+  setMemoryActive(p: string, on: boolean): void {
+    const entry = this.find(p);
+    if (!entry) return;
+    if (on) delete entry.memoryActive;
+    else entry.memoryActive = false;
+    this.save();
+  }
+
   getPromptTemplatesActive(p: string): Record<string, boolean> {
     return this.find(p)?.promptTemplatesActive ?? {};
   }

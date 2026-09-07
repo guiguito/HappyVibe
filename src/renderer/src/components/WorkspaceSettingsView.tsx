@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
@@ -7,6 +7,7 @@ import { PromptTemplateImportControls, PromptTemplateInspector, PromptTemplateRo
 import { McpServersSection } from "./McpServersSection";
 import { McpCatalogSection } from "./McpCatalogSection";
 import { GoTo } from "./GoTo";
+import { MemorySection } from "./MemorySection";
 
 /**
  * Workspace settings (PRD §16 round 8): model override, permission rules +
@@ -163,6 +164,10 @@ export function WorkspaceSettingsView({
           subtitle="This project's prompts, and which global ones are on here."
         >
           <WorkspacePromptTemplatesBlock workspace={workspace} />
+        </Section>
+
+        <Section icon="memory" title="Memory" subtitle="What the agent remembers about this project.">
+          <WorkspaceMemoryBlock workspace={workspace} />
         </Section>
 
         <Section icon="mcp" title="Workspace MCP" subtitle="Servers for this project only.">
@@ -562,5 +567,48 @@ function GitCapabilityLine({ workspace }: { workspace: string }): React.JSX.Elem
         </button>
       </div>
     </Section>
+  );
+}
+
+/**
+ * §33 — this project's memories, plus the per-project switch.
+ *
+ * The list is the SAME component the global Memory page uses, with a different scope: one
+ * component, two data sources. Turning the switch off is spawn-resolved, so live sessions
+ * respawn to apply it — hence the same disclosure every other spawn-resolved switch carries.
+ */
+function WorkspaceMemoryBlock({ workspace }: { workspace: string }): React.JSX.Element {
+  const [on, setOn] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    void window.hv.memoryGetActive(workspace).then(setOn);
+  }, [workspace]);
+
+  return (
+    <>
+      <label className="flex items-start gap-3 mb-4 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={on ?? true}
+          onChange={(e) => {
+            const next = e.target.checked;
+            setOn(next);
+            void window.hv.memorySetActive(workspace, next);
+          }}
+          className="mt-1"
+        />
+        <span>
+          <span className="font-bold text-sm">Use memory in this project</span>
+          <span className="block text-xs text-ink-soft">
+            When this is off, sessions here get no memories about this project and cannot save any. Global memories
+            still apply. Live sessions restart to apply this — permission grants and dangerous mode reset to safe
+            defaults for those sessions.
+          </span>
+        </span>
+      </label>
+      <MemorySection scope="workspace" workspaceId={workspace} />
+      <p className="mt-4 text-sm text-ink-soft">
+        Memories about you rather than this project live on the <GoTo view="memory" /> page.
+      </p>
+    </>
   );
 }

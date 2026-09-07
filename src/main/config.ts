@@ -48,7 +48,7 @@ interface ConfigFile {
   /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user,
       and §26's grouped Terminal entry). Global only — no per-workspace tier.
       Absent key = on (fail-open default). */
-  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean };
+  builtinTools?: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string };
   /** §32: the web service main calls for the web tools. Absent = HappyVibe's
       default. Global only, like builtinTools, and read PER CALL rather than at
       spawn — the Pi child never sees the URL or the key, so a change needs no
@@ -327,7 +327,7 @@ export function resolveBypass(workspace: string | null | undefined): boolean {
 
 // §13 round 6: global on/off for built-in custom tools. Both default true
 // (fail-open — same convention as HV_BYPASS's persistent setting).
-export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean } {
+export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string } {
   const t = load().builtinTools;
   const plan = t?.plan ?? true;
   // Plan mode's prompt tells the model to resolve decisions with ask_user, so
@@ -344,10 +344,12 @@ export function getBuiltinTools(): { plan: boolean; askUser: boolean; planAppend
   // §32's web group likewise: four tools over one web service, and the only
   // thing coupled to the switch is the steer line naming them.
   // §31's Documents is one tool, so it has no coupling either.
-  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true };
+  // §33's Memory is three tools over one store, coupled to each other and to nothing else —
+  // same grouping argument as the terminal, so one entry.
+  return { plan, askUser: plan ? true : (t?.askUser ?? true), planAppend: t?.planAppend ?? "", terminal: t?.terminal ?? true, intent: t?.intent ?? true, browser: t?.browser ?? true, web: t?.web ?? true, document: t?.document ?? true, memory: t?.memory ?? true, memoryAppend: t?.memoryAppend ?? "" };
 }
 
-export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean }): void {
+export function setBuiltinTools(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string }): void {
   const cfg = load();
   cfg.builtinTools = { ...cfg.builtinTools, ...t };
   save(cfg);

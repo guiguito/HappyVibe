@@ -58,6 +58,16 @@ export const EMPTY_COPY = {
     headline: "No permission decisions yet",
     next: "They appear here once the agent asks for something.",
   },
+  // §33: both name the two ways a memory appears — you ask, or the agent offers — and both say
+  // the save asks first, because that is the promise the feature is sold on.
+  memory: {
+    headline: "No memories yet",
+    next: "Tell the agent “remember that …”, or it will offer to save what it learns from your corrections. Every save asks you first.",
+  },
+  memoryWorkspace: {
+    headline: "Nothing remembered about this project yet",
+    next: "Tell the agent “remember that this project …”, or it will offer to save what it learns here. Every save asks you first.",
+  },
   costs: {
     headline: "No billed calls yet",
     next: "They appear here as soon as the agent talks to a model.",

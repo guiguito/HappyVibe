@@ -31,13 +31,24 @@ export interface BuiltinToggles {
    * document row (with the reason) and stops the hint.
    */
   document: boolean;
+  /**
+   * §33: the Memory entry — memory_save / memory_recall / memory_forget, plus the policy
+   * paragraph and both indexes injected every turn. All three or none: an agent that can save
+   * but not recall carries a cost it can never spend, and one that can save but not forget
+   * cannot obey "forget that".
+   *
+   * OFF COSTS 0 — no policy, no index, no tool schemas. That is the row's whole argument.
+   */
+  memory: boolean;
+  /** §33: the user's append to the memory policy (PromptRow, Plan mode's shape). */
+  memoryAppend: string;
 }
 
 export function parseBuiltins(raw: string | undefined): BuiltinToggles {
-  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true };
+  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "" };
   if (!raw) return out;
   try {
-    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean }>;
+    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string }>;
     if (p.plan === false) out.plan = false;
     if (p.askUser === false) out.askUser = false;
     if (p.terminal === false) out.terminal = false;
@@ -45,6 +56,8 @@ export function parseBuiltins(raw: string | undefined): BuiltinToggles {
     if (p.browser === false) out.browser = false;
     if (p.web === false) out.web = false;
     if (p.document === false) out.document = false;
+    if (p.memory === false) out.memory = false;
+    if (typeof p.memoryAppend === "string") out.memoryAppend = p.memoryAppend;
     if (typeof p.planAppend === "string") out.planAppend = p.planAppend;
     // Defence in depth (Important 3): Plan mode's prompt and applyPlanTools'
     // `required` array both hard-require ask_user — a hand-edited config with

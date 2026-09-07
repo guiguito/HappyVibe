@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -69,6 +69,9 @@ const emptyTreeCache = new Map<string, string>();
 let gitBinary = "git";
 let availability: boolean | null = null;
 const probeCache = new Map<string, RepoState>();
+/** §33: the memory key's basis — the parent of --git-common-dir, so worktrees of one clone
+ *  share one memory folder. Cached beside the probe and cleared with it. */
+const commonDirCache = new Map<string, string | null>();
 
 /** Test seam: point the runner at a binary that does not exist, to exercise §5a. */
 export function setGitBinaryForTest(bin: string | null): void {
@@ -79,6 +82,7 @@ export function resetGitAvailability(): void {
   availability = null;
   probeCache.clear();
   emptyTreeCache.clear();
+  commonDirCache.clear();
 }
 
 function gitEnv(): NodeJS.ProcessEnv {
@@ -192,10 +196,50 @@ function safeReal(p: string): string {
 
 export function invalidateProbe(workspace: string): void {
   probeCache.delete(workspace);
+  commonDirCache.delete(workspace);
 }
 
 export function invalidateAllProbes(): void {
   probeCache.clear();
+  commonDirCache.clear();
+}
+
+/**
+ * §33 — the absolute, realpath'd `.git` common directory, or null when this folder is not a
+ * repo (or git is missing). This is the basis of the memory key, so that every worktree of one
+ * clone shares one memory folder: `--git-common-dir` answers the SAME path from every worktree,
+ * where `--git-dir` answers each worktree's own private directory. That difference is the
+ * feature — memory follows the clone, not the checkout.
+ *
+ * SYNCHRONOUS on purpose, and it is the one sync git call in this file. `spawnOpts` is sync and
+ * is reached from several places; making the key async would mean an `await` before each of
+ * them, and a single forgotten one would silently key a worktree by its path instead — the two
+ * halves of a clone would then keep separate memories with nothing on screen saying so. One
+ * ~10 ms subprocess, cached per workspace for the app's life, buys that away.
+ *
+ * It does not consult `probeWorkspace`: `rev-parse` already fails for a non-repo, so asking
+ * twice would only add a way for the two answers to disagree.
+ */
+export function gitCommonDir(workspace: string): string | null {
+  const cached = commonDirCache.get(workspace);
+  if (cached !== undefined) return cached;
+  let out: string | null = null;
+  try {
+    const raw = execFileSync(gitBinary, ["--no-optional-locks", "rev-parse", "--git-common-dir"], {
+      cwd: workspace,
+      env: gitEnv(),
+      encoding: "utf8",
+      timeout: 5_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    // Relative (".git") from a main worktree, absolute from a linked one — resolve BOTH or the
+    // two halves of a clone key differently and worktree sharing silently does not happen.
+    if (raw) out = safeReal(path.resolve(workspace, raw));
+  } catch {
+    /* not a repo, no git, or an unreadable cwd — key by path instead */
+  }
+  commonDirCache.set(workspace, out);
+  return out;
 }
 
 /** §5c — every read and write is confined to the workspace subtree by pathspec. */

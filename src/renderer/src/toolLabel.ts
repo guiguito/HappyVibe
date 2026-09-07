@@ -26,7 +26,9 @@ export type IconKind =
   | "rewind"
   | "check"
   | "book"
-  | "globe";
+  | "globe"
+  /** §33: two interlocking rings — a knot tied to remember. */
+  | "memory";
 
 export interface ToolLabel {
   icon: IconKind;
@@ -383,6 +385,21 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     }
     case "subagent":
       return { icon: "robot", label: intent ?? `Delegating to ${str("agent") ?? "a subagent"}` };
+    // §33: the model's own sentence leads, as for every registered tool; the memory's NAME is
+    // the honest fallback, because "Remembering something" tells the user nothing they can act
+    // on. All three read the same `name`, which after a save is the SLUG main derived.
+    case "memory_save": {
+      const name = str("name");
+      return { icon: "memory", label: intent ?? (name ? `Remembering ${truncate(name)}` : "Saving a memory") };
+    }
+    case "memory_recall": {
+      const name = str("name");
+      return { icon: "memory", label: intent ?? (name ? `Recalling ${truncate(name)}` : "Recalling a memory") };
+    }
+    case "memory_forget": {
+      const name = str("name");
+      return { icon: "memory", label: intent ?? (name ? `Forgetting ${truncate(name)}` : "Forgetting a memory") };
+    }
     case "use_skill": {
       // §14: loading a skill. Model-authored intent wins (requireIntent); the
       // skill name is the honest fallback headline.
