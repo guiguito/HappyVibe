@@ -3805,10 +3805,25 @@ export function registerIpc(
     windows.setRecord(w.id, { ...rec, ui: ui ?? {} });
     persistLayout();
   });
-  // A closed window's record must leave the file, or the next launch reopens a
-  // phantom holding tabs the user closed. `records()` already excludes it —
-  // this is what makes something write the file at that moment.
-  windows.setOnClosed(() => persistLayout());
+  /**
+   * §7 round 23 — closing a window closes its tabs, exactly as ⌘W on each would.
+   *
+   * A SESSION keeps running (round 11: tab lifecycle and session lifecycle are
+   * separate, and hibernation still owns when a Pi stops). A TERMINAL dies with
+   * its tab, as §26 decided — unless the agent has claimed it, because that one
+   * is not the human's tab to close and killing it would fail the turn reading
+   * from it. A BROWSER pane is destroyed, as §28 decided: nothing is running
+   * and nothing is unsaved.
+   *
+   * And the record must leave the file, or the next launch reopens a phantom
+   * window holding tabs the user closed. `records()` already excludes it — this
+   * is what makes something write the file at that moment.
+   */
+  windows.setOnClosed((_id, _record, holds) => {
+    for (const t of holds.terminals) if (!agentTerminals.isClaimed(t)) terminals.kill(t);
+    for (const b of holds.browsers) browsers.destroy(b);
+    persistLayout();
+  });
 
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.

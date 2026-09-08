@@ -306,3 +306,30 @@ describe("prompts are routed and counted by main (round 23)", () => {
     expect(app.slice(i - 400, i)).not.toMatch(/setTimeout/);
   });
 });
+
+describe("closing a window closes its tabs (round 23)", () => {
+  const agent = readFileSync("src/main/agentTerminals.ts", "utf8");
+
+  it("its unclaimed terminals die and its browser panes are destroyed", () => {
+    expect(ipc).toMatch(/windows\.setOnClosed\(\(_id, _record, holds\) => \{/);
+    expect(ipc).toMatch(/for \(const t of holds\.terminals\) if \(!agentTerminals\.isClaimed\(t\)\) terminals\.kill\(t\)/);
+    expect(ipc).toMatch(/for \(const b of holds\.browsers\) browsers\.destroy\(b\)/);
+  });
+
+  it("an AGENT-claimed terminal survives — it is not the human's tab to close", () => {
+    expect(agent).toMatch(/isClaimed\(terminalId: string\): boolean/);
+  });
+
+  it("sessions are NOT stopped — a tab is not a lifecycle", () => {
+    // Round 11: closing a chat tab leaves the session running, and hibernation
+    // owns when a Pi stops. The close hook must name no session API at all.
+    const i = ipc.indexOf("windows.setOnClosed((_id, _record, holds)");
+    const body = ipc.slice(i, i + 700);
+    expect(body).not.toMatch(/manager\.stop|closeSession|deleteSession|index\.update/);
+  });
+
+  it("the record leaves the file, so no phantom window returns at launch", () => {
+    const i = ipc.indexOf("windows.setOnClosed((_id, _record, holds)");
+    expect(ipc.slice(i, i + 700)).toMatch(/persistLayout\(\)/);
+  });
+});
