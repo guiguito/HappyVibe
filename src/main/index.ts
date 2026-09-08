@@ -9,6 +9,7 @@ import { loginShellPath, mergePath } from './shellPath'
 import { getGitRulesSeeded, rulesFile, setGitRulesSeeded } from './config'
 import { seedDefaultGitRules } from './gitRules'
 import { navAction } from './navGuard'
+import { WindowRegistry } from './windows'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
 // AND userData resolves to .../HappyVibe — in dev the process runs inside
@@ -35,9 +36,20 @@ try {
   /* non-fatal: fall back to a fresh userData dir */
 }
 
-function createWindow(): BrowserWindow {
-  // Create the browser window.
-  const mainWindow = new BrowserWindow({
+/**
+ * §7 round 23 — every window in the app is made here, and only here.
+ *
+ * `createWindow()` used to be called once and its result handed to
+ * `registerIpc(win)`. Two things came of that: every renderer push went
+ * through one `send()` bound to that window, and the `activate` handler below
+ * could create a SECOND window that registerIpc had never seen — deaf for its
+ * whole life, which is the dock-click bug this fixes on the way past.
+ */
+export const windows = new WindowRegistry<BrowserWindow>()
+
+/** The record is opaque here — main stores it and hands it back; see windows.ts. */
+export function openWindow(record: unknown): BrowserWindow {
+  const win = new BrowserWindow({
     width: 900,
     height: 670,
     show: false,
@@ -49,22 +61,24 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+  windows.add(win, record)
+
+  win.on('ready-to-show', () => {
+    win.show()
   })
 
   // Open links in the OS browser, not inside the app window.
   // setWindowOpenHandler covers target=_blank / window.open; will-navigate
   // covers a plain <a href> click (e.g. links in chat answers), which would
   // otherwise navigate the whole SPA away from the app.
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
   // The rule is deny-by-default and lives in navGuard.ts — see there for why an
   // un-prevented relative link could replace the whole app with a dead page.
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    const action = navAction(url, mainWindow.webContents.getURL())
+  win.webContents.on('will-navigate', (event, url) => {
+    const action = navAction(url, win.webContents.getURL())
     if (action === 'allow') return
     event.preventDefault()
     if (action === 'external') void shell.openExternal(url)
@@ -73,12 +87,12 @@ function createWindow(): BrowserWindow {
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  return mainWindow
+  return win
 }
 
 // This method will be called when Electron has finished
@@ -140,7 +154,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  const mainWindow = createWindow()
+  openWindow({})
 
   // A GUI-launched app inherits launchd's minimal PATH, so nvm node, uv and
   // /opt/homebrew are invisible to every child we spawn (Pi, the agent's bash
@@ -163,12 +177,14 @@ app.whenReady().then(() => {
     if (seedDefaultGitRules(rulesFile(), false)) setGitRulesSeeded(true)
   }
 
-  registerIpc(mainWindow)
+  registerIpc(windows)
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // dock icon is clicked and there are no other windows open. Through the
+    // registry, so it receives pushes — before round 23 this window was made
+    // by createWindow() and never handed to registerIpc, i.e. deaf for life.
+    if (windows.all().length === 0) openWindow({})
   })
 })
 

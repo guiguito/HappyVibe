@@ -119,6 +119,7 @@ import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 import { hasNodeRuntime } from "./nodePreflight";
 import { isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
+import type { WindowRegistry } from "./windows";
 
 /**
  * One provider's auth status, as the bridge's `/hv-auth-status` reports it
@@ -489,13 +490,30 @@ function parsePlanWrite(r: { method?: string; title?: string }): { plan: string 
   }
 }
 
-export function registerIpc(win: BrowserWindow): void {
-  // Guard every renderer push: on quit a Pi child can flush a final event after
-  // the window/webContents is destroyed — sending then throws "Object has been
-  // destroyed". Drop those late sends instead of crashing.
-  const send = (channel: string, payload?: unknown): void => {
-    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-    win.webContents.send(channel, payload);
+export function registerIpc(windows: WindowRegistry<BrowserWindow>): void {
+  /**
+   * §7 round 23 — ONE push helper, and it fans out to every window.
+   *
+   * Every window runs the same deterministic reducer over the same stream and
+   * renders only the sessions whose tabs it holds, so a broadcast cannot show
+   * one transcript twice ("a tab lives in exactly one window"). The registry
+   * still guards each send: on quit a Pi child can flush a final event after a
+   * webContents is destroyed, and sending then throws.
+   */
+  const send = (channel: string, payload?: unknown): void => windows.broadcast(channel, payload);
+  /**
+   * The window an ipc call came from. A modal dialog must parent on it — before
+   * round 23 all seven parented on the one captured window, which in a second
+   * window would put the sheet on somebody else's title bar.
+   */
+  const ownerOf = (e: { sender: { id: number } }): BrowserWindow => {
+    const w = windows.bySender(e.sender) ?? windows.primary();
+    // Unreachable: the event itself proves a live renderer, whose window is
+    // either still registered or outlived by another. Non-null so a dialog can
+    // parent unconditionally; a throw here rejects the invoke, which every
+    // caller already handles, rather than parenting a sheet on nothing.
+    if (!w) throw new Error("no window to parent a dialog on");
+    return w;
   };
   // §27: whole-state voice snapshots, same broadcast shape as
   // hv:mcp-status-changed. The facade already throttles to ~4 Hz — a 652 MB
@@ -546,7 +564,10 @@ export function registerIpc(win: BrowserWindow): void {
   // here — the egress gate lives on the partition (browsers.ts), not on the
   // tool call, because JS inside the page can navigate without any tool.
   const browsers = new BrowserManager(
-    win,
+    // Stage 3 replaces this with a per-pane owning window: a WebContentsView
+    // belongs to exactly one window, so a pane that MOVES has to be
+    // re-parented. Until then every pane lives in the primary window.
+    windows.primary()!,
     (info) => send("hv:browser-state", info),
     (id, req) => {
       // Deliberately NOT one EventLog entry per subresource: a single page load
@@ -2534,8 +2555,8 @@ export function registerIpc(win: BrowserWindow): void {
     workspaces.add(dir);
     return dir;
   });
-  ipcMain.handle("hv:add-workspace", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
+  ipcMain.handle("hv:add-workspace", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"] });
     if (r.canceled || !r.filePaths[0]) return null;
     workspaces.add(r.filePaths[0]);
     return r.filePaths[0];
@@ -4108,8 +4129,8 @@ export function registerIpc(win: BrowserWindow): void {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".gif": "image/gif", ".webp": "image/webp",
   };
-  ipcMain.handle("hv:pick-image", async () => {
-    const r = await dialog.showOpenDialog(win, {
+  ipcMain.handle("hv:pick-image", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), {
       properties: ["openFile"],
       filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
     });
@@ -4129,8 +4150,8 @@ export function registerIpc(win: BrowserWindow): void {
   //
   // It also means picking and dropping take the SAME second step, rather than
   // one path that converts in the dialog handler and one that does not.
-  ipcMain.handle("hv:pick-document", async () => {
-    const r = await dialog.showOpenDialog(win, {
+  ipcMain.handle("hv:pick-document", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), {
       properties: ["openFile", "multiSelections"],
       filters: [{ name: "Documents", extensions: [...DOCUMENT_EXTENSIONS] }],
     });
@@ -5071,8 +5092,8 @@ export function registerIpc(win: BrowserWindow): void {
     skillsChanged();
     scheduleSkillReload("global", null);
   });
-  ipcMain.handle("hv:skills-add-linked", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Link a skills directory" });
+  ipcMain.handle("hv:skills-add-linked", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Link a skills directory" });
     if (r.canceled || !r.filePaths[0]) return getLinkedSkillDirs();
     setLinkedSkillDirs([...getLinkedSkillDirs(), r.filePaths[0]]);
     skillsChanged();
@@ -5101,8 +5122,8 @@ export function registerIpc(win: BrowserWindow): void {
   };
   app.on("will-quit", () => { for (const s of importSessions.values()) s.cleanup?.(); });
 
-  ipcMain.handle("hv:skills-import-local", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Import a skill folder (or a folder of skills)" });
+  ipcMain.handle("hv:skills-import-local", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Import a skill folder (or a folder of skills)" });
     if (r.canceled || !r.filePaths[0]) return null;
     const picked = r.filePaths[0];
     const found = scanSkillsDir(picked, "managed");
@@ -5453,12 +5474,12 @@ export function registerIpc(win: BrowserWindow): void {
     promptTemplatesChanged();
     schedulePromptTemplateReload("global", null);
   });
-  ipcMain.handle("hv:prompt-templates-add-linked", async (_e, dir?: string) => {
+  ipcMain.handle("hv:prompt-templates-add-linked", async (e, dir?: string) => {
     // An explicit dir comes from a caller that already knows the path; no arg
     // opens the picker. Linked dirs are referenced in place, never copied.
     let picked = typeof dir === "string" && dir.trim() ? dir : null;
     if (!picked) {
-      const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Link a prompts directory" });
+      const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Link a prompts directory" });
       if (r.canceled || !r.filePaths[0]) return getLinkedPromptTemplateDirs();
       picked = r.filePaths[0];
     }
@@ -5504,8 +5525,8 @@ export function registerIpc(win: BrowserWindow): void {
   };
   app.on("will-quit", () => { for (const s of promptTemplateImports.values()) s.cleanup?.(); });
 
-  ipcMain.handle("hv:prompt-templates-import-local", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Import prompts from a folder" });
+  ipcMain.handle("hv:prompt-templates-import-local", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Import prompts from a folder" });
     if (r.canceled || !r.filePaths[0]) return null;
     const found = scanImportRoot(r.filePaths[0]);
     if (found.length === 0) return { token: null, templates: [], error: "No .md prompts found in that folder." };
