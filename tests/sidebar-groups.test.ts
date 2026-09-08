@@ -148,8 +148,11 @@ describe("ABSENCE — the rejected alternatives", () => {
 
 describe("collapsed by default, and the state persists", () => {
   it("the persisted key is a set, seeded empty — App owns it beside settingsOpen", () => {
+    // §7 round 23 moved the STORE, not the shape: per-window chrome left
+    // localStorage (shared by every renderer of one origin) for the window's
+    // own record. Still a JSON array under the same key, still seeded empty.
     expect(APP).toContain('"hv:settings-groups"');
-    expect(APP).toContain('localStorage.getItem("hv:settings-groups") ?? "[]"');
+    expect(APP).toContain('uiGet("hv:settings-groups") ?? "[]"');
   });
 });
 

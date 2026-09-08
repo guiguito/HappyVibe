@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { uiGet, uiSet } from "../uiStore";
 import { timeago } from "../timeago";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
@@ -640,13 +641,13 @@ export function Sidebar({
   // several workspaces of many sessions each is exactly when it matters.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     try {
-      return new Set(JSON.parse(localStorage.getItem("hv:ws-collapsed") ?? "[]") as string[]);
+      return new Set(JSON.parse(uiGet("hv:ws-collapsed") ?? "[]") as string[]);
     } catch {
       return new Set();
     }
   });
   useEffect(() => {
-    localStorage.setItem("hv:ws-collapsed", JSON.stringify([...collapsed]));
+    uiSet("hv:ws-collapsed", JSON.stringify([...collapsed]));
   }, [collapsed]);
 
   // Round 11: the workspace-tree / Settings split, dragged by the handle below.
@@ -654,12 +655,14 @@ export function Sidebar({
   // value means something different at a different window size, so the split
   // the user chose was not the split they got back. `AUTO` (0) is the original
   // flex behaviour, which double-clicking the handle restores. Persisted like
-  // the other sidebar state (no IPC — a renderer-local preference).
+  // the other sidebar state — per WINDOW since §7 round 23, because
+  // localStorage is shared by every renderer of one origin and a second window
+  // would otherwise have mirrored this one's split.
   const asideRef = useRef<HTMLElement>(null);
   const treeRef = useRef<HTMLDivElement>(null);
-  const [treeFrac, setTreeFrac] = useState(() => readSplit(localStorage.getItem("hv:sidebar-split")));
+  const [treeFrac, setTreeFrac] = useState(() => readSplit(uiGet("hv:sidebar-split")));
   useEffect(() => {
-    localStorage.setItem("hv:sidebar-split", writeSplit(treeFrac));
+    uiSet("hv:sidebar-split", writeSplit(treeFrac));
   }, [treeFrac]);
 
   // The split only exists while the group is open: a dragged height with the

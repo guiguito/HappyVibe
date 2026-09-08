@@ -939,8 +939,10 @@ interface HvApi {
   setTerminalSettings(s: Partial<HvTerminalSettings>): Promise<HvTerminalSettings>;
   /** §26: the centre-area tab layout, stored opaquely — the renderer validates
       and prunes it on restore (layoutPersist.ts). */
-  getLayout(): Promise<Record<string, unknown>>;
-  setLayout(l: Record<string, unknown>): Promise<void>;
+  /** §7 round 23: this window's id and its stored record, read synchronously at preload. */
+  boot: { windowId: number; record: { tabsByWs: unknown; ui: Record<string, string> } };
+  setWindowTabs(t: Record<string, unknown>): Promise<void>;
+  setWindowUi(ui: Record<string, string>): Promise<void>;
 
   // ── §27 Voice input ──────────────────────────────────────────────
   voiceStatus(): Promise<HvVoiceStatus>;

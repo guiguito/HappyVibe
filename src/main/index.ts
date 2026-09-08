@@ -1,14 +1,15 @@
 import "dotenv/config";
-import { app, shell, BrowserWindow, nativeImage, Menu } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, Menu, ipcMain } from 'electron'
 import { join } from 'path'
 import { existsSync, renameSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpc } from './ipc'
 import { loginShellPath, mergePath } from './shellPath'
-import { getGitRulesSeeded, rulesFile, setGitRulesSeeded } from './config'
+import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
 import { seedDefaultGitRules } from './gitRules'
 import { navAction } from './navGuard'
+import { parseLayoutFile, type WindowRecord } from './windowLayout'
 import { WindowRegistry } from './windows'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
@@ -47,11 +48,40 @@ try {
  */
 export const windows = new WindowRegistry<BrowserWindow>()
 
+/**
+ * The layout file: one record per live window, primary first. Debounced because
+ * a divider drag, a window drag and a window resize all fire this per frame.
+ */
+let persistTimer: NodeJS.Timeout | null = null
+export function persistLayout(): void {
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => setLayoutFile(windows.records() as WindowRecord[]), 300)
+}
+
+/**
+ * This window's record, handed to its renderer synchronously.
+ *
+ * Registered HERE, at module scope, rather than in registerIpc: preload asks
+ * for it with `sendSync` at module load, so a handler that arrived later would
+ * block that renderer on a message nobody answers. Main is synchronously busy
+ * from window creation through registerIpc anyway, so the reply cannot be
+ * served before the rest of the app is wired either way.
+ */
+ipcMain.on('hv:window-boot', (e) => {
+  const w = windows.bySender(e.sender)
+  const record = (w && (windows.record(w.id) as WindowRecord | undefined)) ?? { tabsByWs: {}, ui: {} }
+  e.returnValue = { windowId: w?.id ?? -1, record }
+})
+
 /** The record is opaque here — main stores it and hands it back; see windows.ts. */
-export function openWindow(record: unknown): BrowserWindow {
+export function openWindow(record: WindowRecord, at?: { x: number; y: number }): BrowserWindow {
   const win = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: record.bounds?.width ?? 900,
+    height: record.bounds?.height ?? 670,
+    // A torn-off window opens at the pointer, a restored one where it was.
+    // Omitting both is what "centred by the platform" means, and is right for
+    // a first launch and for ⌘⇧N.
+    ...(at ? { x: at.x, y: at.y } : record.bounds ? { x: record.bounds.x, y: record.bounds.y } : {}),
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
@@ -66,6 +96,17 @@ export function openWindow(record: unknown): BrowserWindow {
   win.on('ready-to-show', () => {
     win.show()
   })
+
+  // Bounds ride the window's own record, so a relaunch puts it back where the
+  // user left it — never persisted before round 23.
+  const stamp = (): void => {
+    const rec = windows.record(win.id) as WindowRecord | undefined
+    if (!rec) return
+    windows.setRecord(win.id, { ...rec, bounds: win.getBounds() })
+    persistLayout()
+  }
+  win.on('resize', stamp)
+  win.on('move', stamp)
 
   // Open links in the OS browser, not inside the app window.
   // setWindowOpenHandler covers target=_blank / window.open; will-navigate
@@ -154,7 +195,12 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  openWindow({})
+  // §7 round 23: every window that was open at quit comes back, with its own
+  // tabs, workspace, chrome and bounds. No records (first launch, or a corrupt
+  // file) means exactly one default window — never zero.
+  const restored = parseLayoutFile(getLayoutFile())
+  if (restored.length === 0) openWindow({ tabsByWs: {}, ui: {} })
+  else for (const record of restored) openWindow(record)
 
   // A GUI-launched app inherits launchd's minimal PATH, so nvm node, uv and
   // /opt/homebrew are invisible to every child we spawn (Pi, the agent's bash
@@ -177,14 +223,14 @@ app.whenReady().then(() => {
     if (seedDefaultGitRules(rulesFile(), false)) setGitRulesSeeded(true)
   }
 
-  registerIpc(windows)
+  registerIpc(windows, persistLayout)
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open. Through the
     // registry, so it receives pushes — before round 23 this window was made
     // by createWindow() and never handed to registerIpc, i.e. deaf for life.
-    if (windows.all().length === 0) openWindow({})
+    if (windows.all().length === 0) openWindow({ tabsByWs: {}, ui: {} })
   })
 })
 

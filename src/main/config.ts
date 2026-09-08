@@ -520,19 +520,9 @@ export function setVoiceSettings(settings: Partial<VoiceSettings>): VoiceSetting
 
 /** §26: the tab layout, stored opaquely. The renderer validates and prunes it
     on restore (layoutPersist.ts), so main never has to know what a tab is —
-    the same division of labour as getShortcuts above. */
-export function getLayout(): Record<string, unknown> {
-  return load().layout ?? {};
-}
+    the same division of labour as getShortcuts above.
 
-export function setLayout(layout: Record<string, unknown>): void {
-  const cfg = load();
-  if (Object.keys(layout).length > 0) cfg.layout = layout;
-  else delete cfg.layout;
-  save(cfg);
-}
-
-/** §7 round 23: the same value, now holding `{windows: WindowRecord[]}` — one
+    §7 round 23: the value now holds `{windows: WindowRecord[]}` — one
     record per window, primary first, because two windows writing the single
     workspace-keyed record was last-write-wins. Still opaque to main; the outer
     list is validated by windowLayout.ts and the tabs by the renderer. */

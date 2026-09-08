@@ -24,6 +24,22 @@ interface VoiceSettingsDTO {
 }
 
 contextBridge.exposeInMainWorld("hv", {
+  /**
+   * §7 round 23 — this window's identity and its stored record.
+   *
+   * SYNCHRONOUS on purpose. The renderer reads `record.ui` inside `useState`
+   * initialisers (it used to read localStorage there), and `record.tabsByWs`
+   * replaces an awaited `hv:get-layout`. An async read renders one frame with
+   * `activeWs` null, which is the state that shows the WELCOME screen on top of
+   * a fully restored layout. Answered by a handler registered in index.ts
+   * before any window exists, so this can never block on nobody.
+   */
+  boot: ipcRenderer.sendSync("hv:window-boot") as {
+    windowId: number;
+    record: { tabsByWs: unknown; ui: Record<string, string> };
+  },
+  setWindowTabs: (t: Record<string, unknown>) => ipcRenderer.invoke("hv:set-window-tabs", t),
+  setWindowUi: (ui: Record<string, string>) => ipcRenderer.invoke("hv:set-window-ui", ui),
   // WS8: absolute OS path of a dragged File (Electron ≥32; replaces File.path).
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   getStats: (sessionId?: string) => ipcRenderer.invoke("hv:get-stats", sessionId),
@@ -357,8 +373,6 @@ contextBridge.exposeInMainWorld("hv", {
   },
   getTerminalSettings: () => ipcRenderer.invoke("hv:get-terminal-settings"),
   setTerminalSettings: (s: Record<string, unknown>) => ipcRenderer.invoke("hv:set-terminal-settings", s),
-  getLayout: () => ipcRenderer.invoke("hv:get-layout"),
-  setLayout: (l: Record<string, unknown>) => ipcRenderer.invoke("hv:set-layout", l),
 
   // ── §27 Voice input ──────────────────────────────────────────────
   // The model download and inference both live in main; the renderer only

@@ -21,7 +21,7 @@ import {
   childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
-  getTerminalSettings, setTerminalSettings, getLayout, setLayout,
+  getTerminalSettings, setTerminalSettings,
   getVoiceSettings, setVoiceSettings,
   getWebService, setWebService, resolveWebServiceForCall,
   getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
@@ -120,6 +120,7 @@ import { hasNodeRuntime } from "./nodePreflight";
 import { isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 import type { WindowRegistry } from "./windows";
+import type { WindowRecord } from "./windowLayout";
 
 /**
  * One provider's auth status, as the bridge's `/hv-auth-status` reports it
@@ -490,7 +491,12 @@ function parsePlanWrite(r: { method?: string; title?: string }): { plan: string 
   }
 }
 
-export function registerIpc(windows: WindowRegistry<BrowserWindow>): void {
+export function registerIpc(
+  windows: WindowRegistry<BrowserWindow>,
+  /** index.ts owns the layout file (it owns the registry); passed in rather than
+      imported so ipc.ts and index.ts do not form a cycle. */
+  persistLayout: () => void,
+): void {
   /**
    * §7 round 23 — ONE push helper, and it fans out to every window.
    *
@@ -3705,10 +3711,30 @@ export function registerIpc(windows: WindowRegistry<BrowserWindow>): void {
     return voiceHost.transcribe(samples);
   });
 
-  // §26: the tab layout, stored opaquely — the renderer validates and prunes
-  // it on restore (layoutPersist.ts), so main never learns what a tab is.
-  ipcMain.handle("hv:get-layout", () => getLayout());
-  ipcMain.handle("hv:set-layout", (_e, l: Record<string, unknown>) => setLayout(l ?? {}));
+  // §26/§7 round 23: the tab layout and the per-window chrome, stored opaquely
+  // — the renderer validates and prunes on restore (layoutPersist.ts), so main
+  // still never learns what a tab is. What changed is the ADDRESSEE: each
+  // window writes only its own record, because one shared record meant two
+  // windows last-write-wins over each other's tabs. Reading is not a handler at
+  // all any more — a window is handed its record at boot (index.ts).
+  ipcMain.handle("hv:set-window-tabs", (e, tabsByWs: Record<string, unknown>) => {
+    const w = windows.bySender(e.sender);
+    if (!w) return;
+    const rec = windows.record(w.id) as WindowRecord;
+    windows.setRecord(w.id, { ...rec, tabsByWs: tabsByWs ?? {} });
+    persistLayout();
+  });
+  ipcMain.handle("hv:set-window-ui", (e, ui: Record<string, string>) => {
+    const w = windows.bySender(e.sender);
+    if (!w) return;
+    const rec = windows.record(w.id) as WindowRecord;
+    windows.setRecord(w.id, { ...rec, ui: ui ?? {} });
+    persistLayout();
+  });
+  // A closed window's record must leave the file, or the next launch reopens a
+  // phantom holding tabs the user closed. `records()` already excludes it —
+  // this is what makes something write the file at that moment.
+  windows.setOnClosed(() => persistLayout());
 
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.

@@ -62,6 +62,7 @@ import { BrowserTab } from "./components/BrowserTab";
 import { TerminalView } from "./components/TerminalView";
 import { VoiceView } from "./components/VoiceView";
 import { restoreLayout } from "./layoutPersist";
+import { uiGet, uiSet } from "./uiStore";
 import { buildGridStyle, paneEdges, paneNeighbours, topRightSlot } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
@@ -228,9 +229,9 @@ export default function App(): React.JSX.Element {
    * resolve: the tabs were all there, addressed to a workspace nobody was
    * looking at. Found in the GUI, not by a test — no unit could have seen it.
    */
-  const [activeWs, setActiveWs] = useState<string | null>(() => localStorage.getItem("hv:active-ws"));
+  const [activeWs, setActiveWs] = useState<string | null>(() => uiGet("hv:active-ws"));
   useEffect(() => {
-    if (activeWs) localStorage.setItem("hv:active-ws", activeWs);
+    if (activeWs) uiSet("hv:active-ws", activeWs);
   }, [activeWs]);
   /**
    * §7 round 13: ONE drawer, two panels, one at a time — the rail icon selects
@@ -240,7 +241,7 @@ export default function App(): React.JSX.Element {
    */
   const [drawerByWs, setDrawerByWs] = useState<Record<string, DrawerPanel>>(() => {
     try {
-      return JSON.parse(localStorage.getItem("hv:drawer-panel") ?? "{}") as Record<string, DrawerPanel>;
+      return JSON.parse(uiGet("hv:drawer-panel") ?? "{}") as Record<string, DrawerPanel>;
     } catch {
       return {};
     }
@@ -252,7 +253,7 @@ export default function App(): React.JSX.Element {
       const next = { ...m };
       if (panel) next[activeWs] = panel;
       else delete next[activeWs];
-      localStorage.setItem("hv:drawer-panel", JSON.stringify(next));
+      uiSet("hv:drawer-panel", JSON.stringify(next));
       return next;
     });
   };
@@ -265,15 +266,15 @@ export default function App(): React.JSX.Element {
    * made Changes feel cramped when it was a tab in the file drawer.
    */
   const [drawerWidths, setDrawerWidths] = useState<Record<DrawerPanel, number>>(() => ({
-    files: clampDrawer(Number(localStorage.getItem("hv:drawer-width:files")) || 256),
-    changes: clampDrawer(Number(localStorage.getItem("hv:drawer-width:changes")) || 340),
+    files: clampDrawer(Number(uiGet("hv:drawer-width:files")) || 256),
+    changes: clampDrawer(Number(uiGet("hv:drawer-width:changes")) || 340),
   }));
   const drawerWidth = drawerWidths[drawerPanel ?? "files"];
   const setDrawerWidth = (px: number): void => {
     const panel = drawerPanel ?? "files";
     const w = clampDrawer(px);
     setDrawerWidths((prev) => ({ ...prev, [panel]: w }));
-    localStorage.setItem(`hv:drawer-width:${panel}`, String(w));
+    uiSet(`hv:drawer-width:${panel}`, String(w));
   };
   // §29: the working tree's state for the ACTIVE workspace — a property of the
   // tree, deliberately not of any session, because several sessions can be
@@ -282,15 +283,15 @@ export default function App(): React.JSX.Element {
   const [gitAvailable, setGitAvailable] = useState(true);
   const gitSummary = useMemo(() => summarise(gitStatus?.status?.files ?? []), [gitStatus]);
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
-  useEffect(() => { localStorage.setItem("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => uiGet("hv:sidebar-collapsed") === "1");
+  useEffect(() => { uiSet("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
   // §7 round 18: ⌘K opens the sidebar's session filter. A COUNTER, not a
   // boolean — pressing it twice must re-focus the field, and a boolean already
   // true fires no effect in the sidebar.
   const [searchNonce, setSearchNonce] = useState(0);
   // Round 8: the sidebar's Settings group, open or not — persisted like the rail.
-  const [settingsOpen, setSettingsOpen] = useState(() => localStorage.getItem("hv:settings-open") === "1");
-  useEffect(() => { localStorage.setItem("hv:settings-open", settingsOpen ? "1" : "0"); }, [settingsOpen]);
+  const [settingsOpen, setSettingsOpen] = useState(() => uiGet("hv:settings-open") === "1");
+  useEffect(() => { uiSet("hv:settings-open", settingsOpen ? "1" : "0"); }, [settingsOpen]);
   /**
    * §16 round 18: which of the four settings groups are open. INDEPENDENT, not
    * an accordion — one-open-at-a-time would shut a group whenever `navigate()`
@@ -302,13 +303,13 @@ export default function App(): React.JSX.Element {
    */
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     try {
-      return new Set(JSON.parse(localStorage.getItem("hv:settings-groups") ?? "[]") as string[]);
+      return new Set(JSON.parse(uiGet("hv:settings-groups") ?? "[]") as string[]);
     } catch {
       return new Set();
     }
   });
   useEffect(() => {
-    localStorage.setItem("hv:settings-groups", JSON.stringify([...openGroups]));
+    uiSet("hv:settings-groups", JSON.stringify([...openGroups]));
   }, [openGroups]);
   /** Open the group holding a destination, never close one. */
   const revealGroup = useCallback((v: View) => {
@@ -702,8 +703,11 @@ export default function App(): React.JSX.Element {
      */
     void (async () => {
       try {
-        const [raw, sessionList, termList, browserList, wsList] = await Promise.all([
-          window.hv.getLayout(),
+        // §7 round 23: the tabs come from THIS window's record, read
+        // synchronously at preload — no round trip, and no frame where the
+        // layout is empty.
+        const raw = window.hv.boot.record.tabsByWs;
+        const [sessionList, termList, browserList, wsList] = await Promise.all([
           window.hv.listSessions(),
           window.hv.termList(),
           // §28: normally empty at boot — panes do not survive the app, so their
@@ -726,7 +730,7 @@ export default function App(): React.JSX.Element {
         // closed — in which case any restored workspace beats the welcome
         // screen, which is what the user would otherwise get with their tabs
         // sitting in state, invisible.
-        const remembered = localStorage.getItem("hv:active-ws");
+        const remembered = uiGet("hv:active-ws");
         const target = remembered && layout[remembered] ? remembered : Object.keys(layout)[0];
         if (target) {
           setActiveWs(target);
@@ -1655,7 +1659,7 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (!layoutLoaded) return;
     const id = setTimeout(() => {
-      void window.hv.setLayout(tabsByWs as unknown as Record<string, unknown>).catch(() => {});
+      void window.hv.setWindowTabs(tabsByWs as unknown as Record<string, unknown>).catch(() => {});
     }, 400);
     return () => clearTimeout(id);
   }, [tabsByWs, layoutLoaded]);

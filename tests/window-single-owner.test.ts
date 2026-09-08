@@ -6,14 +6,14 @@
  * item here is a way the app was single-window by construction.
  */
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const ipc = readFileSync("src/main/ipc.ts", "utf8");
 const index = readFileSync("src/main/index.ts", "utf8");
 
 describe("main is no longer bound to one window (round 23)", () => {
   it("registerIpc receives the registry, not a BrowserWindow", () => {
-    expect(ipc).toMatch(/export function registerIpc\(windows: WindowRegistry<BrowserWindow>\)/);
+    expect(ipc).toMatch(/export function registerIpc\(\s*windows: WindowRegistry<BrowserWindow>/);
     expect(ipc).not.toMatch(/export function registerIpc\(win: BrowserWindow\)/);
   });
 
@@ -32,5 +32,153 @@ describe("main is no longer bound to one window (round 23)", () => {
     // handed to registerIpc, so it was deaf for its whole life.
     expect(index).not.toMatch(/length === 0\) createWindow\(\)/);
     expect(index).toMatch(/if \(windows\.all\(\)\.length === 0\) openWindow\(/);
+  });
+});
+
+describe("per-window chrome is per window (round 23)", () => {
+  const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+  const sidebar = readFileSync("src/renderer/src/components/Sidebar.tsx", "utf8");
+  const preload = readFileSync("src/preload/index.ts", "utf8");
+
+  /**
+   * localStorage is shared by every renderer of one origin, so each of these
+   * would have made a second window silently mirror the first one's chrome —
+   * and `hv:active-ws` would have dragged its whole workspace along with it.
+   */
+  const PER_WINDOW_KEYS = [
+    "hv:active-ws",
+    "hv:drawer-panel",
+    "hv:drawer-width:",
+    "hv:sidebar-collapsed",
+    "hv:settings-open",
+    "hv:settings-groups",
+    "hv:ws-collapsed",
+    "hv:sidebar-split",
+  ];
+
+  it("none of the per-window keys is read or written through localStorage any more", () => {
+    for (const k of PER_WINDOW_KEYS) {
+      const esc = k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      expect(app + sidebar, k).not.toMatch(new RegExp(`localStorage\\.[gs]etItem\\([\`"']${esc}`));
+    }
+  });
+
+  it("app-level localStorage is untouched — these are shared on purpose", () => {
+    // A dismissal or a cached system prompt is a property of the USER, not of a
+    // window, so moving them would be the opposite bug.
+    const chat = readFileSync("src/renderer/src/components/ChatView.tsx", "utf8");
+    expect(chat).toMatch(/localStorage\.setItem\(`hv:agentsmd-dismissed:/);
+  });
+
+  it("the layout is read synchronously from the boot record and written per window", () => {
+    expect(preload).toMatch(/boot: ipcRenderer\.sendSync\("hv:window-boot"\)/);
+    // The CHANNEL, not the word: preload's comment names what it replaced.
+    expect(preload).not.toMatch(/invoke\("hv:(get|set)-layout"/);
+    expect(ipc).not.toMatch(/handle\("hv:(get|set)-layout"/);
+    expect(app).toMatch(/window\.hv\.boot\.record\.tabsByWs/);
+    expect(app).toMatch(/window\.hv\.setWindowTabs\(/);
+  });
+
+  it("the one-time adoption from localStorage lives in uiStore and nowhere else", () => {
+    const store = readFileSync("src/renderer/src/uiStore.ts", "utf8");
+    expect(store).toMatch(/const ADOPTED = \[/);
+    // Every key the scan above forbids elsewhere must be adopted here, or that
+    // key silently resets for every existing install.
+    for (const k of PER_WINDOW_KEYS) {
+      if (k.endsWith(":")) {
+        expect(store).toContain(`"${k}files"`);
+        expect(store).toContain(`"${k}changes"`);
+      } else {
+        expect(store).toContain(`"${k}"`);
+      }
+    }
+  });
+
+  it("the boot handler is registered before any window exists, not inside registerIpc", () => {
+    // preload calls it with sendSync at module load, so a handler that arrived
+    // later would block the renderer on a message nobody answers.
+    expect(index).toMatch(/ipcMain\.on\(['"]hv:window-boot['"]/);
+    expect(ipc).not.toMatch(/"hv:window-boot"/);
+    expect(index.search(/ipcMain\.on\(['"]hv:window-boot/)).toBeLessThan(index.indexOf("openWindow({"));
+  });
+});
+
+/**
+ * The per-window store's behaviour, with `window` stubbed — the no-DOM suite
+ * has no browser globals, and this module deliberately reads them lazily so
+ * importing a component that uses it does not need them either.
+ */
+describe("uiStore: per-window reads, and the one-time adoption (round 23)", () => {
+  const load = async (
+    recordUi: Record<string, string>,
+    legacy: Record<string, string> = {},
+  ): Promise<{ uiGet: (k: string) => string | null; uiSet: (k: string, v: string | null) => void; written: Record<string, string>[] }> => {
+    const written: Record<string, string>[] = [];
+    const ls = { ...legacy };
+    (globalThis as unknown as { window: unknown }).window = {
+      hv: {
+        boot: { windowId: 7, record: { tabsByWs: {}, ui: recordUi } },
+        setWindowUi: (ui: Record<string, string>) => {
+          written.push(ui);
+          return Promise.resolve();
+        },
+      },
+    };
+    (globalThis as unknown as { localStorage: unknown }).localStorage = {
+      getItem: (k: string): string | null => (k in ls ? ls[k]! : null),
+    };
+    vi.resetModules();
+    const mod = await import("../src/renderer/src/uiStore");
+    return { ...mod, written };
+  };
+
+  afterEach(() => {
+    delete (globalThis as unknown as { window?: unknown }).window;
+    delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
+  });
+
+  it("reads this window's record, not the shared store", async () => {
+    const { uiGet } = await load({ "hv:active-ws": "/a" }, { "hv:active-ws": "/b" });
+    expect(uiGet("hv:active-ws")).toBe("/a");
+    expect(uiGet("hv:nothing")).toBeNull();
+  });
+
+  it("adopts the legacy localStorage values ONCE, when the record is empty", async () => {
+    const { uiGet } = await load({}, { "hv:sidebar-collapsed": "1", "hv:settings-groups": '["x"]', "hv:unrelated": "no" });
+    expect(uiGet("hv:sidebar-collapsed")).toBe("1");
+    expect(uiGet("hv:settings-groups")).toBe('["x"]');
+    // Only the adopted list travels — this store is not a localStorage mirror.
+    expect(uiGet("hv:unrelated")).toBeNull();
+  });
+
+  it("a window that HAS a record ignores the legacy store — a new window must not inherit it", async () => {
+    // ⌘⇧N ships `{"hv:sidebar-collapsed":"1"}`, and adopting on top of that
+    // would hand the new window the first one's workspace and drawer widths.
+    const { uiGet } = await load({ "hv:sidebar-collapsed": "1" }, { "hv:active-ws": "/b", "hv:sidebar-collapsed": "0" });
+    expect(uiGet("hv:sidebar-collapsed")).toBe("1");
+    expect(uiGet("hv:active-ws")).toBeNull();
+  });
+
+  it("a write pushes the whole map to main, and null deletes", async () => {
+    const { uiSet, uiGet, written } = await load({ "a": "1" });
+    uiSet("b", "2");
+    expect(written.at(-1)).toEqual({ a: "1", b: "2" });
+    uiSet("a", null);
+    expect(written.at(-1)).toEqual({ b: "2" });
+    expect(uiGet("a")).toBeNull();
+  });
+
+  it("survives a store that throws (private window, blocked site data)", async () => {
+    (globalThis as unknown as { window: unknown }).window = {
+      hv: { boot: { windowId: 1, record: { tabsByWs: {}, ui: {} } }, setWindowUi: () => Promise.resolve() },
+    };
+    (globalThis as unknown as { localStorage: unknown }).localStorage = {
+      getItem: (): string => {
+        throw new Error("blocked");
+      },
+    };
+    vi.resetModules();
+    const { uiGet } = await import("../src/renderer/src/uiStore");
+    expect(uiGet("hv:sidebar-collapsed")).toBeNull();
   });
 });
