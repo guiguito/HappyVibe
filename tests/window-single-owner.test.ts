@@ -251,3 +251,58 @@ describe("a tab lives in exactly one window (round 23)", () => {
     expect(app).toMatch(/window\.hv\.boot\.draft/);
   });
 });
+
+describe("prompts are routed and counted by main (round 23)", () => {
+  const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+  const permission = readFileSync("src/renderer/src/permission.ts", "utf8");
+
+  it("only the two MODAL kinds are gated on the routed window", () => {
+    // Everything else in that handler is state EVERY window needs: dangerous
+    // mode, plan state, the tool inventories, and the notifies that draw
+    // transcript cards.
+    expect(app).toMatch(/const mine = r\.promptWindowId === undefined \|\| r\.promptWindowId === window\.hv\.boot\.windowId/);
+    expect(app).toMatch(/if \(info && mine\)/);
+    expect(app).toMatch(/if \(ask && mine\)/);
+  });
+
+  it("the sidebar's pending count comes from main, not from this window's queue", () => {
+    // A renderer counting its own queue reports only the prompts it was chosen
+    // to show, so the OTHER window's sidebar would claim the session is idle.
+    expect(app).toMatch(/pending=\{pendingBySession\}/);
+    expect(permission).not.toMatch(/export function pendingCounts/);
+  });
+
+  it("only BLOCKING prompts are counted, from their own map", () => {
+    // uiOwners holds every ui-request INCLUDING notifies, which are
+    // fire-and-forget and therefore never deleted. Counting that map made the
+    // sidebar climb with every transcript card and kept counting deleted
+    // sessions — measured live as {sessionA:2, deletedSession:3, sessionB:4}
+    // while exactly one prompt was open.
+    expect(ipc).toMatch(/const pendingPrompts = new Map<string, string>\(\)/);
+    expect(ipc).toMatch(/if \(!method \|\| !BLOCKING_UI_METHODS\.has\(method\)\) return;/);
+    expect(ipc).toMatch(/for \(const sid of pendingPrompts\.values\(\)\)/);
+    expect(ipc).not.toMatch(/for \(const sid of uiOwners\.values\(\)\)/);
+  });
+
+  it("a dead session leaves nothing pending", () => {
+    const i = ipc.indexOf('send("hv:pi-exit"');
+    expect(ipc.slice(i - 400, i)).toMatch(/pendingPrompts\.delete\(id\)/);
+  });
+
+  it("the dock badge is summed in main — one number for the whole app", () => {
+    expect(ipc).toMatch(/const badgeByWindow = new Map<number, number>\(\)/);
+    expect(ipc).toMatch(/for \(const win of windows\.all\(\)\) total \+= badgeByWindow\.get\(win\.id\) \?\? 0/);
+  });
+
+  it("an answered prompt is retracted from every window", () => {
+    expect(ipc.match(/send\("hv:ui-resolved"/g)?.length).toBe(2);
+    expect(app).toMatch(/window\.hv\.onUiResolved\(/);
+  });
+
+  it("holdings are DECLARED by the renderer and not debounced", () => {
+    // Routing a prompt to the window that held the tab 400ms ago is the bug.
+    expect(app).toMatch(/window\.hv\.windowHolds\(\{/);
+    const i = app.indexOf("window.hv.windowHolds({");
+    expect(app.slice(i - 400, i)).not.toMatch(/setTimeout/);
+  });
+});

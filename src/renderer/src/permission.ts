@@ -98,16 +98,6 @@ export function headFor(queue: QueuedPrompt[], selectedId: string | null): Queue
   return queue.find((q) => !q.req.sessionId || q.req.sessionId === "__utility__" || q.req.sessionId === selectedId) ?? null;
 }
 
-/** Pending prompt count per session — sidebar attention dots. */
-export function pendingCounts(queue: QueuedPrompt[]): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const q of queue) {
-    const sid = q.req.sessionId;
-    if (sid) out[sid] = (out[sid] ?? 0) + 1;
-  }
-  return out;
-}
-
 /** Drop a session's pending prompts (its Pi exited — nothing left to answer). */
 export function dropSession(queue: QueuedPrompt[], sessionId: string): QueuedPrompt[] {
   return queue.filter((q) => q.req.sessionId !== sessionId);

@@ -54,6 +54,19 @@ contextBridge.exposeInMainWorld("hv", {
     return () => ipcRenderer.off("hv:tab-arrive", l);
   },
   setWindowTabs: (t: Record<string, unknown>) => ipcRenderer.invoke("hv:set-window-tabs", t),
+  /** §7 round 23: what this window shows — main routes prompts off it. */
+  windowHolds: (h: { sessions: string[]; terminals: string[]; browsers: string[] }) =>
+    ipcRenderer.send("hv:window-holds", h),
+  onUiResolved: (h: (p: { id: string }) => void) => {
+    const l = (_e: unknown, p: { id: string }): void => h(p);
+    ipcRenderer.on("hv:ui-resolved", l);
+    return () => ipcRenderer.off("hv:ui-resolved", l);
+  },
+  onPendingChanged: (h: (p: Record<string, number>) => void) => {
+    const l = (_e: unknown, p: Record<string, number>): void => h(p);
+    ipcRenderer.on("hv:pending-changed", l);
+    return () => ipcRenderer.off("hv:pending-changed", l);
+  },
   setWindowUi: (ui: Record<string, string>) => ipcRenderer.invoke("hv:set-window-ui", ui),
   // WS8: absolute OS path of a dragged File (Electron ≥32; replaces File.path).
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),

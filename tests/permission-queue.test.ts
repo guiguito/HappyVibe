@@ -4,7 +4,6 @@ import {
   headFor,
   parseDangerous,
   parsePermission,
-  pendingCounts,
   type QueuedPrompt,
 } from "../src/renderer/src/permission";
 
@@ -32,14 +31,6 @@ describe("headFor — cross-session prompt routing", () => {
   test("utility/session-less prompts always surface", () => {
     expect(headFor([prompt("u1", "__utility__")], "A")?.req.id).toBe("u1");
     expect(headFor([prompt("n1", undefined)], null)?.req.id).toBe("n1");
-  });
-});
-
-describe("pendingCounts — sidebar attention dots", () => {
-  test("counts per session, ignores session-less prompts", () => {
-    expect(pendingCounts([prompt("a1", "A"), prompt("a2", "A"), prompt("b1", "B"), prompt("n", undefined)]))
-      .toEqual({ A: 2, B: 1 });
-    expect(pendingCounts([])).toEqual({});
   });
 });
 

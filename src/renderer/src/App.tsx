@@ -27,7 +27,6 @@ import {
   parsePermission,
   parsePlan,
   parsePlanBlocked,
-  pendingCounts,
   type PermissionChoice,
   type QueuedPrompt,
 } from "./permission";
@@ -104,6 +103,8 @@ export default function App(): React.JSX.Element {
   // Per-session permission prompt queues (B4): the modal shows the focused
   // session's oldest pending prompt; the rest badge the sidebar + dock.
   const [uiQueue, setUiQueue] = useState<QueuedPrompt[]>([]);
+  /** §7 round 23: prompts per session ACROSS windows — main computes it. */
+  const [pendingBySession, setPendingBySession] = useState<Record<string, number>>({});
   // Sessions currently in /hv-dangerous mode (bridge-notified, never persisted).
   const [dangerous, setDangerous] = useState<Record<string, boolean>>({});
   // §23: per-session plan mode + current plan-file path (bridge-notified; SURVIVES
@@ -364,7 +365,16 @@ export default function App(): React.JSX.Element {
       const sid = sessionOf(tab);
       if (sid) { setSelectedId(sid); setView("chat"); }
     });
-    return () => { offTitle(); offExit(); offBrowser(); offBrowserClosed(); offTabArrive(); };
+    // §7 round 23: answered elsewhere — drop it from this window's queue. Only
+    // one window was shown it, but the badge and the sidebar count it here too.
+    const offUiResolved = window.hv.onUiResolved(({ id }) =>
+      setUiQueue((q) => (q.some((p) => p.req.id === id) ? q.filter((p) => p.req.id !== id) : q)),
+    );
+    // Pending-per-session comes from MAIN, which is the only place that knows
+    // every window's prompts. Counting our own queue would report only the ones
+    // we were chosen to show, so the other window's sidebar would look idle.
+    const offPending = window.hv.onPendingChanged(setPendingBySession);
+    return () => { offTitle(); offExit(); offBrowser(); offBrowserClosed(); offTabArrive(); offUiResolved(); offPending(); };
   }, []);
   // F6: global shortcuts. The handler closure is refreshed each render (reads
   // live wsId/tabs/newSession); a single listener reads it through the ref so we
@@ -892,12 +902,24 @@ export default function App(): React.JSX.Element {
     // Only hv.permission select prompts open the modal. Other ui-requests
     // (setStatus etc.) are fire-and-forget — routing them here was a CRITICAL bug.
     const offUiRequest = window.hv.onUiRequest((r) => {
+      /**
+       * §7 round 23: a blocking prompt is shown in ONE window, and main names
+       * it — the window holding this session's chat tab (promptRouting.ts).
+       * Everything BELOW this gate stays unconditional on purpose: dangerous
+       * mode, plan state and the tool inventories are state every window needs,
+       * and a notify draws a transcript card every window keeps.
+       *
+       * An absent id means main could not choose, and then every window shows
+       * it: a permission prompt never times out, so a lost one hangs the agent
+       * forever — better two dialogs than none.
+       */
+      const mine = r.promptWindowId === undefined || r.promptWindowId === window.hv.boot.windowId;
       const info = parsePermission(r);
-      if (info) setUiQueue((q) => [...q, { kind: "permission", req: r, info }]);
+      if (info && mine) setUiQueue((q) => [...q, { kind: "permission", req: r, info }]);
       // V2.B: ask_user questions queue through the same machinery (badges,
       // headFor routing). Kind-based parse — hv.auth inputs stay untouched.
       const ask = parseAskUser(r);
-      if (ask) setUiQueue((q) => [...q, { kind: "askUser", req: r, ask }]);
+      if (ask && mine) setUiQueue((q) => [...q, { kind: "askUser", req: r, ask }]);
       const dng = parseDangerous(r);
       if (dng !== null && r.sessionId) setDangerous((p) => ({ ...p, [r.sessionId!]: dng }));
       // §23: plan-mode toggle + plan-ready card + skipped-tool marking.
@@ -1689,6 +1711,27 @@ export default function App(): React.JSX.Element {
       void window.hv.setWindowTabs(tabsByWs as unknown as Record<string, unknown>).catch(() => {});
     }, 400);
     return () => clearTimeout(id);
+  }, [tabsByWs, layoutLoaded]);
+
+  /**
+   * §7 round 23 — tell main what this window HOLDS, on every layout change.
+   *
+   * This is how a prompt finds the window showing its session (promptRouting.ts)
+   * and how closing a window knows which terminals and panes went with it. It is
+   * DECLARED rather than derived: main must not learn to parse a tab id, and the
+   * tabs module is the only thing that knows what one means.
+   *
+   * NOT debounced, unlike the persist above — routing a prompt to the window
+   * that had the tab 400ms ago is exactly the bug this prevents.
+   */
+  useEffect(() => {
+    if (!layoutLoaded) return;
+    const all = Object.values(tabsByWs);
+    void window.hv.windowHolds({
+      sessions: all.flatMap(allChats),
+      terminals: all.flatMap(allTerminals),
+      browsers: all.flatMap(allBrowsers),
+    });
   }, [tabsByWs, layoutLoaded]);
 
   /**
@@ -2512,7 +2555,7 @@ export default function App(): React.JSX.Element {
         workspaces={workspaces}
         sessions={sessions}
         statuses={statuses}
-        pending={pendingCounts(uiQueue)}
+        pending={pendingBySession}
         planning={Object.fromEntries(Object.entries(planMode).map(([sid, p]) => [sid, p.enabled]))}
         selectedId={selectedId}
         openSessionIds={openSessionIds}

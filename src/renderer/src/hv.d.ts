@@ -746,7 +746,16 @@ interface HvApi {
 
   onPiEvent(cb: (e: Record<string, unknown>) => void): () => void;
   onUiRequest(
-    cb: (r: { id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[] }) => void
+    cb: (r: {
+      id: string;
+      sessionId?: string;
+      method?: string;
+      title?: string;
+      message?: string;
+      options?: string[];
+      /** §7 round 23: the ONE window that should show this as a modal. */
+      promptWindowId?: number;
+    }) => void
   ): () => void;
   onPiExit(cb: (info: { sessionId: string; code: number | null; intentional: boolean; stderr?: string }) => void): () => void;
   /** V2.A: provider/model config changed — refetch model lists/tiers. */
@@ -955,6 +964,9 @@ interface HvApi {
   }): Promise<boolean>;
   onTabArrive(h: (p: { tab: string; ws: string; draft?: string }) => void): () => void;
   setWindowTabs(t: Record<string, unknown>): Promise<void>;
+  windowHolds(h: { sessions: string[]; terminals: string[]; browsers: string[] }): void;
+  onUiResolved(h: (p: { id: string }) => void): () => void;
+  onPendingChanged(h: (p: Record<string, number>) => void): () => void;
   setWindowUi(ui: Record<string, string>): Promise<void>;
 
   // ── §27 Voice input ──────────────────────────────────────────────

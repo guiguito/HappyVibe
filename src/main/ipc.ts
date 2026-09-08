@@ -117,10 +117,11 @@ import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 import { hasNodeRuntime } from "./nodePreflight";
-import { isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
+import { BLOCKING_UI_METHODS, isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 import type { WindowRegistry } from "./windows";
 import type { WindowRecord } from "./windowLayout";
+import { promptWindowFor } from "./promptRouting";
 
 /**
  * One provider's auth status, as the bridge's `/hv-auth-status` reports it
@@ -992,6 +993,66 @@ export function registerIpc(
   // Which client owns a pending extension_ui_request id (permission modal, auth flows).
   const UTILITY = "__utility__";
   const uiOwners = new Map<string, string>();
+  /**
+   * §7 round 23 — name the ONE window that should show this prompt.
+   *
+   * Round 21 put a session's dialog inside that session's pane; this says whose
+   * pane. Stamped on every `hv:ui-request`, but only the two MODAL kinds
+   * (permission, ask_user) are gated on it in the renderer — a notify draws a
+   * transcript card, and every window keeps every session's transcript so that
+   * moving a tab later finds the history already there.
+   */
+  const stampPrompt = <T extends { sessionId?: string }>(r: T): T & { promptWindowId?: number } => {
+    const id = promptWindowFor(
+      r.sessionId === UTILITY ? undefined : r.sessionId,
+      (sid) => windows.holderOf(sid),
+      BrowserWindow.getFocusedWindow()?.id ?? null,
+      windows.primary()?.id ?? null,
+    );
+    return id === null ? r : { ...r, promptWindowId: id };
+  };
+  /**
+   * How many prompts each session is waiting on — computed in MAIN because it is
+   * the only place that knows all of them. A renderer counting its own queue
+   * would report only the prompts it was chosen to show, so the OTHER window's
+   * sidebar would claim nothing is pending.
+   */
+  const pendingPrompts = new Map<string, string>();
+  const pendingChanged = (): void => {
+    const counts: Record<string, number> = {};
+    for (const sid of pendingPrompts.values()) if (sid !== UTILITY) counts[sid] = (counts[sid] ?? 0) + 1;
+    send("hv:pending-changed", counts);
+  };
+  /**
+   * BLOCKING ones only, and that is the whole point of a second map.
+   *
+   * `uiOwners` holds EVERY ui-request, notifies included — and a notify is
+   * fire-and-forget, so nothing ever deletes it. Counting that map made the
+   * sidebar's attention count climb with every transcript card a session ever
+   * drew, and kept counting sessions that had been deleted. The renderer's old
+   * count could not have this bug: its queue only ever held parsed modals.
+   */
+  const notePending = (id: string, sessionId: string, method?: string): void => {
+    if (!method || !BLOCKING_UI_METHODS.has(method)) return;
+    pendingPrompts.set(id, sessionId);
+    pendingChanged();
+  };
+  const clearPending = (id: string): void => {
+    if (pendingPrompts.delete(id)) pendingChanged();
+  };
+  /**
+   * What each window currently shows, declared by its own renderer on every
+   * layout change. Main never derives this from a tab id.
+   */
+  ipcMain.on("hv:window-holds", (e, h: { sessions: string[]; terminals: string[]; browsers: string[] }) => {
+    const w = windows.bySender(e.sender);
+    if (!w) return;
+    windows.setHolds(w.id, {
+      sessions: Array.isArray(h?.sessions) ? h.sessions : [],
+      terminals: Array.isArray(h?.terminals) ? h.terminals : [],
+      browsers: Array.isArray(h?.browsers) ? h.browsers : [],
+    });
+  });
   const clientFor = (owner: string | undefined): PiClient | null =>
     owner === UTILITY ? utility : owner ? (manager.get(owner) as PiClient | null) : null;
 
@@ -1033,7 +1094,8 @@ export function registerIpc(
         return;
       }
       uiOwners.set(r.id, UTILITY);
-      send("hv:ui-request", { ...r, sessionId: UTILITY });
+      notePending(r.id, UTILITY, r.method);
+      send("hv:ui-request", stampPrompt({ ...r, sessionId: UTILITY }));
       // Auth landed/left → the model list changed (OAuth results only flow as
       // hv.auth ui-requests, so this is where main learns about them).
       try {
@@ -1521,7 +1583,7 @@ export function registerIpc(
       const skill = parseSkillNotify(r);
       if (skill) {
         void log.append({ type: "skill.invoked", sessionId, workspaceId: meta?.workspaceId, data: skill });
-        send("hv:ui-request", { ...r, sessionId });
+        send("hv:ui-request", stampPrompt({ ...r, sessionId }));
         return;
       }
       // §24: a prompt template expanded. Log {typed, sha256(expanded)} — the
@@ -1542,7 +1604,7 @@ export function registerIpc(
           workspaceId: meta?.workspaceId,
           data: { sessionId, typed, expandedHash: expandedHash(command.expanded) },
         });
-        send("hv:ui-request", { ...r, message: promptTemplateNotifyMessage(command, typed), sessionId });
+        send("hv:ui-request", stampPrompt({ ...r, message: promptTemplateNotifyMessage(command, typed), sessionId }));
         return;
       }
       // Async subagents: lifecycle relays drive activity gating (a live async run
@@ -1629,7 +1691,7 @@ export function registerIpc(
         } else if (sub.stage === "interrupt-sent" && sub.runId) {
           void log.append({ type: "subagent.interrupt", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId } });
         }
-        send("hv:ui-request", { ...r, sessionId });
+        send("hv:ui-request", stampPrompt({ ...r, sessionId }));
         return;
       }
       // §26 part 2: the blocking terminal inputs. Main ALWAYS respondUi — a
@@ -1645,12 +1707,12 @@ export function registerIpc(
           // `message` (a blocking input uses `title`) — the renderer's parsers
           // all read `message`, so this must too.
           const notify = (payload: Record<string, unknown>): void =>
-            send("hv:ui-request", {
+            send("hv:ui-request", stampPrompt({
               id: `hv-term-${Date.now()}`,
               method: "notify",
               message: JSON.stringify({ kind: "hv.terminal", ...payload }),
               sessionId,
-            });
+            }));
           try {
             const wsId = meta?.workspaceId;
             if (!wsId) throw new Error("No workspace for this session");
@@ -1734,14 +1796,14 @@ export function registerIpc(
             });
           }, BROWSER_OP_TIMEOUT_MS);
           const notify = (payload: Record<string, unknown>): void =>
-            send("hv:ui-request", {
+            send("hv:ui-request", stampPrompt({
               id: `hv-browser-${Date.now()}`,
               method: "notify",
               // A notify's payload rides `message` (a blocking input uses
               // `title`). Every renderer parser reads `message`, so this must.
               message: JSON.stringify({ kind: "hv.browser", ...payload }),
               sessionId,
-            });
+            }));
           try {
             const wsId = meta?.workspaceId;
             if (!wsId) throw new Error("No workspace for this session");
@@ -2186,7 +2248,7 @@ export function registerIpc(
         } else if (planN.kind === "hv.plan.blocked") {
           void log.append({ type: "plan.blocked", sessionId, workspaceId: wsId, data: { toolName: planN.toolName } });
         }
-        send("hv:ui-request", { ...r, sessionId });
+        send("hv:ui-request", stampPrompt({ ...r, sessionId }));
         return;
       }
       // Nothing above recognised it. If it BLOCKS the extension and carries no
@@ -2206,9 +2268,10 @@ export function registerIpc(
         return;
       }
       uiOwners.set(r.id, sessionId);
+      notePending(r.id, sessionId, r.method);
       // W1.3: an unanswered permission prompt protects the session from hibernation.
       if (isPermissionPrompt(r)) activity.promptOpened(sessionId);
-      send("hv:ui-request", { ...r, sessionId });
+      send("hv:ui-request", stampPrompt({ ...r, sessionId }));
     });
   };
 
@@ -2405,6 +2468,11 @@ export function registerIpc(
         data: { code, ...(stderr ? { stderr } : {}) },
       });
     }
+    // §7 round 23: a crashed or closed session must not leave a phantom count
+    // in every window's sidebar — the renderer does the same with dropSession.
+    let dropped = false;
+    for (const [id, owner] of pendingPrompts) if (owner === sessionId) { pendingPrompts.delete(id); dropped = true; }
+    if (dropped) pendingChanged();
     send("hv:pi-exit", { sessionId, code, intentional, stderr });
   });
 
@@ -3292,6 +3360,10 @@ export function registerIpc(
   ipcMain.on("hv:respond-permission", (_e, id: string, choice: string) => {
     const owner = uiOwners.get(id);
     uiOwners.delete(id);
+    // §7 round 23: only one window was shown this prompt, but the others are
+    // counting it. Tell them all it is answered, then re-publish the counts.
+    send("hv:ui-resolved", { id });
+    clearPending(id);
     if (owner && owner !== UTILITY) {
       activity.promptClosed(owner);
       drainPendingReload(owner); // prompt closed → session may be idle now
@@ -3304,6 +3376,8 @@ export function registerIpc(
   ipcMain.on("hv:respond-input", (_e, id: string, value: string | null) => {
     const owner = uiOwners.get(id);
     uiOwners.delete(id);
+    send("hv:ui-resolved", { id });
+    clearPending(id);
     clientFor(owner)?.respondUi(id, value === null ? { cancelled: true } : { value });
   });
 
@@ -3858,9 +3932,20 @@ export function registerIpc(
   // case rather than treating it as "all of it is new".
 
   // macOS dock badge = total pending permission prompts (renderer-computed).
-  ipcMain.on("hv:set-badge-count", (_e, n: number) => {
+  /**
+   * §7 round 23: the dock badge is ONE number for the whole app, so it is a SUM
+   * over windows. Each renderer reports its own queue length; letting them each
+   * call setBadgeCount directly meant the last writer won and the badge showed
+   * one window's count as if it were everything.
+   */
+  const badgeByWindow = new Map<number, number>();
+  ipcMain.on("hv:set-badge-count", (e, n: number) => {
+    const w = windows.bySender(e.sender);
+    if (w) badgeByWindow.set(w.id, Number.isInteger(n) && n > 0 ? n : 0);
+    let total = 0;
+    for (const win of windows.all()) total += badgeByWindow.get(win.id) ?? 0;
     try {
-      app.setBadgeCount(Number.isInteger(n) && n > 0 ? n : 0);
+      app.setBadgeCount(total);
     } catch {
       /* not supported on this platform */
     }
