@@ -23,13 +23,10 @@
  * strip and still acts on the strip it sits in.
  */
 
-import { workspaceEmoji } from "../workspaceEmoji";
-import { basename } from "../tabs";
 
 export type DrawerPanel = "files" | "changes";
 
 export function RightRail({
-  workspace,
   open,
   onToggle,
   gitAvailable,
@@ -39,21 +36,6 @@ export function RightRail({
   filesKey,
   changesKey,
 }: {
-  /**
-   * §7 round 23: WHICH WORKSPACE this window is showing.
-   *
-   * Tabs are per workspace (round 11), so a workspace switch changes the whole
-   * strip — and until now the centre area said nothing about which one it was
-   * on. Reported as tabs vanishing: a window torn off to hold one terminal, a
-   * new session started in a DIFFERENT workspace from the sidebar, and the
-   * terminal tab silently stopped being displayed. Nothing was lost and
-   * switching back brought it straight back, but with the sidebar collapsed
-   * there was no way to know that had happened.
-   *
-   * A LABEL, not a control: the sidebar is the switcher, and a second one here
-   * would be a second place to look for the same thing.
-   */
-  workspace: string | null;
   /** Which panel the drawer is showing, or null when it is closed. */
   open: DrawerPanel | null;
   onToggle: (panel: DrawerPanel) => void;
@@ -68,17 +50,6 @@ export function RightRail({
 }): React.JSX.Element {
   return (
     <div className="shrink-0 flex items-stretch">
-      {workspace && (
-        <span
-          title={workspace}
-          className="shrink-0 self-center flex items-center gap-1.5 max-w-40 border-r-2 border-line pr-3 pl-1 text-[13px] text-ink-soft"
-        >
-          {/* Same emoji and the same name the sidebar uses — one workspace must
-              not have two identities. */}
-          <span className="shrink-0" aria-hidden>{workspaceEmoji(workspace)}</span>
-          <span className="truncate">{basename(workspace)}</span>
-        </span>
-      )}
       <RailButton
         title={`${open === "files" ? "Hide" : "Show"} the files panel (${filesKey})`}
         label="Files panel"

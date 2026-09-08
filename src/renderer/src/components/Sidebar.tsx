@@ -3,6 +3,7 @@ import { uiGet, uiSet } from "../uiStore";
 import { timeago } from "../timeago";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
+import { bySidebarOrder, lastUsed } from "../sessionOrder";
 import { AUTO, fractionFor, isSized, readSplit, writeSplit } from "../sidebarSplit";
 import { BrandLogo } from "./BrandLogo";
 
@@ -510,8 +511,8 @@ function SessionRow({
          */
         <span className="flex items-center shrink-0">
           {!status && (
-            <span className="text-[10px] tabular-nums text-ink-soft/70 group-hover:hidden" title={new Date(session.updatedAt).toLocaleString()}>
-              {timeago(Date.parse(session.updatedAt))}
+            <span className="text-[10px] tabular-nums text-ink-soft/70 group-hover:hidden" title={new Date(lastUsed(session)).toLocaleString()}>
+              {timeago(Date.parse(lastUsed(session)))}
             </span>
           )}
           <button
@@ -556,6 +557,7 @@ export function Sidebar({
   openGroups,
   onToggleGroup,
   onToggleSettingsOpen,
+  activeWs,
   railCollapsed,
   onToggleCollapsed,
 }: {
@@ -586,6 +588,15 @@ export function Sidebar({
   openGroups: ReadonlySet<string>;
   onToggleGroup: (g: string) => void;
   /** F6: slim icon-rail mode + its toggle (⌘\); state persisted in App. */
+  /**
+   * The workspace whose tabs the centre area is showing.
+   *
+   * Tabs are per workspace (round 11), so a switch changes the whole strip —
+   * and the sidebar marked the selected SESSION but never the selected
+   * WORKSPACE. Reported as tabs vanishing: a new session started in another
+   * workspace swapped the strip with nothing on screen saying so.
+   */
+  activeWs: string | null;
   railCollapsed: boolean;
   onToggleCollapsed: () => void;
   onAddWorkspace: () => void;
@@ -700,6 +711,17 @@ export function Sidebar({
 
   const archivedCount = sessions.filter((s) => s.archived).length;
 
+  /**
+   * Sessions whose agent process is LIVE — pinned to the top of their
+   * workspace. `statuses` is the process lifecycle, deliberately not App's
+   * `busy` flag: see bySidebarOrder for why pinning on the turn would jitter.
+   */
+  const live = new Set(
+    Object.entries(statuses)
+      .filter(([, st]) => st === "running" || st === "waking")
+      .map(([id]) => id),
+  );
+
   // F6: collapsed icon rail — brand, workspace initials (click expands), and the
   // MCP/Settings/Help nav at the bottom. ⌘\ (App) and the chevron toggle it.
   // (§28 round 1 swapped the keys: ⌘B opens a BROWSER, the sidebar moved to ⌘\.)
@@ -725,8 +747,15 @@ export function Sidebar({
               key={ws}
               type="button"
               onClick={onToggleCollapsed}
-              title={basename(ws)}
-              className="size-8 shrink-0 flex items-center justify-center rounded-lg border-2 border-line bg-card text-base hover:border-honey cursor-pointer"
+              title={ws === activeWs ? `${basename(ws)} — showing` : basename(ws)}
+              aria-current={ws === activeWs ? "true" : undefined}
+              /* The BORDER carries "showing", not the size or shape: this is a
+                 column of tiles, and one of them growing would read as a
+                 different kind of thing. (`railBtn` above is size-9/rounded-xl
+                 and would do exactly that, so it is deliberately not reused.) */
+              className={`size-8 shrink-0 flex items-center justify-center rounded-lg border-2 bg-card text-base cursor-pointer ${
+                ws === activeWs ? "border-honey shadow-sticker" : "border-line hover:border-honey"
+              }`}
             >
               {/* Round 11: the emoji replaces two-letter initials — a column of
                   `HA`/`FL`/`DE` was unreadable at 48px. */}
@@ -833,7 +862,7 @@ export function Sidebar({
         {workspaces.map((ws) => {
           const wsSessions = sessions
             .filter((s) => s.workspaceId === ws && visible(s))
-            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+            .sort(bySidebarOrder(live));
           const isCollapsed = collapsed.has(ws) && !q; // filtering expands everything
           return (
             <div key={ws} className="mb-1.5">
@@ -845,12 +874,23 @@ export function Sidebar({
                   type="button"
                   onClick={() => toggle(ws)}
                   aria-expanded={!isCollapsed}
+                  aria-current={ws === activeWs ? "true" : undefined}
                   className="flex-1 min-w-0 flex items-center gap-1 font-bold text-sm text-left cursor-pointer"
-                  title={ws}
+                  title={ws === activeWs ? `${ws} — showing` : ws}
                 >
-                  {/* Round 11: derived from the path — decoration, not data. */}
-                  <span className="shrink-0" aria-hidden>{workspaceEmoji(ws)}</span>
-                  <span className="truncate">{basename(ws)}</span>
+                  {/* Round 11: derived from the path — decoration, not data.
+                      §7 round 23: the honey chip marks the workspace on screen,
+                      the same mark the collapsed rail uses, so the two modes
+                      say "showing" the same way. Deliberately NOT the selected
+                      session's full honey row — that sits directly beneath this
+                      one, and two stacked honey blocks read as one region
+                      instead of group > item. */}
+                  <span className={`shrink-0 ${ws === activeWs ? "rounded bg-honey-soft px-0.5" : ""}`} aria-hidden>
+                    {workspaceEmoji(ws)}
+                  </span>
+                  {/* And the inactive ones recede, so the live one is the one
+                      your eye lands on without anything having to shout. */}
+                  <span className={`truncate ${ws === activeWs ? "" : "text-ink-soft"}`}>{basename(ws)}</span>
                   <Chevron open={!isCollapsed} />
                 </button>
                 {/* V2.C2: hover icons live in reserved slots (invisible, not

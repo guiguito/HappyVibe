@@ -2190,6 +2190,12 @@ export default function App(): React.JSX.Element {
   const selectSession = async (id: string): Promise<void> => {
     setSelectedId(id);
     setView("chat");
+    // The sidebar orders by last use, and going to a session IS use. On the
+    // GESTURE, never on the load: `hydrateSession` below also runs for the
+    // chats already on screen at boot, and bumping there would re-stamp the
+    // restored layout at every launch. It also returns early for a session
+    // that is already live, so a genuine re-focus would never have reached it.
+    window.hv.touchSession(id);
     // Round 11: opening a session ADDS a tab (or focuses the one it already has)
     // rather than replacing whatever chat was on screen.
     const ws = sessions.find((x) => x.id === id)?.workspaceId;
@@ -2656,6 +2662,7 @@ export default function App(): React.JSX.Element {
     <div className="h-full flex">
       <Sidebar
         workspaces={workspaces}
+        activeWs={wsId}
         sessions={sessions}
         statuses={statuses}
         pending={pendingBySession}
@@ -2862,7 +2869,7 @@ export default function App(): React.JSX.Element {
                       // Round 11: focusing a chat tab IS selecting that session —
                       // the sidebar highlight, shortcuts and stats follow it.
                       const sid = sessionOf(tab);
-                      if (sid) { setSelectedId(sid); setView("chat"); }
+                      if (sid) { setSelectedId(sid); setView("chat"); window.hv.touchSession(sid); }
                     }}
                     onClose={(tab) => {
                       // Four tab kinds, four lifecycles: a chat keeps its
@@ -2929,7 +2936,6 @@ export default function App(): React.JSX.Element {
                     trailing={
                       slot === topRightSlot(wsTabs) ? (
                         <RightRail
-                          workspace={wsId}
                           open={DRAWER}
                           onToggle={toggleDrawer}
                           gitAvailable={gitAvailable}

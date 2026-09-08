@@ -150,6 +150,10 @@ interface SessionMeta {
   /** §16 round 16: per-session thinking override (session → global). */
   thinking?: string;
   titleSource: "fallback" | "model" | "user";
+  /** When the user last opened or prompted it — what the sidebar orders by.
+   *  Absent on sessions that predate the field; readers fall back to
+   *  `updatedAt` (sessionOrder.ts). Mirror of the main-side SessionMeta. */
+  lastUsedAt?: string;
 }
 
 /** Round-4: reopened sessions restore tool cards too (intent + result live in
@@ -629,6 +633,10 @@ interface HvApi {
     /** §23: the session's active plan, so the pill survives a renderer reload. */
     plan: { path: string; status: string; done: number; total: number } | null;
   }>;
+  /** The user OPENED this session — the sidebar orders by last use. Fire and
+   *  forget; nothing waits on it. Deliberately separate from openSession,
+   *  which also runs for the chats already on screen at boot. */
+  touchSession(sessionId: string): void;
   /** §9: the pre-compaction history, display only — never re-entered into context. */
   loadEarlier(sessionId: string): Promise<RestoreItem[]>;
   /** §26: `terminals` answers the two-named-outcomes confirm when this session

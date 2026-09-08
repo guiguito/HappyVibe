@@ -443,3 +443,72 @@ describe("the PRD's own listing matches the shipped nav", () => {
     }
   });
 });
+
+describe("the session list is ordered by LAST USED, and the workspace on screen is marked", () => {
+  const SIDEBAR = fs.readFileSync(path.join(import.meta.dirname, "..", "src/renderer/src/components/Sidebar.tsx"), "utf8");
+  const APP = fs.readFileSync(path.join(import.meta.dirname, "..", "src/renderer/src/App.tsx"), "utf8");
+  const IPC = fs.readFileSync(path.join(import.meta.dirname, "..", "src/main/ipc.ts"), "utf8");
+
+  it("the sort goes through the shared comparator, not an inline updatedAt compare", () => {
+    // The absence matters more than the presence: reverting the sort would
+    // leave every other assertion here passing.
+    expect(SIDEBAR).toContain("bySidebarOrder(live)");
+    expect(SIDEBAR).not.toContain("b.updatedAt.localeCompare(a.updatedAt)");
+  });
+
+  it("waking pins alongside running, and crashed does not", () => {
+    // Pinning only "running" would make a session you just clicked drop to its
+    // old slot and jump back a second later, which is the jitter to avoid.
+    // And it is `statuses` (the process) rather than `busy` (the turn) on
+    // purpose — pinning the turn would reshuffle the list at every boundary.
+    const i = SIDEBAR.indexOf("const live = new Set(");
+    expect(i).toBeGreaterThan(-1);
+    const block = SIDEBAR.slice(i, i + 300);
+    expect(block).toContain('st === "running" || st === "waking"');
+    expect(block).not.toContain("crashed");
+  });
+
+  /**
+   * The trap this whole feature dies to, and no pure test can see it: App
+   * hydrates the chats already on screen at boot. Bumping there would re-stamp
+   * the restored layout at every launch and flatten the ordering — so the bump
+   * belongs to the GESTURE, never to the load.
+   */
+  it("only a real open touches — never the boot hydration path", () => {
+    expect(APP.match(/touchSession/g)?.length).toBe(2);
+    const h = APP.indexOf("const hydrateSessionInner");
+    expect(h).toBeGreaterThan(-1);
+    expect(APP.slice(h, h + 2500)).not.toContain("touchSession");
+    // and main's open handler stays a pure read
+    const o = IPC.indexOf('"hv:open-session"');
+    expect(IPC.slice(o, o + 1200)).not.toContain("touch(");
+  });
+
+  it("prompting counts as use", () => {
+    const i = IPC.indexOf("activity.prompted(sessionId);");
+    expect(IPC.slice(i, i + 300)).toContain("index.touch(sessionId)");
+  });
+
+  it("the sidebar is told which workspace is on screen, in BOTH modes", () => {
+    expect(SIDEBAR).toContain("activeWs: string | null;");
+    expect(APP).toMatch(/<Sidebar[\s\S]{0,120}activeWs=\{wsId\}/);
+    // the collapsed rail's tile className is no longer a constant
+    expect(SIDEBAR).toMatch(/ws === activeWs \? "border-honey shadow-sticker" : "border-line hover:border-honey"/);
+    // and the expanded header marks it too
+    expect(SIDEBAR).toMatch(/ws === activeWs \? "rounded bg-honey-soft px-0\.5" : ""/);
+    expect((SIDEBAR.match(/aria-current=\{ws === activeWs/g) ?? []).length).toBe(2);
+  });
+
+  it("the centre area does NOT name the workspace — one workspace, one identity", () => {
+    // Reverses commit 6a11517: the right rail said it, which read as clutter in
+    // a place that should be quiet. The left panel owns this now.
+    const RAIL = fs.readFileSync(path.join(import.meta.dirname, "..", "src/renderer/src/components/RightRail.tsx"), "utf8");
+    expect(RAIL).not.toContain("workspace: string | null;");
+    expect(RAIL).not.toContain("workspaceEmoji");
+    // Scoped to the RightRail call — AgentsMdPanel has its own legitimate
+    // `workspace={wsId}`, and a bare string match would forbid that too.
+    const r = APP.indexOf("<RightRail");
+    expect(r).toBeGreaterThan(-1);
+    expect(APP.slice(r, r + 400)).not.toContain("workspace=");
+  });
+});

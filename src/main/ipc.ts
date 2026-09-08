@@ -2689,6 +2689,18 @@ export function registerIpc(
     return meta;
   });
 
+  /**
+   * The user went to this session — order it first in the sidebar.
+   *
+   * Deliberately NOT folded into `hv:open-session`, which the renderer also
+   * calls when it hydrates the chats that are already on screen at boot and on
+   * tab mount. Bumping there would re-stamp a handful of sessions at every
+   * launch and quietly destroy the ordering; only a real open touches.
+   */
+  ipcMain.on("hv:touch-session", (_e, sessionId: string) => {
+    if (index.touch(sessionId)) sessionsChanged();
+  });
+
   ipcMain.handle(
     "hv:open-session",
     async (_e, sessionId: string): Promise<{
@@ -2994,6 +3006,10 @@ export function registerIpc(
       client = await startClient(meta, !!meta.piSessionFile);
     }
     activity.prompted(sessionId);
+    // The sidebar orders by last use, and prompting IS use. `touch` rather than
+    // `update` so `updatedAt` keeps meaning "metadata changed" — see store.ts.
+    index.touch(sessionId);
+    sessionsChanged();
     if (meta?.titleSource === "fallback" && !firstPrompt.has(sessionId) && meta.title === "New session") {
       firstPrompt.set(sessionId, msg);
       index.update(sessionId, { title: truncateTitle(msg) }); // fallback until generation lands

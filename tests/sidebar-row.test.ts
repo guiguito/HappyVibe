@@ -41,9 +41,15 @@ describe("the row has one destructive affordance, not two", () => {
 });
 
 describe("the resting row shows an age", () => {
-  it("renders timeago from updatedAt, with the exact time on hover", () => {
-    expect(SRC).toContain("timeago(Date.parse(session.updatedAt))");
-    expect(SRC).toContain("new Date(session.updatedAt).toLocaleString()");
+  it("renders timeago from LAST USED — the same fact the list sorts by", () => {
+    // It used to read `updatedAt`, which is "metadata last changed": bumped by
+    // a rename, a model swap, and — worst — by auto-hibernation, which picks
+    // the LEAST recently used session, so the stalest row showed the freshest
+    // age. Now the age and the order come from one function, which is what
+    // makes "top of the list shows 10d" structurally impossible.
+    expect(SRC).toContain("timeago(Date.parse(lastUsed(session)))");
+    expect(SRC).toContain("new Date(lastUsed(session)).toLocaleString()");
+    expect(SRC).not.toContain("Date.parse(session.updatedAt)");
   });
 
   it("hides the age while the session is working — the pulsing dot already says so", () => {

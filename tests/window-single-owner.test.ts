@@ -464,38 +464,3 @@ describe("drag between windows, and tear-off (round 23, stage 4)", () => {
     expect(app).toMatch(/window\.hv\.onTabLeft\(\(\{ tab, ws \}\) => detachTab\(ws, tab\)\)/);
   });
 });
-
-describe("the centre area names its workspace (round 23, follow-up)", () => {
-  const rail = readFileSync("src/renderer/src/components/RightRail.tsx", "utf8");
-  const app = readFileSync("src/renderer/src/App.tsx", "utf8");
-  const sidebar = readFileSync("src/renderer/src/components/Sidebar.tsx", "utf8");
-
-  it("the layout-wide cluster shows which workspace the tabs belong to", () => {
-    // Reported as tabs vanishing: a torn-off window holding one terminal, a new
-    // session started in a DIFFERENT workspace from the sidebar, and the
-    // terminal tab stopped being displayed. Nothing was lost — tabs are per
-    // workspace (round 11) — but with the sidebar collapsed nothing on screen
-    // said the workspace had changed.
-    expect(rail).toMatch(/workspace: string \| null;/);
-    expect(rail).toMatch(/\{workspaceEmoji\(workspace\)\}/);
-    expect(rail).toMatch(/\{basename\(workspace\)\}/);
-    expect(app).toMatch(/<RightRail\s+workspace=\{wsId\}/);
-  });
-
-  it("it is a LABEL, not a second workspace switcher", () => {
-    // The sidebar is the switcher; a second one here would be a second place to
-    // look for the same thing.
-    const i = rail.indexOf("{workspaceEmoji(workspace)}");
-    const block = rail.slice(i - 400, i);
-    expect(block).toMatch(/<span/);
-    expect(block).not.toMatch(/<button|onClick/);
-  });
-
-  it("it borrows the sidebar's identity rather than inventing one", () => {
-    // Two names for one workspace is exactly the drift this repo keeps paying
-    // for; both surfaces use workspaceEmoji + basename, full path in `title`.
-    expect(sidebar).toMatch(/\{workspaceEmoji\(ws\)\}/);
-    expect(sidebar).toMatch(/\{basename\(ws\)\}/);
-    expect(rail).toMatch(/title=\{workspace\}/);
-  });
-});

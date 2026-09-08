@@ -27,6 +27,20 @@ export interface SessionMeta {
   thinking?: string;
   /** Who last set the title. "user" is never overwritten by generation. */
   titleSource: "fallback" | "model" | "user";
+  /**
+   * When the user last OPENED or PROMPTED this session — what the sidebar
+   * orders by, and the age its row shows.
+   *
+   * Deliberately not `updatedAt`, which means "metadata last changed" and is
+   * bumped by a rename, a model swap, archive and hibernate. That is a useful
+   * fact in its own right, and overloading it would erase it — while leaving
+   * the ordering just as wrong, since neither prompting nor opening touches it.
+   *
+   * Optional, and every reader falls back to `updatedAt` (sessionOrder.ts), so
+   * sessions that predate the field keep exactly the order they already had and
+   * there is nothing to migrate.
+   */
+  lastUsedAt?: string;
 }
 
 function readJson<T>(file: string, fallback: T): T {
@@ -82,6 +96,21 @@ export class SessionIndex {
     const meta = this.get(id);
     if (!meta) return undefined;
     Object.assign(meta, patch, { updatedAt: new Date().toISOString() });
+    this.save();
+    return meta;
+  }
+
+  /**
+   * Mark the session as used, now.
+   *
+   * Deliberately NOT `update({lastUsedAt})`: that bumps `updatedAt` on every
+   * call, which would drag the two meanings back together — every open would
+   * also read as a metadata change.
+   */
+  touch(id: string): SessionMeta | undefined {
+    const meta = this.get(id);
+    if (!meta) return undefined;
+    meta.lastUsedAt = new Date().toISOString();
     this.save();
     return meta;
   }

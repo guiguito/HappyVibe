@@ -108,6 +108,8 @@ contextBridge.exposeInMainWorld("hv", {
   listSessions: () => ipcRenderer.invoke("hv:list-sessions"),
   createSession: (workspaceId: string) => ipcRenderer.invoke("hv:create-session", workspaceId),
   openSession: (sessionId: string) => ipcRenderer.invoke("hv:open-session", sessionId),
+  /** The user opened this session — the sidebar orders by last use. */
+  touchSession: (sessionId: string) => ipcRenderer.send("hv:touch-session", sessionId),
   loadEarlier: (sessionId: string) => ipcRenderer.invoke("hv:load-earlier", sessionId),
   closeSession: (sessionId: string, terminals?: "stop" | "keep") =>
     ipcRenderer.invoke("hv:close-session", sessionId, terminals),
