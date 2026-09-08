@@ -1,5 +1,65 @@
 # Multi-window Implementation Plan
 
+> **STATUS: IMPLEMENTED** — all four stages landed on `guiguito/multiwindow`, ten commits
+> (`af26c1d`…`7041384`). Gate green at every commit; final `266 files, 3360 tests`.
+> `npm run live:why` prints nothing throughout — no Pi-facing file is touched by this round.
+>
+> ## What the GUI pass found, and no test could
+>
+> Seven bugs. Every one of them was reachable only by driving the real app, and each is
+> pinned now in `tests/window-single-owner.test.ts`.
+>
+> 1. **The tab context menu never opened on a file tab.** Round 12 gated `onContextMenu`
+>    on `if (!isChat && !isTerm) return;` because the menu existed only for Rename — so
+>    "Move to new window" was unreachable on exactly the kind whose move carries an
+>    unsaved buffer. Right-clicking `notes.txt` did nothing at all.
+> 2. **React StrictMode ate the travelling draft.** It double-invokes the mount effect, so
+>    the first `load` consumed-and-deleted the draft and the second overwrote the editor
+>    with the file on disk. The tab arrived clean, showing none of the text.
+> 3. **`onClick={load}` passed a MouseEvent as `useDraft`** — truthy, so "Reload from disk"
+>    would have resurrected the draft. The typechecker caught this one the moment `load`
+>    grew a flag.
+> 4. **Counting `uiOwners` counted notifies.** That map holds every ui-request, and a
+>    notify is fire-and-forget so nothing deletes it — the sidebar's attention count climbed
+>    with every transcript card and kept counting deleted sessions. Measured live as
+>    `{sessionA: 2, deletedSession: 3, sessionB: 4}` with exactly one prompt open.
+> 5. **A window arriving with a browser tab had an empty URL bar** over a page that was
+>    loaded, visible and correctly re-parented: `hv:browser-state` had been pushed before
+>    that window existed, and boot seeded terminals but only the browsers' alive-SET.
+> 6. **One drag both moved a tab and tore off a window.** A drop that leaves
+>    `dropEffect === "none"` made the gesture do two things — the worst kind of latent bug,
+>    since a real drop usually sets the effect. Tear-off now keys off whether the drag was
+>    CONSUMED, never off a DOM field.
+> 7. **`showOpenDialog`'s window overload rejects `undefined`**, so `ownerOf` had to become
+>    non-nullable rather than quietly parenting a sheet on nothing.
+>
+> ## Two plan corrections made while building
+>
+> - **`persistLayout` could not land in stage 1.** Writing the new file shape while the
+>   renderer still read the legacy one would have cost the user their tabs, so bounds and
+>   persistence moved into the same commit as the renderer switch.
+> - **`hv:window-boot` lives in `index.ts`, not `ipc.ts`.** preload asks for it with
+>   `sendSync` at module load, so a handler registered later would block that renderer on a
+>   message nobody answers.
+>
+> ## One thing a human should still do
+>
+> The cross-window drag was verified with **dispatched** drag events, including the
+> empty-`dataTransfer` case the OS actually delivers. What automation cannot do is perform a
+> real OS drag between two windows: the design no longer depends on the dataTransfer
+> surviving the hop, only on `dragover`/`drop` reaching the other window. Worth one drag by
+> hand.
+>
+> ## Also worth knowing
+>
+> - Existing installs get a **one-time chrome adoption** (`ADOPTED` in `uiStore.ts`).
+>   Without it every install silently lost its sidebar collapse, drawer widths and active
+>   workspace, because the record starts empty and the tabs survive — which is what makes
+>   that loss easy to miss.
+> - `pendingCounts` was **deleted** from `permission.ts` with its test. Main owns that
+>   computation now, and a tested-but-uncalled export is the dead-code shape this repo has
+>   been bitten by before.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A second HappyVibe window that is a full peer of the first — any tab kind, its own 2×2 grid, its own sidebar and workspace — with tabs moving between windows by menu, by drag, and by tear-off.
@@ -91,7 +151,7 @@
   }
   ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // tests/window-registry.test.ts
@@ -163,13 +223,13 @@ describe("WindowRegistry", () => {
 });
 ```
 
-- [ ] **Step 2: Run it — expect FAIL (module not found)**
+- [x] **Step 2: Run it — expect FAIL (module not found)**
 
 ```
 L=/tmp/vitest.log; npx vitest run tests/window-registry.test.ts > $L 2>&1; echo "EXIT=$?"; tail -20 $L
 ```
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 // src/main/windows.ts
@@ -238,9 +298,9 @@ export class WindowRegistry<W extends WinLike = WinLike> {
 }
 ```
 
-- [ ] **Step 4: Run — expect PASS.** Same command.
+- [x] **Step 4: Run — expect PASS.** Same command.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add src/main/windows.ts tests/window-registry.test.ts
@@ -260,7 +320,7 @@ git commit -m "feat(windows): a window registry in main — stage 1 of multi-win
 - Produces: `registerIpc(windows: WindowRegistry<BrowserWindow>): void`; in index.ts `export function openWindow(record: unknown, at?: {x:number;y:number}): BrowserWindow` (later tasks use it).
 - BrowserManager still gets ONE window this stage: `windows.primary()!` — Task 10 removes it.
 
-- [ ] **Step 1: Write the failing source scan**
+- [x] **Step 1: Write the failing source scan**
 
 ```ts
 // tests/window-single-owner.test.ts
@@ -290,9 +350,9 @@ describe("main is no longer bound to one window (round 23)", () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL on all four.**
+- [x] **Step 2: Run — expect FAIL on all four.**
 
-- [ ] **Step 3: Implement in `index.ts`**
+- [x] **Step 3: Implement in `index.ts`**
 
 Replace `function createWindow(): BrowserWindow { … }` with:
 
@@ -338,7 +398,7 @@ export function openWindow(record: unknown, at?: { x: number; y: number }): Brow
 
 In `whenReady`: replace `const mainWindow = createWindow()` with `openWindow({})`, `registerIpc(mainWindow)` with `registerIpc(windows)`, and the activate body with `if (windows.all().length === 0) openWindow({})`.
 
-- [ ] **Step 4: Implement in `ipc.ts`**
+- [x] **Step 4: Implement in `ipc.ts`**
 
 ```ts
 import type { WindowRegistry } from "./windows";
@@ -354,16 +414,16 @@ export function registerIpc(windows: WindowRegistry<BrowserWindow>): void {
 
 Then each of the 7 dialog handlers: change `async () =>` to `async (e) =>` and `showOpenDialog(win, {` to `showOpenDialog(ownerOf(e), {`. (`hv:skills-import-local` and `hv:prompt-templates-import-local` have two calls each in the grep — check `:5105/:5508` and the `if (!picked)` sites; the count must come to 7.) `new BrowserManager(win,` → `new BrowserManager(windows.primary()!,` for this stage.
 
-- [ ] **Step 5: Gate**
+- [x] **Step 5: Gate**
 
 ```
 npm run gate > /tmp/gate.log 2>&1; echo "EXIT=$?"; tail -30 /tmp/gate.log
 ```
 Expected: typecheck clean, suite green including the new scan.
 
-- [ ] **Step 6: GUI check (dev server RESTART)** — the app boots and behaves identically. Then on macOS: close the window (⌘⇧W), click the dock icon: the new window shows the session list (a push landed). Before this task that window was deaf.
+- [x] **Step 6: GUI check (dev server RESTART)** — the app boots and behaves identically. Then on macOS: close the window (⌘⇧W), click the dock icon: the new window shows the session list (a push landed). Before this task that window was deaf.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git commit -am "refactor(main): registerIpc takes the window registry; send() broadcasts; dialogs parent on the sender — stage 1"
@@ -394,7 +454,7 @@ git commit -am "refactor(main): registerIpc takes the window registry; send() br
   ```
   `config.ts`: `getLayoutFile(): unknown` and `setLayoutFile(records: WindowRecord[]): void` (writes `{windows: records}`; deletes the key when the list is empty).
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```ts
 // tests/window-layout.test.ts
@@ -427,9 +487,9 @@ describe("parseLayoutFile", () => {
 });
 ```
 
-- [ ] **Step 2: Run — FAIL (module not found).**
+- [x] **Step 2: Run — FAIL (module not found).**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 // src/main/windowLayout.ts
@@ -485,7 +545,7 @@ export function setLayoutFile(records: WindowRecord[]): void {
 ```
 (`import type { WindowRecord } from "./windowLayout"`.) The `hv:get-layout`/`hv:set-layout` handlers at `ipc.ts:3689-3690` are deleted in Task 4; leave them compiling for now by pointing them at the new functions, or delete both handler and preload lines together in Task 4 — the gate must stay green at every commit.
 
-- [ ] **Step 4: Run — PASS. Commit** `feat(windows): the layout file is a list of window records, legacy shape migrated — stage 2`
+- [x] **Step 4: Run — PASS. Commit** `feat(windows): the layout file is a list of window records, legacy shape migrated — stage 2`
 
 ---
 
@@ -515,7 +575,7 @@ export function setLayoutFile(records: WindowRecord[]): void {
   ```
 - Main: `windows.record(id)` is a `WindowRecord`; `persistLayout()` = `setLayoutFile(windows.records() as WindowRecord[])`, debounced 300 ms, called on `hv:set-window-tabs`, `hv:set-window-ui`, window `resize`/`move`, and window `closed` (so a closed window's record is forgotten on disk too — decision 5).
 
-- [ ] **Step 1: Extend the source scan (failing)**
+- [x] **Step 1: Extend the source scan (failing)**
 
 ```ts
 // append to tests/window-single-owner.test.ts
@@ -543,9 +603,9 @@ describe("per-window chrome is per window (round 23)", () => {
 });
 ```
 
-- [ ] **Step 2: Run — FAIL.**
+- [x] **Step 2: Run — FAIL.**
 
-- [ ] **Step 3: `uiStore.ts`**
+- [x] **Step 3: `uiStore.ts`**
 
 ```ts
 // src/renderer/src/uiStore.ts
@@ -569,7 +629,7 @@ export function uiSet(key: string, value: string | null): void {
 }
 ```
 
-- [ ] **Step 4: Preload + types**
+- [x] **Step 4: Preload + types**
 
 `src/preload/index.ts` inside `exposeInMainWorld("hv", {`: add `boot: ipcRenderer.sendSync("hv:window-boot"),` and replace lines 360-361 with
 ```ts
@@ -578,7 +638,7 @@ export function uiSet(key: string, value: string | null): void {
 ```
 `hv.d.ts`: mirror them (`boot: { windowId: number; record: { tabsByWs: unknown; ui: Record<string, string> } }`).
 
-- [ ] **Step 5: Main — boot and record writes**
+- [x] **Step 5: Main — boot and record writes**
 
 In `ipc.ts`, replace the `hv:get-layout`/`hv:set-layout` handlers with:
 ```ts
@@ -629,17 +689,17 @@ In `whenReady`: replace `openWindow({})` with
 ```
 `registerIpc(windows)` must still run BEFORE the renderers ask for boot — `whenReady` is synchronous up to `loadURL`, and `sendSync` from preload arrives after the first `await`, so the order `open…; registerIpc(windows)` is safe. Keep it that way and add a comment saying so.
 
-- [ ] **Step 6: Renderer — boot and writer**
+- [x] **Step 6: Renderer — boot and writer**
 
 `App.tsx:703-745`: drop `window.hv.getLayout()` from the `Promise.all`, use `const raw = window.hv.boot.record.tabsByWs;`. Replace `localStorage.getItem("hv:active-ws")` at `:729` with `uiGet("hv:active-ws")`. `:1658`: `window.hv.setLayout(…)` → `window.hv.setWindowTabs(…)`.
 
 `App.tsx:231-311`: every `localStorage.getItem("hv:…")` → `uiGet("hv:…")`, every `localStorage.setItem("hv:…", v)` → `uiSet("hv:…", v)`, for exactly: `hv:active-ws`, `hv:drawer-panel`, `hv:drawer-width:files`, `hv:drawer-width:changes`, `hv:sidebar-collapsed`, `hv:settings-open`, `hv:settings-groups`. `Sidebar.tsx:643-662`: `hv:ws-collapsed`, `hv:sidebar-split`. Import `{ uiGet, uiSet } from "../uiStore"` / `"./uiStore"`. Leave every other `localStorage` use alone (dismissals, red-zone, sysprompt cache are app-level and should stay shared).
 
-- [ ] **Step 7: Gate; then GUI**
+- [x] **Step 7: Gate; then GUI**
 
 Dev-server restart. Observable: (1) the app restores exactly the tabs it had before this task — the legacy record migrated; `config.json` now reads `"layout": {"windows": [ { "bounds": …, "tabsByWs": …, "ui": {…} } ]}`. (2) Resize and move the window, quit, relaunch: it comes back at the same place and size — bounds were never persisted before. (3) Collapse the sidebar, ⌘R: still collapsed (the record round-trips through main).
 
-- [ ] **Step 8: Commit** `feat(windows): each renderer boots from its own record; chrome state leaves localStorage — stage 2`
+- [x] **Step 8: Commit** `feat(windows): each renderer boots from its own record; chrome state leaves localStorage — stage 2`
 
 ---
 
@@ -649,7 +709,7 @@ Dev-server restart. Observable: (1) the app restores exactly the tabs it had bef
 - Modify: `src/main/index.ts:104-135` (menu template)
 - Test: extend `tests/window-single-owner.test.ts`
 
-- [ ] **Step 1: Failing scan**
+- [x] **Step 1: Failing scan**
 
 ```ts
   it("Window ▸ New Window exists with ⌘⇧N and opens a collapsed-sidebar peer on the focused window's workspace", () => {
@@ -659,7 +719,7 @@ Dev-server restart. Observable: (1) the app restores exactly the tabs it had bef
   });
 ```
 
-- [ ] **Step 2: Implement.** In the `Window` submenu, first entry:
+- [x] **Step 2: Implement.** In the `Window` submenu, first entry:
 
 ```ts
             {
@@ -677,9 +737,9 @@ Dev-server restart. Observable: (1) the app restores exactly the tabs it had bef
 ```
 The menu is macOS-only today (`if (process.platform === 'darwin')`); that is pre-existing and stays.
 
-- [ ] **Step 3: Gate; GUI:** ⌘⇧N → a second window appears, sidebar collapsed to the icon rail, on the same workspace, centre area empty. Quit with both open, relaunch: two windows come back. Close the second, relaunch: one.
+- [x] **Step 3: Gate; GUI:** ⌘⇧N → a second window appears, sidebar collapsed to the icon rail, on the same workspace, centre area empty. Quit with both open, relaunch: two windows come back. Close the second, relaunch: one.
 
-- [ ] **Step 4: Commit** `feat(windows): Window ▸ New Window opens an empty peer — stage 2`
+- [x] **Step 4: Commit** `feat(windows): Window ▸ New Window opens an empty peer — stage 2`
 
 ---
 
@@ -698,7 +758,7 @@ The menu is macOS-only today (`if (process.platform === 'darwin')`); that is pre
 - App: `draftsRef = useRef<Record<string, string>>({})` (dirty content by `bufferKey`), `arrivedDrafts = useRef<Record<string, string>>({})`.
 - **Detach is the PURE `closeTab` from tabs.ts**, never App's `closeTerminalTab`/`closeBrowserTab` wrappers: those kill the PTY / destroy the pane, and a moved tab's subject must survive the move.
 
-- [ ] **Step 1: Failing scan**
+- [x] **Step 1: Failing scan**
 
 ```ts
 describe("a tab lives in exactly one window (round 23)", () => {
@@ -719,7 +779,7 @@ describe("a tab lives in exactly one window (round 23)", () => {
 });
 ```
 
-- [ ] **Step 2: FileTab.** `:54` type as above. `:113-117`:
+- [x] **Step 2: FileTab.** `:54` type as above. `:113-117`:
 ```ts
   useEffect(() => {
     dirtyRef.current = dirty;
@@ -734,7 +794,7 @@ describe("a tab lives in exactly one window (round 23)", () => {
           if (draft !== undefined) setContent(draft);
 ```
 
-- [ ] **Step 3: App.** Near `dirtyMap` (`:390`):
+- [x] **Step 3: App.** Near `dirtyMap` (`:390`):
 ```ts
   /** Round 23: the unsaved text per open file, so a cross-window move can carry it. Ref: never re-renders. */
   const draftsRef = useRef<Record<string, string>>({});
@@ -786,7 +846,7 @@ TabStrip menu (`:290-300`): add an entry after Rename:
 ```
 New props: `onMoveToWindow: (tab: TabId) => void; canMoveToWindow: (tab: TabId) => boolean`. (`onMouseDown` + `preventDefault`, the `tests/tabstrip-menu.test.ts` rule.) App: `onMoveToWindow={(tab) => void moveTabToWindow(wsId, tab, "new")}`.
 
-- [ ] **Step 4: Main.**
+- [x] **Step 4: Main.**
 ```ts
   ipcMain.handle("hv:move-tab", (e, req: { tab: string; ws: string; draft?: string; record?: unknown; target: "new" | number; at?: { x: number; y: number } }) => {
     if (req.target === "new") {
@@ -804,9 +864,9 @@ New props: `onMoveToWindow: (tab: TabId) => void; canMoveToWindow: (tab: TabId) 
 ```
 A NEW window has no listener yet when it is created, so its draft rides the boot: `pendingDrafts = new Map<number, {tab, ws, draft}>()`; `hv:window-boot` returns `{ windowId, record, draft: pendingDrafts.get(id) }` and deletes it; `uiStore`-adjacent in App boot: `if (window.hv.boot.draft) arrivedDrafts.current[bufferKey(draft.ws, draft.tab)] = draft.draft`. Preload: `moveTab: (r) => ipcRenderer.invoke("hv:move-tab", r)`, `onTabArrive: (h) => { const l = (_e, p) => h(p); ipcRenderer.on("hv:tab-arrive", l); return () => ipcRenderer.off("hv:tab-arrive", l); }`.
 
-- [ ] **Step 5: Gate; GUI.** (a) Open `README.md`, type a line, do NOT save, right-click → Move to new window: the new window shows the file with your line and the unsaved dot; the source window no longer has the tab; Save in the new window writes it. (b) Move a terminal running `sleep 60`: the new window's terminal shows the same scrollback and `sleep` is still running (`pgrep sleep`). (c) Move a chat mid-stream: the new window's chat continues streaming; the source window's sidebar still shows the session busy. (d) The menu item is greyed for a browser tab.
+- [x] **Step 5: Gate; GUI.** (a) Open `README.md`, type a line, do NOT save, right-click → Move to new window: the new window shows the file with your line and the unsaved dot; the source window no longer has the tab; Save in the new window writes it. (b) Move a terminal running `sleep 60`: the new window's terminal shows the same scrollback and `sleep` is still running (`pgrep sleep`). (c) Move a chat mid-stream: the new window's chat continues streaming; the source window's sidebar still shows the session busy. (d) The menu item is greyed for a browser tab.
 
-- [ ] **Step 6: Commit** `feat(windows): Move to new window — the tab leaves here and arrives there, unsaved text included — stage 2`
+- [x] **Step 6: Commit** `feat(windows): Move to new window — the tab leaves here and arrives there, unsaved text included — stage 2`
 
 ---
 
@@ -824,7 +884,7 @@ A NEW window has no listener yet when it is created, so its draft rides the boot
 - Main → renderer: `hv:ui-request` payload gains `promptWindowId?: number`; `hv:ui-resolved {id}` broadcast; `hv:pending-changed Record<sessionId, number>` broadcast.
 - Badge: `hv:set-badge-count` keeps a `Map<windowId, number>`; `app.setBadgeCount(sum)`.
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```ts
 // tests/prompt-routing.test.ts
@@ -849,7 +909,7 @@ describe("promptWindowFor", () => {
 });
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```ts
 // src/main/promptRouting.ts
@@ -883,7 +943,7 @@ and every `send("hv:ui-request", { ...r, … })` becomes `send("hv:ui-request", 
 ```
 Holdings: `ipcMain.on("hv:window-holds", (e, h: Holdings) => { const w = windows.bySender(e.sender); if (w) windows.setHolds(w.id, h); });`. Badge: `const badgeByWindow = new Map<number, number>(); ipcMain.on("hv:set-badge-count", (e, n) => { const w = windows.bySender(e.sender); if (w) badgeByWindow.set(w.id, Number.isInteger(n) && n > 0 ? n : 0); let sum = 0; for (const id of windows.all().map((x) => x.id)) sum += badgeByWindow.get(id) ?? 0; app.setBadgeCount(sum); });`.
 
-- [ ] **Step 3: Renderer.** `:863`:
+- [x] **Step 3: Renderer.** `:863`:
 ```ts
     const offUiRequest = window.hv.onUiRequest((r) => {
       // Round 23: a blocking prompt is shown in ONE window, named by main.
@@ -895,9 +955,9 @@ Holdings: `ipcMain.on("hv:window-holds", (e, h: Holdings) => { const w = windows
 ```
 (everything else in the handler — dangerous, plan, inventories — stays unconditional: that is state every window needs). Add `window.hv.onUiResolved(({ id }) => setUiQueue((q) => q.filter((p) => p.req.id !== id)))`. Holdings, inside the `:1649` layout-writer effect (same trigger, no debounce): `window.hv.windowHolds({ sessions: Object.values(tabsByWs).flatMap(allChats), terminals: Object.values(tabsByWs).flatMap(allTerminals), browsers: Object.values(tabsByWs).flatMap((t) => liveSlots(t).flatMap((s) => t.panes[s]!.tabs.map(browserOf).filter((b): b is string => b !== null))) })`. Sidebar pending (`:2429`): `pending={pendingBySession}` where `const [pendingBySession, setPendingBySession] = useState<Record<string, number>>({})` fed by `window.hv.onPendingChanged`. Keep `pendingCounts` exported (its test), but App no longer calls it — delete the import if unused.
 
-- [ ] **Step 4: Gate; GUI.** Two windows, a chat in each. Ask the window-2 session to run a shell command: the permission modal appears **inside window 2's chat pane only**; window 1 shows the session with a pending badge in its sidebar and the dock badge is 1; approving in window 2 clears both. Then move the window-2 chat to window 1 while idle, ask again: the prompt appears in window 1. Then close every chat tab of a session (both windows) and prompt it from the sidebar's session row: the modal appears in the FOCUSED window, viewport-centred (paneDialog's fallback).
+- [x] **Step 4: Gate; GUI.** Two windows, a chat in each. Ask the window-2 session to run a shell command: the permission modal appears **inside window 2's chat pane only**; window 1 shows the session with a pending badge in its sidebar and the dock badge is 1; approving in window 2 clears both. Then move the window-2 chat to window 1 while idle, ask again: the prompt appears in window 1. Then close every chat tab of a session (both windows) and prompt it from the sidebar's session row: the modal appears in the FOCUSED window, viewport-centred (paneDialog's fallback).
 
-- [ ] **Step 5: Commit** `feat(windows): prompts route to the holding window; badge and pending counts sum in main — stage 2`
+- [x] **Step 5: Commit** `feat(windows): prompts route to the holding window; badge and pending counts sum in main — stage 2`
 
 ---
 
@@ -911,7 +971,7 @@ Holdings: `ipcMain.on("hv:window-holds", (e, h: Holdings) => { const w = windows
 - Registry `onClosed(id, record, holds)`: for each `holds.terminals` not agent-claimed (`agentTerminals` has the claims — use its existing "is claimed" query; if none exists, add `isClaimed(id): boolean`), `terminals.kill(id)`; for each `holds.browsers`, `browsers.destroy(id)`. Sessions: nothing (they keep running). Then `persistLayout()` — the record is already gone from `windows.records()`.
 - The hook is Task 1's `setOnClosed`, already bound in Task 4 to `persistLayout()`; this task widens that one callback body in `registerIpc`, where `terminals`/`browsers`/`agentTerminals` are in scope.
 
-- [ ] **Step 1: Failing scan**
+- [x] **Step 1: Failing scan**
 ```ts
   it("closing a window kills its unclaimed terminals and destroys its browser panes, and forgets its record", () => {
     expect(ipc).toMatch(/windows\.setOnClosed\(\(_id, _record, holds\) => \{/);
@@ -919,9 +979,9 @@ Holdings: `ipcMain.on("hv:window-holds", (e, h: Holdings) => { const w = windows
     expect(ipc).toMatch(/for \(const b of holds\.browsers\) browsers\.destroy\(b\)/);
   });
 ```
-- [ ] **Step 2: Implement** per the interface. Check `terminals.ts` for the kill method's real name (`kill`/`close`/`dispose`) and `agentTerminals.ts` for a claim query BEFORE writing the regex; adjust the scan to the real names, never the code to the regex.
-- [ ] **Step 3: Gate; GUI.** Window 2 holds a terminal (`sleep 600`), a chat and a browser-less file. Close window 2 (⌘⇧W): `pgrep -f "sleep 600"` is empty within a second; the chat session is still listed in window 1's sidebar and still busy if it was; `config.json` `layout.windows` has one record. Quit and relaunch with two windows open: both return, each with its tabs. Absence: no ghost tab for the closed window's terminal appears anywhere on relaunch.
-- [ ] **Step 4: Commit** `feat(windows): closing a window closes its tabs, ⌘W-style; all windows restore at launch — stage 2`
+- [x] **Step 2: Implement** per the interface. Check `terminals.ts` for the kill method's real name (`kill`/`close`/`dispose`) and `agentTerminals.ts` for a claim query BEFORE writing the regex; adjust the scan to the real names, never the code to the regex.
+- [x] **Step 3: Gate; GUI.** Window 2 holds a terminal (`sleep 600`), a chat and a browser-less file. Close window 2 (⌘⇧W): `pgrep -f "sleep 600"` is empty within a second; the chat session is still listed in window 1's sidebar and still busy if it was; `config.json` `layout.windows` has one record. Quit and relaunch with two windows open: both return, each with its tabs. Absence: no ghost tab for the closed window's terminal appears anywhere on relaunch.
+- [x] **Step 4: Commit** `feat(windows): closing a window closes its tabs, ⌘W-style; all windows restore at launch — stage 2`
 
 ---
 
@@ -942,7 +1002,7 @@ Holdings: `ipcMain.on("hv:window-holds", (e, h: Holdings) => { const w = windows
 - `destroy(id)` uses `entry.win`.
 - The egress hook is untouched: still `installEgress()` once per partition, `byWebContentsId` unchanged.
 
-- [ ] **Step 1: Failing scan**
+- [x] **Step 1: Failing scan**
 ```ts
 describe("a browser pane belongs to the window that reports its bounds (round 23)", () => {
   const browsers = readFileSync("src/main/browsers.ts", "utf8");
@@ -961,9 +1021,9 @@ describe("a browser pane belongs to the window that reports its bounds (round 23
   });
 });
 ```
-- [ ] **Step 2: Implement.** `Entry` gains `win: BrowserWindow`. `create` sets `entry.win = win` and `win.contentView.addChildView(view)`. `setBounds` re-parents as above. `destroy`: `entry.win.contentView.removeChildView(entry.view)`. ipc `:3466`: `(e, workspaceId) => browsers.create(workspaceId, ownerOf(e)!)`; `:3467-3472`: pass `ownerOf(e)!` as the third argument. `:548`: drop the window argument. Renderer: remove the `isBrowserTab` gate on `canMoveToWindow`.
-- [ ] **Step 3: Gate; GUI.** Open a browser tab on `https://example.org`, Move to new window: the page appears in the new window at the pane's rectangle, the source window shows no browser tab and no stray white rectangle. Navigate in the new window to a host not yet allowed: the "Allow …" gate still fires (egress is still armed after the re-parent — this is the trap the `once per partition` note exists for). Open a SECOND browser in window 1: both gates still fire. Resize window 2: the page follows. Absence: `hv:browser-closed` is NOT emitted by the move (the pane survives).
-- [ ] **Step 4: Commit** `feat(browser): a pane re-parents to whichever window reports its bounds; egress stays per partition — stage 3`
+- [x] **Step 2: Implement.** `Entry` gains `win: BrowserWindow`. `create` sets `entry.win = win` and `win.contentView.addChildView(view)`. `setBounds` re-parents as above. `destroy`: `entry.win.contentView.removeChildView(entry.view)`. ipc `:3466`: `(e, workspaceId) => browsers.create(workspaceId, ownerOf(e)!)`; `:3467-3472`: pass `ownerOf(e)!` as the third argument. `:548`: drop the window argument. Renderer: remove the `isBrowserTab` gate on `canMoveToWindow`.
+- [x] **Step 3: Gate; GUI.** Open a browser tab on `https://example.org`, Move to new window: the page appears in the new window at the pane's rectangle, the source window shows no browser tab and no stray white rectangle. Navigate in the new window to a host not yet allowed: the "Allow …" gate still fires (egress is still armed after the re-parent — this is the trap the `once per partition` note exists for). Open a SECOND browser in window 1: both gates still fire. Resize window 2: the page follows. Absence: `hv:browser-closed` is NOT emitted by the move (the pane survives).
+- [x] **Step 4: Commit** `feat(browser): a pane re-parents to whichever window reports its bounds; egress stays per partition — stage 3`
 
 ---
 
@@ -983,7 +1043,7 @@ describe("a browser pane belongs to the window that reports its bounds (round 23
 - Source on `hv:tab-left`: `detachTab(ws, tab)`.
 - HTML5 DnD crosses Electron windows of one app on macOS; `getData` works on drop. Verify in the GUI step before relying on it — if the `dataTransfer` arrives empty cross-window, fall back to stashing the payload in main at `dragstart` (`hv:drag-begin`) and reading it back on drop; note which route shipped in the commit body.
 
-- [ ] **Step 1: Failing scan**
+- [x] **Step 1: Failing scan**
 ```ts
   it("the strip carries a JSON payload for cross-window drops and claims a foreign tab through main", () => {
     expect(tabstrip).toMatch(/const DRAG_JSON = "application\/x-hv-tab\+json"/);
@@ -992,9 +1052,9 @@ describe("a browser pane belongs to the window that reports its bounds (round 23
     expect(app).toMatch(/window\.hv\.onTabLeft\(/);
   });
 ```
-- [ ] **Step 2: Implement** per the interfaces. `onDrop`: parse `DRAG_JSON` first; fall back to `DRAG_MIME` for the same-window path so `tests/tabstrip-menu.test.ts` and the existing behaviour are untouched.
-- [ ] **Step 3: Gate; GUI.** Drag a file tab from window 1's strip onto window 2's strip: it lands in the pane you dropped on, disappears from window 1, keeps an unsaved draft. Drag a chat the other way. Regression sequence: drag a tab within ONE window between two panes — still works (the old path). Drag and press Escape over the source window — nothing moves.
-- [ ] **Step 4: Commit** `feat(windows): drag a tab onto another window's strip — stage 4`
+- [x] **Step 2: Implement** per the interfaces. `onDrop`: parse `DRAG_JSON` first; fall back to `DRAG_MIME` for the same-window path so `tests/tabstrip-menu.test.ts` and the existing behaviour are untouched.
+- [x] **Step 3: Gate; GUI.** Drag a file tab from window 1's strip onto window 2's strip: it lands in the pane you dropped on, disappears from window 1, keeps an unsaved draft. Drag a chat the other way. Regression sequence: drag a tab within ONE window between two panes — still works (the old path). Drag and press Escape over the source window — nothing moves.
+- [x] **Step 4: Commit** `feat(windows): drag a tab onto another window's strip — stage 4`
 
 ---
 
@@ -1009,7 +1069,7 @@ describe("a browser pane belongs to the window that reports its bounds (round 23
 - Renderer: `onDragEnd={(e) => { if (e.dataTransfer.dropEffect === "none") onTearOff(id, { x: e.screenX, y: e.screenY }); }}` → App `moveTabToWindow(ws, tab, "new", at)` BUT through `hv:tear-off` so main can refuse: `tearOff(req: same as moveTab + at)` → main: `if (insideAny(req.at, windows.all().map((w) => w.getBounds()))) return false;` (a cancelled drag, or a drop that missed a strip inside a window) else `openWindow(record, at)` (+ pending draft, Task 6's map) and `return true`; the source detaches only on true.
 - `e.screenX/Y` are CSS pixels in the renderer's screen space; `getBounds()` is DIP — the same unit on macOS. Verify on a Retina display in the GUI step.
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 ```ts
 // tests/tear-off.test.ts
 import { describe, expect, it } from "vitest";
@@ -1028,7 +1088,7 @@ describe("insideAny", () => {
   });
 });
 ```
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 ```ts
 // src/main/tearOff.ts
 /** §7 round 23 — a drag that ended outside every window is a tear-off. Pure. */
@@ -1037,8 +1097,8 @@ export const insideAny = (pt: { x: number; y: number }, rects: Rect[]): boolean 
   rects.some((r) => pt.x >= r.x && pt.x < r.x + r.width && pt.y >= r.y && pt.y < r.y + r.height);
 ```
 plus the handler and the strip wiring per the interfaces.
-- [ ] **Step 3: Gate; GUI.** Drag a tab out onto the desktop and release: a new window appears with its top-left at the pointer, holding that tab, sidebar collapsed; the source no longer has it. Drag and release over the source window's own chat area (not a strip): nothing happens, the tab stays. Press Escape mid-drag: nothing happens. On a Retina display the new window's corner is at the pointer, not at half/double the distance.
-- [ ] **Step 4: Commit** `feat(windows): tear a tab off onto the desktop — stage 4, multi-window complete`
+- [x] **Step 3: Gate; GUI.** Drag a tab out onto the desktop and release: a new window appears with its top-left at the pointer, holding that tab, sidebar collapsed; the source no longer has it. Drag and release over the source window's own chat area (not a strip): nothing happens, the tab stays. Press Escape mid-drag: nothing happens. On a Retina display the new window's corner is at the pointer, not at half/double the distance.
+- [x] **Step 4: Commit** `feat(windows): tear a tab off onto the desktop — stage 4, multi-window complete`
 
 ---
 
