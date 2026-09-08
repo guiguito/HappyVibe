@@ -2071,11 +2071,9 @@ export default function App(): React.JSX.Element {
    * another window → hand the tab over; no window → tear off a new one; its own
    * window → nothing.
    *
-   * It cannot be a drop handler in the target, and that is measured rather than
-   * assumed: Chromium does not deliver `dragover`/`drop` to a second Electron
-   * window, so dragging a tab onto another window did nothing at all — for
-   * every tab kind, in both directions. `dragstart`/`dragend` fire in the
-   * SOURCE window and do work, which is why the tear-off worked all along.
+   * `dragstart` and `dragend` fire in the SOURCE window, so this path is
+   * available whatever the target does — which is why the tear-off, whose
+   * target is no window at all, has always worked.
    */
   const onTabDragEnd = (ws: string, tab: TabId, at: { x: number; y: number }): void => {
     void window.hv
@@ -2085,15 +2083,27 @@ export default function App(): React.JSX.Element {
   };
 
   /**
-   * §7 round 23 — a tab dropped inside THIS window: the strip, or an empty pane.
+   * §7 round 23 — a tab dropped on a strip or an empty pane. Moves it BETWEEN
+   * PANES, and only for a tab this window already owns.
    *
-   * Same-window only. A drag from another window never reaches here (see
-   * above), so there is no foreign branch to get wrong — main handles that
-   * entirely from the release point.
+   * A drag from another window DOES reach here — a comment three versions of
+   * this feature carried claimed the opposite, and that error is what broke
+   * cross-window drag. Chromium keeps the drag internal to the app, so both the
+   * MIME type and its data cross windows intact. The foreign drop therefore ran
+   * as if it were a local one: `moveTab` did nothing (the tab is not in this
+   * window's panes) and then `dragEnd` told main to FORGET the drag — so the
+   * source window's `dragend`, which arrives afterwards and is what actually
+   * performs the move, found nothing in flight and dropped the gesture. The tab
+   * bar lit up, the release did nothing, and no error was raised anywhere.
+   *
+   * So a tab that is not ours is left strictly alone: no `preventDefault`, no
+   * `dragEnd`. The source window's release point completes it (see above).
+   * `paneOf` returning -1 is the whole discriminator — main is not consulted,
+   * because a window can answer "is this tab mine" by itself.
    */
   const onTabDropped = (e: React.DragEvent, slot: number, ws: string): void => {
     const id = e.dataTransfer.getData("application/x-hv-tabid");
-    if (!id) return;
+    if (!id || paneOf(tabsByWs[ws] ?? emptyTabs, id) < 0) return;
     e.preventDefault();
     updateTabs(ws, (t) => moveTab(t, id, slot));
     // The drag is CONSUMED. Main forgets it, so the `dragend` that follows

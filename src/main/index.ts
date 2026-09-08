@@ -134,17 +134,13 @@ ipcMain.on('hv:drag-end', () => {
 /**
  * §7 round 23 — where a tab drag was RELEASED, decided from the source window.
  *
- * This is the whole cross-window story, and it is here rather than in a drop
- * handler for a measured reason: Chromium does not deliver `dragover`/`drop` to
- * a SECOND Electron window. A DOM drag becomes an OS drag session, and the
- * other window's web contents never hears about it — so the first version
- * waited on an event that never arrives, and dragging a tab onto another window
- * did nothing at all. Reported for every tab kind, in both directions.
- *
- * `dragstart` and `dragend` fire in the SOURCE window, which does work — the
- * tear-off has always worked for exactly that reason. So main takes the release
- * POINT and answers the whole question itself, because it is the only side that
- * knows where every window is:
+ * This is the whole cross-window story, and it is here rather than in the
+ * target's drop handler because a drop is not always what ends a drag: a
+ * TEAR-OFF is released over no window at all, and no drop handler anywhere can
+ * see that. `dragstart` and `dragend` fire in the SOURCE window, so this path
+ * covers every ending. Main takes the release POINT and answers the whole
+ * question itself, because it is the only side that knows where every window
+ * is:
  *
  *   - over another window  → hand the tab to it;
  *   - over no window       → tear off a new one there;

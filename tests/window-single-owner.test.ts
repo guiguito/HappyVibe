@@ -393,13 +393,13 @@ describe("drag between windows is decided from the RELEASE POINT (round 23, stag
   const app = readFileSync("src/renderer/src/App.tsx", "utf8");
   const tabstrip = readFileSync("src/renderer/src/components/TabStrip.tsx", "utf8");
 
-  it("the target window is never asked — it does not get the event", () => {
+  it("the target window is never asked — there is no claim protocol", () => {
     /**
-     * Measured, and the whole reason this is shaped the way it is: Chromium
-     * does not deliver `dragover`/`drop` to a SECOND Electron window, so
-     * dragging a tab onto another window did nothing at all. `dragstart` and
-     * `dragend` fire in the SOURCE window and do work, which is why the
-     * tear-off worked all along.
+     * Not because the target gets no event (it does — see the foreign-drop
+     * case below), but because a drop is not the only way a drag ends: a
+     * TEAR-OFF is released over no window at all. `dragstart`/`dragend` fire in
+     * the SOURCE window, so one path in main covers every ending, and no
+     * negotiation between windows is needed for any of them.
      */
     expect(index).toMatch(/ipcMain\.handle\('hv:drag-release'/);
     expect(index).not.toContain("hv:claim-tab");
@@ -436,6 +436,30 @@ describe("drag between windows is decided from the RELEASE POINT (round 23, stag
     expect(app.slice(d, d + 700)).toMatch(/window\.hv\.dragEnd\(\)/);
     const i = index.indexOf("ipcMain.handle('hv:drag-release'");
     expect(index.slice(i, i + 600)).toMatch(/if \(!w \|\| !d \|\| d\.windowId !== w\.id\)/);
+  });
+
+  it("a drop of a tab this window does not OWN is left strictly alone", () => {
+    /**
+     * The bug this pins, which shipped and was reported three times: a drag
+     * from another window DOES reach the target's drop handler, MIME and data
+     * intact — Chromium keeps the drag internal to the app. The handler ran it
+     * as a local move, so `moveTab` did nothing (the tab is in no pane here)
+     * and then `dragEnd` told main to FORGET the drag. The source window's
+     * `dragend` arrives after the drop, found nothing in flight, and dropped
+     * the gesture. Symptom: the target's tab bar lights up, the release does
+     * nothing, and nothing anywhere raises an error.
+     *
+     * `paneOf(...) < 0` is the guard, and it must come BEFORE both
+     * `preventDefault` and `dragEnd` — consuming the drag is precisely what
+     * broke it.
+     */
+    const d = app.indexOf("const onTabDropped");
+    const drop = app.slice(d, d + 700);
+    expect(drop).toMatch(/if \(!id \|\| paneOf\(tabsByWs\[ws\] \?\? emptyTabs, id\) < 0\) return;/);
+    const guard = drop.indexOf("paneOf(tabsByWs[ws]");
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(drop.indexOf("e.preventDefault()"));
+    expect(guard).toBeLessThan(drop.indexOf("window.hv.dragEnd()"));
   });
 
   it("the same-window drop still goes through the MIME, with no round trip", () => {

@@ -195,12 +195,11 @@ export function TabStrip({
       className={`flex items-stretch border-b-2 border-line shrink-0 h-full ${dropHover ? "bg-honey-soft" : "bg-paper"}`}
       role="tablist"
       onDragOver={(e) => {
-        // A foreign drag has no recognisable type, so the strip leans on main's
-        // "a drag is up" broadcast instead — otherwise it would refuse the drop
-        // and the tab would look undraggable between windows.
-        // Same-window only: a drag from another window never reaches this
-        // strip at all (Chromium does not deliver drop events across Electron
-        // windows), so main decides that case from the release point instead.
+        // A drag from another window DOES reach here, MIME and all — Chromium
+        // keeps it internal to the app — so this lights up for a foreign tab
+        // too, which is what makes the strip look like a target. The drop
+        // itself is then ignored for a tab this window does not own, and the
+        // SOURCE window's release point performs the move (App.onTabDropped).
         if (e.dataTransfer.types.includes(DRAG_MIME)) {
           e.preventDefault();
           setDropHover(true);
