@@ -178,6 +178,26 @@ app.whenReady().then(() => {
         {
           label: 'Window',
           submenu: [
+            // §7 round 23: a full peer, opened empty. ⌘N and ⌘T are the session
+            // and terminal bindings (shortcuts.ts), so a new WINDOW gets ⌘⇧N.
+            {
+              label: 'New Window',
+              accelerator: 'CmdOrCtrl+Shift+N',
+              click: () => {
+                // Same workspace as the window you pressed it in — a window you
+                // open to hold a tab should not also make you re-pick a project
+                // — but with the sidebar COLLAPSED, because it was opened to
+                // hold a tab, not to browse.
+                const from = BrowserWindow.getFocusedWindow()
+                const ui = from ? (windows.record(from.id) as WindowRecord | undefined)?.ui : undefined
+                const ws = ui?.['hv:active-ws']
+                openWindow({
+                  tabsByWs: {},
+                  ui: { ...(ws ? { 'hv:active-ws': ws } : {}), 'hv:sidebar-collapsed': '1' },
+                })
+              },
+            },
+            { type: 'separator' },
             { role: 'minimize' },
             { role: 'zoom' },
             { type: 'separator' },

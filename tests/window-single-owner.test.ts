@@ -94,6 +94,15 @@ describe("per-window chrome is per window (round 23)", () => {
     }
   });
 
+  it("Window > New Window exists on Cmd-Shift-N and opens a collapsed-sidebar peer", () => {
+    // Cmd-N and Cmd-T are the session and terminal bindings (shortcuts.ts), so
+    // a new WINDOW cannot have either.
+    expect(index).toMatch(/label: 'New Window'/);
+    expect(index).toMatch(/accelerator: 'CmdOrCtrl\+Shift\+N'/);
+    // It is opened to hold a tab, not to browse.
+    expect(index).toMatch(/'hv:sidebar-collapsed': '1'/);
+  });
+
   it("the boot handler is registered before any window exists, not inside registerIpc", () => {
     // preload calls it with sendSync at module load, so a handler that arrived
     // later would block the renderer on a message nobody answers.
