@@ -4,6 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { BYOK_PROVIDERS, buildProviderEnv, keySource, type ByokProvider, type KeySource } from "./providers";
 import { customEndpointEnv, type CustomEndpoint } from "./modelsJson";
+import type { WindowRecord } from "./windowLayout";
 import { mcpSecretEnvVar } from "./mcpSecretName";
 import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
@@ -527,6 +528,21 @@ export function getLayout(): Record<string, unknown> {
 export function setLayout(layout: Record<string, unknown>): void {
   const cfg = load();
   if (Object.keys(layout).length > 0) cfg.layout = layout;
+  else delete cfg.layout;
+  save(cfg);
+}
+
+/** §7 round 23: the same value, now holding `{windows: WindowRecord[]}` — one
+    record per window, primary first, because two windows writing the single
+    workspace-keyed record was last-write-wins. Still opaque to main; the outer
+    list is validated by windowLayout.ts and the tabs by the renderer. */
+export function getLayoutFile(): unknown {
+  return load().layout;
+}
+
+export function setLayoutFile(records: WindowRecord[]): void {
+  const cfg = load();
+  if (records.length > 0) cfg.layout = { windows: records } as unknown as Record<string, unknown>;
   else delete cfg.layout;
   save(cfg);
 }
