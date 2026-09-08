@@ -360,6 +360,14 @@ export default function App(): React.JSX.Element {
      */
     const offTabArrive = window.hv.onTabArrive(({ tab, ws, draft }) => {
       if (draft !== undefined) arrivedDrafts.current[bufferKey(ws, tab)] = draft;
+      // A pane's state was pushed before this window held it, so fetch it now —
+      // otherwise the chrome shows an empty URL bar over a live page.
+      if (isBrowserTab(tab)) {
+        void window.hv
+          .browserList()
+          .then((l) => setBrowsers(Object.fromEntries(l.map((b) => [b.id, b]))))
+          .catch(() => {});
+      }
       setTabsByWs((p) => ({ ...p, [ws]: openInto(p[ws] ?? emptyTabs, tab) }));
       setActiveWs(ws);
       const sid = sessionOf(tab);
@@ -755,6 +763,11 @@ export default function App(): React.JSX.Element {
           window.hv.listWorkspaces(),
         ]);
         setTerminals(Object.fromEntries(termList.map((t) => [t.id, t])));
+        // §7 round 23: seed the PANES too, not just their alive-set. A window
+        // that opens holding a browser tab (⌘⇧N + move, or a restore) has never
+        // received `hv:browser-state` for it, so its URL bar and title rendered
+        // EMPTY over a page that was loaded and visible.
+        setBrowsers(Object.fromEntries(browserList.map((b) => [b.id, b])));
         const layout = restoreLayout(raw, {
           sessions: new Set(sessionList.map((x) => x.id)),
           terminals: new Set(termList.map((t) => t.id)),
@@ -2790,9 +2803,9 @@ export default function App(): React.JSX.Element {
                     }}
                     onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
                     onMoveToWindow={(tab) => void moveTabToWindow(wsId, tab, "new")}
-                    // §28's WebContentsView belongs to exactly one window, so a
-                    // browser pane cannot move until stage 3 re-parents it.
-                    canMoveToWindow={(tab) => !isBrowserTab(tab)}
+                    // Every kind can move since stage 3 re-parents a pane's
+                    // WebContentsView onto whichever window reports its bounds.
+                    canMoveToWindow={() => true}
                     onNewSession={() => void newSession(wsId)}
                     newSessionKey={formatBinding(bindings.newSession)}
                     onNewTerminal={() => {

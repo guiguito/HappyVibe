@@ -333,3 +333,45 @@ describe("closing a window closes its tabs (round 23)", () => {
     expect(ipc.slice(i, i + 700)).toMatch(/persistLayout\(\)/);
   });
 });
+
+describe("a browser pane belongs to the window that draws it (round 23, stage 3)", () => {
+  const browsers = readFileSync("src/main/browsers.ts", "utf8");
+
+  it("the manager captures no window at all", () => {
+    expect(browsers).not.toMatch(/private readonly win: BrowserWindow/);
+    expect(browsers).not.toMatch(/this\.win\./);
+  });
+
+  it("attaching is setBounds's job, so a moved tab needs no move message", () => {
+    // The renderer that measures the placeholder IS the window the pane is in.
+    expect(browsers).toMatch(/setBounds\(id: string, bounds: Rectangle, win: BrowserWindow\)/);
+    expect(browsers).toMatch(/entry\.win\?\.contentView\.removeChildView\(entry\.view\);\s*\}[\s\S]{0,140}win\.contentView\.addChildView\(entry\.view\)/);
+    // create() must NOT attach — an agent-opened pane has no window yet.
+    const c = browsers.slice(browsers.indexOf("create(workspaceId: string)"), browsers.indexOf("wireGuest(entry)"));
+    expect(c).not.toMatch(/addChildView/);
+  });
+
+  it("a window that arrives holding a pane learns that pane's state", () => {
+    // Found in the GUI: the page was loaded, visible and correctly re-parented,
+    // but window 2's URL bar read "Enter a URL" — it had never received an
+    // `hv:browser-state` push for a pane created before it existed.
+    const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+    expect(app).toMatch(/setBrowsers\(Object\.fromEntries\(browserList\.map/);
+    const i = app.indexOf("onTabArrive");
+    expect(app.slice(i, i + 700)).toMatch(/if \(isBrowserTab\(tab\)\)/);
+  });
+
+  it("the egress hook is STILL installed once per partition", () => {
+    // Per-window installation would silently disarm every window but the
+    // newest — Electron REPLACES onBeforeRequest rather than stacking it, the
+    // same trap per-pane installation already sprung.
+    expect(browsers).toMatch(/private egressInstalled = false/);
+    expect((browsers.match(/onBeforeRequest\(/g) ?? []).length).toBe(1);
+  });
+
+  it("ipc hands the sender's window to bounds, and every kind may move now", () => {
+    expect(ipc).toMatch(/\}, ownerOf\(e\)\);/);
+    const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+    expect(app).toMatch(/canMoveToWindow=\{\(\) => true\}/);
+  });
+});

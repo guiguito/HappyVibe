@@ -571,10 +571,6 @@ export function registerIpc(
   // here — the egress gate lives on the partition (browsers.ts), not on the
   // tool call, because JS inside the page can navigate without any tool.
   const browsers = new BrowserManager(
-    // Stage 3 replaces this with a per-pane owning window: a WebContentsView
-    // belongs to exactly one window, so a pane that MOVES has to be
-    // re-parented. Until then every pane lives in the primary window.
-    windows.primary()!,
     (info) => send("hv:browser-state", info),
     (id, req) => {
       // Deliberately NOT one EventLog entry per subresource: a single page load
@@ -3565,13 +3561,17 @@ export function registerIpc(
   // main moves the view. `hv:browser-visible false` is also what makes the
   // permission modal win — BrowserTab hides the view whenever an overlay is up.
   ipcMain.handle("hv:browser-create", (_e, workspaceId: string) => browsers.create(workspaceId));
-  ipcMain.handle("hv:browser-bounds", (_e, id: string, b: { x: number; y: number; width: number; height: number }) => {
+  ipcMain.handle("hv:browser-bounds", (e, id: string, b: { x: number; y: number; width: number; height: number }) => {
     // Round to whole device pixels: a fractional bound leaves a hairline of the
     // renderer showing through at the seam.
+    //
+    // §7 round 23: the SENDER's window owns the pane from here on — a moved tab
+    // re-parents on its new window's first bounds report, so there is no
+    // separate move message that could disagree about where the page belongs.
     browsers.setBounds(id, {
       x: Math.round(b.x), y: Math.round(b.y),
       width: Math.max(0, Math.round(b.width)), height: Math.max(0, Math.round(b.height)),
-    });
+    }, ownerOf(e));
   });
   ipcMain.handle("hv:browser-visible", (_e, id: string, visible: boolean) => browsers.setVisible(id, visible));
   // origin "user": typing a URL IS consent (§28) — no prompt, still logged.
