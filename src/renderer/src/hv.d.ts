@@ -975,12 +975,10 @@ interface HvApi {
   windowHolds(h: { sessions: string[]; terminals: string[]; browsers: string[] }): void;
   dragBegin(d: { tab: string; ws: string; draft?: string }): void;
   dragEnd(): void;
-  claimTab(): Promise<{ tab: string; ws: string; draft?: string } | null>;
   listWindows(): Promise<Array<{ id: number; label: string }>>;
   onWindowsChanged(h: (w: Array<{ id: number; label: string }>) => void): () => void;
-  tearOff(at: { x: number; y: number }, record: unknown): Promise<boolean>;
-  onDragActive(h: (active: boolean) => void): () => void;
-  onTabLeft(h: (p: { tab: string; ws: string }) => void): () => void;
+  /** Where the drag was released — main decides move / tear-off / nothing. */
+  dragRelease(at: { x: number; y: number }, record: unknown): Promise<boolean>;
   onUiResolved(h: (p: { id: string }) => void): () => void;
   onPendingChanged(h: (p: Record<string, number>) => void): () => void;
   setWindowUi(ui: Record<string, string>): Promise<void>;

@@ -58,7 +58,7 @@ contextBridge.exposeInMainWorld("hv", {
       a custom MIME type does not survive the OS drag between two windows. */
   dragBegin: (d: { tab: string; ws: string; draft?: string }) => ipcRenderer.send("hv:drag-begin", d),
   dragEnd: () => ipcRenderer.send("hv:drag-end"),
-  claimTab: () => ipcRenderer.invoke("hv:claim-tab"),
+
   /** §7 round 23: the drag-free route — send a tab to a NAMED window. */
   listWindows: () => ipcRenderer.invoke("hv:list-windows"),
   onWindowsChanged: (h: (w: Array<{ id: number; label: string }>) => void) => {
@@ -66,17 +66,9 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:windows-changed", l);
     return () => ipcRenderer.off("hv:windows-changed", l);
   },
-  tearOff: (at: { x: number; y: number }, record: unknown) => ipcRenderer.invoke("hv:tear-off", at, record),
-  onDragActive: (h: (active: boolean) => void) => {
-    const l = (_e: unknown, a: boolean): void => h(a);
-    ipcRenderer.on("hv:drag-active", l);
-    return () => ipcRenderer.off("hv:drag-active", l);
-  },
-  onTabLeft: (h: (p: { tab: string; ws: string }) => void) => {
-    const l = (_e: unknown, p: { tab: string; ws: string }): void => h(p);
-    ipcRenderer.on("hv:tab-left", l);
-    return () => ipcRenderer.off("hv:tab-left", l);
-  },
+  /** Where the drag was released — main decides move / tear-off / nothing. */
+  dragRelease: (at: { x: number; y: number }, record: unknown) =>
+    ipcRenderer.invoke("hv:drag-release", at, record),
   /** §7 round 23: what this window shows — main routes prompts off it. */
   windowHolds: (h: { sessions: string[]; terminals: string[]; browsers: string[] }) =>
     ipcRenderer.send("hv:window-holds", h),

@@ -360,9 +360,8 @@ describe("a browser pane belongs to the window that draws it (round 23, stage 3)
     const body = app2.slice(i, i + 1400);
     expect(body).toMatch(/if \(isTermTab\(tab\)\)/);
     expect(body).toMatch(/window\.hv\s*\.termList\(\)/);
-    // and on the cross-window DROP path, which is a different handler
-    const j = app2.indexOf("const onForeignDrop");
-    expect(app2.slice(j, j + 1200)).toMatch(/isTermTab\(p\.tab\)/);
+    // One arrival path for every route now — menu, drag and tear-off all land
+    // on hv:tab-arrive — so there is no second handler to keep in step.
   });
 
   it("a window that arrives holding a pane learns that pane's state", () => {
@@ -390,77 +389,57 @@ describe("a browser pane belongs to the window that draws it (round 23, stage 3)
   });
 });
 
-describe("drag between windows, and tear-off (round 23, stage 4)", () => {
+describe("drag between windows is decided from the RELEASE POINT (round 23, stage 4)", () => {
   const app = readFileSync("src/renderer/src/App.tsx", "utf8");
   const tabstrip = readFileSync("src/renderer/src/components/TabStrip.tsx", "utf8");
 
-  it("the payload is parked in MAIN, not carried in the dataTransfer", () => {
-    // A DOM drag between two Electron windows becomes an OS drag session, and a
-    // custom MIME type is not part of what the OS carries — so relying on it
-    // would make a cross-window drop silently receive nothing.
-    expect(index).toMatch(/let dragging: \{ tab: string; ws: string; windowId: number; draft\?: string \} \| null = null/);
-    expect(index).toMatch(/ipcMain\.on\('hv:drag-begin'/);
-    expect(index).toMatch(/ipcMain\.handle\('hv:claim-tab'/);
+  it("the target window is never asked — it does not get the event", () => {
+    /**
+     * Measured, and the whole reason this is shaped the way it is: Chromium
+     * does not deliver `dragover`/`drop` to a SECOND Electron window, so
+     * dragging a tab onto another window did nothing at all. `dragstart` and
+     * `dragend` fire in the SOURCE window and do work, which is why the
+     * tear-off worked all along.
+     */
+    expect(index).toMatch(/ipcMain\.handle\('hv:drag-release'/);
+    expect(index).not.toContain("hv:claim-tab");
+    expect(index).not.toContain("hv:drag-active");
+    expect(index).not.toContain("hv:tab-left");
+    expect(app).not.toContain("foreignDrag");
+    expect(tabstrip).not.toContain("foreignDragActive");
   });
 
-  it("ONE handler decides every tab drop, shared by the strip and the pane", () => {
-    // It was answered in two places for one commit, which is how the strip and
-    // the pane would have come to disagree about a foreign drag.
-    expect(tabstrip).toMatch(/onTabDrop: \(e: React\.DragEvent, toPane: number\) => void;/);
-    expect(tabstrip).toMatch(/onDrop=\{\(e\) => \{ setDropHover\(false\); onTabDrop\(e, paneIndex\); \}\}/);
-    expect(tabstrip).not.toMatch(/onForeignDrop/);
-    // Round 11's between-panes move must not regress into a round trip.
-    const i = app.indexOf("const onTabDropped");
-    const drop = app.slice(i, i + 900);
+  it("one release point, three outcomes", () => {
+    const i = index.indexOf("ipcMain.handle('hv:drag-release'");
+    const body = index.slice(i, i + 1800);
+    // over another window → hand it over
+    expect(body).toMatch(/target\.webContents\.send\('hv:tab-arrive'/);
+    // over none → tear off there
+    expect(body).toMatch(/openWindow\(rec, at\)/);
+    // over its OWN window → nothing: a missed drop, or an Escape cancel
+    expect(body).toMatch(/if \(!target && under\.some\(\(win\) => win\.id === w\.id\)\) return false/);
+  });
+
+  it("a CONSUMED drag cannot also move or tear off — dropEffect is never trusted", () => {
+    // A drop that leaves dropEffect "none" once made ONE gesture both move a
+    // tab between panes and spawn a window holding it.
+    const d = app.indexOf("const onTabDropped");
+    expect(app.slice(d, d + 700)).toMatch(/window\.hv\.dragEnd\(\)/);
+    const i = index.indexOf("ipcMain.handle('hv:drag-release'");
+    expect(index.slice(i, i + 400)).toMatch(/if \(!w \|\| !d \|\| d\.windowId !== w\.id\) return false/);
+  });
+
+  it("the same-window drop still goes through the MIME, with no round trip", () => {
+    // Round 11's between-panes move must not regress into an ipc call.
+    const d = app.indexOf("const onTabDropped");
+    const drop = app.slice(d, d + 700);
     expect(drop).toMatch(/const id = e\.dataTransfer\.getData\("application\/x-hv-tabid"\);/);
     expect(drop).toMatch(/updateTabs\(ws, \(t\) => moveTab\(t, id, slot\)\)/);
+    expect(tabstrip).toMatch(/onDrop=\{\(e\) => \{ setDropHover\(false\); onTabDrop\(e, paneIndex\); \}\}/);
   });
 
-  it("an EMPTY pane accepts a tab, having invited one since round 11", () => {
-    // "Open a file or drag a tab here." was the only drop target that accepted
-    // nothing — and it is the natural place to aim when the tab comes from
-    // another window, where the 40px strip is not what the eye goes to.
-    const i = app.indexOf("Open a file or drag a tab here.");
-    const pane = app.slice(i - 700, i);
-    expect(pane).toMatch(/onDrop=\{\(e\) => onTabDropped\(e, slot, wsId\)\}/);
-    expect(pane).toMatch(/onDragOver=/);
-  });
-
-  it("moving to an ALREADY-OPEN window needs no drag at all", () => {
-    // Whether macOS hands a DOM drop to a second Electron window is not
-    // something this app gets to promise, so the menu names the targets.
-    expect(index).toMatch(/label: `Window \$\{i \+ 1\}`/);
-    expect(tabstrip).toMatch(/Move to \{w\.label\}/);
-    expect(app).toMatch(/otherWindows=\{allWindows\.filter\(\(w\) => w\.id !== window\.hv\.boot\.windowId\)\}/);
-  });
-
-  it("a strip accepts a foreign drag it cannot see the type of", () => {
-    expect(tabstrip).toMatch(/e\.dataTransfer\.types\.includes\(DRAG_MIME\) \|\| foreignDragActive/);
-  });
-
-  it("claiming refuses the drag's OWN window — that path is the layout move", () => {
-    const i = index.indexOf("ipcMain.handle('hv:claim-tab'");
-    expect(index.slice(i, i + 700)).toMatch(/if \(d\.windowId === w\.id\) return null/);
-  });
-
-  it("a tear-off needs BOTH no drop and a point outside every window", () => {
-    // Escape-cancel and a missed drop both end with no drop target, and both
-    // land inside a window — neither may spawn one.
-    const i = index.indexOf("ipcMain.handle('hv:tear-off'");
-    const body = index.slice(i, i + 800);
-    expect(body).toMatch(/if \(insideAny\(at, windows\.all\(\)\.map\(\(win\) => win\.getBounds\(\)\)\)\) return false/);
-    expect(app).toMatch(/if \(dropped\) \{ window\.hv\.dragEnd\(\); return; \}/);
-  });
-
-  it("a CONSUMED drag cannot also tear off — dropEffect is never trusted", () => {
-    // Measured: a drop that leaves dropEffect "none" made one gesture both move
-    // the tab between panes AND spawn a window holding it.
-    const i = app.indexOf("const onTabDropped");
-    expect(app.slice(i, i + 900)).toMatch(/window\.hv\.dragEnd\(\)/);
-    expect(index).toMatch(/if \(!w \|\| !d \|\| d\.windowId !== w\.id\) return false/);
-  });
-
-  it("the source lets go only when told, and detaches the same way the menu does", () => {
-    expect(app).toMatch(/window\.hv\.onTabLeft\(\(\{ tab, ws \}\) => detachTab\(ws, tab\)\)/);
+  it("the source detaches only when main says the tab actually moved", () => {
+    const i = app.indexOf("const onTabDragEnd");
+    expect(app.slice(i, i + 500)).toMatch(/\.then\(\(moved\) => \{ if \(moved\) detachTab\(ws, tab\); else window\.hv\.dragEnd\(\); \}\)/);
   });
 });

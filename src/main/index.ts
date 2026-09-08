@@ -97,7 +97,8 @@ ipcMain.on('hv:window-boot', (e) => {
  * Ordinals, because a window has no title of its own; primary is Window 1.
  */
 function windowList(): Array<{ id: number; label: string }> {
-  return windows.all().map((w, i) => ({ id: w.id, label: `Window ${i + 1}` }))
+  // Sentence case: the menu reads "Move to new window" / "Move to window 2".
+  return windows.all().map((w, i) => ({ id: w.id, label: `window ${i + 1}` }))
 }
 
 ipcMain.handle('hv:list-windows', () => windowList())
@@ -123,52 +124,62 @@ ipcMain.on('hv:drag-begin', (e, d: { tab: string; ws: string; draft?: string }) 
   const w = windows.bySender(e.sender)
   if (!w) return
   dragging = { ...d, windowId: w.id }
-  // Every window is told a drag is up, so a strip can accept a drop it cannot
-  // see the type of.
-  windows.broadcast('hv:drag-active', true)
 })
 
 ipcMain.on('hv:drag-end', () => {
   dragging = null
-  windows.broadcast('hv:drag-active', false)
 })
 
 /**
- * Another window accepted the drop. The SOURCE is told to let go, and the
- * payload is handed back so the taker can open it locally.
+ * §7 round 23 — where a tab drag was RELEASED, decided from the source window.
+ *
+ * This is the whole cross-window story, and it is here rather than in a drop
+ * handler for a measured reason: Chromium does not deliver `dragover`/`drop` to
+ * a SECOND Electron window. A DOM drag becomes an OS drag session, and the
+ * other window's web contents never hears about it — so the first version
+ * waited on an event that never arrives, and dragging a tab onto another window
+ * did nothing at all. Reported for every tab kind, in both directions.
+ *
+ * `dragstart` and `dragend` fire in the SOURCE window, which does work — the
+ * tear-off has always worked for exactly that reason. So main takes the release
+ * POINT and answers the whole question itself, because it is the only side that
+ * knows where every window is:
+ *
+ *   - over another window  → hand the tab to it;
+ *   - over no window       → tear off a new one there;
+ *   - over its own window  → nothing (a missed drop, or an Escape cancel).
+ *
+ * A CONSUMED drag is already null here — a same-window drop clears it — so a
+ * drop between panes cannot also move or tear off. `dropEffect` is never
+ * consulted: a synthetic drop leaves it "none", and trusting it once made one
+ * gesture both move a tab and spawn a window holding it.
  */
-ipcMain.handle('hv:claim-tab', (e) => {
+ipcMain.handle('hv:drag-release', (e, at: { x: number; y: number }, record: unknown): boolean => {
   const w = windows.bySender(e.sender)
   const d = dragging
-  if (!w || !d) return null
-  // A drop in the window the drag started in is the EXISTING within-layout
-  // move, and doing both would duplicate the tab.
-  if (d.windowId === w.id) return null
-  dragging = null
-  windows.byId(d.windowId)?.webContents.send('hv:tab-left', { tab: d.tab, ws: d.ws })
-  windows.broadcast('hv:drag-active', false)
-  return { tab: d.tab, ws: d.ws, draft: d.draft }
-})
-
-/**
- * A drag that ended with no drop. It is a tear-off only if it ended OUTSIDE
- * every window — a drop that missed a strip, and an Escape cancel, both land
- * inside one and must not spawn anything.
- */
-ipcMain.handle('hv:tear-off', (e, at: { x: number; y: number }, record: unknown): boolean => {
-  const w = windows.bySender(e.sender)
-  const d = dragging
-  // A CONSUMED drag is already null here — a same-window drop and a
-  // cross-window claim both clear it — so this refuses without ever asking
-  // `dropEffect` whether a drop happened. Measured: a synthetic drop leaves
-  // dropEffect "none", and trusting it moved the tab AND tore it off, two
-  // actions for one gesture.
   if (!w || !d || d.windowId !== w.id) return false
-  if (insideAny(at, windows.all().map((win) => win.getBounds()))) return false
+
+  /**
+   * Which window is under the pointer. Creation order is NOT z-order and
+   * Electron exposes no way to ask, so overlapping windows tie-break to the
+   * most recently created — the one you most likely just made. Accepted, and
+   * cheap to revisit if it ever bites.
+   */
+  const under = windows.all().filter((win) => insideAny(at, [win.getBounds()]))
+  const target = under.filter((win) => win.id !== w.id).at(-1) ?? null
+
+  // Released over its own window with nothing accepting it: the tab stays.
+  if (!target && under.some((win) => win.id === w.id)) return false
+
+  if (target) {
+    dragging = null
+    target.webContents.send('hv:tab-arrive', { tab: d.tab, ws: d.ws, draft: d.draft })
+    return true
+  }
+
   const rec = record as WindowRecord | undefined
   if (!rec) return false
   dragging = null
-  windows.broadcast('hv:drag-active', false)
   const opened = openWindow(rec, at)
   if (d.draft !== undefined) pendingDrafts.set(opened.id, { tab: d.tab, ws: d.ws, draft: d.draft })
   return true

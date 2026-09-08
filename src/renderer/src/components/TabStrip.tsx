@@ -23,6 +23,50 @@ import { basename, browserOf, sessionOf, terminalOf, type Pane, type TabId } fro
  */
 const DRAG_MIME = "application/x-hv-tabid";
 
+/**
+ * §7 round 23 — one row style for the tab menu.
+ *
+ * Reported as "too large and lacking icons": it was `text-sm` with `py-1.5` and
+ * three bare strings, which at three items read as a dialog rather than a
+ * context menu. Tighter type, tighter rows, and a glyph per row so the eye can
+ * tell them apart without reading.
+ */
+const menuItem =
+  "w-full flex items-center gap-2 text-left px-3 py-1 hover:bg-paper-deep/40 cursor-pointer " +
+  "disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent";
+
+/** The app's icon idiom: 24-box, stroked, sized by the caller's row. */
+const glyph = "size-3.5 shrink-0 text-ink-soft";
+
+function PencilGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className={glyph} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 20h4L20 8a2.8 2.8 0 0 0-4-4L4 16z" />
+    </svg>
+  );
+}
+
+/** A window with a plus: the tab lands somewhere that does not exist yet. */
+function NewWindowGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className={glyph} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M13 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8" />
+      <path d="M17 3v6M14 6h6" />
+    </svg>
+  );
+}
+
+/** A window with an arrow going into it: an existing one. */
+function WindowGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className={glyph} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="4" y="4" width="16" height="16" rx="1" />
+      <path d="M4 9h16" />
+      <path d="M9 15h6m0 0-2-2m2 2-2 2" />
+    </svg>
+  );
+}
+
 export function TabStrip({
   pane,
   paneIndex,
@@ -52,7 +96,6 @@ export function TabStrip({
   otherWindows,
   onDragBegin,
   onDragEnd,
-  foreignDragActive,
 }: {
   pane: Pane;
   /** Slot index in the 2×2 grid (0–3). */
@@ -90,8 +133,6 @@ export function TabStrip({
   onDragEnd: (tab: TabId, at: { x: number; y: number }, dropped: boolean) => void;
   /** A drop whose payload came from ANOTHER window. */
 
-  /** True while any window has a tab drag in flight. */
-  foreignDragActive: boolean;
   /**
    * §7 round 23: ONE handler for every tab drop, shared with the empty pane —
    * "is this my own drag or another window's" is a single decision and had
@@ -157,7 +198,10 @@ export function TabStrip({
         // A foreign drag has no recognisable type, so the strip leans on main's
         // "a drag is up" broadcast instead — otherwise it would refuse the drop
         // and the tab would look undraggable between windows.
-        if (e.dataTransfer.types.includes(DRAG_MIME) || foreignDragActive) {
+        // Same-window only: a drag from another window never reaches this
+        // strip at all (Chromium does not deliver drop events across Electron
+        // windows), so main decides that case from the release point instead.
+        if (e.dataTransfer.types.includes(DRAG_MIME)) {
           e.preventDefault();
           setDropHover(true);
         }
@@ -316,7 +360,7 @@ export function TabStrip({
             }}
           />
           <div
-            className="fixed z-50 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold"
+            className="fixed z-50 min-w-44 rounded-lg border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-[13px] font-semibold"
             style={{ left: menu.x, top: menu.y }}
           >
             {/* Only a chat or a terminal has a title of its own to change. */}
@@ -332,8 +376,9 @@ export function TabStrip({
                   });
                   setMenu(null);
                 }}
-                className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
+                className={menuItem}
               >
+                <PencilGlyph />
                 Rename…
               </button>
             )}
@@ -349,14 +394,16 @@ export function TabStrip({
                 onMoveToWindow(menu.tab, "new");
                 setMenu(null);
               }}
-              className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent"
+              className={menuItem}
             >
+              <NewWindowGlyph />
               Move to new window
             </button>
             {/* §7 round 23: moving to an ALREADY-OPEN window. The drag is the
                 nicer gesture and it is still there, but it cannot be the only
-                route — whether macOS hands a DOM drop to a second Electron
-                window is not something this app gets to promise. */}
+                route — Chromium does not hand a DOM drop to a second Electron
+                window, so the drag is resolved from the release point and this
+                stays the precise, keyboard-reachable way to say where. */}
             {otherWindows.map((w) => (
               <button
                 key={w.id}
@@ -367,8 +414,11 @@ export function TabStrip({
                   onMoveToWindow(menu.tab, w.id);
                   setMenu(null);
                 }}
-                className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent"
+                className={menuItem}
               >
+                <WindowGlyph />
+                {/* Sentence case, like every other label in the app: "Move to
+                    new window" and "Move to window 2" are the same sentence. */}
                 Move to {w.label}
               </button>
             ))}
