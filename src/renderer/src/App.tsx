@@ -107,6 +107,8 @@ export default function App(): React.JSX.Element {
   const [pendingBySession, setPendingBySession] = useState<Record<string, number>>({});
   /** §7 round 23: any window has a tab drag in flight, so strips accept drops. */
   const [foreignDrag, setForeignDrag] = useState(false);
+  /** §7 round 23: the OTHER windows, for the drag-free "Move to Window 2". */
+  const [allWindows, setAllWindows] = useState<Array<{ id: number; label: string }>>([]);
   // Sessions currently in /hv-dangerous mode (bridge-notified, never persisted).
   const [dangerous, setDangerous] = useState<Record<string, boolean>>({});
   // §23: per-session plan mode + current plan-file path (bridge-notified; SURVIVES
@@ -362,8 +364,19 @@ export default function App(): React.JSX.Element {
      */
     const offTabArrive = window.hv.onTabArrive(({ tab, ws, draft }) => {
       if (draft !== undefined) arrivedDrafts.current[bufferKey(ws, tab)] = draft;
-      // A pane's state was pushed before this window held it, so fetch it now —
-      // otherwise the chrome shows an empty URL bar over a live page.
+      /**
+       * The SUBJECT's state was pushed before this window held the tab — a
+       * terminal or pane created after this window booted is simply not in its
+       * registry — so fetch it now. Without this the tab renders from a missing
+       * entry: a terminal titled "Terminal" instead of its running command, and
+       * a browser with an empty URL bar over a live page. Both were seen.
+       */
+      if (isTermTab(tab)) {
+        void window.hv
+          .termList()
+          .then((l) => setTerminals(Object.fromEntries(l.map((t) => [t.id, t]))))
+          .catch(() => {});
+      }
       if (isBrowserTab(tab)) {
         void window.hv
           .browserList()
@@ -385,12 +398,16 @@ export default function App(): React.JSX.Element {
     // we were chosen to show, so the other window's sidebar would look idle.
     const offPending = window.hv.onPendingChanged(setPendingBySession);
     const offDragActive = window.hv.onDragActive(setForeignDrag);
+    // Fetched once (this window may have opened after the last broadcast) and
+    // then kept current as windows open and close.
+    void window.hv.listWindows().then(setAllWindows).catch(() => {});
+    const offWindows = window.hv.onWindowsChanged(setAllWindows);
     // Another window took the tab we were dragging — let go of it here. Same
     // detach as the menu route, so a moved terminal keeps its PTY.
     const offTabLeft = window.hv.onTabLeft(({ tab, ws }) => detachTab(ws, tab));
     return () => {
       offTitle(); offExit(); offBrowser(); offBrowserClosed();
-      offTabArrive(); offUiResolved(); offPending(); offDragActive(); offTabLeft();
+      offTabArrive(); offUiResolved(); offPending(); offDragActive(); offTabLeft(); offWindows();
     };
   }, []);
   // F6: global shortcuts. The handler closure is refreshed each render (reads
@@ -2052,6 +2069,28 @@ export default function App(): React.JSX.Element {
       .catch(() => window.hv.dragEnd());
   };
 
+  /**
+   * §7 round 23 — a tab dropped anywhere that accepts one.
+   *
+   * Used by the tab strip AND by an empty pane. The pane matters more than it
+   * looks: it is the natural place to aim at when the tab comes from another
+   * window, and it has invited exactly that since round 11 ("Open a file or
+   * drag a tab here") while accepting nothing at all.
+   */
+  const onTabDropped = (e: React.DragEvent, slot: number, ws: string): void => {
+    const id = e.dataTransfer.getData("application/x-hv-tabid");
+    if (id) {
+      e.preventDefault();
+      updateTabs(ws, (t) => moveTab(t, id, slot));
+      window.hv.dragEnd();
+      return;
+    }
+    if (foreignDrag) {
+      e.preventDefault();
+      onForeignDrop(slot);
+    }
+  };
+
   /** A drop in THIS window whose payload belongs to another one. */
   const onForeignDrop = (toPane: number): void => {
     void window.hv.claimTab().then((p) => {
@@ -2064,6 +2103,9 @@ export default function App(): React.JSX.Element {
       setActiveWs(p.ws);
       const sid = sessionOf(p.tab);
       if (sid) { setSelectedId(sid); setView("chat"); }
+      if (isTermTab(p.tab)) {
+        void window.hv.termList().then((l) => setTerminals(Object.fromEntries(l.map((t) => [t.id, t])))).catch(() => {});
+      }
       if (isBrowserTab(p.tab)) {
         void window.hv.browserList().then((l) => setBrowsers(Object.fromEntries(l.map((b) => [b.id, b])))).catch(() => {});
       }
@@ -2849,20 +2891,14 @@ export default function App(): React.JSX.Element {
                       const tid = terminalOf(tab);
                       if (tid) void window.hv.termRename(tid, title).catch(surface);
                     }}
-                    onMoveTab={(tab, to) => {
-                      updateTabs(wsId, (t) => moveTab(t, tab, to));
-                      // §7 round 23: the drag is CONSUMED. Main forgets it, and
-                      // the tear-off that `dragend` fires next is refused —
-                      // never trust `dropEffect` to say a drop happened.
-                      window.hv.dragEnd();
-                    }}
-                    onMoveToWindow={(tab) => void moveTabToWindow(wsId, tab, "new")}
+                    onTabDrop={(e, to) => onTabDropped(e, to, wsId)}
+                    onMoveToWindow={(tab, target) => void moveTabToWindow(wsId, tab, target)}
+                    otherWindows={allWindows.filter((w) => w.id !== window.hv.boot.windowId)}
                     // Every kind can move since stage 3 re-parents a pane's
                     // WebContentsView onto whichever window reports its bounds.
                     canMoveToWindow={() => true}
                     onDragBegin={(tab) => window.hv.dragBegin({ tab, ws: wsId, draft: draftOf(wsId, tab) })}
                     onDragEnd={(tab, at, dropped) => onTabDragEnd(wsId, tab, at, dropped)}
-                    onForeignDrop={onForeignDrop}
                     foreignDragActive={foreignDrag}
                     onNewSession={() => void newSession(wsId)}
                     newSessionKey={formatBinding(bindings.newSession)}
@@ -2996,6 +3032,10 @@ export default function App(): React.JSX.Element {
                   key={`empty-${slot}`}
                   style={{ gridArea: CONTENTS[slot] }}
                   className={`min-h-0 flex items-center justify-center text-sm text-ink-soft ${paneDivider(CONTENTS[slot])}`}
+                  onDragOver={(e) => {
+                    if (e.dataTransfer.types.includes("application/x-hv-tabid") || foreignDrag) e.preventDefault();
+                  }}
+                  onDrop={(e) => onTabDropped(e, slot, wsId)}
                 >
                   Open a file or drag a tab here.
                 </div>

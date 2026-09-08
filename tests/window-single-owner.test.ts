@@ -351,6 +351,20 @@ describe("a browser pane belongs to the window that draws it (round 23, stage 3)
     expect(c).not.toMatch(/addChildView/);
   });
 
+  it("an arriving TERMINAL tab learns its terminal's state too", () => {
+    // Seen: the tab read "Terminal" instead of `sleep 4242`, because the
+    // terminal was created after that window booted and so was absent from its
+    // registry. Same shape as the browser URL bar below.
+    const app2 = readFileSync("src/renderer/src/App.tsx", "utf8");
+    const i = app2.indexOf("onTabArrive");
+    const body = app2.slice(i, i + 1400);
+    expect(body).toMatch(/if \(isTermTab\(tab\)\)/);
+    expect(body).toMatch(/window\.hv\s*\.termList\(\)/);
+    // and on the cross-window DROP path, which is a different handler
+    const j = app2.indexOf("const onForeignDrop");
+    expect(app2.slice(j, j + 1200)).toMatch(/isTermTab\(p\.tab\)/);
+  });
+
   it("a window that arrives holding a pane learns that pane's state", () => {
     // Found in the GUI: the page was loaded, visible and correctly re-parented,
     // but window 2's URL bar read "Enter a URL" — it had never received an
@@ -358,7 +372,7 @@ describe("a browser pane belongs to the window that draws it (round 23, stage 3)
     const app = readFileSync("src/renderer/src/App.tsx", "utf8");
     expect(app).toMatch(/setBrowsers\(Object\.fromEntries\(browserList\.map/);
     const i = app.indexOf("onTabArrive");
-    expect(app.slice(i, i + 700)).toMatch(/if \(isBrowserTab\(tab\)\)/);
+    expect(app.slice(i, i + 1600)).toMatch(/if \(isBrowserTab\(tab\)\)/);
   });
 
   it("the egress hook is STILL installed once per partition", () => {
@@ -389,11 +403,35 @@ describe("drag between windows, and tear-off (round 23, stage 4)", () => {
     expect(index).toMatch(/ipcMain\.handle\('hv:claim-tab'/);
   });
 
-  it("the same-window drop still goes through the existing MIME path", () => {
+  it("ONE handler decides every tab drop, shared by the strip and the pane", () => {
+    // It was answered in two places for one commit, which is how the strip and
+    // the pane would have come to disagree about a foreign drag.
+    expect(tabstrip).toMatch(/onTabDrop: \(e: React\.DragEvent, toPane: number\) => void;/);
+    expect(tabstrip).toMatch(/onDrop=\{\(e\) => \{ setDropHover\(false\); onTabDrop\(e, paneIndex\); \}\}/);
+    expect(tabstrip).not.toMatch(/onForeignDrop/);
     // Round 11's between-panes move must not regress into a round trip.
-    const drop = tabstrip.slice(tabstrip.indexOf("const onDrop"), tabstrip.indexOf("const onDrop") + 700);
-    expect(drop).toMatch(/const id = e\.dataTransfer\.getData\(DRAG_MIME\);/);
-    expect(drop).toMatch(/onMoveTab\(id, paneIndex\);\s*return;/);
+    const i = app.indexOf("const onTabDropped");
+    const drop = app.slice(i, i + 900);
+    expect(drop).toMatch(/const id = e\.dataTransfer\.getData\("application\/x-hv-tabid"\);/);
+    expect(drop).toMatch(/updateTabs\(ws, \(t\) => moveTab\(t, id, slot\)\)/);
+  });
+
+  it("an EMPTY pane accepts a tab, having invited one since round 11", () => {
+    // "Open a file or drag a tab here." was the only drop target that accepted
+    // nothing — and it is the natural place to aim when the tab comes from
+    // another window, where the 40px strip is not what the eye goes to.
+    const i = app.indexOf("Open a file or drag a tab here.");
+    const pane = app.slice(i - 700, i);
+    expect(pane).toMatch(/onDrop=\{\(e\) => onTabDropped\(e, slot, wsId\)\}/);
+    expect(pane).toMatch(/onDragOver=/);
+  });
+
+  it("moving to an ALREADY-OPEN window needs no drag at all", () => {
+    // Whether macOS hands a DOM drop to a second Electron window is not
+    // something this app gets to promise, so the menu names the targets.
+    expect(index).toMatch(/label: `Window \$\{i \+ 1\}`/);
+    expect(tabstrip).toMatch(/Move to \{w\.label\}/);
+    expect(app).toMatch(/otherWindows=\{allWindows\.filter\(\(w\) => w\.id !== window\.hv\.boot\.windowId\)\}/);
   });
 
   it("a strip accepts a foreign drag it cannot see the type of", () => {
@@ -417,9 +455,8 @@ describe("drag between windows, and tear-off (round 23, stage 4)", () => {
   it("a CONSUMED drag cannot also tear off — dropEffect is never trusted", () => {
     // Measured: a drop that leaves dropEffect "none" made one gesture both move
     // the tab between panes AND spawn a window holding it.
-    const app2 = readFileSync("src/renderer/src/App.tsx", "utf8");
-    const i = app2.indexOf("onMoveTab={(tab, to) => {");
-    expect(app2.slice(i, i + 500)).toMatch(/window\.hv\.dragEnd\(\)/);
+    const i = app.indexOf("const onTabDropped");
+    expect(app.slice(i, i + 900)).toMatch(/window\.hv\.dragEnd\(\)/);
     expect(index).toMatch(/if \(!w \|\| !d \|\| d\.windowId !== w\.id\) return false/);
   });
 

@@ -59,6 +59,13 @@ contextBridge.exposeInMainWorld("hv", {
   dragBegin: (d: { tab: string; ws: string; draft?: string }) => ipcRenderer.send("hv:drag-begin", d),
   dragEnd: () => ipcRenderer.send("hv:drag-end"),
   claimTab: () => ipcRenderer.invoke("hv:claim-tab"),
+  /** §7 round 23: the drag-free route — send a tab to a NAMED window. */
+  listWindows: () => ipcRenderer.invoke("hv:list-windows"),
+  onWindowsChanged: (h: (w: Array<{ id: number; label: string }>) => void) => {
+    const l = (_e: unknown, w: Array<{ id: number; label: string }>): void => h(w);
+    ipcRenderer.on("hv:windows-changed", l);
+    return () => ipcRenderer.off("hv:windows-changed", l);
+  },
   tearOff: (at: { x: number; y: number }, record: unknown) => ipcRenderer.invoke("hv:tear-off", at, record),
   onDragActive: (h: (active: boolean) => void) => {
     const l = (_e: unknown, a: boolean): void => h(a);

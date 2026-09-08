@@ -968,6 +968,8 @@ interface HvApi {
   dragBegin(d: { tab: string; ws: string; draft?: string }): void;
   dragEnd(): void;
   claimTab(): Promise<{ tab: string; ws: string; draft?: string } | null>;
+  listWindows(): Promise<Array<{ id: number; label: string }>>;
+  onWindowsChanged(h: (w: Array<{ id: number; label: string }>) => void): () => void;
   tearOff(at: { x: number; y: number }, record: unknown): Promise<boolean>;
   onDragActive(h: (active: boolean) => void): () => void;
   onTabLeft(h: (p: { tab: string; ws: string }) => void): () => void;

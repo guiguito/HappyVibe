@@ -34,7 +34,7 @@ export function TabStrip({
   busyFor,
   onSelect,
   onClose,
-  onMoveTab,
+  onTabDrop,
   onNewSession,
   newSessionKey,
   onNewTerminal,
@@ -49,9 +49,9 @@ export function TabStrip({
   onRename,
   onMoveToWindow,
   canMoveToWindow,
+  otherWindows,
   onDragBegin,
   onDragEnd,
-  onForeignDrop,
   foreignDragActive,
 }: {
   pane: Pane;
@@ -79,18 +79,25 @@ export function TabStrip({
    * filename, and renaming the file is the tree's job.
    */
   onRename: (tab: TabId, title: string) => void;
-  /** §7 round 23: hand this tab to a brand-new window. */
-  onMoveToWindow: (tab: TabId) => void;
+  /** §7 round 23: hand this tab to a brand-new window, or to a named one. */
+  onMoveToWindow: (tab: TabId, target: "new" | number) => void;
+  /** The OTHER windows, so moving between two open ones needs no drag. */
+  otherWindows: Array<{ id: number; label: string }>;
   /** False while a kind cannot live in a second window yet (browser, stage 3). */
   canMoveToWindow: (tab: TabId) => boolean;
   /** §7 round 23: a drag starts/ends — the payload is parked in main. */
   onDragBegin: (tab: TabId) => void;
   onDragEnd: (tab: TabId, at: { x: number; y: number }, dropped: boolean) => void;
   /** A drop whose payload came from ANOTHER window. */
-  onForeignDrop: (toPane: number) => void;
+
   /** True while any window has a tab drag in flight. */
   foreignDragActive: boolean;
-  onMoveTab: (tab: TabId, toPane: number) => void;
+  /**
+   * §7 round 23: ONE handler for every tab drop, shared with the empty pane —
+   * "is this my own drag or another window's" is a single decision and had
+   * started being answered in two places.
+   */
+  onTabDrop: (e: React.DragEvent, toPane: number) => void;
   /** Round 11: the trailing `+` — fill this pane without leaving it. */
   onNewSession: () => void;
   /** Shown beside "New session" in the `+` menu, as ⌘T is beside New terminal. */
@@ -128,21 +135,6 @@ export function TabStrip({
       active ? "bg-card font-bold border-b-2 border-b-card -mb-0.5" : "text-ink-soft hover:bg-paper-deep/50 hover:text-ink"
     }`;
 
-  const onDrop = (e: React.DragEvent): void => {
-    const id = e.dataTransfer.getData(DRAG_MIME);
-    if (id) {
-      e.preventDefault();
-      onMoveTab(id, paneIndex);
-      return;
-    }
-    // §7 round 23: no payload in the drag means it came from another window —
-    // the OS drag carries no custom MIME type, so main is asked for it.
-    if (foreignDragActive) {
-      e.preventDefault();
-      onForeignDrop(paneIndex);
-    }
-  };
-
   const [dropHover, setDropHover] = useState(false);
   // §7 round 12: right-click → Rename. Same shape as the file tree's menu (the
   // app's only other one): coords + a full-screen catcher that closes on click
@@ -171,7 +163,7 @@ export function TabStrip({
         }
       }}
       onDragLeave={() => setDropHover(false)}
-      onDrop={(e) => { setDropHover(false); onDrop(e); }}
+      onDrop={(e) => { setDropHover(false); onTabDrop(e, paneIndex); }}
     >
       {/* Sized to its tabs, NOT flex-1: the `+` belongs immediately after the last
           tab, and a growing strip would push it to the far edge. `min-w-0` still
@@ -354,14 +346,32 @@ export function TabStrip({
               disabled={!canMoveToWindow(menu.tab)}
               onMouseDown={(e) => {
                 e.preventDefault();
-                onMoveToWindow(menu.tab);
+                onMoveToWindow(menu.tab, "new");
                 setMenu(null);
               }}
               className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent"
-              title={canMoveToWindow(menu.tab) ? undefined : "A browser pane cannot move between windows yet"}
             >
               Move to new window
             </button>
+            {/* §7 round 23: moving to an ALREADY-OPEN window. The drag is the
+                nicer gesture and it is still there, but it cannot be the only
+                route — whether macOS hands a DOM drop to a second Electron
+                window is not something this app gets to promise. */}
+            {otherWindows.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                disabled={!canMoveToWindow(menu.tab)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onMoveToWindow(menu.tab, w.id);
+                  setMenu(null);
+                }}
+                className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent"
+              >
+                Move to {w.label}
+              </button>
+            ))}
           </div>
         </>
       )}

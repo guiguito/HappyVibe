@@ -89,6 +89,25 @@ ipcMain.on('hv:window-boot', (e) => {
 })
 
 /**
+ * §7 round 23 — the other windows a tab can be sent to, by NAME.
+ *
+ * This is the route that does not depend on a drag at all. Whether macOS
+ * delivers a DOM drop across two Electron windows is not something the app can
+ * promise, so "move this tab to that window" must be reachable without one.
+ * Ordinals, because a window has no title of its own; primary is Window 1.
+ */
+function windowList(): Array<{ id: number; label: string }> {
+  return windows.all().map((w, i) => ({ id: w.id, label: `Window ${i + 1}` }))
+}
+
+ipcMain.handle('hv:list-windows', () => windowList())
+
+/** Every window's menu has to change when the SET of windows does. */
+export function windowsChanged(): void {
+  windows.broadcast('hv:windows-changed', windowList())
+}
+
+/**
  * §7 round 23 — the drag in flight, parked where BOTH windows can reach it.
  *
  * A DOM drag's `dataTransfer` does not reliably survive a hop between two
@@ -204,10 +223,13 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
   })
 
   windows.add(win, record)
-
+  // The list is broadcast on SHOW rather than here: at this point the new
+  // window's own renderer does not exist yet, and it fetches the list itself.
   win.on('ready-to-show', () => {
     win.show()
+    windowsChanged()
   })
+  win.on('closed', () => windowsChanged())
 
   // Bounds ride the window's own record, so a relaunch puts it back where the
   // user left it — never persisted before round 23.
