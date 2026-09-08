@@ -489,6 +489,14 @@ describe("the session list is ordered by LAST USED, and the workspace on screen 
     expect(IPC.slice(i, i + 300)).toContain("index.touch(sessionId)");
   });
 
+  it("a failed window lookup is SURFACED, never swallowed", () => {
+    // It removes UI when it fails: an empty list means the tab menu offers only
+    // "Move to new window", with no hint that moving to an open window exists.
+    // A stale main process (the handler lives in main, so ⌘R does not reload
+    // it) looked exactly like the feature being broken.
+    expect(APP).toContain("window.hv.listWindows().then(setAllWindows).catch(surface)");
+  });
+
   it("the sidebar is told which workspace is on screen, in BOTH modes", () => {
     expect(SIDEBAR).toContain("activeWs: string | null;");
     expect(APP).toMatch(/<Sidebar[\s\S]{0,120}activeWs=\{wsId\}/);

@@ -400,7 +400,21 @@ export default function App(): React.JSX.Element {
     const offDragActive = window.hv.onDragActive(setForeignDrag);
     // Fetched once (this window may have opened after the last broadcast) and
     // then kept current as windows open and close.
-    void window.hv.listWindows().then(setAllWindows).catch(() => {});
+    /**
+     * NOT swallowed, and that is the point.
+     *
+     * This is a CAPABILITY lookup whose failure silently removes UI: with an
+     * empty list the tab menu offers only "Move to new window", so moving a tab
+     * to a window you already have simply is not on offer and nothing says why.
+     * That is exactly what a STALE MAIN PROCESS looks like — `hv:list-windows`
+     * lives in main, and main-side changes need a dev-server restart, where a
+     * ⌘R reload re-runs only the renderer. Reported as "I can't move a terminal
+     * between windows"; the answer was in an error nobody was shown.
+     *
+     * A write that fails (setWindowUi, setWindowTabs) is still swallowed on
+     * purpose — losing the last chrome tweak costs a collapsed sidebar.
+     */
+    void window.hv.listWindows().then(setAllWindows).catch(surface);
     const offWindows = window.hv.onWindowsChanged(setAllWindows);
     // Another window took the tab we were dragging — let go of it here. Same
     // detach as the menu route, so a moved terminal keeps its PTY.
