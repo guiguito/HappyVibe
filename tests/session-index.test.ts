@@ -172,3 +172,22 @@ test("deleteSessionFile NEVER deletes outside the session dir (confinement)", ()
   deleteSessionFile(sessions, evilFile);
   expect(fs.existsSync(evilFile)).toBe(true);
 });
+
+test("touch sets lastUsedAt and leaves updatedAt alone", async () => {
+  // `update()` stamps updatedAt on every call, so touching through it would drag
+  // the two meanings back together: every open would also read as a metadata
+  // change, and auto-hibernation — which picks the LEAST recently used session
+  // — would keep looking like use.
+  const index = new SessionIndex(file());
+  const meta = index.create("/tmp/ws");
+  expect(meta.lastUsedAt).toBeUndefined();
+  const before = meta.updatedAt;
+  await new Promise((r) => setTimeout(r, 5));
+
+  const touched = index.touch(meta.id)!;
+  expect(touched.lastUsedAt).toBeTruthy();
+  expect(touched.updatedAt).toBe(before);
+  expect(new SessionIndex(file()).get(meta.id)!.lastUsedAt).toBe(touched.lastUsedAt);
+
+  expect(index.touch("nope")).toBeUndefined();
+});

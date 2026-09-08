@@ -21,7 +21,7 @@ import {
   childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
-  getTerminalSettings, setTerminalSettings, getLayout, setLayout,
+  getTerminalSettings, setTerminalSettings,
   getVoiceSettings, setVoiceSettings,
   getWebService, setWebService, resolveWebServiceForCall,
   getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
@@ -117,8 +117,11 @@ import { authenticate, logout } from "./mcpOAuth";
 import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 import { hasNodeRuntime } from "./nodePreflight";
-import { isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
+import { BLOCKING_UI_METHODS, isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
+import type { WindowRegistry } from "./windows";
+import type { WindowRecord } from "./windowLayout";
+import { promptWindowFor } from "./promptRouting";
 
 /**
  * One provider's auth status, as the bridge's `/hv-auth-status` reports it
@@ -489,13 +492,35 @@ function parsePlanWrite(r: { method?: string; title?: string }): { plan: string 
   }
 }
 
-export function registerIpc(win: BrowserWindow): void {
-  // Guard every renderer push: on quit a Pi child can flush a final event after
-  // the window/webContents is destroyed — sending then throws "Object has been
-  // destroyed". Drop those late sends instead of crashing.
-  const send = (channel: string, payload?: unknown): void => {
-    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-    win.webContents.send(channel, payload);
+export function registerIpc(
+  windows: WindowRegistry<BrowserWindow>,
+  /** index.ts owns the layout file (it owns the registry); passed in rather than
+      imported so ipc.ts and index.ts do not form a cycle. */
+  persistLayout: () => void,
+): void {
+  /**
+   * §7 round 23 — ONE push helper, and it fans out to every window.
+   *
+   * Every window runs the same deterministic reducer over the same stream and
+   * renders only the sessions whose tabs it holds, so a broadcast cannot show
+   * one transcript twice ("a tab lives in exactly one window"). The registry
+   * still guards each send: on quit a Pi child can flush a final event after a
+   * webContents is destroyed, and sending then throws.
+   */
+  const send = (channel: string, payload?: unknown): void => windows.broadcast(channel, payload);
+  /**
+   * The window an ipc call came from. A modal dialog must parent on it — before
+   * round 23 all seven parented on the one captured window, which in a second
+   * window would put the sheet on somebody else's title bar.
+   */
+  const ownerOf = (e: { sender: { id: number } }): BrowserWindow => {
+    const w = windows.bySender(e.sender) ?? windows.primary();
+    // Unreachable: the event itself proves a live renderer, whose window is
+    // either still registered or outlived by another. Non-null so a dialog can
+    // parent unconditionally; a throw here rejects the invoke, which every
+    // caller already handles, rather than parenting a sheet on nothing.
+    if (!w) throw new Error("no window to parent a dialog on");
+    return w;
   };
   // §27: whole-state voice snapshots, same broadcast shape as
   // hv:mcp-status-changed. The facade already throttles to ~4 Hz — a 652 MB
@@ -546,7 +571,6 @@ export function registerIpc(win: BrowserWindow): void {
   // here — the egress gate lives on the partition (browsers.ts), not on the
   // tool call, because JS inside the page can navigate without any tool.
   const browsers = new BrowserManager(
-    win,
     (info) => send("hv:browser-state", info),
     (id, req) => {
       // Deliberately NOT one EventLog entry per subresource: a single page load
@@ -965,6 +989,66 @@ export function registerIpc(win: BrowserWindow): void {
   // Which client owns a pending extension_ui_request id (permission modal, auth flows).
   const UTILITY = "__utility__";
   const uiOwners = new Map<string, string>();
+  /**
+   * §7 round 23 — name the ONE window that should show this prompt.
+   *
+   * Round 21 put a session's dialog inside that session's pane; this says whose
+   * pane. Stamped on every `hv:ui-request`, but only the two MODAL kinds
+   * (permission, ask_user) are gated on it in the renderer — a notify draws a
+   * transcript card, and every window keeps every session's transcript so that
+   * moving a tab later finds the history already there.
+   */
+  const stampPrompt = <T extends { sessionId?: string }>(r: T): T & { promptWindowId?: number } => {
+    const id = promptWindowFor(
+      r.sessionId === UTILITY ? undefined : r.sessionId,
+      (sid) => windows.holderOf(sid),
+      BrowserWindow.getFocusedWindow()?.id ?? null,
+      windows.primary()?.id ?? null,
+    );
+    return id === null ? r : { ...r, promptWindowId: id };
+  };
+  /**
+   * How many prompts each session is waiting on — computed in MAIN because it is
+   * the only place that knows all of them. A renderer counting its own queue
+   * would report only the prompts it was chosen to show, so the OTHER window's
+   * sidebar would claim nothing is pending.
+   */
+  const pendingPrompts = new Map<string, string>();
+  const pendingChanged = (): void => {
+    const counts: Record<string, number> = {};
+    for (const sid of pendingPrompts.values()) if (sid !== UTILITY) counts[sid] = (counts[sid] ?? 0) + 1;
+    send("hv:pending-changed", counts);
+  };
+  /**
+   * BLOCKING ones only, and that is the whole point of a second map.
+   *
+   * `uiOwners` holds EVERY ui-request, notifies included — and a notify is
+   * fire-and-forget, so nothing ever deletes it. Counting that map made the
+   * sidebar's attention count climb with every transcript card a session ever
+   * drew, and kept counting sessions that had been deleted. The renderer's old
+   * count could not have this bug: its queue only ever held parsed modals.
+   */
+  const notePending = (id: string, sessionId: string, method?: string): void => {
+    if (!method || !BLOCKING_UI_METHODS.has(method)) return;
+    pendingPrompts.set(id, sessionId);
+    pendingChanged();
+  };
+  const clearPending = (id: string): void => {
+    if (pendingPrompts.delete(id)) pendingChanged();
+  };
+  /**
+   * What each window currently shows, declared by its own renderer on every
+   * layout change. Main never derives this from a tab id.
+   */
+  ipcMain.on("hv:window-holds", (e, h: { sessions: string[]; terminals: string[]; browsers: string[] }) => {
+    const w = windows.bySender(e.sender);
+    if (!w) return;
+    windows.setHolds(w.id, {
+      sessions: Array.isArray(h?.sessions) ? h.sessions : [],
+      terminals: Array.isArray(h?.terminals) ? h.terminals : [],
+      browsers: Array.isArray(h?.browsers) ? h.browsers : [],
+    });
+  });
   const clientFor = (owner: string | undefined): PiClient | null =>
     owner === UTILITY ? utility : owner ? (manager.get(owner) as PiClient | null) : null;
 
@@ -1006,7 +1090,8 @@ export function registerIpc(win: BrowserWindow): void {
         return;
       }
       uiOwners.set(r.id, UTILITY);
-      send("hv:ui-request", { ...r, sessionId: UTILITY });
+      notePending(r.id, UTILITY, r.method);
+      send("hv:ui-request", stampPrompt({ ...r, sessionId: UTILITY }));
       // Auth landed/left → the model list changed (OAuth results only flow as
       // hv.auth ui-requests, so this is where main learns about them).
       try {
@@ -1494,7 +1579,7 @@ export function registerIpc(win: BrowserWindow): void {
       const skill = parseSkillNotify(r);
       if (skill) {
         void log.append({ type: "skill.invoked", sessionId, workspaceId: meta?.workspaceId, data: skill });
-        send("hv:ui-request", { ...r, sessionId });
+        send("hv:ui-request", stampPrompt({ ...r, sessionId }));
         return;
       }
       // §24: a prompt template expanded. Log {typed, sha256(expanded)} — the
@@ -1515,7 +1600,7 @@ export function registerIpc(win: BrowserWindow): void {
           workspaceId: meta?.workspaceId,
           data: { sessionId, typed, expandedHash: expandedHash(command.expanded) },
         });
-        send("hv:ui-request", { ...r, message: promptTemplateNotifyMessage(command, typed), sessionId });
+        send("hv:ui-request", stampPrompt({ ...r, message: promptTemplateNotifyMessage(command, typed), sessionId }));
         return;
       }
       // Async subagents: lifecycle relays drive activity gating (a live async run
@@ -1602,7 +1687,7 @@ export function registerIpc(win: BrowserWindow): void {
         } else if (sub.stage === "interrupt-sent" && sub.runId) {
           void log.append({ type: "subagent.interrupt", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId } });
         }
-        send("hv:ui-request", { ...r, sessionId });
+        send("hv:ui-request", stampPrompt({ ...r, sessionId }));
         return;
       }
       // §26 part 2: the blocking terminal inputs. Main ALWAYS respondUi — a
@@ -1618,12 +1703,12 @@ export function registerIpc(win: BrowserWindow): void {
           // `message` (a blocking input uses `title`) — the renderer's parsers
           // all read `message`, so this must too.
           const notify = (payload: Record<string, unknown>): void =>
-            send("hv:ui-request", {
+            send("hv:ui-request", stampPrompt({
               id: `hv-term-${Date.now()}`,
               method: "notify",
               message: JSON.stringify({ kind: "hv.terminal", ...payload }),
               sessionId,
-            });
+            }));
           try {
             const wsId = meta?.workspaceId;
             if (!wsId) throw new Error("No workspace for this session");
@@ -1707,14 +1792,14 @@ export function registerIpc(win: BrowserWindow): void {
             });
           }, BROWSER_OP_TIMEOUT_MS);
           const notify = (payload: Record<string, unknown>): void =>
-            send("hv:ui-request", {
+            send("hv:ui-request", stampPrompt({
               id: `hv-browser-${Date.now()}`,
               method: "notify",
               // A notify's payload rides `message` (a blocking input uses
               // `title`). Every renderer parser reads `message`, so this must.
               message: JSON.stringify({ kind: "hv.browser", ...payload }),
               sessionId,
-            });
+            }));
           try {
             const wsId = meta?.workspaceId;
             if (!wsId) throw new Error("No workspace for this session");
@@ -2159,7 +2244,7 @@ export function registerIpc(win: BrowserWindow): void {
         } else if (planN.kind === "hv.plan.blocked") {
           void log.append({ type: "plan.blocked", sessionId, workspaceId: wsId, data: { toolName: planN.toolName } });
         }
-        send("hv:ui-request", { ...r, sessionId });
+        send("hv:ui-request", stampPrompt({ ...r, sessionId }));
         return;
       }
       // Nothing above recognised it. If it BLOCKS the extension and carries no
@@ -2179,9 +2264,10 @@ export function registerIpc(win: BrowserWindow): void {
         return;
       }
       uiOwners.set(r.id, sessionId);
+      notePending(r.id, sessionId, r.method);
       // W1.3: an unanswered permission prompt protects the session from hibernation.
       if (isPermissionPrompt(r)) activity.promptOpened(sessionId);
-      send("hv:ui-request", { ...r, sessionId });
+      send("hv:ui-request", stampPrompt({ ...r, sessionId }));
     });
   };
 
@@ -2378,6 +2464,11 @@ export function registerIpc(win: BrowserWindow): void {
         data: { code, ...(stderr ? { stderr } : {}) },
       });
     }
+    // §7 round 23: a crashed or closed session must not leave a phantom count
+    // in every window's sidebar — the renderer does the same with dropSession.
+    let dropped = false;
+    for (const [id, owner] of pendingPrompts) if (owner === sessionId) { pendingPrompts.delete(id); dropped = true; }
+    if (dropped) pendingChanged();
     send("hv:pi-exit", { sessionId, code, intentional, stderr });
   });
 
@@ -2534,8 +2625,8 @@ export function registerIpc(win: BrowserWindow): void {
     workspaces.add(dir);
     return dir;
   });
-  ipcMain.handle("hv:add-workspace", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
+  ipcMain.handle("hv:add-workspace", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"] });
     if (r.canceled || !r.filePaths[0]) return null;
     workspaces.add(r.filePaths[0]);
     return r.filePaths[0];
@@ -2596,6 +2687,18 @@ export function registerIpc(win: BrowserWindow): void {
     }
     sessionsChanged();
     return meta;
+  });
+
+  /**
+   * The user went to this session — order it first in the sidebar.
+   *
+   * Deliberately NOT folded into `hv:open-session`, which the renderer also
+   * calls when it hydrates the chats that are already on screen at boot and on
+   * tab mount. Bumping there would re-stamp a handful of sessions at every
+   * launch and quietly destroy the ordering; only a real open touches.
+   */
+  ipcMain.on("hv:touch-session", (_e, sessionId: string) => {
+    if (index.touch(sessionId)) sessionsChanged();
   });
 
   ipcMain.handle(
@@ -2903,6 +3006,10 @@ export function registerIpc(win: BrowserWindow): void {
       client = await startClient(meta, !!meta.piSessionFile);
     }
     activity.prompted(sessionId);
+    // The sidebar orders by last use, and prompting IS use. `touch` rather than
+    // `update` so `updatedAt` keeps meaning "metadata changed" — see store.ts.
+    index.touch(sessionId);
+    sessionsChanged();
     if (meta?.titleSource === "fallback" && !firstPrompt.has(sessionId) && meta.title === "New session") {
       firstPrompt.set(sessionId, msg);
       index.update(sessionId, { title: truncateTitle(msg) }); // fallback until generation lands
@@ -3265,6 +3372,10 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.on("hv:respond-permission", (_e, id: string, choice: string) => {
     const owner = uiOwners.get(id);
     uiOwners.delete(id);
+    // §7 round 23: only one window was shown this prompt, but the others are
+    // counting it. Tell them all it is answered, then re-publish the counts.
+    send("hv:ui-resolved", { id });
+    clearPending(id);
     if (owner && owner !== UTILITY) {
       activity.promptClosed(owner);
       drainPendingReload(owner); // prompt closed → session may be idle now
@@ -3277,6 +3388,8 @@ export function registerIpc(win: BrowserWindow): void {
   ipcMain.on("hv:respond-input", (_e, id: string, value: string | null) => {
     const owner = uiOwners.get(id);
     uiOwners.delete(id);
+    send("hv:ui-resolved", { id });
+    clearPending(id);
     clientFor(owner)?.respondUi(id, value === null ? { cancelled: true } : { value });
   });
 
@@ -3464,13 +3577,17 @@ export function registerIpc(win: BrowserWindow): void {
   // main moves the view. `hv:browser-visible false` is also what makes the
   // permission modal win — BrowserTab hides the view whenever an overlay is up.
   ipcMain.handle("hv:browser-create", (_e, workspaceId: string) => browsers.create(workspaceId));
-  ipcMain.handle("hv:browser-bounds", (_e, id: string, b: { x: number; y: number; width: number; height: number }) => {
+  ipcMain.handle("hv:browser-bounds", (e, id: string, b: { x: number; y: number; width: number; height: number }) => {
     // Round to whole device pixels: a fractional bound leaves a hairline of the
     // renderer showing through at the seam.
+    //
+    // §7 round 23: the SENDER's window owns the pane from here on — a moved tab
+    // re-parents on its new window's first bounds report, so there is no
+    // separate move message that could disagree about where the page belongs.
     browsers.setBounds(id, {
       x: Math.round(b.x), y: Math.round(b.y),
       width: Math.max(0, Math.round(b.width)), height: Math.max(0, Math.round(b.height)),
-    });
+    }, ownerOf(e));
   });
   ipcMain.handle("hv:browser-visible", (_e, id: string, visible: boolean) => browsers.setVisible(id, visible));
   // origin "user": typing a URL IS consent (§28) — no prompt, still logged.
@@ -3684,10 +3801,45 @@ export function registerIpc(win: BrowserWindow): void {
     return voiceHost.transcribe(samples);
   });
 
-  // §26: the tab layout, stored opaquely — the renderer validates and prunes
-  // it on restore (layoutPersist.ts), so main never learns what a tab is.
-  ipcMain.handle("hv:get-layout", () => getLayout());
-  ipcMain.handle("hv:set-layout", (_e, l: Record<string, unknown>) => setLayout(l ?? {}));
+  // §26/§7 round 23: the tab layout and the per-window chrome, stored opaquely
+  // — the renderer validates and prunes on restore (layoutPersist.ts), so main
+  // still never learns what a tab is. What changed is the ADDRESSEE: each
+  // window writes only its own record, because one shared record meant two
+  // windows last-write-wins over each other's tabs. Reading is not a handler at
+  // all any more — a window is handed its record at boot (index.ts).
+  ipcMain.handle("hv:set-window-tabs", (e, tabsByWs: Record<string, unknown>) => {
+    const w = windows.bySender(e.sender);
+    if (!w) return;
+    const rec = windows.record(w.id) as WindowRecord;
+    windows.setRecord(w.id, { ...rec, tabsByWs: tabsByWs ?? {} });
+    persistLayout();
+  });
+  ipcMain.handle("hv:set-window-ui", (e, ui: Record<string, string>) => {
+    const w = windows.bySender(e.sender);
+    if (!w) return;
+    const rec = windows.record(w.id) as WindowRecord;
+    windows.setRecord(w.id, { ...rec, ui: ui ?? {} });
+    persistLayout();
+  });
+  /**
+   * §7 round 23 — closing a window closes its tabs, exactly as ⌘W on each would.
+   *
+   * A SESSION keeps running (round 11: tab lifecycle and session lifecycle are
+   * separate, and hibernation still owns when a Pi stops). A TERMINAL dies with
+   * its tab, as §26 decided — unless the agent has claimed it, because that one
+   * is not the human's tab to close and killing it would fail the turn reading
+   * from it. A BROWSER pane is destroyed, as §28 decided: nothing is running
+   * and nothing is unsaved.
+   *
+   * And the record must leave the file, or the next launch reopens a phantom
+   * window holding tabs the user closed. `records()` already excludes it — this
+   * is what makes something write the file at that moment.
+   */
+  windows.setOnClosed((_id, _record, holds) => {
+    for (const t of holds.terminals) if (!agentTerminals.isClaimed(t)) terminals.kill(t);
+    for (const b of holds.browsers) browsers.destroy(b);
+    persistLayout();
+  });
 
   // Read-only display of a built-in tool's prompt body (§13 round 6) — the UI
   // shows this verbatim and offers only an append, never an override.
@@ -3811,9 +3963,20 @@ export function registerIpc(win: BrowserWindow): void {
   // case rather than treating it as "all of it is new".
 
   // macOS dock badge = total pending permission prompts (renderer-computed).
-  ipcMain.on("hv:set-badge-count", (_e, n: number) => {
+  /**
+   * §7 round 23: the dock badge is ONE number for the whole app, so it is a SUM
+   * over windows. Each renderer reports its own queue length; letting them each
+   * call setBadgeCount directly meant the last writer won and the badge showed
+   * one window's count as if it were everything.
+   */
+  const badgeByWindow = new Map<number, number>();
+  ipcMain.on("hv:set-badge-count", (e, n: number) => {
+    const w = windows.bySender(e.sender);
+    if (w) badgeByWindow.set(w.id, Number.isInteger(n) && n > 0 ? n : 0);
+    let total = 0;
+    for (const win of windows.all()) total += badgeByWindow.get(win.id) ?? 0;
     try {
-      app.setBadgeCount(Number.isInteger(n) && n > 0 ? n : 0);
+      app.setBadgeCount(total);
     } catch {
       /* not supported on this platform */
     }
@@ -4108,8 +4271,8 @@ export function registerIpc(win: BrowserWindow): void {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".gif": "image/gif", ".webp": "image/webp",
   };
-  ipcMain.handle("hv:pick-image", async () => {
-    const r = await dialog.showOpenDialog(win, {
+  ipcMain.handle("hv:pick-image", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), {
       properties: ["openFile"],
       filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
     });
@@ -4129,8 +4292,8 @@ export function registerIpc(win: BrowserWindow): void {
   //
   // It also means picking and dropping take the SAME second step, rather than
   // one path that converts in the dialog handler and one that does not.
-  ipcMain.handle("hv:pick-document", async () => {
-    const r = await dialog.showOpenDialog(win, {
+  ipcMain.handle("hv:pick-document", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), {
       properties: ["openFile", "multiSelections"],
       filters: [{ name: "Documents", extensions: [...DOCUMENT_EXTENSIONS] }],
     });
@@ -5071,8 +5234,8 @@ export function registerIpc(win: BrowserWindow): void {
     skillsChanged();
     scheduleSkillReload("global", null);
   });
-  ipcMain.handle("hv:skills-add-linked", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Link a skills directory" });
+  ipcMain.handle("hv:skills-add-linked", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Link a skills directory" });
     if (r.canceled || !r.filePaths[0]) return getLinkedSkillDirs();
     setLinkedSkillDirs([...getLinkedSkillDirs(), r.filePaths[0]]);
     skillsChanged();
@@ -5101,8 +5264,8 @@ export function registerIpc(win: BrowserWindow): void {
   };
   app.on("will-quit", () => { for (const s of importSessions.values()) s.cleanup?.(); });
 
-  ipcMain.handle("hv:skills-import-local", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Import a skill folder (or a folder of skills)" });
+  ipcMain.handle("hv:skills-import-local", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Import a skill folder (or a folder of skills)" });
     if (r.canceled || !r.filePaths[0]) return null;
     const picked = r.filePaths[0];
     const found = scanSkillsDir(picked, "managed");
@@ -5453,12 +5616,12 @@ export function registerIpc(win: BrowserWindow): void {
     promptTemplatesChanged();
     schedulePromptTemplateReload("global", null);
   });
-  ipcMain.handle("hv:prompt-templates-add-linked", async (_e, dir?: string) => {
+  ipcMain.handle("hv:prompt-templates-add-linked", async (e, dir?: string) => {
     // An explicit dir comes from a caller that already knows the path; no arg
     // opens the picker. Linked dirs are referenced in place, never copied.
     let picked = typeof dir === "string" && dir.trim() ? dir : null;
     if (!picked) {
-      const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Link a prompts directory" });
+      const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Link a prompts directory" });
       if (r.canceled || !r.filePaths[0]) return getLinkedPromptTemplateDirs();
       picked = r.filePaths[0];
     }
@@ -5504,8 +5667,8 @@ export function registerIpc(win: BrowserWindow): void {
   };
   app.on("will-quit", () => { for (const s of promptTemplateImports.values()) s.cleanup?.(); });
 
-  ipcMain.handle("hv:prompt-templates-import-local", async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"], title: "Import prompts from a folder" });
+  ipcMain.handle("hv:prompt-templates-import-local", async (e) => {
+    const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"], title: "Import prompts from a folder" });
     if (r.canceled || !r.filePaths[0]) return null;
     const found = scanImportRoot(r.filePaths[0]);
     if (found.length === 0) return { token: null, templates: [], error: "No .md prompts found in that folder." };

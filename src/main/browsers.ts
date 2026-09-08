@@ -51,6 +51,19 @@ export interface BrowserInfo {
 interface Entry {
   info: BrowserInfo;
   view: WebContentsView;
+  /**
+   * §7 round 23: a WebContentsView is attached to exactly ONE window's
+   * contentView, so a pane that moves has to be RE-PARENTED. This is the window
+   * it is currently in, and `null` until something draws it.
+   *
+   * ATTACHING IS `setBounds`'s JOB, not `create`'s, and that is what makes a
+   * moved tab work with no move message: the renderer that measures the
+   * placeholder is by definition the window the pane is in, so the pane follows
+   * the drawing without anybody having to tell it. It also means `create` needs
+   * no window — including for a pane the AGENT opens, which no renderer has
+   * asked for yet.
+   */
+  win: BrowserWindow | null;
   egress: EgressState;
   console: Array<{ level: string; text: string }>;
   /** The URL a blocked navigation wanted, kept so "Allow" can retry it. */
@@ -76,7 +89,6 @@ export class BrowserManager {
   private readonly byWebContentsId = new Map<number, Entry>();
 
   constructor(
-    private readonly win: BrowserWindow,
     private readonly onState: (info: BrowserInfo) => void,
     /** Fired for every request the guest makes — main audits these. */
     private readonly onRequest: (id: string, req: NetRequest) => void,
@@ -113,6 +125,7 @@ export class BrowserManager {
       console: [],
       approvedNav: new Set(),
       lastVisibleAt: Date.now(),
+      win: null,
     };
     this.entries.set(id, entry);
     this.byWebContentsId.set(view.webContents.id, entry);
@@ -121,7 +134,8 @@ export class BrowserManager {
     // flashes at 0,0 over the sidebar for a frame.
     view.setVisible(false);
     view.setBackgroundColor("#ffffff");
-    this.win.contentView.addChildView(view);
+    // Deliberately NOT attached to a window here — see Entry.win. An unattached
+    // view still loads and navigates; it is simply not composited yet.
 
     this.wireGuest(entry);
     this.installEgress();
@@ -452,8 +466,25 @@ export class BrowserManager {
     void entry.view.webContents.executeJavaScript(PICKER_CANCEL_SCRIPT, true).catch(() => {});
   }
 
-  setBounds(id: string, bounds: Rectangle): void {
-    this.entries.get(id)?.view.setBounds(bounds);
+  /**
+   * §7 round 23: the reporting window OWNS the pane. Re-parenting here rather
+   * than in a `move` API is deliberate — the renderer that measures the
+   * placeholder is the one the pane is in, so a moved tab needs no second
+   * message and cannot disagree with itself about where the page belongs.
+   */
+  setBounds(id: string, bounds: Rectangle, win: BrowserWindow): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    if (entry.win !== win) {
+      try {
+        entry.win?.contentView.removeChildView(entry.view);
+      } catch {
+        /* the old window is already gone — adding to the new one is all that matters */
+      }
+      win.contentView.addChildView(entry.view);
+      entry.win = win;
+    }
+    entry.view.setBounds(bounds);
   }
 
   setVisible(id: string, visible: boolean): void {
@@ -486,7 +517,7 @@ export class BrowserManager {
     this.byWebContentsId.delete(entry.view.webContents.id);
     this.entries.delete(id);
     try {
-      this.win.contentView.removeChildView(entry.view);
+      entry.win?.contentView.removeChildView(entry.view);
       entry.view.webContents.close();
     } catch {
       /* the window is already going away */

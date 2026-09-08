@@ -23,6 +23,50 @@ import { basename, browserOf, sessionOf, terminalOf, type Pane, type TabId } fro
  */
 const DRAG_MIME = "application/x-hv-tabid";
 
+/**
+ * §7 round 23 — one row style for the tab menu.
+ *
+ * Reported as "too large and lacking icons": it was `text-sm` with `py-1.5` and
+ * three bare strings, which at three items read as a dialog rather than a
+ * context menu. Tighter type, tighter rows, and a glyph per row so the eye can
+ * tell them apart without reading.
+ */
+const menuItem =
+  "w-full flex items-center gap-2 text-left px-3 py-1 hover:bg-paper-deep/40 cursor-pointer " +
+  "disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent";
+
+/** The app's icon idiom: 24-box, stroked, sized by the caller's row. */
+const glyph = "size-3.5 shrink-0 text-ink-soft";
+
+function PencilGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className={glyph} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 20h4L20 8a2.8 2.8 0 0 0-4-4L4 16z" />
+    </svg>
+  );
+}
+
+/** A window with a plus: the tab lands somewhere that does not exist yet. */
+function NewWindowGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className={glyph} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M13 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8" />
+      <path d="M17 3v6M14 6h6" />
+    </svg>
+  );
+}
+
+/** A window with an arrow going into it: an existing one. */
+function WindowGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className={glyph} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="4" y="4" width="16" height="16" rx="1" />
+      <path d="M4 9h16" />
+      <path d="M9 15h6m0 0-2-2m2 2-2 2" />
+    </svg>
+  );
+}
+
 export function TabStrip({
   pane,
   paneIndex,
@@ -34,7 +78,7 @@ export function TabStrip({
   busyFor,
   onSelect,
   onClose,
-  onMoveTab,
+  onTabDrop,
   onNewSession,
   newSessionKey,
   onNewTerminal,
@@ -47,6 +91,11 @@ export function TabStrip({
   onClosePane,
   trailing,
   onRename,
+  onMoveToWindow,
+  canMoveToWindow,
+  otherWindows,
+  onDragBegin,
+  onDragEnd,
 }: {
   pane: Pane;
   /** Slot index in the 2×2 grid (0–3). */
@@ -73,7 +122,23 @@ export function TabStrip({
    * filename, and renaming the file is the tree's job.
    */
   onRename: (tab: TabId, title: string) => void;
-  onMoveTab: (tab: TabId, toPane: number) => void;
+  /** §7 round 23: hand this tab to a brand-new window, or to a named one. */
+  onMoveToWindow: (tab: TabId, target: "new" | number) => void;
+  /** The OTHER windows, so moving between two open ones needs no drag. */
+  otherWindows: Array<{ id: number; label: string }>;
+  /** False while a kind cannot live in a second window yet (browser, stage 3). */
+  canMoveToWindow: (tab: TabId) => boolean;
+  /** §7 round 23: a drag starts/ends — the payload is parked in main. */
+  onDragBegin: (tab: TabId) => void;
+  onDragEnd: (tab: TabId, at: { x: number; y: number }, dropped: boolean) => void;
+  /** A drop whose payload came from ANOTHER window. */
+
+  /**
+   * §7 round 23: ONE handler for every tab drop, shared with the empty pane —
+   * "is this my own drag or another window's" is a single decision and had
+   * started being answered in two places.
+   */
+  onTabDrop: (e: React.DragEvent, toPane: number) => void;
   /** Round 11: the trailing `+` — fill this pane without leaving it. */
   onNewSession: () => void;
   /** Shown beside "New session" in the `+` menu, as ⌘T is beside New terminal. */
@@ -111,14 +176,6 @@ export function TabStrip({
       active ? "bg-card font-bold border-b-2 border-b-card -mb-0.5" : "text-ink-soft hover:bg-paper-deep/50 hover:text-ink"
     }`;
 
-  const onDrop = (e: React.DragEvent): void => {
-    const id = e.dataTransfer.getData(DRAG_MIME);
-    if (id) {
-      e.preventDefault();
-      onMoveTab(id, paneIndex);
-    }
-  };
-
   const [dropHover, setDropHover] = useState(false);
   // §7 round 12: right-click → Rename. Same shape as the file tree's menu (the
   // app's only other one): coords + a full-screen catcher that closes on click
@@ -133,13 +190,42 @@ export function TabStrip({
     if (t) onRename(editing.tab, t);
   };
 
+  /**
+   * §7 round 23 — only a chat or a terminal has a title of its OWN to change.
+   * A file tab's title is its filename (renaming it is the tree's job) and a
+   * browser tab's is the page's. Shared by the menu's Rename… and by the
+   * double-click below, so "which tabs can be renamed" is answered once.
+   */
+  const renameable = (t: TabId): boolean => sessionOf(t) !== null || terminalOf(t) !== null;
+
+  const startRename = (t: TabId): void => {
+    // Already editing THIS tab: a double-click inside the input is a user
+    // selecting a word, and re-seeding the draft would throw away what they
+    // have typed.
+    if (editing?.tab === t) return;
+    const sid = sessionOf(t);
+    const tid = terminalOf(t);
+    if (sid === null && tid === null) return;
+    setEditing({ tab: t, draft: sid ? sessionTitleFor(sid) : tid ? terminalTitleFor(tid) : "" });
+  };
+
   return (
     <div
       className={`flex items-stretch border-b-2 border-line shrink-0 h-full ${dropHover ? "bg-honey-soft" : "bg-paper"}`}
       role="tablist"
-      onDragOver={(e) => { if (e.dataTransfer.types.includes(DRAG_MIME)) { e.preventDefault(); setDropHover(true); } }}
+      onDragOver={(e) => {
+        // A drag from another window DOES reach here, MIME and all — Chromium
+        // keeps it internal to the app — so this lights up for a foreign tab
+        // too, which is what makes the strip look like a target. The drop
+        // itself is then ignored for a tab this window does not own, and the
+        // SOURCE window's release point performs the move (App.onTabDropped).
+        if (e.dataTransfer.types.includes(DRAG_MIME)) {
+          e.preventDefault();
+          setDropHover(true);
+        }
+      }}
       onDragLeave={() => setDropHover(false)}
-      onDrop={(e) => { setDropHover(false); onDrop(e); }}
+      onDrop={(e) => { setDropHover(false); onTabDrop(e, paneIndex); }}
     >
       {/* Sized to its tabs, NOT flex-1: the `+` belongs immediately after the last
           tab, and a growing strip would push it to the far edge. `min-w-0` still
@@ -173,14 +259,26 @@ export function TabStrip({
               aria-selected={active}
               tabIndex={0}
               draggable
-              onDragStart={(e) => e.dataTransfer.setData(DRAG_MIME, id)}
+              onDragStart={(e) => {
+                // The MIME still carries the id for a SAME-window drop, which
+                // is the common case and needs no round trip. Across windows
+                // the OS drag drops custom types, so main holds the payload.
+                e.dataTransfer.setData(DRAG_MIME, id);
+                onDragBegin(id);
+              }}
+              onDragEnd={(e) => onDragEnd(id, { x: e.screenX, y: e.screenY }, e.dataTransfer.dropEffect !== "none")}
               onClick={() => onSelect(id)}
+              // The other half of the same gesture the menu offers — the idiom
+              // every tabbed app shares, and the one people reach for first.
+              onDoubleClick={() => startRename(id)}
               onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(id)}
               onAuxClick={(e) => e.button === 1 && onClose(id)}
               onContextMenu={(e) => {
-                // Only chat and terminal tabs are renameable — a file tab's
-                // title IS its filename.
-                if (!isChat && !isTerm) return;
+                // §7 round 23: EVERY tab kind opens this menu. Round 12 gated
+                // it on renameability (a file tab's title IS its filename), so
+                // when "To new window" joined it, the menu was unreachable
+                // for exactly the kind whose move matters most — a file with an
+                // unsaved buffer. Renaming is now gated per ITEM instead.
                 e.preventDefault();
                 setMenu({ tab: id, x: e.clientX, y: e.clientY });
               }}
@@ -283,24 +381,64 @@ export function TabStrip({
             }}
           />
           <div
-            className="fixed z-50 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold"
+            className="fixed z-50 min-w-44 rounded-lg border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-[13px] font-semibold"
             style={{ left: menu.x, top: menu.y }}
           >
+            {renameable(menu.tab) && (
+              <button
+                type="button"
+                onClick={() => {
+                  startRename(menu.tab);
+                  setMenu(null);
+                }}
+                className={menuItem}
+              >
+                <PencilGlyph />
+                Rename…
+              </button>
+            )}
+            {/* §7 round 23. onMouseDown + preventDefault, not onClick: pressing
+                a <button> does not focus it, and this menu's own dismissal has
+                unmounted an item between mousedown and mouseup twice before
+                (tests/tabstrip-menu.test.ts). */}
             <button
               type="button"
-              onClick={() => {
-                const sid = sessionOf(menu.tab);
-                const tid = terminalOf(menu.tab);
-                setEditing({
-                  tab: menu.tab,
-                  draft: sid ? sessionTitleFor(sid) : tid ? terminalTitleFor(tid) : "",
-                });
+              disabled={!canMoveToWindow(menu.tab)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onMoveToWindow(menu.tab, "new");
                 setMenu(null);
               }}
-              className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
+              className={menuItem}
             >
-              Rename…
+              <NewWindowGlyph />
+              To new window
             </button>
+            {/* §7 round 23: moving to an ALREADY-OPEN window. The drag is the
+                nicer gesture and it works, but it cannot be the only route —
+                this is the precise, keyboard-reachable way to say where, and it
+                names the destination instead of asking you to aim at it. */}
+            {otherWindows.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                disabled={!canMoveToWindow(menu.tab)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onMoveToWindow(menu.tab, w.id);
+                  setMenu(null);
+                }}
+                className={menuItem}
+              >
+                <WindowGlyph />
+                {/* Sentence case, like every other label in the app: "To new
+                    window" and "To window 2" are the same sentence. The verb is
+                    dropped on purpose — every row here acts on the tab that was
+                    right-clicked, the glyph says which kind of destination, and
+                    "Move to window 2" was long enough to need truncating. */}
+                To {w.label}
+              </button>
+            ))}
           </div>
         </>
       )}

@@ -27,7 +27,6 @@ import {
   parsePermission,
   parsePlan,
   parsePlanBlocked,
-  pendingCounts,
   type PermissionChoice,
   type QueuedPrompt,
 } from "./permission";
@@ -62,6 +61,7 @@ import { BrowserTab } from "./components/BrowserTab";
 import { TerminalView } from "./components/TerminalView";
 import { VoiceView } from "./components/VoiceView";
 import { restoreLayout } from "./layoutPersist";
+import { uiGet, uiSet } from "./uiStore";
 import { buildGridStyle, paneEdges, paneNeighbours, topRightSlot } from "./paneGrid";
 import { watchTargets } from "./watchTargets";
 import { FileTree } from "./components/FileTree";
@@ -103,6 +103,10 @@ export default function App(): React.JSX.Element {
   // Per-session permission prompt queues (B4): the modal shows the focused
   // session's oldest pending prompt; the rest badge the sidebar + dock.
   const [uiQueue, setUiQueue] = useState<QueuedPrompt[]>([]);
+  /** §7 round 23: prompts per session ACROSS windows — main computes it. */
+  const [pendingBySession, setPendingBySession] = useState<Record<string, number>>({});
+  /** §7 round 23: the OTHER windows, for the drag-free "Move to Window 2". */
+  const [allWindows, setAllWindows] = useState<Array<{ id: number; label: string }>>([]);
   // Sessions currently in /hv-dangerous mode (bridge-notified, never persisted).
   const [dangerous, setDangerous] = useState<Record<string, boolean>>({});
   // §23: per-session plan mode + current plan-file path (bridge-notified; SURVIVES
@@ -228,9 +232,9 @@ export default function App(): React.JSX.Element {
    * resolve: the tabs were all there, addressed to a workspace nobody was
    * looking at. Found in the GUI, not by a test — no unit could have seen it.
    */
-  const [activeWs, setActiveWs] = useState<string | null>(() => localStorage.getItem("hv:active-ws"));
+  const [activeWs, setActiveWs] = useState<string | null>(() => uiGet("hv:active-ws"));
   useEffect(() => {
-    if (activeWs) localStorage.setItem("hv:active-ws", activeWs);
+    if (activeWs) uiSet("hv:active-ws", activeWs);
   }, [activeWs]);
   /**
    * §7 round 13: ONE drawer, two panels, one at a time — the rail icon selects
@@ -240,7 +244,7 @@ export default function App(): React.JSX.Element {
    */
   const [drawerByWs, setDrawerByWs] = useState<Record<string, DrawerPanel>>(() => {
     try {
-      return JSON.parse(localStorage.getItem("hv:drawer-panel") ?? "{}") as Record<string, DrawerPanel>;
+      return JSON.parse(uiGet("hv:drawer-panel") ?? "{}") as Record<string, DrawerPanel>;
     } catch {
       return {};
     }
@@ -252,7 +256,7 @@ export default function App(): React.JSX.Element {
       const next = { ...m };
       if (panel) next[activeWs] = panel;
       else delete next[activeWs];
-      localStorage.setItem("hv:drawer-panel", JSON.stringify(next));
+      uiSet("hv:drawer-panel", JSON.stringify(next));
       return next;
     });
   };
@@ -265,15 +269,15 @@ export default function App(): React.JSX.Element {
    * made Changes feel cramped when it was a tab in the file drawer.
    */
   const [drawerWidths, setDrawerWidths] = useState<Record<DrawerPanel, number>>(() => ({
-    files: clampDrawer(Number(localStorage.getItem("hv:drawer-width:files")) || 256),
-    changes: clampDrawer(Number(localStorage.getItem("hv:drawer-width:changes")) || 340),
+    files: clampDrawer(Number(uiGet("hv:drawer-width:files")) || 256),
+    changes: clampDrawer(Number(uiGet("hv:drawer-width:changes")) || 340),
   }));
   const drawerWidth = drawerWidths[drawerPanel ?? "files"];
   const setDrawerWidth = (px: number): void => {
     const panel = drawerPanel ?? "files";
     const w = clampDrawer(px);
     setDrawerWidths((prev) => ({ ...prev, [panel]: w }));
-    localStorage.setItem(`hv:drawer-width:${panel}`, String(w));
+    uiSet(`hv:drawer-width:${panel}`, String(w));
   };
   // §29: the working tree's state for the ACTIVE workspace — a property of the
   // tree, deliberately not of any session, because several sessions can be
@@ -282,15 +286,15 @@ export default function App(): React.JSX.Element {
   const [gitAvailable, setGitAvailable] = useState(true);
   const gitSummary = useMemo(() => summarise(gitStatus?.status?.files ?? []), [gitStatus]);
   // F6: collapsible sidebar (slim icon rail); persisted across launches.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("hv:sidebar-collapsed") === "1");
-  useEffect(() => { localStorage.setItem("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => uiGet("hv:sidebar-collapsed") === "1");
+  useEffect(() => { uiSet("hv:sidebar-collapsed", sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
   // §7 round 18: ⌘K opens the sidebar's session filter. A COUNTER, not a
   // boolean — pressing it twice must re-focus the field, and a boolean already
   // true fires no effect in the sidebar.
   const [searchNonce, setSearchNonce] = useState(0);
   // Round 8: the sidebar's Settings group, open or not — persisted like the rail.
-  const [settingsOpen, setSettingsOpen] = useState(() => localStorage.getItem("hv:settings-open") === "1");
-  useEffect(() => { localStorage.setItem("hv:settings-open", settingsOpen ? "1" : "0"); }, [settingsOpen]);
+  const [settingsOpen, setSettingsOpen] = useState(() => uiGet("hv:settings-open") === "1");
+  useEffect(() => { uiSet("hv:settings-open", settingsOpen ? "1" : "0"); }, [settingsOpen]);
   /**
    * §16 round 18: which of the four settings groups are open. INDEPENDENT, not
    * an accordion — one-open-at-a-time would shut a group whenever `navigate()`
@@ -302,13 +306,13 @@ export default function App(): React.JSX.Element {
    */
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     try {
-      return new Set(JSON.parse(localStorage.getItem("hv:settings-groups") ?? "[]") as string[]);
+      return new Set(JSON.parse(uiGet("hv:settings-groups") ?? "[]") as string[]);
     } catch {
       return new Set();
     }
   });
   useEffect(() => {
-    localStorage.setItem("hv:settings-groups", JSON.stringify([...openGroups]));
+    uiSet("hv:settings-groups", JSON.stringify([...openGroups]));
   }, [openGroups]);
   /** Open the group holding a destination, never close one. */
   const revealGroup = useCallback((v: View) => {
@@ -349,7 +353,70 @@ export default function App(): React.JSX.Element {
         return next;
       }),
     );
-    return () => { offTitle(); offExit(); offBrowser(); offBrowserClosed(); };
+    /**
+     * §7 round 23 — a tab handed to THIS window by another one.
+     *
+     * `setActiveWs` too: the tab belongs to a workspace, and arriving on a
+     * workspace nobody is looking at is round 11's blank-centre bug again —
+     * every tab present and invisible.
+     */
+    const offTabArrive = window.hv.onTabArrive(({ tab, ws, draft }) => {
+      if (draft !== undefined) arrivedDrafts.current[bufferKey(ws, tab)] = draft;
+      /**
+       * The SUBJECT's state was pushed before this window held the tab — a
+       * terminal or pane created after this window booted is simply not in its
+       * registry — so fetch it now. Without this the tab renders from a missing
+       * entry: a terminal titled "Terminal" instead of its running command, and
+       * a browser with an empty URL bar over a live page. Both were seen.
+       */
+      if (isTermTab(tab)) {
+        void window.hv
+          .termList()
+          .then((l) => setTerminals(Object.fromEntries(l.map((t) => [t.id, t]))))
+          .catch(() => {});
+      }
+      if (isBrowserTab(tab)) {
+        void window.hv
+          .browserList()
+          .then((l) => setBrowsers(Object.fromEntries(l.map((b) => [b.id, b]))))
+          .catch(() => {});
+      }
+      setTabsByWs((p) => ({ ...p, [ws]: openInto(p[ws] ?? emptyTabs, tab) }));
+      setActiveWs(ws);
+      const sid = sessionOf(tab);
+      if (sid) { setSelectedId(sid); setView("chat"); }
+    });
+    // §7 round 23: answered elsewhere — drop it from this window's queue. Only
+    // one window was shown it, but the badge and the sidebar count it here too.
+    const offUiResolved = window.hv.onUiResolved(({ id }) =>
+      setUiQueue((q) => (q.some((p) => p.req.id === id) ? q.filter((p) => p.req.id !== id) : q)),
+    );
+    // Pending-per-session comes from MAIN, which is the only place that knows
+    // every window's prompts. Counting our own queue would report only the ones
+    // we were chosen to show, so the other window's sidebar would look idle.
+    const offPending = window.hv.onPendingChanged(setPendingBySession);
+    // Fetched once (this window may have opened after the last broadcast) and
+    // then kept current as windows open and close.
+    /**
+     * NOT swallowed, and that is the point.
+     *
+     * This is a CAPABILITY lookup whose failure silently removes UI: with an
+     * empty list the tab menu offers only "To new window", so moving a tab
+     * to a window you already have simply is not on offer and nothing says why.
+     * That is exactly what a STALE MAIN PROCESS looks like — `hv:list-windows`
+     * lives in main, and main-side changes need a dev-server restart, where a
+     * ⌘R reload re-runs only the renderer. Reported as "I can't move a terminal
+     * between windows"; the answer was in an error nobody was shown.
+     *
+     * A write that fails (setWindowUi, setWindowTabs) is still swallowed on
+     * purpose — losing the last chrome tweak costs a collapsed sidebar.
+     */
+    void window.hv.listWindows().then(setAllWindows).catch(surface);
+    const offWindows = window.hv.onWindowsChanged(setAllWindows);
+    return () => {
+      offTitle(); offExit(); offBrowser(); offBrowserClosed();
+      offTabArrive(); offUiResolved(); offPending(); offWindows();
+    };
   }, []);
   // F6: global shortcuts. The handler closure is refreshed each render (reads
   // live wsId/tabs/newSession); a single listener reads it through the ref so we
@@ -388,6 +455,14 @@ export default function App(): React.JSX.Element {
   // bufferKey(ws, rel) → unsaved edits (feeds the tab-strip dirty dot; the
   // buffers themselves live in the always-mounted FileTab components).
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
+  /**
+   * §7 round 23: the unsaved text of every open file, so a cross-window move
+   * can carry it. A REF, not state — FileTab reports on every keystroke and
+   * re-rendering App for each one would undo §7's streaming perf rules.
+   */
+  const draftsRef = useRef<Record<string, string>>({});
+  /** Drafts that arrived WITH a moved tab, waiting for their FileTab to mount. */
+  const arrivedDrafts = useRef<Record<string, string>>({});
   const seenOnboarding = useRef(true); // assume seen until config says otherwise
   /**
    * The session the wizard opened, if any. The two wow notices fire once, for
@@ -702,8 +777,16 @@ export default function App(): React.JSX.Element {
      */
     void (async () => {
       try {
-        const [raw, sessionList, termList, browserList, wsList] = await Promise.all([
-          window.hv.getLayout(),
+        // §7 round 23: the tabs come from THIS window's record, read
+        // synchronously at preload — no round trip, and no frame where the
+        // layout is empty.
+        const raw = window.hv.boot.record.tabsByWs;
+        // §7 round 23: a tab moved into a BRAND-NEW window brings its unsaved
+        // text on the boot payload — `openWindow` returns before this renderer
+        // exists, so an hv:tab-arrive push at that moment reaches nobody.
+        const bootDraft = window.hv.boot.draft;
+        if (bootDraft) arrivedDrafts.current[bufferKey(bootDraft.ws, bootDraft.tab)] = bootDraft.draft;
+        const [sessionList, termList, browserList, wsList] = await Promise.all([
           window.hv.listSessions(),
           window.hv.termList(),
           // §28: normally empty at boot — panes do not survive the app, so their
@@ -714,6 +797,11 @@ export default function App(): React.JSX.Element {
           window.hv.listWorkspaces(),
         ]);
         setTerminals(Object.fromEntries(termList.map((t) => [t.id, t])));
+        // §7 round 23: seed the PANES too, not just their alive-set. A window
+        // that opens holding a browser tab (⌘⇧N + move, or a restore) has never
+        // received `hv:browser-state` for it, so its URL bar and title rendered
+        // EMPTY over a page that was loaded and visible.
+        setBrowsers(Object.fromEntries(browserList.map((b) => [b.id, b])));
         const layout = restoreLayout(raw, {
           sessions: new Set(sessionList.map((x) => x.id)),
           terminals: new Set(termList.map((t) => t.id)),
@@ -726,7 +814,7 @@ export default function App(): React.JSX.Element {
         // closed — in which case any restored workspace beats the welcome
         // screen, which is what the user would otherwise get with their tabs
         // sitting in state, invisible.
-        const remembered = localStorage.getItem("hv:active-ws");
+        const remembered = uiGet("hv:active-ws");
         const target = remembered && layout[remembered] ? remembered : Object.keys(layout)[0];
         if (target) {
           setActiveWs(target);
@@ -861,12 +949,24 @@ export default function App(): React.JSX.Element {
     // Only hv.permission select prompts open the modal. Other ui-requests
     // (setStatus etc.) are fire-and-forget — routing them here was a CRITICAL bug.
     const offUiRequest = window.hv.onUiRequest((r) => {
+      /**
+       * §7 round 23: a blocking prompt is shown in ONE window, and main names
+       * it — the window holding this session's chat tab (promptRouting.ts).
+       * Everything BELOW this gate stays unconditional on purpose: dangerous
+       * mode, plan state and the tool inventories are state every window needs,
+       * and a notify draws a transcript card every window keeps.
+       *
+       * An absent id means main could not choose, and then every window shows
+       * it: a permission prompt never times out, so a lost one hangs the agent
+       * forever — better two dialogs than none.
+       */
+      const mine = r.promptWindowId === undefined || r.promptWindowId === window.hv.boot.windowId;
       const info = parsePermission(r);
-      if (info) setUiQueue((q) => [...q, { kind: "permission", req: r, info }]);
+      if (info && mine) setUiQueue((q) => [...q, { kind: "permission", req: r, info }]);
       // V2.B: ask_user questions queue through the same machinery (badges,
       // headFor routing). Kind-based parse — hv.auth inputs stay untouched.
       const ask = parseAskUser(r);
-      if (ask) setUiQueue((q) => [...q, { kind: "askUser", req: r, ask }]);
+      if (ask && mine) setUiQueue((q) => [...q, { kind: "askUser", req: r, ask }]);
       const dng = parseDangerous(r);
       if (dng !== null && r.sessionId) setDangerous((p) => ({ ...p, [r.sessionId!]: dng }));
       // §23: plan-mode toggle + plan-ready card + skipped-tool marking.
@@ -1655,9 +1755,30 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (!layoutLoaded) return;
     const id = setTimeout(() => {
-      void window.hv.setLayout(tabsByWs as unknown as Record<string, unknown>).catch(() => {});
+      void window.hv.setWindowTabs(tabsByWs as unknown as Record<string, unknown>).catch(() => {});
     }, 400);
     return () => clearTimeout(id);
+  }, [tabsByWs, layoutLoaded]);
+
+  /**
+   * §7 round 23 — tell main what this window HOLDS, on every layout change.
+   *
+   * This is how a prompt finds the window showing its session (promptRouting.ts)
+   * and how closing a window knows which terminals and panes went with it. It is
+   * DECLARED rather than derived: main must not learn to parse a tab id, and the
+   * tabs module is the only thing that knows what one means.
+   *
+   * NOT debounced, unlike the persist above — routing a prompt to the window
+   * that had the tab 400ms ago is exactly the bug this prevents.
+   */
+  useEffect(() => {
+    if (!layoutLoaded) return;
+    const all = Object.values(tabsByWs);
+    void window.hv.windowHolds({
+      sessions: all.flatMap(allChats),
+      terminals: all.flatMap(allTerminals),
+      browsers: all.flatMap(allBrowsers),
+    });
   }, [tabsByWs, layoutLoaded]);
 
   /**
@@ -1880,6 +2001,116 @@ export default function App(): React.JSX.Element {
     setDirtyMap((p) => (!!p[key] === d ? p : { ...p, [key]: d }));
   }, []);
 
+  /**
+   * §7 round 23 — remove a tab from THIS window with NO side effect on its
+   * subject, which is what makes a move a move.
+   *
+   * The pure `closeTab` deliberately, never App's own closeTerminalTab /
+   * closeBrowserTab wrappers: those kill the PTY and destroy the pane. Right
+   * for closing a tab, catastrophic for moving one.
+   */
+  const detachTab = (ws: string, tab: TabId): void =>
+    setTabsByWs((p) => {
+      const t = p[ws];
+      if (!t) return p;
+      const slot = paneOf(t, tab);
+      return slot < 0 ? p : { ...p, [ws]: closeTab(t, slot, tab) };
+    });
+
+  /** Open any tab kind into a layout, by its id alone. */
+  const openInto = (t: WorkspaceTabs, tab: TabId): WorkspaceTabs => {
+    const sid = sessionOf(tab);
+    if (sid) return openChat(t, sid);
+    const tid = terminalOf(tab);
+    if (tid) return openTerminal(t, tid);
+    const bid = browserOf(tab);
+    if (bid) return openBrowserTab(t, bid);
+    return openFile(t, tab);
+  };
+
+  /**
+   * Hand a tab to another window — a brand-new one, or an existing one by id.
+   *
+   * The source detaches only once main CONFIRMS: detaching first would lose the
+   * tab outright if the target window died between the click and the push.
+   */
+  const moveTabToWindow = async (
+    ws: string,
+    tab: TabId,
+    target: "new" | number,
+    at?: { x: number; y: number },
+  ): Promise<void> => {
+    // Only a file tab has a buffer; the other three kinds live in main.
+    const draft = isChatTab(tab) || isTermTab(tab) || isBrowserTab(tab)
+      ? undefined
+      : draftsRef.current[bufferKey(ws, tab)];
+    // The destination layout is built HERE, by the renderer that owns the tabs
+    // module — main stays unable to tell a tab from a filename.
+    const record = target === "new"
+      ? {
+          tabsByWs: { [ws]: openInto(emptyTabs, tab) } as unknown as Record<string, unknown>,
+          ui: { "hv:active-ws": ws, "hv:sidebar-collapsed": "1" },
+        }
+      : undefined;
+    const ok = await window.hv.moveTab({ tab, ws, draft, record, target, at }).catch(() => false);
+    if (ok) detachTab(ws, tab);
+  };
+
+  /** The record a window should open with when it is to hold exactly this tab. */
+  const recordFor = (ws: string, tab: TabId): Record<string, unknown> => ({
+    tabsByWs: { [ws]: openInto(emptyTabs, tab) } as unknown as Record<string, unknown>,
+    ui: { "hv:active-ws": ws, "hv:sidebar-collapsed": "1" },
+  });
+
+  const draftOf = (ws: string, tab: TabId): string | undefined =>
+    isChatTab(tab) || isTermTab(tab) || isBrowserTab(tab) ? undefined : draftsRef.current[bufferKey(ws, tab)];
+
+  /**
+   * §7 round 23 — a drag ended. Main decides what that MEANT from the release
+   * POINT, because it is the only side that knows where every window is:
+   * another window → hand the tab over; no window → tear off a new one; its own
+   * window → nothing.
+   *
+   * `dragstart` and `dragend` fire in the SOURCE window, so this path is
+   * available whatever the target does — which is why the tear-off, whose
+   * target is no window at all, has always worked.
+   */
+  const onTabDragEnd = (ws: string, tab: TabId, at: { x: number; y: number }): void => {
+    void window.hv
+      .dragRelease(at, recordFor(ws, tab))
+      .then((moved) => { if (moved) detachTab(ws, tab); else window.hv.dragEnd(); })
+      .catch(() => window.hv.dragEnd());
+  };
+
+  /**
+   * §7 round 23 — a tab dropped on a strip or an empty pane. Moves it BETWEEN
+   * PANES, and only for a tab this window already owns.
+   *
+   * A drag from another window DOES reach here — a comment three versions of
+   * this feature carried claimed the opposite, and that error is what broke
+   * cross-window drag. Chromium keeps the drag internal to the app, so both the
+   * MIME type and its data cross windows intact. The foreign drop therefore ran
+   * as if it were a local one: `moveTab` did nothing (the tab is not in this
+   * window's panes) and then `dragEnd` told main to FORGET the drag — so the
+   * source window's `dragend`, which arrives afterwards and is what actually
+   * performs the move, found nothing in flight and dropped the gesture. The tab
+   * bar lit up, the release did nothing, and no error was raised anywhere.
+   *
+   * So a tab that is not ours is left strictly alone: no `preventDefault`, no
+   * `dragEnd`. The source window's release point completes it (see above).
+   * `paneOf` returning -1 is the whole discriminator — main is not consulted,
+   * because a window can answer "is this tab mine" by itself.
+   */
+  const onTabDropped = (e: React.DragEvent, slot: number, ws: string): void => {
+    const id = e.dataTransfer.getData("application/x-hv-tabid");
+    if (!id || paneOf(tabsByWs[ws] ?? emptyTabs, id) < 0) return;
+    e.preventDefault();
+    updateTabs(ws, (t) => moveTab(t, id, slot));
+    // The drag is CONSUMED. Main forgets it, so the `dragend` that follows
+    // cannot ALSO move the tab to another window or tear one off.
+    window.hv.dragEnd();
+  };
+
   const surface = (err: unknown): void => setError(ipcMessage(err));
 
   const addWorkspace = async (): Promise<void> => {
@@ -1958,6 +2189,12 @@ export default function App(): React.JSX.Element {
   const selectSession = async (id: string): Promise<void> => {
     setSelectedId(id);
     setView("chat");
+    // The sidebar orders by last use, and going to a session IS use. On the
+    // GESTURE, never on the load: `hydrateSession` below also runs for the
+    // chats already on screen at boot, and bumping there would re-stamp the
+    // restored layout at every launch. It also returns early for a session
+    // that is already live, so a genuine re-focus would never have reached it.
+    window.hv.touchSession(id);
     // Round 11: opening a session ADDS a tab (or focuses the one it already has)
     // rather than replacing whatever chat was on screen.
     const ws = sessions.find((x) => x.id === id)?.workspaceId;
@@ -2424,9 +2661,10 @@ export default function App(): React.JSX.Element {
     <div className="h-full flex">
       <Sidebar
         workspaces={workspaces}
+        activeWs={wsId}
         sessions={sessions}
         statuses={statuses}
-        pending={pendingCounts(uiQueue)}
+        pending={pendingBySession}
         planning={Object.fromEntries(Object.entries(planMode).map(([sid, p]) => [sid, p.enabled]))}
         selectedId={selectedId}
         openSessionIds={openSessionIds}
@@ -2630,7 +2868,7 @@ export default function App(): React.JSX.Element {
                       // Round 11: focusing a chat tab IS selecting that session —
                       // the sidebar highlight, shortcuts and stats follow it.
                       const sid = sessionOf(tab);
-                      if (sid) { setSelectedId(sid); setView("chat"); }
+                      if (sid) { setSelectedId(sid); setView("chat"); window.hv.touchSession(sid); }
                     }}
                     onClose={(tab) => {
                       // Four tab kinds, four lifecycles: a chat keeps its
@@ -2659,7 +2897,14 @@ export default function App(): React.JSX.Element {
                       const tid = terminalOf(tab);
                       if (tid) void window.hv.termRename(tid, title).catch(surface);
                     }}
-                    onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
+                    onTabDrop={(e, to) => onTabDropped(e, to, wsId)}
+                    onMoveToWindow={(tab, target) => void moveTabToWindow(wsId, tab, target)}
+                    otherWindows={allWindows.filter((w) => w.id !== window.hv.boot.windowId)}
+                    // Every kind can move since stage 3 re-parents a pane's
+                    // WebContentsView onto whichever window reports its bounds.
+                    canMoveToWindow={() => true}
+                    onDragBegin={(tab) => window.hv.dragBegin({ tab, ws: wsId, draft: draftOf(wsId, tab) })}
+                    onDragEnd={(tab, at) => onTabDragEnd(wsId, tab, at)}
                     onNewSession={() => void newSession(wsId)}
                     newSessionKey={formatBinding(bindings.newSession)}
                     onNewTerminal={() => {
@@ -2792,6 +3037,10 @@ export default function App(): React.JSX.Element {
                   key={`empty-${slot}`}
                   style={{ gridArea: CONTENTS[slot] }}
                   className={`min-h-0 flex items-center justify-center text-sm text-ink-soft ${paneDivider(CONTENTS[slot])}`}
+                  onDragOver={(e) => {
+                    if (e.dataTransfer.types.includes("application/x-hv-tabid")) e.preventDefault();
+                  }}
+                  onDrop={(e) => onTabDropped(e, slot, wsId)}
                 >
                   Open a file or drag a tab here.
                 </div>
@@ -2974,7 +3223,19 @@ export default function App(): React.JSX.Element {
                         }
                       : undefined
                   }
-                  onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
+                  onDirtyChange={(d, text) => {
+                    setDirtyFlag(bufferKey(w, f), d);
+                    // §7 round 23: keep the unsaved text where a cross-window
+                    // move can find it. A ref, so this costs no render.
+                    if (d) draftsRef.current[bufferKey(w, f)] = text;
+                    else delete draftsRef.current[bufferKey(w, f)];
+                  }}
+                  takeDraft={() => {
+                    const k = bufferKey(w, f);
+                    const d = arrivedDrafts.current[k];
+                    delete arrivedDrafts.current[k];
+                    return d;
+                  }}
                   saveKey={bindings.save}
                   searchKey={bindings.search}
                 />

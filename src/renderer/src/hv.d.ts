@@ -150,6 +150,10 @@ interface SessionMeta {
   /** §16 round 16: per-session thinking override (session → global). */
   thinking?: string;
   titleSource: "fallback" | "model" | "user";
+  /** When the user last opened or prompted it — what the sidebar orders by.
+   *  Absent on sessions that predate the field; readers fall back to
+   *  `updatedAt` (sessionOrder.ts). Mirror of the main-side SessionMeta. */
+  lastUsedAt?: string;
 }
 
 /** Round-4: reopened sessions restore tool cards too (intent + result live in
@@ -629,6 +633,10 @@ interface HvApi {
     /** §23: the session's active plan, so the pill survives a renderer reload. */
     plan: { path: string; status: string; done: number; total: number } | null;
   }>;
+  /** The user OPENED this session — the sidebar orders by last use. Fire and
+   *  forget; nothing waits on it. Deliberately separate from openSession,
+   *  which also runs for the chats already on screen at boot. */
+  touchSession(sessionId: string): void;
   /** §9: the pre-compaction history, display only — never re-entered into context. */
   loadEarlier(sessionId: string): Promise<RestoreItem[]>;
   /** §26: `terminals` answers the two-named-outcomes confirm when this session
@@ -746,7 +754,16 @@ interface HvApi {
 
   onPiEvent(cb: (e: Record<string, unknown>) => void): () => void;
   onUiRequest(
-    cb: (r: { id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[] }) => void
+    cb: (r: {
+      id: string;
+      sessionId?: string;
+      method?: string;
+      title?: string;
+      message?: string;
+      options?: string[];
+      /** §7 round 23: the ONE window that should show this as a modal. */
+      promptWindowId?: number;
+    }) => void
   ): () => void;
   onPiExit(cb: (info: { sessionId: string; code: number | null; intentional: boolean; stderr?: string }) => void): () => void;
   /** V2.A: provider/model config changed — refetch model lists/tiers. */
@@ -939,8 +956,32 @@ interface HvApi {
   setTerminalSettings(s: Partial<HvTerminalSettings>): Promise<HvTerminalSettings>;
   /** §26: the centre-area tab layout, stored opaquely — the renderer validates
       and prunes it on restore (layoutPersist.ts). */
-  getLayout(): Promise<Record<string, unknown>>;
-  setLayout(l: Record<string, unknown>): Promise<void>;
+  /** §7 round 23: this window's id and its stored record, read synchronously at preload. */
+  boot: {
+    windowId: number;
+    record: { tabsByWs: unknown; ui: Record<string, string> };
+    draft?: { tab: string; ws: string; draft: string };
+  };
+  moveTab(req: {
+    tab: string;
+    ws: string;
+    draft?: string;
+    record?: unknown;
+    target: "new" | number;
+    at?: { x: number; y: number };
+  }): Promise<boolean>;
+  onTabArrive(h: (p: { tab: string; ws: string; draft?: string }) => void): () => void;
+  setWindowTabs(t: Record<string, unknown>): Promise<void>;
+  windowHolds(h: { sessions: string[]; terminals: string[]; browsers: string[] }): void;
+  dragBegin(d: { tab: string; ws: string; draft?: string }): void;
+  dragEnd(): void;
+  listWindows(): Promise<Array<{ id: number; label: string }>>;
+  onWindowsChanged(h: (w: Array<{ id: number; label: string }>) => void): () => void;
+  /** Where the drag was released — main decides move / tear-off / nothing. */
+  dragRelease(at: { x: number; y: number }, record: unknown): Promise<boolean>;
+  onUiResolved(h: (p: { id: string }) => void): () => void;
+  onPendingChanged(h: (p: Record<string, number>) => void): () => void;
+  setWindowUi(ui: Record<string, string>): Promise<void>;
 
   // ── §27 Voice input ──────────────────────────────────────────────
   voiceStatus(): Promise<HvVoiceStatus>;

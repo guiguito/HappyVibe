@@ -38,6 +38,7 @@ export function FileTab({
   onDirtyChange,
   saveKey,
   searchKey,
+  takeDraft,
 }: {
   workspace: string;
   relPath: string;
@@ -51,7 +52,20 @@ export function FileTab({
   onSendToChat?: (text: string) => void;
   /** WS6: extra classes (e.g. the split-pane divider border). */
   className?: string;
-  onDirtyChange: (dirty: boolean) => void;
+  /**
+   * §7 round 23: the CONTENT rides along with the flag. A cross-window move
+   * remounts this editor (round 11's flat grid avoids that between PANES, and
+   * between windows it is unavoidable), so the host needs the unsaved text at
+   * move time. It keeps it in a ref, so reporting every keystroke costs no
+   * render.
+   */
+  onDirtyChange: (dirty: boolean, content: string) => void;
+  /**
+   * §7 round 23: the unsaved text this tab arrived with, if it was moved here
+   * from another window. Called once, after the on-disk copy has loaded, so the
+   * buffer is dirty against the real `savedContent` exactly as it was before.
+   */
+  takeDraft?: () => string | undefined;
   /** Round 8: resolved shortcut bindings, forwarded to the CodeMirror keymap. */
   saveKey: string;
   searchKey: string;
@@ -113,16 +127,31 @@ export function FileTab({
   const dirtyRef = useRef(dirty);
   useEffect(() => {
     dirtyRef.current = dirty;
-    onDirtyChange(dirty);
-  }, [dirty, onDirtyChange]);
+    onDirtyChange(dirty, content);
+  }, [dirty, content, onDirtyChange]);
 
-  const load = (): void => {
+  /**
+   * §7 round 23: the unsaved text this tab arrived with, remembered.
+   *
+   * Two things force a ref rather than a bare `takeDraft()` at the read site.
+   * StrictMode double-invokes the mount effect, so `load` runs twice on one
+   * instance — a one-shot take applied the draft on the first run and then the
+   * second run overwrote it with the file on disk, which is exactly how this
+   * shipped and what the GUI showed. And "Reload from disk" calls `load`
+   * directly and must NOT resurrect the draft, hence the explicit flag.
+   */
+  const takenDraft = useRef<string | undefined>(undefined);
+
+  const load = (useDraft = false): void => {
     window.hv
       .fsRead(workspace, relPath)
       .then((r) => {
         if (r.kind === "text") {
           setBuf({ kind: "text", savedContent: r.content, mtimeMs: r.mtimeMs });
-          setContent(r.content);
+          // Applied AFTER savedContent is set, so `dirty` is computed against
+          // the file on disk and the unsaved dot is honest.
+          if (useDraft) takenDraft.current ??= takeDraft?.();
+          setContent((useDraft ? takenDraft.current : undefined) ?? r.content);
           setDocVersion((v) => v + 1);
           setConflict(null);
         } else {
@@ -132,7 +161,11 @@ export function FileTab({
       .catch((err) => setBuf({ kind: "error", message: err instanceof Error ? err.message : String(err) }));
   };
 
-  useEffect(load, [workspace, relPath]);
+  // Only the MOUNT load adopts an arrived draft; every other caller wants disk.
+  useEffect(() => {
+    load(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, relPath]);
 
   // External-change detection: compare mtime against disk. F6: driven by the
   // filesystem watch (push) so an agent edit refreshes an open tab immediately —
@@ -206,7 +239,7 @@ export function FileTab({
           {conflict === "changed" && (
             <button
               type="button"
-              onClick={load}
+              onClick={() => load()}
               className="rounded-lg border-2 border-line-strong font-bold text-xs px-3 py-1 hover:bg-paper-deep/40 cursor-pointer"
             >
               Reload from disk
@@ -420,7 +453,7 @@ export function FileTab({
                 <p className="text-ink-soft mt-1 break-words">{buf.message}</p>
                 <button
                   type="button"
-                  onClick={load}
+                  onClick={() => load()}
                   className="mt-4 rounded-lg border-2 border-line-strong font-bold text-xs px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
                 >
                   Try again

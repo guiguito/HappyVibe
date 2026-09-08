@@ -24,6 +24,65 @@ interface VoiceSettingsDTO {
 }
 
 contextBridge.exposeInMainWorld("hv", {
+  /**
+   * §7 round 23 — this window's identity and its stored record.
+   *
+   * SYNCHRONOUS on purpose. The renderer reads `record.ui` inside `useState`
+   * initialisers (it used to read localStorage there), and `record.tabsByWs`
+   * replaces an awaited `hv:get-layout`. An async read renders one frame with
+   * `activeWs` null, which is the state that shows the WELCOME screen on top of
+   * a fully restored layout. Answered by a handler registered in index.ts
+   * before any window exists, so this can never block on nobody.
+   */
+  boot: ipcRenderer.sendSync("hv:window-boot") as {
+    windowId: number;
+    record: { tabsByWs: unknown; ui: Record<string, string> };
+    /** §7 round 23: unsaved text of a tab moved into this brand-new window. */
+    draft?: { tab: string; ws: string; draft: string };
+  },
+  moveTab: (req: {
+    tab: string;
+    ws: string;
+    draft?: string;
+    record?: unknown;
+    target: "new" | number;
+    at?: { x: number; y: number };
+  }) => ipcRenderer.invoke("hv:move-tab", req),
+  onTabArrive: (h: (p: { tab: string; ws: string; draft?: string }) => void) => {
+    const l = (_e: unknown, p: { tab: string; ws: string; draft?: string }): void => h(p);
+    ipcRenderer.on("hv:tab-arrive", l);
+    return () => ipcRenderer.off("hv:tab-arrive", l);
+  },
+  setWindowTabs: (t: Record<string, unknown>) => ipcRenderer.invoke("hv:set-window-tabs", t),
+  /** §7 round 23: the drag payload lives in main, not in the dataTransfer —
+      a custom MIME type does not survive the OS drag between two windows. */
+  dragBegin: (d: { tab: string; ws: string; draft?: string }) => ipcRenderer.send("hv:drag-begin", d),
+  dragEnd: () => ipcRenderer.send("hv:drag-end"),
+
+  /** §7 round 23: the drag-free route — send a tab to a NAMED window. */
+  listWindows: () => ipcRenderer.invoke("hv:list-windows"),
+  onWindowsChanged: (h: (w: Array<{ id: number; label: string }>) => void) => {
+    const l = (_e: unknown, w: Array<{ id: number; label: string }>): void => h(w);
+    ipcRenderer.on("hv:windows-changed", l);
+    return () => ipcRenderer.off("hv:windows-changed", l);
+  },
+  /** Where the drag was released — main decides move / tear-off / nothing. */
+  dragRelease: (at: { x: number; y: number }, record: unknown) =>
+    ipcRenderer.invoke("hv:drag-release", at, record),
+  /** §7 round 23: what this window shows — main routes prompts off it. */
+  windowHolds: (h: { sessions: string[]; terminals: string[]; browsers: string[] }) =>
+    ipcRenderer.send("hv:window-holds", h),
+  onUiResolved: (h: (p: { id: string }) => void) => {
+    const l = (_e: unknown, p: { id: string }): void => h(p);
+    ipcRenderer.on("hv:ui-resolved", l);
+    return () => ipcRenderer.off("hv:ui-resolved", l);
+  },
+  onPendingChanged: (h: (p: Record<string, number>) => void) => {
+    const l = (_e: unknown, p: Record<string, number>): void => h(p);
+    ipcRenderer.on("hv:pending-changed", l);
+    return () => ipcRenderer.off("hv:pending-changed", l);
+  },
+  setWindowUi: (ui: Record<string, string>) => ipcRenderer.invoke("hv:set-window-ui", ui),
   // WS8: absolute OS path of a dragged File (Electron ≥32; replaces File.path).
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   getStats: (sessionId?: string) => ipcRenderer.invoke("hv:get-stats", sessionId),
@@ -41,6 +100,8 @@ contextBridge.exposeInMainWorld("hv", {
   listSessions: () => ipcRenderer.invoke("hv:list-sessions"),
   createSession: (workspaceId: string) => ipcRenderer.invoke("hv:create-session", workspaceId),
   openSession: (sessionId: string) => ipcRenderer.invoke("hv:open-session", sessionId),
+  /** The user opened this session — the sidebar orders by last use. */
+  touchSession: (sessionId: string) => ipcRenderer.send("hv:touch-session", sessionId),
   loadEarlier: (sessionId: string) => ipcRenderer.invoke("hv:load-earlier", sessionId),
   closeSession: (sessionId: string, terminals?: "stop" | "keep") =>
     ipcRenderer.invoke("hv:close-session", sessionId, terminals),
@@ -357,8 +418,6 @@ contextBridge.exposeInMainWorld("hv", {
   },
   getTerminalSettings: () => ipcRenderer.invoke("hv:get-terminal-settings"),
   setTerminalSettings: (s: Record<string, unknown>) => ipcRenderer.invoke("hv:set-terminal-settings", s),
-  getLayout: () => ipcRenderer.invoke("hv:get-layout"),
-  setLayout: (l: Record<string, unknown>) => ipcRenderer.invoke("hv:set-layout", l),
 
   // ── §27 Voice input ──────────────────────────────────────────────
   // The model download and inference both live in main; the renderer only

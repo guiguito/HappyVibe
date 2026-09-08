@@ -51,6 +51,18 @@ export class AgentTerminals {
 
   constructor(private readonly mgr: TerminalManager) {}
 
+  /**
+   * §7 round 23: is ANY session holding this terminal?
+   *
+   * Closing a window closes its tabs, and a terminal tab's close kills the PTY
+   * — but a terminal the agent is using is not the human's tab to close, and
+   * killing it would fail the turn that is reading from it.
+   */
+  isClaimed(terminalId: string): boolean {
+    const c = this.claims.get(terminalId);
+    return c !== undefined && this.mgr.get(terminalId) !== null;
+  }
+
   /** The live terminals this session started. Dead ids are pruned lazily here. */
   ownedBy(sessionId: string): string[] {
     return [...this.claims.entries()]

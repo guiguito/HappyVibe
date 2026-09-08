@@ -23,6 +23,7 @@
  * strip and still acts on the strip it sits in.
  */
 
+
 export type DrawerPanel = "files" | "changes";
 
 export function RightRail({
