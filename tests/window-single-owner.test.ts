@@ -409,9 +409,18 @@ describe("drag between windows is decided from the RELEASE POINT (round 23, stag
     expect(tabstrip).not.toContain("foreignDragActive");
   });
 
+  it("the release point is the OS CURSOR, not the dragend event's coordinates", () => {
+    // Those were only ever verified against synthetic events where the test
+    // supplied the numbers. A wrong or zero point fails in the shape that looks
+    // like success: it lands outside every window, so the tab TEARS OFF instead
+    // of moving, and a tear-off looks like something you meant to do.
+    expect(index).toMatch(/const at = screen\.getCursorScreenPoint\(\)/);
+    expect(index).toMatch(/_at: \{ x: number; y: number \}/);
+  });
+
   it("one release point, three outcomes", () => {
     const i = index.indexOf("ipcMain.handle('hv:drag-release'");
-    const body = index.slice(i, i + 1800);
+    const body = index.slice(i, i + 3000);
     // over another window → hand it over
     expect(body).toMatch(/target\.webContents\.send\('hv:tab-arrive'/);
     // over none → tear off there
@@ -426,7 +435,7 @@ describe("drag between windows is decided from the RELEASE POINT (round 23, stag
     const d = app.indexOf("const onTabDropped");
     expect(app.slice(d, d + 700)).toMatch(/window\.hv\.dragEnd\(\)/);
     const i = index.indexOf("ipcMain.handle('hv:drag-release'");
-    expect(index.slice(i, i + 400)).toMatch(/if \(!w \|\| !d \|\| d\.windowId !== w\.id\) return false/);
+    expect(index.slice(i, i + 600)).toMatch(/if \(!w \|\| !d \|\| d\.windowId !== w\.id\)/);
   });
 
   it("the same-window drop still goes through the MIME, with no round trip", () => {

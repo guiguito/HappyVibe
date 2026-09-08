@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, shell, BrowserWindow, nativeImage, Menu, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, Menu, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { existsSync, renameSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -124,6 +124,7 @@ ipcMain.on('hv:drag-begin', (e, d: { tab: string; ws: string; draft?: string }) 
   const w = windows.bySender(e.sender)
   if (!w) return
   dragging = { ...d, windowId: w.id }
+  console.log('[hv:drag] begin', d.tab, 'in window', w.id)
 })
 
 ipcMain.on('hv:drag-end', () => {
@@ -154,10 +155,25 @@ ipcMain.on('hv:drag-end', () => {
  * consulted: a synthetic drop leaves it "none", and trusting it once made one
  * gesture both move a tab and spawn a window holding it.
  */
-ipcMain.handle('hv:drag-release', (e, at: { x: number; y: number }, record: unknown): boolean => {
+ipcMain.handle('hv:drag-release', (e, _at: { x: number; y: number }, record: unknown): boolean => {
   const w = windows.bySender(e.sender)
   const d = dragging
-  if (!w || !d || d.windowId !== w.id) return false
+  if (!w || !d || d.windowId !== w.id) {
+    console.log('[hv:drag] release ignored — no drag in flight for this window')
+    return false
+  }
+
+  /**
+   * The POINTER, asked of the OS, not the `dragend` event's `screenX/screenY`.
+   *
+   * Those coordinates were never verified against a real drag — only against
+   * synthetic events where the test supplied the numbers — and a wrong or zero
+   * point fails in a way that LOOKS like the feature working: it lands outside
+   * every window, so the tab tears off instead of moving, and a tear-off is
+   * indistinguishable from "I meant to do that". `screen.getCursorScreenPoint`
+   * is the OS's own answer and cannot drift from it.
+   */
+  const at = screen.getCursorScreenPoint()
 
   /**
    * Which window is under the pointer. Creation order is NOT z-order and
@@ -167,6 +183,10 @@ ipcMain.handle('hv:drag-release', (e, at: { x: number; y: number }, record: unkn
    */
   const under = windows.all().filter((win) => insideAny(at, [win.getBounds()]))
   const target = under.filter((win) => win.id !== w.id).at(-1) ?? null
+  // ponytail: temporary trace while cross-window drag is being pinned down —
+  // remove once a real drag is confirmed working end to end.
+  console.log('[hv:drag] release at', at, 'from window', w.id,
+    '→', target ? `move to window ${target.id}` : under.length ? 'own window, ignored' : 'tear off')
 
   // Released over its own window with nothing accepting it: the tab stays.
   if (!target && under.some((win) => win.id === w.id)) return false
