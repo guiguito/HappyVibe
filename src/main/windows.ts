@@ -87,9 +87,28 @@ export class WindowRegistry<W extends WinLike = WinLike> {
     return this.all().find((w) => w.webContents.id === wc.id) ?? null;
   }
 
+  /**
+   * A push to every live window.
+   *
+   * The try/catch is load-bearing, and `isDestroyed()` is not enough on its own:
+   * a window can have a live `webContents` whose RENDER FRAME has already been
+   * disposed — the state a window is in while it closes, and every window is in
+   * during app quit. There is no synchronous predicate for it, so `send` throws
+   * *"Render frame was disposed before WebFrameMain could be accessed"*.
+   *
+   * Catching per window rather than around the loop is the point: an
+   * uncaught throw on the FIRST dying window would abort the iteration, so
+   * every window after it would silently miss the message. Seen on quit, from a
+   * PTY exiting and from the window-list broadcast a closing window fires.
+   */
   broadcast(channel: string, payload?: unknown): void {
     for (const w of this.all()) {
-      if (!w.webContents.isDestroyed()) w.webContents.send(channel, payload);
+      if (w.webContents.isDestroyed()) continue;
+      try {
+        w.webContents.send(channel, payload);
+      } catch {
+        /* frame already gone — the next window still gets it */
+      }
     }
   }
 

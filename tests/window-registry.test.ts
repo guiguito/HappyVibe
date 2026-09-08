@@ -25,6 +25,22 @@ describe("WindowRegistry", () => {
     expect(b.sent).toEqual([["hv:x", 1]]);
   });
 
+  it("a window whose render frame is gone cannot stop the others receiving", () => {
+    // `isDestroyed()` is false while the render frame is already disposed — the
+    // state during a window close and during app quit — and `send` throws
+    // "Render frame was disposed before WebFrameMain could be accessed".
+    // Thrown from inside the loop, it would drop the message for every window
+    // AFTER the dying one.
+    const reg = new WindowRegistry();
+    const dying = reg.add(fakeWin(1), {});
+    const alive = reg.add(fakeWin(2), {});
+    dying.webContents.send = () => {
+      throw new Error("Render frame was disposed before WebFrameMain could be accessed");
+    };
+    expect(() => reg.broadcast("hv:x", 1)).not.toThrow();
+    expect(alive.sent).toEqual([["hv:x", 1]]);
+  });
+
   it("primary is the oldest live window, and moves on when it closes", () => {
     const reg = new WindowRegistry();
     const a = reg.add(fakeWin(1), {}), b = reg.add(fakeWin(2), {});
