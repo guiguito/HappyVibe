@@ -10,6 +10,7 @@ import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayo
 import { seedDefaultGitRules } from './gitRules'
 import { navAction } from './navGuard'
 import { parseLayoutFile, type WindowRecord } from './windowLayout'
+import { insideAny } from './tearOff'
 import { WindowRegistry } from './windows'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
@@ -85,6 +86,73 @@ ipcMain.on('hv:window-boot', (e) => {
   const draft = w ? pendingDrafts.get(w.id) : undefined
   if (w) pendingDrafts.delete(w.id)
   e.returnValue = { windowId: w?.id ?? -1, record, ...(draft ? { draft } : {}) }
+})
+
+/**
+ * §7 round 23 — the drag in flight, parked where BOTH windows can reach it.
+ *
+ * A DOM drag's `dataTransfer` does not reliably survive a hop between two
+ * Electron windows: the drag becomes an OS drag session, and a custom MIME type
+ * is not part of what the OS carries. So the payload never travels in the drag
+ * at all — it is left here at `dragstart` and claimed by whichever window
+ * accepts the drop. Cleared on `dragend`, so an abandoned drag leaves nothing
+ * for the next drop to pick up.
+ */
+let dragging: { tab: string; ws: string; windowId: number; draft?: string } | null = null
+
+ipcMain.on('hv:drag-begin', (e, d: { tab: string; ws: string; draft?: string }) => {
+  const w = windows.bySender(e.sender)
+  if (!w) return
+  dragging = { ...d, windowId: w.id }
+  // Every window is told a drag is up, so a strip can accept a drop it cannot
+  // see the type of.
+  windows.broadcast('hv:drag-active', true)
+})
+
+ipcMain.on('hv:drag-end', () => {
+  dragging = null
+  windows.broadcast('hv:drag-active', false)
+})
+
+/**
+ * Another window accepted the drop. The SOURCE is told to let go, and the
+ * payload is handed back so the taker can open it locally.
+ */
+ipcMain.handle('hv:claim-tab', (e) => {
+  const w = windows.bySender(e.sender)
+  const d = dragging
+  if (!w || !d) return null
+  // A drop in the window the drag started in is the EXISTING within-layout
+  // move, and doing both would duplicate the tab.
+  if (d.windowId === w.id) return null
+  dragging = null
+  windows.byId(d.windowId)?.webContents.send('hv:tab-left', { tab: d.tab, ws: d.ws })
+  windows.broadcast('hv:drag-active', false)
+  return { tab: d.tab, ws: d.ws, draft: d.draft }
+})
+
+/**
+ * A drag that ended with no drop. It is a tear-off only if it ended OUTSIDE
+ * every window — a drop that missed a strip, and an Escape cancel, both land
+ * inside one and must not spawn anything.
+ */
+ipcMain.handle('hv:tear-off', (e, at: { x: number; y: number }, record: unknown): boolean => {
+  const w = windows.bySender(e.sender)
+  const d = dragging
+  // A CONSUMED drag is already null here — a same-window drop and a
+  // cross-window claim both clear it — so this refuses without ever asking
+  // `dropEffect` whether a drop happened. Measured: a synthetic drop leaves
+  // dropEffect "none", and trusting it moved the tab AND tore it off, two
+  // actions for one gesture.
+  if (!w || !d || d.windowId !== w.id) return false
+  if (insideAny(at, windows.all().map((win) => win.getBounds()))) return false
+  const rec = record as WindowRecord | undefined
+  if (!rec) return false
+  dragging = null
+  windows.broadcast('hv:drag-active', false)
+  const opened = openWindow(rec, at)
+  if (d.draft !== undefined) pendingDrafts.set(opened.id, { tab: d.tab, ws: d.ws, draft: d.draft })
+  return true
 })
 
 /** Hand a tab to another window. Returns false when there is nobody to hand it to. */

@@ -375,3 +375,55 @@ describe("a browser pane belongs to the window that draws it (round 23, stage 3)
     expect(app).toMatch(/canMoveToWindow=\{\(\) => true\}/);
   });
 });
+
+describe("drag between windows, and tear-off (round 23, stage 4)", () => {
+  const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+  const tabstrip = readFileSync("src/renderer/src/components/TabStrip.tsx", "utf8");
+
+  it("the payload is parked in MAIN, not carried in the dataTransfer", () => {
+    // A DOM drag between two Electron windows becomes an OS drag session, and a
+    // custom MIME type is not part of what the OS carries — so relying on it
+    // would make a cross-window drop silently receive nothing.
+    expect(index).toMatch(/let dragging: \{ tab: string; ws: string; windowId: number; draft\?: string \} \| null = null/);
+    expect(index).toMatch(/ipcMain\.on\('hv:drag-begin'/);
+    expect(index).toMatch(/ipcMain\.handle\('hv:claim-tab'/);
+  });
+
+  it("the same-window drop still goes through the existing MIME path", () => {
+    // Round 11's between-panes move must not regress into a round trip.
+    const drop = tabstrip.slice(tabstrip.indexOf("const onDrop"), tabstrip.indexOf("const onDrop") + 700);
+    expect(drop).toMatch(/const id = e\.dataTransfer\.getData\(DRAG_MIME\);/);
+    expect(drop).toMatch(/onMoveTab\(id, paneIndex\);\s*return;/);
+  });
+
+  it("a strip accepts a foreign drag it cannot see the type of", () => {
+    expect(tabstrip).toMatch(/e\.dataTransfer\.types\.includes\(DRAG_MIME\) \|\| foreignDragActive/);
+  });
+
+  it("claiming refuses the drag's OWN window — that path is the layout move", () => {
+    const i = index.indexOf("ipcMain.handle('hv:claim-tab'");
+    expect(index.slice(i, i + 700)).toMatch(/if \(d\.windowId === w\.id\) return null/);
+  });
+
+  it("a tear-off needs BOTH no drop and a point outside every window", () => {
+    // Escape-cancel and a missed drop both end with no drop target, and both
+    // land inside a window — neither may spawn one.
+    const i = index.indexOf("ipcMain.handle('hv:tear-off'");
+    const body = index.slice(i, i + 800);
+    expect(body).toMatch(/if \(insideAny\(at, windows\.all\(\)\.map\(\(win\) => win\.getBounds\(\)\)\)\) return false/);
+    expect(app).toMatch(/if \(dropped\) \{ window\.hv\.dragEnd\(\); return; \}/);
+  });
+
+  it("a CONSUMED drag cannot also tear off — dropEffect is never trusted", () => {
+    // Measured: a drop that leaves dropEffect "none" made one gesture both move
+    // the tab between panes AND spawn a window holding it.
+    const app2 = readFileSync("src/renderer/src/App.tsx", "utf8");
+    const i = app2.indexOf("onMoveTab={(tab, to) => {");
+    expect(app2.slice(i, i + 500)).toMatch(/window\.hv\.dragEnd\(\)/);
+    expect(index).toMatch(/if \(!w \|\| !d \|\| d\.windowId !== w\.id\) return false/);
+  });
+
+  it("the source lets go only when told, and detaches the same way the menu does", () => {
+    expect(app).toMatch(/window\.hv\.onTabLeft\(\(\{ tab, ws \}\) => detachTab\(ws, tab\)\)/);
+  });
+});

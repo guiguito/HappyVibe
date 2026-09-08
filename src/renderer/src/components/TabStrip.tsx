@@ -49,6 +49,10 @@ export function TabStrip({
   onRename,
   onMoveToWindow,
   canMoveToWindow,
+  onDragBegin,
+  onDragEnd,
+  onForeignDrop,
+  foreignDragActive,
 }: {
   pane: Pane;
   /** Slot index in the 2×2 grid (0–3). */
@@ -79,6 +83,13 @@ export function TabStrip({
   onMoveToWindow: (tab: TabId) => void;
   /** False while a kind cannot live in a second window yet (browser, stage 3). */
   canMoveToWindow: (tab: TabId) => boolean;
+  /** §7 round 23: a drag starts/ends — the payload is parked in main. */
+  onDragBegin: (tab: TabId) => void;
+  onDragEnd: (tab: TabId, at: { x: number; y: number }, dropped: boolean) => void;
+  /** A drop whose payload came from ANOTHER window. */
+  onForeignDrop: (toPane: number) => void;
+  /** True while any window has a tab drag in flight. */
+  foreignDragActive: boolean;
   onMoveTab: (tab: TabId, toPane: number) => void;
   /** Round 11: the trailing `+` — fill this pane without leaving it. */
   onNewSession: () => void;
@@ -122,6 +133,13 @@ export function TabStrip({
     if (id) {
       e.preventDefault();
       onMoveTab(id, paneIndex);
+      return;
+    }
+    // §7 round 23: no payload in the drag means it came from another window —
+    // the OS drag carries no custom MIME type, so main is asked for it.
+    if (foreignDragActive) {
+      e.preventDefault();
+      onForeignDrop(paneIndex);
     }
   };
 
@@ -143,7 +161,15 @@ export function TabStrip({
     <div
       className={`flex items-stretch border-b-2 border-line shrink-0 h-full ${dropHover ? "bg-honey-soft" : "bg-paper"}`}
       role="tablist"
-      onDragOver={(e) => { if (e.dataTransfer.types.includes(DRAG_MIME)) { e.preventDefault(); setDropHover(true); } }}
+      onDragOver={(e) => {
+        // A foreign drag has no recognisable type, so the strip leans on main's
+        // "a drag is up" broadcast instead — otherwise it would refuse the drop
+        // and the tab would look undraggable between windows.
+        if (e.dataTransfer.types.includes(DRAG_MIME) || foreignDragActive) {
+          e.preventDefault();
+          setDropHover(true);
+        }
+      }}
       onDragLeave={() => setDropHover(false)}
       onDrop={(e) => { setDropHover(false); onDrop(e); }}
     >
@@ -179,7 +205,14 @@ export function TabStrip({
               aria-selected={active}
               tabIndex={0}
               draggable
-              onDragStart={(e) => e.dataTransfer.setData(DRAG_MIME, id)}
+              onDragStart={(e) => {
+                // The MIME still carries the id for a SAME-window drop, which
+                // is the common case and needs no round trip. Across windows
+                // the OS drag drops custom types, so main holds the payload.
+                e.dataTransfer.setData(DRAG_MIME, id);
+                onDragBegin(id);
+              }}
+              onDragEnd={(e) => onDragEnd(id, { x: e.screenX, y: e.screenY }, e.dataTransfer.dropEffect !== "none")}
               onClick={() => onSelect(id)}
               onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(id)}
               onAuxClick={(e) => e.button === 1 && onClose(id)}

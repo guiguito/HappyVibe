@@ -105,6 +105,8 @@ export default function App(): React.JSX.Element {
   const [uiQueue, setUiQueue] = useState<QueuedPrompt[]>([]);
   /** §7 round 23: prompts per session ACROSS windows — main computes it. */
   const [pendingBySession, setPendingBySession] = useState<Record<string, number>>({});
+  /** §7 round 23: any window has a tab drag in flight, so strips accept drops. */
+  const [foreignDrag, setForeignDrag] = useState(false);
   // Sessions currently in /hv-dangerous mode (bridge-notified, never persisted).
   const [dangerous, setDangerous] = useState<Record<string, boolean>>({});
   // §23: per-session plan mode + current plan-file path (bridge-notified; SURVIVES
@@ -382,7 +384,14 @@ export default function App(): React.JSX.Element {
     // every window's prompts. Counting our own queue would report only the ones
     // we were chosen to show, so the other window's sidebar would look idle.
     const offPending = window.hv.onPendingChanged(setPendingBySession);
-    return () => { offTitle(); offExit(); offBrowser(); offBrowserClosed(); offTabArrive(); offUiResolved(); offPending(); };
+    const offDragActive = window.hv.onDragActive(setForeignDrag);
+    // Another window took the tab we were dragging — let go of it here. Same
+    // detach as the menu route, so a moved terminal keeps its PTY.
+    const offTabLeft = window.hv.onTabLeft(({ tab, ws }) => detachTab(ws, tab));
+    return () => {
+      offTitle(); offExit(); offBrowser(); offBrowserClosed();
+      offTabArrive(); offUiResolved(); offPending(); offDragActive(); offTabLeft();
+    };
   }, []);
   // F6: global shortcuts. The handler closure is refreshed each render (reads
   // live wsId/tabs/newSession); a single listener reads it through the ref so we
@@ -2022,6 +2031,45 @@ export default function App(): React.JSX.Element {
     if (ok) detachTab(ws, tab);
   };
 
+  /** The record a window should open with when it is to hold exactly this tab. */
+  const recordFor = (ws: string, tab: TabId): Record<string, unknown> => ({
+    tabsByWs: { [ws]: openInto(emptyTabs, tab) } as unknown as Record<string, unknown>,
+    ui: { "hv:active-ws": ws, "hv:sidebar-collapsed": "1" },
+  });
+
+  const draftOf = (ws: string, tab: TabId): string | undefined =>
+    isChatTab(tab) || isTermTab(tab) || isBrowserTab(tab) ? undefined : draftsRef.current[bufferKey(ws, tab)];
+
+  /**
+   * §7 round 23 — a drag ended. Nothing dropped it AND it finished outside every
+   * window means TEAR-OFF; main decides that, because it owns the bounds.
+   */
+  const onTabDragEnd = (ws: string, tab: TabId, at: { x: number; y: number }, dropped: boolean): void => {
+    if (dropped) { window.hv.dragEnd(); return; }
+    void window.hv
+      .tearOff(at, recordFor(ws, tab))
+      .then((torn) => { if (torn) detachTab(ws, tab); else window.hv.dragEnd(); })
+      .catch(() => window.hv.dragEnd());
+  };
+
+  /** A drop in THIS window whose payload belongs to another one. */
+  const onForeignDrop = (toPane: number): void => {
+    void window.hv.claimTab().then((p) => {
+      if (!p) return;
+      if (p.draft !== undefined) arrivedDrafts.current[bufferKey(p.ws, p.tab)] = p.draft;
+      setTabsByWs((prev) => {
+        const opened = openInto(prev[p.ws] ?? emptyTabs, p.tab);
+        return { ...prev, [p.ws]: moveTab(opened, p.tab, toPane) };
+      });
+      setActiveWs(p.ws);
+      const sid = sessionOf(p.tab);
+      if (sid) { setSelectedId(sid); setView("chat"); }
+      if (isBrowserTab(p.tab)) {
+        void window.hv.browserList().then((l) => setBrowsers(Object.fromEntries(l.map((b) => [b.id, b])))).catch(() => {});
+      }
+    }).catch(() => {});
+  };
+
   const surface = (err: unknown): void => setError(ipcMessage(err));
 
   const addWorkspace = async (): Promise<void> => {
@@ -2801,11 +2849,21 @@ export default function App(): React.JSX.Element {
                       const tid = terminalOf(tab);
                       if (tid) void window.hv.termRename(tid, title).catch(surface);
                     }}
-                    onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
+                    onMoveTab={(tab, to) => {
+                      updateTabs(wsId, (t) => moveTab(t, tab, to));
+                      // §7 round 23: the drag is CONSUMED. Main forgets it, and
+                      // the tear-off that `dragend` fires next is refused —
+                      // never trust `dropEffect` to say a drop happened.
+                      window.hv.dragEnd();
+                    }}
                     onMoveToWindow={(tab) => void moveTabToWindow(wsId, tab, "new")}
                     // Every kind can move since stage 3 re-parents a pane's
                     // WebContentsView onto whichever window reports its bounds.
                     canMoveToWindow={() => true}
+                    onDragBegin={(tab) => window.hv.dragBegin({ tab, ws: wsId, draft: draftOf(wsId, tab) })}
+                    onDragEnd={(tab, at, dropped) => onTabDragEnd(wsId, tab, at, dropped)}
+                    onForeignDrop={onForeignDrop}
+                    foreignDragActive={foreignDrag}
                     onNewSession={() => void newSession(wsId)}
                     newSessionKey={formatBinding(bindings.newSession)}
                     onNewTerminal={() => {

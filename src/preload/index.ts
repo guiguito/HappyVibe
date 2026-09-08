@@ -54,6 +54,22 @@ contextBridge.exposeInMainWorld("hv", {
     return () => ipcRenderer.off("hv:tab-arrive", l);
   },
   setWindowTabs: (t: Record<string, unknown>) => ipcRenderer.invoke("hv:set-window-tabs", t),
+  /** §7 round 23: the drag payload lives in main, not in the dataTransfer —
+      a custom MIME type does not survive the OS drag between two windows. */
+  dragBegin: (d: { tab: string; ws: string; draft?: string }) => ipcRenderer.send("hv:drag-begin", d),
+  dragEnd: () => ipcRenderer.send("hv:drag-end"),
+  claimTab: () => ipcRenderer.invoke("hv:claim-tab"),
+  tearOff: (at: { x: number; y: number }, record: unknown) => ipcRenderer.invoke("hv:tear-off", at, record),
+  onDragActive: (h: (active: boolean) => void) => {
+    const l = (_e: unknown, a: boolean): void => h(a);
+    ipcRenderer.on("hv:drag-active", l);
+    return () => ipcRenderer.off("hv:drag-active", l);
+  },
+  onTabLeft: (h: (p: { tab: string; ws: string }) => void) => {
+    const l = (_e: unknown, p: { tab: string; ws: string }): void => h(p);
+    ipcRenderer.on("hv:tab-left", l);
+    return () => ipcRenderer.off("hv:tab-left", l);
+  },
   /** §7 round 23: what this window shows — main routes prompts off it. */
   windowHolds: (h: { sessions: string[]; terminals: string[]; browsers: string[] }) =>
     ipcRenderer.send("hv:window-holds", h),

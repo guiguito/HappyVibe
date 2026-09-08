@@ -965,6 +965,12 @@ interface HvApi {
   onTabArrive(h: (p: { tab: string; ws: string; draft?: string }) => void): () => void;
   setWindowTabs(t: Record<string, unknown>): Promise<void>;
   windowHolds(h: { sessions: string[]; terminals: string[]; browsers: string[] }): void;
+  dragBegin(d: { tab: string; ws: string; draft?: string }): void;
+  dragEnd(): void;
+  claimTab(): Promise<{ tab: string; ws: string; draft?: string } | null>;
+  tearOff(at: { x: number; y: number }, record: unknown): Promise<boolean>;
+  onDragActive(h: (active: boolean) => void): () => void;
+  onTabLeft(h: (p: { tab: string; ws: string }) => void): () => void;
   onUiResolved(h: (p: { id: string }) => void): () => void;
   onPendingChanged(h: (p: Record<string, number>) => void): () => void;
   setWindowUi(ui: Record<string, string>): Promise<void>;
