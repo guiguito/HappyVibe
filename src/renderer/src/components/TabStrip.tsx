@@ -190,6 +190,25 @@ export function TabStrip({
     if (t) onRename(editing.tab, t);
   };
 
+  /**
+   * §7 round 23 — only a chat or a terminal has a title of its OWN to change.
+   * A file tab's title is its filename (renaming it is the tree's job) and a
+   * browser tab's is the page's. Shared by the menu's Rename… and by the
+   * double-click below, so "which tabs can be renamed" is answered once.
+   */
+  const renameable = (t: TabId): boolean => sessionOf(t) !== null || terminalOf(t) !== null;
+
+  const startRename = (t: TabId): void => {
+    // Already editing THIS tab: a double-click inside the input is a user
+    // selecting a word, and re-seeding the draft would throw away what they
+    // have typed.
+    if (editing?.tab === t) return;
+    const sid = sessionOf(t);
+    const tid = terminalOf(t);
+    if (sid === null && tid === null) return;
+    setEditing({ tab: t, draft: sid ? sessionTitleFor(sid) : tid ? terminalTitleFor(tid) : "" });
+  };
+
   return (
     <div
       className={`flex items-stretch border-b-2 border-line shrink-0 h-full ${dropHover ? "bg-honey-soft" : "bg-paper"}`}
@@ -249,6 +268,9 @@ export function TabStrip({
               }}
               onDragEnd={(e) => onDragEnd(id, { x: e.screenX, y: e.screenY }, e.dataTransfer.dropEffect !== "none")}
               onClick={() => onSelect(id)}
+              // The other half of the same gesture the menu offers — the idiom
+              // every tabbed app shares, and the one people reach for first.
+              onDoubleClick={() => startRename(id)}
               onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(id)}
               onAuxClick={(e) => e.button === 1 && onClose(id)}
               onContextMenu={(e) => {
@@ -362,17 +384,11 @@ export function TabStrip({
             className="fixed z-50 min-w-44 rounded-lg border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-[13px] font-semibold"
             style={{ left: menu.x, top: menu.y }}
           >
-            {/* Only a chat or a terminal has a title of its own to change. */}
-            {(sessionOf(menu.tab) !== null || terminalOf(menu.tab) !== null) && (
+            {renameable(menu.tab) && (
               <button
                 type="button"
                 onClick={() => {
-                  const sid = sessionOf(menu.tab);
-                  const tid = terminalOf(menu.tab);
-                  setEditing({
-                    tab: menu.tab,
-                    draft: sid ? sessionTitleFor(sid) : tid ? terminalTitleFor(tid) : "",
-                  });
+                  startRename(menu.tab);
                   setMenu(null);
                 }}
                 className={menuItem}

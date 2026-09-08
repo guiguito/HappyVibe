@@ -205,7 +205,26 @@ describe("a tab lives in exactly one window (round 23)", () => {
     const i = tabstrip.indexOf("onContextMenu");
     expect(tabstrip.slice(i, i + 400)).not.toMatch(/if \(!isChat && !isTerm\) return;/);
     // Rename is gated per ITEM instead.
-    expect(tabstrip).toMatch(/\{\(sessionOf\(menu\.tab\) !== null \|\| terminalOf\(menu\.tab\) !== null\) && \(/);
+    expect(tabstrip).toMatch(/\{renameable\(menu\.tab\) && \(/);
+  });
+
+  it("double-clicking a tab renames it, through the SAME pair the menu uses", () => {
+    /**
+     * The idiom every tabbed app shares, and the one people reach for before
+     * the menu. Both entry points go through `renameable` + `startRename`, so
+     * "which tabs can be renamed" and "what the draft starts as" are each
+     * answered in one place — the menu used to inline both, and a second copy
+     * beside it is exactly how the two would drift.
+     */
+    expect(tabstrip).toMatch(/onDoubleClick=\{\(\) => startRename\(id\)\}/);
+    expect(tabstrip).toMatch(/const renameable = \(t: TabId\): boolean =>/);
+    // A file tab's title IS its filename and a browser's is the page's, so
+    // neither is renameable by either route.
+    expect(tabstrip).toMatch(/sessionOf\(t\) !== null \|\| terminalOf\(t\) !== null/);
+    // Double-clicking INSIDE the open input selects a word; re-seeding the
+    // draft there would throw away what has been typed.
+    const i = tabstrip.indexOf("const startRename");
+    expect(tabstrip.slice(i, i + 400)).toMatch(/if \(editing\?\.tab === t\) return;/);
   });
 
   it("the tab menu offers a move to a new window", () => {
