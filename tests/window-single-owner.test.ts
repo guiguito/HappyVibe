@@ -208,11 +208,11 @@ describe("a tab lives in exactly one window (round 23)", () => {
     expect(tabstrip).toMatch(/\{\(sessionOf\(menu\.tab\) !== null \|\| terminalOf\(menu\.tab\) !== null\) && \(/);
   });
 
-  it("the tab menu offers Move to new window", () => {
-    expect(tabstrip).toMatch(/Move to new window/);
+  it("the tab menu offers a move to a new window", () => {
+    expect(tabstrip).toMatch(/To new window/);
     // The app's only blur-dismissed menu bug, twice reported: a <button> press
     // does not focus it, so this menu acts on mousedown (tests/tabstrip-menu).
-    const at = tabstrip.indexOf(">\n              Move to new window");
+    const at = tabstrip.indexOf(">\n              To new window");
     expect(at).toBeGreaterThan(-1);
     const item = tabstrip.slice(tabstrip.lastIndexOf("<button", at), at);
     expect(item).toMatch(/onMouseDown/);

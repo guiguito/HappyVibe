@@ -97,7 +97,7 @@ ipcMain.on('hv:window-boot', (e) => {
  * is Window 1.
  */
 function windowList(): Array<{ id: number; label: string }> {
-  // Sentence case: the menu reads "Move to new window" / "Move to window 2".
+  // Sentence case: the menu reads "To new window" / "To window 2".
   return windows.all().map((w, i) => ({ id: w.id, label: `window ${i + 1}` }))
 }
 

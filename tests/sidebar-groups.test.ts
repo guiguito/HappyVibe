@@ -491,7 +491,7 @@ describe("the session list is ordered by LAST USED, and the workspace on screen 
 
   it("a failed window lookup is SURFACED, never swallowed", () => {
     // It removes UI when it fails: an empty list means the tab menu offers only
-    // "Move to new window", with no hint that moving to an open window exists.
+    // "To new window", with no hint that moving to an open window exists.
     // A stale main process (the handler lives in main, so ⌘R does not reload
     // it) looked exactly like the feature being broken.
     expect(APP).toContain("window.hv.listWindows().then(setAllWindows).catch(surface)");

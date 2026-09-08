@@ -401,7 +401,7 @@ export default function App(): React.JSX.Element {
      * NOT swallowed, and that is the point.
      *
      * This is a CAPABILITY lookup whose failure silently removes UI: with an
-     * empty list the tab menu offers only "Move to new window", so moving a tab
+     * empty list the tab menu offers only "To new window", so moving a tab
      * to a window you already have simply is not on offer and nothing says why.
      * That is exactly what a STALE MAIN PROCESS looks like — `hv:list-windows`
      * lives in main, and main-side changes need a dev-server restart, where a

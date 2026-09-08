@@ -254,7 +254,7 @@ export function TabStrip({
               onContextMenu={(e) => {
                 // §7 round 23: EVERY tab kind opens this menu. Round 12 gated
                 // it on renameability (a file tab's title IS its filename), so
-                // when "Move to new window" joined it, the menu was unreachable
+                // when "To new window" joined it, the menu was unreachable
                 // for exactly the kind whose move matters most — a file with an
                 // unsaved buffer. Renaming is now gated per ITEM instead.
                 e.preventDefault();
@@ -396,13 +396,12 @@ export function TabStrip({
               className={menuItem}
             >
               <NewWindowGlyph />
-              Move to new window
+              To new window
             </button>
             {/* §7 round 23: moving to an ALREADY-OPEN window. The drag is the
-                nicer gesture and it is still there, but it cannot be the only
-                route — Chromium does not hand a DOM drop to a second Electron
-                window, so the drag is resolved from the release point and this
-                stays the precise, keyboard-reachable way to say where. */}
+                nicer gesture and it works, but it cannot be the only route —
+                this is the precise, keyboard-reachable way to say where, and it
+                names the destination instead of asking you to aim at it. */}
             {otherWindows.map((w) => (
               <button
                 key={w.id}
@@ -416,9 +415,12 @@ export function TabStrip({
                 className={menuItem}
               >
                 <WindowGlyph />
-                {/* Sentence case, like every other label in the app: "Move to
-                    new window" and "Move to window 2" are the same sentence. */}
-                Move to {w.label}
+                {/* Sentence case, like every other label in the app: "To new
+                    window" and "To window 2" are the same sentence. The verb is
+                    dropped on purpose — every row here acts on the tab that was
+                    right-clicked, the glyph says which kind of destination, and
+                    "Move to window 2" was long enough to need truncating. */}
+                To {w.label}
               </button>
             ))}
           </div>
