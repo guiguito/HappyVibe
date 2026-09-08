@@ -2929,6 +2929,7 @@ export default function App(): React.JSX.Element {
                     trailing={
                       slot === topRightSlot(wsTabs) ? (
                         <RightRail
+                          workspace={wsId}
                           open={DRAWER}
                           onToggle={toggleDrawer}
                           gitAvailable={gitAvailable}
