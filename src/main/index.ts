@@ -91,10 +91,10 @@ ipcMain.on('hv:window-boot', (e) => {
 /**
  * §7 round 23 — the other windows a tab can be sent to, by NAME.
  *
- * This is the route that does not depend on a drag at all. Whether macOS
- * delivers a DOM drop across two Electron windows is not something the app can
- * promise, so "move this tab to that window" must be reachable without one.
- * Ordinals, because a window has no title of its own; primary is Window 1.
+ * This is the route that does not depend on a drag at all — a drag is a
+ * gesture not everyone can perform, and "move this tab to that window" should
+ * not require one. Ordinals, because a window has no title of its own; primary
+ * is Window 1.
  */
 function windowList(): Array<{ id: number; label: string }> {
   // Sentence case: the menu reads "Move to new window" / "Move to window 2".
@@ -111,12 +111,12 @@ export function windowsChanged(): void {
 /**
  * §7 round 23 — the drag in flight, parked where BOTH windows can reach it.
  *
- * A DOM drag's `dataTransfer` does not reliably survive a hop between two
- * Electron windows: the drag becomes an OS drag session, and a custom MIME type
- * is not part of what the OS carries. So the payload never travels in the drag
- * at all — it is left here at `dragstart` and claimed by whichever window
- * accepts the drop. Cleared on `dragend`, so an abandoned drag leaves nothing
- * for the next drop to pick up.
+ * The `dataTransfer` MIME does cross windows intact, but it can only be read
+ * from a DROP — and a TEAR-OFF has no drop to read it from, since it lands over
+ * no window at all. The destination there does not exist yet either. So the
+ * payload is left here at `dragstart` and handed to whichever window ends up
+ * taking the tab. Cleared on `dragend`, so an abandoned drag leaves nothing for
+ * the next one to pick up.
  */
 let dragging: { tab: string; ws: string; windowId: number; draft?: string } | null = null
 
@@ -124,7 +124,6 @@ ipcMain.on('hv:drag-begin', (e, d: { tab: string; ws: string; draft?: string }) 
   const w = windows.bySender(e.sender)
   if (!w) return
   dragging = { ...d, windowId: w.id }
-  console.log('[hv:drag] begin', d.tab, 'in window', w.id)
 })
 
 ipcMain.on('hv:drag-end', () => {
@@ -154,10 +153,7 @@ ipcMain.on('hv:drag-end', () => {
 ipcMain.handle('hv:drag-release', (e, _at: { x: number; y: number }, record: unknown): boolean => {
   const w = windows.bySender(e.sender)
   const d = dragging
-  if (!w || !d || d.windowId !== w.id) {
-    console.log('[hv:drag] release ignored — no drag in flight for this window')
-    return false
-  }
+  if (!w || !d || d.windowId !== w.id) return false
 
   /**
    * The POINTER, asked of the OS, not the `dragend` event's `screenX/screenY`.
@@ -179,11 +175,6 @@ ipcMain.handle('hv:drag-release', (e, _at: { x: number; y: number }, record: unk
    */
   const under = windows.all().filter((win) => insideAny(at, [win.getBounds()]))
   const target = under.filter((win) => win.id !== w.id).at(-1) ?? null
-  // ponytail: temporary trace while cross-window drag is being pinned down —
-  // remove once a real drag is confirmed working end to end.
-  console.log('[hv:drag] release at', at, 'from window', w.id,
-    '→', target ? `move to window ${target.id}` : under.length ? 'own window, ignored' : 'tear off')
-
   // Released over its own window with nothing accepting it: the tab stays.
   if (!target && under.some((win) => win.id === w.id)) return false
 
