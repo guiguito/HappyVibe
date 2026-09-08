@@ -59,6 +59,18 @@ export function persistLayout(): void {
 }
 
 /**
+ * §7 round 23 — an unsaved buffer travelling into a window that does not exist
+ * yet.
+ *
+ * `openWindow` returns long before its renderer is alive, so pushing
+ * `hv:tab-arrive` at that moment reaches nobody. The draft waits here and
+ * leaves on the boot reply below, which is the first thing that renderer asks
+ * for. Keyed by window id and deleted on read, so it cannot leak into a later
+ * reload of the same window.
+ */
+const pendingDrafts = new Map<number, { tab: string; ws: string; draft: string }>()
+
+/**
  * This window's record, handed to its renderer synchronously.
  *
  * Registered HERE, at module scope, rather than in registerIpc: preload asks
@@ -70,8 +82,40 @@ export function persistLayout(): void {
 ipcMain.on('hv:window-boot', (e) => {
   const w = windows.bySender(e.sender)
   const record = (w && (windows.record(w.id) as WindowRecord | undefined)) ?? { tabsByWs: {}, ui: {} }
-  e.returnValue = { windowId: w?.id ?? -1, record }
+  const draft = w ? pendingDrafts.get(w.id) : undefined
+  if (w) pendingDrafts.delete(w.id)
+  e.returnValue = { windowId: w?.id ?? -1, record, ...(draft ? { draft } : {}) }
 })
+
+/** Hand a tab to another window. Returns false when there is nobody to hand it to. */
+ipcMain.handle(
+  'hv:move-tab',
+  (
+    e,
+    req: {
+      tab: string
+      ws: string
+      draft?: string
+      record?: unknown
+      target: 'new' | number
+      at?: { x: number; y: number }
+    },
+  ): boolean => {
+    if (req.target === 'new') {
+      const record = req.record as WindowRecord | undefined
+      if (!record) return false
+      const w = openWindow(record, req.at)
+      if (req.draft !== undefined) pendingDrafts.set(w.id, { tab: req.tab, ws: req.ws, draft: req.draft })
+      return true
+    }
+    const w = windows.byId(req.target)
+    // Refusing a move to the sender's OWN window matters: that path is
+    // `moveTab` within a layout, and doing both would duplicate the tab.
+    if (!w || w.webContents.id === e.sender.id) return false
+    w.webContents.send('hv:tab-arrive', { tab: req.tab, ws: req.ws, draft: req.draft })
+    return true
+  },
+)
 
 /** The record is opaque here — main stores it and hands it back; see windows.ts. */
 export function openWindow(record: WindowRecord, at?: { x: number; y: number }): BrowserWindow {

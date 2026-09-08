@@ -37,6 +37,21 @@ contextBridge.exposeInMainWorld("hv", {
   boot: ipcRenderer.sendSync("hv:window-boot") as {
     windowId: number;
     record: { tabsByWs: unknown; ui: Record<string, string> };
+    /** §7 round 23: unsaved text of a tab moved into this brand-new window. */
+    draft?: { tab: string; ws: string; draft: string };
+  },
+  moveTab: (req: {
+    tab: string;
+    ws: string;
+    draft?: string;
+    record?: unknown;
+    target: "new" | number;
+    at?: { x: number; y: number };
+  }) => ipcRenderer.invoke("hv:move-tab", req),
+  onTabArrive: (h: (p: { tab: string; ws: string; draft?: string }) => void) => {
+    const l = (_e: unknown, p: { tab: string; ws: string; draft?: string }): void => h(p);
+    ipcRenderer.on("hv:tab-arrive", l);
+    return () => ipcRenderer.off("hv:tab-arrive", l);
   },
   setWindowTabs: (t: Record<string, unknown>) => ipcRenderer.invoke("hv:set-window-tabs", t),
   setWindowUi: (ui: Record<string, string>) => ipcRenderer.invoke("hv:set-window-ui", ui),

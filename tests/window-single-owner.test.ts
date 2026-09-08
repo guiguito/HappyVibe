@@ -191,3 +191,63 @@ describe("uiStore: per-window reads, and the one-time adoption (round 23)", () =
     expect(uiGet("hv:sidebar-collapsed")).toBeNull();
   });
 });
+
+describe("a tab lives in exactly one window (round 23)", () => {
+  const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+  const tabstrip = readFileSync("src/renderer/src/components/TabStrip.tsx", "utf8");
+  const filetab = readFileSync("src/renderer/src/components/FileTab.tsx", "utf8");
+
+  it("the tab menu opens for EVERY kind, not only the renameable ones", () => {
+    // Round 12 gated onContextMenu on `if (!isChat && !isTerm) return;` — it
+    // existed only for Rename. That made round 23's Move item unreachable on a
+    // file tab, i.e. on exactly the kind whose move carries an unsaved buffer.
+    // Found in the GUI: right-clicking notes.txt did nothing at all.
+    const i = tabstrip.indexOf("onContextMenu");
+    expect(tabstrip.slice(i, i + 400)).not.toMatch(/if \(!isChat && !isTerm\) return;/);
+    // Rename is gated per ITEM instead.
+    expect(tabstrip).toMatch(/\{\(sessionOf\(menu\.tab\) !== null \|\| terminalOf\(menu\.tab\) !== null\) && \(/);
+  });
+
+  it("the tab menu offers Move to new window", () => {
+    expect(tabstrip).toMatch(/Move to new window/);
+    // The app's only blur-dismissed menu bug, twice reported: a <button> press
+    // does not focus it, so this menu acts on mousedown (tests/tabstrip-menu).
+    const at = tabstrip.indexOf(">\n              Move to new window");
+    expect(at).toBeGreaterThan(-1);
+    const item = tabstrip.slice(tabstrip.lastIndexOf("<button", at), at);
+    expect(item).toMatch(/onMouseDown/);
+    expect(item).not.toMatch(/onClick/);
+  });
+
+  it("a dirty draft is reported with the dirty flag, and an arriving tab can take one", () => {
+    expect(filetab).toMatch(/onDirtyChange: \(dirty: boolean, content: string\) => void/);
+    expect(filetab).toMatch(/takeDraft\?: \(\) => string \| undefined/);
+  });
+
+  it("detaching uses the pure closeTab, so a moved terminal keeps its PTY", () => {
+    // closeTerminalTab KILLS the pty and closeBrowserTab DESTROYS the pane —
+    // right for closing a tab, catastrophic for moving one.
+    const i = app.indexOf("const detachTab");
+    expect(i).toBeGreaterThan(-1);
+    const detach = app.slice(i, i + 500);
+    expect(detach).toMatch(/closeTab\(/);
+    expect(detach).not.toMatch(/closeTerminalTab|closeBrowserTab|termKill|browserDestroy/);
+  });
+
+  it("the source detaches only after main confirms the move", () => {
+    // Detaching first would lose the tab outright if the target window died
+    // between the click and the push.
+    const i = app.indexOf("const moveTabToWindow");
+    expect(i).toBeGreaterThan(-1);
+    const fn = app.slice(i, i + 1200);
+    expect(fn).toMatch(/const ok = await window\.hv\.moveTab\(/);
+    expect(fn).toMatch(/if \(ok\) detachTab\(/);
+  });
+
+  it("a NEW window's draft rides the boot payload, not a push it would miss", () => {
+    // openWindow returns before its renderer exists, so hv:tab-arrive sent then
+    // reaches nobody. index.ts parks it and hv:window-boot hands it over.
+    expect(index).toMatch(/pendingDrafts/);
+    expect(app).toMatch(/window\.hv\.boot\.draft/);
+  });
+});

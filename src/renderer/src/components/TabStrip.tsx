@@ -47,6 +47,8 @@ export function TabStrip({
   onClosePane,
   trailing,
   onRename,
+  onMoveToWindow,
+  canMoveToWindow,
 }: {
   pane: Pane;
   /** Slot index in the 2×2 grid (0–3). */
@@ -73,6 +75,10 @@ export function TabStrip({
    * filename, and renaming the file is the tree's job.
    */
   onRename: (tab: TabId, title: string) => void;
+  /** §7 round 23: hand this tab to a brand-new window. */
+  onMoveToWindow: (tab: TabId) => void;
+  /** False while a kind cannot live in a second window yet (browser, stage 3). */
+  canMoveToWindow: (tab: TabId) => boolean;
   onMoveTab: (tab: TabId, toPane: number) => void;
   /** Round 11: the trailing `+` — fill this pane without leaving it. */
   onNewSession: () => void;
@@ -178,9 +184,11 @@ export function TabStrip({
               onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(id)}
               onAuxClick={(e) => e.button === 1 && onClose(id)}
               onContextMenu={(e) => {
-                // Only chat and terminal tabs are renameable — a file tab's
-                // title IS its filename.
-                if (!isChat && !isTerm) return;
+                // §7 round 23: EVERY tab kind opens this menu. Round 12 gated
+                // it on renameability (a file tab's title IS its filename), so
+                // when "Move to new window" joined it, the menu was unreachable
+                // for exactly the kind whose move matters most — a file with an
+                // unsaved buffer. Renaming is now gated per ITEM instead.
                 e.preventDefault();
                 setMenu({ tab: id, x: e.clientX, y: e.clientY });
               }}
@@ -286,20 +294,40 @@ export function TabStrip({
             className="fixed z-50 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold"
             style={{ left: menu.x, top: menu.y }}
           >
+            {/* Only a chat or a terminal has a title of its own to change. */}
+            {(sessionOf(menu.tab) !== null || terminalOf(menu.tab) !== null) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const sid = sessionOf(menu.tab);
+                  const tid = terminalOf(menu.tab);
+                  setEditing({
+                    tab: menu.tab,
+                    draft: sid ? sessionTitleFor(sid) : tid ? terminalTitleFor(tid) : "",
+                  });
+                  setMenu(null);
+                }}
+                className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
+              >
+                Rename…
+              </button>
+            )}
+            {/* §7 round 23. onMouseDown + preventDefault, not onClick: pressing
+                a <button> does not focus it, and this menu's own dismissal has
+                unmounted an item between mousedown and mouseup twice before
+                (tests/tabstrip-menu.test.ts). */}
             <button
               type="button"
-              onClick={() => {
-                const sid = sessionOf(menu.tab);
-                const tid = terminalOf(menu.tab);
-                setEditing({
-                  tab: menu.tab,
-                  draft: sid ? sessionTitleFor(sid) : tid ? terminalTitleFor(tid) : "",
-                });
+              disabled={!canMoveToWindow(menu.tab)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onMoveToWindow(menu.tab);
                 setMenu(null);
               }}
-              className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
+              className="w-full text-left px-3.5 py-1.5 hover:bg-paper-deep/40 cursor-pointer disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent"
+              title={canMoveToWindow(menu.tab) ? undefined : "A browser pane cannot move between windows yet"}
             >
-              Rename…
+              Move to new window
             </button>
           </div>
         </>

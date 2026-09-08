@@ -940,7 +940,20 @@ interface HvApi {
   /** §26: the centre-area tab layout, stored opaquely — the renderer validates
       and prunes it on restore (layoutPersist.ts). */
   /** §7 round 23: this window's id and its stored record, read synchronously at preload. */
-  boot: { windowId: number; record: { tabsByWs: unknown; ui: Record<string, string> } };
+  boot: {
+    windowId: number;
+    record: { tabsByWs: unknown; ui: Record<string, string> };
+    draft?: { tab: string; ws: string; draft: string };
+  };
+  moveTab(req: {
+    tab: string;
+    ws: string;
+    draft?: string;
+    record?: unknown;
+    target: "new" | number;
+    at?: { x: number; y: number };
+  }): Promise<boolean>;
+  onTabArrive(h: (p: { tab: string; ws: string; draft?: string }) => void): () => void;
   setWindowTabs(t: Record<string, unknown>): Promise<void>;
   setWindowUi(ui: Record<string, string>): Promise<void>;
 

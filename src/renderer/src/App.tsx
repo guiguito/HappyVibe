@@ -350,7 +350,21 @@ export default function App(): React.JSX.Element {
         return next;
       }),
     );
-    return () => { offTitle(); offExit(); offBrowser(); offBrowserClosed(); };
+    /**
+     * §7 round 23 — a tab handed to THIS window by another one.
+     *
+     * `setActiveWs` too: the tab belongs to a workspace, and arriving on a
+     * workspace nobody is looking at is round 11's blank-centre bug again —
+     * every tab present and invisible.
+     */
+    const offTabArrive = window.hv.onTabArrive(({ tab, ws, draft }) => {
+      if (draft !== undefined) arrivedDrafts.current[bufferKey(ws, tab)] = draft;
+      setTabsByWs((p) => ({ ...p, [ws]: openInto(p[ws] ?? emptyTabs, tab) }));
+      setActiveWs(ws);
+      const sid = sessionOf(tab);
+      if (sid) { setSelectedId(sid); setView("chat"); }
+    });
+    return () => { offTitle(); offExit(); offBrowser(); offBrowserClosed(); offTabArrive(); };
   }, []);
   // F6: global shortcuts. The handler closure is refreshed each render (reads
   // live wsId/tabs/newSession); a single listener reads it through the ref so we
@@ -389,6 +403,14 @@ export default function App(): React.JSX.Element {
   // bufferKey(ws, rel) → unsaved edits (feeds the tab-strip dirty dot; the
   // buffers themselves live in the always-mounted FileTab components).
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
+  /**
+   * §7 round 23: the unsaved text of every open file, so a cross-window move
+   * can carry it. A REF, not state — FileTab reports on every keystroke and
+   * re-rendering App for each one would undo §7's streaming perf rules.
+   */
+  const draftsRef = useRef<Record<string, string>>({});
+  /** Drafts that arrived WITH a moved tab, waiting for their FileTab to mount. */
+  const arrivedDrafts = useRef<Record<string, string>>({});
   const seenOnboarding = useRef(true); // assume seen until config says otherwise
   /**
    * The session the wizard opened, if any. The two wow notices fire once, for
@@ -707,6 +729,11 @@ export default function App(): React.JSX.Element {
         // synchronously at preload — no round trip, and no frame where the
         // layout is empty.
         const raw = window.hv.boot.record.tabsByWs;
+        // §7 round 23: a tab moved into a BRAND-NEW window brings its unsaved
+        // text on the boot payload — `openWindow` returns before this renderer
+        // exists, so an hv:tab-arrive push at that moment reaches nobody.
+        const bootDraft = window.hv.boot.draft;
+        if (bootDraft) arrivedDrafts.current[bufferKey(bootDraft.ws, bootDraft.tab)] = bootDraft.draft;
         const [sessionList, termList, browserList, wsList] = await Promise.all([
           window.hv.listSessions(),
           window.hv.termList(),
@@ -1884,6 +1911,61 @@ export default function App(): React.JSX.Element {
     setDirtyMap((p) => (!!p[key] === d ? p : { ...p, [key]: d }));
   }, []);
 
+  /**
+   * §7 round 23 — remove a tab from THIS window with NO side effect on its
+   * subject, which is what makes a move a move.
+   *
+   * The pure `closeTab` deliberately, never App's own closeTerminalTab /
+   * closeBrowserTab wrappers: those kill the PTY and destroy the pane. Right
+   * for closing a tab, catastrophic for moving one.
+   */
+  const detachTab = (ws: string, tab: TabId): void =>
+    setTabsByWs((p) => {
+      const t = p[ws];
+      if (!t) return p;
+      const slot = paneOf(t, tab);
+      return slot < 0 ? p : { ...p, [ws]: closeTab(t, slot, tab) };
+    });
+
+  /** Open any tab kind into a layout, by its id alone. */
+  const openInto = (t: WorkspaceTabs, tab: TabId): WorkspaceTabs => {
+    const sid = sessionOf(tab);
+    if (sid) return openChat(t, sid);
+    const tid = terminalOf(tab);
+    if (tid) return openTerminal(t, tid);
+    const bid = browserOf(tab);
+    if (bid) return openBrowserTab(t, bid);
+    return openFile(t, tab);
+  };
+
+  /**
+   * Hand a tab to another window — a brand-new one, or an existing one by id.
+   *
+   * The source detaches only once main CONFIRMS: detaching first would lose the
+   * tab outright if the target window died between the click and the push.
+   */
+  const moveTabToWindow = async (
+    ws: string,
+    tab: TabId,
+    target: "new" | number,
+    at?: { x: number; y: number },
+  ): Promise<void> => {
+    // Only a file tab has a buffer; the other three kinds live in main.
+    const draft = isChatTab(tab) || isTermTab(tab) || isBrowserTab(tab)
+      ? undefined
+      : draftsRef.current[bufferKey(ws, tab)];
+    // The destination layout is built HERE, by the renderer that owns the tabs
+    // module — main stays unable to tell a tab from a filename.
+    const record = target === "new"
+      ? {
+          tabsByWs: { [ws]: openInto(emptyTabs, tab) } as unknown as Record<string, unknown>,
+          ui: { "hv:active-ws": ws, "hv:sidebar-collapsed": "1" },
+        }
+      : undefined;
+    const ok = await window.hv.moveTab({ tab, ws, draft, record, target, at }).catch(() => false);
+    if (ok) detachTab(ws, tab);
+  };
+
   const surface = (err: unknown): void => setError(ipcMessage(err));
 
   const addWorkspace = async (): Promise<void> => {
@@ -2664,6 +2746,10 @@ export default function App(): React.JSX.Element {
                       if (tid) void window.hv.termRename(tid, title).catch(surface);
                     }}
                     onMoveTab={(tab, to) => updateTabs(wsId, (t) => moveTab(t, tab, to))}
+                    onMoveToWindow={(tab) => void moveTabToWindow(wsId, tab, "new")}
+                    // §28's WebContentsView belongs to exactly one window, so a
+                    // browser pane cannot move until stage 3 re-parents it.
+                    canMoveToWindow={(tab) => !isBrowserTab(tab)}
                     onNewSession={() => void newSession(wsId)}
                     newSessionKey={formatBinding(bindings.newSession)}
                     onNewTerminal={() => {
@@ -2978,7 +3064,19 @@ export default function App(): React.JSX.Element {
                         }
                       : undefined
                   }
-                  onDirtyChange={(d) => setDirtyFlag(bufferKey(w, f), d)}
+                  onDirtyChange={(d, text) => {
+                    setDirtyFlag(bufferKey(w, f), d);
+                    // §7 round 23: keep the unsaved text where a cross-window
+                    // move can find it. A ref, so this costs no render.
+                    if (d) draftsRef.current[bufferKey(w, f)] = text;
+                    else delete draftsRef.current[bufferKey(w, f)];
+                  }}
+                  takeDraft={() => {
+                    const k = bufferKey(w, f);
+                    const d = arrivedDrafts.current[k];
+                    delete arrivedDrafts.current[k];
+                    return d;
+                  }}
                   saveKey={bindings.save}
                   searchKey={bindings.search}
                 />
