@@ -191,3 +191,12 @@ test("touch sets lastUsedAt and leaves updatedAt alone", async () => {
 
   expect(index.touch("nope")).toBeUndefined();
 });
+
+test("§34: pulseAskedAt is additive and survives a reload", () => {
+  const index = new SessionIndex(file());
+  const meta = index.create("/tmp/ws");
+  // Absent = never asked. Nothing to migrate for sessions that predate the field.
+  expect(meta.pulseAskedAt).toBeUndefined();
+  index.update(meta.id, { pulseAskedAt: "2026-09-10T10:00:00.000Z" });
+  expect(new SessionIndex(file()).get(meta.id)?.pulseAskedAt).toBe("2026-09-10T10:00:00.000Z");
+});
