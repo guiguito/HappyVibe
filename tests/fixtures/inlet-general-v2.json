@@ -1,0 +1,137 @@
+{
+    "feedbackDatabaseId": "fdb_h2ntrck1mywr",
+    "formVersionId": "fv_1t9feyt7f0pa",
+    "formVersion": 2,
+    "publishedAt": "2026-09-09T14:13:05.370Z",
+    "pages": [
+        {
+            "id": "pg_0h7213ch39n3",
+            "elements": [
+                {
+                    "id": "el_qqeqaggpvang",
+                    "type": "title",
+                    "text": "Feedback for HappyVibe"
+                },
+                {
+                    "id": "el_2xya17ejhnzp",
+                    "type": "body_text",
+                    "text": "Anything you noticed while using the app \u2014 broken, confusing, missing or good. Two fields are all that is required."
+                },
+                {
+                    "id": "el_szbmd4ddzewt",
+                    "type": "choice",
+                    "label": "What kind of feedback is this?",
+                    "options": [
+                        {
+                            "id": "op_7484gpbkt32d",
+                            "label": "Something is broken"
+                        },
+                        {
+                            "id": "op_wmg8jyckcgh2",
+                            "label": "An idea or a request"
+                        },
+                        {
+                            "id": "op_byyr6kw8s1h3",
+                            "label": "Something was confusing"
+                        },
+                        {
+                            "id": "op_mnazdt2gm0e9",
+                            "label": "Something worked well"
+                        },
+                        {
+                            "id": "op_2efhpnkc12ck",
+                            "label": "Something else"
+                        }
+                    ],
+                    "required": true,
+                    "selection": "single",
+                    "optionKind": "text",
+                    "orientation": "vertical"
+                }
+            ]
+        },
+        {
+            "id": "pg_858p3y4hd1x8",
+            "elements": [
+                {
+                    "id": "el_5evwc8vfj3yc",
+                    "type": "text",
+                    "label": "What happened?",
+                    "required": true,
+                    "maxLength": 4000,
+                    "multiline": true,
+                    "helperText": "What you were doing, what you expected, and what happened instead.",
+                    "placeholder": "I was trying to\u2026"
+                }
+            ]
+        },
+        {
+            "id": "pg_ytkz3ze7srhd",
+            "elements": [
+                {
+                    "id": "el_fppmeabbfspe",
+                    "type": "choice",
+                    "label": "How is HappyVibe treating you overall?",
+                    "options": [
+                        {
+                            "id": "op_5ef2m5c9854y",
+                            "emoji": "\ud83d\ude16",
+                            "label": "Frustrating"
+                        },
+                        {
+                            "id": "op_7xq44nmgbb5v",
+                            "emoji": "\ud83d\ude15",
+                            "label": "Rough edges"
+                        },
+                        {
+                            "id": "op_fhwv8g1advac",
+                            "emoji": "\ud83d\ude42",
+                            "label": "Fine"
+                        },
+                        {
+                            "id": "op_kc7172rqc53r",
+                            "emoji": "\ud83d\ude04",
+                            "label": "Great"
+                        }
+                    ],
+                    "required": false,
+                    "selection": "single",
+                    "optionKind": "emoji",
+                    "orientation": "horizontal"
+                }
+            ]
+        },
+        {
+            "id": "pg_ww0vb8253e5y",
+            "elements": [
+                {
+                    "id": "el_pebaya4w61jq",
+                    "type": "screenshot",
+                    "label": "A screenshot, if it helps",
+                    "maxCount": 3,
+                    "required": false,
+                    "helperText": "Optional. Up to three images.",
+                    "acceptedMediaTypes": [
+                        "image/jpeg",
+                        "image/png",
+                        "image/webp"
+                    ],
+                    "maxFileBytes": 10485760
+                }
+            ]
+        },
+        {
+            "id": "pg_qcpj4fgnsxq2",
+            "elements": [
+                {
+                    "id": "el_86jj3z6wcjh6",
+                    "type": "email",
+                    "label": "Your email, if you would like a reply",
+                    "required": false,
+                    "helperText": "Optional. Only used to answer this feedback.",
+                    "placeholder": "you@example.com"
+                }
+            ]
+        }
+    ]
+}

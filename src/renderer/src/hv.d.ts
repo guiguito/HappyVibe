@@ -6,7 +6,7 @@ declare global {
  * so the app never hard-codes an upload limit. Separate tsconfig roots, so this
  * is a structural mirror of src/main/feedback/inlet.ts rather than an import.
  */
-type HvFormElement =
+type HvKnownElement =
   | { id: string; type: "title" | "subtitle" | "body_text"; text: string }
   | {
       id: string;
@@ -30,9 +30,23 @@ type HvFormElement =
       maxCount: number;
       acceptedMediaTypes: string[];
       maxFileBytes: number;
-    }
-  /** A type this build does not know: rendered as a sentence, never guessed at. */
-  | { id: string; type: string; label?: string; required?: boolean };
+    };
+
+/**
+ * A type this build does not know: rendered as a sentence, never guessed at.
+ *
+ * It is a SEPARATE type rather than a branch of the union above, because a
+ * branch with `type: string` overlaps every literal and would stop
+ * `el.type === "choice"` from narrowing anything.
+ */
+interface HvUnknownElement {
+  id: string;
+  type: string;
+  label?: string;
+  required?: boolean;
+}
+
+type HvFormElement = HvKnownElement | HvUnknownElement;
 
 interface HvFormPage {
   id: string;

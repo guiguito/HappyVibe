@@ -1,0 +1,49 @@
+{
+    "feedbackDatabaseId": "fdb_384szrcgeb7n",
+    "formVersionId": "fv_0fj0tz62d9a7",
+    "formVersion": 1,
+    "publishedAt": "2026-09-09T21:30:16.584Z",
+    "pages": [
+        {
+            "id": "pg_bahgvpt1yypq",
+            "elements": [
+                {
+                    "id": "el_m1jnhejwr94k",
+                    "type": "choice",
+                    "label": "How did the session go?",
+                    "options": [
+                        {
+                            "id": "op_q43mx0mmzxnm",
+                            "emoji": "\ud83d\ude16",
+                            "label": "Very bad"
+                        },
+                        {
+                            "id": "op_52t7zzraqkzn",
+                            "emoji": "\ud83d\ude15",
+                            "label": "Bad"
+                        },
+                        {
+                            "id": "op_9k5hjev2vpgs",
+                            "emoji": "\ud83d\ude10",
+                            "label": "Okay"
+                        },
+                        {
+                            "id": "op_frm6a7s5vdeq",
+                            "emoji": "\ud83d\ude42",
+                            "label": "Good"
+                        },
+                        {
+                            "id": "op_42wz4qrhyfnv",
+                            "emoji": "\ud83d\ude04",
+                            "label": "Great"
+                        }
+                    ],
+                    "required": true,
+                    "selection": "single",
+                    "optionKind": "emoji",
+                    "orientation": "horizontal"
+                }
+            ]
+        }
+    ]
+}

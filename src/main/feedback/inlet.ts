@@ -37,7 +37,7 @@ export class InletError extends Error {
   }
 }
 
-export type FormElement =
+export type KnownElement =
   | { id: string; type: "title" | "subtitle" | "body_text"; text: string }
   | {
       id: string;
@@ -61,9 +61,23 @@ export type FormElement =
       maxCount: number;
       acceptedMediaTypes: string[];
       maxFileBytes: number;
-    }
-  /** Forward-compatible: a type this build does not know. Never guessed at. */
-  | { id: string; type: string; label?: string; required?: boolean };
+    };
+
+/**
+ * Forward-compatible: a type this build does not know.
+ *
+ * A SEPARATE type rather than a branch, because a branch with `type: string`
+ * overlaps every literal and stops the union discriminating at all — the
+ * renderer's mirror splits it the same way for the same reason.
+ */
+export interface UnknownElement {
+  id: string;
+  type: string;
+  label?: string;
+  required?: boolean;
+}
+
+export type FormElement = KnownElement | UnknownElement;
 
 export interface FormPage {
   id: string;
