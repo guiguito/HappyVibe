@@ -38,7 +38,11 @@ export class InletError extends Error {
 }
 
 export type KnownElement =
-  | { id: string; type: "title" | "subtitle" | "body_text"; text: string }
+  // Three members, not one with a union of literals: Inlet declares three
+  // schemas, and a single member cannot be narrowed away by an early return.
+  | { id: string; type: "title"; text: string }
+  | { id: string; type: "subtitle"; text: string }
+  | { id: string; type: "body_text"; text: string }
   | {
       id: string;
       type: "choice";

@@ -1,5 +1,4 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, systemPreferences } from "electron";
-import { is } from "@electron-toolkit/utils";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -3975,7 +3974,10 @@ export function registerIpc(
    * A null config is the whole "no key ⇒ no surface" rule (§20) — the renderer
    * asks `hv:feedback-info` at boot and mounts neither the icon nor the pulse.
    */
-  const feedbackCfg = resolveFeedbackConfig(process.env, is.dev);
+  // `!app.isPackaged` IS `is.dev` from @electron-toolkit/utils, inlined: importing
+  // that package here pulls `electron` in as CommonJS and breaks every test that
+  // imports ipc.ts under vitest (three of them, measured).
+  const feedbackCfg = resolveFeedbackConfig(process.env, !app.isPackaged);
   const feedbackFast = fastPulse(process.env);
   const inlet = feedbackCfg ? createInletClient(feedbackCfg) : null;
   /**

@@ -18,6 +18,7 @@ import { describeProviderError, retryNoticeText } from "./providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
+import { FeedbackDialog } from "./components/FeedbackDialog";
 import { ShortcutsView } from "./components/ShortcutsView";
 import { eventToBinding, formatBinding, resolveBindings, type ShortcutId } from "./shortcuts";
 import {
@@ -49,7 +50,7 @@ import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, merg
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment, type DocumentAttachment } from "./composer";
 import {
-  activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
+  activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane, activeTabOf,
   isChatTab, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, sessionOf, setSize, splitAt, splitOptions, termTab, terminalOf,
   allBrowsers, browserOf, browserTab, isBrowserTab, openBrowserTab,
   crossDividerSpans,
@@ -150,6 +151,14 @@ export default function App(): React.JSX.Element {
   // it is permanent: §7 round 8 deleted the Help entry and §22 round 17
   // confirmed no re-open path.
   const [onboarding, setOnboarding] = useState(false);
+  /**
+   * §34: whether this build can collect feedback at all. `available` is false
+   * when the channel has no publishable key, and then NEITHER surface mounts —
+   * "don't show what cannot work" (§20). Read once at boot; the channel cannot
+   * change while the app runs.
+   */
+  const [feedbackInfo, setFeedbackInfo] = useState<{ available: boolean; fastPulse: boolean }>({ available: false, fastPulse: false });
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   // First-prompt suggestion chips. They INSERT and never send (§27's refused
   // auto-send), live only until the first send, and are branched on what the
   // folder actually holds — an empty one gets prompts that CREATE a codebase,
@@ -844,6 +853,10 @@ export default function App(): React.JSX.Element {
       // past that moment still reads false and would meet a brand-new wizard.
       setOnboarding(shouldShowOnboarding({ seen, workspaces: ws.length, sessions: sess.length }));
     })();
+
+    // §34: does this build have a feedback channel? Decides the sidebar icon
+    // and the session pulse, both of which are absent without a key.
+    void window.hv.feedbackInfo().then(setFeedbackInfo);
 
     // B5: default model's context window feeds the estimated-gauge fallback.
     void (async () => {
@@ -2539,6 +2552,16 @@ export default function App(): React.JSX.Element {
    */
   const wsId = activeWs ?? selected?.workspaceId ?? null;
   const wsTabs = (wsId ? tabsByWs[wsId] : undefined) ?? emptyTabs;
+  /**
+   * §34: the session in the FOCUSED slot of this window's grid, or null when the
+   * focused tab is not a chat. It decides two things: which session's model a
+   * feedback report names, and which pane may raise the pulse — a pulse in a
+   * pane the user is not looking at is an interruption from nowhere.
+   */
+  const focusedChatSessionId = ((): string | null => {
+    const tab = activeTabOf(wsTabs);
+    return tab ? sessionOf(tab) : null;
+  })();
   // F6: refresh the global-shortcut closure with the current render's state.
   shortcutRef.current = (e: KeyboardEvent): void => {
     // Round 8: dispatch off the registry, so a rebind on the shortcuts page is
@@ -2670,6 +2693,8 @@ export default function App(): React.JSX.Element {
         openSessionIds={openSessionIds}
         view={activeView}
         onNavigate={(v) => !needsSetup && setView(v)}
+        feedbackAvailable={feedbackInfo.available}
+        onFeedback={() => setFeedbackOpen(true)}
         onAddWorkspace={addWorkspace}
         onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
         gitInfo={gitInfo}
@@ -3345,6 +3370,16 @@ export default function App(): React.JSX.Element {
             </div>
           </div>
         </div>
+      )}
+      {feedbackOpen && (
+        <FeedbackDialog
+          /* The dialog is app-level, so the session is context rather than
+             scope: main resolves its model, and there is none to name from a
+             settings page. */
+          sessionId={activeView === "chat" ? focusedChatSessionId : null}
+          view={activeView}
+          onClose={() => setFeedbackOpen(false)}
+        />
       )}
       {onboarding && (
         <OnboardingDialog

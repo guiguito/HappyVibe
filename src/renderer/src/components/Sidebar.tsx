@@ -349,6 +349,15 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
 }
 
 /** §7 round 18: the search affordance. The INPUT hides at rest; this does not. */
+/** §34: an outlined speech bubble — "tell us something", not "chat with us". */
+function FeedbackIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 1 1 21 12z" />
+    </svg>
+  );
+}
+
 function SearchIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -543,6 +552,8 @@ export function Sidebar({
   openSessionIds,
   view,
   onNavigate,
+  feedbackAvailable,
+  onFeedback,
   onAddWorkspace,
   onWorkspaceSettings,
   gitInfo,
@@ -577,6 +588,9 @@ export function Sidebar({
   openSessionIds: ReadonlySet<string>;
   view: View;
   onNavigate: (v: View) => void;
+  /** §34: false when the channel has no publishable key — then there is no icon at all. */
+  feedbackAvailable: boolean;
+  onFeedback: () => void;
   /** Round 8: the Settings group's open/closed state (persisted in App). */
   settingsOpen: boolean;
   onToggleSettingsOpen: () => void;
@@ -741,6 +755,14 @@ export function Sidebar({
         >
           <BrandLogo size="sm" className="hover:rotate-6 transition-transform" />
         </button>
+        {/* §34: reachable in BOTH sidebar states. A feedback affordance that
+            disappears when the sidebar does is the one nobody finds when
+            something is wrong. */}
+        {feedbackAvailable && (
+          <button type="button" onClick={onFeedback} title="Send feedback" aria-label="Send feedback" className={railBtn(false)}>
+            <FeedbackIcon />
+          </button>
+        )}
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1.5 w-full pt-2">
           {workspaces.map((ws) => (
             <button
@@ -786,6 +808,17 @@ export function Sidebar({
             Happy<span className="text-tangerine">Vibe</span>
           </div>
         </button>
+        {feedbackAvailable && (
+          <button
+            type="button"
+            onClick={onFeedback}
+            title="Send feedback"
+            aria-label="Send feedback"
+            className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1"
+          >
+            <FeedbackIcon />
+          </button>
+        )}
         {/* §7 round 18: the affordance stays, the input does not. Same idiom
             as the collapse control beside it — icon button, shortcut in the
             tooltip. */}

@@ -1,0 +1,53 @@
+import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import { FEEDBACK_COPY } from "../src/renderer/src/components/feedbackCopy";
+
+/**
+ * The renderer suite has no DOM, so a visual contract is pinned in two halves:
+ * the data the component exports, and a SOURCE SCAN for the things that must be
+ * true and cannot be asserted by rendering — `tests/modal-layer.test.ts`'s shape.
+ */
+const dialog = fs.readFileSync("src/renderer/src/components/FeedbackDialog.tsx", "utf8");
+const form = fs.readFileSync("src/renderer/src/components/FormRenderer.tsx", "utf8");
+const sidebar = fs.readFileSync("src/renderer/src/components/Sidebar.tsx", "utf8");
+const app = fs.readFileSync("src/renderer/src/App.tsx", "utf8");
+
+describe("§34 dialog", () => {
+  it("uses the modal shell classes, so it sits at z-100 and browser panes hide under it", () => {
+    expect(dialog).toMatch(/className="hv-overlay /);
+    expect(dialog).toMatch(/className="hv-dialog /);
+  });
+
+  it("thumbnails are data: URLs — the CSP has no blob:", () => {
+    expect(form + dialog).not.toMatch(/createObjectURL/);
+    expect(dialog).toMatch(/readAsDataURL/);
+  });
+
+  it("no dead copy", () => {
+    const all = dialog + form;
+    const unused = Object.keys(FEEDBACK_COPY).filter((k) => !all.includes(`C.${k}`) && !all.includes(`FEEDBACK_COPY.${k}`));
+    expect(unused).toEqual([]);
+  });
+
+  it("the copy never says telemetry, and the ✕ is not Banner's word", () => {
+    expect(Object.values(FEEDBACK_COPY).join(" ")).not.toMatch(/telemetry/i);
+  });
+
+  it("the sidebar renders the icon in BOTH states, gated on availability", () => {
+    expect((sidebar.match(/feedbackAvailable && \(/g) ?? []).length).toBe(2);
+    expect((sidebar.match(/<FeedbackIcon \/>/g) ?? []).length).toBe(2);
+    expect(sidebar).toMatch(/title="Send feedback"/);
+  });
+
+  it("App opens through feedbackOpen and every close path drops main's capture", () => {
+    expect(app).toMatch(/feedbackAvailable=\{feedbackInfo\.available\}/);
+    expect(dialog).toMatch(/window\.hv\.feedbackOpen\(\)/);
+    expect(dialog).toMatch(/window\.hv\.feedbackClose\(\)/);
+    // One `close` helper, so no path can forget it.
+    expect((dialog.match(/const close = \(\)/g) ?? []).length).toBe(1);
+  });
+
+  it("the dialog is app-level: it passes no sessionId from a settings page", () => {
+    expect(app).toMatch(/sessionId=\{activeView === "chat" \? focusedChatSessionId : null\}/);
+  });
+});
