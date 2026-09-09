@@ -39,6 +39,7 @@ import {
 } from "../mentions";
 import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-document";
 import { Banner } from "./Banner";
+import { SessionPulse } from "./SessionPulse";
 
 /** §20 round 17 — red-zone dismissals persist per session (Principle 5: never nag). */
 const REDZONE_KEY = "hv:redzone-dismissed:";
@@ -115,6 +116,7 @@ export function ChatView({
   waking = false,
   crashed,
   turns,
+  pulse = null,
   queue = emptyQueue,
   delegations = [],
   onStopRun,
@@ -176,6 +178,16 @@ export function ChatView({
   waking?: boolean;
   crashed: number | null;
   turns: number;
+  /**
+   * §34: the session pulse, when App's `pulseDecision` says this session may be
+   * asked. Null when the build has no feedback channel — then it never mounts.
+   */
+  pulse?: {
+    show: boolean;
+    facts: () => HvSessionFacts;
+    onAsked: () => void;
+    onOpenDialog: () => void;
+  } | null;
   queue?: QueueState;
   /** V2.C1: active subagent runs (sticky in-flow section; done ones slide away). */
   delegations?: DelegationRun[];
@@ -1003,6 +1015,14 @@ export function ChatView({
             Review context
           </button>
         </Banner>
+      )}
+
+      {/* §34: the session pulse. It YIELDS to both banners — one attention
+          request at a time — which is why the check is here and not only in
+          App: the red-zone banner is this component's own state. It is not a
+          Banner itself: those are for things that are wrong (§20). */}
+      {pulse?.show && sessionId && crashed === null && !suggestCompact && (
+        <SessionPulse sessionId={sessionId} facts={pulse.facts} onAsked={pulse.onAsked} onOpenDialog={pulse.onOpenDialog} />
       )}
 
       {/* V2.C1: the delegation run lives OUTSIDE the chat flow — a sticky

@@ -243,6 +243,8 @@ interface SessionMeta {
    *  Absent on sessions that predate the field; readers fall back to
    *  `updatedAt` (sessionOrder.ts). Mirror of the main-side SessionMeta. */
   lastUsedAt?: string;
+  /** §34: when the session pulse was SHOWN. Absent = never asked; strict once, ever. */
+  pulseAskedAt?: string;
 }
 
 /** Round-4: reopened sessions restore tool cards too (intent + result live in

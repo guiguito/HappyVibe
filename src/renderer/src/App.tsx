@@ -19,6 +19,7 @@ import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
 import { FeedbackDialog } from "./components/FeedbackDialog";
+import { drawOffset, pulseDecision, PULSE_TIMING } from "./sessionPulse";
 import { ShortcutsView } from "./components/ShortcutsView";
 import { eventToBinding, formatBinding, resolveBindings, type ShortcutId } from "./shortcuts";
 import {
@@ -159,6 +160,16 @@ export default function App(): React.JSX.Element {
    */
   const [feedbackInfo, setFeedbackInfo] = useState<{ available: boolean; fastPulse: boolean }>({ available: false, fastPulse: false });
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  /**
+   * §34: when each session was opened IN THIS APP RUN, plus its one random
+   * offset. "How is this session going" is about this sitting, not about a
+   * session created last week, so the clock starts when the session appears
+   * here rather than at createdAt.
+   */
+  const pulseClock = useRef<Record<string, { openedAt: number; offsetMs: number }>>({});
+  const [pulseShow, setPulseShow] = useState<Record<string, boolean>>({});
+  /** §34: compactions this sitting — a number the pulse reports, nothing else reads. */
+  const [compactions, setCompactions] = useState<Record<string, number>>({});
   // First-prompt suggestion chips. They INSERT and never send (§27's refused
   // auto-send), live only until the first send, and are branched on what the
   // folder actually holds — an empty one gets prompts that CREATE a codebase,
@@ -1541,6 +1552,7 @@ export default function App(): React.JSX.Element {
           return { ...p, [sid]: next };
         });
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
+        setCompactions((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
       }
       // B2: pending steering/follow-up queue. Messages that leave the queue
       // were delivered to the agent — append them as user items right there,
@@ -2562,6 +2574,44 @@ export default function App(): React.JSX.Element {
     const tab = activeTabOf(wsTabs);
     return tab ? sessionOf(tab) : null;
   })();
+
+  /**
+   * §34 — may this session be asked how it is going?
+   *
+   * An EFFECT rather than a line inside the `agent_end` handler: that handler is
+   * registered once and would read every input through a stale closure, needing
+   * a ref per gate. `turns` bumping is the same beat, one render later, and it
+   * carries the fresh state with it.
+   *
+   * Only the focused session is ever evaluated, which is also where its clock
+   * starts — "how is this session going" is about this sitting, so a session
+   * sitting in a background pane is not accruing one.
+   */
+  useEffect(() => {
+    const sid = focusedChatSessionId;
+    if (!sid || !feedbackInfo.available || pulseShow[sid]) return;
+    const timing = feedbackInfo.fastPulse ? PULSE_TIMING.fast : PULSE_TIMING.normal;
+    const clock = (pulseClock.current[sid] ??= { openedAt: Date.now(), offsetMs: drawOffset(timing, Math.random) });
+    const meta = sessions.find((x) => x.id === sid);
+    const show = pulseDecision(
+      {
+        asked: !!meta?.pulseAskedAt,
+        openedAt: clock.openedAt,
+        offsetMs: clock.offsetMs,
+        now: Date.now(),
+        turns: turns[sid] ?? 0,
+        busy: !!busy[sid],
+        promptOpen: (pendingBySession[sid] ?? 0) > 0,
+        // The crash banner. The red-zone one is ChatView's own state, and it
+        // re-checks that at render — the pulse yields to both.
+        bannerShowing: statuses[sid] === "crashed",
+        focused: true,
+        available: feedbackInfo.available,
+      },
+      timing,
+    );
+    if (show) setPulseShow((p) => ({ ...p, [sid]: true }));
+  }, [focusedChatSessionId, turns, busy, statuses, pendingBySession, sessions, feedbackInfo, pulseShow]);
   // F6: refresh the global-shortcut closure with the current render's state.
   shortcutRef.current = (e: KeyboardEvent): void => {
     // Round 8: dispatch off the registry, so a rebind on the shortcuts page is
@@ -3127,6 +3177,27 @@ export default function App(): React.JSX.Element {
             streaming={streamText[sid] || undefined}
             thinking={thinkingText[sid] || undefined}
             busy={busy[sid] || false}
+            /* §34: `show` drops while the agent streams and comes back at idle;
+               the component stays mounted, so `onAsked` still fires exactly once. */
+            pulse={
+              feedbackInfo.available
+                ? {
+                    show: !!pulseShow[sid] && !busy[sid],
+                    facts: () => ({
+                      sittingMs: Date.now() - (pulseClock.current[sid]?.openedAt ?? Date.now()),
+                      turns: turns[sid] ?? 0,
+                      messages: (transcripts[sid] ?? []).length,
+                      // The GAUGE's figure, null right after a compaction — never
+                      // stats.tokens, which is cumulative since session start.
+                      contextTokens: (sid === selectedId ? selStats : null)?.contextUsage?.tokens ?? null,
+                      contextWindow: (sid === selectedId ? selStats : null)?.contextUsage?.contextWindow ?? null,
+                      compactions: compactions[sid] ?? 0,
+                    }),
+                    onAsked: () => void window.hv.sessionPulseAsked(sid),
+                    onOpenDialog: () => setFeedbackOpen(true),
+                  }
+                : null
+            }
             waking={(statuses[sid] === "waking") || false}
             crashed={statuses[sid] === "crashed" ? (crashCodes[sid] ?? -1) : null}
             turns={turns[sid] || 0}
