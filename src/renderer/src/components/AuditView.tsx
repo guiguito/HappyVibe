@@ -92,11 +92,33 @@ interface MemoryEvent {
   count?: number;
 }
 
+/**
+ * §34 — a feedback submission that LEFT the machine, on the user's say-so.
+ *
+ * Counts, sizes and ids only: never an answer, never the clientContext. The
+ * audit log is readable, exportable and long-lived, and §19's rule is telemetry
+ * without content — a feedback report is the one place a user's own words could
+ * most easily leak into it.
+ */
+interface FeedbackEvent {
+  ts: string;
+  workspaceId?: string;
+  sessionId?: string;
+  database: "general" | "session";
+  formVersion: number;
+  submissionId: string;
+  status: "accepted" | "duplicate";
+  attachments: number;
+  bytes: number;
+  channel?: string;
+}
+
 export type Row =
   | ({ row: "decision" } & Decision)
   | ({ row: "oneshot" } & OneShot)
   | ({ row: "excluded" } & ModelExcluded)
-  | ({ row: "memory" } & MemoryEvent);
+  | ({ row: "memory" } & MemoryEvent)
+  | ({ row: "feedback" } & FeedbackEvent);
 
 /**
  * One EventLog row → one display row.
@@ -113,6 +135,7 @@ export function toAuditRow(e: HvAuditEvent): Row {
   const base = { ts: e.ts, sessionId: e.sessionId, workspaceId: e.workspaceId };
   if (e.type === "assistant.oneshot") return { row: "oneshot", ...(e.data as unknown as OneShot), ...base };
   if (e.type === "model.excluded") return { row: "excluded", ...(e.data as unknown as ModelExcluded), ...base };
+  if (e.type === "feedback.sent") return { row: "feedback", ...(e.data as unknown as FeedbackEvent), ...base };
   // §33: discriminate on the event TYPE, like every row above — the data payload carries a
   // `kind` field too, and reading THAT is the bug this function was extracted to fix.
   if (e.type.startsWith("memory.")) {
@@ -127,6 +150,17 @@ export function toAuditRow(e: HvAuditEvent): Row {
  *
  * Exported for tests: the renderer suite has no DOM, so wording is pinned as data.
  */
+/**
+ * The app's own words for a submission. Exported for tests: the renderer suite
+ * has no DOM, so wording is pinned as data (§20's two-halves rule).
+ */
+export function feedbackText(r: FeedbackEvent): string {
+  if (r.database === "session") return "Rated the session";
+  if (r.status === "duplicate") return "Sent feedback · already received";
+  if (r.attachments === 0) return "Sent feedback";
+  return `Sent feedback · ${r.attachments} screenshot${r.attachments === 1 ? "" : "s"}`;
+}
+
 export function memoryText(r: MemoryEvent): string {
   const who = r.who === "human" ? "you " : "";
   const scope = r.scope === "workspace" ? " (this project)" : "";
@@ -262,6 +296,9 @@ export function AuditView({
     // happen is its own row, right beside this one. It answers to the source filter under its
     // own name so it can be isolated or excluded.
     if (r.row === "memory") return !decision && (!source || source === "memory");
+    // §34: not a decision either. Its own source name, so it can be isolated or
+    // excluded, and hidden whenever a DECISION filter is on.
+    if (r.row === "feedback") return !decision && (!source || source === "feedback");
     return (!decision || r.decision === decision) && (!source || (SOURCE_LABEL[r.source] ?? r.source) === source);
   };
   const shown = rows?.filter(matches) ?? null;
@@ -332,6 +369,7 @@ export function AuditView({
             <option value="assistant">The app itself</option>
             <option value="model">Model availability</option>
             <option value="memory">Memory</option>
+            <option value="feedback">Feedback</option>
           </select>
         </div>
 
@@ -380,6 +418,28 @@ export function AuditView({
                     {(r.description || r.reason) && (
                       <div className="text-xs text-ink-soft mt-0.5 truncate">{r.reason ?? r.description}</div>
                     )}
+                  </>
+                ) : r.row === "feedback" ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block rounded-full border border-line bg-paper-deep px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 text-ink-soft">
+                        feedback
+                      </span>
+                      <span className="font-bold shrink-0">{feedbackText(r)}</span>
+                      <span className="flex-1" />
+                      <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
+                        {new Date(r.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <code className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0">
+                        {r.submissionId} · form v{r.formVersion}
+                        {r.bytes > 0 ? ` · ${Math.max(1, Math.round(r.bytes / 1024))} KB` : ""}
+                      </code>
+                      <span className="text-[10px] text-ink-soft/70 shrink-0" title={r.workspaceId}>
+                        {r.workspaceId ? basename(r.workspaceId) : ""}
+                      </span>
+                    </div>
                   </>
                 ) : r.row === "oneshot" ? (
                   <>
