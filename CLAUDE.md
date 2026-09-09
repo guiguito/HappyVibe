@@ -1048,6 +1048,22 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   measured: off 5,873 tok/turn, on-and-empty 6,908, at the 100-memory cap 9,425 — and the three
   tool SCHEMAS are 743 of that against the policy's 242, which is why the settings panel shows
   both. Full wire shapes + the GUI findings: docs/validation/d1.md §33.
+- **§34 feedback: the only Inlet key in `src/` is a PUBLISHABLE `ipk_` key, and prod's is `null`
+  until someone mints it.** Only a signed-in admin in Inlet's web UI can create one — an API key
+  gets `insufficient_scope` (measured). A null config means **no icon and no pulse at all**
+  (`hv:feedback-info` → `available:false`), which is §20's rule rather than a button that fails,
+  and it is why a packaged build shows no feedback surface today. The `isk_` SERVER keys live in
+  `.env` only (`FEEDBACK_API_KEY` dev, `FEEDBACK_API_KEY_PROD` prod) for the MCP reading side and
+  `tests/feedback-live.test.ts`'s cleanup; `tests/feedback-secrets.test.ts` scans `src/` for both
+  the literal and any read of the var, and `resolveFeedbackConfig` refuses a non-`ipk_` key by
+  shape so a mis-set env var cannot promote the app to admin.
+  **The pulse's 20-second arm is `HV_FEEDBACK_FAST_PULSE=1`, never `import.meta.env.DEV`** — under
+  dev mode every development session would pulse after its first turn and every tap is a REAL row
+  in the Dev database. **Do not import `@electron-toolkit/utils` into `ipc.ts`**: it pulls
+  `electron` in as CommonJS and takes three unrelated tests down with a *"Named export
+  'BrowserWindow' not found"* that names line 2 rather than the cause; `!app.isPackaged` IS
+  `is.dev`. The live test writes to its own **Smoke tests** database (`fdb_dcjfkk5yfhgt`) and
+  deletes the row, and skips on no `.env` OR an unreachable server.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array
