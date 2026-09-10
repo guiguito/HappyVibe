@@ -193,17 +193,32 @@ describe("the card→circle flight (A1)", () => {
 });
 
 describe("the circle's enter, exit and shift (A2)", () => {
-  it("enters with a scale-up and leaves with a scale-down, both motion-safe", () => {
+  it("enters with a scale-up and leaves by shrinking, both motion-safe", () => {
     expect(rail).toContain("motion-safe:starting:scale-[.6]");
-    expect(rail).toContain("data-[leaving]:scale-[.6]");
-    expect(rail).toContain("data-[leaving]:opacity-0");
+    expect(rail).toContain("data-[leaving]:scale-[.15]");
   });
 
-  it("a leaving circle's fade ends at EXACTLY zero", () => {
-    // §28's coverage check reads `opacity !== "0"` as visible — literally, as a
-    // string compare. A circle resting at 0.01 is an invisible element that
-    // permanently blanks any browser pane it overlaps.
-    expect(rail).not.toMatch(/data-\[leaving\]:opacity-\[0\.\d/);
+  it("the exit does NOT touch opacity — the pulse owns it", () => {
+    // Measured twice, after "the kill is almost invisible" was reported twice.
+    // `RUN_STATE_RING` puts `animate-pulse` on the live states, which animates
+    // the same opacity an exit would fade, and a CSS animation beats a
+    // transition outright: with the pulse running the fade never happened at
+    // all, and killing the animation instead snapped opacity to 0 in one frame.
+    // Scale is uncontested and traces cleanly, so the exit is scale only.
+    // Scoped to the CIRCLE's own class string: the rail's expanded overlay is
+    // in this slice too and fades quite correctly — it has no pulse to fight.
+    const circle = rail.slice(rail.indexOf("data-hv-run-avatar={a.domKey}"));
+    const cls = circle.slice(circle.indexOf("className={`size-9"), circle.indexOf("`}", circle.indexOf("className={`size-9")));
+    expect(cls).toContain("data-[leaving]:scale-[.15]");
+    expect(cls).not.toContain("data-[leaving]:opacity");
+  });
+
+  it("it shrinks far enough that removal is not a pop", () => {
+    // The circle is deleted at the end of this. Stopping at .6 and vanishing
+    // reads as a disappearance; .15 reads as having gone.
+    const m = /data-\[leaving\]:scale-\[\.(\d+)\]/.exec(rail.slice(rail.indexOf("data-hv-run-avatar={a.domKey}")));
+    expect(m).toBeTruthy();
+    expect(Number(`0.${m![1]}`)).toBeLessThanOrEqual(0.2);
   });
 
   it("siblings close the gap with FLIP rather than teleporting", () => {
@@ -244,5 +259,43 @@ describe("the overlay and the hover readout (A3)", () => {
 
   it("the sticky wrapper string is untouched", () => {
     expect(chat).toContain('className="sticky top-0 z-20 px-6 relative max-w-3xl mx-auto w-full"');
+  });
+});
+
+/**
+ * A run's circle must still be on screen while it fades (2026-09-10).
+ *
+ * The exit is a CSS duration on the circle; the removal is a `setTimeout` in
+ * App. Nothing connects them, so the 1.5x rescale moved the fade to 220ms and
+ * left both delete timers where they were — cutting every exit off partway,
+ * which looks exactly like no animation at all. That is how a killed terminal
+ * was reported as "almost invisible".
+ *
+ * Both timers are expressed in terms of `DUR` now, so the two move together.
+ */
+describe("a circle outlives its own exit animation", () => {
+  const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+  const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+  const DUR_BASE = Number(/base:\s*(\d+)/.exec(motion)?.[1]);
+
+  it("the CSS exit duration is the same token the timers use", () => {
+    expect(DUR_BASE).toBeGreaterThan(0);
+    expect(chat).toContain(`motion-safe:data-[leaving]:duration-${DUR_BASE}`);
+  });
+
+  it("a terminal is removed no sooner than its fade ends", () => {
+    // Was `DUR.fast`, which is shorter than the fade — the circle vanished
+    // mid-animation.
+    const drop = app.slice(app.indexOf("const dropAgentTerminal"), app.indexOf("const dropAgentTerminal") + 1400);
+    expect(drop).toContain("leaving: true");
+    expect(drop).toContain("}, DUR.base);");
+  });
+
+  it("a delegation raises `leaving` a full exit before it is deleted", () => {
+    // The pair must stay a pair: a hardcoded gap silently stops matching the
+    // fade the moment the scale changes, which is exactly what happened.
+    expect(app).toContain("}, 2_500 - DUR.base);");
+    expect(app.match(/\}, 2_500 - DUR\.base\);/g)?.length).toBe(2);
+    expect(app.match(/\}, 2_500\);/g)?.length).toBe(2);
   });
 });

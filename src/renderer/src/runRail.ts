@@ -129,6 +129,7 @@ export function toRunAvatars(delegations: DelegationRun[], terminals: TerminalRu
       state: t.running ? "working" : "stopped",
       hue: avatarHue(t.title),
       startedAt: t.startedAt,
+      ...(t.leaving ? { leaving: true as const } : {}),
     })),
   ];
 }

@@ -41,6 +41,12 @@ export interface TerminalRun {
    * an older session file replays notifies that predate the field.
    */
   toolCallId?: string;
+  /**
+   * A2 (2026-09-10): this run is retiring and its circle should play its exit.
+   * Terminals had no equivalent of a delegation's `leaving` at all, so a killed
+   * one vanished in a single frame.
+   */
+  leaving?: true;
 }
 
 /**

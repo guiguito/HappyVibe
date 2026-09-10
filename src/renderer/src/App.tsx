@@ -200,7 +200,9 @@ export default function App(): React.JSX.Element {
    * which the push channel keeps live, so an exited terminal drops out of the
    * card stack with no extra bookkeeping.
    */
-  const [agentTerms, setAgentTerms] = useState<Record<string, Record<string, { intent: string; startedAt: number; toolCallId?: string }>>>({});
+  const [agentTerms, setAgentTerms] = useState<
+    Record<string, Record<string, { intent: string; startedAt: number; toolCallId?: string; title?: string; leaving?: true }>>
+  >({});
   /**
    * §28: every live browser pane, keyed by id. Main owns the panes and pushes
    * state (url/title/loading/blocked/crashed) — the renderer never derives it,
@@ -963,7 +965,7 @@ export default function App(): React.JSX.Element {
             const run = findByRunId(p[sid] ?? {}, sub.runId!);
             return run ? { ...p, [sid]: { ...p[sid], [run.id]: { ...run, leaving: true } } } : p;
           });
-        }, 2_350);
+        }, 2_500 - DUR.base);
         setTimeout(() => {
           setDelegations((p) => {
             const run = findByRunId(p[sid] ?? {}, sub.runId!);
@@ -1141,7 +1143,13 @@ export default function App(): React.JSX.Element {
               // A1: `toolCallId` is kept here because this notify is the ONLY
               // moment it and the terminal id are ever seen together — the same
               // shape of trap as §12's `asyncCards`, one feature over.
-              [sid]: { ...(p[sid] ?? {}), [terminalId]: { intent: termEv.intent ?? "", startedAt: Date.now(), toolCallId: termEv.toolCallId } },
+              [sid]: {
+                ...(p[sid] ?? {}),
+                // `title` is remembered here because a KILLED terminal loses its
+                // live entry the moment main pushes the exit — and the circle has
+                // to keep naming itself for the length of its exit animation.
+                [terminalId]: { intent: termEv.intent ?? "", startedAt: Date.now(), toolCallId: termEv.toolCallId, title: title ?? "" },
+              },
             }));
           } else if (termEv.terminalId) {
             dropAgentTerminal(sid, termEv.terminalId);
@@ -1468,7 +1476,7 @@ export default function App(): React.JSX.Element {
                 const run = p[sid]?.[t.toolCallId];
                 return run ? { ...p, [sid]: { ...p[sid], [t.toolCallId]: { ...run, leaving: true } } } : p;
               });
-            }, 2_350);
+            }, 2_500 - DUR.base);
             setTimeout(() => {
               setDelegations((p) => {
                 if (!p[sid]?.[t.toolCallId]) return p;
@@ -1855,13 +1863,32 @@ export default function App(): React.JSX.Element {
    * it was killed, or the human promoted it to a tab. The PTY's own fate is
    * decided elsewhere; this only forgets the card.
    */
-  const dropAgentTerminal = (sid: string, terminalId: string): void =>
+  /**
+   * Retire an agent terminal's run — in TWO steps, like a delegation.
+   *
+   * It used to be one synchronous delete, so a killed terminal's circle
+   * vanished in a single frame with no animation at all (reported 2026-09-10 as
+   * "almost invisible"). A delegation already did this properly: its 2.5s
+   * outcome timer raises `leaving` before it removes the run.
+   *
+   * The delete still has to HAPPEN, and on its own clock rather than the
+   * caller's, because the caller is usually main's exit push — see the render
+   * site, which keeps a leaving run on screen after its live entry is gone.
+   */
+  const dropAgentTerminal = (sid: string, terminalId: string): void => {
     setAgentTerms((p) => {
-      const forSession = p[sid];
-      if (!forSession?.[terminalId]) return p;
-      const { [terminalId]: _gone, ...rest } = forSession;
-      return { ...p, [sid]: rest };
+      const run = p[sid]?.[terminalId];
+      return run && !run.leaving ? { ...p, [sid]: { ...p[sid], [terminalId]: { ...run, leaving: true } } } : p;
     });
+    setTimeout(() => {
+      setAgentTerms((p) => {
+        const forSession = p[sid];
+        if (!forSession?.[terminalId]) return p;
+        const { [terminalId]: _gone, ...rest } = forSession;
+        return { ...p, [sid]: rest };
+      });
+    }, DUR.base);
+  };
 
   /**
    * §26 part 2: the human moves an agent terminal into a tab of its own. The
@@ -3373,9 +3400,20 @@ export default function App(): React.JSX.Element {
             // terminal leaves the card stack with no extra bookkeeping.
             terminalRuns={Object.entries(agentTerms[sid] ?? {}).flatMap(([id, meta]) => {
               const info = terminals[id];
-              return info
-                ? [{ terminalId: id, title: info.title, running: info.running, intent: meta.intent, startedAt: meta.startedAt, toolCallId: meta.toolCallId }]
-                : [];
+              // A killed terminal loses its live entry immediately, so without
+              // the `meta.leaving` arm the circle would still disappear in one
+              // frame however the exit is animated — the live map, not the
+              // delete, is what actually removes it.
+              if (!info && !meta.leaving) return [];
+              return [{
+                terminalId: id,
+                title: info?.title ?? meta.title ?? "",
+                running: info?.running ?? false,
+                intent: meta.intent,
+                startedAt: meta.startedAt,
+                toolCallId: meta.toolCallId,
+                ...(meta.leaving ? { leaving: true as const } : {}),
+              }];
             })}
             terminalSettings={termSettings}
             onStopTerminal={(id) => {

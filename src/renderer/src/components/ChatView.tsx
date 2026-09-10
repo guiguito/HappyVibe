@@ -2116,8 +2116,20 @@ function RunRail({
                 // The hue is INLINE, not a class: Tailwind's scanner never sees
                 // a computed class name and would emit nothing.
                 style={{ backgroundColor: `hsl(${a.hue} 70% 92%)`, color: `hsl(${a.hue} 60% 30%)` }}
-                // A2: enters with the brand's overshoot, leaves faster and
-                // smaller. The transition names `scale`, NOT `transform`:
+                // A2: enters with the brand's overshoot, and leaves by
+                // SHRINKING ONLY — no opacity in the exit.
+                //
+                // Measured, after "the kill is almost invisible" was reported
+                // twice: `RUN_STATE_RING` puts `animate-pulse` on the live
+                // states, that animates the very opacity an exit would fade,
+                // and a CSS animation beats a transition outright. With the
+                // pulse running the fade never happened (opacity just went on
+                // oscillating); killing the animation instead snapped it to 0
+                // in one frame, which was worse. Scale is uncontested, traced
+                // cleanly through every probe, and .15 is small enough that
+                // removal is not a pop.
+                //
+                // The transition names `scale`, NOT `transform`:
                 // Tailwind v4 compiles `scale-*` to the `scale` PROPERTY, so a
                 // list naming `transform` leaves the size change instant while
                 // the opacity animates — which looks almost right, and is the
@@ -2127,7 +2139,7 @@ function RunRail({
                 // EXACTLY 0 — §28's coverage check compares the string, and a
                 // circle resting at 0.01 would blank a browser pane for good.
                 data-leaving={a.leaving || undefined}
-                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer motion-safe:transition-[scale,opacity,border-color] motion-safe:duration-[240ms] motion-safe:ease-hv-pop motion-safe:starting:scale-[.6] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.6] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-220 motion-safe:data-[leaving]:ease-hv-in ${RUN_STATE_RING[a.state]}`}
+                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer motion-safe:transition-[scale,opacity,border-color] motion-safe:duration-[240ms] motion-safe:ease-hv-pop motion-safe:starting:scale-[.6] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.15] motion-safe:data-[leaving]:duration-220 motion-safe:data-[leaving]:ease-hv-in ${RUN_STATE_RING[a.state]}`}
               >
                 <ToolIcon kind={(a.kind === "agent" ? "robot" : "terminal") as IconKind} className="size-4" />
               </button>
