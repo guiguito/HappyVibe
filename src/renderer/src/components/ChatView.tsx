@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DUR } from "../motion";
+import { usePresence } from "../usePresence";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { hasRestorable, tailToolCallIds, type RewindScope } from "../rewind";
 import { matchesBinding } from "../shortcuts";
@@ -768,6 +770,25 @@ export function ChatView({
 
   // #8: filter the transcript by search text (message kinds that carry text).
 
+  /**
+   * B3 (Animations round, 2026-09-10) — the two chat banners and the two
+   * transient strips. Each takes a strip of height off the top of the
+   * conversation, so appearing and vanishing SHOVES everything below it; the
+   * reveal is a height, and the exit is what stops the shove being a jump.
+   *
+   * These four hooks MUST sit above the `!workspace || !sessionId` early return
+   * on the next line — a hook after a conditional return changes the hook count
+   * between renders and React tears the app down.
+   */
+  const crashBanner = usePresence(crashed !== null, DUR.fast);
+  const suggestBanner = usePresence(suggestCompact, DUR.fast);
+  const agentsMdStrip = usePresence(offerAgentsMd, DUR.fast);
+  const voiceToast = usePresence(!!voiceNotice, DUR.fast);
+  // What the toast SAYS while it is leaving: `voiceNotice` is already null by
+  // then, and reading it would empty the message a frame before the fade.
+  const lastVoiceNotice = useRef("");
+  if (voiceNotice) lastVoiceNotice.current = voiceNotice;
+
   if (!workspace || !sessionId) return <ChatWelcome onOpenFolder={onOpenFolder} />;
 
   const queued = queue.steering.length + queue.followUp.length;
@@ -986,8 +1007,8 @@ export function ChatView({
         </div>
       )}
       {/* Crash banner */}
-      {crashed !== null && (
-        <Banner tone="danger">
+      {crashBanner.mounted && (
+        <Banner tone="danger" leaving={crashBanner.leaving}>
           <span className="flex-1">The agent process stopped (code {crashed}).</span>
           <button
             type="button"
@@ -1000,9 +1021,10 @@ export function ChatView({
       )}
 
       {/* B5: red-zone auto-suggest (once per session, non-blocking). */}
-      {suggestCompact && (
+      {suggestBanner.mounted && (
         <Banner
           tone="danger"
+          leaving={suggestBanner.leaving}
           onDismiss={() => {
             if (!sessionId) return;
             localStorage.setItem(`${REDZONE_KEY}${sessionId}`, "1");
@@ -1027,8 +1049,12 @@ export function ChatView({
           obvious WHO is running, that progress is happening, and — clicked —
           WHAT the child is doing (live trace, from the in-flow tool card). */}
       {/* Round 3 #7: proactively offer to create AGENTS.md when the workspace has none. */}
-      {offerAgentsMd && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-honey-soft text-sm text-ink">
+      {agentsMdStrip.mounted && (
+        <div
+          data-leaving={agentsMdStrip.leaving || undefined}
+          className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:grid-rows-[0fr] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
+        >
+        <div className="min-h-0 overflow-hidden flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-honey-soft text-sm text-ink">
           <span className="font-bold flex-1">No AGENTS.md found — add project context so the agent understands this codebase?</span>
           <button
             type="button"
@@ -1047,6 +1073,7 @@ export function ChatView({
           >
             Dismiss
           </button>
+        </div>
         </div>
       )}
       {/* Round 3 #11: rewind confirm — files are NOT rolled back (chat-only V1). */}
@@ -1177,9 +1204,17 @@ export function ChatView({
       />
       {/* §27: a transient composer notice — a denied mic, or a failed engine.
           Deliberately not a modal: dictation failing should not seize the app. */}
-      {voiceNotice && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-md rounded-xl border-2 border-line-strong bg-card px-3 py-2 text-[13px] shadow-sticker-lg">
-          <span className="font-semibold">Voice input:</span> {voiceNotice}
+      {voiceToast.mounted && (
+        // A toast RISES, it does not unfold — it floats over the composer
+        // rather than taking height from it, so there is nothing to shove.
+        // The fade must land on exactly `opacity: 0`: §28's coverage check
+        // reads `opacity !== "0"` as visible, and a toast stuck at 0.01 would
+        // blank a browser pane underneath it for good.
+        <div
+          data-leaving={voiceToast.leaving || undefined}
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-md rounded-xl border-2 border-line-strong bg-card px-3 py-2 text-[13px] shadow-sticker-lg motion-safe:transition-[opacity,translate] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-2 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
+        >
+          <span className="font-semibold">Voice input:</span> {voiceNotice ?? lastVoiceNotice.current}
         </div>
       )}
       {/* Round 3 #3: large-paste confirm. */}

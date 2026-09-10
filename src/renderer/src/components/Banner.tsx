@@ -24,23 +24,39 @@ export function Banner({
   tone,
   children,
   onDismiss,
+  leaving,
 }: {
   tone: keyof typeof BANNER_TONE;
   children: React.ReactNode;
   onDismiss?: () => void;
+  /**
+   * Animations round (2026-09-10): true while `usePresence` is holding this
+   * banner mounted for its exit. A banner takes a strip of height off the top
+   * of the app, so appearing and disappearing SHOVES the whole conversation —
+   * which is why the reveal is a height (`grid-template-rows` 0fr→1fr, the
+   * DelegationRunCard idiom) and not just a fade.
+   */
+  leaving?: boolean;
 }): React.JSX.Element {
   return (
-    <div className={`flex items-center gap-3 px-6 py-2.5 border-b-2 text-sm font-semibold ${BANNER_TONE[tone]}`}>
-      {children}
-      {onDismiss && (
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer"
-        >
-          Dismiss
-        </button>
-      )}
+    <div
+      data-leaving={leaving || undefined}
+      className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:grid-rows-[0fr] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
+    >
+      <div
+        className={`min-h-0 overflow-hidden flex items-center gap-3 px-6 py-2.5 border-b-2 text-sm font-semibold ${BANNER_TONE[tone]}`}
+      >
+        {children}
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer"
+          >
+            Dismiss
+          </button>
+        )}
+      </div>
     </div>
   );
 }

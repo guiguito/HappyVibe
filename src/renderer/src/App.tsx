@@ -2618,6 +2618,20 @@ export default function App(): React.JSX.Element {
   const drawerShow = usePresence(!!drawerPanel, DUR.fast);
   const lastDrawer = useRef<{ panel: DrawerPanel; ws: string } | null>(null);
 
+  // B3: the two app-level banners, same treatment and for the same reason —
+  // each takes a strip off the top, so appearing and vanishing shoves the whole
+  // conversation. Both hooks live up here for the rule the block above records.
+  const errorBanner = usePresence(!!error, DUR.fast);
+  // `activeView`'s own expression, inlined: that const is computed below the
+  // early return and a hook cannot wait for it. Spelling it out rather than
+  // approximating with `view` keeps the banner off the forced Models page.
+  const dangerBanner = usePresence(
+    (keyState === "missing" && !onboarding ? "models" : view) === "chat" &&
+      !!selectedId &&
+      !!dangerous[selectedId],
+    DUR.fast,
+  );
+
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
   }
@@ -2864,20 +2878,25 @@ export default function App(): React.JSX.Element {
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
       <main className="flex-1 min-w-0 flex flex-col">
-        {error && (
-          <Banner tone="attention" onDismiss={() => setError(null)}>
+        {errorBanner.mounted && (
+          <Banner tone="attention" leaving={errorBanner.leaving} onDismiss={() => setError(null)}>
             <span className="flex-1">{error}</span>
           </Banner>
         )}
         {/* B4: permanent dangerous-mode warning with one-click off. */}
-        {activeView === "chat" && selectedId && dangerous[selectedId] && (
-          <Banner tone="danger">
+        {dangerBanner.mounted && (
+          <Banner tone="danger" leaving={dangerBanner.leaving}>
             <span className="flex-1">
               Dangerous mode is ON for this session — every tool call runs without asking.
             </span>
             <button
               type="button"
-              onClick={() => void window.hv.promptSession(selectedId, "/hv-dangerous off")}
+              // The session id is re-checked here rather than narrowed by the
+              // render guard: `usePresence` keeps this banner mounted for its
+              // 120 ms exit, and by then the selection may already be gone.
+              onClick={() => {
+                if (selectedId) void window.hv.promptSession(selectedId, "/hv-dangerous off");
+              }}
               className="text-xs font-bold rounded-lg border-2 border-berry px-2.5 py-1 hover:bg-berry hover:text-paper cursor-pointer"
             >
               Turn off
