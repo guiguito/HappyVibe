@@ -7,7 +7,7 @@ import { PiClient } from "../src/main/pi/PiClient";
 /**
  * Subagent discoverability contract test (docs/validation/d1.md §hv.subagent).
  *
- * The bridge injects an "## Available subagents" roster into the system prompt
+ * The bridge injects a <happyvibe_subagents> roster into the system prompt
  * each turn (renderSubagentSection, same per-turn mechanism as nested
  * AGENTS.md) and mirrors it in the /hv-context snapshot's system block. The
  * enumeration (/hv-agents) needs no model; the injection needs a real turn
@@ -112,7 +112,7 @@ test.skipIf(!KEY)(
       await h.client.send({ type: "prompt", message: "/hv-sysprompt" });
       const sys = await h.nextRequest((r) => payload(r).kind === "hv.sysprompt");
       const text = payload(sys).text as string;
-      expect(text).toContain("## Available subagents");
+      expect(text).toContain("<happyvibe_subagents>");
       expect(text).toContain("scout");
       expect(text).toContain("SCOUT-MARKER-Q3");
 

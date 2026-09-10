@@ -143,23 +143,33 @@ export function renderSubagentSection(all: AgentDef[]): string {
   if (agents.length === 0) return "";
   const lines = agents.map(subagentRosterLine);
   return (
-    "\n\n## Available subagents\n\n" +
-    "These subagents are ready to delegate to right now. Prefer delegating exploration, long " +
-    "searches, and self-contained research to the most fitting one instead of doing it inline — " +
-    "each runs in its own context and reports back a concise result.\n\n" +
+    // A2 (Improve-prompts round, 2026-09-10). Three changes and one deliberate
+    // non-change, all measured against what the old text actually did:
+    //
+    // 1. "Prefer delegating exploration, long searches, and self-contained
+    //    research" over-nudged — current models took it literally and spent a
+    //    child run, a receipt and a whole extra turn on two-file questions. A
+    //    threshold replaces the preference.
+    // 2. No wait-tool name appears here. This said "the `wait` tool"; upstream
+    //    renamed it twice (subagent_wait, then bg_wait at 0.61, no alias) and
+    //    the test pinned the stale word. The ONLY place a wait-tool name may be
+    //    written is WAIT_TOOLS (hv-rules.ts), which the intercept derives from.
+    // 3. The never-block rule was stated three times — here, in the intercept,
+    //    and in upstream's own async receipt. One sentence is enough here; the
+    //    intercept carries the full explanation at the moment it is needed.
+    //
+    // NOT changed: the `{ action: "list" }` countermand. pi-subagents 0.64's own
+    // subagent description still tells the model to call it first, three times
+    // over (src/extension/tool-description.ts), and that costs a turn.
+    "\n\n<happyvibe_subagents>\n" +
+    "Sub-agents you can delegate to. Each runs in its own context and reports back a concise result:\n" +
     lines.join("\n") +
-    "\n\n**How to delegate:** call the `subagent` tool directly with `{ agent: \"<name>\", task: \"<what to do>\" }`. " +
-    // The countermand stays (the tool description steers the model to call
-    // `list` first, which costs a turn). The superlative that used to follow it
-    // — "the agents above are the full, current list" — was removed 2026-08-29:
-    // it was false while the roster came from a two-directory scan, and even
-    // now a project-local agent file can add one between two turns.
-    "Delegate directly by name. Do NOT call `{ action: \"list\" }` first. " +
-    "Delegations run in the background by default. After you delegate, **end your turn** with a brief " +
-    "note that the work is running in the background — do NOT call the `wait` tool and do NOT poll with " +
-    "`subagent` status. This is an interactive session: the subagent's result is delivered to you " +
-    "automatically as a new turn the moment it finishes, and you answer the user then. Meanwhile the " +
-    "user can keep chatting with you."
+    "\n\nDelegate when the work spans many files or would take more than a few reads. " +
+    "Call `subagent` with `{ agent, task }` directly, by name — there is no need to call " +
+    "`{ action: \"list\" }` first. Delegations run in the background: after delegating, end your " +
+    "turn with one line saying so — the result arrives as a new turn, and the user can keep " +
+    "chatting meanwhile.\n" +
+    "</happyvibe_subagents>"
   );
 }
 
