@@ -111,3 +111,72 @@ it("keeps the z-100 layer classes on a pane-scoped dialog", () => {
     expect(src).not.toContain("hv-overlay fixed inset-0");
   }
 });
+
+/**
+ * The two pop animations are not interchangeable, and picking the wrong one
+ * fails VISIBLY but silently (Animations round, 2026-09-10).
+ *
+ * `hv-pop-in` — used by `.hv-dialog` — carries `translate(-50%, -50%)` inside
+ * its keyframes, because it animates a card centred by `top-1/2 left-1/2`
+ * transforms. Put it on a card centred by FLEX and the transform displaces it
+ * by half its own size for the length of the animation and then snaps back:
+ * the card appears to expand from the top left. Reported from the running app,
+ * on two Memory dialogs that predate this round.
+ *
+ * `hv-dialog-flow` is the same overshoot with no translate, for flex-centred
+ * cards. So the rule is a biconditional, and both directions are pinned:
+ * translate-centred ⇒ `.hv-dialog`; flex-centred ⇒ `.hv-dialog-flow`.
+ */
+describe("a dialog's pop matches how it is centred", () => {
+  const tsx = (dir: string): string[] => {
+    const out: string[] = [];
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) out.push(...tsx(full));
+      else if (e.name.endsWith(".tsx")) out.push(full);
+    }
+    return out;
+  };
+  const FILES = tsx(path.join(process.cwd(), "src/renderer/src"));
+
+  /** Class strings carrying one of the two pop classes, with their file. */
+  const popSites = (cls: string): Array<{ file: string; text: string }> => {
+    const out: Array<{ file: string; text: string }> = [];
+    for (const f of FILES) {
+      for (const m of fs.readFileSync(f, "utf8").matchAll(/className=\{?[`"]([^`"]*)[`"]/g)) {
+        const text = m[1];
+        const has = new RegExp(`(^|\\s)${cls}(\\s|$)`).test(text);
+        if (has) out.push({ file: path.relative(process.cwd(), f), text });
+      }
+    }
+    return out;
+  };
+
+  const isTransformCentred = (c: string): boolean => c.includes("-translate-x-1/2") && c.includes("-translate-y-1/2");
+
+  it("finds both kinds — a scan matching nothing passes vacuously", () => {
+    expect(popSites("hv-dialog").length).toBeGreaterThan(0);
+    expect(popSites("hv-dialog-flow").length).toBeGreaterThan(0);
+  });
+
+  it("`hv-dialog` is only ever on a transform-centred card", () => {
+    const wrong = popSites("hv-dialog").filter((s) => !isTransformCentred(s.text));
+    expect(wrong.map((s) => s.file)).toEqual([]);
+  });
+
+  it("`hv-dialog-flow` is only ever on a card centred some other way", () => {
+    // The inverse mistake: this animation has no translate, so on a
+    // transform-centred card the `-translate-x-1/2` is overwritten for the
+    // length of the animation and the card jumps to the viewport centre.
+    const wrong = popSites("hv-dialog-flow").filter((s) => isTransformCentred(s.text));
+    expect(wrong.map((s) => s.file)).toEqual([]);
+  });
+
+  it("only one of the two keyframes carries a translate", () => {
+    const css = fs.readFileSync(path.join(process.cwd(), "src/renderer/src/styles.css"), "utf8");
+    const popIn = css.slice(css.indexOf("@keyframes hv-pop-in {"), css.indexOf("@keyframes hv-fade-in"));
+    const flow = css.slice(css.indexOf("@keyframes hv-pop-in-flow {"), css.indexOf(".hv-dialog-flow {"));
+    expect(popIn).toContain("translate(-50%, -50%)");
+    expect(flow).not.toContain("translate(");
+  });
+});
