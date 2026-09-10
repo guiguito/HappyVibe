@@ -856,7 +856,11 @@ export default function (pi: ExtensionAPI) {
     const agentsSection = renderSubagentSection(agents);
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
-    const planSection = builtins.plan && plan.enabled ? "\n\n" + buildPlanPrompt(builtins.planAppend) : "";
+    // A3: the prompt names the blocked tools this session actually HAS.
+    const planSection =
+      builtins.plan && plan.enabled
+        ? "\n\n" + buildPlanPrompt(builtins.planAppend, pi.getAllTools().map((t) => t.name))
+        : "";
     // §26: steer long-running commands to terminal_run rather than a
     // backgrounded bash call. Only while the group is registered — otherwise
     // the prompt would name a tool the model does not have.
@@ -2333,13 +2337,13 @@ export default function (pi: ExtensionAPI) {
     name: "plan_complete",
     label: "Complete plan",
     description:
-      "Submit the finished, decision-complete implementation plan for the user to review. " +
-      "Only available in Plan Mode, and only as your FINAL action of the turn (call it alone). " +
-      "Pass the complete plan as Markdown with a '# title', a '## Tasks' GFM checklist (- [ ] …), " +
-      "and a '## Verification' section. On revision, pass a complete replacement plan, not a delta.",
+      // A3: the structure is stated once, in the Plan Mode instructions. This
+      // says what the call does and when, not what the plan must contain.
+      "Submit the finished plan for the user to review, as the final action of your turn. " +
+      "Markdown, in the structure your Plan Mode instructions give.",
     parameters: Type.Object({
       intent: intentParam(),
-      plan: Type.String({ description: "The complete implementation plan as Markdown (title + summary + ## Tasks checklist + ## Verification)." }),
+      plan: Type.String({ description: "The complete plan as Markdown (see the required structure in your instructions)." }),
     }),
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       if (!plan.enabled) return { content: [{ type: "text", text: "plan_complete is only available in Plan Mode." }], details: {} };
@@ -2370,9 +2374,8 @@ export default function (pi: ExtensionAPI) {
     name: "plan_start",
     label: "Start plan mode",
     description:
-      "Enter Plan Mode for this session when the user asks you to plan before acting. In Plan Mode " +
-      "you explore read-only and draft an implementation plan; you cannot modify anything. Leaving " +
-      "Plan Mode and starting implementation are the user's choice — you cannot exit it yourself.",
+      "Enter Plan Mode for this session when the user asks you to plan before acting: read-only " +
+      "exploration ending in an implementation plan. Only the user can leave it.",
     parameters: Type.Object({
       intent: intentParam(),
     }),

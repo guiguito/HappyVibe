@@ -171,7 +171,7 @@ export function planSlug(body: string): string {
 // outright. `browser_open`/`browser_navigate` are deliberately NOT here — they
 // fall through to floor-ask, because opening documentation to read it is
 // legitimate planning, and a GET the user approves per-call is not a mutation.
-const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "terminal_run", "browser_click", "browser_type", "browser_evaluate"]);
+export const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "terminal_run", "browser_click", "browser_type", "browser_evaluate"]);
 /** Read-only tools that pass straight through the plan gate. */
 const PLAN_PASS_TOOLS = new Set([
   // use_skill only returns an ALREADY-APPROVED SKILL.md's text (spawn-time trust
@@ -312,16 +312,28 @@ export function gatePlanCall(toolName: string, input: unknown): PlanGate {
 
 const PLAN_PROMPT_MARKER = "[HAPPYVIBE PLAN MODE ACTIVE]";
 
-export function buildPlanPrompt(append = ""): string {
+export function buildPlanPrompt(append = "", registeredTools?: Iterable<string>): string {
+  // A3 (Improve-prompts round, 2026-09-10) — the blocked list is DERIVED, and
+  // filtered to tools that exist this session.
+  //
+  // It used to be re-typed prose beside the gate that decides it (§20
+  // Principle 11's exact hazard — the same sentence is how "sub-agents are
+  // blocked" stayed wrong for months after the capability ceiling allowed
+  // them). And §26's rule holds here too: a prompt must never name a tool the
+  // model does not have, which four of these are whenever their built-in group
+  // is switched off. With no tool list given (the settings panel, unit tests)
+  // the full set is shown, because that page is about what the mode does.
+  const have = registeredTools ? new Set(registeredTools) : null;
+  const blocked = [...BLOCKED_PLAN_TOOLS].filter((t) => !have || have.has(t));
   const body = `${PLAN_PROMPT_MARKER}
 # Plan Mode (read-only)
 
-You are in Plan Mode. You may explore and ask, but you CANNOT modify anything —
-file edits, writes, installs and commits are blocked, and shell is limited to
-read-only inspection. You MAY delegate to a sub-agent: the user approves its
+You are in Plan Mode: explore, ask, and produce a decision-complete
+implementation plan the user will approve. The user implements it later, not
+you. Blocked while planning: ${blocked.join(", ")}; bash is limited to a
+read-only allowlist. Delegating to a sub-agent works — the user approves its
 boundary first, and a read-only explorer is the most useful thing a planning
-session can do. Produce a decision-complete implementation plan
-that the user will approve; do NOT implement it.
+session can do.
 
 ## Phase 1 — Ground in the repository
 - Explore first. Read files, search, inspect config, run read-only checks to
@@ -331,32 +343,31 @@ that the user will approve; do NOT implement it.
 ## Phase 2 — Clarify intent
 - Use the ask_user tool for genuine decisions, tradeoffs, or missing product
   intent that exploration cannot resolve (1-4 concise questions, 2-4 real
-  options each). If a high-impact ambiguity remains, ask — do not guess.
+  options each). If a high-impact ambiguity remains, ask rather than guess.
 
 ## Phase 3 — Finalize
-- When the plan leaves no implementation decisions open, call plan_complete
-  ALONE as your final action, passing the complete plan as Markdown. Never end a
-  turn merely announcing you will present the plan — submit it with plan_complete.
-- Every turn must end EITHER with an ask_user question OR with plan_complete.
+- Finish with plan_complete once no decision is open; if one is, ask it with
+  ask_user. Do not end a turn by only announcing the plan — submit it.
+- If the user later requests revisions, call plan_complete again with a
+  complete replacement plan, not a delta.
 
 ## Required plan structure (Markdown)
-- A clear \`# <title>\` heading.
-- A short summary of the approach.
-- Grouped behavior-level changes (not a file-by-file dump).
+- A clear \`# <title>\` heading and a short summary of the approach.
+- Grouped behavior-level changes, not a file-by-file dump. Name the existing
+  helpers the plan reuses, with paths.
 - A \`## Tasks\` section as a GFM checklist (\`- [ ] …\`) — each task a discrete
   step; you will tick these off during implementation.
 - A \`## Verification\` section describing how to confirm it worked (tests to run,
   behavior to observe) — this becomes the acceptance script.
-- Explicit assumptions/defaults where you chose one.
-
-If the user later requests revisions, call plan_complete again with a complete
-replacement plan (not a delta).`;
+- Explicit assumptions/defaults where you chose one.`;
   // Additive only: this cannot widen what the agent is allowed to do — enforcement
   // is gatePlanCall (BLOCKED_PLAN_TOOLS/PLAN_PASS_TOOLS/PLAN_SAFE_SUBCOMMANDS), not
   // this prompt text. A user append lands strictly after the built-in body, never
   // interleaved, and can't touch the marker above.
   const extra = append.trim();
-  return extra ? `${body}\n\n${extra}` : body;
+  // X4: one delimiter family. The marker stays the first line INSIDE the
+  // element — restorePlanState and the settings readout both look for it.
+  return `<happyvibe_plan_mode>\n${extra ? `${body}\n\n${extra}` : body}\n</happyvibe_plan_mode>`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
