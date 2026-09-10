@@ -55,3 +55,57 @@ describe("motion tokens (Animations round, 2026-09-10)", () => {
     for (const cls of ["hv-menu-in", "hv-dialog-flow"]) expect(reduced, cls).toContain(`.${cls}`);
   });
 });
+
+/**
+ * Animations round (2026-09-10) — the Tailwind v4 trap that cost a GUI pass.
+ *
+ * v4 compiles `scale-*` to the **`scale` property** and `translate-*` to the
+ * **`translate` property**, not to `transform` as v3 did. A transition list
+ * naming `transform` therefore leaves the size or position change INSTANT
+ * while everything beside it animates — which looks almost right, reviews
+ * clean, and is invisible in a screenshot.
+ *
+ * It was found by reading the emitted CSS in the running app, not by watching
+ * the animation. This scan is what stops the next one shipping.
+ */
+describe("a transition names the property Tailwind v4 actually sets", () => {
+  const RENDERER = path.join(process.cwd(), "src/renderer/src");
+
+  /** Every `className` value in the renderer, as raw text. */
+  const classStrings = (): string[] => {
+    const out: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (e.name.endsWith(".tsx")) {
+          const src = fs.readFileSync(full, "utf8");
+          for (const m of src.matchAll(/className=\{?[`"]([^`"]*)[`"]/g)) out.push(`${path.relative(process.cwd(), full)}::${m[1]}`);
+        }
+      }
+    };
+    walk(RENDERER);
+    return out;
+  };
+
+  const withTransition = (): string[] => classStrings().filter((c) => c.includes("transition-["));
+
+  it("finds transition lists to check — a scan matching nothing passes vacuously", () => {
+    expect(withTransition().length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("any class that scales also transitions `scale`", () => {
+    const bad = withTransition().filter((c) => /\bscale-\[/.test(c) && !/transition-\[[^\]]*\bscale\b/.test(c));
+    expect(bad.map((c) => c.split("::")[0])).toEqual([]);
+  });
+
+  it("any class that translates also transitions `translate`", () => {
+    const bad = withTransition().filter((c) => /\btranslate-[xy]-/.test(c) && !/transition-\[[^\]]*\btranslate\b/.test(c));
+    expect(bad.map((c) => c.split("::")[0])).toEqual([]);
+  });
+
+  it("nothing transitions bare `transform` — v4 emits none of these through it", () => {
+    const bad = withTransition().filter((c) => /transition-\[[^\]]*\btransform\b/.test(c));
+    expect(bad.map((c) => c.split("::")[0])).toEqual([]);
+  });
+});

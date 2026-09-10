@@ -2105,12 +2105,17 @@ function RunRail({
                 // a computed class name and would emit nothing.
                 style={{ backgroundColor: `hsl(${a.hue} 70% 92%)`, color: `hsl(${a.hue} 60% 30%)` }}
                 // A2: enters with the brand's overshoot, leaves faster and
-                // smaller. `data-leaving` is raised 150 ms before React removes
+                // smaller. The transition names `scale`, NOT `transform`:
+                // Tailwind v4 compiles `scale-*` to the `scale` PROPERTY, so a
+                // list naming `transform` leaves the size change instant while
+                // the opacity animates — which looks almost right, and is the
+                // reason this was found by reading the emitted CSS rather than
+                // by watching. `data-leaving` is raised 150 ms before React removes
                 // the run, by the same timer that removes it. The fade ends at
                 // EXACTLY 0 — §28's coverage check compares the string, and a
                 // circle resting at 0.01 would blank a browser pane for good.
                 data-leaving={a.leaving || undefined}
-                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer motion-safe:transition-[transform,opacity,border-color] motion-safe:duration-[160ms] motion-safe:ease-hv-pop motion-safe:starting:scale-[.6] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.6] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-150 motion-safe:data-[leaving]:ease-hv-in ${RUN_STATE_RING[a.state]}`}
+                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer motion-safe:transition-[scale,opacity,border-color] motion-safe:duration-[160ms] motion-safe:ease-hv-pop motion-safe:starting:scale-[.6] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.6] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-150 motion-safe:data-[leaving]:ease-hv-in ${RUN_STATE_RING[a.state]}`}
               >
                 <ToolIcon kind={(a.kind === "agent" ? "robot" : "terminal") as IconKind} className="size-4" />
               </button>
@@ -2162,7 +2167,7 @@ function RunRail({
         <div
           data-leaving={overlay.leaving || undefined}
           style={{ transformOrigin: originFor(shownOpen) }}
-          className={`${RUN_RAIL_OVERLAY} z-20 motion-safe:transition-[transform,opacity] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:scale-[.96] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.96] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-100 motion-safe:data-[leaving]:ease-hv-in`}
+          className={`${RUN_RAIL_OVERLAY} z-20 motion-safe:transition-[scale,opacity] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:scale-[.96] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.96] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-100 motion-safe:data-[leaving]:ease-hv-in`}
         >
           {cardFor(shownOpen, true)}
         </div>
