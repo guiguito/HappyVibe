@@ -1,5 +1,32 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
+/** §34. Same reason as the voice DTOs below: preload cannot see hv.d.ts. These
+    two are the only feedback payloads with a shape worth naming — the rest are
+    a string or nothing. */
+interface HvFeedbackSendArgs {
+  formVersion: number;
+  answers: Record<string, unknown>;
+  images: Array<{ questionId: string; name: string; type: string; bytes: Uint8Array }>;
+  includeCapture: boolean;
+  captureQuestionId: string | null;
+  sessionId: string | null;
+  view: string;
+}
+interface HvFeedbackPulseArgs {
+  sessionId: string;
+  formVersion: number;
+  questionId: string;
+  optionId: string;
+  session: {
+    sittingMs: number;
+    turns: number;
+    messages: number;
+    contextTokens: number | null;
+    contextWindow: number | null;
+    compactions: number;
+  };
+}
+
 /** §27. Structural mirrors of src/main/voice — preload sits in the NODE
     tsconfig, which does not see the renderer's hv.d.ts globals. */
 interface VoiceStatusDTO {
@@ -286,6 +313,15 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:get-analytics", filter),
   getOnboardingSeen: () => ipcRenderer.invoke("hv:get-onboarding-seen"),
   setOnboardingSeen: (seen: boolean) => ipcRenderer.invoke("hv:set-onboarding-seen", seen),
+
+  // ── §34: collect feedback (dialog + session pulse) ───────────────────────
+  feedbackInfo: () => ipcRenderer.invoke("hv:feedback-info"),
+  feedbackOpen: () => ipcRenderer.invoke("hv:feedback-open"),
+  feedbackClose: () => ipcRenderer.invoke("hv:feedback-close"),
+  feedbackSend: (args: HvFeedbackSendArgs) => ipcRenderer.invoke("hv:feedback-send", args),
+  feedbackPulseForm: () => ipcRenderer.invoke("hv:feedback-pulse-form"),
+  feedbackPulseSend: (args: HvFeedbackPulseArgs) => ipcRenderer.invoke("hv:feedback-pulse-send", args),
+  sessionPulseAsked: (sessionId: string) => ipcRenderer.invoke("hv:session-pulse-asked", sessionId),
   // §30: the changelog dot's flag.
 
   // ── B5: context visibility (additive) ────────────────────────────

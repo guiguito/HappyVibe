@@ -1,4 +1,93 @@
 declare global {
+/**
+ * §34. Mirrors the client shape of Inlet's element union
+ * (packages/shared/src/form.ts, `toClientDefinition`) — a screenshot question
+ * arrives with `acceptedMediaTypes` and `maxFileBytes` injected by the server,
+ * so the app never hard-codes an upload limit. Separate tsconfig roots, so this
+ * is a structural mirror of src/main/feedback/inlet.ts rather than an import.
+ */
+type HvKnownElement =
+  // Three members, not one with a union of literals: Inlet declares three
+  // schemas, and a single member cannot be narrowed away by an early return.
+  | { id: string; type: "title"; text: string }
+  | { id: string; type: "subtitle"; text: string }
+  | { id: string; type: "body_text"; text: string }
+  | {
+      id: string;
+      type: "choice";
+      label: string;
+      helperText?: string;
+      required: boolean;
+      optionKind: "text" | "emoji";
+      selection: "single" | "multi";
+      orientation: "vertical" | "horizontal";
+      options: Array<{ id: string; label: string; emoji?: string }>;
+    }
+  | { id: string; type: "text"; label: string; helperText?: string; required: boolean; multiline: boolean; maxLength: number; placeholder?: string }
+  | { id: string; type: "email"; label: string; helperText?: string; required: boolean; placeholder?: string }
+  | {
+      id: string;
+      type: "screenshot";
+      label: string;
+      helperText?: string;
+      required: boolean;
+      maxCount: number;
+      acceptedMediaTypes: string[];
+      maxFileBytes: number;
+    };
+
+/**
+ * A type this build does not know: rendered as a sentence, never guessed at.
+ *
+ * It is a SEPARATE type rather than a branch of the union above, because a
+ * branch with `type: string` overlaps every literal and would stop
+ * `el.type === "choice"` from narrowing anything.
+ */
+interface HvUnknownElement {
+  id: string;
+  type: string;
+  label?: string;
+  required?: boolean;
+}
+
+type HvFormElement = HvKnownElement | HvUnknownElement;
+
+interface HvFormPage {
+  id: string;
+  elements: HvFormElement[];
+}
+
+interface HvFormDefinition {
+  feedbackDatabaseId: string;
+  formVersionId: string;
+  formVersion: number;
+  publishedAt: string;
+  pages: HvFormPage[];
+}
+
+/** Inlet's five answer shapes, keyed by stable question id. */
+type HvAnswers = Record<
+  string,
+  { optionId: string } | { optionIds: string[] } | { value: string } | { attachmentIds: string[] }
+>;
+
+/** §34: the numbers that ride a pulse tap. Every field is a count or a duration. */
+interface HvSessionFacts {
+  sittingMs: number;
+  turns: number;
+  messages: number;
+  contextTokens: number | null;
+  contextWindow: number | null;
+  compactions: number;
+}
+
+type HvFeedbackFormReply =
+  | { ok: true; form: HvFormDefinition; source: "live" | "cache" }
+  | { ok: false; reason: "not_published" | "unreachable" | "unavailable" };
+
+type HvInletErrorKind =
+  | "not_published" | "validation" | "expired" | "rate_limited" | "conflict" | "network" | "server" | "unauthorized";
+
 /** §26. Mirrors TerminalInfo in src/main/terminals.ts (separate tsconfig roots). */
 interface HvTerminalInfo {
   id: string;
@@ -154,6 +243,8 @@ interface SessionMeta {
    *  Absent on sessions that predate the field; readers fall back to
    *  `updatedAt` (sessionOrder.ts). Mirror of the main-side SessionMeta. */
   lastUsedAt?: string;
+  /** §34: when the session pulse was SHOWN. Absent = never asked; strict once, ever. */
+  pulseAskedAt?: string;
 }
 
 /** Round-4: reopened sessions restore tool cards too (intent + result live in
@@ -1150,6 +1241,36 @@ interface HvApi {
   getAnalytics(filter?: { workspaceId?: string; sinceTs?: string }): Promise<HvAnalytics>;
   getOnboardingSeen(): Promise<boolean>;
   setOnboardingSeen(seen: boolean): Promise<void>;
+
+  // §34: collect feedback. `available` is false when the channel has no
+  // publishable key — the icon and the pulse are then not mounted at all.
+  feedbackInfo(): Promise<{ available: boolean; fastPulse: boolean }>;
+  /** Captures this window BEFORE the dialog paints, and returns the form. */
+  feedbackOpen(): Promise<(HvFeedbackFormReply & { thumbnail?: string | null }) | { ok: false; reason: "not_published" | "unreachable" | "unavailable" }>;
+  /** Drops this window's held capture. Every close path calls it. */
+  feedbackClose(): Promise<void>;
+  feedbackSend(args: {
+    formVersion: number;
+    answers: HvAnswers;
+    images: Array<{ questionId: string; name: string; type: string; bytes: Uint8Array }>;
+    includeCapture: boolean;
+    captureQuestionId: string | null;
+    sessionId: string | null;
+    view: string;
+  }): Promise<
+    | { ok: true; submissionId: string; status: "accepted" | "duplicate" }
+    | { ok: false; kind: HvInletErrorKind; message: string; details?: Array<{ questionId?: string; message: string }> }
+  >;
+  feedbackPulseForm(): Promise<HvFeedbackFormReply>;
+  feedbackPulseSend(args: {
+    sessionId: string;
+    formVersion: number;
+    questionId: string;
+    optionId: string;
+    session: HvSessionFacts;
+  }): Promise<{ ok: true; submissionId: string } | { ok: false; kind: HvInletErrorKind; message: string }>;
+  /** Asked-at-show: written the moment the pulse row first renders. */
+  sessionPulseAsked(sessionId: string): Promise<void>;
   /** §30: the app version whose changelog was last read. `null` = never recorded. */
 }
 

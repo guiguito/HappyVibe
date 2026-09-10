@@ -39,6 +39,7 @@ import {
 } from "../mentions";
 import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-document";
 import { Banner } from "./Banner";
+import { SessionPulse } from "./SessionPulse";
 
 /** §20 round 17 — red-zone dismissals persist per session (Principle 5: never nag). */
 const REDZONE_KEY = "hv:redzone-dismissed:";
@@ -115,6 +116,7 @@ export function ChatView({
   waking = false,
   crashed,
   turns,
+  pulse = null,
   queue = emptyQueue,
   delegations = [],
   onStopRun,
@@ -176,6 +178,19 @@ export function ChatView({
   waking?: boolean;
   crashed: number | null;
   turns: number;
+  /**
+   * §34: the session pulse, when App's `pulseDecision` says this session may be
+   * asked. Null when the build has no feedback channel — then it never mounts.
+   */
+  pulse?: {
+    show: boolean;
+    /** Streaming: the row hides but the component stays mounted (see SessionPulse). */
+    hidden: boolean;
+    facts: () => HvSessionFacts;
+    onAsked: () => void;
+    onDone: () => void;
+    onOpenDialog: () => void;
+  } | null;
   queue?: QueueState;
   /** V2.C1: active subagent runs (sticky in-flow section; done ones slide away). */
   delegations?: DelegationRun[];
@@ -1286,6 +1301,25 @@ export function ChatView({
           searchQuery={searchOpen ? searchQuery : ""}
           searchActiveIndex={searchActive}
           onSearchTotal={onSearchTotal}
+        />
+      )}
+
+      {/* §34: the session pulse sits DIRECTLY ABOVE THE COMPOSER, not in the
+          banner stack at the top. It is a quiet question about the conversation
+          you are having, so it belongs where you are looking and where you
+          answer — the banner rail is for things that are wrong.
+
+          It still yields to both banners: one attention request at a time, and
+          the red-zone one is this component's own state, which is why the check
+          lives here rather than only in App. */}
+      {pulse?.show && sessionId && crashed === null && !suggestCompact && (
+        <SessionPulse
+          sessionId={sessionId}
+          hidden={pulse.hidden}
+          facts={pulse.facts}
+          onAsked={pulse.onAsked}
+          onDone={pulse.onDone}
+          onOpenDialog={pulse.onOpenDialog}
         />
       )}
 

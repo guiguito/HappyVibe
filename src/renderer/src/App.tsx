@@ -18,6 +18,8 @@ import { describeProviderError, retryNoticeText } from "./providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
+import { FeedbackDialog } from "./components/FeedbackDialog";
+import { drawOffset, pulseDecision, PULSE_TIMING } from "./sessionPulse";
 import { ShortcutsView } from "./components/ShortcutsView";
 import { eventToBinding, formatBinding, resolveBindings, type ShortcutId } from "./shortcuts";
 import {
@@ -49,7 +51,7 @@ import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, merg
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment, type DocumentAttachment } from "./composer";
 import {
-  activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane,
+  activateTab, allChats, chatTabCount, visibleChats, allFiles, allTerminals, bufferKey, chatTab, closePane, closeSessionTabs, closeTab, emptyTabs, focusPane, activeTabOf,
   isChatTab, isTermTab, liveSlots, moveTab, openChat, openFile, openTerminal, paneOf, sessionOf, setSize, splitAt, splitOptions, termTab, terminalOf,
   allBrowsers, browserOf, browserTab, isBrowserTab, openBrowserTab,
   crossDividerSpans,
@@ -150,6 +152,31 @@ export default function App(): React.JSX.Element {
   // it is permanent: §7 round 8 deleted the Help entry and §22 round 17
   // confirmed no re-open path.
   const [onboarding, setOnboarding] = useState(false);
+  /**
+   * §34: whether this build can collect feedback at all. `available` is false
+   * when the channel has no publishable key, and then NEITHER surface mounts —
+   * "don't show what cannot work" (§20). Read once at boot; the channel cannot
+   * change while the app runs.
+   */
+  const [feedbackInfo, setFeedbackInfo] = useState<{ available: boolean; fastPulse: boolean }>({ available: false, fastPulse: false });
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  /**
+   * §34: when each session was opened IN THIS APP RUN, plus its one random
+   * offset. "How is this session going" is about this sitting, not about a
+   * session created last week, so the clock starts when the session appears
+   * here rather than at createdAt.
+   */
+  const pulseClock = useRef<Record<string, { openedAt: number; offsetMs: number }>>({});
+  const [pulseShow, setPulseShow] = useState<Record<string, boolean>>({});
+  /**
+   * §34: answered or dismissed, for this app run. It lives HERE rather than in
+   * SessionPulse because that component is remounted by any change that
+   * recreates it, and the first cut lost the fact on every turn — the row came
+   * back to someone who had just rated it.
+   */
+  const [pulseDone, setPulseDone] = useState<Record<string, boolean>>({});
+  /** §34: compactions this sitting — a number the pulse reports, nothing else reads. */
+  const [compactions, setCompactions] = useState<Record<string, number>>({});
   // First-prompt suggestion chips. They INSERT and never send (§27's refused
   // auto-send), live only until the first send, and are branched on what the
   // folder actually holds — an empty one gets prompts that CREATE a codebase,
@@ -845,6 +872,10 @@ export default function App(): React.JSX.Element {
       setOnboarding(shouldShowOnboarding({ seen, workspaces: ws.length, sessions: sess.length }));
     })();
 
+    // §34: does this build have a feedback channel? Decides the sidebar icon
+    // and the session pulse, both of which are absent without a key.
+    void window.hv.feedbackInfo().then(setFeedbackInfo);
+
     // B5: default model's context window feeds the estimated-gauge fallback.
     void (async () => {
       try {
@@ -1528,6 +1559,7 @@ export default function App(): React.JSX.Element {
           return { ...p, [sid]: next };
         });
         setTurns((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
+        setCompactions((p) => ({ ...p, [sid]: (p[sid] ?? 0) + 1 }));
       }
       // B2: pending steering/follow-up queue. Messages that leave the queue
       // were delivered to the agent — append them as user items right there,
@@ -2511,6 +2543,56 @@ export default function App(): React.JSX.Element {
     setView(t.view);
   }, [keyState, revealGroup]);
 
+  /**
+   * §34 — may this session be asked how it is going?
+   *
+   * MUST sit above the `keyState === "loading"` early return below. A hook
+   * placed after a conditional return changes the hook COUNT between renders,
+   * and React tears the whole app down: "Rendered more hooks than during the
+   * previous render", a white window and nothing else. That is what happened
+   * the first time this shipped, and only the GUI pass could see it — no test
+   * in this suite renders App.
+   *
+   * An EFFECT rather than a line inside the `agent_end` handler: that handler is
+   * registered once and would read every input through a stale closure, needing
+   * a ref per gate. `turns` bumping is the same beat, one render later, and it
+   * carries the fresh state with it.
+   *
+   * It re-derives the focused session rather than using `focusedChatSessionId`,
+   * which is computed below the return — only the focused pane may raise a
+   * pulse, and that is also where its clock starts: a session sitting in a
+   * background pane is not accruing a sitting.
+   */
+  useEffect(() => {
+    if (!feedbackInfo.available) return;
+    const ws = activeWs ?? sessions.find((x) => x.id === selectedId)?.workspaceId ?? null;
+    const tabs = (ws ? tabsByWs[ws] : undefined) ?? emptyTabs;
+    const tab = activeTabOf(tabs);
+    const sid = tab ? sessionOf(tab) : null;
+    if (!sid || pulseShow[sid]) return;
+    const timing = feedbackInfo.fastPulse ? PULSE_TIMING.fast : PULSE_TIMING.normal;
+    const clock = (pulseClock.current[sid] ??= { openedAt: Date.now(), offsetMs: drawOffset(timing, Math.random) });
+    const meta = sessions.find((x) => x.id === sid);
+    const show = pulseDecision(
+      {
+        asked: !!meta?.pulseAskedAt,
+        openedAt: clock.openedAt,
+        offsetMs: clock.offsetMs,
+        now: Date.now(),
+        turns: turns[sid] ?? 0,
+        busy: !!busy[sid],
+        promptOpen: (pendingBySession[sid] ?? 0) > 0,
+        // The crash banner. The red-zone one is ChatView's own state, and it
+        // re-checks that at render — the pulse yields to both.
+        bannerShowing: statuses[sid] === "crashed",
+        focused: true,
+        available: feedbackInfo.available,
+      },
+      timing,
+    );
+    if (show) setPulseShow((p) => ({ ...p, [sid]: true }));
+  }, [activeWs, selectedId, tabsByWs, turns, busy, statuses, pendingBySession, sessions, feedbackInfo, pulseShow]);
+
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
   }
@@ -2539,6 +2621,17 @@ export default function App(): React.JSX.Element {
    */
   const wsId = activeWs ?? selected?.workspaceId ?? null;
   const wsTabs = (wsId ? tabsByWs[wsId] : undefined) ?? emptyTabs;
+  /**
+   * §34: the session in the FOCUSED slot of this window's grid, or null when the
+   * focused tab is not a chat. It decides two things: which session's model a
+   * feedback report names, and which pane may raise the pulse — a pulse in a
+   * pane the user is not looking at is an interruption from nowhere.
+   */
+  const focusedChatSessionId = ((): string | null => {
+    const tab = activeTabOf(wsTabs);
+    return tab ? sessionOf(tab) : null;
+  })();
+
   // F6: refresh the global-shortcut closure with the current render's state.
   shortcutRef.current = (e: KeyboardEvent): void => {
     // Round 8: dispatch off the registry, so a rebind on the shortcuts page is
@@ -2670,6 +2763,8 @@ export default function App(): React.JSX.Element {
         openSessionIds={openSessionIds}
         view={activeView}
         onNavigate={(v) => !needsSetup && setView(v)}
+        feedbackAvailable={feedbackInfo.available}
+        onFeedback={() => setFeedbackOpen(true)}
         onAddWorkspace={addWorkspace}
         onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
         gitInfo={gitInfo}
@@ -3102,6 +3197,30 @@ export default function App(): React.JSX.Element {
             streaming={streamText[sid] || undefined}
             thinking={thinkingText[sid] || undefined}
             busy={busy[sid] || false}
+            /* §34: `show` drops while the agent streams and comes back at idle;
+               the component stays mounted, so `onAsked` still fires exactly once. */
+            pulse={
+              feedbackInfo.available
+                ? {
+                    // Mounting is sticky; `hidden` is what the stream toggles.
+                    show: !!pulseShow[sid] && !pulseDone[sid],
+                    hidden: !!busy[sid],
+                    facts: () => ({
+                      sittingMs: Date.now() - (pulseClock.current[sid]?.openedAt ?? Date.now()),
+                      turns: turns[sid] ?? 0,
+                      messages: (transcripts[sid] ?? []).length,
+                      // The GAUGE's figure, null right after a compaction — never
+                      // stats.tokens, which is cumulative since session start.
+                      contextTokens: (sid === selectedId ? selStats : null)?.contextUsage?.tokens ?? null,
+                      contextWindow: (sid === selectedId ? selStats : null)?.contextUsage?.contextWindow ?? null,
+                      compactions: compactions[sid] ?? 0,
+                    }),
+                    onAsked: () => void window.hv.sessionPulseAsked(sid),
+                    onDone: () => setPulseDone((p) => ({ ...p, [sid]: true })),
+                    onOpenDialog: () => setFeedbackOpen(true),
+                  }
+                : null
+            }
             waking={(statuses[sid] === "waking") || false}
             crashed={statuses[sid] === "crashed" ? (crashCodes[sid] ?? -1) : null}
             turns={turns[sid] || 0}
@@ -3345,6 +3464,16 @@ export default function App(): React.JSX.Element {
             </div>
           </div>
         </div>
+      )}
+      {feedbackOpen && (
+        <FeedbackDialog
+          /* The dialog is app-level, so the session is context rather than
+             scope: main resolves its model, and there is none to name from a
+             settings page. */
+          sessionId={activeView === "chat" ? focusedChatSessionId : null}
+          view={activeView}
+          onClose={() => setFeedbackOpen(false)}
+        />
       )}
       {onboarding && (
         <OnboardingDialog

@@ -67,6 +67,10 @@ interface ConfigFile {
   /** Round 8: user-remapped keyboard shortcuts, action id → canonical binding
       ("Mod-Shift-e"). An absent id means that action keeps its default. */
   shortcuts?: Record<string, string>;
+  /** §34: the last good published feedback form per Inlet database, so an
+      offline open still renders something. Keyed by database id; the app reads
+      whatever Inlet publishes, so this is a cache and never a schema. */
+  feedback?: { formCache?: Record<string, unknown> };
   /** §25: plugin marketplaces the user has listed. Absent = the one built-in
       (the official Anthropic list). The resolver supports N; V1 ships one. */
   marketplaces?: Array<{ id: string; url: string }>;
@@ -888,4 +892,15 @@ export function removeMarketplace(id: string): Array<{ id: string; url: string }
   cfg.marketplaces = cur.filter((m) => m.id !== id);
   save(cfg);
   return cfg.marketplaces;
+}
+
+// §34: the feedback form cache (additive — an unknown key in an older config is inert).
+export function getFeedbackFormCache(): Record<string, unknown> {
+  return load().feedback?.formCache ?? {};
+}
+
+export function setFeedbackFormCache(db: string, form: unknown): void {
+  const cfg = load();
+  cfg.feedback = { ...cfg.feedback, formCache: { ...cfg.feedback?.formCache, [db]: form } };
+  save(cfg);
 }

@@ -41,6 +41,18 @@ export interface SessionMeta {
    * there is nothing to migrate.
    */
   lastUsedAt?: string;
+  /**
+   * §34: when the session pulse was SHOWN for this session.
+   *
+   * Asked-at-show, not asked-at-answer, and that is the whole rule: a user who
+   * quit with the row up is not asked again. Strict once per session, ever —
+   * the pulse's value depends on it never becoming a nag.
+   *
+   * Additive; absent = never asked, so there is nothing to migrate. Survives
+   * hibernation, reload and reopen because it lives here rather than in the
+   * renderer.
+   */
+  pulseAskedAt?: string;
 }
 
 function readJson<T>(file: string, fallback: T): T {

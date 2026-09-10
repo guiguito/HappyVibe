@@ -26,6 +26,11 @@ import {
   getWebService, setWebService, resolveWebServiceForCall,
   getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
 } from "./config";
+import { fastPulse, resolveFeedbackConfig } from "./feedback/config";
+import { createInletClient, InletError, sendSubmission, type Answers, type FormDefinition, type Upload } from "./feedback/inlet";
+import { clampView, generalContext, pulseContext, type HostFacts, type ModelRef, type SessionFacts } from "./feedback/context";
+import { captureWindow, type Capture } from "./feedback/capture";
+import { readCachedForm, writeCachedForm } from "./feedback/formCache";
 import { TerminalManager } from "./terminals";
 import {
   voiceStatus, startVoiceDownload, cancelVoiceDownload, removeVoiceModel, onVoiceStatus,
@@ -3930,7 +3935,11 @@ export function registerIpc(
       // match would be a second filter idiom in a file that has exactly one.
       ...MEMORY_EVENT_TYPES.map((t) => log.read({ type: t, ...filter })),
     ]);
-    return [...decisions, ...oneShots, ...excluded, ...memory.flat()].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    // §34: a feedback submission is the fourth thing this page answers for — not a
+    // decision and not a model call, but something that LEFT the machine on the
+    // user's say-so, which is exactly what an audit log is for.
+    const feedback = await log.read({ type: "feedback.sent", ...filter });
+    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   });
 
   // ── B7: local analytics (read + aggregate in main, never leaves the machine) ──
@@ -3957,6 +3966,190 @@ export function registerIpc(
   // once, and once only — there is no re-open path (§22 round 17).
   ipcMain.handle("hv:get-onboarding-seen", () => getOnboardingSeen());
   ipcMain.handle("hv:set-onboarding-seen", (_e, seen: boolean) => setOnboardingSeen(!!seen));
+
+  // ── §34 Collect feedback ───────────────────────────────────────────────────
+  /**
+   * Resolved ONCE per app run: the channel is a build fact plus the environment
+   * at launch, and re-reading it per call would let the two surfaces disagree.
+   * A null config is the whole "no key ⇒ no surface" rule (§20) — the renderer
+   * asks `hv:feedback-info` at boot and mounts neither the icon nor the pulse.
+   */
+  // `!app.isPackaged` IS `is.dev` from @electron-toolkit/utils, inlined: importing
+  // that package here pulls `electron` in as CommonJS and breaks every test that
+  // imports ipc.ts under vitest (three of them, measured).
+  const feedbackCfg = resolveFeedbackConfig(process.env, !app.isPackaged);
+  const feedbackFast = fastPulse(process.env);
+  const inlet = feedbackCfg ? createInletClient(feedbackCfg) : null;
+  /**
+   * The window capture, per window, in MEMORY only — never a file, dropped when
+   * the dialog closes or the submission lands. Keyed by window id because the
+   * icon can be clicked in either window and each must send its own picture.
+   */
+  const captures = new Map<number, Capture>();
+
+  const hostFacts = (): HostFacts => ({
+    appVersion: app.getVersion(),
+    channel: feedbackCfg?.channel ?? "dev",
+    os: {
+      platform: process.platform,
+      // The MARKETING version ("15.5"), not the Darwin kernel — the number a
+      // user would recognise in a bug report.
+      version: process.getSystemVersion(),
+      release: os.release(),
+      arch: process.arch,
+    },
+    electron: process.versions.electron ?? "",
+  });
+
+  /**
+   * §34: main resolves the model through the SAME chain every spawn uses, so a
+   * feedback report names the model the session would actually run. Never a
+   * second table, and null when nothing resolves — §16's refusal, not a guess.
+   */
+  const modelFor = (sessionId: string | null): ModelRef | null => {
+    const meta = sessionId ? index.get(sessionId) : undefined;
+    const m = meta ? resolveSpawnModel(meta.workspaceId, meta.id) : resolveSpawnModel();
+    return m ? { provider: m.provider, id: m.modelId } : null;
+  };
+
+  type FormReply =
+    | { ok: true; form: FormDefinition; source: "live" | "cache" }
+    | { ok: false; reason: "not_published" | "unreachable" | "unavailable" };
+
+  const readFormWithCache = async (db: string): Promise<FormReply> => {
+    if (!inlet) return { ok: false, reason: "unavailable" };
+    try {
+      const form = await inlet.readForm(db);
+      writeCachedForm(db, form);
+      return { ok: true, form, source: "live" };
+    } catch (e) {
+      // A closed form is a STATE, not a failure: say so rather than falling back
+      // to a cached copy of a form nobody can answer any more.
+      if (e instanceof InletError && e.kind === "not_published") return { ok: false, reason: "not_published" };
+      const cached = readCachedForm(db);
+      return cached ? { ok: true, form: cached, source: "cache" } : { ok: false, reason: "unreachable" };
+    }
+  };
+
+  /** Counts, ids and sizes. Never an answer, never the clientContext. */
+  const auditFeedbackSent = (
+    database: "general" | "session",
+    r: { formVersion: number; submissionId: string; status: string; attachments: number; bytes: number },
+    sessionId?: string,
+  ): void => {
+    const meta = sessionId ? index.get(sessionId) : undefined;
+    void log.append({
+      type: "feedback.sent",
+      sessionId,
+      workspaceId: meta?.workspaceId,
+      data: { database, ...r, channel: feedbackCfg?.channel },
+    });
+  };
+
+  const feedbackFailure = (e: unknown) =>
+    e instanceof InletError
+      ? { ok: false as const, kind: e.kind, message: e.message, details: e.details }
+      : { ok: false as const, kind: "network" as const, message: e instanceof Error ? e.message : String(e) };
+
+  ipcMain.handle("hv:feedback-info", () => ({ available: !!feedbackCfg, fastPulse: feedbackFast }));
+
+  ipcMain.handle("hv:feedback-open", async (e) => {
+    if (!feedbackCfg) return { ok: false, reason: "unavailable" };
+    const win = windows.bySender(e.sender);
+    let thumbnail: string | null = null;
+    if (win) {
+      try {
+        // BEFORE the dialog paints — the renderer mounts it on this reply, so the
+        // picture is the app as the user left it, with no scrim and no dialog.
+        const cap = await captureWindow(win);
+        captures.set(win.id, cap);
+        thumbnail = cap.thumbnail;
+      } catch {
+        /* a minimized or occluded window rejects; the dialog simply offers no capture */
+      }
+    }
+    const form = await readFormWithCache(feedbackCfg.databases.general);
+    return form.ok ? { ...form, thumbnail } : form;
+  });
+
+  ipcMain.handle("hv:feedback-close", (e) => {
+    const win = windows.bySender(e.sender);
+    if (win) captures.delete(win.id);
+  });
+
+  ipcMain.handle(
+    "hv:feedback-send",
+    async (
+      e,
+      args: {
+        formVersion: number;
+        answers: Answers;
+        images: Array<{ questionId: string; name: string; type: string; bytes: Uint8Array }>;
+        includeCapture: boolean;
+        captureQuestionId: string | null;
+        sessionId: string | null;
+        view: string;
+      },
+    ) => {
+      if (!feedbackCfg || !inlet) return { ok: false, kind: "unauthorized", message: "Feedback is not available in this build." };
+      const win = windows.bySender(e.sender);
+      const uploads: Upload[] = args.images.map((i) => ({
+        questionId: i.questionId,
+        name: i.name,
+        type: i.type,
+        bytes: new Uint8Array(i.bytes),
+      }));
+      const cap = win ? captures.get(win.id) : undefined;
+      if (args.includeCapture && cap && args.captureQuestionId) {
+        uploads.push({ questionId: args.captureQuestionId, name: "window.png", type: "image/png", bytes: new Uint8Array(cap.png) });
+      }
+      try {
+        const r = await sendSubmission(inlet, feedbackCfg.databases.general, {
+          formVersion: args.formVersion,
+          answers: args.answers,
+          uploads,
+          clientContext: generalContext(hostFacts(), { view: clampView(args.view), model: modelFor(args.sessionId) }),
+        });
+        auditFeedbackSent("general", r, args.sessionId ?? undefined);
+        if (win) captures.delete(win.id);
+        return { ok: true, submissionId: r.submissionId, status: r.status };
+      } catch (err) {
+        return feedbackFailure(err);
+      }
+    },
+  );
+
+  ipcMain.handle("hv:feedback-pulse-form", () =>
+    feedbackCfg ? readFormWithCache(feedbackCfg.databases.session) : { ok: false, reason: "unavailable" },
+  );
+
+  ipcMain.handle(
+    "hv:feedback-pulse-send",
+    async (_e, args: { sessionId: string; formVersion: number; questionId: string; optionId: string; session: SessionFacts }) => {
+      if (!feedbackCfg || !inlet) return { ok: false, kind: "unauthorized", message: "Feedback is not available in this build." };
+      try {
+        const r = await sendSubmission(inlet, feedbackCfg.databases.session, {
+          formVersion: args.formVersion,
+          answers: { [args.questionId]: { optionId: args.optionId } },
+          uploads: [],
+          clientContext: pulseContext(hostFacts(), args.session, modelFor(args.sessionId)),
+        });
+        auditFeedbackSent("session", r, args.sessionId);
+        return { ok: true, submissionId: r.submissionId };
+      } catch (err) {
+        return feedbackFailure(err);
+      }
+    },
+  );
+
+  /**
+   * Written the moment the row is SHOWN (§34, asked-at-show). Nothing is logged
+   * and nothing is sent on a dismissal — a dismissal is not an event that left
+   * the machine.
+   */
+  ipcMain.handle("hv:session-pulse-asked", (_e, sessionId: string) => {
+    index.update(sessionId, { pulseAskedAt: new Date().toISOString() });
+  });
 
   // §30: which version's changelog the user has read — the changelog dot's flag.
   // `null` means never recorded; see config.ts for why the renderer seeds that

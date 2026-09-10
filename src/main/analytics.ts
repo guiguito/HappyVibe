@@ -173,6 +173,11 @@ export function aggregate(
         // number for the dashboard — it has no cost, no tokens and no decision.
         // Named here anyway so the switch stays an inventory of what main writes.
         break;
+      case "feedback.sent":
+        // §34: same shape of fact, one surface over — a submission the user chose
+        // to send is for the audit log, not the dashboard. Named so the switch
+        // stays an inventory of every type main writes.
+        break;
       case "assistant.oneshot": {
         const d = e.data as { estTokens?: number; ok?: boolean } | undefined;
         oneShotCount += 1;
