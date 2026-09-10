@@ -1059,7 +1059,7 @@ export function ChatView({
       {agentsMdStrip.mounted && (
         <div
           data-leaving={agentsMdStrip.leaving || undefined}
-          className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:grid-rows-[0fr] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
+          className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-[240ms] motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:grid-rows-[0fr] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-180 motion-safe:data-[leaving]:ease-hv-in"
         >
         <div className="min-h-0 overflow-hidden flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-honey-soft text-sm text-ink">
           <span className="font-bold flex-1">No AGENTS.md found — add project context so the agent understands this codebase?</span>
@@ -1219,7 +1219,7 @@ export function ChatView({
         // blank a browser pane underneath it for good.
         <div
           data-leaving={voiceToast.leaving || undefined}
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-md rounded-xl border-2 border-line-strong bg-card px-3 py-2 text-[13px] shadow-sticker-lg motion-safe:transition-[opacity,translate] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-2 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-md rounded-xl border-2 border-line-strong bg-card px-3 py-2 text-[13px] shadow-sticker-lg motion-safe:transition-[opacity,translate] motion-safe:duration-[240ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-2 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-180 motion-safe:data-[leaving]:ease-hv-in"
         >
           <span className="font-semibold">Voice input:</span> {voiceNotice ?? lastVoiceNotice.current}
         </div>
@@ -1945,7 +1945,7 @@ function RunRail({
    * `open` is already null by then, and reading it would blank the card a frame
    * before the fade.
    */
-  const overlay = usePresence(open !== null, 100);
+  const overlay = usePresence(open !== null, 150);
   const lastOpen = useRef<string | null>(null);
   if (open) lastOpen.current = open;
   const shownOpen = open ?? lastOpen.current;
@@ -2089,7 +2089,7 @@ function RunRail({
           // dismissible (PRD §12), so it only ever leaves by being answered.
           <div
             key={`promoted-${a.key}`}
-            className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0"
+            className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-270 motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0"
           >
             <div className="min-h-0 overflow-hidden">{cardFor(a.key, false)}</div>
           </div>
@@ -2127,7 +2127,7 @@ function RunRail({
                 // EXACTLY 0 — §28's coverage check compares the string, and a
                 // circle resting at 0.01 would blank a browser pane for good.
                 data-leaving={a.leaving || undefined}
-                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer motion-safe:transition-[scale,opacity,border-color] motion-safe:duration-[160ms] motion-safe:ease-hv-pop motion-safe:starting:scale-[.6] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.6] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-150 motion-safe:data-[leaving]:ease-hv-in ${RUN_STATE_RING[a.state]}`}
+                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer motion-safe:transition-[scale,opacity,border-color] motion-safe:duration-[240ms] motion-safe:ease-hv-pop motion-safe:starting:scale-[.6] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.6] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-220 motion-safe:data-[leaving]:ease-hv-in ${RUN_STATE_RING[a.state]}`}
               >
                 <ToolIcon kind={(a.kind === "agent" ? "robot" : "terminal") as IconKind} className="size-4" />
               </button>
@@ -2135,7 +2135,7 @@ function RunRail({
                 // No gap between the circle and this panel: a gap means the
                 // mouse leaves on the way in and the STOP inside is
                 // unreachable. The `pt-1` is INSIDE the hover target.
-                <div className="absolute left-0 top-full pt-1 z-20 w-72 motion-safe:transition-[opacity,translate] motion-safe:duration-100 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:-translate-y-0.5">
+                <div className="absolute left-0 top-full pt-1 z-20 w-72 motion-safe:transition-[opacity,translate] motion-safe:duration-150 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:-translate-y-0.5">
                   <div className="rounded-lg border-2 border-line bg-card shadow-sticker-lg px-3 py-2 flex flex-col gap-1">
                     <span className="text-sm font-black text-tangerine-deep break-words">{a.name}</span>
                     {a.caption && <span className="text-xs text-ink-soft break-words">{a.caption}</span>}
@@ -2179,7 +2179,7 @@ function RunRail({
         <div
           data-leaving={overlay.leaving || undefined}
           style={{ transformOrigin: originFor(shownOpen) }}
-          className={`${RUN_RAIL_OVERLAY} z-20 motion-safe:transition-[scale,opacity] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:scale-[.96] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.96] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-100 motion-safe:data-[leaving]:ease-hv-in`}
+          className={`${RUN_RAIL_OVERLAY} z-20 motion-safe:transition-[scale,opacity] motion-safe:duration-[240ms] motion-safe:ease-hv-out motion-safe:starting:scale-[.96] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.96] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-150 motion-safe:data-[leaving]:ease-hv-in`}
         >
           {cardFor(shownOpen, true)}
         </div>

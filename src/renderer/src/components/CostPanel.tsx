@@ -118,7 +118,7 @@ export function CostPanel({
         // over. `leaving` is supplied by ChatView, which owns the conditional
         // render and therefore owns the exit.
         data-leaving={leaving || undefined}
-        className="w-[34rem] max-w-full h-full bg-paper border-l-2 border-line-strong shadow-sticker-lg flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-x-3 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:translate-x-3 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
+        className="w-[34rem] max-w-full h-full bg-paper border-l-2 border-line-strong shadow-sticker-lg flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-270 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-x-3 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:translate-x-3 motion-safe:data-[leaving]:duration-180 motion-safe:data-[leaving]:ease-hv-in"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-5 py-3 border-b-2 border-line">

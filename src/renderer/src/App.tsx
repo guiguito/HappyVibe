@@ -1884,7 +1884,7 @@ export default function App(): React.JSX.Element {
       // One frame later, so the tab it flies TO has been committed.
       requestAnimationFrame(() => {
         const to = document.querySelector<HTMLElement>(`[data-hv-tab="${CSS.escape(termTab(terminalId))}"]`);
-        if (to) void flyGhost(from, to, { duration: 280 });
+        if (to) void flyGhost(from, to, { duration: 420 });
       });
     }
   };
@@ -2962,7 +2962,7 @@ export default function App(): React.JSX.Element {
         {activeView !== "chat" && (
           <div
             key={activeView}
-            className="flex-1 min-h-0 flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-[140ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-1"
+            className="flex-1 min-h-0 flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-[210ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-1"
           >
           {activeView === "models" && (
             <ModelsView
@@ -3038,7 +3038,7 @@ export default function App(): React.JSX.Element {
             with `display` in the list, so the browser holds the swap to 100%
             and the fade is actually visible. Going away stays instant. */}
         <div
-          className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"} motion-safe:transition-[opacity,display] motion-safe:transition-discrete motion-safe:duration-[140ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0`}
+          className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"} motion-safe:transition-[opacity,display] motion-safe:transition-discrete motion-safe:duration-[210ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0`}
         >
           <div
             // B5 (Animations round, 2026-09-10): the grid eases between RATIOS.
@@ -3057,7 +3057,7 @@ export default function App(): React.JSX.Element {
             // no state is plumbed through two components to say a mouse is
             // down. A new pane's CONTENT still enters — the tab pops in (B6)
             // and its transcript items rise (A7).
-            className="flex-1 min-w-0 min-h-0 grid relative motion-safe:transition-[grid-template-columns,grid-template-rows] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:data-[dragging]:transition-none"
+            className="flex-1 min-w-0 min-h-0 grid relative motion-safe:transition-[grid-template-columns,grid-template-rows] motion-safe:duration-270 motion-safe:ease-hv-out motion-safe:data-[dragging]:transition-none"
             style={gridStyle}
             onDragOver={(e) => e.dataTransfer.types.includes("application/x-hv-relpath") && e.preventDefault()}
             onDrop={(e) => {
@@ -3521,7 +3521,7 @@ export default function App(): React.JSX.Element {
                 // itself by this rect, and this element is exempt from the
                 // coverage check by `data-hv-drawer`.
                 data-leaving={drawerShow.leaving || undefined}
-                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-x-3 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:translate-x-3 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
+                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-270 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-x-3 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:translate-x-3 motion-safe:data-[leaving]:duration-180 motion-safe:data-[leaving]:ease-hv-in"
                 style={{ width: drawerWidth }}
               >
                 {/* §29: the drag strip. Absolutely placed on the drawer's own
@@ -3555,7 +3555,7 @@ export default function App(): React.JSX.Element {
                     layout of the row exactly as it was. */}
                 <div
                   key={shownDrawer.panel}
-                  className="min-h-0 flex-1 motion-safe:transition-opacity motion-safe:duration-120 motion-safe:ease-hv-out motion-safe:starting:opacity-0"
+                  className="min-h-0 flex-1 motion-safe:transition-opacity motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:opacity-0"
                 >
                   {shownDrawer.panel === "changes" ? (
                     <ChangesPanel

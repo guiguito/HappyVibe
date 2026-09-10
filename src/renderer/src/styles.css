@@ -229,11 +229,11 @@
  */
 .hv-overlay {
   z-index: 100;
-  animation: hv-fade-in 150ms ease-out;
+  animation: hv-fade-in 220ms ease-out;
 }
 .hv-dialog {
   z-index: 100;
-  animation: hv-pop-in 180ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  animation: hv-pop-in 270ms cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 /**
@@ -254,8 +254,8 @@
  */
 [data-live] > * {
   transition:
-    opacity 150ms var(--ease-hv-out),
-    translate 150ms var(--ease-hv-out);
+    opacity 220ms var(--ease-hv-out),
+    translate 220ms var(--ease-hv-out);
   @starting-style {
     opacity: 0;
     translate: 0 6px;
@@ -274,8 +274,8 @@
  */
 .hv-menu-in {
   transition:
-    opacity 120ms var(--ease-hv-out),
-    transform 120ms var(--ease-hv-out);
+    opacity 180ms var(--ease-hv-out),
+    transform 180ms var(--ease-hv-out);
   @starting-style {
     opacity: 0;
     transform: scale(0.97);
@@ -299,7 +299,7 @@
   }
 }
 .hv-dialog-flow {
-  animation: hv-pop-in-flow 180ms var(--ease-hv-pop);
+  animation: hv-pop-in-flow 270ms var(--ease-hv-pop);
 }
 
 /**

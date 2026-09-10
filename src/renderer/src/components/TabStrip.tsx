@@ -175,7 +175,7 @@ export function TabStrip({
   // The asymmetry is the rule — an exit that lingers is a tab you can still
   // click after deciding to close it.
   const tab = (active: boolean): string =>
-    `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors motion-safe:transition-[scale,opacity,color,background-color] motion-safe:duration-120 motion-safe:ease-hv-out motion-safe:starting:scale-90 motion-safe:starting:opacity-0 ${
+    `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors motion-safe:transition-[scale,opacity,color,background-color] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:scale-90 motion-safe:starting:opacity-0 ${
       active ? "bg-card font-bold border-b-2 border-b-card -mb-0.5" : "text-ink-soft hover:bg-paper-deep/50 hover:text-ink"
     }`;
 

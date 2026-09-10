@@ -25,12 +25,18 @@ describe("motion tokens (Animations round, 2026-09-10)", () => {
   });
 
   it("the pop easing IS the existing dialog overshoot, not a second one beside it", () => {
-    expect(CSS).toMatch(/hv-pop-in 180ms cubic-bezier\(0\.34, 1\.4, 0\.64, 1\)/);
+    expect(CSS).toMatch(/hv-pop-in 270ms cubic-bezier\(0\.34, 1\.4, 0\.64, 1\)/);
     expect(EASE.pop).toBe("cubic-bezier(0.34, 1.4, 0.64, 1)");
   });
 
-  it("durations are the four the spec names and nothing is over 320 ms", () => {
-    expect(Object.values(DUR).sort((a, b) => a - b)).toEqual([120, 150, 180, 320]);
+  it("durations are the four the scale names, and the flight is the ceiling", () => {
+    // Rescaled 1.5x on 2026-09-10, after the first build was reported as too
+    // snappy to read — "super fast, I don't see anything". The proposal's own
+    // "nothing over 320 ms" is therefore superseded, deliberately; what the
+    // rule preserves is the SHAPE, four steps with the flight as the ceiling
+    // and every other motion below it.
+    expect(Object.values(DUR).sort((a, b) => a - b)).toEqual([180, 220, 270, 480]);
+    expect(Math.max(...Object.values(DUR))).toBe(DUR.flight);
   });
 
   it("dead shimmer CSS is gone", () => {

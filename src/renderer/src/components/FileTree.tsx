@@ -267,7 +267,7 @@ export function FileTree({
                     expanded and collapsed constantly, so an exit here would be
                     a delay on every click rather than a flourish. */}
                 {open && (
-                  <div className="motion-safe:transition-opacity motion-safe:duration-100 motion-safe:ease-hv-out motion-safe:starting:opacity-0">
+                  <div className="motion-safe:transition-opacity motion-safe:duration-150 motion-safe:ease-hv-out motion-safe:starting:opacity-0">
                     {renderDir(rel, depth + 1)}
                   </div>
                 )}

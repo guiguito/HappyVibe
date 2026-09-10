@@ -102,7 +102,7 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
             the pop would never play. */}
         <span
           key={card.status}
-          className={`size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-200 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${s.dot}`}
+          className={`size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-300 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${s.dot}`}
         />
         <span className="text-[15px] shrink-0" aria-hidden>🧭</span>
         <button type="button" onClick={() => setExpanded((v) => !v)} className="flex items-center gap-2 text-left cursor-pointer flex-1 min-w-0">

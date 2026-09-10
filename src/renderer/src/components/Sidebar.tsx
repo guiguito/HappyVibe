@@ -522,7 +522,7 @@ function SessionRow({
   return (
     <div
       data-hv-session={rowId}
-      className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold cursor-pointer motion-safe:starting:opacity-0 motion-safe:transition-opacity motion-safe:duration-150 motion-safe:ease-hv-out ${
+      className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold cursor-pointer motion-safe:starting:opacity-0 motion-safe:transition-opacity motion-safe:duration-220 motion-safe:ease-hv-out ${
         selected
           ? "bg-honey-soft border border-honey/60"
           : open
@@ -879,13 +879,13 @@ export function Sidebar({
   return (
     <aside
       ref={asideRef}
-      className={`${railCollapsed ? "w-12" : "w-64"} shrink-0 bg-paper-deep pegboard border-r-2 border-line grid overflow-hidden motion-safe:transition-[width] motion-safe:duration-180 motion-safe:ease-hv-out`}
+      className={`${railCollapsed ? "w-12" : "w-64"} shrink-0 bg-paper-deep pegboard border-r-2 border-line grid overflow-hidden motion-safe:transition-[width] motion-safe:duration-270 motion-safe:ease-hv-out`}
     >
       {/* The collapsed rail. */}
       <div
         inert={!railCollapsed || undefined}
         aria-hidden={!railCollapsed || undefined}
-        className={`col-start-1 row-start-1 w-12 flex flex-col items-center py-3 gap-2 motion-safe:transition-opacity motion-safe:duration-100 ${railCollapsed ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        className={`col-start-1 row-start-1 w-12 flex flex-col items-center py-3 gap-2 motion-safe:transition-opacity motion-safe:duration-150 ${railCollapsed ? "opacity-100" : "opacity-0 pointer-events-none"}`}
       >
           <button
             type="button"
@@ -947,7 +947,7 @@ export function Sidebar({
       <div
         inert={railCollapsed || undefined}
         aria-hidden={railCollapsed || undefined}
-        className={`col-start-1 row-start-1 w-64 min-w-64 flex flex-col min-h-0 motion-safe:transition-opacity motion-safe:duration-100 ${railCollapsed ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+        className={`col-start-1 row-start-1 w-64 min-w-64 flex flex-col min-h-0 motion-safe:transition-opacity motion-safe:duration-150 ${railCollapsed ? "opacity-0 pointer-events-none" : "opacity-100"}`}
       >
         {/* Brand */}
         {/* §34: `gap-1`, not `gap-2`. Measured — with three icon buttons the row

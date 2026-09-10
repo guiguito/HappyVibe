@@ -686,7 +686,7 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
               dots behave differently is the drift round 15 closed. */}
           <span
             key={delegationStatus}
-            className={`mt-1 size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-200 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${
+            className={`mt-1 size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-300 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${
               running
                 ? "bg-sky animate-pulse"
                 : denied || card.status === "error" || outcome === "failed" || outcome === "stopped"
@@ -880,7 +880,7 @@ export function ToolCard({
               does not jump. */}
           <span
             key={card.status}
-            className={`size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-200 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${s.dot}`}
+            className={`size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-300 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${s.dot}`}
             title={s.label}
             aria-label={s.label}
             role="img"

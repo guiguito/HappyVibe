@@ -41,7 +41,7 @@ export function Banner({
   return (
     <div
       data-leaving={leaving || undefined}
-      className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:grid-rows-[0fr] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
+      className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-[240ms] motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:grid-rows-[0fr] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-180 motion-safe:data-[leaving]:ease-hv-in"
     >
       <div
         className={`min-h-0 overflow-hidden flex items-center gap-3 px-6 py-2.5 border-b-2 text-sm font-semibold ${BANNER_TONE[tone]}`}

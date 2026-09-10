@@ -10,7 +10,7 @@
  */
 
 /** Every duration in the app, in ms. Nothing here may exceed `flight`. */
-export const DUR = { fast: 120, base: 150, panel: 180, flight: 320 } as const;
+export const DUR = { fast: 180, base: 220, panel: 270, flight: 480 } as const;
 
 /** Enters and movement are `out`; exits are `in` and always shorter. */
 export const EASE = {
@@ -107,11 +107,17 @@ export function flyGhost(
     { duration, easing: EASE.out, fill: "forwards" },
   );
 
-  // The text goes early: a headline squeezed into 36px is illegible smear, and
-  // fading it over the first 40% reads as the card becoming a token.
+  // The text is HELD, then goes late.
+  //
+  // It used to fade over the first 40%, which meant the ghost spent the last
+  // two thirds of its flight as a blank rounded rectangle — reported as "I
+  // don't see anything", and rightly: the thing you are meant to follow had
+  // already lost the only feature that identified it. A headline squeezed into
+  // 36px really is smear, so it still goes; it just goes at the END, while the
+  // ghost is shrinking and there is no longer room for it.
   for (const t of ghost.querySelectorAll<HTMLElement>("*")) {
     if (t.childElementCount === 0 && t.textContent?.trim()) {
-      t.animate([{ opacity: 1 }, { opacity: 0, offset: 0.4 }, { opacity: 0 }], { duration, fill: "forwards" });
+      t.animate([{ opacity: 1 }, { opacity: 1, offset: 0.55 }, { opacity: 0 }], { duration, fill: "forwards" });
     }
   }
 
@@ -151,7 +157,7 @@ export function flipChildren(parent: HTMLElement, attr: string, prev: Map<string
     const dy = was.top - now.top;
     if (dx === 0 && dy === 0) continue;
     el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }], {
-      duration: 200,
+      duration: 300,
       easing: EASE.out,
     });
   }

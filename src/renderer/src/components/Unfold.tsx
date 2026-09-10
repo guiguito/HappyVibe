@@ -35,7 +35,7 @@ export function Unfold({
   const present = usePresence(open, ms);
   return (
     <div
-      className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-180 motion-safe:ease-hv-out ${
+      className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-270 motion-safe:ease-hv-out ${
         open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
       }`}
     >
