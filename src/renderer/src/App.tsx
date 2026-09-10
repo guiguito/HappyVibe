@@ -1,4 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DUR } from "./motion";
+import { usePresence } from "./usePresence";
 import { ChangesPanel } from "./components/ChangesPanel";
 import { RightRail, type DrawerPanel } from "./components/RightRail";
 import { badgeTint, clampDrawer, summarise } from "./gitui";
@@ -2593,6 +2595,24 @@ export default function App(): React.JSX.Element {
     if (show) setPulseShow((p) => ({ ...p, [sid]: true }));
   }, [activeWs, selectedId, tabsByWs, turns, busy, statuses, pendingBySession, sessions, feedbackInfo, pulseShow]);
 
+  /**
+   * Animations round (2026-09-10) — the right drawer's exit.
+   *
+   * It is a conditional render, so React removes it before any transition can
+   * run; `usePresence` keeps it mounted for the 120 ms exit and `lastDrawer`
+   * remembers WHICH panel it was showing, because by then the state that says
+   * so is already null.
+   *
+   * Both MUST sit above the `keyState === "loading"` early return, for exactly
+   * the reason §34's effect above records: a hook after a conditional return
+   * changes the hook COUNT between renders and React tears the whole app down.
+   * Presence is driven by `drawerPanel` alone because `wsId` is not resolved
+   * until after that return — the render itself still requires a workspace, so
+   * a drawer never appears without one.
+   */
+  const drawerShow = usePresence(!!drawerPanel, DUR.fast);
+  const lastDrawer = useRef<{ panel: DrawerPanel; ws: string } | null>(null);
+
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
   }
@@ -2747,6 +2767,16 @@ export default function App(): React.JSX.Element {
   // content spans under it. The file tree is a separate absolute overlay (below),
   // so opening it never shrinks the panes. Content stays mounted-flat (WS6).
   const DRAWER = drawerPanel && !!wsId ? drawerPanel : null;
+  // Animations round: what the drawer renders while it is LEAVING. The stale
+  // value is only reused for the workspace it belonged to — switching
+  // workspaces must not flash the previous one's Changes panel on the way out.
+  if (DRAWER && wsId) lastDrawer.current = { panel: DRAWER, ws: wsId };
+  const shownDrawer =
+    DRAWER && wsId
+      ? { panel: DRAWER, ws: wsId }
+      : wsId && lastDrawer.current?.ws === wsId
+        ? lastDrawer.current
+        : null;
   const gridStyle = buildGridStyle(wsTabs);
 
   return (
@@ -3363,7 +3393,7 @@ export default function App(): React.JSX.Element {
             {/* v5.1: file tree is a right-side OVERLAY drawer (top below the tab
                 bar, h-11) — it overlays the content instead of a grid column, so
                 opening it never shrinks the panes. Below the ContextPanel (z-40). */}
-            {DRAWER && (
+            {drawerShow.mounted && shownDrawer && (
               <div
                 // §7 round 13: plain `bg-paper`, NOT the sidebar's pegboard.
                 // Tried and reverted: the texture is the app's mark for its own
@@ -3374,7 +3404,13 @@ export default function App(): React.JSX.Element {
                 // §7 round 13: marked so BrowserTab can make ROOM for it
                 // instead of hiding under it — see its `drawerWidth` prop.
                 data-hv-drawer=""
-                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col"
+                // Animations round: it enters from its OWN edge (12px, not off
+                // screen) and leaves the same way, faster. It must never slide
+                // ACROSS a browser pane — but it does not: the pane insets
+                // itself by this rect, and this element is exempt from the
+                // coverage check by `data-hv-drawer`.
+                data-leaving={drawerShow.leaving || undefined}
+                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-x-3 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:translate-x-3 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
                 style={{ width: drawerWidth }}
               >
                 {/* §29: the drag strip. Absolutely placed on the drawer's own
@@ -3402,11 +3438,26 @@ export default function App(): React.JSX.Element {
                 {/* §7 round 13: ONE panel at a time. The rail is the switcher,
                     so the drawer carries no tab header of its own — which is
                     what gives Changes the whole width it needs. */}
-                <div className="min-h-0 flex-1">
-                  {DRAWER === "changes" ? (
-                    <ChangesPanel key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
+                {/* Animations round: `key` on the SWAP, so switching Changes ↔
+                    Files remounts and `starting:` fires — a crossfade, where a
+                    plain replace was a hard cut. `contents` keeps the flex
+                    layout of the row exactly as it was. */}
+                <div
+                  key={shownDrawer.panel}
+                  className="min-h-0 flex-1 motion-safe:transition-opacity motion-safe:duration-120 motion-safe:ease-hv-out motion-safe:starting:opacity-0"
+                >
+                  {shownDrawer.panel === "changes" ? (
+                    <ChangesPanel
+                      key={shownDrawer.ws}
+                      workspace={shownDrawer.ws}
+                      onOpenFile={(rel) => openFileTab(shownDrawer.ws, rel)}
+                    />
                   ) : (
-                    <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
+                    <FileTree
+                      key={shownDrawer.ws}
+                      workspace={shownDrawer.ws}
+                      onOpenFile={(rel) => openFileTab(shownDrawer.ws, rel)}
+                    />
                   )}
                 </div>
               </div>
