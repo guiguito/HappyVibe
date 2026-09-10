@@ -362,6 +362,12 @@ export interface DelegationRun {
   label: string;
   startedAt: number;
   status: "running" | "done" | "error" | "interrupted";
+  /**
+   * A2 (2026-09-10): the run's outcome has been shown and its circle is on the
+   * way out. Set at 2 350 ms by the SAME timer that deletes it at 2 500, so
+   * there is one clock rather than two that can drift apart.
+   */
+  leaving?: true;
   /** Async only — latest status-poll snapshot (currentTool, activityState, …). */
   live?: {
     currentTool?: string;

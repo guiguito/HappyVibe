@@ -39,6 +39,22 @@ export interface RunAvatar {
   state: RunState;
   /** 0-359, derived from `name`. */
   hue: number;
+  /**
+   * A2 (2026-09-10): true while the run's 2.5 s outcome timer is winding down,
+   * so CSS can play the exit before React removes the circle. Set at 2 350 ms
+   * by the same timer that deletes at 2 500 — one clock, not two.
+   */
+  leaving?: true;
+  /**
+   * A1 (2026-09-10): when this run began, so the flight can tell a run BORN
+   * here from one that merely became visible here.
+   *
+   * Without it, switching to a session that already has a delegation in flight
+   * would fly a ghost for a run that started minutes ago — motion announcing
+   * something that did not just happen. The card-presence check does not cover
+   * that case, because a session you switch to has its card in the DOM too.
+   */
+  startedAt: number;
 }
 
 /**
@@ -99,6 +115,8 @@ export function toRunAvatars(delegations: DelegationRun[], terminals: TerminalRu
       caption: r.label,
       state: delegationState(r),
       hue: avatarHue(r.agent),
+      startedAt: r.startedAt,
+      ...(r.leaving ? { leaving: true as const } : {}),
     })),
     ...terminals.map((t): RunAvatar => ({
       key: t.terminalId,
@@ -110,6 +128,7 @@ export function toRunAvatars(delegations: DelegationRun[], terminals: TerminalRu
       // was killed — never "succeeded".
       state: t.running ? "working" : "stopped",
       hue: avatarHue(t.title),
+      startedAt: t.startedAt,
     })),
   ];
 }

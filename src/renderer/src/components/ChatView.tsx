@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { DUR } from "../motion";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DUR, EASE, flipChildren, flyGhost, reducedMotion, snapshotRects } from "../motion";
 import { usePresence } from "../usePresence";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { hasRestorable, tailToolCallIds, type RewindScope } from "../rewind";
@@ -1865,6 +1865,14 @@ const RUN_RAIL_OVERLAY = "absolute left-0 top-full mt-2 w-full max-w-2xl";
  * covering every browser pane; and a run needing attention is PROMOTED to a
  * full card rather than waiting behind a click.
  */
+/**
+ * A1: how recently a run must have started for its arrival to be worth
+ * animating. A run older than this became VISIBLE here, it did not happen here
+ * — switching to a session with a delegation already in flight must not
+ * announce it as news.
+ */
+const BORN_HERE_MS = 2_000;
+
 function RunRail({
   runs,
   terminalRuns,
@@ -1907,6 +1915,118 @@ function RunRail({
     setOpen((o) => (o && !keys.split("|").includes(o) ? null : o));
     setHover((h) => (h && !keys.split("|").includes(h) ? null : h));
   }, [keys]);
+
+  /**
+   * A1 (2026-09-10) — the signature move: a ghost of the card's header flies to
+   * the circle, so the rail is understood as "where that went" rather than as a
+   * row of dots that appeared.
+   *
+   * These refs and the effect below MUST sit above the `avatars.length === 0`
+   * early return on the next line — a hook after a conditional return changes
+   * the hook count between renders and React tears the app down.
+   */
+  const rowRef = useRef<HTMLDivElement>(null);
+  const flownKeys = useRef<Set<string>>(new Set());
+  /**
+   * A3: the overlay is a conditional render, so React removes it before an exit
+   * can run. `lastOpen` is WHICH card to keep drawing during those 100 ms —
+   * `open` is already null by then, and reading it would blank the card a frame
+   * before the fade.
+   */
+  const overlay = usePresence(open !== null, 100);
+  const lastOpen = useRef<string | null>(null);
+  if (open) lastOpen.current = open;
+  const shownOpen = open ?? lastOpen.current;
+
+  /**
+   * The point the overlay grows from: the centre of the circle that opened it,
+   * in the overlay's own coordinates. Measured rather than guessed, because the
+   * row wraps and the circle can be anywhere along it.
+   */
+  const originFor = (key: string): string => {
+    const row = rowRef.current;
+    const avatar = avatars.find((a) => a.key === key);
+    const circle = row && avatar
+      ? row.querySelector<HTMLElement>(`[data-hv-run-avatar="${CSS.escape(avatar.domKey)}"]`)
+      : null;
+    const host = row?.parentElement;
+    if (!circle || !host) return "top left";
+    const c = circle.getBoundingClientRect();
+    const h = host.getBoundingClientRect();
+    return `${Math.round(c.left - h.left + c.width / 2)}px ${Math.round(c.top - h.top + c.height / 2)}px`;
+  };
+  const prevRects = useRef<Map<string, DOMRect>>(new Map());
+  const domKeys = avatars.map((a) => a.domKey).join("|");
+
+  /**
+   * `useLayoutEffect`, not `useEffect`: the rects have to be read after React
+   * has committed the new row and before the browser paints it, or the FLIP
+   * measures positions the user has already seen.
+   */
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    // Siblings close the gap a leaving circle left, instead of teleporting.
+    flipChildren(row, "data-hv-run-avatar", prevRects.current);
+    for (const a of avatars) {
+      if (flownKeys.current.has(a.domKey)) continue;
+      flownKeys.current.add(a.domKey);
+      void fly(a);
+    }
+    prevRects.current = snapshotRects(row, "data-hv-run-avatar");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the id list, not the array identity
+  }, [domKeys]);
+
+  /**
+   * Fly one ghost, or decline and let A2's pop-in carry it.
+   *
+   * Every refusal below is a case where the flight would be a lie rather than
+   * a flourish, and each one leaves a perfectly good circle behind:
+   *
+   *  - reduced motion: the settled frame, never a faster animation.
+   *  - a run that did not start HERE (a session you switched to, a run resynced
+   *    after a respawn). The card-presence check does not cover this, because a
+   *    session you switch to has its card in this pane's DOM too.
+   *  - no card with this id in THIS pane: a resynced run is keyed by its run id
+   *    and no card ever carried that, which is exactly how restore excludes
+   *    itself without a special case.
+   *  - the card scrolled out of the viewport. It is NEVER scrolled back into
+   *    view to make the flight possible: moving the conversation so an
+   *    animation can play is the animation deciding what you are reading.
+   */
+  async function fly(a: RunAvatar): Promise<void> {
+    if (reducedMotion()) return;
+    if (Date.now() - a.startedAt > BORN_HERE_MS) return;
+    const row = rowRef.current;
+    const circle = row?.querySelector<HTMLElement>(`[data-hv-run-avatar="${CSS.escape(a.domKey)}"]`);
+    if (!circle) return;
+    // Scoped to this pane: two panes can show two sessions, and a card in the
+    // other one is not this circle's origin.
+    const pane = row?.closest<HTMLElement>("[data-hv-pane-session]") ?? document.body;
+    const card = pane.querySelector<HTMLElement>(`[data-hv-run-card="${CSS.escape(a.domKey)}"]`);
+    if (!card) return;
+    const scroller = card.closest<HTMLElement>(".overflow-y-auto");
+    if (scroller) {
+      const r = card.getBoundingClientRect();
+      const box = scroller.getBoundingClientRect();
+      if (r.bottom < box.top || r.top > box.bottom) return;
+    }
+    // The header ROW, not the whole card: a tall card shrinking to 36px reads
+    // as the card being deleted, where its header reads as a token leaving.
+    const header = (card.firstElementChild as HTMLElement | null) ?? card;
+    // The destination is hidden imperatively rather than through state: a
+    // `setState` here lands after the layout effect, so the circle would paint
+    // at full opacity for one frame before the ghost had moved — a visible
+    // double image at the exact moment the eye is on it.
+    circle.style.opacity = "0";
+    // The card dips and returns, so the eye reads "a copy left" rather than
+    // "that moved away".
+    header.animate([{ opacity: 1 }, { opacity: 0.6, offset: 0.5 }, { opacity: 1 }], { duration: DUR.flight });
+    await flyGhost(header, circle, { duration: DUR.flight, round: true });
+    circle.style.opacity = "";
+    // The landing carries the brand's own overshoot — the sticker press.
+    circle.animate([{ transform: "scale(1.1)" }, { transform: "scale(1)" }], { duration: DUR.fast, easing: EASE.pop });
+  }
 
   if (avatars.length === 0) return null;
 
@@ -1951,9 +2071,18 @@ function RunRail({
       {avatars
         .filter((a) => promoted.has(a.key))
         .map((a) => (
-          <div key={`promoted-${a.key}`}>{cardFor(a.key, false)}</div>
+          // A3: attention takes SPACE, so it unfolds rather than fading in —
+          // a card appearing at full height shoves the conversation. There is
+          // no exit and no `data-leaving`: this state is deliberately not
+          // dismissible (PRD §12), so it only ever leaves by being answered.
+          <div
+            key={`promoted-${a.key}`}
+            className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0"
+          >
+            <div className="min-h-0 overflow-hidden">{cardFor(a.key, false)}</div>
+          </div>
         ))}
-      <div className="pt-3 flex items-center gap-2 flex-wrap">
+      <div ref={rowRef} className="pt-3 flex items-center gap-2 flex-wrap">
         {avatars
           .filter((a) => !promoted.has(a.key))
           .map((a) => (
@@ -1975,7 +2104,13 @@ function RunRail({
                 // The hue is INLINE, not a class: Tailwind's scanner never sees
                 // a computed class name and would emit nothing.
                 style={{ backgroundColor: `hsl(${a.hue} 70% 92%)`, color: `hsl(${a.hue} 60% 30%)` }}
-                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer ${RUN_STATE_RING[a.state]}`}
+                // A2: enters with the brand's overshoot, leaves faster and
+                // smaller. `data-leaving` is raised 150 ms before React removes
+                // the run, by the same timer that removes it. The fade ends at
+                // EXACTLY 0 — §28's coverage check compares the string, and a
+                // circle resting at 0.01 would blank a browser pane for good.
+                data-leaving={a.leaving || undefined}
+                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer motion-safe:transition-[transform,opacity,border-color] motion-safe:duration-[160ms] motion-safe:ease-hv-pop motion-safe:starting:scale-[.6] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.6] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-150 motion-safe:data-[leaving]:ease-hv-in ${RUN_STATE_RING[a.state]}`}
               >
                 <ToolIcon kind={(a.kind === "agent" ? "robot" : "terminal") as IconKind} className="size-4" />
               </button>
@@ -1983,7 +2118,7 @@ function RunRail({
                 // No gap between the circle and this panel: a gap means the
                 // mouse leaves on the way in and the STOP inside is
                 // unreachable. The `pt-1` is INSIDE the hover target.
-                <div className="absolute left-0 top-full pt-1 z-20 w-72">
+                <div className="absolute left-0 top-full pt-1 z-20 w-72 motion-safe:transition-[opacity,translate] motion-safe:duration-100 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:-translate-y-0.5">
                   <div className="rounded-lg border-2 border-line bg-card shadow-sticker-lg px-3 py-2 flex flex-col gap-1">
                     <span className="text-sm font-black text-tangerine-deep break-words">{a.name}</span>
                     {a.caption && <span className="text-xs text-ink-soft break-words">{a.caption}</span>}
@@ -2019,7 +2154,19 @@ function RunRail({
             </div>
           ))}
       </div>
-      {open && !promoted.has(open) && <div className={`${RUN_RAIL_OVERLAY} z-20`}>{cardFor(open, true)}</div>}
+      {overlay.mounted && shownOpen && !promoted.has(shownOpen) && (
+        // A3: it grows FROM the circle that opened it, so the card reads as
+        // that circle expanding rather than as a panel appearing near it.
+        // The origin is an inline style because it is a measured pixel offset —
+        // Tailwind's scanner never sees a computed class.
+        <div
+          data-leaving={overlay.leaving || undefined}
+          style={{ transformOrigin: originFor(shownOpen) }}
+          className={`${RUN_RAIL_OVERLAY} z-20 motion-safe:transition-[transform,opacity] motion-safe:duration-[160ms] motion-safe:ease-hv-out motion-safe:starting:scale-[.96] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.96] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-100 motion-safe:data-[leaving]:ease-hv-in`}
+        >
+          {cardFor(shownOpen, true)}
+        </div>
+      )}
     </div>
   );
 }

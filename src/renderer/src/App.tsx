@@ -961,6 +961,12 @@ export default function App(): React.JSX.Element {
         setTimeout(() => {
           setDelegations((p) => {
             const run = findByRunId(p[sid] ?? {}, sub.runId!);
+            return run ? { ...p, [sid]: { ...p[sid], [run.id]: { ...run, leaving: true } } } : p;
+          });
+        }, 2_350);
+        setTimeout(() => {
+          setDelegations((p) => {
+            const run = findByRunId(p[sid] ?? {}, sub.runId!);
             if (!run) return p;
             const next = { ...p[sid] };
             delete next[run.id];
@@ -1454,6 +1460,15 @@ export default function App(): React.JSX.Element {
               const run = p[sid]?.[t.toolCallId];
               return run ? { ...p, [sid]: { ...p[sid], [t.toolCallId]: { ...run, status } } } : p;
             });
+            // A2 (2026-09-10): flag the exit 150 ms before the delete, so CSS
+            // can play it. One timer pair off one constant — a second clock
+            // somewhere else is how an exit ends up half-played.
+            setTimeout(() => {
+              setDelegations((p) => {
+                const run = p[sid]?.[t.toolCallId];
+                return run ? { ...p, [sid]: { ...p[sid], [t.toolCallId]: { ...run, leaving: true } } } : p;
+              });
+            }, 2_350);
             setTimeout(() => {
               setDelegations((p) => {
                 if (!p[sid]?.[t.toolCallId]) return p;

@@ -122,7 +122,10 @@ describe("the card the rail opens IS the expanded state (2026-08-31)", () => {
     // A promoted (needs_attention) card has no circle to return to, and that
     // state must not be dismissible — PRD §12, 2026-08-30.
     expect(rail).toContain("cardFor(a.key, false)");
-    expect(rail).toContain("cardFor(open, true)");
+    // A3 (2026-09-10) renamed the argument: the overlay is held mounted for its
+    // exit, so it draws `shownOpen` (the key it was showing) rather than
+    // `open`, which is already null by then. `closable: true` is the invariant.
+    expect(rail).toContain("cardFor(shownOpen, true)");
     expect(rail).toContain("onClose={closable ?");
   });
 
@@ -145,5 +148,101 @@ describe("the card the rail opens IS the expanded state (2026-08-31)", () => {
     expect(rail).toContain('a.kind === "terminal" && <TerminalTail terminalId={a.key} />');
     // …and it must read MAIN's rendered grid, never re-parse raw PTY bytes.
     expect(term).toContain("window.hv.termText(terminalId, 3)");
+  });
+});
+
+/**
+ * A1 / A2 / A3 (Animations round, 2026-09-10) — the flight, and the circle's
+ * own motion.
+ *
+ * The renderer suite has no DOM, so what is pinned here is the SHAPE of the
+ * code: the traps this design can fall into are all visible in the source, and
+ * each one below has a specific way of failing silently in the running app.
+ */
+describe("the card→circle flight (A1)", () => {
+  it("the ghost is positioned INLINE, never by the class word", () => {
+    // §28's coverage check gathers candidates by the class words `absolute` /
+    // `fixed` (BrowserTab.tsx) and judges them by bounding box. A ghost
+    // carrying either word is a full-size candidate crossing the screen, and
+    // it would blank a browser pane for the length of every flight.
+    const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+    expect(motion).toContain('position: "fixed"');
+    expect(motion).not.toMatch(/classList\.add\(|className\s*=\s*["'`]/);
+  });
+
+  it("the flight never scrolls the transcript to make itself possible", () => {
+    // The card is where the user left it. Moving the conversation so an
+    // animation can play is the animation deciding what you are reading.
+    expect(rail).not.toContain("scrollIntoView");
+    expect(rail).not.toContain("scrollTo(");
+  });
+
+  it("both take-off points and the landing point are marked in the DOM", () => {
+    const card = readFileSync("src/renderer/src/components/ToolCard.tsx", "utf8");
+    // Two card roots: the delegation card and the generic one `terminal_run`
+    // uses. Miss either and that family silently never flies.
+    expect(card.match(/data-hv-run-card=/g)?.length).toBe(2);
+    expect(chat).toContain("data-hv-run-avatar={a.domKey}");
+  });
+
+  it("the circle is keyed on domKey, not on the map key", () => {
+    // The map key changes mid-run when an async delegation is re-keyed, which
+    // destroys the DOM node the flight is aiming at.
+    expect(rail).toContain("key={a.domKey}");
+  });
+});
+
+describe("the circle's enter, exit and shift (A2)", () => {
+  it("enters with a scale-up and leaves with a scale-down, both motion-safe", () => {
+    expect(rail).toContain("motion-safe:starting:scale-[.6]");
+    expect(rail).toContain("data-[leaving]:scale-[.6]");
+    expect(rail).toContain("data-[leaving]:opacity-0");
+  });
+
+  it("a leaving circle's fade ends at EXACTLY zero", () => {
+    // §28's coverage check reads `opacity !== "0"` as visible — literally, as a
+    // string compare. A circle resting at 0.01 is an invisible element that
+    // permanently blanks any browser pane it overlaps.
+    expect(rail).not.toMatch(/data-\[leaving\]:opacity-\[0\.\d/);
+  });
+
+  it("siblings close the gap with FLIP rather than teleporting", () => {
+    expect(rail).toContain("flipChildren");
+    expect(rail).toContain("snapshotRects");
+  });
+
+  it("the ring colour transitions, and the map stays data", () => {
+    expect(rail).toMatch(/transition-\[[^\]]*border-color/);
+    const runRail = readFileSync("src/renderer/src/runRail.ts", "utf8");
+    expect(runRail).toContain("export const RUN_STATE_RING");
+  });
+});
+
+describe("the overlay and the hover readout (A3)", () => {
+  it("the overlay grows from the circle that opened it", () => {
+    expect(rail).toContain("transformOrigin");
+  });
+
+  it("the hover readout has NO exit", () => {
+    // The STOP lives inside this panel. An exit animation means the panel is
+    // still on screen after the pointer has left it, so a click aimed at STOP
+    // can land on a panel that is already dying — or worse, feel like it
+    // worked. Instant is the safe direction here.
+    const readout = rail.slice(rail.indexOf("hover === a.key && open !== a.key"));
+    expect(readout.slice(0, 900)).toContain("pt-1");
+    expect(readout.slice(0, 900)).not.toContain("data-[leaving]");
+  });
+
+  it("still has no click-catcher and nothing above z-20", () => {
+    // Unchanged from 2026-08-31 and re-asserted because this round touched
+    // every line around them: a `fixed inset-0` catcher reads as covering every
+    // browser pane (browserCoverage judges by BOX), and z-20 is the rail's
+    // ceiling.
+    expect(rail).not.toContain("fixed inset-0");
+    expect(rail).not.toMatch(/\bz-(?:3\d|4\d|5\d|\[\d{3}\])\b/);
+  });
+
+  it("the sticky wrapper string is untouched", () => {
+    expect(chat).toContain('className="sticky top-0 z-20 px-6 relative max-w-3xl mx-auto w-full"');
   });
 });
