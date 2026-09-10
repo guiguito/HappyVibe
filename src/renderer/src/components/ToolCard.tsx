@@ -663,7 +663,13 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
     };
   }, [open, asyncId, sessionId, results.length, req?.agent]);
   return (
-    <div className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}>
+    // A1 (2026-09-10): where the card→circle flight takes off from. The id is a
+    // DOM attribute rather than something parsed out of the card's text — the
+    // rail looks this up by exact value, and text is not an identifier.
+    <div
+      data-hv-run-card={card.toolCallId}
+      className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}
+    >
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -839,6 +845,9 @@ export function ToolCard({
       : undefined;
   return (
     <div
+      // A1: the generic root serves `terminal_run` too, so it is the other
+      // take-off point for the flight.
+      data-hv-run-card={card.toolCallId}
       className={`rounded-xl border-2 bg-card shadow-sticker overflow-hidden ${
         denied ? "border-berry/50" : "border-line"
       }`}

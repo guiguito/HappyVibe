@@ -1958,13 +1958,17 @@ function RunRail({
           .filter((a) => !promoted.has(a.key))
           .map((a) => (
             <div
-              key={a.key}
+              // A1: the DOM key, not the map key — see runRail.ts's `domKey`.
+              key={a.domKey}
               className="relative"
               onMouseEnter={() => setHover(a.key)}
               onMouseLeave={() => setHover((h) => (h === a.key ? null : h))}
             >
               <button
                 type="button"
+                // A1: where a flying ghost lands, and how a GUI pass counts the
+                // circles. An id is never parsed out of text.
+                data-hv-run-avatar={a.domKey}
                 onClick={() => setOpen((o) => (o === a.key ? null : a.key))}
                 aria-expanded={open === a.key}
                 aria-label={`${a.name}${a.caption ? ` — ${a.caption}` : ""} (${a.state})`}

@@ -30,6 +30,17 @@ export interface TerminalRun {
   /** The model's own headline for the call that opened it. */
   intent: string;
   startedAt: number;
+  /**
+   * A1 prereq 3 (2026-09-10): the `terminal_run` call that opened this
+   * terminal. The transcript CARD has always known it and the circle has always
+   * known the terminal id, with nothing joining the two — so the card→circle
+   * flight had no way to find its own destination. The bridge now carries it
+   * through `hv.terminal-run` and main echoes it on the started notify.
+   *
+   * Optional because a terminal the USER opened has no tool call, and because
+   * an older session file replays notifies that predate the field.
+   */
+  toolCallId?: string;
 }
 
 /**

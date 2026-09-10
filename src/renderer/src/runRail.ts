@@ -15,6 +15,22 @@ export type RunState = "working" | "attention" | "done" | "failed" | "stopped";
 export interface RunAvatar {
   /** Map key: the delegation's run id, or the terminal's id. Unique across both. */
   key: string;
+  /**
+   * A1 (2026-09-10): React key AND `data-hv-run-avatar` — the id that does NOT
+   * change for the life of the run.
+   *
+   * `key` cannot serve: an async delegation is re-keyed `toolCallId → asyncId`
+   * at `tool_execution_end` (App.tsx), so keying the circle on it made React
+   * destroy the node and build a new one MID-RUN. That was invisible until
+   * something had to animate the circle — the enter re-fires, and a flight
+   * landing on a node that no longer exists lands nowhere.
+   *
+   * The tool call is the one identifier that exists before the run has any
+   * other name, and it survives the re-key because that code spreads the
+   * foreground run. A run resynced after a respawn never had a tool call in
+   * this session, so it falls back to its own id.
+   */
+  domKey: string;
   kind: "agent" | "terminal";
   /** The agent's name, or the terminal's foreground command. */
   name: string;
@@ -77,6 +93,7 @@ export function toRunAvatars(delegations: DelegationRun[], terminals: TerminalRu
   return [
     ...delegations.map((r): RunAvatar => ({
       key: r.id,
+      domKey: r.toolCallId ?? r.id,
       kind: "agent",
       name: r.agent,
       caption: r.label,
@@ -85,6 +102,7 @@ export function toRunAvatars(delegations: DelegationRun[], terminals: TerminalRu
     })),
     ...terminals.map((t): RunAvatar => ({
       key: t.terminalId,
+      domKey: t.toolCallId ?? t.terminalId,
       kind: "terminal",
       name: t.title,
       caption: t.intent,
