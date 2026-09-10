@@ -3,6 +3,7 @@ import { uiGet, uiSet } from "../uiStore";
 import { timeago } from "../timeago";
 import { DOT_TITLE, SESSION_DOT, sessionDotState } from "../sessionDot";
 import { flipChildren, snapshotRects } from "../motion";
+import { Unfold } from "./Unfold";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
 import { bySidebarOrder, lastUsed } from "../sessionOrder";
@@ -1256,10 +1257,9 @@ export function Sidebar({
                         tight (§20 round 18 measured it), so a group opening
                         moves everything below it — which is exactly the case a
                         height reveal exists for. */}
-                    <div className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-150 motion-safe:ease-hv-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-                      <div className="min-h-0 overflow-hidden">
-                    {open &&
-                      NAV.filter((n) => n.group === g.id).map((n) => (
+                    <Unfold open={open}>
+                      <div>
+                    {NAV.filter((n) => n.group === g.id).map((n) => (
                         <button
                           key={n.view}
                           type="button"
@@ -1273,7 +1273,7 @@ export function Sidebar({
                         </button>
                       ))}
                       </div>
-                    </div>
+                    </Unfold>
                   </div>
                 );
               })}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Unfold } from "./Unfold";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ModelSelect } from "./ModelSelect";
@@ -117,9 +118,7 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
       {/* C1 (Animations round, 2026-09-10): the plan body unfolds. Same idiom
           and same reason as the tool card's — a plan is long, and appearing at
           full height in one frame shoves the whole conversation. */}
-      <div className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-180 motion-safe:ease-hv-out ${expanded && body ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="min-h-0 overflow-hidden">
-      {expanded && body && (
+      <Unfold open={expanded && !!body}>
         <div className="px-4 pb-2 border-t-2 border-line/60 pt-2">
           <div className="md max-h-96 overflow-y-auto">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
@@ -135,9 +134,7 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
             </button>
           )}
         </div>
-      )}
-        </div>
-      </div>
+      </Unfold>
 
       {/* Actions — all human-only transitions. */}
       {isDraft && !dismissed && (

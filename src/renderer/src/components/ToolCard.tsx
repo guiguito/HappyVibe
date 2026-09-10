@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Unfold } from "./Unfold";
 import { MEMORY_TYPE_LABEL } from "../memoryFact";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
@@ -714,12 +715,10 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
       </button>
       {/* B1 (Animations round, 2026-09-10): the body UNFOLDS. A card that grows
           by its own height in one frame shoves every message below it, which is
-          the whole reason this is a height reveal (`grid-template-rows` 0fr→1fr,
-          already the app's idiom) rather than a fade. The content mounts only
-          when open, so a long child transcript costs nothing while collapsed. */}
-      <div className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-180 motion-safe:ease-hv-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="min-h-0 overflow-hidden">
-      {open && (
+          the whole reason this is a height reveal rather than a fade. `Unfold`
+          keeps the child transcript out of the DOM while collapsed, and alive
+          just long enough for the close to animate. */}
+      <Unfold open={open}>
         <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 flex flex-col gap-3">
           {errorText && results.length === 0 && !inspected?.length ? (
             <p className="text-xs text-berry whitespace-pre-wrap break-words">{errorText}</p>
@@ -734,9 +733,7 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
             </>
           )}
         </div>
-      )}
-        </div>
-      </div>
+      </Unfold>
     </div>
   );
 }
@@ -955,12 +952,11 @@ export function ToolCard({
           </button>
         );
       })()}
-      {/* B1: the same unfold. `details` mounts only when open — the raw
-          envelope can be very large, and paying to render it while collapsed
-          is the cost this reveal must not introduce. */}
-      <div className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-180 motion-safe:ease-hv-out ${details ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="min-h-0 overflow-hidden">{details && <TechnicalDetails card={card} />}</div>
-      </div>
+      {/* B1: the same unfold. The raw envelope can be very large, and paying to
+          render it while collapsed is the cost this reveal must not introduce. */}
+      <Unfold open={details}>
+        <TechnicalDetails card={card} />
+      </Unfold>
       {/* Round 11: collapsed to one line — the agent usually recovers by itself, so
           an expanded error per attempt is noise. Click (or the details toggle) for
           the full text, which TechnicalDetails already renders. */}

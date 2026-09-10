@@ -109,3 +109,60 @@ describe("a transition names the property Tailwind v4 actually sets", () => {
     expect(bad.map((c) => c.split("::")[0])).toEqual([]);
   });
 });
+
+/**
+ * The reveal that opens and SNAPS shut (Animations round, 2026-09-10).
+ *
+ * A `grid-template-rows` 0fr↔1fr wrapper around `{open && children}` opens
+ * beautifully and closes in one frame: the open row's height comes from its
+ * content, so the moment React unmounts that content there is nothing left to
+ * animate from. Measured in the running app before the fix — 280px → 0px, no
+ * intermediate.
+ *
+ * `Unfold` is the one place that gets this right, so every height reveal goes
+ * through it rather than being hand-rolled a fifth time.
+ */
+describe("height reveals go through Unfold", () => {
+  const UNFOLD = fs.readFileSync(path.join(process.cwd(), "src/renderer/src/components/Unfold.tsx"), "utf8");
+
+  it("Unfold keeps its children alive for the close", () => {
+    expect(UNFOLD).toContain("usePresence");
+    expect(UNFOLD).toContain("present.mounted && children");
+  });
+
+  it("and still refuses to render them while collapsed", () => {
+    // The other half of the bargain: a collapsed delegation transcript costs
+    // nothing. `mounted` is false at rest, not merely hidden.
+    expect(UNFOLD).not.toMatch(/\{children\}(?![^]*present\.mounted)/);
+  });
+
+  it("the inner element can shrink to nothing", () => {
+    // A grid item's default `min-height: auto` refuses to shrink below its
+    // content, so without this the row never reaches 0fr and it never closes.
+    expect(UNFOLD).toContain("min-h-0");
+    expect(UNFOLD).toContain("overflow-hidden");
+  });
+
+  it("every height reveal has SOMETHING keeping its content alive for the close", () => {
+    // The rule is not "always use Unfold" — `Banner` and the AGENTS.md strip
+    // hand-roll the same rows because their CALLER already holds them mounted
+    // through `usePresence` and drives them by `data-leaving`, which satisfies
+    // the requirement a different way. What must never exist is a 0fr↔1fr
+    // wrapper with no mechanism at all: that one opens and snaps shut.
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (e.name.endsWith(".tsx") && e.name !== "Unfold.tsx") {
+          const src = fs.readFileSync(full, "utf8");
+          const reveals = /grid-rows-\[0fr\]/.test(src) && /grid-rows-\[1fr\]/.test(src);
+          const keepsAlive = src.includes("data-leaving") || src.includes("usePresence");
+          if (reveals && !keepsAlive) offenders.push(path.relative(process.cwd(), full));
+        }
+      }
+    };
+    walk(path.join(process.cwd(), "src/renderer/src"));
+    expect(offenders).toEqual([]);
+  });
+});
