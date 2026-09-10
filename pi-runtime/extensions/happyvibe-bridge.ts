@@ -2054,9 +2054,9 @@ export default function (pi: ExtensionAPI) {
   // ONE group, four thin shells over blocking hv.web-* inputs. Main calls the
   // web service, so main owns the URL, the encrypted key, the caps, the
   // deadline and the audit row; the bridge carries the request and turns the
-  // reply into a tool result. browserReply is the mapper — it already prefixes
-  // UNTRUSTED_BANNER on `untrusted:true`, and a page fetched headlessly is
-  // exactly as untrusted as one rendered in the pane.
+  // reply into a tool result. browserReply is the mapper — it already wraps
+  // the payload in <untrusted source="web"> on `untrusted:true`, and a page
+  // fetched headlessly is exactly as untrusted as one rendered in the pane.
   //
   // Four separate tools rather than one with an action enum: §10's rules must
   // be able to allow web_search by default while asking per host for the other
