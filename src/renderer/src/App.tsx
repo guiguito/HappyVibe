@@ -3041,14 +3041,22 @@ export default function App(): React.JSX.Element {
           className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"} motion-safe:transition-[opacity,display] motion-safe:transition-discrete motion-safe:duration-[140ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0`}
         >
           <div
-            // B5 (Animations round, 2026-09-10): splitting and unsplitting
-            // animates the grid, so a new pane opens rather than appearing.
-            // `data-dragging` kills it while a divider is held — the drag
-            // writes a new percentage on every mousemove, and a 180 ms
-            // transition on top of that makes the divider lag the pointer.
-            // It is set on THIS element by the drag handler itself, which
-            // already holds it as `parentElement`, so no state has to be
-            // plumbed through two components to say "a mouse is down".
+            // B5 (Animations round, 2026-09-10): the grid eases between RATIOS.
+            //
+            // Measured, and narrower than the proposal claimed: splitting and
+            // unsplitting change the number of TRACKS (`959px` → `479.5px
+            // 479.5px`), and CSS cannot interpolate one track into two — those
+            // two gestures land in a single frame and no transition can change
+            // that. What this does cover is a ratio change at a fixed track
+            // count, which eases correctly (measured 451/507 → 287/671).
+            //
+            // `data-dragging` kills it while a divider is held: the drag writes
+            // a new percentage on every mousemove, and easing on top of that
+            // makes the divider lag the pointer. It is set on THIS element by
+            // the drag handler, which already holds it as `parentElement`, so
+            // no state is plumbed through two components to say a mouse is
+            // down. A new pane's CONTENT still enters — the tab pops in (B6)
+            // and its transcript items rise (A7).
             className="flex-1 min-w-0 min-h-0 grid relative motion-safe:transition-[grid-template-columns,grid-template-rows] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:data-[dragging]:transition-none"
             style={gridStyle}
             onDragOver={(e) => e.dataTransfer.types.includes("application/x-hv-relpath") && e.preventDefault()}

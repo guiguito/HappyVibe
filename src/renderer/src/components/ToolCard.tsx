@@ -679,9 +679,14 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
         {/* v5: intent wraps (break-words) instead of clipping to one ellipsized line. */}
         <span className="flex items-start gap-2.5">
           {/* Round 15: the delegation's own status word joins the icon rule —
-              same treatment as an ordinary card, so the two read alike. */}
+              same treatment as an ordinary card, so the two read alike. B1
+              (2026-09-10) extends that to the MOTION: this dot pops on the
+              change exactly as the generic card's does, keyed on the same
+              string it is titled by so `@starting-style` fires. Two cards whose
+              dots behave differently is the drift round 15 closed. */}
           <span
-            className={`mt-1 size-2.5 rounded-full shrink-0 ${
+            key={delegationStatus}
+            className={`mt-1 size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-200 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${
               running
                 ? "bg-sky animate-pulse"
                 : denied || card.status === "error" || outcome === "failed" || outcome === "stopped"
