@@ -918,7 +918,22 @@ export function ToolCard({
         {destructive && <CardGlyph mark={BADGE_MARKS.destructive} />}
         <DetailsToggle open={details} onClick={() => setDetails(!details)} />
       </div>
-      {diff && openDiff && <DiffView lines={diff.lines} />}
+      {/* B1: the third expandable body on this card, and the one with a real
+          ceiling — a large edit's diff. `Unfold` mounts it once and keeps it
+          mounted through the close, so the diff is laid out a single time and
+          only the container's row is animated; re-laying out hundreds of lines
+          twice per toggle is the cost this must not introduce.
+
+          An edit card mounts with `openDiff` already true, and that does NOT
+          animate: a transition needs a previously-rendered value to change
+          from, so the row simply renders open. That is what keeps reopening a
+          session with many edit cards from animating all of them at once —
+          the same hazard A7's `live` flag answers one component over. */}
+      {diff && (
+        <Unfold open={openDiff}>
+          <DiffView lines={diff.lines} />
+        </Unfold>
+      )}
       {/* §33: what was remembered, on the card itself rather than behind `details`.
           The whole promise is that nothing is saved behind your back, so the memory has to be
           visible where the save happened — a JSON envelope three clicks away is not that. */}

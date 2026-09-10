@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { DUR, EASE } from "../src/renderer/src/motion";
+import { SESSION_DOT } from "../src/renderer/src/sessionDot";
 
 /**
  * Animations round (2026-09-10) — the motion vocabulary has ONE source.
@@ -164,5 +165,72 @@ describe("height reveals go through Unfold", () => {
     };
     walk(path.join(process.cwd(), "src/renderer/src"));
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * What this round deliberately did NOT animate (Animations round, 2026-09-10).
+ *
+ * Each of these is a decision with a reason, and each is the kind of decision a
+ * later "let's polish this too" quietly reverses. They are cheaper to pin than
+ * to re-argue.
+ */
+describe("the deliberate absences", () => {
+  const R2 = (p: string): string => fs.readFileSync(path.join(process.cwd(), p), "utf8");
+
+  it("the transcript's autoscroll stays instant", () => {
+    // `Transcript.tsx` explains it at length: smooth scroll fights the `follow`
+    // heuristic, so the view ends up chasing itself. The in-conversation
+    // search's match-centring keeps its own smooth scroll and is untouched.
+    const tx = R2("src/renderer/src/components/Transcript.tsx");
+    const follow = tx.slice(tx.indexOf("bottom.current?.scrollIntoView"), tx.indexOf("bottom.current?.scrollIntoView") + 120);
+    expect(follow).not.toContain('behavior: "smooth"');
+  });
+
+  it("the streaming bubble and the busy dots are not given an enter", () => {
+    // They already move. A7's `live` flag is stamped by `appendItem`, and the
+    // in-progress turn renders OUTSIDE `items` precisely so a delta re-renders
+    // only itself — animating it would fight that.
+    const tx = R2("src/renderer/src/components/Transcript.tsx");
+    const tail = tx.slice(tx.indexOf("{streaming && <AssistantBubble"));
+    expect(tail.slice(0, 600)).not.toContain("starting:");
+  });
+
+  it("no number is tweened", () => {
+    // Cost, tokens, context % and elapsed all tick. Tweening a ticker is noise
+    // dressed as polish — and `contextUsage.tokens` is null right after a
+    // compaction, so a tween would animate towards a lie.
+    for (const f of ["ContextBubble.tsx", "CostBubble.tsx"]) {
+      const src = R2(`src/renderer/src/components/${f}`);
+      expect(src, f).not.toMatch(/transition-\[[^\]]*width/);
+      expect(src, f).not.toContain("motion-safe:starting:");
+    }
+  });
+
+  it("the width DRAGS stay untransitioned", () => {
+    // A dragged edge must track the pointer exactly. The drawer's strip writes
+    // px per mousemove and the pane divider writes a percentage; easing either
+    // one makes it lag the hand holding it.
+    const app = R2("src/renderer/src/App.tsx");
+    const strip = app.slice(app.indexOf('aria-label="Resize the panel"'), app.indexOf('aria-label="Resize the panel"') + 400);
+    expect(strip).not.toContain("transition-[width]");
+    expect(app).toContain("data-dragging");
+  });
+
+  it("the pulse still means 'still going' everywhere it survived", () => {
+    // A8 took the pulse off the sidebar's ALIVE dot on purpose — that is the
+    // whole change. It must stay on the states that really are in progress.
+    const card = R2("src/renderer/src/components/ToolCard.tsx");
+    expect(card).toContain('running: { dot: "bg-sky animate-pulse"');
+    expect(SESSION_DOT.waking).toContain("animate-pulse");
+    expect(SESSION_DOT.alive).not.toContain("animate-pulse");
+  });
+
+  it("the composer's auto-grow is untouched", () => {
+    // Its height goes `auto` → measured px per keystroke; a transition there
+    // would lag the caret behind the text being typed.
+    const chat = R2("src/renderer/src/components/ChatView.tsx");
+    const grow = chat.slice(chat.indexOf("scrollHeight"), chat.indexOf("scrollHeight") + 300);
+    expect(grow).not.toContain("transition");
   });
 });
