@@ -37,8 +37,8 @@ function GlobalBypassToggle(): React.JSX.Element {
         </button>
       </div>
       {confirming && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirming(false)}>
-          <div className="w-full max-w-md rounded-2xl border-2 border-berry bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirming(false)}>
+          <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-berry bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-berry mb-1">⚠ Auto-approve every action?</div>
             <p className="text-sm text-ink-soft mb-4">
               This turns off ALL permission prompts globally — the agent may write files and run shell commands without

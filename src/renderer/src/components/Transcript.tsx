@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
@@ -52,7 +52,11 @@ function RewindButton({ onClick }: { onClick: () => void }): React.JSX.Element {
 // Perf: `id` is a stable key assigned at append time (see App.appendItem). Keying
 // on it instead of the array index lets React.memo skip re-parsing committed
 // markdown when new items arrive or the live streaming bubble updates.
-export type TranscriptItem = { id?: number } & (
+// A7 (Animations round, 2026-09-10): `live` is stamped by App's `appendItem`
+// and by nothing else — restore and "Show earlier messages" leave it absent, so
+// reopening a session and expanding a compaction boundary both paint at once
+// instead of animating hundreds of nodes.
+export type TranscriptItem = { id?: number; live?: true } & (
   // W2.1: `images` = data URLs of attached images (user bubbles only).
   // §9 round 9: `outOfContext` marks an item loaded from BELOW the compaction
   // boundary — visible, but not something the agent can still see.
@@ -745,11 +749,16 @@ export function Transcript({
             />
           );
           // Dimmed items get a wrapper; everything else stays a direct flex
-          // child, so `self-end` / `self-center` positioning is untouched.
+          // child, so `self-end` / `self-center` positioning is untouched —
+          // which is why A7's enter rides a `display: contents` wrapper rather
+          // than a box of its own. The animation is on the ITEM's own subtree
+          // via `[data-live] > *`, since `contents` generates no box to animate.
           return "outOfContext" in it && it.outOfContext ? (
             <div key={thinkingKey(it, i, collapseNonce)} className="flex flex-col opacity-60">{item}</div>
           ) : (
-            <Fragment key={thinkingKey(it, i, collapseNonce)}>{item}</Fragment>
+            <div key={thinkingKey(it, i, collapseNonce)} className="contents" data-live={it.live || undefined}>
+              {item}
+            </div>
           );
         })}
         {/* Perf: the in-progress turn renders here, outside `items`, so a delta

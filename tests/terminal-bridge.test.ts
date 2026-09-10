@@ -124,6 +124,12 @@ test.skipIf(!KEY)("terminal_run opens, terminal_read polls, terminal_kill stops"
 
   const run = h.requests.find((r) => r.kind === "hv.terminal-run")!;
   expect(run.command).toBe("sleep 20");
+  // A1 (2026-09-10): the join between this call's transcript card and its rail
+  // circle. Asserted against a REAL Pi, because the value comes from Pi's own
+  // `execute(toolCallId, …)` argument — a source scan can prove we forward the
+  // parameter, only a live run proves Pi actually fills it.
+  expect(typeof run.toolCallId, "terminal_run must carry its tool call id").toBe("string");
+  expect(String(run.toolCallId).length).toBeGreaterThan(0);
   // §26: intent is REQUIRED on terminal_run — the card leads with it.
   const runStart = h.starts.find((s) => s.tool === "terminal_run")!;
   expect(typeof runStart.args.intent).toBe("string");

@@ -244,7 +244,7 @@ function MemoryInspector({
   return (
     <div className="hv-overlay fixed inset-0 bg-ink/40 flex items-center justify-center p-6" onMouseDown={onClose}>
       <div
-        className="hv-dialog w-[min(40rem,calc(100vw-3rem))] max-h-[80vh] overflow-y-auto rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6"
+        className="hv-dialog-flow w-[min(40rem,calc(100vw-3rem))] max-h-[80vh] overflow-y-auto rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 mb-3">
@@ -407,7 +407,7 @@ function ImportModal({
   return (
     <div className="hv-overlay fixed inset-0 bg-ink/40 flex items-center justify-center p-6" onMouseDown={onClose}>
       <div
-        className="hv-dialog w-[min(44rem,calc(100vw-3rem))] max-h-[80vh] overflow-y-auto rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6"
+        className="hv-dialog-flow w-[min(44rem,calc(100vw-3rem))] max-h-[80vh] overflow-y-auto rounded-2xl bg-card border-2 border-ink/80 shadow-pop p-6"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <h2 className="font-black text-xl mb-1">Import from Claude Code</h2>

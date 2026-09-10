@@ -122,7 +122,10 @@ describe("the card the rail opens IS the expanded state (2026-08-31)", () => {
     // A promoted (needs_attention) card has no circle to return to, and that
     // state must not be dismissible — PRD §12, 2026-08-30.
     expect(rail).toContain("cardFor(a.key, false)");
-    expect(rail).toContain("cardFor(open, true)");
+    // A3 (2026-09-10) renamed the argument: the overlay is held mounted for its
+    // exit, so it draws `shownOpen` (the key it was showing) rather than
+    // `open`, which is already null by then. `closable: true` is the invariant.
+    expect(rail).toContain("cardFor(shownOpen, true)");
     expect(rail).toContain("onClose={closable ?");
   });
 
@@ -145,5 +148,197 @@ describe("the card the rail opens IS the expanded state (2026-08-31)", () => {
     expect(rail).toContain('a.kind === "terminal" && <TerminalTail terminalId={a.key} />');
     // …and it must read MAIN's rendered grid, never re-parse raw PTY bytes.
     expect(term).toContain("window.hv.termText(terminalId, 3)");
+  });
+});
+
+/**
+ * A1 / A2 / A3 (Animations round, 2026-09-10) — the flight, and the circle's
+ * own motion.
+ *
+ * The renderer suite has no DOM, so what is pinned here is the SHAPE of the
+ * code: the traps this design can fall into are all visible in the source, and
+ * each one below has a specific way of failing silently in the running app.
+ */
+describe("the card→circle flight (A1)", () => {
+  it("the ghost is positioned INLINE, never by the class word", () => {
+    // §28's coverage check gathers candidates by the class words `absolute` /
+    // `fixed` (BrowserTab.tsx) and judges them by bounding box. A ghost
+    // carrying either word is a full-size candidate crossing the screen, and
+    // it would blank a browser pane for the length of every flight.
+    const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+    expect(motion).toContain('position: "fixed"');
+    expect(motion).not.toMatch(/classList\.add\(|className\s*=\s*["'`]/);
+  });
+
+  it("a ghost is a picture at REST — it never inherits its source's state", () => {
+    // `cloneNode` copies attributes, and `data-leaving` is an attribute that
+    // drives CSS. "Open as tab" clones the circle AFTER marking it retiring, so
+    // the ghost arrived already carrying the exit and rendered at .15 scale — a
+    // 5px speck instead of a 36px token. Measured before and after.
+    const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+    expect(motion).toContain('ghost.removeAttribute("data-leaving")');
+    expect(motion).toContain('querySelectorAll("[data-leaving]")');
+  });
+
+  it("a caller can hand in the origin rect it measured itself", () => {
+    // The action that creates the destination can hide the origin: opening a
+    // tab makes it active, so the circle's pane is hidden and it measures 0x0
+    // one frame later. `flyGhost` then declines — correctly, and uselessly.
+    const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+    expect(motion).toContain("opts.fromRect ?? fromEl.getBoundingClientRect()");
+    const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+    const fn = app.slice(app.indexOf("const openAgentTerminalAsTab"), app.indexOf("const openAgentTerminalAsTab") + 3000);
+    expect(fn.indexOf("const fromRect =")).toBeLessThan(fn.indexOf("setTabsByWs"));
+  });
+
+  it("the two flights declare which SHAPE they want", () => {
+    // A ghost that BECOMES its destination matches its box on each axis
+    // ("stretch", the default) — card→circle needs that, or it arrives the
+    // wrong shape at the moment it is supposed to BE the circle. A ghost that
+    // goes INTO its destination keeps one ratio ("contain"), because stretching
+    // a 36px circle into an 86x40 tab scales it 2.4x wide against 1.1x tall and
+    // it lands as an oval. Measured: 2.15 aspect before, 1.00 after.
+    const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+    expect(motion).toContain('opts.fit === "contain"');
+    // contain keeps the SOURCE's corners: a shape that did not change should
+    // not morph its radius on the way.
+    expect(motion).toContain("endRadius = startRadius");
+    const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+    expect(app).toContain('fit: "contain"');
+  });
+
+  it("the card→circle flight is NOT contained — it must match the circle", () => {
+    const rail = chat.slice(chat.indexOf("async function fly("), chat.indexOf("async function fly(") + 2600);
+    expect(rail).toContain("round: true");
+    expect(rail).not.toContain('fit: "contain"');
+  });
+
+  it("the flight never scrolls the transcript to make itself possible", () => {
+    // The card is where the user left it. Moving the conversation so an
+    // animation can play is the animation deciding what you are reading.
+    expect(rail).not.toContain("scrollIntoView");
+    expect(rail).not.toContain("scrollTo(");
+  });
+
+  it("both take-off points and the landing point are marked in the DOM", () => {
+    const card = readFileSync("src/renderer/src/components/ToolCard.tsx", "utf8");
+    // Two card roots: the delegation card and the generic one `terminal_run`
+    // uses. Miss either and that family silently never flies.
+    expect(card.match(/data-hv-run-card=/g)?.length).toBe(2);
+    expect(chat).toContain("data-hv-run-avatar={a.domKey}");
+  });
+
+  it("the circle is keyed on domKey, not on the map key", () => {
+    // The map key changes mid-run when an async delegation is re-keyed, which
+    // destroys the DOM node the flight is aiming at.
+    expect(rail).toContain("key={a.domKey}");
+  });
+});
+
+describe("the circle's enter, exit and shift (A2)", () => {
+  it("enters with a scale-up and leaves by shrinking, both motion-safe", () => {
+    expect(rail).toContain("motion-safe:starting:scale-[.6]");
+    expect(rail).toContain("data-[leaving]:scale-[.15]");
+  });
+
+  it("the exit does NOT touch opacity — the pulse owns it", () => {
+    // Measured twice, after "the kill is almost invisible" was reported twice.
+    // `RUN_STATE_RING` puts `animate-pulse` on the live states, which animates
+    // the same opacity an exit would fade, and a CSS animation beats a
+    // transition outright: with the pulse running the fade never happened at
+    // all, and killing the animation instead snapped opacity to 0 in one frame.
+    // Scale is uncontested and traces cleanly, so the exit is scale only.
+    // Scoped to the CIRCLE's own class string: the rail's expanded overlay is
+    // in this slice too and fades quite correctly — it has no pulse to fight.
+    const circle = rail.slice(rail.indexOf("data-hv-run-avatar={a.domKey}"));
+    const cls = circle.slice(circle.indexOf("className={`size-9"), circle.indexOf("`}", circle.indexOf("className={`size-9")));
+    expect(cls).toContain("data-[leaving]:scale-[.15]");
+    expect(cls).not.toContain("data-[leaving]:opacity");
+  });
+
+  it("it shrinks far enough that removal is not a pop", () => {
+    // The circle is deleted at the end of this. Stopping at .6 and vanishing
+    // reads as a disappearance; .15 reads as having gone.
+    const m = /data-\[leaving\]:scale-\[\.(\d+)\]/.exec(rail.slice(rail.indexOf("data-hv-run-avatar={a.domKey}")));
+    expect(m).toBeTruthy();
+    expect(Number(`0.${m![1]}`)).toBeLessThanOrEqual(0.2);
+  });
+
+  it("siblings close the gap with FLIP rather than teleporting", () => {
+    expect(rail).toContain("flipChildren");
+    expect(rail).toContain("snapshotRects");
+  });
+
+  it("the ring colour transitions, and the map stays data", () => {
+    expect(rail).toMatch(/transition-\[[^\]]*border-color/);
+    const runRail = readFileSync("src/renderer/src/runRail.ts", "utf8");
+    expect(runRail).toContain("export const RUN_STATE_RING");
+  });
+});
+
+describe("the overlay and the hover readout (A3)", () => {
+  it("the overlay grows from the circle that opened it", () => {
+    expect(rail).toContain("transformOrigin");
+  });
+
+  it("the hover readout has NO exit", () => {
+    // The STOP lives inside this panel. An exit animation means the panel is
+    // still on screen after the pointer has left it, so a click aimed at STOP
+    // can land on a panel that is already dying — or worse, feel like it
+    // worked. Instant is the safe direction here.
+    const readout = rail.slice(rail.indexOf("hover === a.key && open !== a.key"));
+    expect(readout.slice(0, 900)).toContain("pt-1");
+    expect(readout.slice(0, 900)).not.toContain("data-[leaving]");
+  });
+
+  it("still has no click-catcher and nothing above z-20", () => {
+    // Unchanged from 2026-08-31 and re-asserted because this round touched
+    // every line around them: a `fixed inset-0` catcher reads as covering every
+    // browser pane (browserCoverage judges by BOX), and z-20 is the rail's
+    // ceiling.
+    expect(rail).not.toContain("fixed inset-0");
+    expect(rail).not.toMatch(/\bz-(?:3\d|4\d|5\d|\[\d{3}\])\b/);
+  });
+
+  it("the sticky wrapper string is untouched", () => {
+    expect(chat).toContain('className="sticky top-0 z-20 px-6 relative max-w-3xl mx-auto w-full"');
+  });
+});
+
+/**
+ * A run's circle must still be on screen while it fades (2026-09-10).
+ *
+ * The exit is a CSS duration on the circle; the removal is a `setTimeout` in
+ * App. Nothing connects them, so the 1.5x rescale moved the fade to 220ms and
+ * left both delete timers where they were — cutting every exit off partway,
+ * which looks exactly like no animation at all. That is how a killed terminal
+ * was reported as "almost invisible".
+ *
+ * Both timers are expressed in terms of `DUR` now, so the two move together.
+ */
+describe("a circle outlives its own exit animation", () => {
+  const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+  const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+  const DUR_BASE = Number(/base:\s*(\d+)/.exec(motion)?.[1]);
+
+  it("the CSS exit duration is the same token the timers use", () => {
+    expect(DUR_BASE).toBeGreaterThan(0);
+    expect(chat).toContain(`motion-safe:data-[leaving]:duration-${DUR_BASE}`);
+  });
+
+  it("a terminal is removed no sooner than its fade ends", () => {
+    // Was `DUR.fast`, which is shorter than the fade — the circle vanished
+    // mid-animation.
+    const drop = app.slice(app.indexOf("const dropAgentTerminal"), app.indexOf("const dropAgentTerminal") + 1400);
+    expect(drop).toContain("leaving: true");
+    expect(drop).toContain("}, DUR.base);");
+  });
+
+  it("a delegation raises `leaving` a full exit before it is deleted", () => {
+    // The pair must stay a pair: a hardcoded gap silently stops matching the
+    // fade the moment the scale changes, which is exactly what happened.
+    expect(app).toContain("}, 2_500 - DUR.base);");
+    expect(app.match(/\}, 2_500 - DUR\.base\);/g)?.length).toBe(2);
+    expect(app.match(/\}, 2_500\);/g)?.length).toBe(2);
   });
 });

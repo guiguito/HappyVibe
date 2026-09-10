@@ -350,11 +350,24 @@ export interface DelegationRun {
   kind: "fg" | "async";
   /** Foreground only — the tool card to read the live transcript from. */
   toolCallId?: string;
+  /**
+   * A1 (2026-09-10): the detached run this card is now tracking, attached by
+   * the `started` notify. It exists so a `control` / `complete` notify can find
+   * the run in the window before `tool_execution_end` re-keys the map — see
+   * `findByRunId`. After the re-key it is redundant with `id`, and harmless.
+   */
+  runId?: string;
   agent: string;
   /** headline: args.intent when present (W1.1 registered-tool param), else task. */
   label: string;
   startedAt: number;
   status: "running" | "done" | "error" | "interrupted";
+  /**
+   * A2 (2026-09-10): the run's outcome has been shown and its circle is on the
+   * way out. Set at 2 350 ms by the SAME timer that deletes it at 2 500, so
+   * there is one clock rather than two that can drift apart.
+   */
+  leaving?: true;
   /** Async only — latest status-poll snapshot (currentTool, activityState, …). */
   live?: {
     currentTool?: string;
@@ -416,6 +429,10 @@ export interface TerminalEvent {
   terminalId?: string;
   title?: string;
   intent?: string;
+  /** A1 (2026-09-10): the `terminal_run` call that opened it — the join that
+   *  lets the rail's circle and this call's transcript card find each other.
+   *  Absent for a terminal the USER opened, which has no tool call. */
+  toolCallId?: string;
   workspaceId?: string;
 }
 
@@ -493,6 +510,72 @@ export function delegationLabel(args: unknown): string {
   const s = displayableTask(a?.intent) ?? displayableTask(a?.task) ?? "";
   const t = s.trim().replace(/\s+/g, " ");
   return t.length > LABEL_MAX ? t.slice(0, LABEL_MAX - 1) + "…" : t;
+}
+
+/**
+ * A1 prerequisite 2 (Animations round, 2026-09-10) — one delegation is one run.
+ *
+ * `subagent:async-started` used to ADD a run keyed by `runId` beside the
+ * foreground run keyed by `toolCallId`, and both existed until
+ * `tool_execution_end` deleted the foreground one. For that window a single
+ * delegation drew TWO circles in the rail. It went unreported because it is
+ * brief and the two look identical — but a flight cannot aim at a set of two,
+ * and the duplicate would animate in and then simply vanish.
+ *
+ * So: attach the run id to the foreground run when one is waiting for it, and
+ * ADD only when none is. The add is not tidiness — the same notify path serves
+ * the `/hv-subagent-list` resync after a respawn, where there is no foreground
+ * run to attach to and the card must still appear.
+ *
+ * Three parts of the match are load-bearing. `!r.runId` is what makes two
+ * same-agent delegations in one turn take one id each rather than both landing
+ * on the first. `status === "running"` stops a finished run being revived by a
+ * later notify. And the agent name is compared only when the notify HAS one —
+ * upstream sends none for a workflow-mode run, and the bridge drops the
+ * generic "workflow" rather than captioning a pipeline the user never chose.
+ *
+ * The notify's own caption never wins: upstream redacts the task on every
+ * observer surface from 0.50, and the bridge's remembered caption is a
+ * best-effort pairing, where the foreground run's label came from the tool
+ * call's own args and was never a guess.
+ */
+export function applySubagentStarted(
+  runs: Record<string, DelegationRun>,
+  started: { runId: string; agent?: string; label: string },
+  now: number,
+): Record<string, DelegationRun> {
+  // `findByRunId`, not `runs[started.runId]`: once the id has been ATTACHED the
+  // run is still filed under its tool call id, so a direct key check misses and
+  // a repeated notify would add the duplicate this function exists to prevent.
+  if (findByRunId(runs, started.runId)) return runs;
+  const host = Object.values(runs).find(
+    (r) => r.kind === "fg" && r.status === "running" && !r.runId && (!started.agent || r.agent === started.agent),
+  );
+  if (host) return { ...runs, [host.id]: { ...host, runId: started.runId } };
+  return {
+    ...runs,
+    [started.runId]: {
+      id: started.runId,
+      kind: "async",
+      agent: started.agent ?? "subagent",
+      label: started.label,
+      startedAt: now,
+      status: "running",
+    },
+  };
+}
+
+/**
+ * The run a `control` / `complete` / `interrupt-sent` notify is about.
+ *
+ * Those notifies carry only a run id, and until `tool_execution_end` re-keys
+ * the map that run is still filed under its TOOL CALL id — so a direct lookup
+ * misses for the whole window between the two events. That window is short but
+ * it is exactly where `needs_attention` lives, which is the one state the rail
+ * must not drop.
+ */
+export function findByRunId(runs: Record<string, DelegationRun>, runId: string): DelegationRun | null {
+  return runs[runId] ?? Object.values(runs).find((r) => r.runId === runId) ?? null;
 }
 
 /** Caption for a card raised from an hv.subagent notify (started / active resync),

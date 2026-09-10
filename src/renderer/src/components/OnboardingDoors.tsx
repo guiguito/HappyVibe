@@ -123,7 +123,7 @@ function ProviderPicker({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full mt-1 z-20 w-64 rounded-xl border-2 border-ink/70 bg-card shadow-pop overflow-hidden">
+          <div className="absolute hv-menu-in origin-top-left left-0 top-full mt-1 z-20 w-64 rounded-xl border-2 border-ink/70 bg-card shadow-pop overflow-hidden">
             <input
               autoFocus
               value={query}

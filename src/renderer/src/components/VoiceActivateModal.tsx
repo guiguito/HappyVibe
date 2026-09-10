@@ -26,7 +26,7 @@ export function VoiceActivateModal({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 p-6"
+      className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/20 p-6"
       onClick={onClose}
       role="presentation"
     >
@@ -35,7 +35,7 @@ export function VoiceActivateModal({
         aria-modal="true"
         aria-labelledby="voice-activate-title"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg"
+        className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg"
       >
         <h2 id="voice-activate-title" className="text-base font-bold flex items-center gap-2">
           <span aria-hidden>🎙️</span> Set up voice input

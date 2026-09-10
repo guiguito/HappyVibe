@@ -109,3 +109,50 @@ describe("RUN_STATE_RING", () => {
     }
   });
 });
+
+/**
+ * A1 prerequisite 1 (Animations round, 2026-09-10) — a React key IS DOM
+ * identity, and the rail's was unstable for the whole of a run's life.
+ *
+ * An async delegation is re-keyed `toolCallId → asyncId` at
+ * `tool_execution_end`, and the circle was keyed on that same map key — so
+ * React destroyed the node and built a new one mid-run. Nothing looked wrong
+ * until something had to ANIMATE it: the enter would re-fire, and a flight
+ * landing on a node that no longer exists lands nowhere.
+ *
+ * `key` stays the map key (it is what every lookup uses). `domKey` is the
+ * stable one, and it is what React and `data-hv-run-avatar` use.
+ */
+describe("domKey — stable DOM identity across the async re-key (A1)", () => {
+  it("a delegation keeps its tool-call id as its DOM key through the re-key", () => {
+    const fg = del({ id: "tc1", toolCallId: "tc1", kind: "fg" });
+    // exactly what App.tsx's tool_execution_end does: spread the fg run, swap the id
+    const rekeyed = del({ ...fg, id: "async-uuid", kind: "async" });
+    expect(toRunAvatars([fg], [])[0].domKey).toBe("tc1");
+    expect(toRunAvatars([rekeyed], [])[0].domKey).toBe("tc1");
+    // …while the map key still follows the run id, because that is what the
+    // completion notify and every lookup are keyed by.
+    expect(toRunAvatars([rekeyed], [])[0].key).toBe("async-uuid");
+  });
+
+  it("a run with no tool-call id falls back to its run id", () => {
+    // The post-respawn `/hv-subagent-list` resync raises runs that never had a
+    // tool call in this session: they must still render.
+    expect(toRunAvatars([del({ id: "run9", toolCallId: undefined })], [])[0].domKey).toBe("run9");
+  });
+
+  it("a terminal's DOM key is its tool-call id when the join is present", () => {
+    expect(toRunAvatars([], [term({ terminalId: "t1", toolCallId: "tc7" })])[0].domKey).toBe("tc7");
+    expect(toRunAvatars([], [term({ terminalId: "t1", toolCallId: "tc7" })])[0].key).toBe("t1");
+  });
+
+  it("a terminal with no join falls back to its terminal id", () => {
+    expect(toRunAvatars([], [term({ terminalId: "t1" })])[0].domKey).toBe("t1");
+  });
+
+  it("every avatar has a non-empty domKey — an empty one collapses two circles into one", () => {
+    for (const a of toRunAvatars([del(), del({ id: "r2" })], [term(), term({ terminalId: "t2" })])) {
+      expect(a.domKey.length).toBeGreaterThan(0);
+    }
+  });
+});

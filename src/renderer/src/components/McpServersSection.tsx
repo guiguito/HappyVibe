@@ -64,11 +64,11 @@ export function McpConnectResult({
 }): React.JSX.Element {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-6"
+      className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6"
       onMouseDown={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 max-h-[85vh] overflow-y-auto"
+        className="hv-dialog-flow w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 max-h-[85vh] overflow-y-auto"
         onMouseDown={(e) => e.stopPropagation()}
       >
         {state.phase === "connecting" && (
@@ -554,9 +554,9 @@ function McpServerEditor({
   const labelCls = "text-[10px] font-bold uppercase tracking-widest text-ink-soft mb-1 mt-3 block";
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
       <div
-        className="w-full max-w-xl rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 max-h-[85vh] overflow-y-auto"
+        className="hv-dialog-flow w-full max-w-xl rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 max-h-[85vh] overflow-y-auto"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <h2 className="font-black text-xl leading-tight mb-1">{server ? `Edit ${server.name}` : "Add MCP server"}</h2>
