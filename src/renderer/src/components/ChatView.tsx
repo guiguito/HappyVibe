@@ -1544,7 +1544,7 @@ export function ChatView({
             {attachMenuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setAttachMenuOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-2 z-20 w-60 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
+                <div className="absolute hv-menu-in origin-bottom-left bottom-full left-0 mb-2 z-20 w-60 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
                   <button
                     type="button"
                     disabled={!vision}
@@ -1606,7 +1606,7 @@ export function ChatView({
                 attach menu. §12 (2026-08-29): an AGENT match opens it too, so
                 `@wor` finds `worker` even where no file matches. */}
             {mention && (mention.items.length > 0 || mentionAgents.length > 0) && (
-              <div className="absolute bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+              <div className="absolute hv-menu-in origin-bottom-left bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
                 {/* §12: agents first — they are the rarer, more valuable pick,
                     and the file list is long. Mouse-picked only: the arrow/Tab
                     index below still addresses mention.items (files), which
@@ -1643,7 +1643,7 @@ export function ChatView({
             )}
             {/* §14 round 6 / §24: /skill: + prompt-command menu — same placement/styling as @file. */}
             {command && command.items.length > 0 && (
-              <div className="absolute bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+              <div className="absolute hv-menu-in origin-bottom-left bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
                 {command.items.map((c, i) => (
                   <button
                     key={c.name}
@@ -2317,7 +2317,7 @@ function AgentsChip({ agents, onPick }: { agents: AgentInfo[]; onPick: (name: st
       </button>
       {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-30 w-72 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
+        <div className="absolute hv-menu-in origin-top-left top-full left-0 mt-1.5 z-30 w-72 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
           {/* Same grouping as the Agents page — one sort, two surfaces. */}
           {sortAgents(agents).map((a) => (
             <button
@@ -2374,7 +2374,7 @@ function ThinkingPill({
       {open && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1.5 z-30 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+          <div className="absolute hv-menu-in origin-top-left top-full left-0 mt-1.5 z-30 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
             {/* Round 16 GUI pass: picking a level was one-way — there was no way
                 back to the global default, so a session could only ever be
                 pinned. This row is that way back. */}
@@ -2442,7 +2442,7 @@ function McpChip({
       </button>
       {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-30 w-64 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
+        <div className="absolute hv-menu-in origin-top-left top-full left-0 mt-1.5 z-30 w-64 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
           {rows.map((srv) => (
             <div key={`${srv.scope}:${srv.name}`} className="flex items-center gap-2 px-3 py-1">
               <span
@@ -2485,7 +2485,7 @@ function SkillsChip({ skills }: { skills: Array<{ name: string; scope: string; u
       </button>
       {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-30 w-64 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
+        <div className="absolute hv-menu-in origin-top-left top-full left-0 mt-1.5 z-30 w-64 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
           {skills.map((s) => (
             <div key={`${s.scope}:${s.name}`} className="flex items-baseline gap-2 px-3 py-1">
               <span className={`flex-1 min-w-0 truncate ${s.used ? "font-bold" : "font-medium text-ink-soft"}`}>{s.name}</span>

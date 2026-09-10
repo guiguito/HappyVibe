@@ -106,7 +106,10 @@ export function ModelSelect({
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div
-            className={`absolute ${direction === "up" ? "bottom-full mb-2" : "top-full mt-2"} left-0 z-20 ${menuWidthClassName} max-h-80 overflow-hidden flex flex-col rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm`}
+            // B2: the origin rides the SAME ternary as the position — a menu
+            // that opens upward must scale from its bottom edge, or it reads as
+            // sliding rather than unfolding from the button you pressed.
+            className={`hv-menu-in absolute ${direction === "up" ? "bottom-full mb-2 origin-bottom-left" : "top-full mt-2 origin-top-left"} left-0 z-20 ${menuWidthClassName} max-h-80 overflow-hidden flex flex-col rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm`}
           >
             {models.length > 5 && (
               <input

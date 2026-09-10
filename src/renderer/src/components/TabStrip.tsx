@@ -381,7 +381,7 @@ export function TabStrip({
             }}
           />
           <div
-            className="fixed z-50 min-w-44 rounded-lg border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-[13px] font-semibold"
+            className="fixed hv-menu-in origin-top-left z-50 min-w-44 rounded-lg border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-[13px] font-semibold"
             style={{ left: menu.x, top: menu.y }}
           >
             {renameable(menu.tab) && (
@@ -569,7 +569,7 @@ function NewTabButton({
       {/* Drops to the RIGHT (left-0): the `+` now sits just after the last tab, so
           a right-aligned menu would extend leftward off the pane. */}
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
+        <div className="absolute hv-menu-in origin-top-left left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
           <Item label="New session" hint={newSessionKey} icon={<ChatGlyph />} onPick={onNewSession} />
           <Item label="New terminal" hint={newTerminalKey} icon={<TerminalGlyph />} onPick={onNewTerminal} />
           <Item label="New browser" hint={newBrowserKey} icon={<BrowserGlyph />} onPick={onNewBrowser} />

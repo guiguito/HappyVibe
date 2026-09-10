@@ -332,7 +332,7 @@ export function FileTree({
         <>
           <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
           <div
-            className="fixed z-50 min-w-36 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm"
+            className="fixed hv-menu-in origin-top-left z-50 min-w-36 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm"
             style={{ top: menu.y, left: menu.x }}
           >
             <button

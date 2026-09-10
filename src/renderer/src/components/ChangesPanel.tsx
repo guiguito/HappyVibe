@@ -1113,7 +1113,7 @@ function SaveMenu({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 bottom-full mb-1 z-50 w-44 rounded-xl border-2 border-line bg-card shadow-sticker-lg p-1 flex flex-col">
+          <div className="absolute hv-menu-in origin-bottom-right right-0 bottom-full mb-1 z-50 w-44 rounded-xl border-2 border-line bg-card shadow-sticker-lg p-1 flex flex-col">
             <button
               type="button"
               disabled={!canAmend}

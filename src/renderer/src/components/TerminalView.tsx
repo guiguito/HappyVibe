@@ -360,8 +360,9 @@ function FontPicker({
       {open && families !== null && (
         <div
           role="listbox"
-          className={`absolute right-0 z-30 max-h-72 w-72 overflow-y-auto rounded-xl border-2 border-line-strong bg-paper shadow-pop ${
-            dropUp ? "bottom-full mb-1" : "mt-1"
+          // B2: the origin rides the same `dropUp` ternary as the position.
+          className={`hv-menu-in absolute right-0 z-30 max-h-72 w-72 overflow-y-auto rounded-xl border-2 border-line-strong bg-paper shadow-pop ${
+            dropUp ? "bottom-full mb-1 origin-bottom-right" : "mt-1 origin-top-right"
           }`}
         >
           {options.map((family) => {
