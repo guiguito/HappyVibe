@@ -26,14 +26,28 @@ const THANKS_MS = 2_000;
 
 export function SessionPulse({
   sessionId,
+  hidden,
   facts,
   onAsked,
+  onDone,
   onOpenDialog,
 }: {
   sessionId: string;
+  /**
+   * The agent is streaming — render nothing, but STAY MOUNTED.
+   *
+   * Unmounting instead was the first cut, and it shipped a bug the unit tests
+   * could not see: the answered/dismissed state lives in this component, so the
+   * next turn remounted it, showed the row again to someone who had just rated,
+   * and re-stamped `pulseAskedAt`. Hiding is a render decision, not a lifecycle
+   * one.
+   */
+  hidden: boolean;
   /** Read LAZILY, at tap time: the numbers must describe the session as it is when rated. */
   facts: () => HvSessionFacts;
   onAsked: () => void;
+  /** Answered or dismissed — App remembers, so a later turn cannot bring it back. */
+  onDone: () => void;
   onOpenDialog: () => void;
 }): React.JSX.Element | null {
   const [phase, setPhase] = useState<Phase>({ k: "loading" });
@@ -67,10 +81,14 @@ export function SessionPulse({
   }, [sessionId]);
 
   /** Sends nothing, logs nothing. It already counted as asked when it appeared. */
-  const dismiss = (): void => setPhase({ k: "gone" });
+  const dismiss = (): void => {
+    setPhase({ k: "gone" });
+    onDone();
+  };
 
   const pick = async (optionId: string, form: HvFormDefinition, questionId: string): Promise<void> => {
     setPhase({ k: "thanks" });
+    onDone();
     timer.current = setTimeout(() => setPhase({ k: "gone" }), THANKS_MS);
     const r = await window.hv.feedbackPulseSend({ sessionId, formVersion: form.formVersion, questionId, optionId, session: facts() });
     // A failed rating is not worth a dialog: the user gave one tap, and the row
@@ -78,7 +96,7 @@ export function SessionPulse({
     if (!r.ok) console.warn("[feedback] pulse send failed:", r.kind, r.message);
   };
 
-  if (phase.k === "gone" || phase.k === "loading") return null;
+  if (hidden || phase.k === "gone" || phase.k === "loading") return null;
 
   return (
     <div className="flex items-center gap-3 px-6 py-2 border-b-2 border-line bg-paper text-sm">

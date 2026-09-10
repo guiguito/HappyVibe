@@ -797,14 +797,19 @@ export function Sidebar({
   return (
     <aside ref={asideRef} className="w-64 shrink-0 bg-paper-deep pegboard border-r-2 border-line flex flex-col">
       {/* Brand */}
-      <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-2">
+      {/* §34: `gap-1`, not `gap-2`. Measured — with three icon buttons the row
+          needs exactly the width it has, and the 8px gaps were the 5px that
+          truncated the wordmark to "HappyV…". The name never truncates: it is
+          nine fixed characters, so it is `shrink-0` below and the row is sized
+          to fit it rather than the other way round. */}
+      <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-1">
         <button
           type="button"
           onClick={() => onNavigate("chat")}
           className="flex items-center gap-2.5 cursor-pointer group min-w-0"
         >
           <BrandLogo size="sm" className="group-hover:rotate-6 transition-transform" />
-          <div className="font-black text-lg tracking-tight leading-none truncate">
+          <div className="font-black text-lg tracking-tight leading-none shrink-0">
             Happy<span className="text-tangerine">Vibe</span>
           </div>
         </button>

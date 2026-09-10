@@ -168,6 +168,13 @@ export default function App(): React.JSX.Element {
    */
   const pulseClock = useRef<Record<string, { openedAt: number; offsetMs: number }>>({});
   const [pulseShow, setPulseShow] = useState<Record<string, boolean>>({});
+  /**
+   * §34: answered or dismissed, for this app run. It lives HERE rather than in
+   * SessionPulse because that component is remounted by any change that
+   * recreates it, and the first cut lost the fact on every turn — the row came
+   * back to someone who had just rated it.
+   */
+  const [pulseDone, setPulseDone] = useState<Record<string, boolean>>({});
   /** §34: compactions this sitting — a number the pulse reports, nothing else reads. */
   const [compactions, setCompactions] = useState<Record<string, number>>({});
   // First-prompt suggestion chips. They INSERT and never send (§27's refused
@@ -2536,6 +2543,56 @@ export default function App(): React.JSX.Element {
     setView(t.view);
   }, [keyState, revealGroup]);
 
+  /**
+   * §34 — may this session be asked how it is going?
+   *
+   * MUST sit above the `keyState === "loading"` early return below. A hook
+   * placed after a conditional return changes the hook COUNT between renders,
+   * and React tears the whole app down: "Rendered more hooks than during the
+   * previous render", a white window and nothing else. That is what happened
+   * the first time this shipped, and only the GUI pass could see it — no test
+   * in this suite renders App.
+   *
+   * An EFFECT rather than a line inside the `agent_end` handler: that handler is
+   * registered once and would read every input through a stale closure, needing
+   * a ref per gate. `turns` bumping is the same beat, one render later, and it
+   * carries the fresh state with it.
+   *
+   * It re-derives the focused session rather than using `focusedChatSessionId`,
+   * which is computed below the return — only the focused pane may raise a
+   * pulse, and that is also where its clock starts: a session sitting in a
+   * background pane is not accruing a sitting.
+   */
+  useEffect(() => {
+    if (!feedbackInfo.available) return;
+    const ws = activeWs ?? sessions.find((x) => x.id === selectedId)?.workspaceId ?? null;
+    const tabs = (ws ? tabsByWs[ws] : undefined) ?? emptyTabs;
+    const tab = activeTabOf(tabs);
+    const sid = tab ? sessionOf(tab) : null;
+    if (!sid || pulseShow[sid]) return;
+    const timing = feedbackInfo.fastPulse ? PULSE_TIMING.fast : PULSE_TIMING.normal;
+    const clock = (pulseClock.current[sid] ??= { openedAt: Date.now(), offsetMs: drawOffset(timing, Math.random) });
+    const meta = sessions.find((x) => x.id === sid);
+    const show = pulseDecision(
+      {
+        asked: !!meta?.pulseAskedAt,
+        openedAt: clock.openedAt,
+        offsetMs: clock.offsetMs,
+        now: Date.now(),
+        turns: turns[sid] ?? 0,
+        busy: !!busy[sid],
+        promptOpen: (pendingBySession[sid] ?? 0) > 0,
+        // The crash banner. The red-zone one is ChatView's own state, and it
+        // re-checks that at render — the pulse yields to both.
+        bannerShowing: statuses[sid] === "crashed",
+        focused: true,
+        available: feedbackInfo.available,
+      },
+      timing,
+    );
+    if (show) setPulseShow((p) => ({ ...p, [sid]: true }));
+  }, [activeWs, selectedId, tabsByWs, turns, busy, statuses, pendingBySession, sessions, feedbackInfo, pulseShow]);
+
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
   }
@@ -2575,43 +2632,6 @@ export default function App(): React.JSX.Element {
     return tab ? sessionOf(tab) : null;
   })();
 
-  /**
-   * §34 — may this session be asked how it is going?
-   *
-   * An EFFECT rather than a line inside the `agent_end` handler: that handler is
-   * registered once and would read every input through a stale closure, needing
-   * a ref per gate. `turns` bumping is the same beat, one render later, and it
-   * carries the fresh state with it.
-   *
-   * Only the focused session is ever evaluated, which is also where its clock
-   * starts — "how is this session going" is about this sitting, so a session
-   * sitting in a background pane is not accruing one.
-   */
-  useEffect(() => {
-    const sid = focusedChatSessionId;
-    if (!sid || !feedbackInfo.available || pulseShow[sid]) return;
-    const timing = feedbackInfo.fastPulse ? PULSE_TIMING.fast : PULSE_TIMING.normal;
-    const clock = (pulseClock.current[sid] ??= { openedAt: Date.now(), offsetMs: drawOffset(timing, Math.random) });
-    const meta = sessions.find((x) => x.id === sid);
-    const show = pulseDecision(
-      {
-        asked: !!meta?.pulseAskedAt,
-        openedAt: clock.openedAt,
-        offsetMs: clock.offsetMs,
-        now: Date.now(),
-        turns: turns[sid] ?? 0,
-        busy: !!busy[sid],
-        promptOpen: (pendingBySession[sid] ?? 0) > 0,
-        // The crash banner. The red-zone one is ChatView's own state, and it
-        // re-checks that at render — the pulse yields to both.
-        bannerShowing: statuses[sid] === "crashed",
-        focused: true,
-        available: feedbackInfo.available,
-      },
-      timing,
-    );
-    if (show) setPulseShow((p) => ({ ...p, [sid]: true }));
-  }, [focusedChatSessionId, turns, busy, statuses, pendingBySession, sessions, feedbackInfo, pulseShow]);
   // F6: refresh the global-shortcut closure with the current render's state.
   shortcutRef.current = (e: KeyboardEvent): void => {
     // Round 8: dispatch off the registry, so a rebind on the shortcuts page is
@@ -3182,7 +3202,9 @@ export default function App(): React.JSX.Element {
             pulse={
               feedbackInfo.available
                 ? {
-                    show: !!pulseShow[sid] && !busy[sid],
+                    // Mounting is sticky; `hidden` is what the stream toggles.
+                    show: !!pulseShow[sid] && !pulseDone[sid],
+                    hidden: !!busy[sid],
                     facts: () => ({
                       sittingMs: Date.now() - (pulseClock.current[sid]?.openedAt ?? Date.now()),
                       turns: turns[sid] ?? 0,
@@ -3194,6 +3216,7 @@ export default function App(): React.JSX.Element {
                       compactions: compactions[sid] ?? 0,
                     }),
                     onAsked: () => void window.hv.sessionPulseAsked(sid),
+                    onDone: () => setPulseDone((p) => ({ ...p, [sid]: true })),
                     onOpenDialog: () => setFeedbackOpen(true),
                   }
                 : null

@@ -184,8 +184,11 @@ export function ChatView({
    */
   pulse?: {
     show: boolean;
+    /** Streaming: the row hides but the component stays mounted (see SessionPulse). */
+    hidden: boolean;
     facts: () => HvSessionFacts;
     onAsked: () => void;
+    onDone: () => void;
     onOpenDialog: () => void;
   } | null;
   queue?: QueueState;
@@ -1022,7 +1025,14 @@ export function ChatView({
           App: the red-zone banner is this component's own state. It is not a
           Banner itself: those are for things that are wrong (§20). */}
       {pulse?.show && sessionId && crashed === null && !suggestCompact && (
-        <SessionPulse sessionId={sessionId} facts={pulse.facts} onAsked={pulse.onAsked} onOpenDialog={pulse.onOpenDialog} />
+        <SessionPulse
+          sessionId={sessionId}
+          hidden={pulse.hidden}
+          facts={pulse.facts}
+          onAsked={pulse.onAsked}
+          onDone={pulse.onDone}
+          onOpenDialog={pulse.onOpenDialog}
+        />
       )}
 
       {/* V2.C1: the delegation run lives OUTSIDE the chat flow — a sticky

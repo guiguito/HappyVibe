@@ -213,7 +213,13 @@ export function FeedbackDialog({
     );
   };
 
-  const heading = phase.k === "ready" ? titleOf(phase.form) ?? C.title : C.title;
+  /**
+   * The header is CHROME and says the app's own words. It must not repeat the
+   * form's `title` element: the body renders every element in authored order,
+   * so reading the title from the form put "Feedback for HappyVibe" on screen
+   * twice, once in the header and once again as the first thing in the page.
+   */
+  const heading = C.title;
   const counter = phase.k === "ready" ? `${step + 1} / ${phase.form.pages.length}` : null;
 
   return (
@@ -259,10 +265,6 @@ export function FeedbackDialog({
 
 type ScreenshotEl = Extract<HvKnownElement, { type: "screenshot" }>;
 
-function titleOf(form: HvFormDefinition): string | null {
-  for (const p of form.pages) for (const el of p.elements) if (isKnown(el) && el.type === "title") return el.text;
-  return null;
-}
 
 function screenshotOn(page: HvFormPage): ScreenshotEl | null {
   for (const el of page.elements) if (isKnown(el) && el.type === "screenshot") return el;
