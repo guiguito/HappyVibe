@@ -78,7 +78,10 @@ export function CostPanel({
   calls,
   total,
   onClose,
+  leaving,
 }: {
+  /** Animations round: true while ChatView holds this mounted for its exit. */
+  leaving?: boolean;
   calls: HvApiCall[];
   total: HvLedgerTotal;
   onClose: () => void;
@@ -109,7 +112,13 @@ export function CostPanel({
     // same pane, so click-outside still closes without dimming anything.
     <div className="absolute inset-0 z-30 flex justify-end" onMouseDown={onClose}>
       <div
-        className="w-[34rem] max-w-full h-full bg-paper border-l-2 border-line-strong shadow-sticker-lg flex flex-col"
+        // Animations round (2026-09-10): it slides in from its OWN edge, 12px,
+        // never from off-screen — the browser-pane rule, and the same distance
+        // the Files drawer travels, since this is the same gesture one surface
+        // over. `leaving` is supplied by ChatView, which owns the conditional
+        // render and therefore owns the exit.
+        data-leaving={leaving || undefined}
+        className="w-[34rem] max-w-full h-full bg-paper border-l-2 border-line-strong shadow-sticker-lg flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-x-3 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:translate-x-3 motion-safe:data-[leaving]:duration-120 motion-safe:data-[leaving]:ease-hv-in"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-5 py-3 border-b-2 border-line">

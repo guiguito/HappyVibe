@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DUR, EASE, flipChildren, flyGhost, reducedMotion, snapshotRects } from "../motion";
 import { usePresence } from "../usePresence";
+import { Unfold } from "./Unfold";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { hasRestorable, tailToolCallIds, type RewindScope } from "../rewind";
 import { matchesBinding } from "../shortcuts";
@@ -784,6 +785,12 @@ export function ChatView({
   const suggestBanner = usePresence(suggestCompact, DUR.fast);
   const agentsMdStrip = usePresence(offerAgentsMd, DUR.fast);
   const voiceToast = usePresence(!!voiceNotice, DUR.fast);
+  // The two in-pane slide-overs, reported 2026-09-10 as opening and closing with
+  // no motion at all — neither was in the round's inventory. Same gesture as the
+  // Files drawer, so the same treatment; ChatView owns the conditional render
+  // and therefore owns the exit.
+  const contextPanel = usePresence(contextOpen && !!sessionId, DUR.fast);
+  const costPanel = usePresence(costOpen && !!sessionId, DUR.fast);
   // What the toast SAYS while it is leaving: `voiceNotice` is already null by
   // then, and reading it would empty the message a frame before the fade.
   const lastVoiceNotice = useRef("");
@@ -1243,7 +1250,11 @@ export function ChatView({
         </div>
       )}
       {/* #1: in-conversation search strip — highlights matches, next/prev nav. */}
-      {searchOpen && (
+      {/* Reported 2026-09-10: this appeared and vanished with no motion. It is a
+          strip that takes height off the top of the conversation, which is the
+          Banner shape exactly — so it uses the same reveal, and everything
+          below it slides rather than jumping. */}
+      <Unfold open={searchOpen}>
         <div className="flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-paper-deep/40">
           <span className="text-ink-soft">⌕</span>
           <input
@@ -1290,7 +1301,7 @@ export function ChatView({
             ✕
           </button>
         </div>
-      )}
+      </Unfold>
       {/* Round 3 #2 (fixed round 4): loader while the session opens/resumes —
           shown for any not-yet-running open, not just hibernated resumes. */}
       {waking && items.length === 0 ? (
@@ -1803,8 +1814,9 @@ export function ChatView({
           </button>
         </div>
       </form>
-      {contextOpen && sessionId && (
+      {contextPanel.mounted && sessionId && (
         <ContextPanel
+          leaving={contextPanel.leaving}
           sessionId={sessionId}
           snapshot={contextSnapshot}
           stats={stats}
@@ -1814,8 +1826,8 @@ export function ChatView({
           onCompact={onCompact}
         />
       )}
-      {costOpen && sessionId && (
-        <CostPanel calls={costCalls} total={costTotal} onClose={() => onCostOpenChange(false)} />
+      {costPanel.mounted && sessionId && (
+        <CostPanel leaving={costPanel.leaving} calls={costCalls} total={costTotal} onClose={() => onCostOpenChange(false)} />
       )}
       </div>
     </div>
