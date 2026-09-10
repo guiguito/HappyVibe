@@ -214,10 +214,13 @@ export function FeedbackDialog({
   };
 
   /**
-   * The header is CHROME and says the app's own words. It must not repeat the
-   * form's `title` element: the body renders every element in authored order,
-   * so reading the title from the form put "Feedback for HappyVibe" on screen
-   * twice, once in the header and once again as the first thing in the page.
+   * The dialog's ACCESSIBLE name only — never drawn.
+   *
+   * It started as a visible header and was wrong twice: first it read the
+   * form's own `title` element, so "Feedback for HappyVibe" appeared twice on
+   * the page; then, fixed to the app's own words, it was still a second heading
+   * above the one the form authors. The body renders the form in authored
+   * order and that is the only title the user sees.
    */
   const heading = C.title;
   const counter = phase.k === "ready" ? `${step + 1} / ${phase.form.pages.length}` : null;
@@ -236,7 +239,11 @@ export function FeedbackDialog({
           className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(30rem,calc(100vw-3rem))] max-h-[min(42rem,calc(100vh-3rem))] overflow-y-auto rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-6 focus:outline-none"
         >
           <div className="flex items-start gap-3 mb-4">
-            <Dialog.Title className="font-black text-lg tracking-tight flex-1">{heading}</Dialog.Title>
+            {/* Screen-reader only. Radix requires a title for the dialog's
+                accessible name, but the form authors its OWN title element and
+                the body renders it — chrome must not repeat the content. */}
+            <Dialog.Title className="sr-only">{heading}</Dialog.Title>
+            <div className="flex-1" />
             {counter && <span className="text-xs font-bold text-ink-soft pt-1">{counter}</span>}
             <button type="button" onClick={requestClose} aria-label="Close" className="text-ink-soft hover:text-ink cursor-pointer leading-none">
               ✕

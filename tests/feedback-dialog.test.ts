@@ -23,6 +23,15 @@ describe("§34 dialog", () => {
     expect(dialog).toMatch(/readAsDataURL/);
   });
 
+  /**
+   * The chrome must not draw a heading: the form authors its own title element
+   * and the body renders it. The Radix title stays for the accessible name.
+   */
+  it("the dialog draws NO header title — the only visible one is the form's own", () => {
+    expect(dialog).toMatch(/<Dialog\.Title className="sr-only">/);
+    expect(dialog).not.toMatch(/<Dialog\.Title className="font-black/);
+  });
+
   it("no dead copy", () => {
     const all = dialog + form;
     const unused = Object.keys(FEEDBACK_COPY).filter((k) => !all.includes(`C.${k}`) && !all.includes(`FEEDBACK_COPY.${k}`));
