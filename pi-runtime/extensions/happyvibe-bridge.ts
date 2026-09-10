@@ -256,16 +256,34 @@ const OPTIONAL_INTENT_TOOLS = ["subagent"];
 // the ORIGINAL model args (agent-loop.js emits before beforeToolCall runs),
 // so tool cards see the intent while the server never does.
 const strippedIntentTools = new Set<string>();
-const INTENT_PARAM = {
-  type: "string",
-  description:
-    "REQUIRED on every call. One short customer-facing sentence, goal first: why this call serves the user's request, then what you are doing. 'Looking for the failing order in the logs' beats 'Running a log query'. Shown to the user as the headline for this call.",
-};
+/**
+ * X1 (Improve-prompts round, 2026-09-10) — ONE description, on every tool.
+ *
+ * Each tool used to carry its own 100-250-char explanation of what an intent
+ * IS; thirty copies rode every turn, ~600-900 tokens, the largest
+ * HappyVibe-authored slice of the context window. The convention and its one
+ * example now live in the identity paragraph (src/main/appendSystem.ts
+ * buildIdentity), which the model reads once — and which follows the same §13
+ * round-12 switch, so neither can describe a parameter that is not there.
+ *
+ * "REQUIRED" is deliberately NOT restated: the schema's own `required` array
+ * says it, and current models honour the schema. No per-tool tail either — the
+ * tool's own name already carries the verb.
+ *
+ * Pinned by tests/intent-description.test.ts, which also scans this file for a
+ * per-tool copy growing back.
+ */
+export const INTENT_DESCRIPTION =
+  "One customer-facing sentence, goal first — shown to the user as this call's headline.";
+const INTENT_PARAM = { type: "string", description: INTENT_DESCRIPTION };
 const OPTIONAL_INTENT_PARAM = {
   type: "string",
-  description:
-    "Optional but recommended. One short customer-facing sentence, goal first, describing this delegation (shown as the headline; falls back to the task text if omitted).",
+  // `subagent` advertises intent without requiring it (see OPTIONAL_INTENT_TOOLS),
+  // so this one line says what happens when the model omits it.
+  description: `Optional. ${INTENT_DESCRIPTION} Falls back to the task text.`,
 };
+/** The same description as a typebox schema, for the tools this file registers itself. */
+const intentParam = (): ReturnType<typeof Type.String> => Type.String({ description: INTENT_DESCRIPTION });
 type MutableParams = { properties?: Record<string, unknown>; required?: string[] };
 /**
  * §13 round 12 — `enabled` gates the whole injection.
@@ -1679,10 +1697,7 @@ export default function (pi: ExtensionAPI) {
       "with the trade-offs in the description. The UI adds a free-text 'Other' option automatically — " +
       "do not add one. If the user dismisses the question, proceed with your best judgment.",
     parameters: Type.Object({
-      intent: Type.String({
-        description:
-          "REQUIRED on every call. One short customer-facing sentence: why you need the user's decision and what it will settle (shown to the user as the headline).",
-      }),
+      intent: intentParam(),
       questions: Type.Array(
         Type.Object({
           question: Type.String({ description: "The full question text shown to the user." }),
@@ -1734,7 +1749,7 @@ export default function (pi: ExtensionAPI) {
       "(as shown in the available skills) and a short `intent`. Returns the skill's SKILL.md so " +
       "you can follow its workflow. Prefer this over reading a SKILL.md file directly.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are loading this skill — the task it serves." }),
+      intent: intentParam(),
       name: Type.String({ description: "The skill name to load (from the available skills list)." }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -1777,7 +1792,7 @@ export default function (pi: ExtensionAPI) {
     // renders a second copy that can drift from what the model is told.
     description: TERMINAL_TOOL_DESCRIPTIONS.terminal_run,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence, goal first: why you are running this, then what it does." }),
+      intent: intentParam(),
       command: Type.String({ description: "One command line. No embedded newlines." }),
       terminalId: Type.Optional(Type.String({ description: "Reuse this terminal instead of opening a new one. It must be idle." })),
     }),
@@ -1820,7 +1835,7 @@ export default function (pi: ExtensionAPI) {
     label: "Stop terminal",
     description: TERMINAL_TOOL_DESCRIPTIONS.terminal_kill,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are stopping it, then what you are stopping." }),
+      intent: intentParam(),
       terminalId: Type.String({ description: "The terminal to stop." }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -1852,7 +1867,7 @@ export default function (pi: ExtensionAPI) {
     label: "Open browser",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_open,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you need this page, then what you are opening." }),
+      intent: intentParam(),
       url: Type.String({ description: "The URL to open. localhost needs no approval; anything else asks the user." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1867,7 +1882,7 @@ export default function (pi: ExtensionAPI) {
     label: "Navigate browser",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_navigate,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are navigating there, then where you are going." }),
+      intent: intentParam(),
       url: Type.String({ description: "The URL to navigate to." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1882,7 +1897,7 @@ export default function (pi: ExtensionAPI) {
     label: "Screenshot page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_screenshot,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are capturing this, then what it shows." }),
+      intent: intentParam(),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const { intent } = params as { intent?: string };
@@ -1895,7 +1910,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_get_text,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are looking for." }),
+      intent: intentParam(),
     }),
     async execute(_id, _params, _signal, _onUpdate, ctx) {
       return browserInput(ctx, { kind: "hv.browser-get-text" });
@@ -1907,7 +1922,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read page console",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_read_console,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you expect to find." }),
+      intent: intentParam(),
       lines: Type.Optional(Type.Number({ description: "How many trailing messages. Default 100, capped at 200." })),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1921,7 +1936,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read page network",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_read_network,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you expect to find." }),
+      intent: intentParam(),
       limit: Type.Optional(Type.Number({ description: "How many trailing requests. Default 50, capped at 200." })),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1935,7 +1950,7 @@ export default function (pi: ExtensionAPI) {
     label: "Click in page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_click,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are clicking, then what you are clicking." }),
+      intent: intentParam(),
       selector: Type.String({ description: "A CSS selector for the element to click." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1950,7 +1965,7 @@ export default function (pi: ExtensionAPI) {
     label: "Type in page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_type,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are typing this, then what you are typing." }),
+      intent: intentParam(),
       selector: Type.String({ description: "A CSS selector for the field to type into." }),
       text: Type.String({ description: "The text to type." }),
     }),
@@ -1968,7 +1983,7 @@ export default function (pi: ExtensionAPI) {
     label: "Run JS in page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_evaluate,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are running this code, then what it does." }),
+      intent: intentParam(),
       code: Type.String({ description: "JavaScript to evaluate in the page. The final expression is the result." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1983,7 +1998,7 @@ export default function (pi: ExtensionAPI) {
     label: "Close browser",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_close,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are closing it." }),
+      intent: intentParam(),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const { intent } = params as { intent?: string };
@@ -2032,15 +2047,12 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  const webIntent = (what: string): ReturnType<typeof Type.String> =>
-    Type.String({ description: `REQUIRED. One short customer-facing sentence: why you need this, then ${what}.` });
-
   pi.registerTool({
     name: "web_search",
     label: "Search the web",
     description: WEB_TOOL_DESCRIPTIONS.web_search,
     parameters: Type.Object({
-      intent: webIntent("what you are looking for"),
+      intent: intentParam(),
       query: Type.String({ description: "The search query. `site:example.com` works." }),
       limit: Type.Optional(
         Type.Integer({ description: `Results to return (default ${WEB_CAPS.search.defaultLimit}, max ${WEB_CAPS.search.maxLimit}).` }),
@@ -2065,7 +2077,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read a web page",
     description: WEB_TOOL_DESCRIPTIONS.web_fetch,
     parameters: Type.Object({
-      intent: webIntent("what page you are reading"),
+      intent: intentParam(),
       url: Type.String({ description: "The http(s) URL to read. Not localhost or a private address — use browser_open for those." }),
       maxChars: Type.Optional(
         Type.Integer({ description: `Chars to return (default ${WEB_CAPS.fetch.defaultChars}, max ${WEB_CAPS.fetch.maxChars}).` }),
@@ -2091,7 +2103,7 @@ export default function (pi: ExtensionAPI) {
     label: "List a site's pages",
     description: WEB_TOOL_DESCRIPTIONS.web_map,
     parameters: Type.Object({
-      intent: webIntent("which site you are listing"),
+      intent: intentParam(),
       url: Type.String({ description: "The site's http(s) URL." }),
       search: Type.Optional(Type.String({ description: "Only return URLs matching this text." })),
       limit: Type.Optional(
@@ -2110,7 +2122,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read a site",
     description: WEB_TOOL_DESCRIPTIONS.web_crawl,
     parameters: Type.Object({
-      intent: webIntent("which site you are reading and what you are looking for"),
+      intent: intentParam(),
       url: Type.String({ description: "The http(s) URL to start from." }),
       limit: Type.Optional(
         Type.Integer({ description: `Pages to read (default ${WEB_CAPS.crawl.defaultLimit}, max ${WEB_CAPS.crawl.maxLimit}).` }),
@@ -2158,7 +2170,7 @@ export default function (pi: ExtensionAPI) {
         path: Type.String({ description: "Path to the document (workspace-relative or absolute, like read)." }),
         offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed), like read." })),
         limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read, like read." })),
-        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are looking for in this document." }),
+        intent: intentParam(),
       }),
       async execute(_id, params, _signal, _onUpdate, ctx) {
         const { path, offset, limit } = params as { path: string; offset?: number; limit?: number };
@@ -2206,7 +2218,7 @@ export default function (pi: ExtensionAPI) {
         "absent from the code, git history and AGENTS.md? Saving the same `name` REPLACES the existing memory — prefer " +
         "that over creating a near-duplicate. Never save secrets, task state or anything you can look up.",
       parameters: Type.Object({
-        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are remembering and why." }),
+        intent: intentParam(),
         scope: MemoryScope,
         type: Type.Union([Type.Literal("user"), Type.Literal("feedback"), Type.Literal("project"), Type.Literal("reference")], {
           description: "user = who they are and how they like to work; feedback = a correction or a confirmed approach (say WHY and HOW TO APPLY); project = a fact about this codebase you cannot recover from it; reference = a pointer to something external.",
@@ -2250,7 +2262,7 @@ export default function (pi: ExtensionAPI) {
         "Open one memory in full, by the name shown in the memory index in your instructions. Use it when the index " +
         "line suggests the memory is relevant to what you are doing.",
       parameters: Type.Object({
-        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are looking up and why." }),
+        intent: intentParam(),
         scope: MemoryScope,
         name: Type.String({ description: "The memory's name, exactly as it appears in the index." }),
       }),
@@ -2272,7 +2284,7 @@ export default function (pi: ExtensionAPI) {
         'Delete one memory. Use it when the user says "forget …", or when a memory has turned out to be wrong or ' +
         "obsolete. To CORRECT a memory, save it again under the same name instead — that replaces it.",
       parameters: Type.Object({
-        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are forgetting and why." }),
+        intent: intentParam(),
         scope: MemoryScope,
         name: Type.String({ description: "The memory's name, exactly as it appears in the index." }),
       }),
@@ -2311,7 +2323,7 @@ export default function (pi: ExtensionAPI) {
       "Pass the complete plan as Markdown with a '# title', a '## Tasks' GFM checklist (- [ ] …), " +
       "and a '## Verification' section. On revision, pass a complete replacement plan, not a delta.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what the plan will achieve." }),
+      intent: intentParam(),
       plan: Type.String({ description: "The complete implementation plan as Markdown (title + summary + ## Tasks checklist + ## Verification)." }),
     }),
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {
@@ -2347,7 +2359,7 @@ export default function (pi: ExtensionAPI) {
       "you explore read-only and draft an implementation plan; you cannot modify anything. Leaving " +
       "Plan Mode and starting implementation are the user's choice — you cannot exit it yourself.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are planning first, then what you will plan." }),
+      intent: intentParam(),
     }),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       if (!plan.enabled) {
@@ -2368,7 +2380,7 @@ export default function (pi: ExtensionAPI) {
       "Record the terminal status of the current plan: 'implemented' once you have completed the plan " +
       "AND its Verification passes, or 'cancelled' if the user abandons it. Only these two values.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you just completed and what remains." }),
+      intent: intentParam(),
       status: Type.Union([Type.Literal("implemented"), Type.Literal("cancelled")], { description: "'implemented' (verification passed) or 'cancelled'." }),
       note: Type.Optional(Type.String({ description: "Optional short note (e.g. what verification confirmed)." })),
     }),

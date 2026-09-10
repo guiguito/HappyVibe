@@ -1,6 +1,6 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { HV_IDENTITY } from "../appendSystem";
+import { buildIdentity } from "../appendSystem";
 
 /**
  * Node-capable exec path for Electron-as-node children. On macOS, LaunchServices
@@ -228,7 +228,9 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       "--no-themes",
       // §16 round 21: identity first, the user's own additions LAST — Pi joins
       // the sources with "\n\n" in argv order, so last wins on a conflict.
-      "--append-system-prompt", HV_IDENTITY,
+      // A1 (2026-09-10): built here rather than imported as a constant — the
+      // paragraph explains `intent`, so it must follow that switch.
+      "--append-system-prompt", buildIdentity({ intent: opts.builtinTools?.intent ?? true }),
       ...(opts.appendFile && existsSync(opts.appendFile) ? ["--append-system-prompt", opts.appendFile] : []),
       "--session-dir", sessionDir,
       ...(model ? ["--provider", model.provider, "--model", model.modelId] : []),

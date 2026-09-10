@@ -3,7 +3,10 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { resolvePiSpawn } from "../src/main/pi/spawn";
-import { HV_IDENTITY } from "../src/main/appendSystem";
+import { buildIdentity } from "../src/main/appendSystem";
+
+/** What spawn passes when nothing overrides the built-in tools (intent defaults on). */
+const IDENTITY = buildIdentity({ intent: true });
 
 /**
  * PRD §16 round 21 — the agent says it is HappyVibe.
@@ -27,8 +30,30 @@ const appends = (args: string[]): string[] =>
 
 test("the identity paragraph is appended, and it names HappyVibe", () => {
   const got = appends(spawnArgs());
-  expect(got).toEqual([HV_IDENTITY]);
-  expect(HV_IDENTITY).toMatch(/HappyVibe/);
+  expect(got).toEqual([IDENTITY]);
+  expect(IDENTITY).toMatch(/HappyVibe/);
+});
+
+/**
+ * X1 (2026-09-10): the `intent` convention is explained HERE, once, instead of
+ * thirty times in tool schemas — which means the paragraph has to follow the
+ * §13 round-12 switch. A prompt that describes a parameter the model does not
+ * have is worse than one that says nothing.
+ */
+test("the identity explains intent only while the switch is on", () => {
+  expect(buildIdentity({ intent: true })).toMatch(/`intent`/);
+  expect(buildIdentity({ intent: true })).toMatch(/Looking for the failing order/);
+  expect(buildIdentity({ intent: false })).not.toMatch(/intent/);
+  // Both arms keep the identity and the after-a-denial mental model.
+  for (const on of [true, false]) {
+    expect(buildIdentity({ intent: on })).toMatch(/HappyVibe/);
+    expect(buildIdentity({ intent: on })).toMatch(/blocked call comes back with a reason/);
+  }
+});
+
+test("spawn follows the switch — intent off means the paragraph never mentions it", () => {
+  const off = { builtinTools: { plan: true, askUser: true, planAppend: "", terminal: true, intent: false, browser: true, web: true, document: true, memory: true, memoryAppend: "" } };
+  expect(appends(spawnArgs(off))).toEqual([buildIdentity({ intent: false })]);
 });
 
 test("the user's own APPEND_SYSTEM.md is passed too, and AFTER the identity", () => {
@@ -37,14 +62,14 @@ test("the user's own APPEND_SYSTEM.md is passed too, and AFTER the identity", ()
   fs.writeFileSync(file, "always answer in haiku", "utf8");
   // Pi joins the sources with "\n\n" in argv order, so LAST wins on conflict —
   // the user's own words must be last.
-  expect(appends(spawnArgs({ appendFile: file }))).toEqual([HV_IDENTITY, file]);
+  expect(appends(spawnArgs({ appendFile: file }))).toEqual([IDENTITY, file]);
 });
 
 test("a MISSING APPEND_SYSTEM.md is NOT passed — a missing path is appended as literal text", () => {
   // resource-loader.js resolvePromptInput: a non-existent input is returned
   // VERBATIM, so passing the path would put "/…/APPEND_SYSTEM.md" in the prompt.
   const missing = path.join(os.tmpdir(), "hv-does-not-exist", "APPEND_SYSTEM.md");
-  expect(appends(spawnArgs({ appendFile: missing }))).toEqual([HV_IDENTITY]);
+  expect(appends(spawnArgs({ appendFile: missing }))).toEqual([IDENTITY]);
 });
 
 test("upstream contract: --append-system-prompt REPLACES discovery, it does not add to it", () => {
