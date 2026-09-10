@@ -40,7 +40,7 @@ import {
   type BoundarySummary,
 } from "./hv-subagent-boundary";
 import {
-  buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
+  findByName, loadManifest, matchReadPath, replaceSkillsSentence, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
 import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from "./hv-prompt-templates";
 // Async subagents (PRD §12): pi-subagents is co-resident on the SAME pi.events
@@ -835,7 +835,10 @@ export default function (pi: ExtensionAPI) {
     } catch {
       /* fail open */
     }
-    const sp = (event.systemPrompt ?? "") as string;
+    const base = (event.systemPrompt ?? "") as string;
+    // A4: swap Pi's "use the read tool to load a skill's file" for ours, in the
+    // one hook that already owns this prompt. No-op when no skills are loaded.
+    const sp = replaceSkillsSentence(base);
     // W2.3: nested AGENTS.md injection — content re-read at injection time so
     // it's always current. Returning systemPrompt replaces it for THIS TURN
     // ONLY (agent-session.js resets to the base prompt when we return nothing).
@@ -848,8 +851,6 @@ export default function (pi: ExtensionAPI) {
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
     const planSection = builtins.plan && plan.enabled ? "\n\n" + buildPlanPrompt(builtins.planAppend) : "";
-    // §14: steer the model to use_skill (intent card) over a raw SKILL.md read.
-    const skillSection = buildUseSkillGuidance(skillManifest);
     // §26: steer long-running commands to terminal_run rather than a
     // backgrounded bash call. Only while the group is registered — otherwise
     // the prompt would name a tool the model does not have.
@@ -872,7 +873,7 @@ export default function (pi: ExtensionAPI) {
           workspace: memoryWorkspaceDir ? readIndex(memoryWorkspaceDir) : null,
         })
       : "";
-    const injected = sp + section + agentsSection + planSection + skillSection + terminalSection + webSection + memorySection;
+    const injected = sp + section + agentsSection + planSection + terminalSection + webSection + memorySection;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -895,10 +896,12 @@ export default function (pi: ExtensionAPI) {
       // Absent when memory is off, so the panel shows no Memory category at all — the 0-cost claim.
       memory: memoryOn ? memoryTokenLines(memoryGlobalDir, memoryWorkspaceDir) : undefined,
     };
-    // memorySection is named here for the same reason as the others: an injection that is
-    // computed and then not returned is silently absent, and memory can be the ONLY thing a
-    // turn injects (no nested AGENTS.md, no agents, no plan, no skills).
-    if (section || agentsSection || planSection || skillSection || memorySection) return { systemPrompt: injected };
+    // F1 (2026-09-10): this used to hand-list the sections, and it OMITTED
+    // terminalSection and webSection — with every agent off and memory, skills
+    // and plan off, both steer lines were computed and then never sent.
+    // Comparing against Pi's own prompt cannot forget a section, and it also
+    // covers A4's skills-sentence swap, which changes `sp` itself.
+    if (injected !== base) return { systemPrompt: injected };
     return undefined; // no injection this turn — resets Pi to the base prompt
   });
 
@@ -1745,9 +1748,9 @@ export default function (pi: ExtensionAPI) {
     name: "use_skill",
     label: "Use skill",
     description:
-      "Load a HappyVibe skill's full instructions when a task matches it. Pass the skill `name` " +
-      "(as shown in the available skills) and a short `intent`. Returns the skill's SKILL.md so " +
-      "you can follow its workflow. Prefer this over reading a SKILL.md file directly.",
+      // A4: the WHEN now lives in Pi's own skills block (one sentence, swapped
+      // by replaceSkillsSentence). This says only what the call does.
+      "Load a skill's instructions by name. Prefer this over reading a SKILL.md file.",
     parameters: Type.Object({
       intent: intentParam(),
       name: Type.String({ description: "The skill name to load (from the available skills list)." }),
