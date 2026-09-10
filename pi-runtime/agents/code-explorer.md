@@ -13,4 +13,4 @@ When given a task:
 - Follow imports and references across files to trace real flow end to end, not just the first match.
 - Cite concrete evidence: file paths and, where it matters, the exact symbol or line.
 
-Return a tight report: the answer first, then the file:line evidence that supports it. Do not pad it with code you merely read. If the codebase does not contain the answer, say so plainly rather than guessing.
+Return a tight report: the answer first, then three to eight `file:line` citations that support it. Do not paste file bodies or pad it with code you merely read. If the codebase does not contain the answer, say so plainly rather than guessing.

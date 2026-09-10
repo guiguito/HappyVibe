@@ -358,6 +358,16 @@ export function requireIntent(pi: ExtensionAPI, enabled = true): void {
   }
 }
 
+/**
+ * X7 (Improve-prompts round, 2026-09-10) — what a refused model should do next.
+ *
+ * Appended to the two refusals that used to say only that something was
+ * blocked. Every other refusal in the app (plan mode, the child guard, the
+ * bash-`&` redirect, the web refusals) already carries a cause and an
+ * alternative; these two did not, and a model handed a bare "blocked" retries.
+ */
+const NEXT_STEP = "Do not retry the same call. Take a different approach, or tell the user what you needed and why.";
+
 // ── B4 permissions (docs/validation/d1.md §hv.audit) ───────────────────────
 // Rules file path rides the spawn env; main rewrites the file on UI edits
 // and broadcasts /hv-rules-reload to every live session.
@@ -1029,11 +1039,13 @@ export default function (pi: ExtensionAPI) {
     if (isWaitTool(tool)) {
       return {
         block: true,
+        // X3: the reason IS the instruction here — a shouted "Do NOT" made
+        // models hesitate over legitimate blocking calls elsewhere.
         reason:
-          "Do NOT wait. This is an interactive HappyVibe session: the subagent's result " +
-          "will be delivered to you automatically as a new turn the moment it finishes. End " +
-          "your turn now with a brief note that the work is running in the background — do not " +
-          `call ${tool}() or poll with subagent status. You will be prompted with the result.`,
+          "This is an interactive HappyVibe session: the sub-agent's result is delivered to you " +
+          "as a new turn when it finishes, so there is nothing to wait for — do not call " +
+          `${tool}() or poll with subagent status. End your turn with one line saying the work ` +
+          "is running in the background.",
       };
     }
     // The run card's caption, captured at the ONE point it is still readable:
@@ -1274,7 +1286,13 @@ export default function (pi: ExtensionAPI) {
 
     if (v.action === "deny") {
       audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule", rule: v.rule });
-      return { block: true, reason: `Blocked by HappyVibe permission rule (${v.rule?.layer}: ${v.rule?.pattern})` };
+      // X7 (2026-09-10): a bare "blocked" makes a current model retry the same
+      // call with small variations — which is what the audit log then fills up
+      // with. Every other refusal in the app already names an alternative.
+      return {
+        block: true,
+        reason: `Blocked by HappyVibe permission rule (${v.rule?.layer}: ${v.rule?.pattern}). ${NEXT_STEP}`,
+      };
     }
     // §23 floor-of-ask: while planning, "everything else" (MCP/unknown tools)
     // never auto-allows — an allow becomes an ask; deny already returned above,
@@ -1339,7 +1357,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "user" });
-    return { block: true, reason: "User denied this action in HappyVibe" };
+    return { block: true, reason: `User denied this action in HappyVibe. ${NEXT_STEP}` };
   });
 
   pi.registerCommand("hv-rules-reload", {
