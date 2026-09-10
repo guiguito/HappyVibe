@@ -170,6 +170,27 @@ describe("the card→circle flight (A1)", () => {
     expect(motion).not.toMatch(/classList\.add\(|className\s*=\s*["'`]/);
   });
 
+  it("a ghost is a picture at REST — it never inherits its source's state", () => {
+    // `cloneNode` copies attributes, and `data-leaving` is an attribute that
+    // drives CSS. "Open as tab" clones the circle AFTER marking it retiring, so
+    // the ghost arrived already carrying the exit and rendered at .15 scale — a
+    // 5px speck instead of a 36px token. Measured before and after.
+    const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+    expect(motion).toContain('ghost.removeAttribute("data-leaving")');
+    expect(motion).toContain('querySelectorAll("[data-leaving]")');
+  });
+
+  it("a caller can hand in the origin rect it measured itself", () => {
+    // The action that creates the destination can hide the origin: opening a
+    // tab makes it active, so the circle's pane is hidden and it measures 0x0
+    // one frame later. `flyGhost` then declines — correctly, and uselessly.
+    const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+    expect(motion).toContain("opts.fromRect ?? fromEl.getBoundingClientRect()");
+    const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+    const fn = app.slice(app.indexOf("const openAgentTerminalAsTab"), app.indexOf("const openAgentTerminalAsTab") + 3000);
+    expect(fn.indexOf("const fromRect =")).toBeLessThan(fn.indexOf("setTabsByWs"));
+  });
+
   it("the flight never scrolls the transcript to make itself possible", () => {
     // The card is where the user left it. Moving the conversation so an
     // animation can play is the animation deciding what you are reading.

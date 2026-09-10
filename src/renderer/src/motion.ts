@@ -54,10 +54,15 @@ export function reducedMotion(): boolean {
 export function flyGhost(
   fromEl: HTMLElement,
   toEl: HTMLElement,
-  opts: { duration?: number; round?: boolean } = {},
+  opts: { duration?: number; round?: boolean; fromRect?: DOMRect } = {},
 ): Promise<void> {
   if (reducedMotion()) return Promise.resolve();
-  const a = fromEl.getBoundingClientRect();
+  // `fromRect` exists for the case where the ACTION that creates the
+  // destination also hides the origin. "Open as tab" does exactly that: the new
+  // tab takes over the pane, so one frame later the circle is inside a hidden
+  // pane and measures 0x0 — and this function then declines, correctly but
+  // uselessly. The caller measures first and hands the rect in.
+  const a = opts.fromRect ?? fromEl.getBoundingClientRect();
   const b = toEl.getBoundingClientRect();
   // A zero rect means the element is display:none or not laid out yet. Flying
   // from or to nothing is a flicker, not an animation.
@@ -66,6 +71,13 @@ export function flyGhost(
   const ghost = fromEl.cloneNode(true) as HTMLElement;
   ghost.removeAttribute("id");
   ghost.setAttribute("aria-hidden", "true");
+  // A clone inherits ATTRIBUTES, and `data-leaving` is an attribute that drives
+  // CSS. By the time "open as tab" clones the circle, that circle is already
+  // retiring — so the ghost arrived carrying the exit and rendered at 0.15
+  // scale, a 5px speck instead of a 36px token. Strip every state marker: a
+  // ghost is a picture of the thing at rest, never a participant in its state.
+  ghost.removeAttribute("data-leaving");
+  for (const n of ghost.querySelectorAll("[data-leaving]")) n.removeAttribute("data-leaving");
   Object.assign(ghost.style, {
     position: "fixed",
     left: `${a.left}px`,

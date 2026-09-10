@@ -82,3 +82,49 @@ describe("a terminal's tool-call id travels bridge → main → renderer (A1)", 
     expect(handler).toContain("toolCallId");
   });
 });
+
+/**
+ * The "Open as tab" flight must look the run up by the SAME key the rail draws
+ * it with (2026-09-10).
+ *
+ * `runRail.ts` keys a terminal's circle on `domKey` — the tool call id when the
+ * join is present, the terminal id otherwise. `openAgentTerminalAsTab` looked
+ * it up by terminalId alone, so from the moment the join shipped it matched
+ * nothing and the flight silently never ran. Reported as "not really visible";
+ * it was not visible at all.
+ *
+ * Two places computing one identity is the drift; this pins them to agree.
+ */
+describe("the open-as-tab flight uses the rail's own key", () => {
+  const APP = R("src/renderer/src/App.tsx");
+  const RAIL = R("src/renderer/src/runRail.ts");
+
+  it("the derivation lives in ONE place", () => {
+    // `domKey` is computed in runRail.ts and nowhere else. The first fix for
+    // this bug re-derived it inside App, which is the same mistake one layer
+    // along — a second copy that can drift.
+    expect(RAIL).toContain("domKey: t.toolCallId ?? t.terminalId");
+    const fn = APP.slice(APP.indexOf("const openAgentTerminalAsTab"), APP.indexOf("const openAgentTerminalAsTab") + 3000);
+    expect(fn).not.toContain("?.toolCallId ?? terminalId");
+  });
+
+  it("the origin is found by the id the caller already holds", () => {
+    const chat = R("src/renderer/src/components/ChatView.tsx");
+    expect(chat).toContain("data-hv-run-key={a.key}");
+    const fn = APP.slice(APP.indexOf("const openAgentTerminalAsTab"), APP.indexOf("const openAgentTerminalAsTab") + 3000);
+    expect(fn).toContain('data-hv-run-key="${CSS.escape(terminalId)}"');
+  });
+
+  it("it waits for the destination tab instead of assuming one frame", () => {
+    const fn = APP.slice(APP.indexOf("const openAgentTerminalAsTab"), APP.indexOf("const openAgentTerminalAsTab") + 3000);
+    expect(fn).toContain("requestAnimationFrame(whenTabExists)");
+    expect(fn).toMatch(/\+\+frames < \d+/);
+  });
+
+  it("the origin is read BEFORE the run is dropped", () => {
+    // A rect from a node React has already unmounted is all zeros, and
+    // `flyGhost` declines those — so the order is the whole feature.
+    const fn = APP.slice(APP.indexOf("const openAgentTerminalAsTab"), APP.indexOf("const openAgentTerminalAsTab") + 1600);
+    expect(fn.indexOf("const from =")).toBeLessThan(fn.indexOf("dropAgentTerminal("));
+  });
+});

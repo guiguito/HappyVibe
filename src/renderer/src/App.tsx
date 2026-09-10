@@ -1901,18 +1901,33 @@ export default function App(): React.JSX.Element {
     // must be read BEFORE `dropAgentTerminal` removes the circle — a rect taken
     // from a node React has already unmounted is all zeros, and `flyGhost`
     // declines those rather than flashing something at the origin.
-    const from = document.querySelector<HTMLElement>(`[data-hv-run-avatar="${CSS.escape(terminalId)}"]`)
-      ?? document.querySelector<HTMLElement>(`[data-hv-run-card="${CSS.escape(terminalId)}"]`);
+    // Found by the circle's MAP key, which for a terminal IS the terminal id we
+    // were handed. The first attempt queried `data-hv-run-avatar` — the DOM
+    // key, which is the tool call id once the join exists (A1 prereq 3) — so it
+    // matched nothing and the flight silently never ran. Re-deriving the same
+    // identity in a second place is the bug; asking for the id we already hold
+    // is the fix.
+    const from = document.querySelector<HTMLElement>(`[data-hv-run-key="${CSS.escape(terminalId)}"]`);
+    // Measured NOW, while the circle is still laid out. Opening the tab makes it
+    // the active one, which hides the chat pane the circle lives in — so by the
+    // frame the destination exists, this node measures 0x0 and the flight would
+    // decline. Reported as "#26 is not really visible"; it never ran at all.
+    const fromRect = from?.getBoundingClientRect();
     setTabsByWs((p) => ({ ...p, [ws]: openTerminal(p[ws] ?? emptyTabs, terminalId) }));
     dropAgentTerminal(sid, terminalId);
     setActiveWs(ws);
     setView("chat");
-    if (from) {
-      // One frame later, so the tab it flies TO has been committed.
-      requestAnimationFrame(() => {
+    if (from && fromRect && fromRect.width > 0) {
+      // Wait for the TAB to exist rather than assuming one frame is enough:
+      // three state updates land here and the strip may commit on a later one.
+      // Capped, so a tab that never appears costs a few frames and no more.
+      let frames = 0;
+      const whenTabExists = (): void => {
         const to = document.querySelector<HTMLElement>(`[data-hv-tab="${CSS.escape(termTab(terminalId))}"]`);
-        if (to) void flyGhost(from, to, { duration: 420 });
-      });
+        if (to) void flyGhost(from, to, { duration: DUR.flight, fromRect });
+        else if (++frames < 10) requestAnimationFrame(whenTabExists);
+      };
+      requestAnimationFrame(whenTabExists);
     }
   };
 

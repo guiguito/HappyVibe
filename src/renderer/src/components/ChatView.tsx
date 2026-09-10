@@ -2110,6 +2110,12 @@ function RunRail({
                 // A1: where a flying ghost lands, and how a GUI pass counts the
                 // circles. An id is never parsed out of text.
                 data-hv-run-avatar={a.domKey}
+                // B6: the MAP key as well, so a caller holding a terminal id
+                // (or a run id) can find this circle without re-deriving
+                // `domKey`. Two places computing one identity is what silently
+                // killed the open-as-tab flight the moment the tool-call join
+                // shipped — the derivation now lives only in runRail.ts.
+                data-hv-run-key={a.key}
                 onClick={() => setOpen((o) => (o === a.key ? null : a.key))}
                 aria-expanded={open === a.key}
                 aria-label={`${a.name}${a.caption ? ` — ${a.caption}` : ""} (${a.state})`}
