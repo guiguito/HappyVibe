@@ -55,9 +55,11 @@ describe("the resting row shows an age", () => {
     expect(SRC).not.toContain("Date.parse(session.updatedAt)");
   });
 
-  it("hides the age while the session is working — the pulsing dot already says so", () => {
-    // A second moving thing in one row is noise, not information.
-    expect(SRC).toMatch(/\{!status && \(/);
+  it("hides the age while the session is working — the dot already says so", () => {
+    // A second moving thing in one row is noise, not information. A8
+    // (2026-09-10) widened this: `busy` is now its own state, so a session
+    // whose agent is mid-turn hides its age even before main reports a status.
+    expect(SRC).toMatch(/\{!status && !busy && \(/);
   });
 
   it("the age hides on hover and the trash appears — one slot, never both", () => {

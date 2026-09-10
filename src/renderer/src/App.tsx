@@ -2836,6 +2836,7 @@ export default function App(): React.JSX.Element {
         activeWs={wsId}
         sessions={sessions}
         statuses={statuses}
+        busy={busy}
         pending={pendingBySession}
         planning={Object.fromEntries(Object.entries(planMode).map(([sid, p]) => [sid, p.enabled]))}
         selectedId={selectedId}
@@ -3026,7 +3027,15 @@ export default function App(): React.JSX.Element {
           className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"} motion-safe:transition-[opacity,display] motion-safe:transition-discrete motion-safe:duration-[140ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0`}
         >
           <div
-            className="flex-1 min-w-0 min-h-0 grid relative"
+            // B5 (Animations round, 2026-09-10): splitting and unsplitting
+            // animates the grid, so a new pane opens rather than appearing.
+            // `data-dragging` kills it while a divider is held — the drag
+            // writes a new percentage on every mousemove, and a 180 ms
+            // transition on top of that makes the divider lag the pointer.
+            // It is set on THIS element by the drag handler itself, which
+            // already holds it as `parentElement`, so no state has to be
+            // plumbed through two components to say "a mouse is down".
+            className="flex-1 min-w-0 min-h-0 grid relative motion-safe:transition-[grid-template-columns,grid-template-rows] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:data-[dragging]:transition-none"
             style={gridStyle}
             onDragOver={(e) => e.dataTransfer.types.includes("application/x-hv-relpath") && e.preventDefault()}
             onDrop={(e) => {
@@ -3666,13 +3675,20 @@ function PaneDividers({
 
   const drag = (which: "main" | "cross", alongX: boolean) => (e: React.MouseEvent): void => {
     e.preventDefault();
-    const box = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect();
-    if (!box) return;
+    // The grid this divider sits in — already needed for the drag maths, and
+    // now also the element B5's transition lives on.
+    const grid = (e.currentTarget as HTMLElement).parentElement;
+    const box = grid?.getBoundingClientRect();
+    if (!box || !grid) return;
+    // Hold the transition for the length of the drag: the divider must track
+    // the pointer exactly, not ease towards it 180 ms behind.
+    grid.setAttribute("data-dragging", "");
     const onMove = (ev: MouseEvent): void => {
       const r = alongX ? (ev.clientX - box.left) / box.width : (ev.clientY - box.top) / box.height;
       onResize(which, r);
     };
     const onUp = (): void => {
+      grid.removeAttribute("data-dragging");
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };

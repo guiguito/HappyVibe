@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { uiGet, uiSet } from "../uiStore";
 import { timeago } from "../timeago";
+import { DOT_TITLE, SESSION_DOT, sessionDotState } from "../sessionDot";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
 import { bySidebarOrder, lastUsed } from "../sessionOrder";
@@ -473,6 +474,7 @@ function TrashIcon(): React.JSX.Element {
 function SessionRow({
   session,
   status,
+  busy,
   pending,
   planning,
   selected,
@@ -493,6 +495,8 @@ function SessionRow({
   onSelect: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
+  /** A8: a turn is in flight in this session. */
+  busy: boolean;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
@@ -502,14 +506,10 @@ function SessionRow({
     if (draft.trim() && draft.trim() !== session.title) onRename(draft.trim());
   };
 
-  const dot =
-    status === "running"
-      ? "bg-leaf animate-pulse"
-      : status === "crashed"
-        ? "bg-berry"
-        : status === "waking"
-          ? "bg-honey animate-pulse"
-          : "bg-line-strong";
+  // A8 (2026-09-10): the dot is derived in ONE place and rendered from a
+  // record — "working" (a turn in flight) is now distinct from "alive" (the Pi
+  // child is up), which the old ternary could not say.
+  const dotState = sessionDotState(status, busy);
 
   // W1.3: hibernated = a subtle moon instead of a status dot; opening it just works.
   const asleep = !!session.hibernated && status === undefined;
@@ -532,7 +532,7 @@ function SessionRow({
           ☾
         </span>
       ) : (
-        <span className={`size-1.5 rounded-full shrink-0 ${dot}`} title={status === "waking" ? "waking up…" : status ?? "idle"} />
+        <span className={`shrink-0 ${SESSION_DOT[dotState]}`} title={DOT_TITLE[dotState]} />
       )}
       {pending > 0 && (
         <span
@@ -588,7 +588,7 @@ function SessionRow({
          * pulsing, and a second moving thing in one row is noise.
          */
         <span className="flex items-center shrink-0">
-          {!status && (
+          {!status && !busy && (
             <span className="text-[10px] tabular-nums text-ink-soft/70 group-hover:hidden" title={new Date(lastUsed(session)).toLocaleString()}>
               {timeago(Date.parse(lastUsed(session)))}
             </span>
@@ -615,6 +615,7 @@ export function Sidebar({
   workspaces,
   sessions,
   statuses,
+  busy,
   pending,
   planning,
   selectedId,
@@ -644,6 +645,11 @@ export function Sidebar({
   workspaces: string[];
   sessions: SessionMeta[];
   statuses: Record<string, SessionStatus>;
+  /**
+   * A8: which sessions have a turn in flight. Distinct from `statuses` — that
+   * one says the Pi child is ALIVE, which every open session's is.
+   */
+  busy: Record<string, boolean>;
   /** Pending permission prompts per session (B4). */
   pending: Record<string, number>;
   /** §23: sessions currently in plan mode → a 🧭 badge. */
@@ -827,6 +833,13 @@ export function Sidebar({
    * `inert` every one of its buttons stays in the tab order and ⌘K could focus
    * a search box nobody can see.
    */
+  /**
+   * A8: is any session in this workspace mid-turn? Derived from the same `busy`
+   * map the rows read — one source, so the rail and the list can never disagree
+   * about what is happening.
+   */
+  const wsBusy = (ws: string): boolean => sessions.some((s) => s.workspaceId === ws && busy[s.id]);
+
   const railBtn = (active: boolean): string =>
       `size-9 flex items-center justify-center rounded-xl border-2 cursor-pointer transition-colors ${
         active ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70 text-ink-soft hover:text-ink"
@@ -868,13 +881,27 @@ export function Sidebar({
                    column of tiles, and one of them growing would read as a
                    different kind of thing. (`railBtn` above is size-9/rounded-xl
                    and would do exactly that, so it is deliberately not reused.) */
-                className={`size-8 shrink-0 flex items-center justify-center rounded-lg border-2 bg-card text-base cursor-pointer ${
+                className={`relative size-8 shrink-0 flex items-center justify-center rounded-lg border-2 bg-card text-base cursor-pointer ${
                   ws === activeWs ? "border-honey shadow-sticker" : "border-line hover:border-honey"
                 }`}
               >
                 {/* Round 11: the emoji replaces two-letter initials — a column of
                     `HA`/`FL`/`DE` was unreadable at 48px. */}
                 <span aria-hidden>{workspaceEmoji(ws)}</span>
+                {/* A8 (2026-09-10): the rail shows no sessions, so without this
+                    badge collapsing the sidebar hides "working" outright — the
+                    one state the user most wants to see from across the room.
+                    It is the same spinner the row uses, so there is one visual
+                    word for it. This `absolute` sits INSIDE the sidebar, which
+                    is left of the centre grid, so it can never overlap a
+                    browser pane and §28's coverage check never sees it. */}
+                {wsBusy(ws) && (
+                  <span
+                    aria-hidden
+                    title="An agent is working in this workspace"
+                    className={`absolute -top-1 -right-1 ${SESSION_DOT.working}`}
+                  />
+                )}
               </button>
             ))}
           </div>
@@ -1074,6 +1101,7 @@ export function Sidebar({
                         key={s.id}
                         session={s}
                         status={statuses[s.id]}
+                        busy={!!busy[s.id]}
                         pending={pending[s.id] ?? 0}
                         planning={planning?.[s.id] ?? false}
                         selected={view === "chat" && s.id === selectedId}
