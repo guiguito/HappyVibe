@@ -99,20 +99,32 @@ export function SessionPulse({
   if (hidden || phase.k === "gone" || phase.k === "loading") return null;
 
   return (
-    <div className="flex items-center gap-3 px-6 py-2 border-b-2 border-line bg-paper text-sm">
+    /**
+     * One quiet line, centred above the composer. No border, no tone, no
+     * background: a banner announces, this asks — and it sits in the reading
+     * column rather than in the rail where the warnings live.
+     *
+     * The disclosure moved to `title`. It is a promise about what travels and
+     * `pulseContext`'s allowlist is what makes it true, so it stays one hover
+     * away rather than being deleted — but a paragraph of policy under a
+     * one-tap question was more weight than the question itself.
+     *
+     * NO bottom padding of its own: the composer form below already carries
+     * `pt-2`, and the two together read as a gap rather than as one thing
+     * sitting above another.
+     */
+    <div className="flex items-center justify-center gap-2 px-6 text-sm">
       {phase.k === "thanks" && <span className="font-bold">{C.thanks}</span>}
       {phase.k === "ready" && (
         <>
-          <div className="flex flex-col min-w-0">
-            <span className="font-semibold">{C.question}</span>
-            {/* Not decoration: the payload builder this describes is tested. */}
-            <span className="text-xs text-ink-soft">{C.disclosure}</span>
-          </div>
+          <span className="text-ink-soft" title={C.disclosure}>
+            {C.question}
+          </span>
           <EmojiChoice size="sm" options={phase.shape.options} onPick={(id) => void pick(id, phase.form, phase.shape.questionId)} />
         </>
       )}
       {phase.k === "invite" && (
-        <button type="button" onClick={onOpenDialog} className="font-semibold underline cursor-pointer">
+        <button type="button" onClick={onOpenDialog} className="text-ink-soft underline cursor-pointer" title={C.disclosure}>
           {C.invite}
         </button>
       )}
@@ -122,7 +134,7 @@ export function SessionPulse({
           onClick={dismiss}
           aria-label={C.dismiss}
           title={C.dismiss}
-          className="ml-auto text-ink-soft hover:text-ink cursor-pointer"
+          className="text-ink-soft/60 hover:text-ink cursor-pointer text-xs leading-none"
         >
           ✕
         </button>

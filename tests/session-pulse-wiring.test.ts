@@ -17,10 +17,30 @@ describe("§34 pulse wiring", () => {
     expect(pulse).not.toMatch(/Dismiss/); // Banner's word, not this row's
   });
 
-  it("it renders in the banner stack and yields to both banners", () => {
+  it("it sits directly ABOVE THE COMPOSER, not in the banner rail, and still yields to banners", () => {
     const at = chat.indexOf("<SessionPulse");
+    // Below the banner block it yields to...
     expect(at).toBeGreaterThan(chat.indexOf("suggestCompact && ("));
-    expect(chat.slice(at - 400, at)).toMatch(/crashed === null && !suggestCompact/);
+    // ...and immediately before the composer form, which is where the user is looking.
+    const form = chat.indexOf("{/* Composer */}");
+    expect(form).toBeGreaterThan(at);
+    // Nothing else is rendered between the pulse and the composer.
+    const afterPulse = chat.indexOf("/>", chat.indexOf("onOpenDialog={pulse.onOpenDialog}"));
+    expect(chat.slice(afterPulse, form)).not.toMatch(/<[A-Z]\w+/);
+    expect(chat.slice(at - 500, at)).toMatch(/crashed === null && !suggestCompact/);
+  });
+
+  /** Minimal by request: a caption and the scale, centred. No rail, no tone, no paragraph. */
+  it("the row is a centred caption plus the emoji, with the disclosure one hover away", () => {
+    expect(pulse).toMatch(/justify-center/);
+    // No bottom padding: the composer's own pt-2 is the whole gap, or the row
+    // floats away from the bar it belongs to.
+    expect(pulse).not.toMatch(/px-6 pb-\d/);
+    expect(pulse).not.toMatch(/border-b-2/);
+    // The disclosure is a promise about what travels — kept as a title, never dropped.
+    expect(pulse).toMatch(/title=\{C\.disclosure\}/);
+    // ...and never as a second visible line under the question.
+    expect(pulse).not.toMatch(/<span className="text-xs text-ink-soft">\{C\.disclosure\}<\/span>/);
   });
 
   /**

@@ -1020,21 +1020,6 @@ export function ChatView({
         </Banner>
       )}
 
-      {/* §34: the session pulse. It YIELDS to both banners — one attention
-          request at a time — which is why the check is here and not only in
-          App: the red-zone banner is this component's own state. It is not a
-          Banner itself: those are for things that are wrong (§20). */}
-      {pulse?.show && sessionId && crashed === null && !suggestCompact && (
-        <SessionPulse
-          sessionId={sessionId}
-          hidden={pulse.hidden}
-          facts={pulse.facts}
-          onAsked={pulse.onAsked}
-          onDone={pulse.onDone}
-          onOpenDialog={pulse.onOpenDialog}
-        />
-      )}
-
       {/* V2.C1: the delegation run lives OUTSIDE the chat flow — a sticky
           in-flow section at the top of the transcript scroll container: it
           scrolls naturally but pins while subagents run. The main chat goes
@@ -1316,6 +1301,25 @@ export function ChatView({
           searchQuery={searchOpen ? searchQuery : ""}
           searchActiveIndex={searchActive}
           onSearchTotal={onSearchTotal}
+        />
+      )}
+
+      {/* §34: the session pulse sits DIRECTLY ABOVE THE COMPOSER, not in the
+          banner stack at the top. It is a quiet question about the conversation
+          you are having, so it belongs where you are looking and where you
+          answer — the banner rail is for things that are wrong.
+
+          It still yields to both banners: one attention request at a time, and
+          the red-zone one is this component's own state, which is why the check
+          lives here rather than only in App. */}
+      {pulse?.show && sessionId && crashed === null && !suggestCompact && (
+        <SessionPulse
+          sessionId={sessionId}
+          hidden={pulse.hidden}
+          facts={pulse.facts}
+          onAsked={pulse.onAsked}
+          onDone={pulse.onDone}
+          onOpenDialog={pulse.onOpenDialog}
         />
       )}
 
