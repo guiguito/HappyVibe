@@ -12,6 +12,7 @@ import { PiClient } from "../src/main/pi/PiClient";
  */
 
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
+import { HV_SKILLS_SENTENCE, PI_SKILLS_SENTENCE } from "../pi-runtime/extensions/hv-skills";
 import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 const runtime = path.join(process.cwd(), "pi-runtime");
 let client: PiClient;
@@ -73,9 +74,12 @@ test.skipIf(!KEY)(
     expect(skillCmds).not.toContain("skill:sneaky-skill");
 
     // Auto-allow any permission prompt (shouldn't be one — use_skill is a SAFE_TOOL).
+    // A notify carries its payload in `message`; /hv-sysprompt rides one.
+    const notifies: string[] = [];
     client.on("ui-request", (m) => {
-      const r = m as { id: string; method?: string };
+      const r = m as { id: string; method?: string; message?: string; title?: string };
       if (r.method === "select") client.respondUi(r.id, { value: "Allow" });
+      for (const v of [r.message, r.title]) if (typeof v === "string") notifies.push(v);
     });
     const toolStarts: Array<Record<string, unknown>> = [];
     const done = new Promise<void>((resolve) =>
@@ -98,6 +102,24 @@ test.skipIf(!KEY)(
     expect(args.name).toBe("pdf-tools");
     expect(typeof args.intent).toBe("string");
     expect((args.intent as string).trim().length).toBeGreaterThan(0);
+
+    // A4 / F3 (2026-09-10): the prompt the model actually received must carry
+    // OUR skills instruction and NOT Pi's, which said the opposite. The
+    // absence is the half that matters and the half a unit test cannot reach:
+    // replaceSkillsSentence runs on Pi's real prompt, in before_agent_start.
+    await client.send({ type: "prompt", message: "/hv-sysprompt" });
+    const deadline = Date.now() + 30_000;
+    let sys: string | undefined;
+    while (Date.now() < deadline && !sys) {
+      sys = notifies.find((n) => n.includes('"kind":"hv.sysprompt"'));
+      if (!sys) await new Promise((r) => setTimeout(r, 200));
+    }
+    expect(sys, "no hv.sysprompt notify arrived").toBeDefined();
+    const text = (JSON.parse(sys as string) as { text: string }).text;
+    expect(text, "a skill is loaded, so Pi's skills block must be present").toContain("<available_skills>");
+    expect(text).toContain(HV_SKILLS_SENTENCE);
+    expect(text, "Pi's contradicting sentence survived the replacement").not.toContain(PI_SKILLS_SENTENCE);
+    expect(text, "the old separate block should be gone").not.toContain("<happyvibe-skills>");
   },
   180_000,
 );
