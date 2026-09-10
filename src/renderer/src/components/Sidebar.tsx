@@ -808,439 +808,470 @@ export function Sidebar({
   // F6: collapsed icon rail — brand, workspace initials (click expands), and the
   // MCP/Settings/Help nav at the bottom. ⌘\ (App) and the chevron toggle it.
   // (§28 round 1 swapped the keys: ⌘B opens a BROWSER, the sidebar moved to ⌘\.)
-  if (railCollapsed) {
-    const railBtn = (active: boolean): string =>
+  /**
+   * A5 (Animations round, 2026-09-10) — ONE aside element, so its width
+   * can transition.
+   *
+   * This used to be two different subtrees behind an early return, which meant
+   * ⌘\\ replaced the whole element and nothing could animate: there was no
+   * shared node whose width could change. The two contents now stack in the
+   * SAME grid cell and crossfade while the width animates.
+   *
+   * `col-start-1 row-start-1` rather than `absolute inset-0`: an absolutely
+   * positioned overlay is a candidate for §28's coverage check, which judges
+   * by bounding box — a full-height one beside a browser pane would blank it.
+   * Grid stacking costs nothing and is invisible to that check.
+   *
+   * The hidden half is `inert` as well as `aria-hidden` and
+   * `pointer-events-none`: it is still in the DOM at full size, so without
+   * `inert` every one of its buttons stays in the tab order and ⌘K could focus
+   * a search box nobody can see.
+   */
+  const railBtn = (active: boolean): string =>
       `size-9 flex items-center justify-center rounded-xl border-2 cursor-pointer transition-colors ${
         active ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70 text-ink-soft hover:text-ink"
       }`;
-    return (
-      <aside className="w-12 shrink-0 bg-paper-deep pegboard border-r-2 border-line flex flex-col items-center py-3 gap-2">
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          title="Expand sidebar (⌘\)"
-          aria-label="Expand sidebar"
-          className="cursor-pointer hover:brightness-105 transition-all"
-        >
-          <BrandLogo size="sm" className="hover:rotate-6 transition-transform" />
-        </button>
-        {/* §34: reachable in BOTH sidebar states. A feedback affordance that
-            disappears when the sidebar does is the one nobody finds when
-            something is wrong. */}
-        {feedbackAvailable && <FeedbackButton onClick={onFeedback} className={railBtn(false)} />}
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1.5 w-full pt-2">
-          {workspaces.map((ws) => (
-            <button
-              key={ws}
-              type="button"
-              onClick={onToggleCollapsed}
-              title={ws === activeWs ? `${basename(ws)} — showing` : basename(ws)}
-              aria-current={ws === activeWs ? "true" : undefined}
-              /* The BORDER carries "showing", not the size or shape: this is a
-                 column of tiles, and one of them growing would read as a
-                 different kind of thing. (`railBtn` above is size-9/rounded-xl
-                 and would do exactly that, so it is deliberately not reused.) */
-              className={`size-8 shrink-0 flex items-center justify-center rounded-lg border-2 bg-card text-base cursor-pointer ${
-                ws === activeWs ? "border-honey shadow-sticker" : "border-line hover:border-honey"
-              }`}
-            >
-              {/* Round 11: the emoji replaces two-letter initials — a column of
-                  `HA`/`FL`/`DE` was unreadable at 48px. */}
-              <span aria-hidden>{workspaceEmoji(ws)}</span>
-            </button>
-          ))}
-        </div>
-        {/* Round 8: ten destinations would be a wall in a 48px rail — one gear
-            expands the sidebar, exactly as the workspace initials above do. */}
-        <button type="button" onClick={onToggleCollapsed} title="Settings" aria-label="Settings" className={railBtn(false)}>
-          <GearIcon />
-        </button>
-      </aside>
-    );
-  }
 
   return (
-    <aside ref={asideRef} className="w-64 shrink-0 bg-paper-deep pegboard border-r-2 border-line flex flex-col">
-      {/* Brand */}
-      {/* §34: `gap-1`, not `gap-2`. Measured — with three icon buttons the row
-          needs exactly the width it has, and the 8px gaps were the 5px that
-          truncated the wordmark to "HappyV…". The name never truncates: it is
-          nine fixed characters, so it is `shrink-0` below and the row is sized
-          to fit it rather than the other way round. */}
-      <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-1">
-        <button
-          type="button"
-          onClick={() => onNavigate("chat")}
-          className="flex items-center gap-2.5 cursor-pointer group min-w-0"
-        >
-          <BrandLogo size="sm" className="group-hover:rotate-6 transition-transform" />
-          <div className="font-black text-lg tracking-tight leading-none shrink-0">
-            Happy<span className="text-tangerine">Vibe</span>
-          </div>
-        </button>
-        {feedbackAvailable && (
-          <FeedbackButton onClick={onFeedback} className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1" />
-        )}
-        {/* §7 round 18: the affordance stays, the input does not. Same idiom
-            as the collapse control beside it — icon button, shortcut in the
-            tooltip. */}
-        <button
-          type="button"
-          onClick={openSearch}
-          title="Find a session (⌘K)"
-          aria-label="Find a session"
-          className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1"
-        >
-          <SearchIcon />
-        </button>
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          title="Collapse sidebar (⌘\)"
-          aria-label="Collapse sidebar"
-          className="shrink-0 text-ink-soft hover:text-ink cursor-pointer text-lg leading-none px-1"
-        >
-          «
-        </button>
-      </div>
-
-      {/* §7 round 18: hidden at rest, expanding IN PLACE — exactly where it
-          used to live, so nothing moves but its existence. Blur while the
-          filter is non-empty KEEPS it open (losing an active filter because
-          you clicked a result would be hostile), while Esc collapses AND
-          clears. That last clause is what removes a piece of state instead of
-          adding one: the only route to "collapsed with a live filter" is Esc
-          with text in the field, so clearing there makes "a collapsed search
-          can never mean a filtered list" true by construction, where the
-          alternative was a permanent filter-active dot on the icon. */}
-      {searching && (
-        <div className="px-4 pb-2">
-          <input
-            ref={searchRef}
-            autoFocus
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            onBlur={() => { if (!filter) setSearching(false); }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") { setFilter(""); setSearching(false); }
-            }}
-            placeholder="Filter sessions…"
-            className="w-full rounded-lg bg-card border-2 border-line px-2.5 py-1.5 text-sm focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
-          />
-        </div>
-      )}
-
-      {/* Workspace tree. An explicit height ONLY while the Settings group is open
-          and the user has dragged the handle. Collapsed, the split has nothing to
-          divide — keeping the dragged height there left the session list clipped
-          mid-row with dead pegboard beneath it, which is the whole reason to
-          collapse the group in the first place. */}
+    <aside
+      ref={asideRef}
+      className={`${railCollapsed ? "w-12" : "w-64"} shrink-0 bg-paper-deep pegboard border-r-2 border-line grid overflow-hidden motion-safe:transition-[width] motion-safe:duration-180 motion-safe:ease-hv-out`}
+    >
+      {/* The collapsed rail. */}
       <div
-        ref={treeRef}
-        style={sized ? { flex: "0 0 auto", height: `${treeFrac * 100}%` } : undefined}
-        className="flex-1 min-h-32 overflow-y-auto px-4 pb-2"
+        inert={!railCollapsed || undefined}
+        aria-hidden={!railCollapsed || undefined}
+        className={`col-start-1 row-start-1 w-12 flex flex-col items-center py-3 gap-2 motion-safe:transition-opacity motion-safe:duration-100 ${railCollapsed ? "opacity-100" : "opacity-0 pointer-events-none"}`}
       >
-        <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">workspaces</span>
           <button
             type="button"
-            onClick={onAddWorkspace}
-            title="Add workspace folder"
-            className="text-xs font-bold text-tangerine hover:text-tangerine-deep cursor-pointer"
+            onClick={onToggleCollapsed}
+            title="Expand sidebar (⌘\)"
+            aria-label="Expand sidebar"
+            className="cursor-pointer hover:brightness-105 transition-all"
           >
-            + add
+            <BrandLogo size="sm" className="hover:rotate-6 transition-transform" />
           </button>
-        </div>
-        {workspaces.length === 0 && (
-          <div className="text-xs text-ink-soft px-1.5 py-1">Add a project folder to start.</div>
-        )}
-        {workspaces.map((ws) => {
-          const wsSessions = sessions
-            .filter((s) => s.workspaceId === ws && visible(s))
-            .sort(bySidebarOrder(live));
-          const isCollapsed = collapsed.has(ws) && !q; // filtering expands everything
-          return (
-            <div key={ws} className="mb-1.5">
-              <div className="group flex items-center gap-1.5 px-1.5 pt-1">
-                {/* Round 8: the name itself toggles the session list, and the
-                    arrow moved right with the other icons — but stays VISIBLE,
-                    since it reports state rather than offering an action. */}
-                <button
-                  type="button"
-                  onClick={() => toggle(ws)}
-                  aria-expanded={!isCollapsed}
-                  aria-current={ws === activeWs ? "true" : undefined}
-                  className="flex-1 min-w-0 flex items-center gap-1 font-bold text-sm text-left cursor-pointer"
-                  title={ws === activeWs ? `${ws} — showing` : ws}
-                >
-                  {/* Round 11: derived from the path — decoration, not data.
-                      §7 round 23: the honey chip marks the workspace on screen,
-                      the same mark the collapsed rail uses, so the two modes
-                      say "showing" the same way. Deliberately NOT the selected
-                      session's full honey row — that sits directly beneath this
-                      one, and two stacked honey blocks read as one region
-                      instead of group > item. */}
-                  <span className={`shrink-0 ${ws === activeWs ? "rounded bg-honey-soft px-0.5" : ""}`} aria-hidden>
-                    {workspaceEmoji(ws)}
-                  </span>
-                  {/* And the inactive ones recede, so the live one is the one
-                      your eye lands on without anything having to shout. */}
-                  <span className={`truncate ${ws === activeWs ? "" : "text-ink-soft"}`}>{basename(ws)}</span>
-                  <Chevron open={!isCollapsed} />
-                </button>
-                {/* V2.C2: hover icons live in reserved slots (invisible, not
-                    removed) LEFT of an always-visible, always-LAST "+" — zero
-                    layout shift, "+" position stable. */}
-                <button
-                  type="button"
-                  title="Workspace settings"
-                  onClick={() => onWorkspaceSettings(ws)}
-                  className="invisible group-hover:visible text-ink-soft hover:text-tangerine cursor-pointer shrink-0"
-                >
-                  <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
-                  </svg>
-                </button>
-                {/* Round 11: the "×" is gone. An unconfirmed one-click remove sat
-                    next to "New session"; removal now lives in a confirmed danger
-                    zone at the bottom of the workspace settings page (the gear). */}
-                <button
-                  type="button"
-                  title="New session"
-                  onClick={() => onNewSession(ws)}
-                  className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
-                >
-                  +
-                </button>
-              </div>
-              {/* §29 1b: the branch, on its own line under the name. Absent —
-                  not greyed — when this folder is not a repository. */}
-              {gitInfo?.[ws]?.branch && (
-                <button
-                  type="button"
-                  onClick={() => onBranchMenu?.(ws)}
-                  className="ml-6 mb-0.5 flex items-center gap-1 text-[10px] text-ink-soft hover:text-ink cursor-pointer max-w-full"
-                  title={`On branch ${gitInfo[ws].branch}${gitInfo[ws].changes !== null ? ` · ${gitInfo[ws].changes} changed` : ""}`}
-                >
-                  <span aria-hidden>⎇</span>
-                  <span className="truncate font-mono">{gitInfo[ws].branch}</span>
-                  {gitInfo[ws].changes !== null && gitInfo[ws].changes! > 0 && (
-                    <span className={gitInfo[ws].tint === "amber" ? "text-honey font-bold" : "text-leaf font-bold"}>
-                      · {gitInfo[ws].changes} {gitInfo[ws].changes === 1 ? "change" : "changes"}
-                    </span>
-                  )}
-                </button>
-              )}
-              {!isCollapsed && (
-                <div className="ml-3 flex flex-col gap-0.5">
-                  {wsSessions.length === 0 && (
-                    <div className="text-xs text-ink-soft/70 px-2 py-0.5">
-                      {q ? "No matching sessions." : "No sessions yet — hit + next to a workspace."}
-                    </div>
-                  )}
-                  {wsSessions.map((s) => (
-                    <SessionRow
-                      key={s.id}
-                      session={s}
-                      status={statuses[s.id]}
-                      pending={pending[s.id] ?? 0}
-                      planning={planning?.[s.id] ?? false}
-                      selected={view === "chat" && s.id === selectedId}
-                      open={openSessionIds.has(s.id)}
-                      onSelect={() => onSelectSession(s.id)}
-                      onRename={(title) => onRenameSession(s.id, title)}
-                      onDelete={() => setConfirmDelete(s)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {archivedCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowArchived((v) => !v)}
-            className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer px-1.5 py-1.5"
-          >
-            {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
-          </button>
-        )}
-      </div>
-
-      {/* Round 11: the drag handle. It sits ON the border the user pointed at, and
-          it is the only resizer in the app — hence hand-rolled rather than a dep.
-          §7 round 12: only while the group is OPEN. Collapsed, there is nothing
-          to size — a resize cursor on the edge of a single row is a control that
-          promises something it cannot do. */}
-      {/* Round 15: the app's two draggable dividers are now ONE control by feel —
-          a 10px hit strip you grab, with a 5px tint centred in it that you see.
-          Two jobs, two widths (App.tsx PaneDividers carries the same pair). The
-          old 6px bar painted its whole height, which read as a fat bar and was
-          still fiddly to catch.
-
-          `-mb-1.5` is what puts it ON the line rather than above it. The strip
-          is the last child of the TREE, and the visible rule is the footer's
-          own `border-t-2` — so at rest the band ended exactly where the border
-          began, and the hover tint appeared a clear 6px high, pointing at
-          nothing. The negative margin pulls the footer up by 6px so the strip's
-          centre and the border's centre coincide; `relative z-10` keeps the
-          footer, which comes later in the DOM, from painting over it. */}
-      {settingsOpen && (
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          title="Drag to resize"
-          onMouseDown={startResize}
-          onDoubleClick={() => setTreeFrac(AUTO)}
-          className="group relative z-10 mt-auto -mb-1.5 h-2.5 shrink-0 cursor-row-resize flex items-center"
-        >
-          <div className="h-[5px] w-full bg-transparent group-hover:bg-tangerine/40 transition-colors" />
-        </div>
-      )}
-
-      {/* Round 11 bounded this so ten nav rows could not squeeze the tree to its
-          floor. §7 round 12: it now TAKES the leftover space (flex-1) instead of
-          being content-sized. That is the reported "weird margin at the bottom":
-          once the handle gave the tree an explicit height, nothing claimed the
-          remainder, so the footer floated up and left dead space beneath it.
-          The same rule is what pins the collapsed `Settings ›` row to the very
-          bottom, with no extra case. */}
-      <div
-        className={`px-4 py-4 border-t-2 border-line min-h-0 flex flex-col ${
-          sized ? "flex-1" : "max-h-[60%] mt-auto"
-        }`}
-      >
-        <button
-          type="button"
-          onClick={onToggleSettingsOpen}
-          aria-expanded={settingsOpen}
-          className="w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
-        >
-          <GearIcon />
-          <span className="text-left">Settings</span>
-          <Chevron open={settingsOpen} />
-          <span className="flex-1" />
-        </button>
-        {settingsOpen && (
-          <div className="mt-1 flex flex-col min-h-0 overflow-y-auto">
-            {/* Pinned rows sit ABOVE every header, at the headers' own indent
-                so they read as top-level rather than as a group's first item.
-                Their font is the item font, so they are never mistaken for a
-                header either. */}
-            {PINNED.map((n) => (
+          {/* §34: reachable in BOTH sidebar states. A feedback affordance that
+              disappears when the sidebar does is the one nobody finds when
+              something is wrong. */}
+          {feedbackAvailable && <FeedbackButton onClick={onFeedback} className={railBtn(false)} />}
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1.5 w-full pt-2">
+            {workspaces.map((ws) => (
               <button
-                key={n.view}
+                key={ws}
                 type="button"
-                onClick={() => onNavigate(n.view)}
-                className={`w-full flex items-center gap-2.5 rounded-xl pl-5 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
-                  view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+                onClick={onToggleCollapsed}
+                title={ws === activeWs ? `${basename(ws)} — showing` : basename(ws)}
+                aria-current={ws === activeWs ? "true" : undefined}
+                /* The BORDER carries "showing", not the size or shape: this is a
+                   column of tiles, and one of them growing would read as a
+                   different kind of thing. (`railBtn` above is size-9/rounded-xl
+                   and would do exactly that, so it is deliberately not reused.) */
+                className={`size-8 shrink-0 flex items-center justify-center rounded-lg border-2 bg-card text-base cursor-pointer ${
+                  ws === activeWs ? "border-honey shadow-sticker" : "border-line hover:border-honey"
                 }`}
               >
-                <n.Icon />
-                <span className="flex-1 text-left">{n.label}</span>
+                {/* Round 11: the emoji replaces two-letter initials — a column of
+                    `HA`/`FL`/`DE` was unreadable at 48px. */}
+                <span aria-hidden>{workspaceEmoji(ws)}</span>
               </button>
             ))}
-            {GROUPS.map((g) => {
-              const open = openGroups.has(g.id);
-              return (
-                <div key={g.id}>
-                  {/* A header TOGGLES. There is no page behind it — the human
-                      altitude sits above the real names, never instead of
-                      them, so a header is not a destination. */}
+          </div>
+          {/* Round 8: ten destinations would be a wall in a 48px rail — one gear
+              expands the sidebar, exactly as the workspace initials above do. */}
+          <button type="button" onClick={onToggleCollapsed} title="Settings" aria-label="Settings" className={railBtn(false)}>
+            <GearIcon />
+          </button>
+      </div>
+      {/* The expanded sidebar. `min-w-64` keeps its contents from reflowing
+          while the aside animates through the narrow widths between. */}
+      <div
+        inert={railCollapsed || undefined}
+        aria-hidden={railCollapsed || undefined}
+        className={`col-start-1 row-start-1 w-64 min-w-64 flex flex-col min-h-0 motion-safe:transition-opacity motion-safe:duration-100 ${railCollapsed ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+      >
+        {/* Brand */}
+        {/* §34: `gap-1`, not `gap-2`. Measured — with three icon buttons the row
+            needs exactly the width it has, and the 8px gaps were the 5px that
+            truncated the wordmark to "HappyV…". The name never truncates: it is
+            nine fixed characters, so it is `shrink-0` below and the row is sized
+            to fit it rather than the other way round. */}
+        <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-1">
+          <button
+            type="button"
+            onClick={() => onNavigate("chat")}
+            className="flex items-center gap-2.5 cursor-pointer group min-w-0"
+          >
+            <BrandLogo size="sm" className="group-hover:rotate-6 transition-transform" />
+            <div className="font-black text-lg tracking-tight leading-none shrink-0">
+              Happy<span className="text-tangerine">Vibe</span>
+            </div>
+          </button>
+          {feedbackAvailable && (
+            <FeedbackButton onClick={onFeedback} className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1" />
+          )}
+          {/* §7 round 18: the affordance stays, the input does not. Same idiom
+              as the collapse control beside it — icon button, shortcut in the
+              tooltip. */}
+          <button
+            type="button"
+            onClick={openSearch}
+            title="Find a session (⌘K)"
+            aria-label="Find a session"
+            className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1"
+          >
+            <SearchIcon />
+          </button>
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            title="Collapse sidebar (⌘\)"
+            aria-label="Collapse sidebar"
+            className="shrink-0 text-ink-soft hover:text-ink cursor-pointer text-lg leading-none px-1"
+          >
+            «
+          </button>
+        </div>
+
+        {/* §7 round 18: hidden at rest, expanding IN PLACE — exactly where it
+            used to live, so nothing moves but its existence. Blur while the
+            filter is non-empty KEEPS it open (losing an active filter because
+            you clicked a result would be hostile), while Esc collapses AND
+            clears. That last clause is what removes a piece of state instead of
+            adding one: the only route to "collapsed with a live filter" is Esc
+            with text in the field, so clearing there makes "a collapsed search
+            can never mean a filtered list" true by construction, where the
+            alternative was a permanent filter-active dot on the icon. */}
+        {searching && (
+          <div className="px-4 pb-2">
+            <input
+              ref={searchRef}
+              autoFocus
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              onBlur={() => { if (!filter) setSearching(false); }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { setFilter(""); setSearching(false); }
+              }}
+              placeholder="Filter sessions…"
+              className="w-full rounded-lg bg-card border-2 border-line px-2.5 py-1.5 text-sm focus:outline-none focus:border-tangerine placeholder:text-ink-soft/60"
+            />
+          </div>
+        )}
+
+        {/* Workspace tree. An explicit height ONLY while the Settings group is open
+            and the user has dragged the handle. Collapsed, the split has nothing to
+            divide — keeping the dragged height there left the session list clipped
+            mid-row with dead pegboard beneath it, which is the whole reason to
+            collapse the group in the first place. */}
+        <div
+          ref={treeRef}
+          style={sized ? { flex: "0 0 auto", height: `${treeFrac * 100}%` } : undefined}
+          className="flex-1 min-h-32 overflow-y-auto px-4 pb-2"
+        >
+          <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">workspaces</span>
+            <button
+              type="button"
+              onClick={onAddWorkspace}
+              title="Add workspace folder"
+              className="text-xs font-bold text-tangerine hover:text-tangerine-deep cursor-pointer"
+            >
+              + add
+            </button>
+          </div>
+          {workspaces.length === 0 && (
+            <div className="text-xs text-ink-soft px-1.5 py-1">Add a project folder to start.</div>
+          )}
+          {workspaces.map((ws) => {
+            const wsSessions = sessions
+              .filter((s) => s.workspaceId === ws && visible(s))
+              .sort(bySidebarOrder(live));
+            const isCollapsed = collapsed.has(ws) && !q; // filtering expands everything
+            return (
+              <div key={ws} className="mb-1.5">
+                <div className="group flex items-center gap-1.5 px-1.5 pt-1">
+                  {/* Round 8: the name itself toggles the session list, and the
+                      arrow moved right with the other icons — but stays VISIBLE,
+                      since it reports state rather than offering an action. */}
                   <button
                     type="button"
-                    onClick={() => onToggleGroup(g.id)}
-                    aria-expanded={open}
-                    className="w-full flex items-center gap-2 rounded-xl pl-5 pr-3.5 py-2 text-[11px] font-bold uppercase tracking-widest text-ink-soft border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
+                    onClick={() => toggle(ws)}
+                    aria-expanded={!isCollapsed}
+                    aria-current={ws === activeWs ? "true" : undefined}
+                    className="flex-1 min-w-0 flex items-center gap-1 font-bold text-sm text-left cursor-pointer"
+                    title={ws === activeWs ? `${ws} — showing` : ws}
                   >
-                    <span className="flex-1 text-left">{g.label}</span>
-                    <Chevron open={open} />
+                    {/* Round 11: derived from the path — decoration, not data.
+                        §7 round 23: the honey chip marks the workspace on screen,
+                        the same mark the collapsed rail uses, so the two modes
+                        say "showing" the same way. Deliberately NOT the selected
+                        session's full honey row — that sits directly beneath this
+                        one, and two stacked honey blocks read as one region
+                        instead of group > item. */}
+                    <span className={`shrink-0 ${ws === activeWs ? "rounded bg-honey-soft px-0.5" : ""}`} aria-hidden>
+                      {workspaceEmoji(ws)}
+                    </span>
+                    {/* And the inactive ones recede, so the live one is the one
+                        your eye lands on without anything having to shout. */}
+                    <span className={`truncate ${ws === activeWs ? "" : "text-ink-soft"}`}>{basename(ws)}</span>
+                    <Chevron open={!isCollapsed} />
                   </button>
-                  {open &&
-                    NAV.filter((n) => n.group === g.id).map((n) => (
-                      <button
-                        key={n.view}
-                        type="button"
-                        onClick={() => onNavigate(n.view)}
-                        className={`w-full flex items-center gap-2.5 rounded-xl pl-8 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
-                          view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
-                        }`}
-                      >
-                        <n.Icon />
-                        <span className="flex-1 text-left">{n.label}</span>
-                      </button>
-                    ))}
+                  {/* V2.C2: hover icons live in reserved slots (invisible, not
+                      removed) LEFT of an always-visible, always-LAST "+" — zero
+                      layout shift, "+" position stable. */}
+                  <button
+                    type="button"
+                    title="Workspace settings"
+                    onClick={() => onWorkspaceSettings(ws)}
+                    className="invisible group-hover:visible text-ink-soft hover:text-tangerine cursor-pointer shrink-0"
+                  >
+                    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" />
+                    </svg>
+                  </button>
+                  {/* Round 11: the "×" is gone. An unconfirmed one-click remove sat
+                      next to "New session"; removal now lives in a confirmed danger
+                      zone at the bottom of the workspace settings page (the gear). */}
+                  <button
+                    type="button"
+                    title="New session"
+                    onClick={() => onNewSession(ws)}
+                    className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
+                  >
+                    +
+                  </button>
                 </div>
-              );
-            })}
+                {/* §29 1b: the branch, on its own line under the name. Absent —
+                    not greyed — when this folder is not a repository. */}
+                {gitInfo?.[ws]?.branch && (
+                  <button
+                    type="button"
+                    onClick={() => onBranchMenu?.(ws)}
+                    className="ml-6 mb-0.5 flex items-center gap-1 text-[10px] text-ink-soft hover:text-ink cursor-pointer max-w-full"
+                    title={`On branch ${gitInfo[ws].branch}${gitInfo[ws].changes !== null ? ` · ${gitInfo[ws].changes} changed` : ""}`}
+                  >
+                    <span aria-hidden>⎇</span>
+                    <span className="truncate font-mono">{gitInfo[ws].branch}</span>
+                    {gitInfo[ws].changes !== null && gitInfo[ws].changes! > 0 && (
+                      <span className={gitInfo[ws].tint === "amber" ? "text-honey font-bold" : "text-leaf font-bold"}>
+                        · {gitInfo[ws].changes} {gitInfo[ws].changes === 1 ? "change" : "changes"}
+                      </span>
+                    )}
+                  </button>
+                )}
+                {!isCollapsed && (
+                  <div className="ml-3 flex flex-col gap-0.5">
+                    {wsSessions.length === 0 && (
+                      <div className="text-xs text-ink-soft/70 px-2 py-0.5">
+                        {q ? "No matching sessions." : "No sessions yet — hit + next to a workspace."}
+                      </div>
+                    )}
+                    {wsSessions.map((s) => (
+                      <SessionRow
+                        key={s.id}
+                        session={s}
+                        status={statuses[s.id]}
+                        pending={pending[s.id] ?? 0}
+                        planning={planning?.[s.id] ?? false}
+                        selected={view === "chat" && s.id === selectedId}
+                        open={openSessionIds.has(s.id)}
+                        onSelect={() => onSelectSession(s.id)}
+                        onRename={(title) => onRenameSession(s.id, title)}
+                        onDelete={() => setConfirmDelete(s)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {archivedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowArchived((v) => !v)}
+              className="text-xs font-bold text-ink-soft hover:text-ink cursor-pointer px-1.5 py-1.5"
+            >
+              {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
+            </button>
+          )}
+        </div>
+
+        {/* Round 11: the drag handle. It sits ON the border the user pointed at, and
+            it is the only resizer in the app — hence hand-rolled rather than a dep.
+            §7 round 12: only while the group is OPEN. Collapsed, there is nothing
+            to size — a resize cursor on the edge of a single row is a control that
+            promises something it cannot do. */}
+        {/* Round 15: the app's two draggable dividers are now ONE control by feel —
+            a 10px hit strip you grab, with a 5px tint centred in it that you see.
+            Two jobs, two widths (App.tsx PaneDividers carries the same pair). The
+            old 6px bar painted its whole height, which read as a fat bar and was
+            still fiddly to catch.
+
+            `-mb-1.5` is what puts it ON the line rather than above it. The strip
+            is the last child of the TREE, and the visible rule is the footer's
+            own `border-t-2` — so at rest the band ended exactly where the border
+            began, and the hover tint appeared a clear 6px high, pointing at
+            nothing. The negative margin pulls the footer up by 6px so the strip's
+            centre and the border's centre coincide; `relative z-10` keeps the
+            footer, which comes later in the DOM, from painting over it. */}
+        {settingsOpen && (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            title="Drag to resize"
+            onMouseDown={startResize}
+            onDoubleClick={() => setTreeFrac(AUTO)}
+            className="group relative z-10 mt-auto -mb-1.5 h-2.5 shrink-0 cursor-row-resize flex items-center"
+          >
+            <div className="h-[5px] w-full bg-transparent group-hover:bg-tangerine/40 transition-colors" />
+          </div>
+        )}
+
+        {/* Round 11 bounded this so ten nav rows could not squeeze the tree to its
+            floor. §7 round 12: it now TAKES the leftover space (flex-1) instead of
+            being content-sized. That is the reported "weird margin at the bottom":
+            once the handle gave the tree an explicit height, nothing claimed the
+            remainder, so the footer floated up and left dead space beneath it.
+            The same rule is what pins the collapsed `Settings ›` row to the very
+            bottom, with no extra case. */}
+        <div
+          className={`px-4 py-4 border-t-2 border-line min-h-0 flex flex-col ${
+            sized ? "flex-1" : "max-h-[60%] mt-auto"
+          }`}
+        >
+          <button
+            type="button"
+            onClick={onToggleSettingsOpen}
+            aria-expanded={settingsOpen}
+            className="w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
+          >
+            <GearIcon />
+            <span className="text-left">Settings</span>
+            <Chevron open={settingsOpen} />
+            <span className="flex-1" />
+          </button>
+          {settingsOpen && (
+            <div className="mt-1 flex flex-col min-h-0 overflow-y-auto">
+              {/* Pinned rows sit ABOVE every header, at the headers' own indent
+                  so they read as top-level rather than as a group's first item.
+                  Their font is the item font, so they are never mistaken for a
+                  header either. */}
+              {PINNED.map((n) => (
+                <button
+                  key={n.view}
+                  type="button"
+                  onClick={() => onNavigate(n.view)}
+                  className={`w-full flex items-center gap-2.5 rounded-xl pl-5 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
+                    view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+                  }`}
+                >
+                  <n.Icon />
+                  <span className="flex-1 text-left">{n.label}</span>
+                </button>
+              ))}
+              {GROUPS.map((g) => {
+                const open = openGroups.has(g.id);
+                return (
+                  <div key={g.id}>
+                    {/* A header TOGGLES. There is no page behind it — the human
+                        altitude sits above the real names, never instead of
+                        them, so a header is not a destination. */}
+                    <button
+                      type="button"
+                      onClick={() => onToggleGroup(g.id)}
+                      aria-expanded={open}
+                      className="w-full flex items-center gap-2 rounded-xl pl-5 pr-3.5 py-2 text-[11px] font-bold uppercase tracking-widest text-ink-soft border-2 border-transparent hover:bg-card/70 cursor-pointer transition-colors"
+                    >
+                      <span className="flex-1 text-left">{g.label}</span>
+                      <Chevron open={open} />
+                    </button>
+                    {open &&
+                      NAV.filter((n) => n.group === g.id).map((n) => (
+                        <button
+                          key={n.view}
+                          type="button"
+                          onClick={() => onNavigate(n.view)}
+                          className={`w-full flex items-center gap-2.5 rounded-xl pl-8 pr-3.5 py-2 text-sm font-bold border-2 cursor-pointer transition-colors ${
+                            view === n.view ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+                          }`}
+                        >
+                          <n.Icon />
+                          <span className="flex-1 text-left">{n.label}</span>
+                        </button>
+                      ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/**
+          * V2.C2: same warm dialog pattern as CompactDialog.
+          *
+          * Round 15: it asks the two-outcome question rather than only the
+          * destructive one — the same shape §5 uses for removing a workspace,
+          * because "get this out of my list" and "destroy this conversation" are
+          * different wishes and the trash icon cannot tell which one you meant.
+          * Archive leads: it is the reversible one.
+          */}
+        {confirmDelete && (
+          <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
+            <div
+              className="hv-dialog-flow w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <h2 className="font-black text-xl">
+                {confirmDelete.archived ? "Restore or delete?" : "Archive or delete?"}
+              </h2>
+              <p className="text-sm text-ink-soft mt-2">&ldquo;{confirmDelete.title}&rdquo;</p>
+              <ul className="mt-3 text-sm text-ink-soft space-y-1.5">
+                <li>
+                  <b className="text-ink">{confirmDelete.archived ? "Unarchive" : "Archive"}</b> —{" "}
+                  {confirmDelete.archived
+                    ? "put it back in the list. Nothing is lost."
+                    : "hide it from the list. You can bring it back from “Show archived”."}
+                </li>
+                <li>
+                  <b className="text-ink">Delete permanently</b> — the conversation, its session file and its sub-agent transcripts are gone for good.
+                </li>
+              </ul>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(null)}
+                  className="rounded-xl border-2 border-line-strong text-ink-soft font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onArchiveSession(confirmDelete.id, !confirmDelete.archived);
+                    setConfirmDelete(null);
+                  }}
+                  className="rounded-xl border-2 border-line-strong bg-card text-ink font-bold text-sm px-4 py-2 shadow-sticker hover:bg-paper-deep/40 cursor-pointer"
+                >
+                  {confirmDelete.archived ? "Unarchive" : "Archive"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeleteSession(confirmDelete.id);
+                    setConfirmDelete(null);
+                  }}
+                  className="rounded-xl bg-berry text-paper font-bold text-sm px-5 py-2 border-2 border-berry shadow-sticker hover:brightness-105 cursor-pointer"
+                >
+                  Delete permanently
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
-
-      {/**
-        * V2.C2: same warm dialog pattern as CompactDialog.
-        *
-        * Round 15: it asks the two-outcome question rather than only the
-        * destructive one — the same shape §5 uses for removing a workspace,
-        * because "get this out of my list" and "destroy this conversation" are
-        * different wishes and the trash icon cannot tell which one you meant.
-        * Archive leads: it is the reversible one.
-        */}
-      {confirmDelete && (
-        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
-          <div
-            className="hv-dialog-flow w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <h2 className="font-black text-xl">
-              {confirmDelete.archived ? "Restore or delete?" : "Archive or delete?"}
-            </h2>
-            <p className="text-sm text-ink-soft mt-2">&ldquo;{confirmDelete.title}&rdquo;</p>
-            <ul className="mt-3 text-sm text-ink-soft space-y-1.5">
-              <li>
-                <b className="text-ink">{confirmDelete.archived ? "Unarchive" : "Archive"}</b> —{" "}
-                {confirmDelete.archived
-                  ? "put it back in the list. Nothing is lost."
-                  : "hide it from the list. You can bring it back from “Show archived”."}
-              </li>
-              <li>
-                <b className="text-ink">Delete permanently</b> — the conversation, its session file and its sub-agent transcripts are gone for good.
-              </li>
-            </ul>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(null)}
-                className="rounded-xl border-2 border-line-strong text-ink-soft font-bold text-sm px-4 py-2 hover:bg-paper-deep/40 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onArchiveSession(confirmDelete.id, !confirmDelete.archived);
-                  setConfirmDelete(null);
-                }}
-                className="rounded-xl border-2 border-line-strong bg-card text-ink font-bold text-sm px-4 py-2 shadow-sticker hover:bg-paper-deep/40 cursor-pointer"
-              >
-                {confirmDelete.archived ? "Unarchive" : "Archive"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onDeleteSession(confirmDelete.id);
-                  setConfirmDelete(null);
-                }}
-                className="rounded-xl bg-berry text-paper font-bold text-sm px-5 py-2 border-2 border-berry shadow-sticker hover:brightness-105 cursor-pointer"
-              >
-                Delete permanently
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </aside>
   );
 }
