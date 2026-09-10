@@ -228,7 +228,7 @@ function parsePlanNotify(r: { method?: string; message?: string }): Record<strin
 
 /** §26 part 2: the blocking agent-terminal inputs. Main ALWAYS answers one. */
 function parseTerminalReq(r: { method?: string; title?: string }):
-  | { kind: "run"; command: string; terminalId?: string; intent?: string }
+  | { kind: "run"; command: string; terminalId?: string; intent?: string; toolCallId?: string }
   | { kind: "read"; terminalId: string; lines?: number; waitMs?: number }
   | { kind: "kill"; terminalId: string }
   | null {
@@ -241,6 +241,8 @@ function parseTerminalReq(r: { method?: string; title?: string }):
         command: p.command,
         terminalId: typeof p.terminalId === "string" ? p.terminalId : undefined,
         intent: typeof p.intent === "string" ? p.intent : undefined,
+        // A1: the join between this call's transcript card and its rail circle.
+        toolCallId: typeof p.toolCallId === "string" ? p.toolCallId : undefined,
       };
     }
     if (p.kind === "hv.terminal-read" && typeof p.terminalId === "string") {
@@ -1736,6 +1738,10 @@ export function registerIpc(
                   title: res.title,
                   command: term.command,
                   intent: term.intent,
+                  // A1: echoed straight back. This notify is sent BEFORE the
+                  // tool result, so the renderer holds the join before the card
+                  // it belongs to has even settled.
+                  toolCallId: term.toolCallId,
                   workspaceId: wsId,
                 });
               }

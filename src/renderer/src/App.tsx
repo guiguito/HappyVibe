@@ -200,7 +200,7 @@ export default function App(): React.JSX.Element {
    * which the push channel keeps live, so an exited terminal drops out of the
    * card stack with no extra bookkeeping.
    */
-  const [agentTerms, setAgentTerms] = useState<Record<string, Record<string, { intent: string; startedAt: number }>>>({});
+  const [agentTerms, setAgentTerms] = useState<Record<string, Record<string, { intent: string; startedAt: number; toolCallId?: string }>>>({});
   /**
    * §28: every live browser pane, keyed by id. Main owns the panes and pushes
    * state (url/title/loading/blocked/crashed) — the renderer never derives it,
@@ -1132,7 +1132,10 @@ export default function App(): React.JSX.Element {
             );
             setAgentTerms((p) => ({
               ...p,
-              [sid]: { ...(p[sid] ?? {}), [terminalId]: { intent: termEv.intent ?? "", startedAt: Date.now() } },
+              // A1: `toolCallId` is kept here because this notify is the ONLY
+              // moment it and the terminal id are ever seen together — the same
+              // shape of trap as §12's `asyncCards`, one feature over.
+              [sid]: { ...(p[sid] ?? {}), [terminalId]: { intent: termEv.intent ?? "", startedAt: Date.now(), toolCallId: termEv.toolCallId } },
             }));
           } else if (termEv.terminalId) {
             dropAgentTerminal(sid, termEv.terminalId);
@@ -3324,7 +3327,9 @@ export default function App(): React.JSX.Element {
             // terminal leaves the card stack with no extra bookkeeping.
             terminalRuns={Object.entries(agentTerms[sid] ?? {}).flatMap(([id, meta]) => {
               const info = terminals[id];
-              return info ? [{ terminalId: id, title: info.title, running: info.running, intent: meta.intent, startedAt: meta.startedAt }] : [];
+              return info
+                ? [{ terminalId: id, title: info.title, running: info.running, intent: meta.intent, startedAt: meta.startedAt, toolCallId: meta.toolCallId }]
+                : [];
             })}
             terminalSettings={termSettings}
             onStopTerminal={(id) => {

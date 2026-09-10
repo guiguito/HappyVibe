@@ -423,6 +423,10 @@ export interface TerminalEvent {
   terminalId?: string;
   title?: string;
   intent?: string;
+  /** A1 (2026-09-10): the `terminal_run` call that opened it — the join that
+   *  lets the rail's circle and this call's transcript card find each other.
+   *  Absent for a terminal the USER opened, which has no tool call. */
+  toolCallId?: string;
   workspaceId?: string;
 }
 
