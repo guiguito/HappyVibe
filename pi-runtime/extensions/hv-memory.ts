@@ -53,13 +53,15 @@ export function readIndex(dir: string | undefined): string {
  */
 export function renderMemorySection(o: { append: string; global: string; workspace: string | null }): string {
   const append = (o.append ?? "").trim();
-  const policy = "<memory-policy>\n" + MEMORY_POLICY + (append ? "\n" + append : "") + "\n</memory-policy>";
+  // X4 (2026-09-10): one delimiter family — an element rather than a markdown
+  // heading, underscore-named like Pi's own <project_instructions>.
+  const policy = "<memory_policy>\n" + MEMORY_POLICY + (append ? "\n" + append : "") + "\n</memory_policy>";
   const g = `<memory scope="global" trust="untrusted">\n${o.global.trim() || "No global memories yet."}\n</memory>`;
   const w =
     o.workspace === null
       ? ""
       : `\n\n<memory scope="workspace" trust="untrusted">\n${o.workspace.trim() || "No workspace memories yet."}\n</memory>`;
-  return "\n\n## Memory\n\n" + policy + "\n\n" + g + w;
+  return "\n\n<happyvibe_memory>\n" + policy + "\n\n" + g + w + "\n</happyvibe_memory>";
 }
 
 export interface ScopeWeight {

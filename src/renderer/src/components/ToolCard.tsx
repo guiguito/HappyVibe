@@ -390,14 +390,17 @@ export function outputTail(text: string, lines = 3): string[] {
  * The card-face preview for one tool's output.
  *
  * Two things it must get right for §32. The direction is per tool (above), and
- * the UNTRUSTED banner is dropped: that line is addressed to the MODEL, and
+ * the untrusted WRAPPER is dropped: those lines are addressed to the MODEL, and
  * spending one of three preview lines telling the user their page is untrusted
  * pushes the char count — the reason the preview exists — off the card.
+ * (X5, 2026-09-10: the marker became an element with an opening and a closing
+ * line, so both go; the old `[UNTRUSTED` prefix is still matched because a
+ * reopened session can carry results written before the change.)
  */
 export function previewLines(toolName: string, text: string, lines = 3): string[] {
   const kept = text
     .split("\n")
-    .filter((l) => l.trim().length > 0 && !l.startsWith("[UNTRUSTED"));
+    .filter((l) => l.trim().length > 0 && !l.startsWith("[UNTRUSTED") && !/^<\/?untrusted[\s>]/.test(l));
   return HEAD_PREVIEW_TOOLS.has(toolName) ? kept.slice(0, lines) : kept.slice(-lines);
 }
 

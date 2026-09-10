@@ -12,7 +12,7 @@ import {
   createChildOutputStore, rememberChildOutputs, substituteDeliveries,
 } from "./hv-subagent-delivery";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
-import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER } from "./hv-browser";
+import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, wrapUntrusted } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
 import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
 import { unwrapMcpCall } from "./hv-mcp";
@@ -115,17 +115,23 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
   return JSON.stringify(factual).slice(0, 300);
 }
 
+/** The tool's own `url` argument when it has one — web_search and browser_close do not. */
+const asUrl = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
+
 /**
  * §28: the same contract as terminalReply, plus two things only the browser has.
  *
- * `untrusted` marks a payload as PAGE-DERIVED, and the banner goes on in front
- * of it — prompt injection has no mechanical fix, so the least we do is never
- * hand the model page bytes that look like our own words. `imageBase64` becomes
+ * `untrusted` marks a payload as PAGE-DERIVED and the bytes are WRAPPED in an
+ * element naming their source (X5) — prompt injection has no mechanical fix, so
+ * the least we do is never hand the model page bytes that look like our own
+ * words, and never leave it guessing where they stop. `source` is the caller's,
+ * not the payload's: this one helper serves both the browser tools and the web
+ * tools, and only the caller knows which it is. `imageBase64` becomes
  * a real image content block: AgentToolResult.content is (TextContent |
  * ImageContent)[], verified in pi-agent-core's types.d.ts, so a vision model
  * gets the screenshot itself rather than a description of one.
  */
-function browserReply(raw: unknown): {
+function browserReply(raw: unknown, source: "web" | "browser", url?: string): {
   content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
   details: Record<string, unknown>;
 } {
@@ -144,7 +150,7 @@ function browserReply(raw: unknown): {
     }
     const text = p.text ?? JSON.stringify(p);
     const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
-      { type: "text", text: p.untrusted ? `${UNTRUSTED_BANNER}${text}` : text },
+      { type: "text", text: p.untrusted ? wrapUntrusted(text, source, url) : text },
     ];
     if (typeof p.imageBase64 === "string" && p.imageBase64) {
       content.push({ type: "image", data: p.imageBase64, mimeType: "image/png" });
@@ -873,7 +879,12 @@ export default function (pi: ExtensionAPI) {
           workspace: memoryWorkspaceDir ? readIndex(memoryWorkspaceDir) : null,
         })
       : "";
-    const injected = sp + section + agentsSection + planSection + terminalSection + webSection + memorySection;
+    // X6 (2026-09-10): STATIC-BEFORE-DYNAMIC, for the provider's prefix cache.
+    // The roster, plan, steer lines and memory policy do not change within a
+    // session; the memory INDEX changes on every save and the nested section
+    // whenever a new subdirectory is touched. Those two used to sit first and
+    // last-but-inside, so either one invalidated the whole HappyVibe tail.
+    const injected = sp + agentsSection + planSection + terminalSection + webSection + memorySection + section;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -1863,7 +1874,8 @@ export default function (pi: ExtensionAPI) {
   const browserInput = async (
     ctx: { ui: { input(title: string, initial: string): Promise<unknown> } },
     payload: Record<string, unknown>,
-  ): Promise<Awaited<ReturnType<typeof browserReply>>> => browserReply(await ctx.ui.input(JSON.stringify(payload), ""));
+  ): Promise<Awaited<ReturnType<typeof browserReply>>> =>
+    browserReply(await ctx.ui.input(JSON.stringify(payload), ""), "browser", asUrl(payload.url));
 
   pi.registerTool({
     name: "browser_open",
@@ -2044,7 +2056,7 @@ export default function (pi: ExtensionAPI) {
     const onAbort = (): void => ctx.ui.notify(JSON.stringify({ kind: "hv.web-cancel", toolCallId }), "info");
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      return browserReply(await ctx.ui.input(JSON.stringify({ ...payload, toolCallId }), ""));
+      return browserReply(await ctx.ui.input(JSON.stringify({ ...payload, toolCallId }), ""), "web", asUrl(payload.url));
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }

@@ -10,7 +10,11 @@ import { gatePlanCall } from "../pi-runtime/extensions/hv-plan";
 describe("renderMemorySection", () => {
   it("policy, then global, then workspace — the more specific voice is read LAST (§15's rule)", () => {
     const s = renderMemorySection({ append: "", global: "## user\n- a — b", workspace: "## project\n- c — d" });
-    expect(s.indexOf("<memory-policy>")).toBeLessThan(s.indexOf('<memory scope="global"'));
+    expect(s.indexOf("<memory_policy>")).toBeLessThan(s.indexOf('<memory scope="global"'));
+    // X4: one element per section, underscore-named like Pi's own tags.
+    expect(s.trimStart().startsWith("<happyvibe_memory>")).toBe(true);
+    expect(s.trimEnd().endsWith("</happyvibe_memory>")).toBe(true);
+    expect(s).not.toContain("## Memory");
     expect(s.indexOf('<memory scope="global"')).toBeLessThan(s.indexOf('<memory scope="workspace"'));
     expect(s).toContain("- a — b");
     expect(s).toContain("- c — d");
@@ -36,7 +40,7 @@ describe("renderMemorySection", () => {
 
   it("the append lands INSIDE the policy block, after the policy — never replacing it", () => {
     const s = renderMemorySection({ append: "Never save anything about food.", global: "", workspace: "" });
-    expect(s).toMatch(/<memory-policy>[\s\S]*Never save anything about food\.\n<\/memory-policy>/);
+    expect(s).toMatch(/<memory_policy>[\s\S]*Never save anything about food\.\n<\/memory_policy>/);
     expect(s).toContain(MEMORY_POLICY);
   });
 

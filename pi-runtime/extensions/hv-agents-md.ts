@@ -101,12 +101,16 @@ export function renderNestedSection(
       note = `\n\n[truncated at ${NESTED_FILE_CAP} chars]`;
     }
     const dir = path.relative(root, path.dirname(p)) || ".";
-    blocks.push(`### ${dir}/AGENTS.md (applies to files under ${dir}/)\n\n${content.trimEnd()}${note}`);
+    // A8 (2026-09-10): Pi wraps the ROOT AGENTS.md as <project_instructions
+    // path=…> (dist/core/system-prompt.js). Ours used to arrive as a markdown
+    // heading, so the model saw two families for one kind of thing.
+    blocks.push(
+      `<project_instructions path="${dir}/AGENTS.md" applies_to="${dir}/">\n${content.trimEnd()}${note}\n</project_instructions>`,
+    );
   }
   if (blocks.length === 0) return "";
   return (
-    "\n\n## Nested AGENTS.md (scoped instructions)\n\n" +
-    "These AGENTS.md files live in subdirectories this session has touched. " +
+    "\n\nThese AGENTS.md files live in subdirectories this session has touched. " +
     "Each applies to work under its own directory; the closest file takes precedence.\n\n" +
     blocks.join("\n\n")
   );

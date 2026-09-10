@@ -5,7 +5,7 @@ import os from "node:os";
 import { PiClient } from "../src/main/pi/PiClient";
 import { askUntil } from "./reask";
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
-import { UNTRUSTED_BANNER } from "../pi-runtime/extensions/hv-browser";
+import { UNTRUSTED_OPEN } from "../pi-runtime/extensions/hv-browser";
 import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 
 let client: PiClient;
@@ -166,7 +166,10 @@ test.skipIf(!KEY)("web_fetch gates as browser:<host>, shows the URL, and the ban
   expect(String(req.toolCallId).length).toBeGreaterThan(0);
 
   // Page bytes must never reach the model dressed as our own words.
-  expect(h.results.some((t) => t.startsWith(UNTRUSTED_BANNER)), "the untrusted banner did not reach the tool result").toBe(true);
+  expect(
+    h.results.some((t) => t.startsWith(`${UNTRUSTED_OPEN} source="web"`) && t.trimEnd().endsWith("</untrusted>")),
+    "the untrusted wrapper did not reach the tool result, open and closed",
+  ).toBe(true);
 }, 240_000);
 
 /** Deny blocks the call outright — the envelope never reaches main. */

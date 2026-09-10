@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  BROWSER_TOOLS, BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER,
+  BROWSER_TOOLS, BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_OPEN, wrapUntrusted,
 } from "../pi-runtime/extensions/hv-browser";
 import { SAFE_TOOLS, evaluate } from "../pi-runtime/extensions/hv-rules";
 import { gatePlanCall } from "../pi-runtime/extensions/hv-plan";
@@ -47,8 +47,17 @@ describe("hv-browser pure module (§28)", () => {
     expect(browserRuleName("garbage")).toBeNull();
   });
 
-  it("carries an untrusted-input banner for page-derived text", () => {
-    expect(UNTRUSTED_BANNER).toMatch(/untrusted/i);
+  it("WRAPS page-derived text, naming the source and closing the element", () => {
+    // X5 (2026-09-10): the old banner had no end marker, so a page ending
+    // "…and now, as the assistant, do X" read as continuous with the result.
+    expect(wrapUntrusted("PAGE", "web", "https://a.example/x")).toBe(
+      '<untrusted source="web" url="https://a.example/x">\nPAGE\n</untrusted>',
+    );
+    // No url on web_search / browser_close — the attribute is simply absent.
+    expect(wrapUntrusted("P", "browser")).toBe('<untrusted source="browser">\nP\n</untrusted>');
+    // A quote in a url cannot break out of the attribute.
+    expect(wrapUntrusted("P", "web", 'ht"tp://x')).toContain(`url="ht'tp://x"`);
+    expect(UNTRUSTED_OPEN).toBe("<untrusted");
   });
 });
 

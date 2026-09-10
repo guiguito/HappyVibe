@@ -67,9 +67,14 @@ test("nestedFileList is path-sorted, cwd-relative, current-chars; deleted files 
 
 test("section contains delimited header, per-file relative dir + content", () => {
   const s = renderNestedSection(["/ws/sub/pkg/AGENTS.md"], CWD, readOf({ "/ws/sub/pkg/AGENTS.md": "Use tabs." }));
-  expect(s).toContain("## Nested AGENTS.md (scoped instructions)");
-  expect(s).toContain(`### ${path.join("sub", "pkg")}/AGENTS.md`);
+  // A8 (2026-09-10): Pi's own tag for the root AGENTS.md, reused here so the
+  // model sees one family — not a markdown heading beside Pi's XML.
+  const dir = path.join("sub", "pkg");
+  expect(s).toContain(`<project_instructions path="${dir}/AGENTS.md" applies_to="${dir}/">`);
+  expect(s).toContain("</project_instructions>");
+  expect(s).not.toContain("## Nested AGENTS.md");
   expect(s).toContain("Use tabs.");
+  expect(s).toContain("the closest file takes precedence");
 });
 
 test("empty set / all-deleted files render nothing", () => {
@@ -89,5 +94,5 @@ test("Set semantics dedupe repeat discoveries (same subtree touched twice)", () 
   set.add("/ws/sub/AGENTS.md");
   set.add("/ws/sub/AGENTS.md");
   const s = renderNestedSection(set, CWD, readOf({ "/ws/sub/AGENTS.md": "once" }));
-  expect(s.match(/AGENTS\.md \(applies/g)).toHaveLength(1);
+  expect(s.match(/<project_instructions /g)).toHaveLength(1);
 });
