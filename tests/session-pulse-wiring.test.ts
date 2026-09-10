@@ -36,6 +36,8 @@ describe("§34 pulse wiring", () => {
     // No bottom padding: the composer's own pt-2 is the whole gap, or the row
     // floats away from the bar it belongs to.
     expect(pulse).not.toMatch(/px-6 pb-\d/);
+    // The dismiss glyph recedes, but its hit area does not shrink with it.
+    expect(pulse).toMatch(/text-\[10px\][^"]*p-1 -m-1/);
     expect(pulse).not.toMatch(/border-b-2/);
     // The disclosure is a promise about what travels — kept as a title, never dropped.
     expect(pulse).toMatch(/title=\{C\.disclosure\}/);

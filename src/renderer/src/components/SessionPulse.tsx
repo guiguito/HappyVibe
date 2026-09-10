@@ -134,7 +134,10 @@ export function SessionPulse({
           onClick={dismiss}
           aria-label={C.dismiss}
           title={C.dismiss}
-          className="text-ink-soft/60 hover:text-ink cursor-pointer text-xs leading-none"
+          /* Smaller GLYPH, same hit area: `p-1 -m-1` keeps the clickable box
+             the size it was while the ✕ itself recedes, which is the point —
+             dismissing is the secondary action here. */
+          className="text-ink-soft/60 hover:text-ink cursor-pointer text-[10px] leading-none p-1 -m-1"
         >
           ✕
         </button>
