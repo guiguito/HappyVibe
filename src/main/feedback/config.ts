@@ -8,10 +8,16 @@
  * fails if one ever lands here, and `resolveFeedbackConfig` refuses one by
  * SHAPE as well, so a mis-set env var cannot turn the app into an admin.
  *
- * prod's key is null until it is minted — only a signed-in admin in Inlet's web
- * UI can create one (`/v1/projects/{id}/credentials` answers `insufficient_scope`
- * to an API key, measured 2026-09-10). Null resolves to null here, and null is
- * what hides the icon and the pulse: "don't show what cannot work" (§20).
+ * Both channels have their key as of 2026-09-10; prod's had to be minted by a
+ * signed-in admin in Inlet's web UI, because `/v1/projects/{id}/credentials`
+ * answers `insufficient_scope` to an API key. Measured for the prod key on the
+ * day it landed: it reads both prod forms, is refused on a DEV database
+ * (`feedback_database_inaccessible`) and is refused on submissions
+ * (`insufficient_scope`) — which is the whole reason it may be committed.
+ *
+ * A null key is still meaningful and still handled: it resolves to null here,
+ * and null is what hides the icon and the pulse — "don't show what cannot
+ * work" (§20) — so a future channel with no key degrades rather than failing.
  *
  * Electron-free on purpose — vitest imports it directly, and `is.dev` is passed
  * in rather than read, so both channels are testable in one process.
@@ -33,7 +39,7 @@ export const FEEDBACK_CHANNELS = {
   },
   prod: {
     baseUrl: "https://feedback.bzapps.eu",
-    publishableKey: null as string | null,
+    publishableKey: "ipk_mF6m0qBQWvn0uFOZg7CKv9f_HOagaTIN" as string | null,
     databases: { general: "fdb_yfre0219xr82", session: "fdb_hnbkxr94p5cd" },
   },
 } as const satisfies Record<

@@ -11,14 +11,29 @@ describe("resolveFeedbackConfig", () => {
   });
 
   /**
-   * §34: prod's publishable key can only be minted by a signed-in admin in
-   * Inlet's web UI (an API key gets `insufficient_scope`, measured 2026-09-10).
-   * Until it lands, prod resolves to NULL and the app shows no feedback surface
-   * at all. When the key lands this test INVERTS — that is the intended signal.
+   * §34: prod's key landed 2026-09-10 (minted by a signed-in admin — an API key
+   * gets `insufficient_scope`). This assertion is the INVERSE of the one it
+   * replaces, which is exactly the signal that was designed in.
    */
-  it("prod channel is UNAVAILABLE until its key lands (null, not a throw)", () => {
-    expect(FEEDBACK_CHANNELS.prod.publishableKey).toBeNull();
-    expect(resolveFeedbackConfig({}, false)).toBeNull();
+  it("prod channel resolves with its own key and its own databases", () => {
+    const c = resolveFeedbackConfig({}, false);
+    expect(c?.channel).toBe("prod");
+    expect(c?.publishableKey).toMatch(/^ipk_/);
+    expect(c?.databases).toEqual({ general: "fdb_yfre0219xr82", session: "fdb_hnbkxr94p5cd" });
+  });
+
+  /** The two channels must never share a key or a database — that is what keeps dev noise out. */
+  it("dev and prod share nothing", () => {
+    const dev = resolveFeedbackConfig({}, true)!;
+    const prod = resolveFeedbackConfig({}, false)!;
+    expect(dev.publishableKey).not.toBe(prod.publishableKey);
+    expect(dev.databases.general).not.toBe(prod.databases.general);
+    expect(dev.databases.session).not.toBe(prod.databases.session);
+  });
+
+  /** A channel with no key still degrades to "no surface" rather than throwing. */
+  it("a keyless channel resolves to null, which is what hides both surfaces", () => {
+    expect(resolveFeedbackConfig({ HV_FEEDBACK_PUBLISHABLE_KEY: "" }, false)).toBeNull();
   });
 
   it("prod databases are the prod project's, never the dev ones", () => {

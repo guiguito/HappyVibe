@@ -1048,11 +1048,15 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   measured: off 5,873 tok/turn, on-and-empty 6,908, at the 100-memory cap 9,425 — and the three
   tool SCHEMAS are 743 of that against the policy's 242, which is why the settings panel shows
   both. Full wire shapes + the GUI findings: docs/validation/d1.md §33.
-- **§34 feedback: the only Inlet key in `src/` is a PUBLISHABLE `ipk_` key, and prod's is `null`
-  until someone mints it.** Only a signed-in admin in Inlet's web UI can create one — an API key
-  gets `insufficient_scope` (measured). A null config means **no icon and no pulse at all**
-  (`hv:feedback-info` → `available:false`), which is §20's rule rather than a button that fails,
-  and it is why a packaged build shows no feedback surface today. The `isk_` SERVER keys live in
+- **§34 feedback: the only Inlet keys in `src/` are PUBLISHABLE `ipk_` keys, one per channel.**
+  Both landed 2026-09-10; a publishable key can only be minted by a signed-in admin in Inlet's
+  web UI, because `/v1/projects/{id}/credentials` answers `insufficient_scope` to an API key.
+  Measured on the prod key: it reads its own forms, is refused on a DEV database
+  (`feedback_database_inaccessible`) and is refused on submissions (`insufficient_scope`) —
+  that last refusal is the whole reason a key may be committed, and
+  `tests/feedback-live.test.ts` asserts it rather than trusting the doc. A null key is still
+  handled and still meaningful: it means **no icon and no pulse at all**
+  (`hv:feedback-info` → `available:false`), §20's rule rather than a button that fails. The `isk_` SERVER keys live in
   `.env` only (`FEEDBACK_API_KEY` dev, `FEEDBACK_API_KEY_PROD` prod) for the MCP reading side and
   `tests/feedback-live.test.ts`'s cleanup; `tests/feedback-secrets.test.ts` scans `src/` for both
   the literal and any read of the var, and `resolveFeedbackConfig` refuses a non-`ipk_` key by
