@@ -1782,7 +1782,7 @@ export default function (pi: ExtensionAPI) {
   // round-12 switch is off), so a skill
   // load surfaces as a transcript card with a model-authored "why", and each
   // invocation is auditable (hv.skill notify). Prompting is steered here via the
-  // <happyvibe-skills> system block; a raw read is caught by the fallback above.
+  // skills sentence (replaceSkillsSentence); a raw read is caught by the fallback above.
   pi.registerTool({
     name: "use_skill",
     label: "Use skill",
