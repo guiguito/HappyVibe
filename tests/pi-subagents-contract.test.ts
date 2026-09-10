@@ -1292,3 +1292,53 @@ describe("the delegation-card guard tracks upstream's launch classifier", () => 
     expect(body).toMatch(/^\tworkflowScriptPath\??:/m);
   });
 });
+
+/**
+ * F4 (Improve-prompts round, 2026-09-10) — WHY the disabled `bg_wait` tool is
+ * still visible to the model, at ~650 tokens a turn.
+ *
+ * `writeSubagentConfig` sets `waitTool.enabled:false`, but that is not an
+ * unregistration: pi-subagents registers the tool regardless and "disabled"
+ * only means a call returns immediately. Its description is 2,639 characters
+ * (measured 2026-09-10), paid on every turn purely so the bridge's intercept
+ * can block a call the model should never make.
+ *
+ * `pi.setActiveTools()` could drop it — and the round's decision was to do
+ * exactly that, GATED on one question: can the model still learn the name from
+ * somewhere else? Because it can, hiding the tool would reproduce the
+ * 2026-08-16 plan-mode failure, where a hidden `edit` came back as a bare
+ * "Tool edit not found" with no reason and the model spent a minute retrying.
+ * Hiding a tool replaces a reason with a lie.
+ *
+ * Upstream's interactive async receipt names it, so the tool stays. This test
+ * is the gate: when it fails, upstream stopped telling the model about
+ * `bg_wait`, the name becomes unlearnable, and hiding it is then safe — drop
+ * it from the active set at session_start and turn_start (beside
+ * requireIntent) and keep the intercept as the second layer.
+ */
+describe("F4 gate — bg_wait stays registered while upstream's receipt names it", () => {
+  const asyncExec = (): string =>
+    readFileSync(
+      path.resolve(__dirname, "../pi-runtime/node_modules/pi-subagents/src/runs/background/async-execution.ts"),
+      "utf8",
+    );
+
+  it("the interactive async receipt still tells the model bg_wait exists", () => {
+    const body = asyncExec();
+    const fn = body.slice(body.indexOf("export function formatAsyncStartedMessage"));
+    expect(fn.length, "formatAsyncStartedMessage not found").toBeGreaterThan(200);
+    // The interactive arm is the one HappyVibe gets (ctx.hasUI is TRUE in rpc).
+    expect(fn.slice(0, fn.indexOf("] : ["))).toMatch(/bg_wait/);
+  });
+
+  it("and the tool is registered whether or not config disabled it", () => {
+    // registerWaitTool takes `enabled` and still calls pi.registerTool — the
+    // flag changes what a CALL does, not whether the schema is sent.
+    const waitTool = readFileSync(
+      path.resolve(__dirname, "../pi-runtime/node_modules/pi-subagents/src/runs/background/wait-tool.ts"),
+      "utf8",
+    );
+    expect(waitTool).toMatch(/pi\.registerTool\(primaryTool\)/);
+    expect(waitTool).not.toMatch(/if \(!enabled\) return/);
+  });
+});

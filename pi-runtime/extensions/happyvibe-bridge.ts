@@ -623,6 +623,14 @@ function emitPlan(ui: { notify(m: string, t?: "info" | "warning" | "error"): voi
 // was planning when a `bash` call came back with gatePlanCall's explanatory
 // refusal. Hiding a tool replaces a reason with a lie — the gate IS the UX here,
 // so there is nothing to re-add: let every blocked call carry its reason.
+//
+// F4 (2026-09-10): the same reasoning is why the DISABLED `bg_wait` tool is
+// still sent to the model, at ~650 tokens a turn. pi-subagents registers it
+// whatever waitTool.enabled says, and dropping it with setActiveTools would be
+// free — except that upstream's own async receipt still tells the model the
+// name, so a hidden tool would come back as a bare "not found" exactly as
+// `edit` did above. The gate for reversing this is the F4 group in
+// tests/pi-subagents-contract.test.ts: when upstream stops naming it, hide it.
 
 function loadRules(): void {
   rulesError = null;
