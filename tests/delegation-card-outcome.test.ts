@@ -128,7 +128,10 @@ describe("App routes the completion to the transcript card", () => {
   it("reads the run's final cost BEFORE the sticky card is torn down", () => {
     const complete = app.slice(app.indexOf('sub.stage === "complete"'), app.indexOf('sub.stage === "active"'));
     const costAt = complete.indexOf("live?.cost");
-    const teardownAt = complete.indexOf("delete next[sub.runId!]");
+    // A1 (2026-09-10) renamed the teardown's key: the run is looked up through
+    // `findByRunId` now, because `started` may have filed it under its tool
+    // call id. The ORDER is the invariant, not the spelling of the key.
+    const teardownAt = complete.indexOf("delete next[run.id]");
     expect(costAt).toBeGreaterThan(-1);
     expect(teardownAt).toBeGreaterThan(-1);
     expect(costAt).toBeLessThan(teardownAt);

@@ -49,7 +49,7 @@ import { dialogHost } from "./paneDialog";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { BuiltinToolsView } from "./components/BuiltinToolsView";
-import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
+import { applySubagentStarted, asyncResultInfo, delegationLabel, findByRunId, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment, type DocumentAttachment } from "./composer";
 import {
@@ -900,28 +900,33 @@ export default function App(): React.JSX.Element {
     // (async) and coexist with foreground cards (keyed by toolCallId).
     const handleSubagentEvent = (sid: string, sub: SubagentEvent): void => {
       if (sub.stage === "started" && sub.runId) {
-        const run: DelegationRun = {
-          id: sub.runId,
-          kind: "async",
-          agent: sub.agent ?? "subagent",
-          // runLabel, not sub.task: from pi-subagents 0.50 the event's own task is
-          // redacted, and this caption must never show that. The bridge substitutes
-          // the task it remembered from the tool call (hv-subagent-tasks.ts).
-          label: runLabel(sub.task),
-          startedAt: Date.now(),
-          status: "running",
-        };
-        setDelegations((p) => ({ ...p, [sid]: { ...p[sid], [run.id]: run } }));
+        // A1 (2026-09-10): ATTACH the run id to the foreground run that is
+        // waiting for it, rather than adding a second run beside it — one
+        // delegation was two circles in the rail until tool_execution_end
+        // cleaned up. `applySubagentStarted` still adds when there is nothing
+        // to attach to, which is the post-respawn resync's only route in.
+        //
+        // runLabel, not sub.task: from pi-subagents 0.50 the event's own task is
+        // redacted, and this caption must never show that. The bridge substitutes
+        // the task it remembered from the tool call (hv-subagent-tasks.ts).
+        setDelegations((p) => ({
+          ...p,
+          [sid]: applySubagentStarted(p[sid] ?? {}, { runId: sub.runId!, agent: sub.agent, label: runLabel(sub.task) }, Date.now()),
+        }));
       } else if (sub.stage === "control" && sub.runId) {
         setDelegations((p) => {
-          const run = p[sid]?.[sub.runId!];
-          return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, live: { ...run.live, activityState: sub.activityState } } } } : p;
+          // findByRunId, not a direct key: between `started` and the re-key at
+          // tool_execution_end the run is still filed under its TOOL CALL id.
+          // That window is short and it is exactly where `needs_attention`
+          // lives, which is the one state the rail must never drop.
+          const run = findByRunId(p[sid] ?? {}, sub.runId!);
+          return run ? { ...p, [sid]: { ...p[sid], [run.id]: { ...run, live: { ...run.live, activityState: sub.activityState } } } } : p;
         });
       } else if (sub.stage === "complete" && sub.runId) {
         const status = sub.status === "success" ? ("done" as const) : sub.status === "interrupted" ? ("interrupted" as const) : ("error" as const);
         setDelegations((p) => {
-          const run = p[sid]?.[sub.runId!];
-          return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, status } } } : p;
+          const run = findByRunId(p[sid] ?? {}, sub.runId!);
+          return run ? { ...p, [sid]: { ...p[sid], [run.id]: { ...run, status } } } : p;
         });
         // §12 (2026-08-30): the TRANSCRIPT card too, not only the sticky one. The
         // sticky card slides away in 2.5s; this one is the permanent record, and
@@ -934,7 +939,7 @@ export default function App(): React.JSX.Element {
           const outcome = status === "done" ? ("done" as const) : status === "interrupted" ? ("stopped" as const) : ("failed" as const);
           // The run's last polled spend, which the sticky card already holds —
           // read BEFORE that card is torn down below.
-          const finalCost = delegationsRef.current[sid]?.[sub.runId!]?.live?.cost;
+          const finalCost = findByRunId(delegationsRef.current[sid] ?? {}, sub.runId!)?.live?.cost;
           const idx = (toolIndex.current[sid] ??= new Map());
           setTranscripts((p) => ({
             ...p,
@@ -955,9 +960,10 @@ export default function App(): React.JSX.Element {
         appendItem(sid, { kind: "notice", text: `${sub.agent ?? "Subagent"} finished — delivering results…`, pending: false });
         setTimeout(() => {
           setDelegations((p) => {
-            if (!p[sid]?.[sub.runId!]) return p;
+            const run = findByRunId(p[sid] ?? {}, sub.runId!);
+            if (!run) return p;
             const next = { ...p[sid] };
-            delete next[sub.runId!];
+            delete next[run.id];
             return { ...p, [sid]: next };
           });
         }, 2_500);
@@ -966,10 +972,16 @@ export default function App(): React.JSX.Element {
         const runs = sub.runs ?? [];
         setDelegations((p) => {
           const cur = p[sid] ?? {};
-          const fg = Object.fromEntries(Object.entries(cur).filter(([, r]) => r.kind === "fg"));
+          // A1: a foreground run that has already been given its run id is the
+          // SAME run as the one in this resync list — keeping both would put
+          // the duplicate circle back through the other door.
+          const listed = new Set(runs.map((x) => x.runId));
+          const fg = Object.fromEntries(
+            Object.entries(cur).filter(([, r]) => r.kind === "fg" && !(r.runId && listed.has(r.runId))),
+          );
           const async: Record<string, DelegationRun> = {};
           for (const x of runs) {
-            const existing = cur[x.runId];
+            const existing = findByRunId(cur, x.runId) ?? undefined;
             async[x.runId] = existing ?? {
               id: x.runId, kind: "async", agent: x.agent ?? "subagent", label: runLabel(x.task), startedAt: Date.now(), status: "running",
             };
@@ -978,8 +990,8 @@ export default function App(): React.JSX.Element {
         });
       } else if (sub.stage === "interrupt-sent" && sub.runId) {
         setDelegations((p) => {
-          const run = p[sid]?.[sub.runId!];
-          return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, status: "interrupted" } } } : p;
+          const run = findByRunId(p[sid] ?? {}, sub.runId!);
+          return run ? { ...p, [sid]: { ...p[sid], [run.id]: { ...run, status: "interrupted" } } } : p;
         });
       }
     };
