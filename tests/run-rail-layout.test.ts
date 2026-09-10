@@ -191,6 +191,28 @@ describe("the card→circle flight (A1)", () => {
     expect(fn.indexOf("const fromRect =")).toBeLessThan(fn.indexOf("setTabsByWs"));
   });
 
+  it("the two flights declare which SHAPE they want", () => {
+    // A ghost that BECOMES its destination matches its box on each axis
+    // ("stretch", the default) — card→circle needs that, or it arrives the
+    // wrong shape at the moment it is supposed to BE the circle. A ghost that
+    // goes INTO its destination keeps one ratio ("contain"), because stretching
+    // a 36px circle into an 86x40 tab scales it 2.4x wide against 1.1x tall and
+    // it lands as an oval. Measured: 2.15 aspect before, 1.00 after.
+    const motion = readFileSync("src/renderer/src/motion.ts", "utf8");
+    expect(motion).toContain('opts.fit === "contain"');
+    // contain keeps the SOURCE's corners: a shape that did not change should
+    // not morph its radius on the way.
+    expect(motion).toContain("endRadius = startRadius");
+    const app = readFileSync("src/renderer/src/App.tsx", "utf8");
+    expect(app).toContain('fit: "contain"');
+  });
+
+  it("the card→circle flight is NOT contained — it must match the circle", () => {
+    const rail = chat.slice(chat.indexOf("async function fly("), chat.indexOf("async function fly(") + 2600);
+    expect(rail).toContain("round: true");
+    expect(rail).not.toContain('fit: "contain"');
+  });
+
   it("the flight never scrolls the transcript to make itself possible", () => {
     // The card is where the user left it. Moving the conversation so an
     // animation can play is the animation deciding what you are reading.

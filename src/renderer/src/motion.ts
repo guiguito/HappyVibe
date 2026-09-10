@@ -54,7 +54,7 @@ export function reducedMotion(): boolean {
 export function flyGhost(
   fromEl: HTMLElement,
   toEl: HTMLElement,
-  opts: { duration?: number; round?: boolean; fromRect?: DOMRect } = {},
+  opts: { duration?: number; round?: boolean; fromRect?: DOMRect; fit?: "stretch" | "contain" } = {},
 ): Promise<void> {
   if (reducedMotion()) return Promise.resolve();
   // `fromRect` exists for the case where the ACTION that creates the
@@ -96,25 +96,48 @@ export function flyGhost(
   document.body.appendChild(ghost);
 
   const duration = opts.duration ?? DUR.flight;
-  const dx = b.left - a.left;
-  const dy = b.top - a.top;
-  // Non-uniform scale, because the source is a wide header row and the target a
-  // small square: forcing one ratio would leave the ghost the wrong shape at
-  // the moment it is supposed to BE the circle.
-  const sx = b.width / a.width;
-  const sy = b.height / a.height;
+  const startRadius = getComputedStyle(fromEl).borderRadius;
+
+  /**
+   * Two flights, two intents, and the difference is visible.
+   *
+   * "stretch" (the default) makes the ghost BECOME the destination: it matches
+   * its box exactly, on each axis independently. That is right for card→circle,
+   * where the ghost has to arrive AS the circle — one shared ratio would land
+   * it the wrong shape at the moment it is supposed to be that circle.
+   *
+   * "contain" makes the ghost go INTO the destination: one ratio for both axes
+   * so it keeps its shape, ending a little smaller than the target and centred
+   * on it. Circle→tab needs this — stretching a 36px circle into an 86x40 tab
+   * scales it 2.4x wide against 1.1x tall, and it arrives as an oval. Reported
+   * on sight, and the reporter was right.
+   */
+  let dx: number, dy: number, sx: number, sy: number, endRadius: string;
+  if (opts.fit === "contain") {
+    // 0.7 so it nests visibly INSIDE rather than filling the target edge to
+    // edge — "it went in there" reads better than "it became that".
+    const s = (Math.min(b.width / a.width, b.height / a.height) * 7) / 10;
+    sx = s;
+    sy = s;
+    // transformOrigin is the top-left corner, so the scaled centre sits at
+    // `a.left + a.width * s / 2` — the translate has to close the gap between
+    // that and the destination's centre, not between the two corners.
+    dx = b.left + b.width / 2 - (a.left + (a.width * s) / 2);
+    dy = b.top + b.height / 2 - (a.top + (a.height * s) / 2);
+    // It keeps its own shape, so it keeps its own corners.
+    endRadius = startRadius;
+  } else {
+    dx = b.left - a.left;
+    dy = b.top - a.top;
+    sx = b.width / a.width;
+    sy = b.height / a.height;
+    endRadius = opts.round ? "50%" : getComputedStyle(toEl).borderRadius;
+  }
+
   const anim = ghost.animate(
     [
-      {
-        transform: "translate(0, 0) scale(1, 1)",
-        borderRadius: getComputedStyle(fromEl).borderRadius,
-        opacity: 1,
-      },
-      {
-        transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
-        borderRadius: opts.round ? "50%" : getComputedStyle(toEl).borderRadius,
-        opacity: 0.95,
-      },
+      { transform: "translate(0, 0) scale(1, 1)", borderRadius: startRadius, opacity: 1 },
+      { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, borderRadius: endRadius, opacity: 0.95 },
     ],
     { duration, easing: EASE.out, fill: "forwards" },
   );

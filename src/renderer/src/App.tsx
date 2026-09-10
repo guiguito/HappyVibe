@@ -1924,7 +1924,7 @@ export default function App(): React.JSX.Element {
       let frames = 0;
       const whenTabExists = (): void => {
         const to = document.querySelector<HTMLElement>(`[data-hv-tab="${CSS.escape(termTab(terminalId))}"]`);
-        if (to) void flyGhost(from, to, { duration: DUR.flight, fromRect });
+        if (to) void flyGhost(from, to, { duration: DUR.flight, fromRect, fit: "contain" });
         else if (++frames < 10) requestAnimationFrame(whenTabExists);
       };
       requestAnimationFrame(whenTabExists);
