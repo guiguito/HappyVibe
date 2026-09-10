@@ -39,6 +39,9 @@ describe("hv-web pure module (§32)", () => {
     // does not carry here: `curl -X POST` has uses web_fetch cannot serve.
     expect(WEB_STEER_LINE).toContain("curl");
     expect(WEB_STEER_LINE.toLowerCase()).not.toContain("never use curl");
+    // A6: names the one alternative the browser tools own, so "the browser
+    // tools" is not left as a category the model has to resolve.
+    expect(WEB_STEER_LINE).toContain("browser_open");
   });
 
   it("flags every private destination, and leaves lookalike public hosts alone", () => {

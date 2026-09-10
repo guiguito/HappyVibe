@@ -56,8 +56,15 @@ describe("module surface", () => {
     expect([...TERMINAL_TOOLS].sort()).toEqual(["terminal_kill", "terminal_read", "terminal_run"]);
   });
 
-  it("steers toward terminal_run by name", () => {
+  it("steers toward terminal_run by name, in one calm sentence", () => {
     expect(TERMINAL_STEER_LINE).toContain("terminal_run");
+    // A5/X2: the how belongs to terminal_run's own description and the why to
+    // the bash-`&` refusal; this is one sentence of when.
+    expect(TERMINAL_STEER_LINE.length).toBeLessThan(220);
+    expect(TERMINAL_STEER_LINE).not.toMatch(/INDEFINITELY/);
+    // Scope FIRST, exception second — bridge.test.ts and rules-bridge.test.ts
+    // both depend on the model still reaching for bash.
+    expect(TERMINAL_STEER_LINE.indexOf("bash")).toBeLessThan(TERMINAL_STEER_LINE.indexOf("terminal_run"));
   });
 });
 

@@ -1707,13 +1707,11 @@ export default function (pi: ExtensionAPI) {
     name: "ask_user",
     label: "Ask the user",
     description:
-      "Ask the user to decide something you genuinely cannot decide or verify yourself " +
-      "(preferences, trade-offs, ambiguous requirements). Blocks until the user answers. " +
-      "Rules: at most 4 questions per call; options must be mutually exclusive and exhaustive " +
-      "for the decision; put your recommended option FIRST with its label suffixed ' (Recommended)'; " +
-      "never ask about things you can check yourself (files, code, docs); keep labels 1-5 words " +
-      "with the trade-offs in the description. The UI adds a free-text 'Other' option automatically — " +
-      "do not add one. If the user dismisses the question, proceed with your best judgment.",
+      // B2 (2026-09-10): the label rules live on the `label` param and the
+      // dismissal sentence in DISMISSED_RESULT — each said once (X2).
+      "Ask the user only for a decision that changes what you build and that the code, docs or a " +
+      "tool cannot answer. Blocks until they answer. At most 4 questions; options exhaustive and " +
+      "mutually exclusive; your recommended option first. The UI adds a free-text 'Other' itself.",
     parameters: Type.Object({
       intent: intentParam(),
       questions: Type.Array(
@@ -2233,14 +2231,14 @@ export default function (pi: ExtensionAPI) {
       name: "memory_save",
       label: "Remember",
       description:
-        "Save a durable memory for future sessions. Ask yourself first: will a future session need this, and is it " +
-        "absent from the code, git history and AGENTS.md? Saving the same `name` REPLACES the existing memory — prefer " +
-        "that over creating a near-duplicate. Never save secrets, task state or anything you can look up.",
+        // B8/X2: what to save, and what not to, is the policy's job — it is in
+        // the system prompt every turn. This says what the call does.
+        "Save one durable memory for future sessions; the same name replaces the existing one.",
       parameters: Type.Object({
         intent: intentParam(),
         scope: MemoryScope,
         type: Type.Union([Type.Literal("user"), Type.Literal("feedback"), Type.Literal("project"), Type.Literal("reference")], {
-          description: "user = who they are and how they like to work; feedback = a correction or a confirmed approach (say WHY and HOW TO APPLY); project = a fact about this codebase you cannot recover from it; reference = a pointer to something external.",
+          description: "See the Types line in your memory instructions.",
         }),
         name: Type.String({ description: "Short stable name, e.g. 'talk like a young engineer'. The same name replaces the existing memory." }),
         description: Type.String({ description: "One line, at most 150 characters — this is what you see in the index every turn." }),
@@ -2278,8 +2276,7 @@ export default function (pi: ExtensionAPI) {
       name: "memory_recall",
       label: "Recall",
       description:
-        "Open one memory in full, by the name shown in the memory index in your instructions. Use it when the index " +
-        "line suggests the memory is relevant to what you are doing.",
+        "Open one memory in full, by its name in the index.",
       parameters: Type.Object({
         intent: intentParam(),
         scope: MemoryScope,
@@ -2300,8 +2297,7 @@ export default function (pi: ExtensionAPI) {
       name: "memory_forget",
       label: "Forget",
       description:
-        'Delete one memory. Use it when the user says "forget …", or when a memory has turned out to be wrong or ' +
-        "obsolete. To CORRECT a memory, save it again under the same name instead — that replaces it.",
+        "Delete one memory by name. To correct one, save it again under the same name instead.",
       parameters: Type.Object({
         intent: intentParam(),
         scope: MemoryScope,

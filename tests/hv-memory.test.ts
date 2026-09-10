@@ -56,6 +56,15 @@ describe("MEMORY_POLICY", () => {
     for (const t of MEMORY_TOOLS) expect(MEMORY_POLICY).toContain(t);
   });
 
+  it("A7 — sets the base rate and owns the type meanings", () => {
+    // Current models over-save when told they have a memory; one sentence
+    // sets the expectation. The types moved out of the save tool's enum
+    // description, which is read only once the model is already saving.
+    expect(MEMORY_POLICY).toMatch(/Most turns save nothing/);
+    expect(MEMORY_POLICY).toMatch(/Types: user \(/);
+    expect(MEMORY_POLICY).toMatch(/feedback \(a correction or confirmed approach/);
+  });
+
   it("carries the four rules the machinery enforces", () => {
     expect(MEMORY_POLICY).toMatch(/secrets/);
     expect(MEMORY_POLICY).toMatch(/hints, not evidence/);
