@@ -2879,74 +2879,98 @@ export default function App(): React.JSX.Element {
             </button>
           </Banner>
         )}
-        {activeView === "models" && (
-          <ModelsView
-            firstRun={needsSetup}
-            onSaved={() => {
-              setKeyState("present");
-              setView("chat");
-            }}
-          />
+        {/* Animations round (2026-09-10) — A6: a settings page fades up on
+            arrival. ONE wrapper keyed on the view, so `@starting-style` fires
+            on every switch; it reproduces the flex-child contract these pages
+            already rely on (`flex-1 min-h-0 flex flex-col`, each page being
+            `flex-1 overflow-y-auto` inside it). It renders only off the chat
+            view — an empty `flex-1` sibling would eat the chat area.
+
+            There is deliberately no EXIT: leaving is instant, which is the
+            snappy choice for navigation. And deliberately no View Transition:
+            its snapshot freezes the scope, so a streaming transcript would go
+            stale behind the switch. */}
+        {activeView !== "chat" && (
+          <div
+            key={activeView}
+            className="flex-1 min-h-0 flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-[140ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-1"
+          >
+          {activeView === "models" && (
+            <ModelsView
+              firstRun={needsSetup}
+              onSaved={() => {
+                setKeyState("present");
+                setView("chat");
+              }}
+            />
+          )}
+          {activeView === "permissions" && <PermissionsView />}
+          {activeView === "workspace" && wsSettings && (
+            <WorkspaceSettingsView
+              workspace={wsSettings}
+              onNewSkillSession={async () => {
+                const sid = await openSessionForSkillCreator(wsSettings);
+                // The creator's prompt is fired by SkillsSection; echo it so the
+                // transcript shows what was sent (hv:prompt-session emits none).
+                if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
+                return sid;
+              }}
+              onRemoved={async () => {
+                // Round 11: the workspace is gone — refresh the list, drop its tabs,
+                // and leave a page that now describes nothing.
+                setWorkspaces(await window.hv.listWorkspaces());
+                setSessions(await window.hv.listSessions());
+                setTabsByWs((p) => { const n = { ...p }; delete n[wsSettings]; return n; });
+                setActiveWs((w) => (w === wsSettings ? null : w));
+                setWsSettings(null);
+                setView("chat");
+              }}
+            />
+          )}
+          {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
+          {activeView === "onBehalf" && <OnBehalfView />}
+          {activeView === "stats" && <DashboardView workspaces={workspaces} />}
+          {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
+          {activeView === "changelog" && <ChangelogView />}
+          {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
+          {activeView === "skills" && (
+            <SkillsView
+              sessionId={selectedId}
+              workspaceId={selected?.workspaceId ?? null}
+              onNewSkillSession={async () => {
+                const sid = await openSessionForSkillCreator();
+                if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
+                return sid;
+              }}
+            />
+          )}
+          {activeView === "promptTemplates" && (
+            <PromptTemplatesView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+          )}
+          {activeView === "plugins" && <PluginsView />}
+          {activeView === "mcp" && <McpView />}
+          {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
+          {activeView === "terminal" && <TerminalView settings={termSettings} onChange={setTermSettings} />}
+          {/* §27: settings are global, so the page needs no props. */}
+          {activeView === "voice" && <VoiceView settings={voiceSettings} onChange={setVoiceSettings} />}
+          {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
+          {activeView === "tools" && (
+            <AllToolsView tools={tools} sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+          )}
+          {activeView === "builtinTools" && <BuiltinToolsView onPlanBuiltinChange={setPlanBuiltinOn} />}
+          </div>
         )}
-        {activeView === "permissions" && <PermissionsView />}
-        {activeView === "workspace" && wsSettings && (
-          <WorkspaceSettingsView
-            workspace={wsSettings}
-            onNewSkillSession={async () => {
-              const sid = await openSessionForSkillCreator(wsSettings);
-              // The creator's prompt is fired by SkillsSection; echo it so the
-              // transcript shows what was sent (hv:prompt-session emits none).
-              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
-              return sid;
-            }}
-            onRemoved={async () => {
-              // Round 11: the workspace is gone — refresh the list, drop its tabs,
-              // and leave a page that now describes nothing.
-              setWorkspaces(await window.hv.listWorkspaces());
-              setSessions(await window.hv.listSessions());
-              setTabsByWs((p) => { const n = { ...p }; delete n[wsSettings]; return n; });
-              setActiveWs((w) => (w === wsSettings ? null : w));
-              setWsSettings(null);
-              setView("chat");
-            }}
-          />
-        )}
-        {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
-        {activeView === "onBehalf" && <OnBehalfView />}
-        {activeView === "stats" && <DashboardView workspaces={workspaces} />}
-        {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
-        {activeView === "changelog" && <ChangelogView />}
-        {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
-        {activeView === "skills" && (
-          <SkillsView
-            sessionId={selectedId}
-            workspaceId={selected?.workspaceId ?? null}
-            onNewSkillSession={async () => {
-              const sid = await openSessionForSkillCreator();
-              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
-              return sid;
-            }}
-          />
-        )}
-        {activeView === "promptTemplates" && (
-          <PromptTemplatesView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
-        )}
-        {activeView === "plugins" && <PluginsView />}
-        {activeView === "mcp" && <McpView />}
-        {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
-        {activeView === "terminal" && <TerminalView settings={termSettings} onChange={setTermSettings} />}
-        {/* §27: settings are global, so the page needs no props. */}
-        {activeView === "voice" && <VoiceView settings={voiceSettings} onChange={setVoiceSettings} />}
-        {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
-        {activeView === "tools" && (
-          <AllToolsView tools={tools} sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
-        )}
-        {activeView === "builtinTools" && <BuiltinToolsView onPlanBuiltinChange={setPlanBuiltinOn} />}
         {/* W2.2: the chat area stays MOUNTED (hidden) on other views so open
             editor buffers and chat state survive a Settings detour. Center is
             tabbed: chat tab + file tabs; the docked file tree sits to the
             right IN FLOW (ContextPanel is a fixed overlay above it, z-40). */}
-        <div className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"}`}>
+        {/* Animations round: the chat fades up when you come BACK to it, which
+            is a `display` flip rather than a mount — hence `transition-discrete`
+            with `display` in the list, so the browser holds the swap to 100%
+            and the fade is actually visible. Going away stays instant. */}
+        <div
+          className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"} motion-safe:transition-[opacity,display] motion-safe:transition-discrete motion-safe:duration-[140ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0`}
+        >
           <div
             className="flex-1 min-w-0 min-h-0 grid relative"
             style={gridStyle}
