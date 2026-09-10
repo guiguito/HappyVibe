@@ -366,8 +366,8 @@ export function FileTree({
 
       {/* Delete confirm — moves to the OS Trash (recoverable), never a hard delete. */}
       {confirmDel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirmDel(null)}>
-          <div className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setConfirmDel(null)}>
+          <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">Move {confirmDel.kind === "dir" ? "folder" : "file"} to Trash?</div>
             <p className="text-sm text-ink-soft mb-4">
               <span className="font-mono break-all">{confirmDel.rel}</span> will be moved to your system Trash — you can restore it from there.
@@ -398,8 +398,8 @@ export function FileTree({
 
       {/* Details popup. */}
       {details && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setDetails(null)}>
-          <div className="w-full max-w-sm rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setDetails(null)}>
+          <div className="hv-dialog-flow w-full max-w-sm rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-3">{details.rel.split("/").pop()}</div>
             <dl className="text-sm grid grid-cols-[5rem_1fr] gap-y-1.5">
               <dt className="text-ink-soft font-bold">Kind</dt><dd>{details.kind === "dir" ? "Folder" : "File"}</dd>

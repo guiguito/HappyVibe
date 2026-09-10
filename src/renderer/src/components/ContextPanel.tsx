@@ -450,9 +450,9 @@ function ContextRow({
 
 function CompactDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }): React.JSX.Element {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onCancel}>
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onCancel}>
       <div
-        className="w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
+        className="hv-dialog-flow w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <h2 className="font-black text-xl">Compact this conversation?</h2>

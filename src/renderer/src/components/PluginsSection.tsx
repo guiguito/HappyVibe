@@ -399,8 +399,8 @@ export function PluginsSection(): React.JSX.Element {
 
       {/* ── confirm dialog ──────────────────────────────────────────────── */}
       {scan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal>
-          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-paper p-5 shadow-xl">
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal>
+          <div className="hv-dialog-flow max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-paper p-5 shadow-xl">
             <h3 className="font-black text-lg tracking-tight">{scan.name}</h3>
             <p className="mt-1 text-sm text-ink-soft">{scan.description}</p>
 

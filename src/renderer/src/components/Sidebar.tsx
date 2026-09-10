@@ -1189,9 +1189,9 @@ export function Sidebar({
         * Archive leads: it is the reversible one.
         */}
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
           <div
-            className="w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
+            className="hv-dialog-flow w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <h2 className="font-black text-xl">

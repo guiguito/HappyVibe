@@ -3528,11 +3528,11 @@ export default function App(): React.JSX.Element {
           chat closed), never silently leak. */}
       {termConfirm && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8"
+          className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8"
           onClick={() => { termConfirm.resolve(null); setTermConfirm(null); }}
         >
           <div
-            className="w-full max-w-md rounded-2xl border-2 border-tangerine bg-card p-5 shadow-sticker-lg"
+            className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-tangerine bg-card p-5 shadow-sticker-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="font-bold mb-1">

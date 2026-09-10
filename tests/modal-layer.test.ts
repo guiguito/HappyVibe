@@ -65,6 +65,38 @@ describe("the modal layer (§28 round 1)", () => {
     walk(path.join(process.cwd(), "src/renderer/src"));
     expect(Math.max(...used)).toBeLessThanOrEqual(50);
   });
+
+  it("no dialog is hand-rolled below the layer any more — every SCRIM uses it", () => {
+    // Animations round (2026-09-10): seventeen confirms were `fixed inset-0
+    // z-50` scrims, which is BELOW the modal layer — so a sticky z-20 card
+    // could paint over one, and none of them animated. They all carry
+    // `.hv-overlay` now, and this scan is what stops the eighteenth arriving as
+    // a copy-paste of the old shape.
+    //
+    // A SCRIM is a full-viewport element that TINTS what is behind it. That is
+    // deliberately not the same shape as the app's other `fixed inset-0`
+    // idiom, the transparent CLICK-CATCHER every menu uses to dismiss itself —
+    // those are correct at z-10, must stay below their own menu, and are not
+    // dialogs. The tint is what tells the two apart.
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name)) {
+          const src = fs.readFileSync(full, "utf8");
+          src.split("\n").forEach((line, i) => {
+            const scrim = /\bfixed inset-0\b/.test(line) && /\bbg-(?:ink|black|white|paper)\//.test(line);
+            if (scrim && !line.includes("hv-overlay")) {
+              offenders.push(`${path.relative(process.cwd(), full)}:${i + 1}`);
+            }
+          });
+        }
+      }
+    };
+    walk(path.join(process.cwd(), "src/renderer/src"));
+    expect(offenders).toEqual([]);
+  });
 });
 
 it("keeps the z-100 layer classes on a pane-scoped dialog", () => {

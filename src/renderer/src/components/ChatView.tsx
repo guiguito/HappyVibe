@@ -1078,8 +1078,8 @@ export function ChatView({
       )}
       {/* Round 3 #11: rewind confirm — files are NOT rolled back (chat-only V1). */}
       {pendingRewind !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
-          <div className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
+          <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">Rewind to this message?</div>
             <p className="text-sm text-ink-soft mb-3">
               Everything after this point is removed from the conversation and the agent's context, and this
@@ -1219,8 +1219,8 @@ export function ChatView({
       )}
       {/* Round 3 #3: large-paste confirm. */}
       {pendingPaste !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingPaste(null)}>
-          <div className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingPaste(null)}>
+          <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">Paste {pendingPaste.length.toLocaleString()} characters?</div>
             <p className="text-sm text-ink-soft mb-4">That's a large amount of text to add to the composer. Insert it anyway?</p>
             <div className="flex justify-end gap-2">

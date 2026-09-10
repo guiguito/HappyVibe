@@ -1140,9 +1140,9 @@ function SaveMenu({
 
 function ConfirmDialog({ c, onCancel }: { c: Confirm; onCancel: () => void }): React.JSX.Element {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={onCancel}>
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={onCancel}>
       <div
-        className={`w-full max-w-md rounded-2xl border-2 ${c.danger ? "border-berry" : "border-tangerine"} bg-card p-5 shadow-sticker-lg`}
+        className={`hv-dialog-flow w-full max-w-md rounded-2xl border-2 ${c.danger ? "border-berry" : "border-tangerine"} bg-card p-5 shadow-sticker-lg`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="font-bold mb-2">{c.title}</div>
