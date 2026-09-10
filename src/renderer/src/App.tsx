@@ -577,7 +577,12 @@ export default function App(): React.JSX.Element {
   const appendItem = (sid: string, item: TranscriptItem): void =>
     setTranscripts((p) => {
       const items = p[sid] ?? [];
-      const withId = { ...item, id: idCounter.current++ };
+      // A7 (2026-09-10): `live` is what makes an item rise in, and this is the
+      // ONE function that means "arrived now". It is deliberately not an id
+      // floor: `idCounter` is one counter for the whole app and `loadEarlier`
+      // mints fresh, HIGHER ids for the messages it prepends, so a floor would
+      // animate the hundred-node path it exists to exclude.
+      const withId = { ...item, id: idCounter.current++, live: true as const };
       if (withId.kind === "tool") {
         (toolIndex.current[sid] ??= new Map()).set(withId.card.toolCallId, items.length);
       }

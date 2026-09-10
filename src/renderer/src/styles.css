@@ -237,6 +237,32 @@
 }
 
 /**
+ * Animations round (2026-09-10) — A7: a transcript item that arrived LIVE
+ * rises in. Restore and "Show earlier messages" never carry the flag, so
+ * reopening a session and expanding a compaction boundary paint at once
+ * instead of animating hundreds of nodes.
+ *
+ * The wrapper is `display: contents` because the transcript is a flex COLUMN
+ * and its children position themselves in it (`self-end` for a user bubble,
+ * `self-center` for a divider) — a real box here would left-align every user
+ * message. `contents` generates no box of its own, so the transition has to
+ * live on its child, hence the `> *`.
+ *
+ * `data-live` appears nowhere else in the app, which is what makes an
+ * unscoped attribute selector safe here (and it doubles as the handle a GUI
+ * pass uses to assert the ABSENCE of animation after a restore).
+ */
+[data-live] > * {
+  transition:
+    opacity 150ms var(--ease-hv-out),
+    translate 150ms var(--ease-hv-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+/**
  * Animations round (2026-09-10) — menus enter from their anchor, exits instant.
  *
  * ONE class for every floating menu in the app (the sites are listed in
@@ -381,7 +407,8 @@
      block that already owns this rule. `.hv-menu-in` is a TRANSITION, so it
      needs `transition: none` as well as the `animation: none` below — killing
      only the animation would leave the fade playing. */
-  .hv-menu-in {
+  .hv-menu-in,
+  [data-live] > * {
     transition: none;
   }
   .hv-menu-in,
