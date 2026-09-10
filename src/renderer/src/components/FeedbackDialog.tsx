@@ -170,7 +170,7 @@ export function FeedbackDialog({
      */
     if (phase.k === "sent")
       return (
-        <div className="flex flex-col items-center justify-center gap-5 py-6 text-center">
+        <div className="min-h-[15rem] flex flex-col items-center justify-center gap-5 py-6 text-center">
           {/* The hop's transform lives on the wrapper, the scale on the mark
               itself, so the two never fight. `lg` is 56px, which reads timid
               in a 466px frame — this is the one place the mark is the subject
@@ -270,18 +270,17 @@ export function FeedbackDialog({
           }}
           aria-describedby={undefined}
           /**
-           * The size is FIXED for the whole flow — the OnboardingDialog rule,
-           * and for the same reason. Steps change what is IN the frame, never
-           * how big it is: a dialog that shrinks to one question and grows
-           * again for the screenshot page re-anchors itself under the pointer
-           * at every step, and collapsed to a sliver on the thank-you.
-           * `h-`, not `max-h-`, is what makes that true.
+           * The frame FITS ITS CONTENT — `max-h-`, never `h-`.
            *
-           * 31rem is MEASURED, not chosen: the tallest page (the five-option
-           * first one) needs 352px of body, and this is that plus the padding,
-           * header and footer. Any taller and every other step is a void.
+           * A one-question step should not be padded out to the height of the
+           * five-option one. The only step that needs a floor is the send-off,
+           * and it asks for that itself (`min-h` on the celebration block)
+           * rather than making every other step pay for it.
+           *
+           * The cap is the viewport: past it the body scrolls and the header
+           * and footer stay put.
            */
-          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col w-[min(30rem,calc(100vw-3rem))] h-[min(31rem,calc(100vh-3rem))] overflow-hidden rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-6 focus:outline-none"
+          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col w-[min(30rem,calc(100vw-3rem))] max-h-[calc(100vh-3rem)] overflow-hidden rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-6 focus:outline-none"
         >
           <div className="flex items-start gap-3 mb-4">
             {/* Screen-reader only. Radix requires a title for the dialog's
@@ -308,14 +307,9 @@ export function FeedbackDialog({
             </div>
           ) : (
             <>
-              {/* `my-auto` on the inner block, not `justify-center` on the
-                  scroller: it centres a short step in the fixed frame, and
-                  when a step is taller than the frame the auto margins
-                  collapse to zero so it scrolls from the TOP instead of
-                  clipping its own first line. */}
-              <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
-                <div className="my-auto w-full">{body()}</div>
-              </div>
+              {/* `min-h-0` is what lets this shrink and scroll once the frame
+                  hits the viewport cap; below that it simply sizes to content. */}
+              <div className="min-h-0 overflow-y-auto">{body()}</div>
               {footer()}
             </>
           )}
