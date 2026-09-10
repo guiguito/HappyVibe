@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { FormPageView, type CaptureOffer, type ImageItem } from "./FormRenderer";
+import { BrandLogo } from "./BrandLogo";
 import { FEEDBACK_COPY as C } from "./feedbackCopy";
 import { answersFor, isKnown, pageComplete, pageIndexOf, unknownRequired, type FormState } from "../feedbackForm";
 
@@ -20,7 +21,16 @@ type Phase =
   | { k: "ready"; form: HvFormDefinition; source: "live" | "cache" }
   | { k: "sent" };
 
-const CLOSE_AFTER_MS = 1_500;
+/**
+ * Long enough for the send-off to PLAY: the logo hop is 1250ms and the line
+ * pops at 760ms, so the old 1500ms closed the dialog on the bounce's last
+ * frame. 2600 leaves the settled frame on screen for about a second — and a
+ * click still closes it immediately, so nobody is held here.
+ *
+ * Under `prefers-reduced-motion` the settled frame is instant (styles.css), and
+ * this simply becomes a beat of reading time.
+ */
+const CLOSE_AFTER_MS = 2_600;
 
 /** A data: URL, because the renderer CSP is `img-src 'self' data:` with no blob:. */
 function readAsDataUrl(file: File): Promise<string> {
@@ -152,11 +162,27 @@ export function FeedbackDialog({
           </button>
         </div>
       );
-    if (phase.k === "sent") return <p className="font-bold">{C.thanks}</p>;
+    /**
+     * The send-off. The house celebration, not a new one: the same bouncing
+     * brand mark and staggered pop the onboarding hand-over uses, so finishing
+     * a form feels like the one other moment in the app that congratulates you.
+     * Centred in the fixed frame, which is why the frame had to stop resizing.
+     */
+    if (phase.k === "sent")
+      return (
+        <div className="flex flex-col items-center justify-center gap-5 py-6 text-center">
+          {/* The hop's transform lives on the wrapper, the scale on the mark
+              itself, so the two never fight. `lg` is 56px, which reads timid
+              in a 466px frame — this is the one place the mark is the subject
+              rather than a label. */}
+          <div className="hv-logo-hop">
+            <BrandLogo size="lg" className="scale-[1.6]" />
+          </div>
+          <p className="hv-done-title font-black text-xl tracking-tight">{C.thanks}</p>
+        </div>
+      );
 
     const blocked = unknownRequired(phase.form);
-    const last = step === phase.form.pages.length - 1;
-    const canNext = pageComplete(phase.form.pages[step], state, (q) => images.filter((i) => i.questionId === q).length + (includeCapture && firstScreenshot(phase.form)?.id === q ? 1 : 0));
     const shot = screenshotOn(phase.form.pages[step]);
     const capture: CaptureOffer | null =
       shot && thumbnail ? { thumbnail, questionId: shot.id, included: includeCapture, onToggle: setIncludeCapture } : null;
@@ -179,36 +205,43 @@ export function FeedbackDialog({
         />
         {banner && <p className="text-sm font-semibold text-berry">{banner}</p>}
         {blocked.length > 0 && <p className="text-xs text-ink-soft">{C.unknown}</p>}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={step === 0}
-            onClick={() => setStep((s) => s - 1)}
-            className="rounded-xl border-2 border-line px-3 py-1.5 text-sm font-bold cursor-pointer hover:border-honey disabled:opacity-40 disabled:cursor-default"
-          >
-            {C.back}
+      </div>
+    );
+  };
+
+  /**
+   * Back / Next / Send, pinned to the bottom of the fixed frame rather than
+   * following the content. On a one-question page they used to ride up under
+   * the question and on the screenshot page they sat far below it — same two
+   * buttons, a different place each step.
+   */
+  const footer = (): React.JSX.Element | null => {
+    if (phase.k !== "ready") return null;
+    const blocked = unknownRequired(phase.form);
+    const last = step === phase.form.pages.length - 1;
+    const canNext = pageComplete(phase.form.pages[step], state, (q) => images.filter((i) => i.questionId === q).length + (includeCapture && firstScreenshot(phase.form)?.id === q ? 1 : 0));
+    const primary =
+      "rounded-xl bg-tangerine text-paper font-bold px-4 py-1.5 text-sm border-2 border-tangerine-deep shadow-pop cursor-pointer hover:brightness-105 disabled:opacity-40 disabled:cursor-default disabled:shadow-none";
+    return (
+      <div className="flex items-center gap-2 pt-4 shrink-0">
+        <button
+          type="button"
+          disabled={step === 0}
+          onClick={() => setStep((s) => s - 1)}
+          className="rounded-xl border-2 border-line px-3 py-1.5 text-sm font-bold cursor-pointer hover:border-honey disabled:opacity-40 disabled:cursor-default"
+        >
+          {C.back}
+        </button>
+        <div className="flex-1" />
+        {last ? (
+          <button type="button" disabled={!canNext || sending || blocked.length > 0} onClick={() => void send()} className={primary}>
+            {sending ? C.sending : C.send}
           </button>
-          <div className="flex-1" />
-          {last ? (
-            <button
-              type="button"
-              disabled={!canNext || sending || blocked.length > 0}
-              onClick={() => void send()}
-              className="rounded-xl bg-tangerine text-paper font-bold px-4 py-1.5 text-sm border-2 border-tangerine-deep shadow-pop cursor-pointer hover:brightness-105 disabled:opacity-40 disabled:cursor-default disabled:shadow-none"
-            >
-              {sending ? C.sending : C.send}
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={!canNext}
-              onClick={() => setStep((s) => s + 1)}
-              className="rounded-xl bg-tangerine text-paper font-bold px-4 py-1.5 text-sm border-2 border-tangerine-deep shadow-pop cursor-pointer hover:brightness-105 disabled:opacity-40 disabled:cursor-default disabled:shadow-none"
-            >
-              {C.next}
-            </button>
-          )}
-        </div>
+        ) : (
+          <button type="button" disabled={!canNext} onClick={() => setStep((s) => s + 1)} className={primary}>
+            {C.next}
+          </button>
+        )}
       </div>
     );
   };
@@ -236,7 +269,19 @@ export function FeedbackDialog({
             requestClose();
           }}
           aria-describedby={undefined}
-          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(30rem,calc(100vw-3rem))] max-h-[min(42rem,calc(100vh-3rem))] overflow-y-auto rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-6 focus:outline-none"
+          /**
+           * The size is FIXED for the whole flow — the OnboardingDialog rule,
+           * and for the same reason. Steps change what is IN the frame, never
+           * how big it is: a dialog that shrinks to one question and grows
+           * again for the screenshot page re-anchors itself under the pointer
+           * at every step, and collapsed to a sliver on the thank-you.
+           * `h-`, not `max-h-`, is what makes that true.
+           *
+           * 31rem is MEASURED, not chosen: the tallest page (the five-option
+           * first one) needs 352px of body, and this is that plus the padding,
+           * header and footer. Any taller and every other step is a void.
+           */
+          className="hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col w-[min(30rem,calc(100vw-3rem))] h-[min(31rem,calc(100vh-3rem))] overflow-hidden rounded-2xl bg-paper-deep pegboard border-2 border-ink/80 shadow-pop p-6 focus:outline-none"
         >
           <div className="flex items-start gap-3 mb-4">
             {/* Screen-reader only. Radix requires a title for the dialog's
@@ -250,7 +295,7 @@ export function FeedbackDialog({
             </button>
           </div>
           {confirmDiscard ? (
-            <div className="flex flex-col gap-3">
+            <div className="flex-1 min-h-0 flex flex-col gap-3">
               <p className="text-sm font-semibold">{C.discard}</p>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setConfirmDiscard(false)} className="rounded-xl border-2 border-line px-3 py-1.5 text-sm font-bold cursor-pointer hover:border-honey">
@@ -262,7 +307,17 @@ export function FeedbackDialog({
               </div>
             </div>
           ) : (
-            body()
+            <>
+              {/* `my-auto` on the inner block, not `justify-center` on the
+                  scroller: it centres a short step in the fixed frame, and
+                  when a step is taller than the frame the auto margins
+                  collapse to zero so it scrolls from the TOP instead of
+                  clipping its own first line. */}
+              <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+                <div className="my-auto w-full">{body()}</div>
+              </div>
+              {footer()}
+            </>
           )}
         </Dialog.Content>
       </Dialog.Portal>

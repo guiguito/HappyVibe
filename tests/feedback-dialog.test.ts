@@ -32,6 +32,30 @@ describe("§34 dialog", () => {
     expect(dialog).not.toMatch(/<Dialog\.Title className="font-black/);
   });
 
+  /**
+   * Two things the user asked for after seeing it: the frame must not resize
+   * step to step, and the send-off must be a moment rather than a line of text.
+   */
+  it("the frame is a FIXED height for the whole flow, with the footer pinned", () => {
+    expect(dialog).toMatch(/h-\[min\(31rem,calc\(100vh-3rem\)\)\]/);
+    // `max-h-` would let a one-question page collapse the dialog again.
+    expect(dialog).not.toMatch(/max-h-\[min\(42rem/);
+    expect(dialog).toMatch(/flex-1 min-h-0 overflow-y-auto/);
+    // Short steps centre; a step taller than the frame still scrolls from the top.
+    expect(dialog).toMatch(/my-auto w-full/);
+    // The buttons live outside the scrolling body, so they cannot drift up the page.
+    expect(dialog.indexOf("const footer =")).toBeGreaterThan(dialog.indexOf("const body ="));
+  });
+
+  it("the send-off reuses the house celebration and is given time to play", () => {
+    expect(dialog).toMatch(/hv-logo-hop/);
+    expect(dialog).toMatch(/<BrandLogo size="lg"/);
+    expect(dialog).toMatch(/hv-done-title/);
+    // The hop is 1250ms; closing before it lands is what made it feel abrupt.
+    const ms = Number(/const CLOSE_AFTER_MS = ([\d_]+);/.exec(dialog)?.[1].replace(/_/g, ""));
+    expect(ms).toBeGreaterThan(1250);
+  });
+
   it("no dead copy", () => {
     const all = dialog + form;
     const unused = Object.keys(FEEDBACK_COPY).filter((k) => !all.includes(`C.${k}`) && !all.includes(`FEEDBACK_COPY.${k}`));
