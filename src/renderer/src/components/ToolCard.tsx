@@ -712,6 +712,13 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
           </span>
         )}
       </button>
+      {/* B1 (Animations round, 2026-09-10): the body UNFOLDS. A card that grows
+          by its own height in one frame shoves every message below it, which is
+          the whole reason this is a height reveal (`grid-template-rows` 0fr→1fr,
+          already the app's idiom) rather than a fade. The content mounts only
+          when open, so a long child transcript costs nothing while collapsed. */}
+      <div className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-180 motion-safe:ease-hv-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="min-h-0 overflow-hidden">
       {open && (
         <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 flex flex-col gap-3">
           {errorText && results.length === 0 && !inspected?.length ? (
@@ -728,6 +735,8 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
           )}
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -859,8 +868,21 @@ export function ToolCard({
           className="flex items-center gap-2.5 text-left cursor-pointer flex-1 min-w-0"
         >
           {/* The dot keeps the status too — `running` has no glyph on purpose
-              (a pulse says "still going" better than any shape can). */}
-          <span className={`size-2.5 rounded-full shrink-0 ${s.dot}`} title={s.label} aria-label={s.label} role="img" />
+              (a pulse says "still going" better than any shape can).
+
+              B1 (2026-09-10): running → done is the one moment this card
+              reports an outcome, so the dot POPS on the change. `key` is the
+              status, which remounts the span and lets `@starting-style` fire;
+              without it React reuses the node and there is no enter to play.
+              The colour transitions too, so a card that merely changes shade
+              does not jump. */}
+          <span
+            key={card.status}
+            className={`size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-200 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${s.dot}`}
+            title={s.label}
+            aria-label={s.label}
+            role="img"
+          />
           {brand ? <i className={`si ${brand} text-[15px] shrink-0 text-ink-soft`} aria-hidden /> : <ToolIcon kind={icon} />}
           <span className="font-bold text-sm line-clamp-2 break-words flex-1 min-w-0" title={label}>
             {label}
@@ -933,7 +955,12 @@ export function ToolCard({
           </button>
         );
       })()}
-      {details && <TechnicalDetails card={card} />}
+      {/* B1: the same unfold. `details` mounts only when open — the raw
+          envelope can be very large, and paying to render it while collapsed
+          is the cost this reveal must not introduce. */}
+      <div className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-180 motion-safe:ease-hv-out ${details ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="min-h-0 overflow-hidden">{details && <TechnicalDetails card={card} />}</div>
+      </div>
       {/* Round 11: collapsed to one line — the agent usually recovers by itself, so
           an expanded error per attempt is noise. Click (or the details toggle) for
           the full text, which TechnicalDetails already renders. */}

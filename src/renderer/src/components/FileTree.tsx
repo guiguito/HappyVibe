@@ -263,7 +263,14 @@ export function FileTree({
                 {creating && creating.parent === rel && open && (
                   <NewEntryInput depth={depth + 1} kind={creating.kind} value={newName} onChange={setNewName} onCommit={commitCreate} onCancel={() => setCreating(null)} />
                 )}
-                {open && renderDir(rel, depth + 1)}
+                {/* C3 (2026-09-10): children fade in, enter only. A tree is
+                    expanded and collapsed constantly, so an exit here would be
+                    a delay on every click rather than a flourish. */}
+                {open && (
+                  <div className="motion-safe:transition-opacity motion-safe:duration-100 motion-safe:ease-hv-out motion-safe:starting:opacity-0">
+                    {renderDir(rel, depth + 1)}
+                  </div>
+                )}
               </div>
             );
           }

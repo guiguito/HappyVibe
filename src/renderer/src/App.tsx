@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DUR } from "./motion";
+import { DUR, flyGhost } from "./motion";
 import { usePresence } from "./usePresence";
 import { ChangesPanel } from "./components/ChangesPanel";
 import { RightRail, type DrawerPanel } from "./components/RightRail";
@@ -1869,10 +1869,24 @@ export default function App(): React.JSX.Element {
    * PTY is untouched: the tab just attaches a fresh emulator to main's buffer.
    */
   const openAgentTerminalAsTab = (sid: string, ws: string, terminalId: string): void => {
+    // B6 (2026-09-10): the run leaves the rail and becomes a tab, so the same
+    // ghost that flew INTO the circle flies out of it to the tab. The origin
+    // must be read BEFORE `dropAgentTerminal` removes the circle — a rect taken
+    // from a node React has already unmounted is all zeros, and `flyGhost`
+    // declines those rather than flashing something at the origin.
+    const from = document.querySelector<HTMLElement>(`[data-hv-run-avatar="${CSS.escape(terminalId)}"]`)
+      ?? document.querySelector<HTMLElement>(`[data-hv-run-card="${CSS.escape(terminalId)}"]`);
     setTabsByWs((p) => ({ ...p, [ws]: openTerminal(p[ws] ?? emptyTabs, terminalId) }));
     dropAgentTerminal(sid, terminalId);
     setActiveWs(ws);
     setView("chat");
+    if (from) {
+      // One frame later, so the tab it flies TO has been committed.
+      requestAnimationFrame(() => {
+        const to = document.querySelector<HTMLElement>(`[data-hv-tab="${CSS.escape(termTab(terminalId))}"]`);
+        if (to) void flyGhost(from, to, { duration: 280 });
+      });
+    }
   };
 
   /**

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { uiGet, uiSet } from "../uiStore";
 import { timeago } from "../timeago";
 import { DOT_TITLE, SESSION_DOT, sessionDotState } from "../sessionDot";
+import { flipChildren, snapshotRects } from "../motion";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
 import { bySidebarOrder, lastUsed } from "../sessionOrder";
@@ -472,6 +473,7 @@ function TrashIcon(): React.JSX.Element {
 }
 
 function SessionRow({
+  rowId,
   session,
   status,
   busy,
@@ -497,6 +499,8 @@ function SessionRow({
   onDelete: () => void;
   /** A8: a turn is in flight in this session. */
   busy: boolean;
+  /** C2: what the list's FLIP identifies this row by across a reorder. */
+  rowId: string;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
@@ -516,7 +520,8 @@ function SessionRow({
 
   return (
     <div
-      className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold cursor-pointer ${
+      data-hv-session={rowId}
+      className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold cursor-pointer motion-safe:starting:opacity-0 motion-safe:transition-opacity motion-safe:duration-150 motion-safe:ease-hv-out ${
         selected
           ? "bg-honey-soft border border-honey/60"
           : open
@@ -769,6 +774,31 @@ export function Sidebar({
   // group collapsed is a division of nothing. §16 round 18 put four groups
   // inside that group, so `isSized` applies the same rule one level down.
   const sized = isSized(settingsOpen, treeFrac, openGroups.size);
+
+  /**
+   * C2 (Animations round, 2026-09-10) — the session lists reorder in place.
+   *
+   * `bySidebarOrder` moves a session to the top when you use it (§17), and a
+   * row teleporting past its neighbours is the one motion a static list cannot
+   * explain. One list per workspace, so the rects are held per workspace too —
+   * a shared map would make a row in one list appear to fly from another.
+   */
+  const listRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const listRects = useRef<Record<string, Map<string, DOMRect>>>({});
+  const sessionListRef = (ws: string) => (el: HTMLDivElement | null): void => {
+    listRefs.current[ws] = el;
+  };
+  const sessionOrderKey = workspaces
+    .map((ws) => sessions.filter((x) => x.workspaceId === ws).map((x) => x.id).join(","))
+    .join("|");
+  useLayoutEffect(() => {
+    for (const [ws, el] of Object.entries(listRefs.current)) {
+      if (!el) continue;
+      flipChildren(el, "data-hv-session", listRects.current[ws] ?? new Map());
+      listRects.current[ws] = snapshotRects(el, "data-hv-session");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the order, not the array identity
+  }, [sessionOrderKey]);
 
   const startResize = (e: React.MouseEvent): void => {
     e.preventDefault(); // else the drag selects sidebar text
@@ -1090,7 +1120,11 @@ export function Sidebar({
                   </button>
                 )}
                 {!isCollapsed && (
-                  <div className="ml-3 flex flex-col gap-0.5">
+                  // C2 (2026-09-10): the list reorders itself (a session moves
+                  // to the top when you use it, §17), and a row teleporting
+                  // past its neighbours is the one motion a static list cannot
+                  // explain. FLIP moves each row from where it WAS.
+                  <div ref={sessionListRef(ws)} className="ml-3 flex flex-col gap-0.5">
                     {wsSessions.length === 0 && (
                       <div className="text-xs text-ink-soft/70 px-2 py-0.5">
                         {q ? "No matching sessions." : "No sessions yet — hit + next to a workspace."}
@@ -1099,6 +1133,7 @@ export function Sidebar({
                     {wsSessions.map((s) => (
                       <SessionRow
                         key={s.id}
+                        rowId={s.id}
                         session={s}
                         status={statuses[s.id]}
                         busy={!!busy[s.id]}
@@ -1216,6 +1251,13 @@ export function Sidebar({
                       <span className="flex-1 text-left">{g.label}</span>
                       <Chevron open={open} />
                     </button>
+                    {/* C4 (2026-09-10): a group unfolds rather than snapping.
+                        The four groups sit in a scroll region that is already
+                        tight (§20 round 18 measured it), so a group opening
+                        moves everything below it — which is exactly the case a
+                        height reveal exists for. */}
+                    <div className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-150 motion-safe:ease-hv-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                      <div className="min-h-0 overflow-hidden">
                     {open &&
                       NAV.filter((n) => n.group === g.id).map((n) => (
                         <button
@@ -1230,6 +1272,8 @@ export function Sidebar({
                           <span className="flex-1 text-left">{n.label}</span>
                         </button>
                       ))}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
