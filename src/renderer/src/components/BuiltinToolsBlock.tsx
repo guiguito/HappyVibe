@@ -86,11 +86,11 @@ function PlanModeRow({
 
       {confirming && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8"
+          className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8"
           onClick={() => setConfirming(false)}
         >
           <div
-            className="w-full max-w-md rounded-2xl border-2 border-berry bg-card p-5 shadow-sticker-lg"
+            className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-berry bg-card p-5 shadow-sticker-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="font-bold text-berry mb-1">Turn off Plan mode?</div>

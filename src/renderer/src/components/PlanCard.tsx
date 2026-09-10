@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Unfold } from "./Unfold";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ModelSelect } from "./ModelSelect";
@@ -95,7 +96,14 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
   return (
     <div className={`rounded-xl border-2 bg-card shadow-sticker overflow-hidden ${isCancelled ? "border-line opacity-70" : "border-sky/50"}`}>
       <div className="w-full flex items-center gap-2.5 px-3.5 py-2.5">
-        <span className={`size-2.5 rounded-full shrink-0 ${s.dot}`} />
+        {/* C1: draft → implementing → implemented is the plan's whole story,
+            and this dot is where it is told. `key` remounts on the change so
+            `@starting-style` fires — React would otherwise reuse the node and
+            the pop would never play. */}
+        <span
+          key={card.status}
+          className={`size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-300 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${s.dot}`}
+        />
         <span className="text-[15px] shrink-0" aria-hidden>🧭</span>
         <button type="button" onClick={() => setExpanded((v) => !v)} className="flex items-center gap-2 text-left cursor-pointer flex-1 min-w-0">
           <span className="font-bold text-sm truncate">Implementation plan</span>
@@ -107,7 +115,10 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
         <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-sky-soft text-sky border border-sky/40">{s.label}</span>
       </div>
 
-      {expanded && body && (
+      {/* C1 (Animations round, 2026-09-10): the plan body unfolds. Same idiom
+          and same reason as the tool card's — a plan is long, and appearing at
+          full height in one frame shoves the whole conversation. */}
+      <Unfold open={expanded && !!body}>
         <div className="px-4 pb-2 border-t-2 border-line/60 pt-2">
           <div className="md max-h-96 overflow-y-auto">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
@@ -123,7 +134,7 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
             </button>
           )}
         </div>
-      )}
+      </Unfold>
 
       {/* Actions — all human-only transitions. */}
       {isDraft && !dismissed && (

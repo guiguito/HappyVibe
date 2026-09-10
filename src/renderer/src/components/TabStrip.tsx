@@ -171,8 +171,11 @@ export function TabStrip({
    * picked from the drawer opens into the pane you asked from.
    */
 }): React.JSX.Element {
+  // B6 (Animations round, 2026-09-10): a new tab pops in; closing is instant.
+  // The asymmetry is the rule — an exit that lingers is a tab you can still
+  // click after deciding to close it.
   const tab = (active: boolean): string =>
-    `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors ${
+    `flex items-center gap-1.5 max-w-48 shrink-0 border-r-2 border-line px-3.5 py-2 text-[13px] cursor-pointer transition-colors motion-safe:transition-[scale,opacity,color,background-color] motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:scale-90 motion-safe:starting:opacity-0 ${
       active ? "bg-card font-bold border-b-2 border-b-card -mb-0.5" : "text-ink-soft hover:bg-paper-deep/50 hover:text-ink"
     }`;
 
@@ -257,6 +260,8 @@ export function TabStrip({
               key={id}
               role="tab"
               aria-selected={active}
+              // B6: where the "Open as tab" flight lands.
+              data-hv-tab={id}
               tabIndex={0}
               draggable
               onDragStart={(e) => {
@@ -381,7 +386,7 @@ export function TabStrip({
             }}
           />
           <div
-            className="fixed z-50 min-w-44 rounded-lg border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-[13px] font-semibold"
+            className="fixed hv-menu-in origin-top-left z-50 min-w-44 rounded-lg border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-[13px] font-semibold"
             style={{ left: menu.x, top: menu.y }}
           >
             {renameable(menu.tab) && (
@@ -569,7 +574,7 @@ function NewTabButton({
       {/* Drops to the RIGHT (left-0): the `+` now sits just after the last tab, so
           a right-aligned menu would extend leftward off the pane. */}
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
+        <div className="absolute hv-menu-in origin-top-left left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
           <Item label="New session" hint={newSessionKey} icon={<ChatGlyph />} onPick={onNewSession} />
           <Item label="New terminal" hint={newTerminalKey} icon={<TerminalGlyph />} onPick={onNewTerminal} />
           <Item label="New browser" hint={newBrowserKey} icon={<BrowserGlyph />} onPick={onNewBrowser} />

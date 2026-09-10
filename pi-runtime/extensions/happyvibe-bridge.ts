@@ -1838,7 +1838,7 @@ export default function (pi: ExtensionAPI) {
       command: Type.String({ description: "One command line. No embedded newlines." }),
       terminalId: Type.Optional(Type.String({ description: "Reuse this terminal instead of opening a new one. It must be idle." })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       const { command, terminalId, intent } = params as { command?: unknown; terminalId?: string; intent?: string };
       // Belt and braces: the tool_call handler already refused a multi-line
       // command before the permission prompt (that ordering is the point), so
@@ -1848,8 +1848,14 @@ export default function (pi: ExtensionAPI) {
       // `intent` rides along so main can echo it on the hv.terminal notify: the
       // CARD leads with the model's headline (§7). The permission prompt does
       // not see this — it was built from the factual summary long before.
+      // A1 (2026-09-10): `toolCallId` rides along so main can echo it on the
+      // hv.terminal started notify. It is the ONLY join between the transcript
+      // card for this call (which knows the tool call id) and the run rail's
+      // circle (which knows the terminal id) — the two describe one run and
+      // nothing connected them, so the card→circle flight had no destination
+      // to aim at. Pi hands it to `execute`; we used to discard it.
       const raw = await ctx.ui.input(
-        JSON.stringify({ kind: "hv.terminal-run", command: checked.command, terminalId, intent }),
+        JSON.stringify({ kind: "hv.terminal-run", command: checked.command, terminalId, intent, toolCallId }),
         "",
       );
       return terminalReply(raw);

@@ -112,8 +112,8 @@ export function PromptTemplateImportControls({
 function GitUrlModal({ onClose, onScan }: { onClose: () => void; onScan: (url: string) => void }): React.JSX.Element {
   const [url, setUrl] = useState("");
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-5" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+      <div className="hv-dialog-flow w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-5" onMouseDown={(e) => e.stopPropagation()}>
         <h3 className="font-black text-lg mb-1">Import from Git URL</h3>
         <p className="text-xs text-ink-soft mb-3">
           Public GitHub, GitLab, Bitbucket or Codeberg repo. Downloaded over HTTPS (no git needed); you choose which
@@ -168,8 +168,8 @@ function ImportPicker({
     }
   };
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-5 flex flex-col max-h-[80vh]" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+      <div className="hv-dialog-flow w-full max-w-lg rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-5 flex flex-col max-h-[80vh]" onMouseDown={(e) => e.stopPropagation()}>
         <h3 className="font-black text-lg mb-1">Import prompts</h3>
         <p className="text-xs text-ink-soft mb-3">
           Choose which prompts to import. They're approved on import ({scope === "workspace" ? "into this workspace" : "as global prompts"}).
@@ -337,9 +337,9 @@ export function PromptTemplateInspector({
   const changed = !!detail?.approved && detail.approved !== detail.current;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
+    <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={onClose}>
       <div
-        className="w-full max-w-2xl rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 flex flex-col max-h-[85vh]"
+        className="hv-dialog-flow w-full max-w-2xl rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6 flex flex-col max-h-[85vh]"
         onMouseDown={(e) => e.stopPropagation()}
       >
         {detail === null ? (

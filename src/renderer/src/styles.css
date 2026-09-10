@@ -47,6 +47,16 @@
   --shadow-sticker: 3px 3px 0 0 var(--color-line);
   --shadow-sticker-lg: 5px 5px 0 0 var(--color-line-strong);
   --shadow-pop: 4px 4px 0 0 var(--color-tangerine-deep);
+
+  /* Animations round (2026-09-10): the whole motion vocabulary, in one place.
+     Tailwind's `--ease-*` namespace emits the `ease-hv-*` utilities; `motion.ts`
+     mirrors these same strings as data for the WAAPI helpers, and
+     tests/motion-tokens.test.ts pins the two equal so they cannot drift.
+     Enters and movement are ease-out, exits are ease-in and always faster, and
+     `pop` IS `hv-pop-in`'s overshoot rather than a second one beside it. */
+  --ease-hv-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-hv-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-hv-pop: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 /* Round 4 #1: in-conversation search highlights (CSS Custom Highlight API). */
@@ -219,35 +229,88 @@
  */
 .hv-overlay {
   z-index: 100;
-  animation: hv-fade-in 150ms ease-out;
+  animation: hv-fade-in 220ms ease-out;
 }
 .hv-dialog {
   z-index: 100;
-  animation: hv-pop-in 180ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  animation: hv-pop-in 270ms cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
-/* V2.C1: subtle "working" shimmer bar on the sticky delegation run card */
-@keyframes hv-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+/**
+ * Animations round (2026-09-10) — A7: a transcript item that arrived LIVE
+ * rises in. Restore and "Show earlier messages" never carry the flag, so
+ * reopening a session and expanding a compaction boundary paint at once
+ * instead of animating hundreds of nodes.
+ *
+ * The wrapper is `display: contents` because the transcript is a flex COLUMN
+ * and its children position themselves in it (`self-end` for a user bubble,
+ * `self-center` for a divider) — a real box here would left-align every user
+ * message. `contents` generates no box of its own, so the transition has to
+ * live on its child, hence the `> *`.
+ *
+ * `data-live` appears nowhere else in the app, which is what makes an
+ * unscoped attribute selector safe here (and it doubles as the handle a GUI
+ * pass uses to assert the ABSENCE of animation after a restore).
+ */
+[data-live] > * {
+  transition:
+    opacity 220ms var(--ease-hv-out),
+    translate 220ms var(--ease-hv-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 6px;
+  }
 }
-.hv-shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 20%,
-    color-mix(in srgb, var(--color-sky) 40%, transparent) 50%,
-    transparent 80%
-  );
-  background-size: 200% 100%;
-  animation: hv-shimmer 1.8s linear infinite;
+
+/**
+ * Animations round (2026-09-10) — menus enter from their anchor, exits instant.
+ *
+ * ONE class for every floating menu in the app (the sites are listed in
+ * tests/menu-enter.test.ts, which fails if a new one forgets it). The scale
+ * never leaves the menu's final box, so §28's coverage check — which judges an
+ * `absolute`/`fixed` candidate by its BOUNDING BOX — sees exactly what it saw
+ * before. `transform-origin` is set per site, because only the call site knows
+ * whether it opens upwards or downwards.
+ */
+.hv-menu-in {
+  transition:
+    opacity 180ms var(--ease-hv-out),
+    transform 180ms var(--ease-hv-out);
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/**
+ * The same overshoot as `.hv-dialog`, for a card centred by FLEX rather than by
+ * `position: absolute`. `hv-pop-in`'s keyframes carry `translate(-50%, -50%)`
+ * — Radix's centring — so reusing it on a flex-centred confirm throws the card
+ * a quarter of the viewport up and left before it settles.
+ */
+@keyframes hv-pop-in-flow {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.hv-dialog-flow {
+  animation: hv-pop-in-flow 270ms var(--ease-hv-pop);
 }
 
 /**
  * §22 onboarding — the welcome beat, round 2 (2026-09-03).
  *
- * CSS-only on purpose, not for taste: the renderer CSP is `script-src 'self'`
- * with no `blob:` and no `data:`, so an animation runtime cannot load at all.
- * That is the same wall §27's audio worklet hit, and it is not being hit twice.
+ * CSS-only on purpose. NOT because of the CSP: a bundled npm library is
+ * `'self'` and loads fine — only CDN/blob/data are blocked, and §27's audio
+ * worklet hit that wall because it was a BLOB URL, not because it was a
+ * library. The reason is the Animations round's decision (2026-09-10): native
+ * CSS + a little Web Animations API, zero dependencies, because Chromium 150
+ * is a fixed target and there is no browser to hedge for.
  *
  * Three beats, in order: the logo skids in from the RIGHT bouncing on a virtual
  * ground, the wordmark drops from the top and rebounds, then the tagline fades
@@ -340,6 +403,16 @@
  * restated here.
  */
 @media (prefers-reduced-motion: reduce) {
+  /* Animations round: the two classes added there are neutralised here, in the
+     block that already owns this rule. `.hv-menu-in` is a TRANSITION, so it
+     needs `transition: none` as well as the `animation: none` below — killing
+     only the animation would leave the fade playing. */
+  .hv-menu-in,
+  [data-live] > * {
+    transition: none;
+  }
+  .hv-menu-in,
+  .hv-dialog-flow,
   .hv-overlay,
   .hv-dialog,
   .hv-logo-travel,

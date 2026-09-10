@@ -1,4 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DUR, flyGhost } from "./motion";
+import { usePresence } from "./usePresence";
 import { ChangesPanel } from "./components/ChangesPanel";
 import { RightRail, type DrawerPanel } from "./components/RightRail";
 import { badgeTint, clampDrawer, summarise } from "./gitui";
@@ -47,7 +49,7 @@ import { dialogHost } from "./paneDialog";
 import { McpView } from "./components/McpView";
 import { AllToolsView } from "./components/AllToolsView";
 import { BuiltinToolsView } from "./components/BuiltinToolsView";
-import { asyncResultInfo, delegationLabel, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
+import { applySubagentStarted, asyncResultInfo, delegationLabel, findByRunId, isSubagentQuery, isSubagentTool, mergeTrace, parseAgents, parseBrowserEvent, parseSubagentEvent, parseTerminalEvent, parseTools, runLabel, traceFromEnd, traceFromUpdate, type AgentInfo, type DelegationChild, type DelegationRun, type SubagentEvent, type ToolInfo } from "./agents";
 import { applyDelta, updateToolCard, mergeIntoLastAssistant } from "./streaming";
 import { attachmentUrl, buildImages, type ImageAttachment, type DocumentAttachment } from "./composer";
 import {
@@ -198,7 +200,9 @@ export default function App(): React.JSX.Element {
    * which the push channel keeps live, so an exited terminal drops out of the
    * card stack with no extra bookkeeping.
    */
-  const [agentTerms, setAgentTerms] = useState<Record<string, Record<string, { intent: string; startedAt: number }>>>({});
+  const [agentTerms, setAgentTerms] = useState<
+    Record<string, Record<string, { intent: string; startedAt: number; toolCallId?: string; title?: string; leaving?: true }>>
+  >({});
   /**
    * §28: every live browser pane, keyed by id. Main owns the panes and pushes
    * state (url/title/loading/blocked/crashed) — the renderer never derives it,
@@ -575,7 +579,12 @@ export default function App(): React.JSX.Element {
   const appendItem = (sid: string, item: TranscriptItem): void =>
     setTranscripts((p) => {
       const items = p[sid] ?? [];
-      const withId = { ...item, id: idCounter.current++ };
+      // A7 (2026-09-10): `live` is what makes an item rise in, and this is the
+      // ONE function that means "arrived now". It is deliberately not an id
+      // floor: `idCounter` is one counter for the whole app and `loadEarlier`
+      // mints fresh, HIGHER ids for the messages it prepends, so a floor would
+      // animate the hundred-node path it exists to exclude.
+      const withId = { ...item, id: idCounter.current++, live: true as const };
       if (withId.kind === "tool") {
         (toolIndex.current[sid] ??= new Map()).set(withId.card.toolCallId, items.length);
       }
@@ -893,28 +902,33 @@ export default function App(): React.JSX.Element {
     // (async) and coexist with foreground cards (keyed by toolCallId).
     const handleSubagentEvent = (sid: string, sub: SubagentEvent): void => {
       if (sub.stage === "started" && sub.runId) {
-        const run: DelegationRun = {
-          id: sub.runId,
-          kind: "async",
-          agent: sub.agent ?? "subagent",
-          // runLabel, not sub.task: from pi-subagents 0.50 the event's own task is
-          // redacted, and this caption must never show that. The bridge substitutes
-          // the task it remembered from the tool call (hv-subagent-tasks.ts).
-          label: runLabel(sub.task),
-          startedAt: Date.now(),
-          status: "running",
-        };
-        setDelegations((p) => ({ ...p, [sid]: { ...p[sid], [run.id]: run } }));
+        // A1 (2026-09-10): ATTACH the run id to the foreground run that is
+        // waiting for it, rather than adding a second run beside it — one
+        // delegation was two circles in the rail until tool_execution_end
+        // cleaned up. `applySubagentStarted` still adds when there is nothing
+        // to attach to, which is the post-respawn resync's only route in.
+        //
+        // runLabel, not sub.task: from pi-subagents 0.50 the event's own task is
+        // redacted, and this caption must never show that. The bridge substitutes
+        // the task it remembered from the tool call (hv-subagent-tasks.ts).
+        setDelegations((p) => ({
+          ...p,
+          [sid]: applySubagentStarted(p[sid] ?? {}, { runId: sub.runId!, agent: sub.agent, label: runLabel(sub.task) }, Date.now()),
+        }));
       } else if (sub.stage === "control" && sub.runId) {
         setDelegations((p) => {
-          const run = p[sid]?.[sub.runId!];
-          return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, live: { ...run.live, activityState: sub.activityState } } } } : p;
+          // findByRunId, not a direct key: between `started` and the re-key at
+          // tool_execution_end the run is still filed under its TOOL CALL id.
+          // That window is short and it is exactly where `needs_attention`
+          // lives, which is the one state the rail must never drop.
+          const run = findByRunId(p[sid] ?? {}, sub.runId!);
+          return run ? { ...p, [sid]: { ...p[sid], [run.id]: { ...run, live: { ...run.live, activityState: sub.activityState } } } } : p;
         });
       } else if (sub.stage === "complete" && sub.runId) {
         const status = sub.status === "success" ? ("done" as const) : sub.status === "interrupted" ? ("interrupted" as const) : ("error" as const);
         setDelegations((p) => {
-          const run = p[sid]?.[sub.runId!];
-          return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, status } } } : p;
+          const run = findByRunId(p[sid] ?? {}, sub.runId!);
+          return run ? { ...p, [sid]: { ...p[sid], [run.id]: { ...run, status } } } : p;
         });
         // §12 (2026-08-30): the TRANSCRIPT card too, not only the sticky one. The
         // sticky card slides away in 2.5s; this one is the permanent record, and
@@ -927,7 +941,7 @@ export default function App(): React.JSX.Element {
           const outcome = status === "done" ? ("done" as const) : status === "interrupted" ? ("stopped" as const) : ("failed" as const);
           // The run's last polled spend, which the sticky card already holds —
           // read BEFORE that card is torn down below.
-          const finalCost = delegationsRef.current[sid]?.[sub.runId!]?.live?.cost;
+          const finalCost = findByRunId(delegationsRef.current[sid] ?? {}, sub.runId!)?.live?.cost;
           const idx = (toolIndex.current[sid] ??= new Map());
           setTranscripts((p) => ({
             ...p,
@@ -948,9 +962,16 @@ export default function App(): React.JSX.Element {
         appendItem(sid, { kind: "notice", text: `${sub.agent ?? "Subagent"} finished — delivering results…`, pending: false });
         setTimeout(() => {
           setDelegations((p) => {
-            if (!p[sid]?.[sub.runId!]) return p;
+            const run = findByRunId(p[sid] ?? {}, sub.runId!);
+            return run ? { ...p, [sid]: { ...p[sid], [run.id]: { ...run, leaving: true } } } : p;
+          });
+        }, 2_500 - DUR.base);
+        setTimeout(() => {
+          setDelegations((p) => {
+            const run = findByRunId(p[sid] ?? {}, sub.runId!);
+            if (!run) return p;
             const next = { ...p[sid] };
-            delete next[sub.runId!];
+            delete next[run.id];
             return { ...p, [sid]: next };
           });
         }, 2_500);
@@ -959,10 +980,16 @@ export default function App(): React.JSX.Element {
         const runs = sub.runs ?? [];
         setDelegations((p) => {
           const cur = p[sid] ?? {};
-          const fg = Object.fromEntries(Object.entries(cur).filter(([, r]) => r.kind === "fg"));
+          // A1: a foreground run that has already been given its run id is the
+          // SAME run as the one in this resync list — keeping both would put
+          // the duplicate circle back through the other door.
+          const listed = new Set(runs.map((x) => x.runId));
+          const fg = Object.fromEntries(
+            Object.entries(cur).filter(([, r]) => r.kind === "fg" && !(r.runId && listed.has(r.runId))),
+          );
           const async: Record<string, DelegationRun> = {};
           for (const x of runs) {
-            const existing = cur[x.runId];
+            const existing = findByRunId(cur, x.runId) ?? undefined;
             async[x.runId] = existing ?? {
               id: x.runId, kind: "async", agent: x.agent ?? "subagent", label: runLabel(x.task), startedAt: Date.now(), status: "running",
             };
@@ -971,8 +998,8 @@ export default function App(): React.JSX.Element {
         });
       } else if (sub.stage === "interrupt-sent" && sub.runId) {
         setDelegations((p) => {
-          const run = p[sid]?.[sub.runId!];
-          return run ? { ...p, [sid]: { ...p[sid], [sub.runId!]: { ...run, status: "interrupted" } } } : p;
+          const run = findByRunId(p[sid] ?? {}, sub.runId!);
+          return run ? { ...p, [sid]: { ...p[sid], [run.id]: { ...run, status: "interrupted" } } } : p;
         });
       }
     };
@@ -1113,7 +1140,16 @@ export default function App(): React.JSX.Element {
             );
             setAgentTerms((p) => ({
               ...p,
-              [sid]: { ...(p[sid] ?? {}), [terminalId]: { intent: termEv.intent ?? "", startedAt: Date.now() } },
+              // A1: `toolCallId` is kept here because this notify is the ONLY
+              // moment it and the terminal id are ever seen together — the same
+              // shape of trap as §12's `asyncCards`, one feature over.
+              [sid]: {
+                ...(p[sid] ?? {}),
+                // `title` is remembered here because a KILLED terminal loses its
+                // live entry the moment main pushes the exit — and the circle has
+                // to keep naming itself for the length of its exit animation.
+                [terminalId]: { intent: termEv.intent ?? "", startedAt: Date.now(), toolCallId: termEv.toolCallId, title: title ?? "" },
+              },
             }));
           } else if (termEv.terminalId) {
             dropAgentTerminal(sid, termEv.terminalId);
@@ -1432,6 +1468,15 @@ export default function App(): React.JSX.Element {
               const run = p[sid]?.[t.toolCallId];
               return run ? { ...p, [sid]: { ...p[sid], [t.toolCallId]: { ...run, status } } } : p;
             });
+            // A2 (2026-09-10): flag the exit 150 ms before the delete, so CSS
+            // can play it. One timer pair off one constant — a second clock
+            // somewhere else is how an exit ends up half-played.
+            setTimeout(() => {
+              setDelegations((p) => {
+                const run = p[sid]?.[t.toolCallId];
+                return run ? { ...p, [sid]: { ...p[sid], [t.toolCallId]: { ...run, leaving: true } } } : p;
+              });
+            }, 2_500 - DUR.base);
             setTimeout(() => {
               setDelegations((p) => {
                 if (!p[sid]?.[t.toolCallId]) return p;
@@ -1818,13 +1863,32 @@ export default function App(): React.JSX.Element {
    * it was killed, or the human promoted it to a tab. The PTY's own fate is
    * decided elsewhere; this only forgets the card.
    */
-  const dropAgentTerminal = (sid: string, terminalId: string): void =>
+  /**
+   * Retire an agent terminal's run — in TWO steps, like a delegation.
+   *
+   * It used to be one synchronous delete, so a killed terminal's circle
+   * vanished in a single frame with no animation at all (reported 2026-09-10 as
+   * "almost invisible"). A delegation already did this properly: its 2.5s
+   * outcome timer raises `leaving` before it removes the run.
+   *
+   * The delete still has to HAPPEN, and on its own clock rather than the
+   * caller's, because the caller is usually main's exit push — see the render
+   * site, which keeps a leaving run on screen after its live entry is gone.
+   */
+  const dropAgentTerminal = (sid: string, terminalId: string): void => {
     setAgentTerms((p) => {
-      const forSession = p[sid];
-      if (!forSession?.[terminalId]) return p;
-      const { [terminalId]: _gone, ...rest } = forSession;
-      return { ...p, [sid]: rest };
+      const run = p[sid]?.[terminalId];
+      return run && !run.leaving ? { ...p, [sid]: { ...p[sid], [terminalId]: { ...run, leaving: true } } } : p;
     });
+    setTimeout(() => {
+      setAgentTerms((p) => {
+        const forSession = p[sid];
+        if (!forSession?.[terminalId]) return p;
+        const { [terminalId]: _gone, ...rest } = forSession;
+        return { ...p, [sid]: rest };
+      });
+    }, DUR.base);
+  };
 
   /**
    * §26 part 2: the human moves an agent terminal into a tab of its own. The
@@ -1832,10 +1896,39 @@ export default function App(): React.JSX.Element {
    * PTY is untouched: the tab just attaches a fresh emulator to main's buffer.
    */
   const openAgentTerminalAsTab = (sid: string, ws: string, terminalId: string): void => {
+    // B6 (2026-09-10): the run leaves the rail and becomes a tab, so the same
+    // ghost that flew INTO the circle flies out of it to the tab. The origin
+    // must be read BEFORE `dropAgentTerminal` removes the circle — a rect taken
+    // from a node React has already unmounted is all zeros, and `flyGhost`
+    // declines those rather than flashing something at the origin.
+    // Found by the circle's MAP key, which for a terminal IS the terminal id we
+    // were handed. The first attempt queried `data-hv-run-avatar` — the DOM
+    // key, which is the tool call id once the join exists (A1 prereq 3) — so it
+    // matched nothing and the flight silently never ran. Re-deriving the same
+    // identity in a second place is the bug; asking for the id we already hold
+    // is the fix.
+    const from = document.querySelector<HTMLElement>(`[data-hv-run-key="${CSS.escape(terminalId)}"]`);
+    // Measured NOW, while the circle is still laid out. Opening the tab makes it
+    // the active one, which hides the chat pane the circle lives in — so by the
+    // frame the destination exists, this node measures 0x0 and the flight would
+    // decline. Reported as "#26 is not really visible"; it never ran at all.
+    const fromRect = from?.getBoundingClientRect();
     setTabsByWs((p) => ({ ...p, [ws]: openTerminal(p[ws] ?? emptyTabs, terminalId) }));
     dropAgentTerminal(sid, terminalId);
     setActiveWs(ws);
     setView("chat");
+    if (from && fromRect && fromRect.width > 0) {
+      // Wait for the TAB to exist rather than assuming one frame is enough:
+      // three state updates land here and the strip may commit on a later one.
+      // Capped, so a tab that never appears costs a few frames and no more.
+      let frames = 0;
+      const whenTabExists = (): void => {
+        const to = document.querySelector<HTMLElement>(`[data-hv-tab="${CSS.escape(termTab(terminalId))}"]`);
+        if (to) void flyGhost(from, to, { duration: DUR.flight, fromRect, fit: "contain" });
+        else if (++frames < 10) requestAnimationFrame(whenTabExists);
+      };
+      requestAnimationFrame(whenTabExists);
+    }
   };
 
   /**
@@ -2593,6 +2686,38 @@ export default function App(): React.JSX.Element {
     if (show) setPulseShow((p) => ({ ...p, [sid]: true }));
   }, [activeWs, selectedId, tabsByWs, turns, busy, statuses, pendingBySession, sessions, feedbackInfo, pulseShow]);
 
+  /**
+   * Animations round (2026-09-10) — the right drawer's exit.
+   *
+   * It is a conditional render, so React removes it before any transition can
+   * run; `usePresence` keeps it mounted for the 120 ms exit and `lastDrawer`
+   * remembers WHICH panel it was showing, because by then the state that says
+   * so is already null.
+   *
+   * Both MUST sit above the `keyState === "loading"` early return, for exactly
+   * the reason §34's effect above records: a hook after a conditional return
+   * changes the hook COUNT between renders and React tears the whole app down.
+   * Presence is driven by `drawerPanel` alone because `wsId` is not resolved
+   * until after that return — the render itself still requires a workspace, so
+   * a drawer never appears without one.
+   */
+  const drawerShow = usePresence(!!drawerPanel, DUR.fast);
+  const lastDrawer = useRef<{ panel: DrawerPanel; ws: string } | null>(null);
+
+  // B3: the two app-level banners, same treatment and for the same reason —
+  // each takes a strip off the top, so appearing and vanishing shoves the whole
+  // conversation. Both hooks live up here for the rule the block above records.
+  const errorBanner = usePresence(!!error, DUR.fast);
+  // `activeView`'s own expression, inlined: that const is computed below the
+  // early return and a hook cannot wait for it. Spelling it out rather than
+  // approximating with `view` keeps the banner off the forced Models page.
+  const dangerBanner = usePresence(
+    (keyState === "missing" && !onboarding ? "models" : view) === "chat" &&
+      !!selectedId &&
+      !!dangerous[selectedId],
+    DUR.fast,
+  );
+
   if (keyState === "loading") {
     return <div className="h-full flex items-center justify-center text-ink-soft">…</div>;
   }
@@ -2747,6 +2872,16 @@ export default function App(): React.JSX.Element {
   // content spans under it. The file tree is a separate absolute overlay (below),
   // so opening it never shrinks the panes. Content stays mounted-flat (WS6).
   const DRAWER = drawerPanel && !!wsId ? drawerPanel : null;
+  // Animations round: what the drawer renders while it is LEAVING. The stale
+  // value is only reused for the workspace it belonged to — switching
+  // workspaces must not flash the previous one's Changes panel on the way out.
+  if (DRAWER && wsId) lastDrawer.current = { panel: DRAWER, ws: wsId };
+  const shownDrawer =
+    DRAWER && wsId
+      ? { panel: DRAWER, ws: wsId }
+      : wsId && lastDrawer.current?.ws === wsId
+        ? lastDrawer.current
+        : null;
   const gridStyle = buildGridStyle(wsTabs);
 
   return (
@@ -2757,6 +2892,7 @@ export default function App(): React.JSX.Element {
         activeWs={wsId}
         sessions={sessions}
         statuses={statuses}
+        busy={busy}
         pending={pendingBySession}
         planning={Object.fromEntries(Object.entries(planMode).map(([sid, p]) => [sid, p.enabled]))}
         selectedId={selectedId}
@@ -2829,96 +2965,141 @@ export default function App(): React.JSX.Element {
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
       <main className="flex-1 min-w-0 flex flex-col">
-        {error && (
-          <Banner tone="attention" onDismiss={() => setError(null)}>
+        {errorBanner.mounted && (
+          <Banner tone="attention" leaving={errorBanner.leaving} onDismiss={() => setError(null)}>
             <span className="flex-1">{error}</span>
           </Banner>
         )}
         {/* B4: permanent dangerous-mode warning with one-click off. */}
-        {activeView === "chat" && selectedId && dangerous[selectedId] && (
-          <Banner tone="danger">
+        {dangerBanner.mounted && (
+          <Banner tone="danger" leaving={dangerBanner.leaving}>
             <span className="flex-1">
               Dangerous mode is ON for this session — every tool call runs without asking.
             </span>
             <button
               type="button"
-              onClick={() => void window.hv.promptSession(selectedId, "/hv-dangerous off")}
+              // The session id is re-checked here rather than narrowed by the
+              // render guard: `usePresence` keeps this banner mounted for its
+              // 120 ms exit, and by then the selection may already be gone.
+              onClick={() => {
+                if (selectedId) void window.hv.promptSession(selectedId, "/hv-dangerous off");
+              }}
               className="text-xs font-bold rounded-lg border-2 border-berry px-2.5 py-1 hover:bg-berry hover:text-paper cursor-pointer"
             >
               Turn off
             </button>
           </Banner>
         )}
-        {activeView === "models" && (
-          <ModelsView
-            firstRun={needsSetup}
-            onSaved={() => {
-              setKeyState("present");
-              setView("chat");
-            }}
-          />
+        {/* Animations round (2026-09-10) — A6: a settings page fades up on
+            arrival. ONE wrapper keyed on the view, so `@starting-style` fires
+            on every switch; it reproduces the flex-child contract these pages
+            already rely on (`flex-1 min-h-0 flex flex-col`, each page being
+            `flex-1 overflow-y-auto` inside it). It renders only off the chat
+            view — an empty `flex-1` sibling would eat the chat area.
+
+            There is deliberately no EXIT: leaving is instant, which is the
+            snappy choice for navigation. And deliberately no View Transition:
+            its snapshot freezes the scope, so a streaming transcript would go
+            stale behind the switch. */}
+        {activeView !== "chat" && (
+          <div
+            key={activeView}
+            className="flex-1 min-h-0 flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-[210ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-1"
+          >
+          {activeView === "models" && (
+            <ModelsView
+              firstRun={needsSetup}
+              onSaved={() => {
+                setKeyState("present");
+                setView("chat");
+              }}
+            />
+          )}
+          {activeView === "permissions" && <PermissionsView />}
+          {activeView === "workspace" && wsSettings && (
+            <WorkspaceSettingsView
+              workspace={wsSettings}
+              onNewSkillSession={async () => {
+                const sid = await openSessionForSkillCreator(wsSettings);
+                // The creator's prompt is fired by SkillsSection; echo it so the
+                // transcript shows what was sent (hv:prompt-session emits none).
+                if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
+                return sid;
+              }}
+              onRemoved={async () => {
+                // Round 11: the workspace is gone — refresh the list, drop its tabs,
+                // and leave a page that now describes nothing.
+                setWorkspaces(await window.hv.listWorkspaces());
+                setSessions(await window.hv.listSessions());
+                setTabsByWs((p) => { const n = { ...p }; delete n[wsSettings]; return n; });
+                setActiveWs((w) => (w === wsSettings ? null : w));
+                setWsSettings(null);
+                setView("chat");
+              }}
+            />
+          )}
+          {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
+          {activeView === "onBehalf" && <OnBehalfView />}
+          {activeView === "stats" && <DashboardView workspaces={workspaces} />}
+          {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
+          {activeView === "changelog" && <ChangelogView />}
+          {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
+          {activeView === "skills" && (
+            <SkillsView
+              sessionId={selectedId}
+              workspaceId={selected?.workspaceId ?? null}
+              onNewSkillSession={async () => {
+                const sid = await openSessionForSkillCreator();
+                if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
+                return sid;
+              }}
+            />
+          )}
+          {activeView === "promptTemplates" && (
+            <PromptTemplatesView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+          )}
+          {activeView === "plugins" && <PluginsView />}
+          {activeView === "mcp" && <McpView />}
+          {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
+          {activeView === "terminal" && <TerminalView settings={termSettings} onChange={setTermSettings} />}
+          {/* §27: settings are global, so the page needs no props. */}
+          {activeView === "voice" && <VoiceView settings={voiceSettings} onChange={setVoiceSettings} />}
+          {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
+          {activeView === "tools" && (
+            <AllToolsView tools={tools} sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
+          )}
+          {activeView === "builtinTools" && <BuiltinToolsView onPlanBuiltinChange={setPlanBuiltinOn} />}
+          </div>
         )}
-        {activeView === "permissions" && <PermissionsView />}
-        {activeView === "workspace" && wsSettings && (
-          <WorkspaceSettingsView
-            workspace={wsSettings}
-            onNewSkillSession={async () => {
-              const sid = await openSessionForSkillCreator(wsSettings);
-              // The creator's prompt is fired by SkillsSection; echo it so the
-              // transcript shows what was sent (hv:prompt-session emits none).
-              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
-              return sid;
-            }}
-            onRemoved={async () => {
-              // Round 11: the workspace is gone — refresh the list, drop its tabs,
-              // and leave a page that now describes nothing.
-              setWorkspaces(await window.hv.listWorkspaces());
-              setSessions(await window.hv.listSessions());
-              setTabsByWs((p) => { const n = { ...p }; delete n[wsSettings]; return n; });
-              setActiveWs((w) => (w === wsSettings ? null : w));
-              setWsSettings(null);
-              setView("chat");
-            }}
-          />
-        )}
-        {activeView === "sysprompt" && <SystemPromptView sessionId={selectedId} />}
-        {activeView === "onBehalf" && <OnBehalfView />}
-        {activeView === "stats" && <DashboardView workspaces={workspaces} />}
-        {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
-        {activeView === "changelog" && <ChangelogView />}
-        {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
-        {activeView === "skills" && (
-          <SkillsView
-            sessionId={selectedId}
-            workspaceId={selected?.workspaceId ?? null}
-            onNewSkillSession={async () => {
-              const sid = await openSessionForSkillCreator();
-              if (sid) appendItem(sid, { kind: "user", text: "/skill:skill-creator", ts: Date.now() });
-              return sid;
-            }}
-          />
-        )}
-        {activeView === "promptTemplates" && (
-          <PromptTemplatesView sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
-        )}
-        {activeView === "plugins" && <PluginsView />}
-        {activeView === "mcp" && <McpView />}
-        {activeView === "shortcuts" && <ShortcutsView bindings={bindings} onChange={setBindings} />}
-        {activeView === "terminal" && <TerminalView settings={termSettings} onChange={setTermSettings} />}
-        {/* §27: settings are global, so the page needs no props. */}
-        {activeView === "voice" && <VoiceView settings={voiceSettings} onChange={setVoiceSettings} />}
-        {activeView === "agents" && <AgentsView agents={agents} sessionId={selectedId} />}
-        {activeView === "tools" && (
-          <AllToolsView tools={tools} sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
-        )}
-        {activeView === "builtinTools" && <BuiltinToolsView onPlanBuiltinChange={setPlanBuiltinOn} />}
         {/* W2.2: the chat area stays MOUNTED (hidden) on other views so open
             editor buffers and chat state survive a Settings detour. Center is
             tabbed: chat tab + file tabs; the docked file tree sits to the
             right IN FLOW (ContextPanel is a fixed overlay above it, z-40). */}
-        <div className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"}`}>
+        {/* Animations round: the chat fades up when you come BACK to it, which
+            is a `display` flip rather than a mount — hence `transition-discrete`
+            with `display` in the list, so the browser holds the swap to 100%
+            and the fade is actually visible. Going away stays instant. */}
+        <div
+          className={`flex-1 min-h-0 ${activeView === "chat" ? "flex" : "hidden"} motion-safe:transition-[opacity,display] motion-safe:transition-discrete motion-safe:duration-[210ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0`}
+        >
           <div
-            className="flex-1 min-w-0 min-h-0 grid relative"
+            // B5 (Animations round, 2026-09-10): the grid eases between RATIOS.
+            //
+            // Measured, and narrower than the proposal claimed: splitting and
+            // unsplitting change the number of TRACKS (`959px` → `479.5px
+            // 479.5px`), and CSS cannot interpolate one track into two — those
+            // two gestures land in a single frame and no transition can change
+            // that. What this does cover is a ratio change at a fixed track
+            // count, which eases correctly (measured 451/507 → 287/671).
+            //
+            // `data-dragging` kills it while a divider is held: the drag writes
+            // a new percentage on every mousemove, and easing on top of that
+            // makes the divider lag the pointer. It is set on THIS element by
+            // the drag handler, which already holds it as `parentElement`, so
+            // no state is plumbed through two components to say a mouse is
+            // down. A new pane's CONTENT still enters — the tab pops in (B6)
+            // and its transcript items rise (A7).
+            className="flex-1 min-w-0 min-h-0 grid relative motion-safe:transition-[grid-template-columns,grid-template-rows] motion-safe:duration-270 motion-safe:ease-hv-out motion-safe:data-[dragging]:transition-none"
             style={gridStyle}
             onDragOver={(e) => e.dataTransfer.types.includes("application/x-hv-relpath") && e.preventDefault()}
             onDrop={(e) => {
@@ -3234,7 +3415,20 @@ export default function App(): React.JSX.Element {
             // terminal leaves the card stack with no extra bookkeeping.
             terminalRuns={Object.entries(agentTerms[sid] ?? {}).flatMap(([id, meta]) => {
               const info = terminals[id];
-              return info ? [{ terminalId: id, title: info.title, running: info.running, intent: meta.intent, startedAt: meta.startedAt }] : [];
+              // A killed terminal loses its live entry immediately, so without
+              // the `meta.leaving` arm the circle would still disappear in one
+              // frame however the exit is animated — the live map, not the
+              // delete, is what actually removes it.
+              if (!info && !meta.leaving) return [];
+              return [{
+                terminalId: id,
+                title: info?.title ?? meta.title ?? "",
+                running: info?.running ?? false,
+                intent: meta.intent,
+                startedAt: meta.startedAt,
+                toolCallId: meta.toolCallId,
+                ...(meta.leaving ? { leaving: true as const } : {}),
+              }];
             })}
             terminalSettings={termSettings}
             onStopTerminal={(id) => {
@@ -3363,7 +3557,7 @@ export default function App(): React.JSX.Element {
             {/* v5.1: file tree is a right-side OVERLAY drawer (top below the tab
                 bar, h-11) — it overlays the content instead of a grid column, so
                 opening it never shrinks the panes. Below the ContextPanel (z-40). */}
-            {DRAWER && (
+            {drawerShow.mounted && shownDrawer && (
               <div
                 // §7 round 13: plain `bg-paper`, NOT the sidebar's pegboard.
                 // Tried and reverted: the texture is the app's mark for its own
@@ -3374,7 +3568,13 @@ export default function App(): React.JSX.Element {
                 // §7 round 13: marked so BrowserTab can make ROOM for it
                 // instead of hiding under it — see its `drawerWidth` prop.
                 data-hv-drawer=""
-                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col"
+                // Animations round: it enters from its OWN edge (12px, not off
+                // screen) and leaves the same way, faster. It must never slide
+                // ACROSS a browser pane — but it does not: the pane insets
+                // itself by this rect, and this element is exempt from the
+                // coverage check by `data-hv-drawer`.
+                data-leaving={drawerShow.leaving || undefined}
+                className="absolute top-11 right-0 bottom-0 z-30 border-l-2 border-line bg-paper shadow-sticker-lg flex flex-col motion-safe:transition-[opacity,translate] motion-safe:duration-270 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-x-3 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:translate-x-3 motion-safe:data-[leaving]:duration-180 motion-safe:data-[leaving]:ease-hv-in"
                 style={{ width: drawerWidth }}
               >
                 {/* §29: the drag strip. Absolutely placed on the drawer's own
@@ -3402,11 +3602,26 @@ export default function App(): React.JSX.Element {
                 {/* §7 round 13: ONE panel at a time. The rail is the switcher,
                     so the drawer carries no tab header of its own — which is
                     what gives Changes the whole width it needs. */}
-                <div className="min-h-0 flex-1">
-                  {DRAWER === "changes" ? (
-                    <ChangesPanel key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
+                {/* Animations round: `key` on the SWAP, so switching Changes ↔
+                    Files remounts and `starting:` fires — a crossfade, where a
+                    plain replace was a hard cut. `contents` keeps the flex
+                    layout of the row exactly as it was. */}
+                <div
+                  key={shownDrawer.panel}
+                  className="min-h-0 flex-1 motion-safe:transition-opacity motion-safe:duration-180 motion-safe:ease-hv-out motion-safe:starting:opacity-0"
+                >
+                  {shownDrawer.panel === "changes" ? (
+                    <ChangesPanel
+                      key={shownDrawer.ws}
+                      workspace={shownDrawer.ws}
+                      onOpenFile={(rel) => openFileTab(shownDrawer.ws, rel)}
+                    />
                   ) : (
-                    <FileTree key={wsId} workspace={wsId!} onOpenFile={(rel) => openFileTab(wsId!, rel)} />
+                    <FileTree
+                      key={shownDrawer.ws}
+                      workspace={shownDrawer.ws}
+                      onOpenFile={(rel) => openFileTab(shownDrawer.ws, rel)}
+                    />
                   )}
                 </div>
               </div>
@@ -3429,11 +3644,11 @@ export default function App(): React.JSX.Element {
           chat closed), never silently leak. */}
       {termConfirm && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8"
+          className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8"
           onClick={() => { termConfirm.resolve(null); setTermConfirm(null); }}
         >
           <div
-            className="w-full max-w-md rounded-2xl border-2 border-tangerine bg-card p-5 shadow-sticker-lg"
+            className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-tangerine bg-card p-5 shadow-sticker-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="font-bold mb-1">
@@ -3535,13 +3750,20 @@ function PaneDividers({
 
   const drag = (which: "main" | "cross", alongX: boolean) => (e: React.MouseEvent): void => {
     e.preventDefault();
-    const box = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect();
-    if (!box) return;
+    // The grid this divider sits in — already needed for the drag maths, and
+    // now also the element B5's transition lives on.
+    const grid = (e.currentTarget as HTMLElement).parentElement;
+    const box = grid?.getBoundingClientRect();
+    if (!box || !grid) return;
+    // Hold the transition for the length of the drag: the divider must track
+    // the pointer exactly, not ease towards it 180 ms behind.
+    grid.setAttribute("data-dragging", "");
     const onMove = (ev: MouseEvent): void => {
       const r = alongX ? (ev.clientX - box.left) / box.width : (ev.clientY - box.top) / box.height;
       onResize(which, r);
     };
     const onUp = (): void => {
+      grid.removeAttribute("data-dragging");
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };

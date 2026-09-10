@@ -15,6 +15,22 @@ export type RunState = "working" | "attention" | "done" | "failed" | "stopped";
 export interface RunAvatar {
   /** Map key: the delegation's run id, or the terminal's id. Unique across both. */
   key: string;
+  /**
+   * A1 (2026-09-10): React key AND `data-hv-run-avatar` — the id that does NOT
+   * change for the life of the run.
+   *
+   * `key` cannot serve: an async delegation is re-keyed `toolCallId → asyncId`
+   * at `tool_execution_end` (App.tsx), so keying the circle on it made React
+   * destroy the node and build a new one MID-RUN. That was invisible until
+   * something had to animate the circle — the enter re-fires, and a flight
+   * landing on a node that no longer exists lands nowhere.
+   *
+   * The tool call is the one identifier that exists before the run has any
+   * other name, and it survives the re-key because that code spreads the
+   * foreground run. A run resynced after a respawn never had a tool call in
+   * this session, so it falls back to its own id.
+   */
+  domKey: string;
   kind: "agent" | "terminal";
   /** The agent's name, or the terminal's foreground command. */
   name: string;
@@ -23,6 +39,22 @@ export interface RunAvatar {
   state: RunState;
   /** 0-359, derived from `name`. */
   hue: number;
+  /**
+   * A2 (2026-09-10): true while the run's 2.5 s outcome timer is winding down,
+   * so CSS can play the exit before React removes the circle. Set at 2 350 ms
+   * by the same timer that deletes at 2 500 — one clock, not two.
+   */
+  leaving?: true;
+  /**
+   * A1 (2026-09-10): when this run began, so the flight can tell a run BORN
+   * here from one that merely became visible here.
+   *
+   * Without it, switching to a session that already has a delegation in flight
+   * would fly a ghost for a run that started minutes ago — motion announcing
+   * something that did not just happen. The card-presence check does not cover
+   * that case, because a session you switch to has its card in the DOM too.
+   */
+  startedAt: number;
 }
 
 /**
@@ -77,14 +109,18 @@ export function toRunAvatars(delegations: DelegationRun[], terminals: TerminalRu
   return [
     ...delegations.map((r): RunAvatar => ({
       key: r.id,
+      domKey: r.toolCallId ?? r.id,
       kind: "agent",
       name: r.agent,
       caption: r.label,
       state: delegationState(r),
       hue: avatarHue(r.agent),
+      startedAt: r.startedAt,
+      ...(r.leaving ? { leaving: true as const } : {}),
     })),
     ...terminals.map((t): RunAvatar => ({
       key: t.terminalId,
+      domKey: t.toolCallId ?? t.terminalId,
       kind: "terminal",
       name: t.title,
       caption: t.intent,
@@ -92,6 +128,8 @@ export function toRunAvatars(delegations: DelegationRun[], terminals: TerminalRu
       // was killed — never "succeeded".
       state: t.running ? "working" : "stopped",
       hue: avatarHue(t.title),
+      startedAt: t.startedAt,
+      ...(t.leaving ? { leaving: true as const } : {}),
     })),
   ];
 }

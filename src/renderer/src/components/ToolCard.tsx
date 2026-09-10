@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Unfold } from "./Unfold";
 import { MEMORY_TYPE_LABEL } from "../memoryFact";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
@@ -666,7 +667,13 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
     };
   }, [open, asyncId, sessionId, results.length, req?.agent]);
   return (
-    <div className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}>
+    // A1 (2026-09-10): where the card→circle flight takes off from. The id is a
+    // DOM attribute rather than something parsed out of the card's text — the
+    // rail looks this up by exact value, and text is not an identifier.
+    <div
+      data-hv-run-card={card.toolCallId}
+      className={`rounded-xl border-2 border-l-4 bg-card shadow-sticker overflow-hidden ${denied ? "border-berry/50" : "border-sky/60"}`}
+    >
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -675,9 +682,14 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
         {/* v5: intent wraps (break-words) instead of clipping to one ellipsized line. */}
         <span className="flex items-start gap-2.5">
           {/* Round 15: the delegation's own status word joins the icon rule —
-              same treatment as an ordinary card, so the two read alike. */}
+              same treatment as an ordinary card, so the two read alike. B1
+              (2026-09-10) extends that to the MOTION: this dot pops on the
+              change exactly as the generic card's does, keyed on the same
+              string it is titled by so `@starting-style` fires. Two cards whose
+              dots behave differently is the drift round 15 closed. */}
           <span
-            className={`mt-1 size-2.5 rounded-full shrink-0 ${
+            key={delegationStatus}
+            className={`mt-1 size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-300 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${
               running
                 ? "bg-sky animate-pulse"
                 : denied || card.status === "error" || outcome === "failed" || outcome === "stopped"
@@ -709,7 +721,12 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
           </span>
         )}
       </button>
-      {open && (
+      {/* B1 (Animations round, 2026-09-10): the body UNFOLDS. A card that grows
+          by its own height in one frame shoves every message below it, which is
+          the whole reason this is a height reveal rather than a fade. `Unfold`
+          keeps the child transcript out of the DOM while collapsed, and alive
+          just long enough for the close to animate. */}
+      <Unfold open={open}>
         <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 flex flex-col gap-3">
           {errorText && results.length === 0 && !inspected?.length ? (
             <p className="text-xs text-berry whitespace-pre-wrap break-words">{errorText}</p>
@@ -724,7 +741,7 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
             </>
           )}
         </div>
-      )}
+      </Unfold>
     </div>
   );
 }
@@ -842,6 +859,9 @@ export function ToolCard({
       : undefined;
   return (
     <div
+      // A1: the generic root serves `terminal_run` too, so it is the other
+      // take-off point for the flight.
+      data-hv-run-card={card.toolCallId}
       className={`rounded-xl border-2 bg-card shadow-sticker overflow-hidden ${
         denied ? "border-berry/50" : "border-line"
       }`}
@@ -853,8 +873,21 @@ export function ToolCard({
           className="flex items-center gap-2.5 text-left cursor-pointer flex-1 min-w-0"
         >
           {/* The dot keeps the status too — `running` has no glyph on purpose
-              (a pulse says "still going" better than any shape can). */}
-          <span className={`size-2.5 rounded-full shrink-0 ${s.dot}`} title={s.label} aria-label={s.label} role="img" />
+              (a pulse says "still going" better than any shape can).
+
+              B1 (2026-09-10): running → done is the one moment this card
+              reports an outcome, so the dot POPS on the change. `key` is the
+              status, which remounts the span and lets `@starting-style` fire;
+              without it React reuses the node and there is no enter to play.
+              The colour transitions too, so a card that merely changes shade
+              does not jump. */}
+          <span
+            key={card.status}
+            className={`size-2.5 rounded-full shrink-0 motion-safe:transition-[scale,background-color] motion-safe:duration-300 motion-safe:ease-hv-pop motion-safe:starting:scale-50 ${s.dot}`}
+            title={s.label}
+            aria-label={s.label}
+            role="img"
+          />
           {brand ? <i className={`si ${brand} text-[15px] shrink-0 text-ink-soft`} aria-hidden /> : <ToolIcon kind={icon} />}
           <span className="font-bold text-sm line-clamp-2 break-words flex-1 min-w-0" title={label}>
             {label}
@@ -888,7 +921,22 @@ export function ToolCard({
         {destructive && <CardGlyph mark={BADGE_MARKS.destructive} />}
         <DetailsToggle open={details} onClick={() => setDetails(!details)} />
       </div>
-      {diff && openDiff && <DiffView lines={diff.lines} />}
+      {/* B1: the third expandable body on this card, and the one with a real
+          ceiling — a large edit's diff. `Unfold` mounts it once and keeps it
+          mounted through the close, so the diff is laid out a single time and
+          only the container's row is animated; re-laying out hundreds of lines
+          twice per toggle is the cost this must not introduce.
+
+          An edit card mounts with `openDiff` already true, and that does NOT
+          animate: a transition needs a previously-rendered value to change
+          from, so the row simply renders open. That is what keeps reopening a
+          session with many edit cards from animating all of them at once —
+          the same hazard A7's `live` flag answers one component over. */}
+      {diff && (
+        <Unfold open={openDiff}>
+          <DiffView lines={diff.lines} />
+        </Unfold>
+      )}
       {/* §33: what was remembered, on the card itself rather than behind `details`.
           The whole promise is that nothing is saved behind your back, so the memory has to be
           visible where the save happened — a JSON envelope three clicks away is not that. */}
@@ -927,7 +975,11 @@ export function ToolCard({
           </button>
         );
       })()}
-      {details && <TechnicalDetails card={card} />}
+      {/* B1: the same unfold. The raw envelope can be very large, and paying to
+          render it while collapsed is the cost this reveal must not introduce. */}
+      <Unfold open={details}>
+        <TechnicalDetails card={card} />
+      </Unfold>
       {/* Round 11: collapsed to one line — the agent usually recovers by itself, so
           an expanded error per attempt is noise. Click (or the details toggle) for
           the full text, which TechnicalDetails already renders. */}

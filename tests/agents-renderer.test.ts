@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
@@ -6,7 +6,9 @@ import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
 import { AGENT_STATUS_LABEL, AGENT_STATUS_TONE, EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
 import { SOURCE_ORDER, agentBlurb, sortAgents } from "../src/renderer/src/agents";
 import {
+  applySubagentStarted,
   asyncResultInfo,
+  findByRunId,
   delegationHint,
   delegationLabel,
   formatElapsed,
@@ -915,5 +917,92 @@ describe("the Agents page follows the Skills pattern (round 16)", () => {
     expect(EDITABLE_SOURCES.has("bundled")).toBe(true);
     expect(EDITABLE_SOURCES.has("project")).toBe(true);
     for (const s of ["builtin", "user", "package"]) expect(EDITABLE_SOURCES.has(s)).toBe(false);
+  });
+});
+
+/**
+ * A1 prerequisite 2 (Animations round, 2026-09-10) — one delegation is one
+ * circle, at every instant.
+ *
+ * `subagent:async-started` used to ADD a run keyed by `runId` beside the
+ * foreground run keyed by `toolCallId`, and the two coexisted until
+ * `tool_execution_end` deleted the foreground one. For that window a single
+ * delegation drew TWO circles in the rail. Nobody reported it because it is
+ * brief and both circles look the same — but a flight cannot aim at a set of
+ * two, and the duplicate would animate in and then vanish.
+ *
+ * The fix is update-if-present, ADD-otherwise. The add is not a fallback for
+ * tidiness: the same notify path serves the `/hv-subagent-list` resync after a
+ * respawn, where there is no foreground run to update and the card must still
+ * appear.
+ */
+describe("applySubagentStarted — one delegation, one run (A1)", () => {
+  const fg = (over: Partial<DelegationRun> = {}): DelegationRun => ({
+    id: "tc1", toolCallId: "tc1", kind: "fg", agent: "worker", label: "Fix the tests",
+    startedAt: 1, status: "running", ...over,
+  });
+
+  it("attaches the runId to the running foreground run instead of adding a second circle", () => {
+    const out = applySubagentStarted({ tc1: fg() }, { runId: "run1", agent: "worker", label: "[prompt redacted]" }, 5);
+    expect(Object.keys(out)).toEqual(["tc1"]);
+    expect(out.tc1.runId).toBe("run1");
+  });
+
+  it("never lets the notify's caption win", () => {
+    // Upstream redacts the task on every observer surface from 0.50, and the
+    // bridge's remembered caption is a best-effort pairing. The foreground
+    // run's label came from the tool call's own args and was never a guess.
+    const out = applySubagentStarted({ tc1: fg() }, { runId: "run1", agent: "worker", label: "[prompt redacted]" }, 5);
+    expect(out.tc1.label).toBe("Fix the tests");
+  });
+
+  it("adds when nothing matches — the post-respawn resync has no foreground run", () => {
+    const out = applySubagentStarted({}, { runId: "run1", agent: "worker", label: "map it" }, 5);
+    expect(out.run1).toMatchObject({ id: "run1", kind: "async", status: "running", agent: "worker", label: "map it" });
+  });
+
+  it("two same-agent delegations in one turn get one runId each", () => {
+    const one = applySubagentStarted({ tc1: fg(), tc2: fg({ id: "tc2", toolCallId: "tc2" }) }, { runId: "r1", agent: "worker", label: "" }, 5);
+    const two = applySubagentStarted(one, { runId: "r2", agent: "worker", label: "" }, 6);
+    expect(Object.keys(two)).toHaveLength(2);
+    expect([two.tc1.runId, two.tc2.runId].sort()).toEqual(["r1", "r2"]);
+  });
+
+  it("is idempotent — a repeated started for a run already known changes nothing", () => {
+    const one = applySubagentStarted({ tc1: fg() }, { runId: "r1", agent: "worker", label: "" }, 5);
+    expect(applySubagentStarted(one, { runId: "r1", agent: "worker", label: "" }, 6)).toBe(one);
+  });
+
+  it("does not hijack a FINISHED foreground run, or a run of another agent", () => {
+    const done = applySubagentStarted({ tc1: fg({ status: "done" }) }, { runId: "r1", agent: "worker", label: "" }, 5);
+    expect(done.r1).toBeDefined();
+    const other = applySubagentStarted({ tc1: fg() }, { runId: "r1", agent: "reviewer", label: "" }, 5);
+    expect(other.r1).toBeDefined();
+    expect(other.tc1.runId).toBeUndefined();
+  });
+
+  it("an agent-less notify still attaches — upstream drops the name on a workflow run", () => {
+    const out = applySubagentStarted({ tc1: fg() }, { runId: "r1", label: "" }, 5);
+    expect(Object.keys(out)).toEqual(["tc1"]);
+    expect(out.tc1.runId).toBe("r1");
+  });
+});
+
+describe("findByRunId — the lookups that the attach would otherwise break (A1)", () => {
+  it("finds a run whose MAP key is still its tool call id", () => {
+    const runs = { tc1: { id: "tc1", toolCallId: "tc1", runId: "r1", kind: "fg", agent: "w", label: "", startedAt: 0, status: "running" } as DelegationRun };
+    expect(findByRunId(runs, "r1")?.id).toBe("tc1");
+  });
+
+  it("prefers the direct key when there is one", () => {
+    const runs = {
+      r1: { id: "r1", kind: "async", agent: "w", label: "direct", startedAt: 0, status: "running" } as DelegationRun,
+      tc1: { id: "tc1", runId: "r1", kind: "fg", agent: "w", label: "attached", startedAt: 0, status: "running" } as DelegationRun,
+    };
+    expect(findByRunId(runs, "r1")?.label).toBe("direct");
+  });
+
+  it("answers null for a run nobody knows", () => {
+    expect(findByRunId({}, "nope")).toBeNull();
   });
 });

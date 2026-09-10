@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DUR, EASE, flipChildren, flyGhost, reducedMotion, snapshotRects } from "../motion";
+import { usePresence } from "../usePresence";
+import { Unfold } from "./Unfold";
 import { Transcript, type TranscriptItem } from "./Transcript";
 import { hasRestorable, tailToolCallIds, type RewindScope } from "../rewind";
 import { matchesBinding } from "../shortcuts";
@@ -768,6 +771,31 @@ export function ChatView({
 
   // #8: filter the transcript by search text (message kinds that carry text).
 
+  /**
+   * B3 (Animations round, 2026-09-10) — the two chat banners and the two
+   * transient strips. Each takes a strip of height off the top of the
+   * conversation, so appearing and vanishing SHOVES everything below it; the
+   * reveal is a height, and the exit is what stops the shove being a jump.
+   *
+   * These four hooks MUST sit above the `!workspace || !sessionId` early return
+   * on the next line — a hook after a conditional return changes the hook count
+   * between renders and React tears the app down.
+   */
+  const crashBanner = usePresence(crashed !== null, DUR.fast);
+  const suggestBanner = usePresence(suggestCompact, DUR.fast);
+  const agentsMdStrip = usePresence(offerAgentsMd, DUR.fast);
+  const voiceToast = usePresence(!!voiceNotice, DUR.fast);
+  // The two in-pane slide-overs, reported 2026-09-10 as opening and closing with
+  // no motion at all — neither was in the round's inventory. Same gesture as the
+  // Files drawer, so the same treatment; ChatView owns the conditional render
+  // and therefore owns the exit.
+  const contextPanel = usePresence(contextOpen && !!sessionId, DUR.fast);
+  const costPanel = usePresence(costOpen && !!sessionId, DUR.fast);
+  // What the toast SAYS while it is leaving: `voiceNotice` is already null by
+  // then, and reading it would empty the message a frame before the fade.
+  const lastVoiceNotice = useRef("");
+  if (voiceNotice) lastVoiceNotice.current = voiceNotice;
+
   if (!workspace || !sessionId) return <ChatWelcome onOpenFolder={onOpenFolder} />;
 
   const queued = queue.steering.length + queue.followUp.length;
@@ -986,8 +1014,8 @@ export function ChatView({
         </div>
       )}
       {/* Crash banner */}
-      {crashed !== null && (
-        <Banner tone="danger">
+      {crashBanner.mounted && (
+        <Banner tone="danger" leaving={crashBanner.leaving}>
           <span className="flex-1">The agent process stopped (code {crashed}).</span>
           <button
             type="button"
@@ -1000,9 +1028,10 @@ export function ChatView({
       )}
 
       {/* B5: red-zone auto-suggest (once per session, non-blocking). */}
-      {suggestCompact && (
+      {suggestBanner.mounted && (
         <Banner
           tone="danger"
+          leaving={suggestBanner.leaving}
           onDismiss={() => {
             if (!sessionId) return;
             localStorage.setItem(`${REDZONE_KEY}${sessionId}`, "1");
@@ -1027,8 +1056,12 @@ export function ChatView({
           obvious WHO is running, that progress is happening, and — clicked —
           WHAT the child is doing (live trace, from the in-flow tool card). */}
       {/* Round 3 #7: proactively offer to create AGENTS.md when the workspace has none. */}
-      {offerAgentsMd && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-honey-soft text-sm text-ink">
+      {agentsMdStrip.mounted && (
+        <div
+          data-leaving={agentsMdStrip.leaving || undefined}
+          className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-[240ms] motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:grid-rows-[0fr] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-180 motion-safe:data-[leaving]:ease-hv-in"
+        >
+        <div className="min-h-0 overflow-hidden flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-honey-soft text-sm text-ink">
           <span className="font-bold flex-1">No AGENTS.md found — add project context so the agent understands this codebase?</span>
           <button
             type="button"
@@ -1048,11 +1081,12 @@ export function ChatView({
             Dismiss
           </button>
         </div>
+        </div>
       )}
       {/* Round 3 #11: rewind confirm — files are NOT rolled back (chat-only V1). */}
       {pendingRewind !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
-          <div className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
+          <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">Rewind to this message?</div>
             <p className="text-sm text-ink-soft mb-3">
               Everything after this point is removed from the conversation and the agent's context, and this
@@ -1177,15 +1211,23 @@ export function ChatView({
       />
       {/* §27: a transient composer notice — a denied mic, or a failed engine.
           Deliberately not a modal: dictation failing should not seize the app. */}
-      {voiceNotice && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-md rounded-xl border-2 border-line-strong bg-card px-3 py-2 text-[13px] shadow-sticker-lg">
-          <span className="font-semibold">Voice input:</span> {voiceNotice}
+      {voiceToast.mounted && (
+        // A toast RISES, it does not unfold — it floats over the composer
+        // rather than taking height from it, so there is nothing to shove.
+        // The fade must land on exactly `opacity: 0`: §28's coverage check
+        // reads `opacity !== "0"` as visible, and a toast stuck at 0.01 would
+        // blank a browser pane underneath it for good.
+        <div
+          data-leaving={voiceToast.leaving || undefined}
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-md rounded-xl border-2 border-line-strong bg-card px-3 py-2 text-[13px] shadow-sticker-lg motion-safe:transition-[opacity,translate] motion-safe:duration-[240ms] motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-2 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-180 motion-safe:data-[leaving]:ease-hv-in"
+        >
+          <span className="font-semibold">Voice input:</span> {voiceNotice ?? lastVoiceNotice.current}
         </div>
       )}
       {/* Round 3 #3: large-paste confirm. */}
       {pendingPaste !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingPaste(null)}>
-          <div className="w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingPaste(null)}>
+          <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">Paste {pendingPaste.length.toLocaleString()} characters?</div>
             <p className="text-sm text-ink-soft mb-4">That's a large amount of text to add to the composer. Insert it anyway?</p>
             <div className="flex justify-end gap-2">
@@ -1208,7 +1250,11 @@ export function ChatView({
         </div>
       )}
       {/* #1: in-conversation search strip — highlights matches, next/prev nav. */}
-      {searchOpen && (
+      {/* Reported 2026-09-10: this appeared and vanished with no motion. It is a
+          strip that takes height off the top of the conversation, which is the
+          Banner shape exactly — so it uses the same reveal, and everything
+          below it slides rather than jumping. */}
+      <Unfold open={searchOpen}>
         <div className="flex items-center gap-2 px-4 py-2 border-b-2 border-line bg-paper-deep/40">
           <span className="text-ink-soft">⌕</span>
           <input
@@ -1255,7 +1301,7 @@ export function ChatView({
             ✕
           </button>
         </div>
-      )}
+      </Unfold>
       {/* Round 3 #2 (fixed round 4): loader while the session opens/resumes —
           shown for any not-yet-running open, not just hibernated resumes. */}
       {waking && items.length === 0 ? (
@@ -1544,7 +1590,7 @@ export function ChatView({
             {attachMenuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setAttachMenuOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-2 z-20 w-60 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
+                <div className="absolute hv-menu-in origin-bottom-left bottom-full left-0 mb-2 z-20 w-60 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm font-semibold">
                   <button
                     type="button"
                     disabled={!vision}
@@ -1606,7 +1652,7 @@ export function ChatView({
                 attach menu. §12 (2026-08-29): an AGENT match opens it too, so
                 `@wor` finds `worker` even where no file matches. */}
             {mention && (mention.items.length > 0 || mentionAgents.length > 0) && (
-              <div className="absolute bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+              <div className="absolute hv-menu-in origin-bottom-left bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
                 {/* §12: agents first — they are the rarer, more valuable pick,
                     and the file list is long. Mouse-picked only: the arrow/Tab
                     index below still addresses mention.items (files), which
@@ -1643,7 +1689,7 @@ export function ChatView({
             )}
             {/* §14 round 6 / §24: /skill: + prompt-command menu — same placement/styling as @file. */}
             {command && command.items.length > 0 && (
-              <div className="absolute bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+              <div className="absolute hv-menu-in origin-bottom-left bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
                 {command.items.map((c, i) => (
                   <button
                     key={c.name}
@@ -1768,8 +1814,9 @@ export function ChatView({
           </button>
         </div>
       </form>
-      {contextOpen && sessionId && (
+      {contextPanel.mounted && sessionId && (
         <ContextPanel
+          leaving={contextPanel.leaving}
           sessionId={sessionId}
           snapshot={contextSnapshot}
           stats={stats}
@@ -1779,8 +1826,8 @@ export function ChatView({
           onCompact={onCompact}
         />
       )}
-      {costOpen && sessionId && (
-        <CostPanel calls={costCalls} total={costTotal} onClose={() => onCostOpenChange(false)} />
+      {costPanel.mounted && sessionId && (
+        <CostPanel leaving={costPanel.leaving} calls={costCalls} total={costTotal} onClose={() => onCostOpenChange(false)} />
       )}
       </div>
     </div>
@@ -1830,6 +1877,14 @@ const RUN_RAIL_OVERLAY = "absolute left-0 top-full mt-2 w-full max-w-2xl";
  * covering every browser pane; and a run needing attention is PROMOTED to a
  * full card rather than waiting behind a click.
  */
+/**
+ * A1: how recently a run must have started for its arrival to be worth
+ * animating. A run older than this became VISIBLE here, it did not happen here
+ * — switching to a session with a delegation already in flight must not
+ * announce it as news.
+ */
+const BORN_HERE_MS = 2_000;
+
 function RunRail({
   runs,
   terminalRuns,
@@ -1872,6 +1927,118 @@ function RunRail({
     setOpen((o) => (o && !keys.split("|").includes(o) ? null : o));
     setHover((h) => (h && !keys.split("|").includes(h) ? null : h));
   }, [keys]);
+
+  /**
+   * A1 (2026-09-10) — the signature move: a ghost of the card's header flies to
+   * the circle, so the rail is understood as "where that went" rather than as a
+   * row of dots that appeared.
+   *
+   * These refs and the effect below MUST sit above the `avatars.length === 0`
+   * early return on the next line — a hook after a conditional return changes
+   * the hook count between renders and React tears the app down.
+   */
+  const rowRef = useRef<HTMLDivElement>(null);
+  const flownKeys = useRef<Set<string>>(new Set());
+  /**
+   * A3: the overlay is a conditional render, so React removes it before an exit
+   * can run. `lastOpen` is WHICH card to keep drawing during those 100 ms —
+   * `open` is already null by then, and reading it would blank the card a frame
+   * before the fade.
+   */
+  const overlay = usePresence(open !== null, 150);
+  const lastOpen = useRef<string | null>(null);
+  if (open) lastOpen.current = open;
+  const shownOpen = open ?? lastOpen.current;
+
+  /**
+   * The point the overlay grows from: the centre of the circle that opened it,
+   * in the overlay's own coordinates. Measured rather than guessed, because the
+   * row wraps and the circle can be anywhere along it.
+   */
+  const originFor = (key: string): string => {
+    const row = rowRef.current;
+    const avatar = avatars.find((a) => a.key === key);
+    const circle = row && avatar
+      ? row.querySelector<HTMLElement>(`[data-hv-run-avatar="${CSS.escape(avatar.domKey)}"]`)
+      : null;
+    const host = row?.parentElement;
+    if (!circle || !host) return "top left";
+    const c = circle.getBoundingClientRect();
+    const h = host.getBoundingClientRect();
+    return `${Math.round(c.left - h.left + c.width / 2)}px ${Math.round(c.top - h.top + c.height / 2)}px`;
+  };
+  const prevRects = useRef<Map<string, DOMRect>>(new Map());
+  const domKeys = avatars.map((a) => a.domKey).join("|");
+
+  /**
+   * `useLayoutEffect`, not `useEffect`: the rects have to be read after React
+   * has committed the new row and before the browser paints it, or the FLIP
+   * measures positions the user has already seen.
+   */
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    // Siblings close the gap a leaving circle left, instead of teleporting.
+    flipChildren(row, "data-hv-run-avatar", prevRects.current);
+    for (const a of avatars) {
+      if (flownKeys.current.has(a.domKey)) continue;
+      flownKeys.current.add(a.domKey);
+      void fly(a);
+    }
+    prevRects.current = snapshotRects(row, "data-hv-run-avatar");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the id list, not the array identity
+  }, [domKeys]);
+
+  /**
+   * Fly one ghost, or decline and let A2's pop-in carry it.
+   *
+   * Every refusal below is a case where the flight would be a lie rather than
+   * a flourish, and each one leaves a perfectly good circle behind:
+   *
+   *  - reduced motion: the settled frame, never a faster animation.
+   *  - a run that did not start HERE (a session you switched to, a run resynced
+   *    after a respawn). The card-presence check does not cover this, because a
+   *    session you switch to has its card in this pane's DOM too.
+   *  - no card with this id in THIS pane: a resynced run is keyed by its run id
+   *    and no card ever carried that, which is exactly how restore excludes
+   *    itself without a special case.
+   *  - the card scrolled out of the viewport. It is NEVER scrolled back into
+   *    view to make the flight possible: moving the conversation so an
+   *    animation can play is the animation deciding what you are reading.
+   */
+  async function fly(a: RunAvatar): Promise<void> {
+    if (reducedMotion()) return;
+    if (Date.now() - a.startedAt > BORN_HERE_MS) return;
+    const row = rowRef.current;
+    const circle = row?.querySelector<HTMLElement>(`[data-hv-run-avatar="${CSS.escape(a.domKey)}"]`);
+    if (!circle) return;
+    // Scoped to this pane: two panes can show two sessions, and a card in the
+    // other one is not this circle's origin.
+    const pane = row?.closest<HTMLElement>("[data-hv-pane-session]") ?? document.body;
+    const card = pane.querySelector<HTMLElement>(`[data-hv-run-card="${CSS.escape(a.domKey)}"]`);
+    if (!card) return;
+    const scroller = card.closest<HTMLElement>(".overflow-y-auto");
+    if (scroller) {
+      const r = card.getBoundingClientRect();
+      const box = scroller.getBoundingClientRect();
+      if (r.bottom < box.top || r.top > box.bottom) return;
+    }
+    // The header ROW, not the whole card: a tall card shrinking to 36px reads
+    // as the card being deleted, where its header reads as a token leaving.
+    const header = (card.firstElementChild as HTMLElement | null) ?? card;
+    // The destination is hidden imperatively rather than through state: a
+    // `setState` here lands after the layout effect, so the circle would paint
+    // at full opacity for one frame before the ghost had moved — a visible
+    // double image at the exact moment the eye is on it.
+    circle.style.opacity = "0";
+    // The card dips and returns, so the eye reads "a copy left" rather than
+    // "that moved away".
+    header.animate([{ opacity: 1 }, { opacity: 0.6, offset: 0.5 }, { opacity: 1 }], { duration: DUR.flight });
+    await flyGhost(header, circle, { duration: DUR.flight, round: true });
+    circle.style.opacity = "";
+    // The landing carries the brand's own overshoot — the sticker press.
+    circle.animate([{ transform: "scale(1.1)" }, { transform: "scale(1)" }], { duration: DUR.fast, easing: EASE.pop });
+  }
 
   if (avatars.length === 0) return null;
 
@@ -1916,27 +2083,69 @@ function RunRail({
       {avatars
         .filter((a) => promoted.has(a.key))
         .map((a) => (
-          <div key={`promoted-${a.key}`}>{cardFor(a.key, false)}</div>
+          // A3: attention takes SPACE, so it unfolds rather than fading in —
+          // a card appearing at full height shoves the conversation. There is
+          // no exit and no `data-leaving`: this state is deliberately not
+          // dismissible (PRD §12), so it only ever leaves by being answered.
+          <div
+            key={`promoted-${a.key}`}
+            className="grid grid-rows-[1fr] motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-270 motion-safe:ease-hv-out motion-safe:starting:grid-rows-[0fr] motion-safe:starting:opacity-0"
+          >
+            <div className="min-h-0 overflow-hidden">{cardFor(a.key, false)}</div>
+          </div>
         ))}
-      <div className="pt-3 flex items-center gap-2 flex-wrap">
+      <div ref={rowRef} className="pt-3 flex items-center gap-2 flex-wrap">
         {avatars
           .filter((a) => !promoted.has(a.key))
           .map((a) => (
             <div
-              key={a.key}
+              // A1: the DOM key, not the map key — see runRail.ts's `domKey`.
+              key={a.domKey}
               className="relative"
               onMouseEnter={() => setHover(a.key)}
               onMouseLeave={() => setHover((h) => (h === a.key ? null : h))}
             >
               <button
                 type="button"
+                // A1: where a flying ghost lands, and how a GUI pass counts the
+                // circles. An id is never parsed out of text.
+                data-hv-run-avatar={a.domKey}
+                // B6: the MAP key as well, so a caller holding a terminal id
+                // (or a run id) can find this circle without re-deriving
+                // `domKey`. Two places computing one identity is what silently
+                // killed the open-as-tab flight the moment the tool-call join
+                // shipped — the derivation now lives only in runRail.ts.
+                data-hv-run-key={a.key}
                 onClick={() => setOpen((o) => (o === a.key ? null : a.key))}
                 aria-expanded={open === a.key}
                 aria-label={`${a.name}${a.caption ? ` — ${a.caption}` : ""} (${a.state})`}
                 // The hue is INLINE, not a class: Tailwind's scanner never sees
                 // a computed class name and would emit nothing.
                 style={{ backgroundColor: `hsl(${a.hue} 70% 92%)`, color: `hsl(${a.hue} 60% 30%)` }}
-                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer ${RUN_STATE_RING[a.state]}`}
+                // A2: enters with the brand's overshoot, and leaves by
+                // SHRINKING ONLY — no opacity in the exit.
+                //
+                // Measured, after "the kill is almost invisible" was reported
+                // twice: `RUN_STATE_RING` puts `animate-pulse` on the live
+                // states, that animates the very opacity an exit would fade,
+                // and a CSS animation beats a transition outright. With the
+                // pulse running the fade never happened (opacity just went on
+                // oscillating); killing the animation instead snapped it to 0
+                // in one frame, which was worse. Scale is uncontested, traced
+                // cleanly through every probe, and .15 is small enough that
+                // removal is not a pop.
+                //
+                // The transition names `scale`, NOT `transform`:
+                // Tailwind v4 compiles `scale-*` to the `scale` PROPERTY, so a
+                // list naming `transform` leaves the size change instant while
+                // the opacity animates — which looks almost right, and is the
+                // reason this was found by reading the emitted CSS rather than
+                // by watching. `data-leaving` is raised 150 ms before React removes
+                // the run, by the same timer that removes it. The fade ends at
+                // EXACTLY 0 — §28's coverage check compares the string, and a
+                // circle resting at 0.01 would blank a browser pane for good.
+                data-leaving={a.leaving || undefined}
+                className={`size-9 rounded-full border-2 grid place-items-center shadow-sticker cursor-pointer motion-safe:transition-[scale,opacity,border-color] motion-safe:duration-[240ms] motion-safe:ease-hv-pop motion-safe:starting:scale-[.6] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.15] motion-safe:data-[leaving]:duration-220 motion-safe:data-[leaving]:ease-hv-in ${RUN_STATE_RING[a.state]}`}
               >
                 <ToolIcon kind={(a.kind === "agent" ? "robot" : "terminal") as IconKind} className="size-4" />
               </button>
@@ -1944,7 +2153,7 @@ function RunRail({
                 // No gap between the circle and this panel: a gap means the
                 // mouse leaves on the way in and the STOP inside is
                 // unreachable. The `pt-1` is INSIDE the hover target.
-                <div className="absolute left-0 top-full pt-1 z-20 w-72">
+                <div className="absolute left-0 top-full pt-1 z-20 w-72 motion-safe:transition-[opacity,translate] motion-safe:duration-150 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:-translate-y-0.5">
                   <div className="rounded-lg border-2 border-line bg-card shadow-sticker-lg px-3 py-2 flex flex-col gap-1">
                     <span className="text-sm font-black text-tangerine-deep break-words">{a.name}</span>
                     {a.caption && <span className="text-xs text-ink-soft break-words">{a.caption}</span>}
@@ -1980,7 +2189,19 @@ function RunRail({
             </div>
           ))}
       </div>
-      {open && !promoted.has(open) && <div className={`${RUN_RAIL_OVERLAY} z-20`}>{cardFor(open, true)}</div>}
+      {overlay.mounted && shownOpen && !promoted.has(shownOpen) && (
+        // A3: it grows FROM the circle that opened it, so the card reads as
+        // that circle expanding rather than as a panel appearing near it.
+        // The origin is an inline style because it is a measured pixel offset —
+        // Tailwind's scanner never sees a computed class.
+        <div
+          data-leaving={overlay.leaving || undefined}
+          style={{ transformOrigin: originFor(shownOpen) }}
+          className={`${RUN_RAIL_OVERLAY} z-20 motion-safe:transition-[scale,opacity] motion-safe:duration-[240ms] motion-safe:ease-hv-out motion-safe:starting:scale-[.96] motion-safe:starting:opacity-0 motion-safe:data-[leaving]:scale-[.96] motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:duration-150 motion-safe:data-[leaving]:ease-hv-in`}
+        >
+          {cardFor(shownOpen, true)}
+        </div>
+      )}
     </div>
   );
 }
@@ -2317,7 +2538,7 @@ function AgentsChip({ agents, onPick }: { agents: AgentInfo[]; onPick: (name: st
       </button>
       {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-30 w-72 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
+        <div className="absolute hv-menu-in origin-top-left top-full left-0 mt-1.5 z-30 w-72 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
           {/* Same grouping as the Agents page — one sort, two surfaces. */}
           {sortAgents(agents).map((a) => (
             <button
@@ -2374,7 +2595,7 @@ function ThinkingPill({
       {open && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1.5 z-30 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
+          <div className="absolute hv-menu-in origin-top-left top-full left-0 mt-1.5 z-30 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
             {/* Round 16 GUI pass: picking a level was one-way — there was no way
                 back to the global default, so a session could only ever be
                 pinned. This row is that way back. */}
@@ -2442,7 +2663,7 @@ function McpChip({
       </button>
       {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-30 w-64 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
+        <div className="absolute hv-menu-in origin-top-left top-full left-0 mt-1.5 z-30 w-64 max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
           {rows.map((srv) => (
             <div key={`${srv.scope}:${srv.name}`} className="flex items-center gap-2 px-3 py-1">
               <span
@@ -2485,7 +2706,7 @@ function SkillsChip({ skills }: { skills: Array<{ name: string; scope: string; u
       </button>
       {open && <div className="fixed inset-0 z-20" onMouseDown={() => setOpen(false)} />}
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-30 w-64 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
+        <div className="absolute hv-menu-in origin-top-left top-full left-0 mt-1.5 z-30 w-64 rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1.5 text-sm">
           {skills.map((s) => (
             <div key={`${s.scope}:${s.name}`} className="flex items-baseline gap-2 px-3 py-1">
               <span className={`flex-1 min-w-0 truncate ${s.used ? "font-bold" : "font-medium text-ink-soft"}`}>{s.name}</span>
