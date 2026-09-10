@@ -349,6 +349,75 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
 }
 
 /** §7 round 18: the search affordance. The INPUT hides at rest; this does not. */
+/**
+ * §34 — the feedback button and its OWN tooltip.
+ *
+ * The `title` attribute produced nothing on hover in the running app, and a
+ * native tooltip is unobservable from outside the renderer anyway, so it could
+ * neither be relied on nor tested. This one is a DOM node: it renders in the
+ * house style, its delay is ours to choose, and a test can assert it exists.
+ *
+ * `fixed` rather than `absolute` so no ancestor's overflow can clip it, with
+ * the position taken from the button's own rect. It stays at the app's z-scale
+ * (z-50, under the 100 that dialogs own) and `browserCoverage` finds it by its
+ * class word and judges it by its small box, so it hides a browser pane only if
+ * it genuinely overlaps one.
+ */
+function FeedbackButton({ onClick, className }: { onClick: () => void; className: string }): React.JSX.Element {
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const ref = useRef<HTMLButtonElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clear = (): void => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => clear, []);
+
+  const show = (delay: number): void => {
+    clear();
+    timer.current = setTimeout(() => {
+      const r = ref.current?.getBoundingClientRect();
+      if (r) setAt({ top: Math.round(r.bottom + 6), left: Math.round(r.left) });
+    }, delay);
+  };
+  const hide = (): void => {
+    clear();
+    setAt(null);
+  };
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        onClick={() => {
+          hide();
+          onClick();
+        }}
+        // Hover waits; keyboard focus does not — a tab-stop has already asked.
+        onMouseEnter={() => show(350)}
+        onMouseLeave={hide}
+        onFocus={() => show(0)}
+        onBlur={hide}
+        aria-label="Send feedback"
+        className={className}
+      >
+        <FeedbackIcon />
+      </button>
+      {at && (
+        <div
+          role="tooltip"
+          style={{ top: at.top, left: at.left }}
+          className="fixed z-50 rounded-lg border-2 border-ink/80 bg-card px-2 py-1 text-xs font-bold shadow-sticker pointer-events-none whitespace-nowrap"
+        >
+          Send feedback
+        </div>
+      )}
+    </>
+  );
+}
+
 /** §34: an outlined speech bubble — "tell us something", not "chat with us". */
 function FeedbackIcon(): React.JSX.Element {
   return (
@@ -758,11 +827,7 @@ export function Sidebar({
         {/* §34: reachable in BOTH sidebar states. A feedback affordance that
             disappears when the sidebar does is the one nobody finds when
             something is wrong. */}
-        {feedbackAvailable && (
-          <button type="button" onClick={onFeedback} title="Send feedback" aria-label="Send feedback" className={railBtn(false)}>
-            <FeedbackIcon />
-          </button>
-        )}
+        {feedbackAvailable && <FeedbackButton onClick={onFeedback} className={railBtn(false)} />}
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1.5 w-full pt-2">
           {workspaces.map((ws) => (
             <button
@@ -814,15 +879,7 @@ export function Sidebar({
           </div>
         </button>
         {feedbackAvailable && (
-          <button
-            type="button"
-            onClick={onFeedback}
-            title="Send feedback"
-            aria-label="Send feedback"
-            className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1"
-          >
-            <FeedbackIcon />
-          </button>
+          <FeedbackButton onClick={onFeedback} className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1" />
         )}
         {/* §7 round 18: the affordance stays, the input does not. Same idiom
             as the collapse control beside it — icon button, shortcut in the

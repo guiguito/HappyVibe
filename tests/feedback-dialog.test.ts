@@ -71,9 +71,29 @@ describe("§34 dialog", () => {
   });
 
   it("the sidebar renders the icon in BOTH states, gated on availability", () => {
-    expect((sidebar.match(/feedbackAvailable && \(/g) ?? []).length).toBe(2);
-    expect((sidebar.match(/<FeedbackIcon \/>/g) ?? []).length).toBe(2);
-    expect(sidebar).toMatch(/title="Send feedback"/);
+    expect((sidebar.match(/feedbackAvailable && /g) ?? []).length).toBe(2);
+    expect((sidebar.match(/<FeedbackButton /g) ?? []).length).toBe(2);
+  });
+
+  /**
+   * The `title` attribute produced NO tooltip in the running app, and a native
+   * one cannot be observed from outside the renderer either — so it could
+   * neither be relied on nor tested. The tooltip is a DOM node now.
+   */
+  it("the feedback button owns its tooltip rather than trusting `title`", () => {
+    expect(sidebar).not.toMatch(/title="Send feedback"/);
+    expect(sidebar).toMatch(/role="tooltip"/);
+    // Hover waits, keyboard focus does not.
+    expect(sidebar).toMatch(/onMouseEnter=\{\(\) => show\(350\)\}/);
+    expect(sidebar).toMatch(/onFocus=\{\(\) => show\(0\)\}/);
+    // Both exits clear it, and so does clicking through to the dialog.
+    expect(sidebar).toMatch(/onMouseLeave=\{hide\}/);
+    expect(sidebar).toMatch(/onBlur=\{hide\}/);
+    // `fixed`, so no ancestor's overflow can clip it; z-50 keeps it under dialogs.
+    expect(sidebar).toMatch(/fixed z-50 rounded-lg/);
+    expect(sidebar).toMatch(/pointer-events-none/);
+    // The timer is cleared on unmount, or a hover then a route change leaks it.
+    expect(sidebar).toMatch(/useEffect\(\(\) => clear, \[\]\)/);
   });
 
   it("App opens through feedbackOpen and every close path drops main's capture", () => {
