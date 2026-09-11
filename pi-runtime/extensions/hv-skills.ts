@@ -89,17 +89,28 @@ export function skillTokenLines(m: SkillManifest): { global: SkillScopeWeight; w
 }
 
 /**
- * System guidance steering the model to use_skill (which carries a customer-
- * facing intent and cards distinctly) instead of a raw `read` of a SKILL.md.
- * Empty when no skills are loaded (nothing to steer).
+ * A4 / F3 (Improve-prompts round, 2026-09-10) — REPLACE Pi's sentence rather
+ * than argue with it.
+ *
+ * Pi's own skills block says "Use the read tool to load a skill's file" a few
+ * hundred tokens before we used to say "do NOT read the SKILL.md file
+ * directly". One prompt, two opposite instructions, every turn — and the
+ * bridge's raw-SKILL.md-read fallback existed only to mop up whichever one
+ * lost. before_agent_start already rewrites the whole system prompt, so the
+ * one upstream sentence is swapped in place and our separate block goes away.
+ *
+ * This is the ONE piece of upstream text HappyVibe edits, so it is pinned:
+ * tests/pi-skills-sentence.test.ts reads Pi's own skills.js and fails if the
+ * literal ever moves, rather than letting a pin bump silently restore the
+ * contradiction. Pi's other branch ("Use bash to load…") fires only when the
+ * `read` tool is absent, which is never our case.
  */
-export function buildUseSkillGuidance(m: SkillManifest): string {
-  if (m.skills.length === 0) return "";
-  return (
-    "\n\n<happyvibe-skills>\n" +
-    "When a task matches an available skill, load it by calling the `use_skill` tool " +
-    "with the skill's name and a short `intent` (what you're doing and why) — do NOT " +
-    "read the SKILL.md file directly. use_skill returns the skill's full instructions.\n" +
-    "</happyvibe-skills>"
-  );
+export const PI_SKILLS_SENTENCE =
+  "Use the read tool to load a skill's file when the task matches its description.";
+export const HV_SKILLS_SENTENCE =
+  "Load a skill with `use_skill(name, intent)`; it returns the skill's instructions.";
+
+/** Pi's system prompt with its skills instruction swapped for ours. A prompt without it is returned unchanged. */
+export function replaceSkillsSentence(systemPrompt: string): string {
+  return systemPrompt.replace(PI_SKILLS_SENTENCE, HV_SKILLS_SENTENCE);
 }

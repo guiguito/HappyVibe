@@ -12,7 +12,7 @@ import {
   createChildOutputStore, rememberChildOutputs, substituteDeliveries,
 } from "./hv-subagent-delivery";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
-import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_BANNER } from "./hv-browser";
+import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, wrapUntrusted } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
 import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
 import { unwrapMcpCall } from "./hv-mcp";
@@ -40,7 +40,7 @@ import {
   type BoundarySummary,
 } from "./hv-subagent-boundary";
 import {
-  buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest,
+  findByName, loadManifest, matchReadPath, replaceSkillsSentence, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
 import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from "./hv-prompt-templates";
 // Async subagents (PRD §12): pi-subagents is co-resident on the SAME pi.events
@@ -115,17 +115,23 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
   return JSON.stringify(factual).slice(0, 300);
 }
 
+/** The tool's own `url` argument when it has one — web_search and browser_close do not. */
+const asUrl = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
+
 /**
  * §28: the same contract as terminalReply, plus two things only the browser has.
  *
- * `untrusted` marks a payload as PAGE-DERIVED, and the banner goes on in front
- * of it — prompt injection has no mechanical fix, so the least we do is never
- * hand the model page bytes that look like our own words. `imageBase64` becomes
+ * `untrusted` marks a payload as PAGE-DERIVED and the bytes are WRAPPED in an
+ * element naming their source (X5) — prompt injection has no mechanical fix, so
+ * the least we do is never hand the model page bytes that look like our own
+ * words, and never leave it guessing where they stop. `source` is the caller's,
+ * not the payload's: this one helper serves both the browser tools and the web
+ * tools, and only the caller knows which it is. `imageBase64` becomes
  * a real image content block: AgentToolResult.content is (TextContent |
  * ImageContent)[], verified in pi-agent-core's types.d.ts, so a vision model
  * gets the screenshot itself rather than a description of one.
  */
-function browserReply(raw: unknown): {
+function browserReply(raw: unknown, source: "web" | "browser", url?: string): {
   content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
   details: Record<string, unknown>;
 } {
@@ -144,7 +150,7 @@ function browserReply(raw: unknown): {
     }
     const text = p.text ?? JSON.stringify(p);
     const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
-      { type: "text", text: p.untrusted ? `${UNTRUSTED_BANNER}${text}` : text },
+      { type: "text", text: p.untrusted ? wrapUntrusted(text, source, url) : text },
     ];
     if (typeof p.imageBase64 === "string" && p.imageBase64) {
       content.push({ type: "image", data: p.imageBase64, mimeType: "image/png" });
@@ -256,16 +262,34 @@ const OPTIONAL_INTENT_TOOLS = ["subagent"];
 // the ORIGINAL model args (agent-loop.js emits before beforeToolCall runs),
 // so tool cards see the intent while the server never does.
 const strippedIntentTools = new Set<string>();
-const INTENT_PARAM = {
-  type: "string",
-  description:
-    "REQUIRED on every call. One short customer-facing sentence, goal first: why this call serves the user's request, then what you are doing. 'Looking for the failing order in the logs' beats 'Running a log query'. Shown to the user as the headline for this call.",
-};
+/**
+ * X1 (Improve-prompts round, 2026-09-10) — ONE description, on every tool.
+ *
+ * Each tool used to carry its own 100-250-char explanation of what an intent
+ * IS; thirty copies rode every turn, ~600-900 tokens, the largest
+ * HappyVibe-authored slice of the context window. The convention and its one
+ * example now live in the identity paragraph (src/main/appendSystem.ts
+ * buildIdentity), which the model reads once — and which follows the same §13
+ * round-12 switch, so neither can describe a parameter that is not there.
+ *
+ * "REQUIRED" is deliberately NOT restated: the schema's own `required` array
+ * says it, and current models honour the schema. No per-tool tail either — the
+ * tool's own name already carries the verb.
+ *
+ * Pinned by tests/intent-description.test.ts, which also scans this file for a
+ * per-tool copy growing back.
+ */
+export const INTENT_DESCRIPTION =
+  "One customer-facing sentence, goal first — shown to the user as this call's headline.";
+const INTENT_PARAM = { type: "string", description: INTENT_DESCRIPTION };
 const OPTIONAL_INTENT_PARAM = {
   type: "string",
-  description:
-    "Optional but recommended. One short customer-facing sentence, goal first, describing this delegation (shown as the headline; falls back to the task text if omitted).",
+  // `subagent` advertises intent without requiring it (see OPTIONAL_INTENT_TOOLS),
+  // so this one line says what happens when the model omits it.
+  description: `Optional. ${INTENT_DESCRIPTION} Falls back to the task text.`,
 };
+/** The same description as a typebox schema, for the tools this file registers itself. */
+const intentParam = (): ReturnType<typeof Type.String> => Type.String({ description: INTENT_DESCRIPTION });
 type MutableParams = { properties?: Record<string, unknown>; required?: string[] };
 /**
  * §13 round 12 — `enabled` gates the whole injection.
@@ -333,6 +357,16 @@ export function requireIntent(pi: ExtensionAPI, enabled = true): void {
     strippedIntentTools.add(t.name);
   }
 }
+
+/**
+ * X7 (Improve-prompts round, 2026-09-10) — what a refused model should do next.
+ *
+ * Appended to the two refusals that used to say only that something was
+ * blocked. Every other refusal in the app (plan mode, the child guard, the
+ * bash-`&` redirect, the web refusals) already carries a cause and an
+ * alternative; these two did not, and a model handed a bare "blocked" retries.
+ */
+const NEXT_STEP = "Do not retry the same call. Take a different approach, or tell the user what you needed and why.";
 
 // ── B4 permissions (docs/validation/d1.md §hv.audit) ───────────────────────
 // Rules file path rides the spawn env; main rewrites the file on UI edits
@@ -589,6 +623,14 @@ function emitPlan(ui: { notify(m: string, t?: "info" | "warning" | "error"): voi
 // was planning when a `bash` call came back with gatePlanCall's explanatory
 // refusal. Hiding a tool replaces a reason with a lie — the gate IS the UX here,
 // so there is nothing to re-add: let every blocked call carry its reason.
+//
+// F4 (2026-09-10): the same reasoning is why the DISABLED `bg_wait` tool is
+// still sent to the model, at ~650 tokens a turn. pi-subagents registers it
+// whatever waitTool.enabled says, and dropping it with setActiveTools would be
+// free — except that upstream's own async receipt still tells the model the
+// name, so a hidden tool would come back as a bare "not found" exactly as
+// `edit` did above. The gate for reversing this is the F4 group in
+// tests/pi-subagents-contract.test.ts: when upstream stops naming it, hide it.
 
 function loadRules(): void {
   rulesError = null;
@@ -817,7 +859,10 @@ export default function (pi: ExtensionAPI) {
     } catch {
       /* fail open */
     }
-    const sp = (event.systemPrompt ?? "") as string;
+    const base = (event.systemPrompt ?? "") as string;
+    // A4: swap Pi's "use the read tool to load a skill's file" for ours, in the
+    // one hook that already owns this prompt. No-op when no skills are loaded.
+    const sp = replaceSkillsSentence(base);
     // W2.3: nested AGENTS.md injection — content re-read at injection time so
     // it's always current. Returning systemPrompt replaces it for THIS TURN
     // ONLY (agent-session.js resets to the base prompt when we return nothing).
@@ -829,9 +874,11 @@ export default function (pi: ExtensionAPI) {
     const agentsSection = renderSubagentSection(agents);
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
-    const planSection = builtins.plan && plan.enabled ? "\n\n" + buildPlanPrompt(builtins.planAppend) : "";
-    // §14: steer the model to use_skill (intent card) over a raw SKILL.md read.
-    const skillSection = buildUseSkillGuidance(skillManifest);
+    // A3: the prompt names the blocked tools this session actually HAS.
+    const planSection =
+      builtins.plan && plan.enabled
+        ? "\n\n" + buildPlanPrompt(builtins.planAppend, pi.getAllTools().map((t) => t.name))
+        : "";
     // §26: steer long-running commands to terminal_run rather than a
     // backgrounded bash call. Only while the group is registered — otherwise
     // the prompt would name a tool the model does not have.
@@ -854,7 +901,12 @@ export default function (pi: ExtensionAPI) {
           workspace: memoryWorkspaceDir ? readIndex(memoryWorkspaceDir) : null,
         })
       : "";
-    const injected = sp + section + agentsSection + planSection + skillSection + terminalSection + webSection + memorySection;
+    // X6 (2026-09-10): STATIC-BEFORE-DYNAMIC, for the provider's prefix cache.
+    // The roster, plan, steer lines and memory policy do not change within a
+    // session; the memory INDEX changes on every save and the nested section
+    // whenever a new subdirectory is touched. Those two used to sit first and
+    // last-but-inside, so either one invalidated the whole HappyVibe tail.
+    const injected = sp + agentsSection + planSection + terminalSection + webSection + memorySection + section;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -877,10 +929,12 @@ export default function (pi: ExtensionAPI) {
       // Absent when memory is off, so the panel shows no Memory category at all — the 0-cost claim.
       memory: memoryOn ? memoryTokenLines(memoryGlobalDir, memoryWorkspaceDir) : undefined,
     };
-    // memorySection is named here for the same reason as the others: an injection that is
-    // computed and then not returned is silently absent, and memory can be the ONLY thing a
-    // turn injects (no nested AGENTS.md, no agents, no plan, no skills).
-    if (section || agentsSection || planSection || skillSection || memorySection) return { systemPrompt: injected };
+    // F1 (2026-09-10): this used to hand-list the sections, and it OMITTED
+    // terminalSection and webSection — with every agent off and memory, skills
+    // and plan off, both steer lines were computed and then never sent.
+    // Comparing against Pi's own prompt cannot forget a section, and it also
+    // covers A4's skills-sentence swap, which changes `sp` itself.
+    if (injected !== base) return { systemPrompt: injected };
     return undefined; // no injection this turn — resets Pi to the base prompt
   });
 
@@ -993,11 +1047,13 @@ export default function (pi: ExtensionAPI) {
     if (isWaitTool(tool)) {
       return {
         block: true,
+        // X3: the reason IS the instruction here — a shouted "Do NOT" made
+        // models hesitate over legitimate blocking calls elsewhere.
         reason:
-          "Do NOT wait. This is an interactive HappyVibe session: the subagent's result " +
-          "will be delivered to you automatically as a new turn the moment it finishes. End " +
-          "your turn now with a brief note that the work is running in the background — do not " +
-          `call ${tool}() or poll with subagent status. You will be prompted with the result.`,
+          "This is an interactive HappyVibe session: the sub-agent's result is delivered to you " +
+          "as a new turn when it finishes, so there is nothing to wait for — do not call " +
+          `${tool}() or poll with subagent status. End your turn with one line saying the work ` +
+          "is running in the background.",
       };
     }
     // The run card's caption, captured at the ONE point it is still readable:
@@ -1238,7 +1294,13 @@ export default function (pi: ExtensionAPI) {
 
     if (v.action === "deny") {
       audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule", rule: v.rule });
-      return { block: true, reason: `Blocked by HappyVibe permission rule (${v.rule?.layer}: ${v.rule?.pattern})` };
+      // X7 (2026-09-10): a bare "blocked" makes a current model retry the same
+      // call with small variations — which is what the audit log then fills up
+      // with. Every other refusal in the app already names an alternative.
+      return {
+        block: true,
+        reason: `Blocked by HappyVibe permission rule (${v.rule?.layer}: ${v.rule?.pattern}). ${NEXT_STEP}`,
+      };
     }
     // §23 floor-of-ask: while planning, "everything else" (MCP/unknown tools)
     // never auto-allows — an allow becomes an ask; deny already returned above,
@@ -1303,7 +1365,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "user" });
-    return { block: true, reason: "User denied this action in HappyVibe" };
+    return { block: true, reason: `User denied this action in HappyVibe. ${NEXT_STEP}` };
   });
 
   pi.registerCommand("hv-rules-reload", {
@@ -1671,18 +1733,13 @@ export default function (pi: ExtensionAPI) {
     name: "ask_user",
     label: "Ask the user",
     description:
-      "Ask the user to decide something you genuinely cannot decide or verify yourself " +
-      "(preferences, trade-offs, ambiguous requirements). Blocks until the user answers. " +
-      "Rules: at most 4 questions per call; options must be mutually exclusive and exhaustive " +
-      "for the decision; put your recommended option FIRST with its label suffixed ' (Recommended)'; " +
-      "never ask about things you can check yourself (files, code, docs); keep labels 1-5 words " +
-      "with the trade-offs in the description. The UI adds a free-text 'Other' option automatically — " +
-      "do not add one. If the user dismisses the question, proceed with your best judgment.",
+      // B2 (2026-09-10): the label rules live on the `label` param and the
+      // dismissal sentence in DISMISSED_RESULT — each said once (X2).
+      "Ask the user only for a decision that changes what you build and that the code, docs or a " +
+      "tool cannot answer. Blocks until they answer. At most 4 questions; options exhaustive and " +
+      "mutually exclusive; your recommended option first. The UI adds a free-text 'Other' itself.",
     parameters: Type.Object({
-      intent: Type.String({
-        description:
-          "REQUIRED on every call. One short customer-facing sentence: why you need the user's decision and what it will settle (shown to the user as the headline).",
-      }),
+      intent: intentParam(),
       questions: Type.Array(
         Type.Object({
           question: Type.String({ description: "The full question text shown to the user." }),
@@ -1725,16 +1782,16 @@ export default function (pi: ExtensionAPI) {
   // round-12 switch is off), so a skill
   // load surfaces as a transcript card with a model-authored "why", and each
   // invocation is auditable (hv.skill notify). Prompting is steered here via the
-  // <happyvibe-skills> system block; a raw read is caught by the fallback above.
+  // skills sentence (replaceSkillsSentence); a raw read is caught by the fallback above.
   pi.registerTool({
     name: "use_skill",
     label: "Use skill",
     description:
-      "Load a HappyVibe skill's full instructions when a task matches it. Pass the skill `name` " +
-      "(as shown in the available skills) and a short `intent`. Returns the skill's SKILL.md so " +
-      "you can follow its workflow. Prefer this over reading a SKILL.md file directly.",
+      // A4: the WHEN now lives in Pi's own skills block (one sentence, swapped
+      // by replaceSkillsSentence). This says only what the call does.
+      "Load a skill's instructions by name. Prefer this over reading a SKILL.md file.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are loading this skill — the task it serves." }),
+      intent: intentParam(),
       name: Type.String({ description: "The skill name to load (from the available skills list)." }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -1777,7 +1834,7 @@ export default function (pi: ExtensionAPI) {
     // renders a second copy that can drift from what the model is told.
     description: TERMINAL_TOOL_DESCRIPTIONS.terminal_run,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence, goal first: why you are running this, then what it does." }),
+      intent: intentParam(),
       command: Type.String({ description: "One command line. No embedded newlines." }),
       terminalId: Type.Optional(Type.String({ description: "Reuse this terminal instead of opening a new one. It must be idle." })),
     }),
@@ -1826,7 +1883,7 @@ export default function (pi: ExtensionAPI) {
     label: "Stop terminal",
     description: TERMINAL_TOOL_DESCRIPTIONS.terminal_kill,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are stopping it, then what you are stopping." }),
+      intent: intentParam(),
       terminalId: Type.String({ description: "The terminal to stop." }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -1851,14 +1908,15 @@ export default function (pi: ExtensionAPI) {
   const browserInput = async (
     ctx: { ui: { input(title: string, initial: string): Promise<unknown> } },
     payload: Record<string, unknown>,
-  ): Promise<Awaited<ReturnType<typeof browserReply>>> => browserReply(await ctx.ui.input(JSON.stringify(payload), ""));
+  ): Promise<Awaited<ReturnType<typeof browserReply>>> =>
+    browserReply(await ctx.ui.input(JSON.stringify(payload), ""), "browser", asUrl(payload.url));
 
   pi.registerTool({
     name: "browser_open",
     label: "Open browser",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_open,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you need this page, then what you are opening." }),
+      intent: intentParam(),
       url: Type.String({ description: "The URL to open. localhost needs no approval; anything else asks the user." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1873,7 +1931,7 @@ export default function (pi: ExtensionAPI) {
     label: "Navigate browser",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_navigate,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are navigating there, then where you are going." }),
+      intent: intentParam(),
       url: Type.String({ description: "The URL to navigate to." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1888,7 +1946,7 @@ export default function (pi: ExtensionAPI) {
     label: "Screenshot page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_screenshot,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are capturing this, then what it shows." }),
+      intent: intentParam(),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const { intent } = params as { intent?: string };
@@ -1901,7 +1959,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_get_text,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are looking for." }),
+      intent: intentParam(),
     }),
     async execute(_id, _params, _signal, _onUpdate, ctx) {
       return browserInput(ctx, { kind: "hv.browser-get-text" });
@@ -1913,7 +1971,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read page console",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_read_console,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you expect to find." }),
+      intent: intentParam(),
       lines: Type.Optional(Type.Number({ description: "How many trailing messages. Default 100, capped at 200." })),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1927,7 +1985,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read page network",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_read_network,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you expect to find." }),
+      intent: intentParam(),
       limit: Type.Optional(Type.Number({ description: "How many trailing requests. Default 50, capped at 200." })),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1941,7 +1999,7 @@ export default function (pi: ExtensionAPI) {
     label: "Click in page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_click,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are clicking, then what you are clicking." }),
+      intent: intentParam(),
       selector: Type.String({ description: "A CSS selector for the element to click." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1956,7 +2014,7 @@ export default function (pi: ExtensionAPI) {
     label: "Type in page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_type,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are typing this, then what you are typing." }),
+      intent: intentParam(),
       selector: Type.String({ description: "A CSS selector for the field to type into." }),
       text: Type.String({ description: "The text to type." }),
     }),
@@ -1974,7 +2032,7 @@ export default function (pi: ExtensionAPI) {
     label: "Run JS in page",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_evaluate,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are running this code, then what it does." }),
+      intent: intentParam(),
       code: Type.String({ description: "JavaScript to evaluate in the page. The final expression is the result." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -1989,7 +2047,7 @@ export default function (pi: ExtensionAPI) {
     label: "Close browser",
     description: BROWSER_TOOL_DESCRIPTIONS.browser_close,
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are closing it." }),
+      intent: intentParam(),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const { intent } = params as { intent?: string };
@@ -2002,9 +2060,9 @@ export default function (pi: ExtensionAPI) {
   // ONE group, four thin shells over blocking hv.web-* inputs. Main calls the
   // web service, so main owns the URL, the encrypted key, the caps, the
   // deadline and the audit row; the bridge carries the request and turns the
-  // reply into a tool result. browserReply is the mapper — it already prefixes
-  // UNTRUSTED_BANNER on `untrusted:true`, and a page fetched headlessly is
-  // exactly as untrusted as one rendered in the pane.
+  // reply into a tool result. browserReply is the mapper — it already wraps
+  // the payload in <untrusted source="web"> on `untrusted:true`, and a page
+  // fetched headlessly is exactly as untrusted as one rendered in the pane.
   //
   // Four separate tools rather than one with an action enum: §10's rules must
   // be able to allow web_search by default while asking per host for the other
@@ -2032,21 +2090,18 @@ export default function (pi: ExtensionAPI) {
     const onAbort = (): void => ctx.ui.notify(JSON.stringify({ kind: "hv.web-cancel", toolCallId }), "info");
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      return browserReply(await ctx.ui.input(JSON.stringify({ ...payload, toolCallId }), ""));
+      return browserReply(await ctx.ui.input(JSON.stringify({ ...payload, toolCallId }), ""), "web", asUrl(payload.url));
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }
   };
-
-  const webIntent = (what: string): ReturnType<typeof Type.String> =>
-    Type.String({ description: `REQUIRED. One short customer-facing sentence: why you need this, then ${what}.` });
 
   pi.registerTool({
     name: "web_search",
     label: "Search the web",
     description: WEB_TOOL_DESCRIPTIONS.web_search,
     parameters: Type.Object({
-      intent: webIntent("what you are looking for"),
+      intent: intentParam(),
       query: Type.String({ description: "The search query. `site:example.com` works." }),
       limit: Type.Optional(
         Type.Integer({ description: `Results to return (default ${WEB_CAPS.search.defaultLimit}, max ${WEB_CAPS.search.maxLimit}).` }),
@@ -2071,7 +2126,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read a web page",
     description: WEB_TOOL_DESCRIPTIONS.web_fetch,
     parameters: Type.Object({
-      intent: webIntent("what page you are reading"),
+      intent: intentParam(),
       url: Type.String({ description: "The http(s) URL to read. Not localhost or a private address — use browser_open for those." }),
       maxChars: Type.Optional(
         Type.Integer({ description: `Chars to return (default ${WEB_CAPS.fetch.defaultChars}, max ${WEB_CAPS.fetch.maxChars}).` }),
@@ -2097,7 +2152,7 @@ export default function (pi: ExtensionAPI) {
     label: "List a site's pages",
     description: WEB_TOOL_DESCRIPTIONS.web_map,
     parameters: Type.Object({
-      intent: webIntent("which site you are listing"),
+      intent: intentParam(),
       url: Type.String({ description: "The site's http(s) URL." }),
       search: Type.Optional(Type.String({ description: "Only return URLs matching this text." })),
       limit: Type.Optional(
@@ -2116,7 +2171,7 @@ export default function (pi: ExtensionAPI) {
     label: "Read a site",
     description: WEB_TOOL_DESCRIPTIONS.web_crawl,
     parameters: Type.Object({
-      intent: webIntent("which site you are reading and what you are looking for"),
+      intent: intentParam(),
       url: Type.String({ description: "The http(s) URL to start from." }),
       limit: Type.Optional(
         Type.Integer({ description: `Pages to read (default ${WEB_CAPS.crawl.defaultLimit}, max ${WEB_CAPS.crawl.maxLimit}).` }),
@@ -2164,7 +2219,7 @@ export default function (pi: ExtensionAPI) {
         path: Type.String({ description: "Path to the document (workspace-relative or absolute, like read)." }),
         offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed), like read." })),
         limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read, like read." })),
-        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are looking for in this document." }),
+        intent: intentParam(),
       }),
       async execute(_id, params, _signal, _onUpdate, ctx) {
         const { path, offset, limit } = params as { path: string; offset?: number; limit?: number };
@@ -2208,14 +2263,14 @@ export default function (pi: ExtensionAPI) {
       name: "memory_save",
       label: "Remember",
       description:
-        "Save a durable memory for future sessions. Ask yourself first: will a future session need this, and is it " +
-        "absent from the code, git history and AGENTS.md? Saving the same `name` REPLACES the existing memory — prefer " +
-        "that over creating a near-duplicate. Never save secrets, task state or anything you can look up.",
+        // B8/X2: what to save, and what not to, is the policy's job — it is in
+        // the system prompt every turn. This says what the call does.
+        "Save one durable memory for future sessions; the same name replaces the existing one.",
       parameters: Type.Object({
-        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are remembering and why." }),
+        intent: intentParam(),
         scope: MemoryScope,
         type: Type.Union([Type.Literal("user"), Type.Literal("feedback"), Type.Literal("project"), Type.Literal("reference")], {
-          description: "user = who they are and how they like to work; feedback = a correction or a confirmed approach (say WHY and HOW TO APPLY); project = a fact about this codebase you cannot recover from it; reference = a pointer to something external.",
+          description: "See the Types line in your memory instructions.",
         }),
         name: Type.String({ description: "Short stable name, e.g. 'talk like a young engineer'. The same name replaces the existing memory." }),
         description: Type.String({ description: "One line, at most 150 characters — this is what you see in the index every turn." }),
@@ -2253,10 +2308,9 @@ export default function (pi: ExtensionAPI) {
       name: "memory_recall",
       label: "Recall",
       description:
-        "Open one memory in full, by the name shown in the memory index in your instructions. Use it when the index " +
-        "line suggests the memory is relevant to what you are doing.",
+        "Open one memory in full, by its name in the index.",
       parameters: Type.Object({
-        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are looking up and why." }),
+        intent: intentParam(),
         scope: MemoryScope,
         name: Type.String({ description: "The memory's name, exactly as it appears in the index." }),
       }),
@@ -2275,10 +2329,9 @@ export default function (pi: ExtensionAPI) {
       name: "memory_forget",
       label: "Forget",
       description:
-        'Delete one memory. Use it when the user says "forget …", or when a memory has turned out to be wrong or ' +
-        "obsolete. To CORRECT a memory, save it again under the same name instead — that replaces it.",
+        "Delete one memory by name. To correct one, save it again under the same name instead.",
       parameters: Type.Object({
-        intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you are forgetting and why." }),
+        intent: intentParam(),
         scope: MemoryScope,
         name: Type.String({ description: "The memory's name, exactly as it appears in the index." }),
       }),
@@ -2312,13 +2365,13 @@ export default function (pi: ExtensionAPI) {
     name: "plan_complete",
     label: "Complete plan",
     description:
-      "Submit the finished, decision-complete implementation plan for the user to review. " +
-      "Only available in Plan Mode, and only as your FINAL action of the turn (call it alone). " +
-      "Pass the complete plan as Markdown with a '# title', a '## Tasks' GFM checklist (- [ ] …), " +
-      "and a '## Verification' section. On revision, pass a complete replacement plan, not a delta.",
+      // A3: the structure is stated once, in the Plan Mode instructions. This
+      // says what the call does and when, not what the plan must contain.
+      "Submit the finished plan for the user to review, as the final action of your turn. " +
+      "Markdown, in the structure your Plan Mode instructions give.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what the plan will achieve." }),
-      plan: Type.String({ description: "The complete implementation plan as Markdown (title + summary + ## Tasks checklist + ## Verification)." }),
+      intent: intentParam(),
+      plan: Type.String({ description: "The complete plan as Markdown (see the required structure in your instructions)." }),
     }),
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       if (!plan.enabled) return { content: [{ type: "text", text: "plan_complete is only available in Plan Mode." }], details: {} };
@@ -2349,11 +2402,10 @@ export default function (pi: ExtensionAPI) {
     name: "plan_start",
     label: "Start plan mode",
     description:
-      "Enter Plan Mode for this session when the user asks you to plan before acting. In Plan Mode " +
-      "you explore read-only and draft an implementation plan; you cannot modify anything. Leaving " +
-      "Plan Mode and starting implementation are the user's choice — you cannot exit it yourself.",
+      "Enter Plan Mode for this session when the user asks you to plan before acting: read-only " +
+      "exploration ending in an implementation plan. Only the user can leave it.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: why you are planning first, then what you will plan." }),
+      intent: intentParam(),
     }),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       if (!plan.enabled) {
@@ -2374,7 +2426,7 @@ export default function (pi: ExtensionAPI) {
       "Record the terminal status of the current plan: 'implemented' once you have completed the plan " +
       "AND its Verification passes, or 'cancelled' if the user abandons it. Only these two values.",
     parameters: Type.Object({
-      intent: Type.String({ description: "REQUIRED. One short customer-facing sentence: what you just completed and what remains." }),
+      intent: intentParam(),
       status: Type.Union([Type.Literal("implemented"), Type.Literal("cancelled")], { description: "'implemented' (verification passed) or 'cancelled'." }),
       note: Type.Optional(Type.String({ description: "Optional short note (e.g. what verification confirmed)." })),
     }),

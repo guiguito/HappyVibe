@@ -33,7 +33,7 @@ Rules:
 
 - Keep each file under ~40 lines. No fluff, no marketing, no generic advice a coding agent already knows.
 - Never invent a command — if you could not verify it, leave it out.
-- NEVER create or modify any file. The app writes them from your output.
+- You cannot create or modify files; the app writes them from your output.
 
 Output format — your final message MUST be exactly one fenced block, tagged
 `json agents-md`, whose body is an object mapping each workspace-relative

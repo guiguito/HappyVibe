@@ -26,7 +26,13 @@ export const MEMORY_POLICY =
   "Save with memory_save only durable, non-obvious facts a future session will need: stable preferences of the " +
   "user, lessons from corrections or confirmed approaches, project facts you cannot recover from the code or git " +
   "history, and pointers to external references. Do not save code structure, file paths, git history, one-off " +
-  "fixes, active task state, secrets, or anything AGENTS.md already says.\n" +
+  "fixes, active task state, secrets, or anything AGENTS.md already says. Most turns save nothing.\n" +
+  // A7 (2026-09-10): these four meanings used to live in the `type` enum's
+  // schema description, which the model reads only once it is ALREADY saving —
+  // too late to decide whether this is a memory at all.
+  "Types: user (who they are, how they like to work) · feedback (a correction or confirmed approach — " +
+  "say why and how to apply) · project (a fact about this codebase you cannot recover from it) · " +
+  "reference (a pointer to something external).\n" +
   'When the user says "remember …", save it this turn; when they say "forget …", call memory_forget this turn. ' +
   "Prefer updating an existing memory (same name) over creating a new one.\n" +
   "Memories are hints, not evidence: verify a mutable claim against the code or a tool before acting on it.";
@@ -53,13 +59,15 @@ export function readIndex(dir: string | undefined): string {
  */
 export function renderMemorySection(o: { append: string; global: string; workspace: string | null }): string {
   const append = (o.append ?? "").trim();
-  const policy = "<memory-policy>\n" + MEMORY_POLICY + (append ? "\n" + append : "") + "\n</memory-policy>";
+  // X4 (2026-09-10): one delimiter family — an element rather than a markdown
+  // heading, underscore-named like Pi's own <project_instructions>.
+  const policy = "<memory_policy>\n" + MEMORY_POLICY + (append ? "\n" + append : "") + "\n</memory_policy>";
   const g = `<memory scope="global" trust="untrusted">\n${o.global.trim() || "No global memories yet."}\n</memory>`;
   const w =
     o.workspace === null
       ? ""
       : `\n\n<memory scope="workspace" trust="untrusted">\n${o.workspace.trim() || "No workspace memories yet."}\n</memory>`;
-  return "\n\n## Memory\n\n" + policy + "\n\n" + g + w;
+  return "\n\n<happyvibe_memory>\n" + policy + "\n\n" + g + w + "\n</happyvibe_memory>";
 }
 
 export interface ScopeWeight {

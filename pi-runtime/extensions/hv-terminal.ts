@@ -87,13 +87,14 @@ export function hasBackgroundAmpersand(cmd: string): boolean {
  * reworded, re-run that measurement — tests/bridge.test.ts and
  * tests/rules-bridge.test.ts both depend on the model still reaching for bash.
  */
+// A5 (2026-09-10): one sentence. This restated terminal_run's own description
+// almost word for word, and the bash-`&` refusal is a third copy that fires
+// exactly when the model gets it wrong (X2: the tool description holds the how,
+// the system section one sentence of when, the refusal the why). Scope first,
+// exception second — the ordering the measurement above depends on.
 export const TERMINAL_STEER_LINE =
-  "`bash` is the right tool for ordinary commands — anything that finishes on its own. " +
-  "The one exception: a command that would run INDEFINITELY (a dev server, a file watcher, " +
-  "`docker compose up` — anything you would otherwise background with a trailing `&`) goes to " +
-  "`terminal_run` instead. That gives the user a terminal they can watch, type into and stop, " +
-  "where a backgrounded bash process is invisible to them and cannot be stopped. Poll it with " +
-  "`terminal_read`, and clean up with `terminal_kill`.";
+  "`bash` runs commands that finish on their own; a command that would run indefinitely " +
+  "(a dev server, a watcher) goes to `terminal_run`, so the user can watch it and stop it.";
 
 /**
  * The three tool descriptions, HERE rather than inline at their registerTool

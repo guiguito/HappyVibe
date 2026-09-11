@@ -28,7 +28,8 @@ import { PI_CLI_RELPATH, nodeExecPath } from "./pi/spawn";
  */
 export function buildTitlePrompt(firstUserMessage: string, append = ""): string {
   const base =
-    "Write a short title (3 to 6 words, no quotes, no trailing period) for a coding session " +
+    "Write a short title (3 to 6 words, in the language of the request, no emoji, no quotes, " +
+    "no trailing period) for a coding session " +
     `that starts with this request:\n\n${firstUserMessage.slice(0, 500)}\n\nReply with ONLY the title.`;
   return append.trim() ? `${base}\n\n${append.trim()}` : base;
 }

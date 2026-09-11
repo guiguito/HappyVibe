@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import {
+import { BLOCKED_PLAN_TOOLS,
   buildPlanFile,
   buildPlanPrompt,
   gatePlanCall,
@@ -187,11 +187,36 @@ describe("buildPlanPrompt", () => {
     expect(p.toLowerCase()).toContain("read-only");
   });
 
+  test("A3 — the blocked list is derived from the gate, and filtered to registered tools", () => {
+    // Principle 11: never re-type beside the gate. §26: never name a tool the
+    // model does not have — four of these vanish with their built-in group.
+    const full = buildPlanPrompt();
+    for (const t of BLOCKED_PLAN_TOOLS) expect(full, t).toContain(t);
+    const noGroups = buildPlanPrompt("", ["edit", "write", "bash", "read", "subagent"]);
+    expect(noGroups).toContain("edit");
+    expect(noGroups).not.toContain("browser_click");
+    expect(noGroups).not.toContain("terminal_run");
+    // The gate allows delegation while planning; the prompt must not deny it.
+    expect(full).not.toMatch(/sub-?agents? (are|is) blocked/i);
+  });
+
+  test("A3 — one delimiter, the marker inside it, and the calm register", () => {
+    const p = buildPlanPrompt();
+    expect(p.startsWith("<happyvibe_plan_mode>\n[HAPPYVIBE PLAN MODE ACTIVE]")).toBe(true);
+    expect(p.trimEnd().endsWith("</happyvibe_plan_mode>")).toBe(true);
+    expect(p).not.toMatch(/CANNOT|ALONE|EITHER/);
+    expect(p).toMatch(/Name the existing\s+helpers the plan reuses/);
+  });
+
   test("appends the user's addition after the built-in body, keeping the marker first", () => {
     const base = buildPlanPrompt();
     const withAppend = buildPlanPrompt("Prefer small diffs.");
-    expect(withAppend.startsWith(base)).toBe(true);
-    expect(withAppend.endsWith("Prefer small diffs.")).toBe(true);
+    // The append lands after the body but INSIDE the element.
+    expect(withAppend).toContain("Prefer small diffs.\n</happyvibe_plan_mode>");
+    expect(withAppend.startsWith("<happyvibe_plan_mode>\n[HAPPYVIBE PLAN MODE ACTIVE]")).toBe(true);
+    expect(base.slice(0, base.length - "\n</happyvibe_plan_mode>".length)).toBe(
+      withAppend.slice(0, base.length - "\n</happyvibe_plan_mode>".length),
+    );
     expect(buildPlanPrompt("   ")).toBe(base); // whitespace-only adds nothing
   });
 });

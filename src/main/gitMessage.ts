@@ -50,6 +50,7 @@ export function buildDraftPrompt(input: DraftInput, budgetChars: number, append 
   return [
     "Write a commit message for the change below.",
     "Reply with ONLY the commit message subject line: one line, imperative mood, no quotes, no trailing period, at most 72 characters.",
+    "Say what changed and why, not which files.",
     style,
     // §19 (2026-08-30): the user's own addition. AFTER the instructions, so it
     // reads as an addition to them; BEFORE the diff, because the diff is the
@@ -183,6 +184,7 @@ export function buildPrPrompt(input: PrDraftInput, budgetChars: number, append =
     "  - the FIRST line is the title: one line, under 72 characters, no prefix like 'Title:'",
     "  - then a blank line",
     "  - then the description in markdown: what changed and why, a short bullet list where it helps.",
+    "Lead the description with why; end with how it was verified when the diff shows it.",
     "Do not wrap the answer in code fences. Do not invent changes that are not in the diff.",
     // §19 (2026-08-30): appended, never substituted — splitPrDraft parses this
     // output, so a rewritten prompt breaks the parse silently.

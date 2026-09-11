@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildUseSkillGuidance, findByName, loadManifest, matchReadPath, skillTokenLines, type SkillManifest } from "../pi-runtime/extensions/hv-skills";
+import { findByName, HV_SKILLS_SENTENCE, loadManifest, matchReadPath, skillTokenLines, type SkillManifest } from "../pi-runtime/extensions/hv-skills";
 
 let root: string;
 beforeEach(() => {
@@ -64,7 +64,9 @@ it("skillTokenLines lists each skill by name per scope", () => {
   expect(lines.workspace.items).toEqual([{ name: "house-style", tokens: 12 }]);
 });
 
-test("buildUseSkillGuidance empty when no skills, present otherwise", () => {
-  expect(buildUseSkillGuidance({ skills: [] })).toBe("");
-  expect(buildUseSkillGuidance(manifest)).toMatch(/use_skill/);
+// A4 (2026-09-10): there is no <happyvibe-skills> block any more — the one
+// sentence replaces Pi's own, in the same system prompt. Shape and pin-bump
+// gate live in tests/pi-skills-sentence.test.ts.
+test("the skills instruction steers to use_skill", () => {
+  expect(HV_SKILLS_SENTENCE).toMatch(/use_skill/);
 });

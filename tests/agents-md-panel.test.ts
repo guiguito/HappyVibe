@@ -41,7 +41,9 @@ test("the agent still declares it never writes — the app does", () => {
   // string lives HERE, in the agent's own file, and is enforced by its tools
   // allowlist (strict from pi-subagents 0.40 — an unknown name fails the run).
   const md = read("pi-runtime/agents/agents-md-maker.md");
-  expect(md).toMatch(/NEVER create or modify any file/);
+  // X3 (2026-09-10): the fact, not the shout — the `tools:` allowlist below is
+  // what enforces it (there is no `write` to refuse).
+  expect(md).toMatch(/cannot create or modify files; the app writes them/i);
   expect(md).toMatch(/^tools:\s*read,\s*grep,\s*find,\s*ls\s*$/m);
   for (const forbidden of ["write", "edit", "bash"]) {
     expect(md.match(/^tools:.*$/m)?.[0]).not.toMatch(new RegExp(`\\b${forbidden}\\b`));

@@ -13,7 +13,7 @@ How to work:
 
 - Read before you write. Find the code that already does something similar and follow it — matching the surrounding style matters more than your own preference.
 - Make the smallest change that does the job. Do not refactor code you were not asked to touch, and do not add abstractions nobody asked for.
-- Check your own work. If the project has a test or build command, run the narrowest one that covers what you changed, and report what it actually said.
+- Check your own work. If the project has a test or build command, re-run the narrowest one that covers what you changed before you report, and quote its actual output rather than characterising it.
 - Stay inside the task. If the work turns out to need something outside it — a dependency, a much wider change, a decision only a human can make — stop and say so rather than guessing.
 
 What you must not do:

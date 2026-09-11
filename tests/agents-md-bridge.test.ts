@@ -121,10 +121,14 @@ test.skipIf(!KEY)(
       await h.client.send({ type: "prompt", message: "/hv-sysprompt" });
       const sys = await h.nextRequest((r) => payload(r).kind === "hv.sysprompt");
       const text = payload(sys).text as string;
-      expect(text).toContain("## Nested AGENTS.md (scoped instructions)");
+      // A8 (2026-09-10): the nested blocks reuse Pi's own <project_instructions>
+      // tag rather than a markdown heading of our own. Pi emits that tag for
+      // the ROOT file too, so the marker for "ours starts here" is the
+      // applies_to attribute, which only a nested block carries.
+      expect(text).toContain('<project_instructions path="sub/AGENTS.md" applies_to="sub/">');
       expect(text).toContain("NESTED-MARKER-X9Z");
       // Root file appears once via Pi's own context files, NOT in our nested section.
-      expect(text.slice(text.indexOf("## Nested AGENTS.md")).includes("ROOT-MARKER-A7Q")).toBe(false);
+      expect(text.slice(text.indexOf('applies_to="sub/"')).includes("ROOT-MARKER-A7Q")).toBe(false);
 
       // Snapshot's system block carries the nested list for the context panel.
       await h.client.send({ type: "prompt", message: "/hv-context" });

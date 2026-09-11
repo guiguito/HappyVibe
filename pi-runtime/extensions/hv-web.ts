@@ -88,10 +88,11 @@ export const WEB_TOOL_DESCRIPTIONS: Record<WebToolName, string> = {
  * `curl -X POST` has legitimate uses `web_fetch` cannot serve, and a `bash`
  * rule already exists for anyone who wants one.
  */
+// A6 (2026-09-10): the four tool descriptions already say what each one does
+// (X2). The one idea that lives nowhere else is "not curl, and why".
 export const WEB_STEER_LINE =
-  "To read a web page or documentation, use `web_fetch`; to find something on the web, use `web_search`; " +
-  "to read your own dev server or a page you need to click, use the browser tools. Prefer these over `curl` " +
-  "in bash — they return clean text and show the user which site you reached.";
+  "Read the web with `web_fetch` and `web_search` rather than `curl`: clean text, and the user sees " +
+  "which site you reached. Your own dev server is `browser_open`.";
 
 /** Suffixes that name a network the service cannot reach on the user's behalf. */
 const PRIVATE_SUFFIXES = [".local", ".localhost", ".internal"];

@@ -123,6 +123,18 @@ describe("Principle 11 — the plan-mode text is DERIVED from the plan gate", ()
     expect(prompt).not.toMatch(/sub-?agents? (are|is) blocked/i);
   });
 
+  it("the prompt TEMPLATE hand-types no blocked tool name — the list is interpolated", () => {
+    // A3 (2026-09-10). The template must reach BLOCKED_PLAN_TOOLS for its
+    // names; typing one is how the list drifts from the gate. `blocked` is the
+    // filtered array, interpolated once.
+    const tpl = gate.slice(gate.indexOf("export function buildPlanPrompt"));
+    const body = tpl.slice(tpl.indexOf("const body ="), tpl.indexOf("const extra ="));
+    expect(body).toContain("${blocked.join(\", \")}");
+    for (const t of ["edit", "write", "multi_edit", "terminal_run", "browser_click", "browser_type", "browser_evaluate"]) {
+      expect(body, t).not.toContain(t);
+    }
+  });
+
   it("names what the gate actually blocks", () => {
     for (const t of ["edit", "write", "terminal_run"]) {
       expect(gate).toContain(`"${t}"`);

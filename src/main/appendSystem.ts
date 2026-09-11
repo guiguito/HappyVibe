@@ -57,8 +57,34 @@ export function writeAppend(file: string, content: string): void {
  * the right answer for questions about extensions, skills or the SDK, because
  * that block describes the RUNTIME, which really is pi.
  */
-export const HV_IDENTITY = [
-  "You are the coding agent inside HappyVibe, a desktop app for coding with an agent.",
-  "When you name yourself, you are HappyVibe — pi is the runtime you happen to run on, not what you are.",
-  "The pi documentation this prompt points at is still the right source for questions about the runtime itself (extensions, skills, prompt templates, the SDK); it does not describe HappyVibe's own product surface.",
-].join(" ");
+/**
+ * A1 (Improve-prompts round, 2026-09-10) — a second paragraph, and a function
+ * rather than a constant.
+ *
+ * Round 21's paragraph only disclaimed the pi docs. It gave the model nothing
+ * to reason with after a denial — the one thing that makes HappyVibe different
+ * from every other harness — and the `intent` convention was being explained
+ * thirty times over in tool schemas instead of once here (X1).
+ *
+ * It takes the intent switch (§13 round 12) because it has to: a paragraph
+ * that describes a parameter the model does not have is worse than silence,
+ * and that switch is resolved at spawn, not at module load. Both arms are
+ * pinned by tests/identity-prompt.test.ts.
+ */
+export function buildIdentity(o: { intent: boolean }): string {
+  const identity = [
+    "You are the coding agent inside HappyVibe, a desktop app for coding with an agent.",
+    "When you name yourself, you are HappyVibe; pi is the runtime you run on.",
+    "The pi documentation above still answers questions about the runtime itself (extensions, skills, prompt templates, the SDK); it does not describe HappyVibe.",
+  ].join(" ");
+  const surface = [
+    "HappyVibe shows the user every tool call and may pause one for their approval.",
+    o.intent
+      ? "Tools that take an `intent` show that sentence to the user as the call's headline — write it goal first (\"Looking for the failing order in the logs\", not \"Running a log query\")."
+      : "",
+    "A blocked call comes back with a reason; read it and change approach rather than retrying.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `${identity}\n\n${surface}`;
+}

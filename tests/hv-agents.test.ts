@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { WAIT_TOOLS } from "../pi-runtime/extensions/hv-rules";
 import {
   duplicateName,
   editAgentFile,
@@ -149,16 +150,32 @@ describe("renderSubagentSection", () => {
     expect(renderSubagentSection([])).toBe("");
   });
 
-  test("lists each agent with name + description under a heading + guidance", () => {
+  test("lists each agent with name + description inside one delimited element", () => {
     const s = renderSubagentSection([mk("code-explorer", "Read-only investigator"), mk("agents-md-maker", "Drafts AGENTS.md")]);
-    expect(s).toContain("## Available subagents");
+    // X4: one delimiter family, underscore-named to match Pi's own
+    // <project_instructions> / <available_skills> rather than fight them.
+    expect(s).toContain("<happyvibe_subagents>");
+    expect(s).toContain("</happyvibe_subagents>");
+    expect(s).not.toContain("## Available subagents");
     expect(s).toContain("subagent"); // guidance mentions the tool
     expect(s).toContain("- **code-explorer** — Read-only investigator");
     expect(s).toContain("- **agents-md-maker** — Drafts AGENTS.md");
     // Countermand the tool description's "call { action: list } first" so the
-    // model delegates directly, and its background/wait guidance.
-    expect(s).toContain('Do NOT call `{ action: "list" }`');
-    expect(s).toContain("wait");
+    // model delegates directly — upstream 0.64 still says it three times.
+    expect(s).toContain('{ action: "list" }');
+  });
+
+  test("A2 — a delegation THRESHOLD, no wait-tool name, and no shouting", () => {
+    const s = renderSubagentSection([mk("worker", "implements things")]);
+    // The threshold replaced "prefer delegating exploration, long searches…",
+    // which made models delegate two-file questions.
+    expect(s).toMatch(/Delegate when the work spans many files/);
+    expect(s).not.toMatch(/Prefer delegating exploration/);
+    // F2: the roster named `wait`, renamed twice upstream. No wait-tool name
+    // may be written outside WAIT_TOOLS, which the intercept derives from.
+    for (const w of WAIT_TOOLS) expect(s, w).not.toContain(w);
+    // X3: the calm register — a real gate stands behind none of this.
+    expect(s).not.toMatch(/\bDo NOT\b|\bNEVER\b/);
   });
 
   test("no longer claims the injected roster is the complete list", () => {

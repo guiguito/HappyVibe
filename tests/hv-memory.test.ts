@@ -10,7 +10,11 @@ import { gatePlanCall } from "../pi-runtime/extensions/hv-plan";
 describe("renderMemorySection", () => {
   it("policy, then global, then workspace — the more specific voice is read LAST (§15's rule)", () => {
     const s = renderMemorySection({ append: "", global: "## user\n- a — b", workspace: "## project\n- c — d" });
-    expect(s.indexOf("<memory-policy>")).toBeLessThan(s.indexOf('<memory scope="global"'));
+    expect(s.indexOf("<memory_policy>")).toBeLessThan(s.indexOf('<memory scope="global"'));
+    // X4: one element per section, underscore-named like Pi's own tags.
+    expect(s.trimStart().startsWith("<happyvibe_memory>")).toBe(true);
+    expect(s.trimEnd().endsWith("</happyvibe_memory>")).toBe(true);
+    expect(s).not.toContain("## Memory");
     expect(s.indexOf('<memory scope="global"')).toBeLessThan(s.indexOf('<memory scope="workspace"'));
     expect(s).toContain("- a — b");
     expect(s).toContain("- c — d");
@@ -36,7 +40,7 @@ describe("renderMemorySection", () => {
 
   it("the append lands INSIDE the policy block, after the policy — never replacing it", () => {
     const s = renderMemorySection({ append: "Never save anything about food.", global: "", workspace: "" });
-    expect(s).toMatch(/<memory-policy>[\s\S]*Never save anything about food\.\n<\/memory-policy>/);
+    expect(s).toMatch(/<memory_policy>[\s\S]*Never save anything about food\.\n<\/memory_policy>/);
     expect(s).toContain(MEMORY_POLICY);
   });
 
@@ -50,6 +54,15 @@ describe("MEMORY_POLICY", () => {
   it("names the three tools it tells the model to use", () => {
     expect(MEMORY_TOOLS).toEqual(["memory_save", "memory_recall", "memory_forget"]);
     for (const t of MEMORY_TOOLS) expect(MEMORY_POLICY).toContain(t);
+  });
+
+  it("A7 — sets the base rate and owns the type meanings", () => {
+    // Current models over-save when told they have a memory; one sentence
+    // sets the expectation. The types moved out of the save tool's enum
+    // description, which is read only once the model is already saving.
+    expect(MEMORY_POLICY).toMatch(/Most turns save nothing/);
+    expect(MEMORY_POLICY).toMatch(/Types: user \(/);
+    expect(MEMORY_POLICY).toMatch(/feedback \(a correction or confirmed approach/);
   });
 
   it("carries the four rules the machinery enforces", () => {
