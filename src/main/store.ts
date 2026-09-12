@@ -42,6 +42,15 @@ export interface SessionMeta {
    */
   lastUsedAt?: string;
   /**
+   * §35: the schedule that opened this session.
+   *
+   * Additive, absent = an ordinary session the user started, so there is
+   * nothing to migrate. Read by the sidebar (the clock glyph), by the spawn
+   * (a read-only schedule's run spawns clamped) and by the outcome routing;
+   * nothing in the transcript reads it.
+   */
+  scheduleId?: string;
+  /**
    * §34: when the session pulse was SHOWN for this session.
    *
    * Asked-at-show, not asked-at-answer, and that is the whole rule: a user who
@@ -546,7 +555,9 @@ export interface WorkspaceEntry {
 /** V2.A: workspace paths are dialog-provided strings — compare them
  *  trailing-slash-insensitively so a "/ws/" vs "/ws" mismatch can never make
  *  setModel silently no-op or getModel miss the override. */
-const normPath = (p: string): string => p.replace(/\/+$/, "") || "/";
+/** §35: schedules.ts and ipc.ts compare workspace paths with the SAME rule the registry uses —
+    "/w/" and "/w" are one workspace. Exported rather than re-spelled (CLAUDE.md: never compare raw path strings). */
+export const normPath = (p: string): string => p.replace(/\/+$/, "") || "/";
 
 /**
  * Round 11: every session belonging to a workspace, archived ones included.
