@@ -75,7 +75,14 @@ export interface Verdict {
 // returns text the user has already reviewed on the Memory page and can read there any time —
 // the use_skill doctrine. Saving and forgetting CHANGE what every future session is told, so
 // they default to ask like any other write.
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall", "schedule_list"]);
+export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall",
+  // §35: schedule_list is a read. schedule_create and schedule_update are here
+  // for the ask_user reason rather than that one — their ONLY effect is to open
+  // the drawer for the human to fill in, and main refuses to write without it
+  // (even under a bypass). A permission modal in front of a confirmation dialog
+  // asks the same question twice and teaches people to click through both.
+  // schedule_delete is deliberately NOT here: it deletes with no second dialog.
+  "schedule_list", "schedule_create", "schedule_update"]);
 
 /**
  * pi-subagents' parent-blocking wait tool, under EVERY name it has shipped under.

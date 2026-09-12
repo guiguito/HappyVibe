@@ -83,9 +83,22 @@ describe("renderScheduleList", () => {
 });
 
 describe("where the four tools sit in the gate", () => {
-  it("schedule_list is a safe default; the three writers are not", () => {
-    expect(SAFE_TOOLS.has("schedule_list")).toBe(true);
-    for (const t of ["schedule_create", "schedule_update", "schedule_delete"]) expect(SAFE_TOOLS.has(t), t).toBe(false);
+  it("only schedule_delete raises a permission prompt — the other three confirm elsewhere", () => {
+    // list is a read. create and update are safe-DEFAULT for the ask_user
+    // reason: their only effect is to open the drawer, and main refuses to
+    // write without it. A modal in front of a confirmation dialog asks the same
+    // question twice and teaches people to click through both — which a live
+    // run proved, by denying the modal and never reaching the drawer at all.
+    for (const t of ["schedule_list", "schedule_create", "schedule_update"]) expect(SAFE_TOOLS.has(t), t).toBe(true);
+    // Delete has no second dialog, so it keeps the prompt.
+    expect(SAFE_TOOLS.has("schedule_delete")).toBe(false);
+  });
+
+  it("the delete prompt names the schedule factually, never the model's intent", () => {
+    const src = R("pi-runtime/extensions/happyvibe-bridge.ts");
+    const fn = src.slice(src.indexOf("function summarize("), src.indexOf("function summarize(") + 900);
+    expect(fn).toMatch(/toolName === "schedule_delete"/);
+    expect(fn).not.toMatch(/input\.intent/);
   });
 
   it("the three writers require an intent; the read does not", () => {

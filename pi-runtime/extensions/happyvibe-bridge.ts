@@ -69,6 +69,14 @@ import { discoverAgentsAll } from "../node_modules/pi-subagents/src/agents/agent
 const sessionGrants = new Set<string>();
 
 function summarize(toolName: string, input: Record<string, unknown>): string {
+  // §35: the only schedule tool that reaches a permission prompt is delete (the
+  // other two confirm in the drawer), and what you are approving is a NAMED
+  // schedule. The bridge has only the id — main resolves the title when it
+  // renders the prompt — so the factual display is the id, never the model's
+  // `intent`, which is the §7 round-1 split.
+  if (toolName === "schedule_delete" && typeof input.id === "string") {
+    return `schedule ${input.id}`;
+  }
   // §26 + §13's MCP rule: the permission prompt shows what will RUN. `intent` is
   // the model's own words and must never be what a user approves against — so
   // terminal_run summarises as its command, exactly like bash.
