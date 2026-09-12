@@ -247,7 +247,7 @@ function documentReply(raw: unknown): {
 // §26: terminal_run/terminal_kill take the REQUIRED intent, per the standing rule
 // above. `subagent`'s demotion to optional (below) is deliberately NOT copied — a
 // terminal that starts is a card in someone's transcript and must say why.
-const INTENT_TOOLS = ["ask_user", "mcp", "use_skill", "terminal_run", "terminal_kill"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+const INTENT_TOOLS = ["ask_user", "mcp", "use_skill", "terminal_run", "terminal_kill", "schedule_create", "schedule_update", "schedule_delete"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
 // `subagent` advertises intent but does NOT require it: the delegation `task` is
 // already a fine customer-facing headline (the UI uses intent ?? task), and a
 // hard requirement made looser models (e.g. Kimi) fail their first delegation
@@ -2384,6 +2384,125 @@ export default function (pi: ExtensionAPI) {
       },
     });
   } // builtins.memory
+
+  // ── §35 Schedules: four tools, and main owns every decision ───────────────
+  //
+  // The model PROPOSES and the user CONFIRMS: create and update open the
+  // drawer prefilled and the tool's result is whatever the user did. Nothing
+  // here writes a schedule, even under a workspace bypass — a schedule is
+  // future unattended spend, and the drawer is where the mode card and the
+  // cost line are visible.
+  //
+  // Scoping is main's job, not this file's: there is no workspaceId parameter
+  // on any of the four, so the model cannot name another workspace to begin
+  // with, and main answers `not found` for an id outside the calling session's.
+  if (builtins.schedules) {
+    const scheduleAsk = async (
+      ctx: { ui: { input: (title: string, value: string) => Promise<unknown> } },
+      payload: Record<string, unknown>,
+    ): Promise<string> => {
+      const raw = await ctx.ui.input(JSON.stringify(payload), "");
+      // Main ALWAYS answers (the hv.plan-write rule) — but if it ever did not,
+      // say so rather than returning an empty string the model reads as success.
+      return typeof raw === "string" && raw ? raw : "ERROR: HappyVibe did not answer.";
+    };
+
+    const RepeatSchema = Type.Union([
+      Type.Object({ kind: Type.Literal("daily") }),
+      Type.Object({ kind: Type.Literal("weekdays") }),
+      Type.Object({ kind: Type.Literal("weekly"), days: Type.Array(Type.Integer({ minimum: 0, maximum: 6 }), { minItems: 1, description: "0 = Sunday … 6 = Saturday" }) }),
+      Type.Object({ kind: Type.Literal("hours"), every: Type.Integer({ minimum: 1, maximum: 23 }) }),
+      Type.Object({ kind: Type.Literal("once"), date: Type.String({ description: "YYYY-MM-DD" }) }),
+    ], { description: "How often it repeats." });
+    const AtSchema = Type.String({ description: "The time of day, as HH:MM in the user's local time." });
+    const ModeSchema = Type.Union([Type.Literal("readonly"), Type.Literal("full")], {
+      description: "readonly = it can read, search and report but change nothing; full = this workspace's usual permission rules, and an `ask` waits for the user. Prefer readonly for reviews and reports.",
+    });
+
+    pi.registerTool({
+      name: "schedule_list",
+      label: "List schedules",
+      description: "List this workspace's schedules: what each one runs, when, in which mode, and how its last run went.",
+      parameters: Type.Object({}),
+      async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+        const raw = await scheduleAsk(ctx, { kind: "hv.schedule-list" });
+        return { content: [{ type: "text", text: raw }], details: { count: raw.startsWith("•") ? raw.split("\n").length : 0 } };
+      },
+    });
+
+    pi.registerTool({
+      name: "schedule_create",
+      label: "Propose a schedule",
+      description:
+        "Propose a recurring run of a prompt in this workspace. The user sees your proposal in a form and confirms or declines it — nothing is created until they do.",
+      parameters: Type.Object({
+        intent: intentParam(),
+        title: Type.String({ description: "A short name for the schedule, e.g. 'Daily change review'." }),
+        prompt: Type.String({ description: "The prompt to send each time it runs. Write it to stand alone — nobody is watching the run." }),
+        repeat: RepeatSchema,
+        at: AtSchema,
+        mode: Type.Optional(ModeSchema),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        const p = params as { title: string; prompt: string; repeat: unknown; at: string; mode?: string };
+        const raw = await scheduleAsk(ctx, {
+          kind: "hv.schedule-create",
+          draft: { title: p.title, prompt: p.prompt, repeat: p.repeat, at: p.at, ...(p.mode ? { mode: p.mode } : {}) },
+        });
+        const text = raw.startsWith("created ")
+          ? `Created. It is on the Schedules page now.`
+          : raw === "declined" ? "The user declined the schedule, so nothing was created."
+          : raw;
+        return { content: [{ type: "text", text }], details: { result: raw } };
+      },
+    });
+
+    pi.registerTool({
+      name: "schedule_update",
+      label: "Propose a change",
+      description:
+        "Propose a change to one of this workspace's schedules (use schedule_list for its id). The user sees the change in a form and confirms or declines it. Set enabled through the form, not here.",
+      parameters: Type.Object({
+        intent: intentParam(),
+        id: Type.String({ description: "The schedule's id, from schedule_list." }),
+        title: Type.Optional(Type.String()),
+        prompt: Type.Optional(Type.String()),
+        repeat: Type.Optional(RepeatSchema),
+        at: Type.Optional(AtSchema),
+        mode: Type.Optional(ModeSchema),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        const p = params as { id: string; title?: string; prompt?: string; repeat?: unknown; at?: string; mode?: string };
+        const patch: Record<string, unknown> = {};
+        for (const k of ["title", "prompt", "repeat", "at", "mode"] as const) if (p[k] !== undefined) patch[k] = p[k];
+        const raw = await scheduleAsk(ctx, { kind: "hv.schedule-update", id: p.id, patch });
+        const text = raw.startsWith("updated ")
+          ? "Updated."
+          : raw === "declined" ? "The user declined the change, so nothing was altered."
+          : raw === "not found" ? "There is no schedule with that id in this workspace."
+          : raw;
+        return { content: [{ type: "text", text }], details: { result: raw } };
+      },
+    });
+
+    pi.registerTool({
+      name: "schedule_delete",
+      label: "Delete a schedule",
+      description: "Delete one of this workspace's schedules (use schedule_list for its id). To pause one instead, propose a change.",
+      parameters: Type.Object({
+        intent: intentParam(),
+        id: Type.String({ description: "The schedule's id, from schedule_list." }),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        const p = params as { id: string };
+        const raw = await scheduleAsk(ctx, { kind: "hv.schedule-delete", id: p.id });
+        const text = raw === "deleted" ? "Deleted."
+          : raw === "not found" ? "There is no schedule with that id in this workspace."
+          : raw;
+        return { content: [{ type: "text", text }], details: { result: raw } };
+      },
+    });
+  } // builtins.schedules
 
   // ── §23 Plan Mode: registered tools ──────────────────────────────────────
   // Gated as a whole block: plan_start is the model's own entry point into Plan

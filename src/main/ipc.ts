@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, systemPreferences } from "electron";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
@@ -125,6 +126,7 @@ import { hasNodeRuntime } from "./nodePreflight";
 import { BLOCKING_UI_METHODS, isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { PendingPrompts } from "./pendingPrompts";
 import { humanRecurrence, runTitle, ScheduleStore, validateScheduleInput, type NewSchedule, type Schedule } from "./schedules";
+import { parseScheduleEnvelope, renderScheduleList } from "./scheduleEnvelopes";
 import { Scheduler, type NotifyExtra, type ScheduleEventType } from "./scheduler";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 import type { WindowRegistry } from "./windows";
@@ -2207,6 +2209,69 @@ export function registerIpc(
       // §23 Plan Mode. plan-write is a BLOCKING input: main writes the workspace
       // file and answers with its path (never forwards to the renderer, never
       // leaves the bridge hanging — an error still resolves with a message).
+      // §35: the four schedule tools. Blocking, like hv.plan-write, and main
+      // ALWAYS answers — a branch that returns without respondUi hangs the
+      // bridge, and an unanswered tool call hangs the whole turn.
+      const sched = parseScheduleEnvelope(r as { method?: string; title?: string });
+      if (sched) {
+        void (async () => {
+          const rid = r.id;
+          const ws = meta?.workspaceId;
+          const answer = (v: string): void => client.respondUi(rid, { value: v });
+          try {
+            if (!ws) return answer("ERROR: this session has no workspace.");
+            // SCOPING, and it lives here rather than in the bridge: an id from
+            // another workspace is simply not found. The model cannot name a
+            // workspace — there is no such parameter — so this is the only way
+            // one could be reached.
+            const mine = scheduleStore.list().filter((s) => normPath(s.workspaceId) === normPath(ws));
+            if (sched.kind === "hv.schedule-list") {
+              return answer(renderScheduleList(mine, (s) => s.runs.at(-1)?.costUsd));
+            }
+            if (sched.kind === "hv.schedule-delete") {
+              const s = mine.find((x) => x.id === sched.id);
+              if (!s) return answer("not found");
+              scheduleStore.remove(s.id);
+              void log.append({
+                type: "schedule.delete",
+                sessionId,
+                workspaceId: ws,
+                data: { scheduleId: s.id, title: s.title, source: "agent" },
+              });
+              schedulesChanged();
+              return answer("deleted");
+            }
+            const existing = sched.kind === "hv.schedule-update" ? mine.find((x) => x.id === sched.id) : undefined;
+            if (sched.kind === "hv.schedule-update" && !existing) return answer("not found");
+            // Never a write without the drawer, even under a workspace bypass:
+            // a schedule is future unattended spend, and the drawer is where the
+            // mode card and the cost line are actually visible.
+            const draft: Record<string, unknown> = sched.kind === "hv.schedule-update"
+              ? { ...existing!, ...sched.patch }
+              : { mode: "full", catchUp: "ask", reuseSession: false, notifyOnDone: true, enabled: true, ...sched.draft, workspaceId: ws };
+            const res = await requestScheduleDrawer({ workspaceId: ws, draft, existingId: existing?.id, sessionId });
+            if ("cancelled" in res) return answer("declined");
+            void log.append({
+              type: existing ? "schedule.update" : "schedule.create",
+              sessionId,
+              workspaceId: ws,
+              data: {
+                scheduleId: res.saved.id,
+                title: res.saved.title,
+                mode: res.saved.mode,
+                recurrence: humanRecurrence(res.saved.repeat, res.saved.at),
+                source: "agent",
+              },
+            });
+            return answer(`${existing ? "updated" : "created"} ${res.saved.id}`);
+          } catch (e) {
+            answer(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        })();
+        return;
+      }
+      // end schedule envelopes
+
       const planWrite = parsePlanWrite(r as { method?: string; title?: string });
       if (planWrite) {
         void (async () => {
@@ -3126,6 +3191,41 @@ export function registerIpc(
   };
   powerMonitor.on("resume", catchUpAndTick);
   catchUpAndTick();
+
+  /**
+   * The drawer as the confirm step for `schedule_create` / `schedule_update`.
+   *
+   * The renderer SAVES through the ordinary `hv:schedule-save` handler and then
+   * reports what happened, so main keeps exactly one write path — the drawer
+   * opened by a tool and the drawer opened by a click are the same drawer.
+   *
+   * There is no timeout, on purpose: this is a permission-shaped question and
+   * those never expire here. What does resolve it is every window going away,
+   * since there is then nothing left that could ever answer.
+   */
+  const scheduleDrawerWaits = new Map<string, (r: { saved: Schedule } | { cancelled: true }) => void>();
+  const requestScheduleDrawer = (req: {
+    workspaceId: string;
+    draft: Record<string, unknown>;
+    existingId?: string;
+    sessionId: string;
+  }): Promise<{ saved: Schedule } | { cancelled: true }> =>
+    new Promise((resolve) => {
+      const requestId = randomUUID();
+      scheduleDrawerWaits.set(requestId, resolve);
+      if (windows.all().length === 0) {
+        scheduleDrawerWaits.delete(requestId);
+        resolve({ cancelled: true });
+        return;
+      }
+      send("hv:schedule-drawer-request", { requestId, ...req });
+    });
+  ipcMain.on("hv:schedule-drawer-answer", (_e, requestId: string, res: { saved?: Schedule } | { cancelled?: boolean }) => {
+    const done = scheduleDrawerWaits.get(requestId);
+    if (!done) return;
+    scheduleDrawerWaits.delete(requestId);
+    done("saved" in res && res.saved ? { saved: res.saved } : { cancelled: true });
+  });
 
   ipcMain.handle("hv:schedules-list", () => scheduleStore.list());
 
