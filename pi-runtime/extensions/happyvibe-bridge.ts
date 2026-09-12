@@ -26,6 +26,7 @@ import {
   buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, resolvePlanVerdict, restorePlanState, shouldForcePlanOff,
   type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
+import { buildReadonlyPrompt, gateReadonlyCall, readonlyFromEnv } from "./hv-readonly";
 import { parseBuiltins } from "./hv-builtins";
 import { memoryTokenLines, readIndex, renderMemorySection } from "./hv-memory";
 // PRD §12 (2026-08-21): the sub-agent boundary. `capability-ceiling` IS in
@@ -377,6 +378,13 @@ let rulesError: string | null = null;
 // permissions" setting is delivered via HV_BYPASS at spawn and re-applied on
 // every respawn, so unlike the manual toggle it survives a respawn.
 let dangerous = process.env.HV_BYPASS === "1";
+/**
+ * §35: a scheduled read-only run. `const`, and that is the feature — there is
+ * no command, no tool and no toggle that can flip it, so nothing inside the
+ * session can widen its own permissions. Only main sets the env var, and only
+ * for a schedule whose mode is "readonly".
+ */
+const readonly = readonlyFromEnv(process.env);
 
 // ── §23 Plan Mode ───────────────────────────────────────────────────────────
 // Per-session read-only mode. State is {enabled, planPath?}; plan TEXT + STATUS
@@ -653,7 +661,7 @@ type AuditDecision = "allow" | "allow-session" | "deny";
 // logged the old value, in red, so the column stopped distinguishing anything —
 // it named the mode, once per row, forever. Old logs keep the old string and
 // the renderer maps both; red is now reserved for what a command DOES.
-type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "terminal" | "web" | "document";
+type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "readonly" | "terminal" | "web" | "document";
 
 /** Every permission decision emits one hv.audit notify — main's audit channel. */
 function audit(
@@ -822,6 +830,10 @@ export default function (pi: ExtensionAPI) {
     } else if (plan.enabled || plan.planPath) {
       emitPlan(ctx.ui, true);
     }
+    // §35: tell the renderer to raise the "Read-only run" pill. A notify rather
+    // than persisted state — the mode comes from the environment on every
+    // spawn, so a respawn re-announces it without anything to restore.
+    if (readonly) ctx.ui.notify(JSON.stringify({ kind: "hv.readonly", enabled: true }), "info");
     busUi = ctx.ui;
   });
 
@@ -882,6 +894,9 @@ export default function (pi: ExtensionAPI) {
     // §26: steer long-running commands to terminal_run rather than a
     // backgrounded bash call. Only while the group is registered — otherwise
     // the prompt would name a tool the model does not have.
+    // §35: a scheduled read-only run gets its own directive instead of the
+    // planning one — it reports in chat and writes no plan file.
+    const readonlySection = readonly ? "\n\n" + buildReadonlyPrompt(pi.getAllTools().map((t) => t.name)) : "";
     const terminalSection = builtins.terminal ? "\n\n" + TERMINAL_STEER_LINE : "";
     // §32: steer web reading to the web tools rather than `bash curl`, which
     // returns raw HTML, runs through the terminal gate as an arbitrary command
@@ -906,7 +921,7 @@ export default function (pi: ExtensionAPI) {
     // session; the memory INDEX changes on every save and the nested section
     // whenever a new subdirectory is touched. Those two used to sit first and
     // last-but-inside, so either one invalidated the whole HappyVibe tail.
-    const injected = sp + agentsSection + planSection + terminalSection + webSection + memorySection + section;
+    const injected = sp + agentsSection + readonlySection + planSection + terminalSection + webSection + memorySection + section;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -1246,10 +1261,29 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
+    let planFloorAsk = false;
+
+    // §35 read-only RUN clamp — first of all the gates, so it wins over plan
+    // mode, over bypass and over every rule. Not gated on any builtins toggle:
+    // the whole promise of a read-only schedule is that nothing in the session
+    // can turn it off (hv-readonly.ts explains why this is not plan mode).
+    //
+    // The verdict shape is Plan mode's, resolved through the same typechecked
+    // resolvePlanVerdict and reported through the same hv.plan.blocked notify,
+    // so the renderer draws one "Skipped" card for both entrances.
+    if (readonly) {
+      const g = resolvePlanVerdict(gateReadonlyCall(tool, input), boundary);
+      if (g.kind === "block") {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "readonly" });
+        ctx.ui.notify(JSON.stringify({ kind: "hv.plan.blocked", toolName: tool, toolCallId: event.toolCallId, reason: g.reason }), "info");
+        return { block: true, reason: g.reason };
+      }
+      if (g.kind === "floor-ask") planFloorAsk = true;
+    }
+
     // §23 Plan Mode clamp — runs BEFORE dangerous/bypass and the rule engine, so
     // plan mode wins over bypass (read-only must mean read-only). Applies to NEW
     // calls only; an in-flight async delegation is untouched.
-    let planFloorAsk = false;
     if (builtins.plan && plan.enabled) {
       // §23: the verdict — including the read-only-delegation decision — is
       // resolved in hv-plan.ts, which is typechecked. See resolvePlanVerdict.
@@ -1259,13 +1293,13 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(JSON.stringify({ kind: "hv.plan.blocked", toolName: tool, toolCallId: event.toolCallId, reason: g.reason }), "info");
         return { block: true, reason: g.reason };
       }
-      planFloorAsk = g.kind === "floor-ask"; // clamp allow→ask below; deny still denies
+      if (g.kind === "floor-ask") planFloorAsk = true; // clamp allow→ask below; deny still denies
     }
 
     // Dangerous mode: everything runs without prompting, but NEVER silently —
     // each call is audit-flagged and the renderer shows a permanent banner.
     // (Skipped while planning: plan mode ignores bypass entirely.)
-    if (dangerous && !plan.enabled) {
+    if (dangerous && !plan.enabled && !readonly) {
       // Round 15: evaluate the rules ANYWAY and record the verdict the bypass
       // overrode. It costs one pure call on an object already in hand (evaluate
       // is the same pure engine the branch below uses), and it is what turns

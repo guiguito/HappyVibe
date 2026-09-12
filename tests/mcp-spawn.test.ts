@@ -113,3 +113,14 @@ test("the child audit dir is passed only when asked for, and reaches the child's
   const withDir = resolvePiSpawn("/ws", "/sess", runtime, { childAuditDir: "/tmp/hv-audit" });
   expect(withDir.env.HV_CHILD_AUDIT_DIR).toBe("/tmp/hv-audit");
 });
+
+/**
+ * §35: a read-only scheduled run is clamped by the ENVIRONMENT, not by anything
+ * inside the session — so this is the only place the clamp can be switched on,
+ * and an absent flag must mean an ordinary session rather than a quiet default.
+ */
+test("HV_READONLY=1 only for a read-only scheduled run", () => {
+  expect(resolvePiSpawn("/ws", "/sessions", runtime).env.HV_READONLY).toBeUndefined();
+  expect(resolvePiSpawn("/ws", "/sessions", runtime, { readonly: false }).env.HV_READONLY).toBeUndefined();
+  expect(resolvePiSpawn("/ws", "/sessions", runtime, { readonly: true }).env.HV_READONLY).toBe("1");
+});

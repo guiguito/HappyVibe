@@ -57,6 +57,16 @@ export interface PiSpawnOptions {
   /** Round 3 #14: persistent "bypass all permissions" resolved for this session
       (workspace ?? global). true → HV_BYPASS=1 → bridge starts in dangerous mode. */
   bypass?: boolean;
+  /**
+   * §35: this session is a scheduled run whose schedule says "Read-only" →
+   * HV_READONLY=1 → the bridge clamps every tool call (hv-readonly.ts).
+   *
+   * Same shape as `bypass`, and re-derived at EVERY spawn from the schedule
+   * rather than persisted in the session file: a resume, a hibernation wake
+   * and an MCP reload all recompute it, so the clamp cannot be lost by a
+   * respawn the way a session-file flag could be.
+   */
+  readonly?: boolean;
   /** §12 FR7: where the child guard appends its per-run decision JSONL →
       HV_CHILD_AUDIT_DIR. Inherited by every child (all three of pi-subagents'
       spawn sites pass `{...process.env}`), so the guard needs nothing else.
@@ -252,6 +262,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
+      ...(opts.readonly ? { HV_READONLY: "1" } : {}),
       ...(opts.childAuditDir ? { HV_CHILD_AUDIT_DIR: opts.childAuditDir } : {}),
       // pi-subagents tells every child to write its output to
       // `<sessionDir>/subagent-artifacts/outputs/<runId>/context.md` and calls
