@@ -1075,7 +1075,15 @@ export function registerIpc(
    * the window that was holding the session when the prompt was raised, and
    * the case this exists for is precisely that no such window exists any more.
    */
-  ipcMain.handle("hv:pending-ui-requests", () => pendingUi.list().map((r) => stampPrompt(r)));
+  ipcMain.handle("hv:pending-ui-requests", () => {
+    // The COUNTS have the same gap the envelopes had, and a GUI pass found it:
+    // `hv:pending-changed` is a push that only fires when something moves, so a
+    // window that opens while a prompt is already waiting starts with an empty
+    // badge. The replayed prompt reaches its queue, but nothing on screen says
+    // to go and look at it — which for an unattended run is the whole point.
+    pendingChanged();
+    return pendingUi.list().map((r) => stampPrompt(r));
+  });
   /**
    * What each window currently shows, declared by its own renderer on every
    * layout change. Main never derives this from a tab id.

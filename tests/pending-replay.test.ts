@@ -70,6 +70,17 @@ describe("wiring (source scan)", () => {
     expect(app).toMatch(/pendingUiRequests\(\)/);
   });
 
+  it("asking for the outstanding prompts also refreshes the COUNTS", () => {
+    // Found in the GUI: the replay reached the queue, and the sidebar badge
+    // stayed empty — `hv:pending-changed` only fires on change, so a window
+    // that opens while a prompt is already waiting is told nothing. For an
+    // unattended run that is the difference between a visible wait and a
+    // silent one.
+    const ipc = R("src/main/ipc.ts");
+    const h = ipc.slice(ipc.indexOf('ipcMain.handle("hv:pending-ui-requests"'), ipc.indexOf('ipcMain.handle("hv:pending-ui-requests"') + 700);
+    expect(h).toContain("pendingChanged()");
+  });
+
   it("a replayed prompt cannot be queued twice when it races a live push", () => {
     const app = R("src/renderer/src/App.tsx");
     expect(app).toMatch(/q\.some\(\(x\) => x\.req\.id === r\.id\)/);
