@@ -81,10 +81,10 @@ function PlanModeRow({
           onChange({ planAppend: v });
         }}
         error={error}
+        // Same rule as Memory's: the disclosure belongs inside this row, above
+        // its divider, or it reads as the heading of the row below.
+        footer={<HowItWorks copy="planMode" />}
       />
-      <div className="px-4 pb-3 -mt-1">
-        <HowItWorks copy="planMode" />
-      </div>
 
       {confirming && (
         <div
@@ -326,26 +326,26 @@ function MemoryRow({
   onAppend: (v: string) => Promise<void>;
 }): React.JSX.Element {
   return (
-    <>
-      <PromptRow
-        title="Memory — 3 tools"
-        subtitle={
-          <>
-            Lets the agent remember durable facts about you and about each project, across sessions. Saving and
-            forgetting ask you first; you can read, edit and delete every memory on the Memory page. Turning this off
-            saves the policy and three tool schemas from every turn. {RESPAWN_NOTE}
-          </>
-        }
-        on={on}
-        onToggle={onChange}
-        loadPrompt={() => window.hv.builtinPrompt("memory").then((r) => r.text)}
-        append={append}
-        onSaveAppend={onAppend}
-      />
-      <div className="px-4 pb-3 -mt-1">
-        <HowItWorks copy="memory" />
-      </div>
-    </>
+    <PromptRow
+      title="Memory — 3 tools"
+      subtitle={
+        <>
+          Lets the agent remember durable facts about you and about each project, across sessions. Saving and
+          forgetting ask you first; you can read, edit and delete every memory on the Memory page. Turning this off
+          saves the policy and three tool schemas from every turn. {RESPAWN_NOTE}
+        </>
+      }
+      on={on}
+      onToggle={onChange}
+      loadPrompt={() => window.hv.builtinPrompt("memory").then((r) => r.text)}
+      append={append}
+      onSaveAppend={onAppend}
+      // The disclosure belongs INSIDE this row, above its divider. Rendered
+      // after <PromptRow/> it sat below the line, reading as the heading of
+      // whatever row came next — which is exactly what it did the moment
+      // Schedules was added underneath.
+      footer={<HowItWorks copy="memory" />}
+    />
   );
 }
 

@@ -113,3 +113,20 @@ describe("the audit log reads as sentences", () => {
     }
   });
 });
+
+describe("the Built-in tools rows keep their own trailers", () => {
+  it("every row's disclosure sits INSIDE it, above the divider", () => {
+    // Rendered after <PromptRow/> one lands below the line and reads as the
+    // heading of the row beneath it — invisible until §35 added a row there,
+    // and true of Plan mode's for just as long.
+    const src = R("src/renderer/src/components/BuiltinToolsBlock.tsx");
+    expect(src).toMatch(/footer=\{<HowItWorks copy="memory" \/>\}/);
+    expect(src).toMatch(/footer=\{<HowItWorks copy="planMode" \/>\}/);
+    expect(src).not.toMatch(/\/>\s*<div className="px-4 pb-3 -mt-1">\s*<HowItWorks/);
+    // The slot renders inside PromptRow's own bordered container.
+    const pr = R("src/renderer/src/components/PromptRow.tsx");
+    const root = pr.indexOf('<div className="border-b border-line last:border-b-0">');
+    expect(pr.indexOf("{footer && <div")).toBeGreaterThan(root);
+    expect(pr.indexOf("{footer && <div")).toBeLessThan(pr.lastIndexOf("</div>"));
+  });
+});

@@ -102,12 +102,18 @@ describe("where it lives", () => {
     expect(groupFor("schedules" as never)).toBeNull();
   });
 
-  it("the row sits above the workspace tree, and the collapsed rail keeps it", () => {
+  it("the row sits above the workspace tree, INSIDE the scroll region, and the collapsed rail keeps it", () => {
     const sb = R("src/renderer/src/components/Sidebar.tsx");
-    expect(sb).toMatch(/data-hv-schedules-row/);
+    const row = sb.indexOf("data-hv-schedules-row");
+    expect(row).toBeGreaterThan(0);
     expect(sb).toMatch(/data-hv-schedules-rail/);
-    // Above the search input, which is above the workspaces.
-    expect(sb.indexOf("data-hv-schedules-row")).toBeLessThan(sb.indexOf("§7 round 18: hidden at rest"));
+    // It scrolls WITH the destinations rather than sitting in the fixed header:
+    // the header is chrome you act with (wordmark, search, collapse), this is a
+    // place you go. So it is after the search block and before the workspaces
+    // label, inside the tree's own scroll container.
+    expect(row).toBeGreaterThan(sb.indexOf("§7 round 18: hidden at rest"));
+    expect(row).toBeGreaterThan(sb.indexOf('className="flex-1 min-h-32 overflow-y-auto px-4 pb-2"'));
+    expect(row).toBeLessThan(sb.indexOf('text-ink-soft">workspaces</span>'));
   });
 
   it("navigating there does NOT open the Settings group", () => {
@@ -176,6 +182,15 @@ describe("the run, on screen", () => {
 
 describe("the page", () => {
   const sv = R("src/renderer/src/components/SchedulesView.tsx");
+
+  it("the page header's action is outlined, not a dialog's honey fill", () => {
+    // The honey fill is a DIALOG's primary action, where it is the one thing to
+    // press. On a page header it shouts over the title.
+    const sv = R("src/renderer/src/components/SchedulesView.tsx");
+    const header = sv.slice(sv.indexOf("New schedule") - 400, sv.indexOf("New schedule"));
+    expect(header).not.toContain("bg-honey");
+    expect(header).toContain("border-line");
+  });
 
   it("shows the open-at-login toggle only when main says it is available", () => {
     expect(sv).toMatch(/loginItem\?\.available && \(/);

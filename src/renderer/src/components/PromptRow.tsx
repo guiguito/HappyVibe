@@ -72,6 +72,7 @@ export function PromptRow({
   onSaveAppend,
   error,
   right,
+  footer,
 }: {
   title: string;
   subtitle: ReactNode;
@@ -90,6 +91,14 @@ export function PromptRow({
   error?: string | null;
   /** Rendered left of the switch — the model picker, on the §19 page. */
   right?: ReactNode;
+  /**
+   * Rendered at the bottom of this row, INSIDE its own border.
+   *
+   * A caller that renders its own trailer after `<PromptRow/>` puts it below
+   * the divider, where it reads as the heading of the NEXT row — which is what
+   * "How memory works" did the moment a row was added underneath it.
+   */
+  footer?: ReactNode;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState<string | null>(null);
@@ -212,6 +221,7 @@ export function PromptRow({
           )}
         </div>
       )}
+      {footer && <div className="px-4 pb-3 -mt-1">{footer}</div>}
     </div>
   );
 }

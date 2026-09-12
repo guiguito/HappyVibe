@@ -85,10 +85,13 @@ export function SchedulesView({
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <div className="flex items-start gap-3 mb-2">
           <h1 className="font-black text-3xl tracking-tight flex-1">Schedules</h1>
+          {/* The settings pages' own add-affordance: outlined and quiet. The
+              honey fill belongs to a dialog's primary action, where it is the
+              one thing to press; on a page header it shouts over the title. */}
           <button
             type="button"
             onClick={() => setEditing({ workspaceId: workspaces[0] })}
-            className="px-3 py-1.5 rounded-lg border-2 border-ink/60 bg-honey font-bold text-sm cursor-pointer"
+            className="shrink-0 text-sm font-bold rounded-lg border-2 border-line px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
           >
             New schedule
           </button>

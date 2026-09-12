@@ -1028,25 +1028,6 @@ export function Sidebar({
           </button>
         </div>
 
-        {/* §35 — the app's first non-workspace top-level entry, and the
-            justification is specific: Schedules is the only thing in HappyVibe
-            that runs across workspaces on its own. It is NOT a NAV entry (a
-            test says so), because NAV lives under the collapsible Settings
-            toggle at the bottom, and a row hidden inside a shut group fails
-            discovery for exactly the person who has never made a schedule. */}
-        <button
-          type="button"
-          data-hv-schedules-row
-          onClick={() => onNavigate("schedules")}
-          className={`mx-2 mb-1 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold cursor-pointer border ${
-            view === "schedules" ? "bg-honey-soft border-honey/60" : "border-transparent hover:bg-card/70"
-          }`}
-        >
-          <ClockIcon />
-          <span className="flex-1 text-left">Schedules</span>
-          {scheduleSubtitle && <span className="text-[10px] font-medium text-ink-soft truncate">{scheduleSubtitle}</span>}
-        </button>
-
         {/* §7 round 18: hidden at rest, expanding IN PLACE — exactly where it
             used to live, so nothing moves but its existence. Blur while the
             filter is non-empty KEEPS it open (losing an active filter because
@@ -1083,6 +1064,30 @@ export function Sidebar({
           style={sized ? { flex: "0 0 auto", height: `${treeFrac * 100}%` } : undefined}
           className="flex-1 min-h-32 overflow-y-auto px-4 pb-2"
         >
+          {/* §35 — the app's first non-workspace top-level entry, and the
+              justification is specific: Schedules is the only thing in HappyVibe
+              that runs across workspaces on its own. It is NOT a NAV entry (a
+              test says so), because NAV lives under the collapsible Settings
+              toggle at the bottom, and a row hidden inside a shut group fails
+              discovery for exactly the person who has never made a schedule.
+
+              It sits INSIDE the scroll region rather than in the fixed header
+              above it: the header is chrome you act with (the wordmark, search,
+              collapse) and this is a destination you go to, so it belongs with
+              the other destinations and scrolls away with them. */}
+          <button
+            type="button"
+            data-hv-schedules-row
+            onClick={() => onNavigate("schedules")}
+            className={`w-full mt-2 flex items-center gap-2 rounded-lg px-1.5 py-1.5 text-sm font-semibold cursor-pointer border ${
+              view === "schedules" ? "bg-honey-soft border-honey/60" : "border-transparent hover:bg-card/70"
+            }`}
+          >
+            <ClockIcon />
+            <span className="flex-1 text-left">Schedules</span>
+            {scheduleSubtitle && <span className="text-[10px] font-medium text-ink-soft truncate">{scheduleSubtitle}</span>}
+          </button>
+
           <div className="flex items-center justify-between px-1.5 pt-2 pb-1.5">
             <span className="text-[10px] font-bold uppercase tracking-widest text-ink-soft">workspaces</span>
             <button
