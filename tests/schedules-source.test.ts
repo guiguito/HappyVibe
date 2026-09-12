@@ -29,3 +29,64 @@ describe("a schedule can never carry its own permission bypass (§5.1)", () => {
     expect(iface.toLowerCase()).not.toMatch(/bypass|dangerous/);
   });
 });
+
+describe("main wires the scheduler to paths it already owns", () => {
+  const ipc = R("src/main/ipc.ts");
+
+  it("a scheduled run is prompted through the SAME function a person's keystrokes take", () => {
+    // A second implementation would drift: @file mentions, prompt-template
+    // expansion, document conversion and the rewind snapshot all live in that
+    // body, and a schedule whose /review stopped expanding would read as the
+    // model ignoring instructions.
+    expect(ipc).toMatch(/const promptSession = async \(/);
+    expect(ipc).toMatch(/promptSession\(sessionId, text, undefined, undefined, undefined, undefined, undefined, \{ source: "schedule" \}\)/);
+  });
+
+  it("a schedule prompting its own run does not count as the user using it", () => {
+    // lastUsedAt has to keep meaning "a human touched this" — archivePreviousRun
+    // reads exactly that to decide whether a run was adopted and should stay.
+    expect(ipc).toMatch(/if \(!bySchedule\) index\.touch\(sessionId\)/);
+  });
+
+  it("the busy gate is the workspace's, not the session's", () => {
+    expect(ipc).toMatch(/sessionsOfWorkspace\(index\.list\(\), ws\)\.every\(/);
+  });
+
+  it("the tick is a 60 s interval plus a powerMonitor resume — setInterval does not fire while the Mac sleeps", () => {
+    expect(ipc).toMatch(/setInterval\(\(\) => void scheduler\.tick\(\)/);
+    expect(ipc).toMatch(/powerMonitor\.on\("resume", catchUpAndTick\)/);
+  });
+
+  it("no cron library was added", () => {
+    const pkg = JSON.parse(R("package.json")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    const all = { ...pkg.dependencies, ...pkg.devDependencies };
+    for (const name of Object.keys(all)) expect(name, name).not.toMatch(/cron|scheduler|later|agenda/i);
+  });
+
+  it("Run all / Skip all is the renderer calling one handler per id — main keeps one decision path", () => {
+    expect(ipc).toMatch(/ipcMain\.handle\("hv:schedule-missed-answer"/);
+    expect(ipc).not.toMatch(/hv:schedules-missed-answer-all/);
+  });
+
+  it("openAtLogin is only ever set from the one handler, and hidden in development", () => {
+    expect(ipc.match(/setLoginItemSettings\(/g)).toHaveLength(1);
+    expect(ipc).toMatch(/available: app\.isPackaged/);
+    expect(ipc).toMatch(/if \(!app\.isPackaged\) throw new Error/);
+  });
+
+  it("a run's cost comes from the session ledger, and unknown stays unknown", () => {
+    const fn = ipc.slice(ipc.indexOf("const runCost ="), ipc.indexOf("const showScheduleNotification"));
+    expect(fn).toMatch(/sessionCalls\(/);
+    expect(fn).toMatch(/return undefined/);
+    expect(fn).not.toMatch(/\?\? 0/);
+  });
+
+  it("Notification is constructed in exactly one place", () => {
+    expect(ipc.match(/new Notification\(/g)).toHaveLength(1);
+  });
+
+  it("the read-only clamp is re-derived at every spawn rather than stored on the session", () => {
+    expect(ipc).toMatch(/readonly: readonlyForSession\(sessionId\)/);
+    expect(ipc).toMatch(/scheduleStore\.get\(scheduleId\)\?\.mode === "readonly"/);
+  });
+});
