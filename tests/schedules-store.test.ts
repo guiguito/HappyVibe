@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ScheduleStore, type NewSchedule } from "../src/main/schedules";
+import { ScheduleStore } from "../src/main/scheduleStore";
+import type { NewSchedule } from "../src/main/schedules";
 import type { SessionMeta } from "../src/main/store";
 
 const tmpFile = (): string => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-sched-")), "schedules.json");

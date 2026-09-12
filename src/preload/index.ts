@@ -626,6 +626,36 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:providers-changed", listener);
     return () => ipcRenderer.removeListener("hv:providers-changed", listener);
   },
+  // §35 Schedules.
+  schedulesList: () => ipcRenderer.invoke("hv:schedules-list"),
+  scheduleSave: (input: unknown) => ipcRenderer.invoke("hv:schedule-save", input),
+  scheduleDelete: (id: string) => ipcRenderer.invoke("hv:schedule-delete", id),
+  scheduleMissedAnswer: (id: string, answer: "run" | "skip") => ipcRenderer.invoke("hv:schedule-missed-answer", id, answer),
+  scheduleRunNow: (id: string) => ipcRenderer.invoke("hv:schedule-run-now", id),
+  scheduleRunCosts: (id: string) => ipcRenderer.invoke("hv:schedule-run-costs", id),
+  scheduleDrawerAnswer: (requestId: string, res: unknown) => ipcRenderer.send("hv:schedule-drawer-answer", requestId, res),
+  loginItemGet: () => ipcRenderer.invoke("hv:login-item-get"),
+  loginItemSet: (on: boolean) => ipcRenderer.invoke("hv:login-item-set", on),
+  onSchedulesChanged: (cb: (list: unknown[]) => void): (() => void) => {
+    const l = (_e: Electron.IpcRendererEvent, list: unknown[]): void => cb(list);
+    ipcRenderer.on("hv:schedules-changed", l);
+    return () => ipcRenderer.removeListener("hv:schedules-changed", l);
+  },
+  onScheduleDrawerRequest: (cb: (r: unknown) => void): (() => void) => {
+    const l = (_e: Electron.IpcRendererEvent, r: unknown): void => cb(r);
+    ipcRenderer.on("hv:schedule-drawer-request", l);
+    return () => ipcRenderer.removeListener("hv:schedule-drawer-request", l);
+  },
+  onSchedulesMissed: (cb: (ids: string[]) => void): (() => void) => {
+    const l = (_e: Electron.IpcRendererEvent, ids: string[]): void => cb(ids);
+    ipcRenderer.on("hv:schedules-missed", l);
+    return () => ipcRenderer.removeListener("hv:schedules-missed", l);
+  },
+  onShowSession: (cb: (r: { sessionId: string; workspaceId: string }) => void): (() => void) => {
+    const l = (_e: Electron.IpcRendererEvent, r: { sessionId: string; workspaceId: string }): void => cb(r);
+    ipcRenderer.on("hv:show-session", l);
+    return () => ipcRenderer.removeListener("hv:show-session", l);
+  },
   /** §35: blocking prompts raised before this window existed (see pendingPrompts.ts). */
   pendingUiRequests: () => ipcRenderer.invoke("hv:pending-ui-requests"),
   onUiRequest: (

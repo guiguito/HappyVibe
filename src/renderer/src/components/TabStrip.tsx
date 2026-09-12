@@ -31,6 +31,16 @@ const DRAG_MIME = "application/x-hv-tabid";
  * context menu. Tighter type, tighter rows, and a glyph per row so the eye can
  * tell them apart without reading.
  */
+/** §35: matches the sidebar's Schedules glyph, so the two read as one feature. */
+function ClockGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
 const menuItem =
   "w-full flex items-center gap-2 text-left px-3 py-1 hover:bg-paper-deep/40 cursor-pointer " +
   "disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent";
@@ -91,6 +101,7 @@ export function TabStrip({
   onClosePane,
   trailing,
   onRename,
+  onRepeatOnSchedule,
   onMoveToWindow,
   canMoveToWindow,
   otherWindows,
@@ -122,6 +133,8 @@ export function TabStrip({
    * filename, and renaming the file is the tree's job.
    */
   onRename: (tab: TabId, title: string) => void;
+  /** §35: a chat tab can become a schedule. Absent for terminals and browsers — there is no prompt to repeat. */
+  onRepeatOnSchedule?: (sessionId: string) => void;
   /** §7 round 23: hand this tab to a brand-new window, or to a named one. */
   onMoveToWindow: (tab: TabId, target: "new" | number) => void;
   /** The OTHER windows, so moving between two open ones needs no drag. */
@@ -400,6 +413,25 @@ export function TabStrip({
               >
                 <PencilGlyph />
                 Rename…
+              </button>
+            )}
+            {/* §35 — the primary creation path for a schedule (§4.1). It lives
+                here and in the composer's ＋ menu because a session ROW has no
+                ⋯ menu to put it in: round 15 cleaned that slot down to one
+                trash icon and the age, and crowding it again was the wrong
+                trade. Same onMouseDown rule as the row below. */}
+            {onRepeatOnSchedule && sessionOf(menu.tab) && (
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onRepeatOnSchedule(sessionOf(menu.tab)!);
+                  setMenu(null);
+                }}
+                className={menuItem}
+              >
+                <ClockGlyph />
+                Repeat this on a schedule…
               </button>
             )}
             {/* §7 round 23. onMouseDown + preventDefault, not onClick: pressing

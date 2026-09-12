@@ -12,8 +12,9 @@
  */
 import {
   applyOutcome, BUSY_WAIT_MS, catchUpDecision, runTitle, withNextRun,
-  type Schedule, type ScheduleRun, type ScheduleStore,
+  type Schedule, type ScheduleRun,
 } from "./schedules";
+import type { ScheduleStore } from "./scheduleStore";
 
 export interface SchedulerHost {
   now(): Date;

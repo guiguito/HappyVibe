@@ -25,10 +25,22 @@ export type View =
   | "terminal"
   // §27.
   | "voice"
+  // §35: a top-level destination, deliberately NOT in NAV — see the row below.
+  | "schedules"
   | "workspace";
 
 function basename(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
+}
+
+/** §35: the Schedules glyph, in both sidebar states and on a run's session row. */
+function ClockIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
 }
 
 /** F6: nav icons shared by the expanded footer and the collapsed rail. */
@@ -553,6 +565,12 @@ function SessionRow({
           🧭
         </span>
       )}
+      {/* §35: this session was opened by a schedule, not by you. */}
+      {session.scheduleId && (
+        <span className="text-[10px] leading-none shrink-0" title="Started by a schedule" aria-label="scheduled run">
+          🕰
+        </span>
+      )}
       {editing ? (
         <input
           autoFocus
@@ -641,6 +659,7 @@ export function Sidebar({
   onDeleteSession,
   settingsOpen,
   searchNonce,
+  scheduleSubtitle,
   openGroups,
   onToggleGroup,
   onToggleSettingsOpen,
@@ -677,6 +696,8 @@ export function Sidebar({
   onToggleSettingsOpen: () => void;
   /** §7 round 18: bumped by ⌘K to open and focus the session filter. */
   searchNonce: number;
+  /** §35: the row's live subtitle, computed by App from the same list the page reads. */
+  scheduleSubtitle?: string | null;
   /** §16 round 18: which settings groups are open. Owned by App for the same
       reason `settingsOpen` is — `navigate()` has to open the group holding its
       destination, and a second mechanism would be a second thing to sync. */
@@ -938,6 +959,21 @@ export function Sidebar({
           </div>
           {/* Round 8: ten destinations would be a wall in a 48px rail — one gear
               expands the sidebar, exactly as the workspace initials above do. */}
+          {/* §35: the rail gets Schedules too — collapsing the sidebar must not
+              hide the one destination that is not a workspace. */}
+          <button
+            type="button"
+            data-hv-schedules-rail
+            onClick={() => onNavigate("schedules")}
+            title={scheduleSubtitle ? `Schedules — ${scheduleSubtitle}` : "Schedules"}
+            aria-label="Schedules"
+            className={`relative ${railBtn(view === "schedules")}`}
+          >
+            <ClockIcon />
+            {scheduleSubtitle?.includes("missed") && (
+              <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-honey border border-ink/60" />
+            )}
+          </button>
           <button type="button" onClick={onToggleCollapsed} title="Settings" aria-label="Settings" className={railBtn(false)}>
             <GearIcon />
           </button>
@@ -991,6 +1027,25 @@ export function Sidebar({
             «
           </button>
         </div>
+
+        {/* §35 — the app's first non-workspace top-level entry, and the
+            justification is specific: Schedules is the only thing in HappyVibe
+            that runs across workspaces on its own. It is NOT a NAV entry (a
+            test says so), because NAV lives under the collapsible Settings
+            toggle at the bottom, and a row hidden inside a shut group fails
+            discovery for exactly the person who has never made a schedule. */}
+        <button
+          type="button"
+          data-hv-schedules-row
+          onClick={() => onNavigate("schedules")}
+          className={`mx-2 mb-1 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-semibold cursor-pointer border ${
+            view === "schedules" ? "bg-honey-soft border-honey/60" : "border-transparent hover:bg-card/70"
+          }`}
+        >
+          <ClockIcon />
+          <span className="flex-1 text-left">Schedules</span>
+          {scheduleSubtitle && <span className="text-[10px] font-medium text-ink-soft truncate">{scheduleSubtitle}</span>}
+        </button>
 
         {/* §7 round 18: hidden at rest, expanding IN PLACE — exactly where it
             used to live, so nothing moves but its existence. Blur while the

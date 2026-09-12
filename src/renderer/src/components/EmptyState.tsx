@@ -68,6 +68,13 @@ export const EMPTY_COPY = {
     headline: "Nothing remembered about this project yet",
     next: "Tell the agent “remember that this project …”, or it will offer to save what it learns here. Every save asks you first.",
   },
+  // §35: both routes in, because the one people will actually use is the one
+  // that is invisible from this page — you make a schedule out of a session you
+  // already ran, not out of a blank form.
+  schedules: {
+    headline: "No schedules yet",
+    next: "Start from a template below, or right-click any chat tab and pick “Repeat this on a schedule…”.",
+  },
   costs: {
     headline: "No billed calls yet",
     next: "They appear here as soon as the agent talks to a model.",

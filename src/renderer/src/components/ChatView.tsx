@@ -144,6 +144,8 @@ export function ChatView({
   chips,
   onChip,
   planEnabled = false,
+  readonlyRun = false,
+  onRepeatOnSchedule,
   sessionSkills,
   onTogglePlan,
   onOpenAgentsMd,
@@ -232,6 +234,9 @@ export function ChatView({
   onChip?: (text: string) => void;
   /** §23: plan-mode toggle state + setter (composer chip). */
   planEnabled?: boolean;
+  /** §35: this session is a scheduled read-only run — clamped by main at spawn, not by anything here. */
+  readonlyRun?: boolean;
+  onRepeatOnSchedule?: () => void;
   /** §14 round 6: skills this session loaded, each flagged if the agent used it. */
   sessionSkills?: Array<{ name: string; scope: string; used: boolean }>;
   onTogglePlan?: (on: boolean) => void;
@@ -946,6 +951,18 @@ export function ChatView({
             {planPillLabel(activePlan.status, activePlan.done, activePlan.total)}
           </button>
         )}
+        {/* §35: a scheduled read-only run says so where Plan mode would. It is
+            NOT the plan pill: the run has no plan, and nothing in the session
+            can switch the clamp off — the composer's Plan toggle is hidden
+            below for the same reason. */}
+        {readonlyRun && (
+          <span
+            className="flex items-center gap-1 rounded-full bg-sky-soft text-sky text-[11px] font-bold px-2 py-0.5"
+            title="Read-only run — started by a schedule. It can read and report; changes are blocked, and nothing in the run can allow them."
+          >
+            <span aria-hidden>🕰</span> Read-only run
+          </span>
+        )}
         {planEnabled && (
           <div className="flex items-center gap-1.5">
             <span
@@ -1601,6 +1618,21 @@ export function ChatView({
                     Attach image
                     {!vision && <span className="block text-[10px] font-medium text-ink-soft">model has no vision</span>}
                   </button>
+                  {/* §35: the primary way people make a schedule — you did the
+                      task by hand once, liked it, and want it every morning. */}
+                  {onRepeatOnSchedule && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttachMenuOpen(false);
+                        onRepeatOnSchedule();
+                      }}
+                      title="Run this session's first message again, on a schedule"
+                      className="w-full text-left px-3 py-2 hover:bg-paper-deep/40 cursor-pointer"
+                    >
+                      Repeat this on a schedule…
+                    </button>
+                  )}
                   {/* §31: this row replaces "Attach file — coming soon". Disabled
                       states carry their REASON rather than hiding, which is how a
                       user learns the Built-in tools setting exists at all. */}
@@ -1630,8 +1662,11 @@ export function ChatView({
               </>
             )}
           </div>
-          {/* §23: plan-mode toggle — read-only "think first" for this session. */}
-          {onTogglePlan && (
+          {/* §23: plan-mode toggle — read-only "think first" for this session.
+              §35: hidden in a read-only RUN. Plan mode is a session switch the
+              user owns; the run's clamp is not, so a toggle beside it would
+              offer a change it cannot make. */}
+          {onTogglePlan && !readonlyRun && (
             <button
               type="button"
               aria-pressed={planEnabled}

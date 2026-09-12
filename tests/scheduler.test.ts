@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Scheduler, type SchedulerHost } from "../src/main/scheduler";
-import { BUSY_WAIT_MS, FAIL_PAUSE_AT, ScheduleStore, type NewSchedule } from "../src/main/schedules";
+import { BUSY_WAIT_MS, FAIL_PAUSE_AT, type NewSchedule } from "../src/main/schedules";
+import { ScheduleStore } from "../src/main/scheduleStore";
 
 const tmp = (): string => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-sch-")), "s.json");
 const T0 = new Date(2026, 8, 11, 9, 0, 30); // 30 s past the 9:00 slot — what a 60 s tick looks like

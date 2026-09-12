@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, humanRecurrence, nextFire, runTitle, validateScheduleInput, withNextRun, type Schedule } from "../src/main/schedules";
+import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, humanRecurrence, nextFire, runTitle, withNextRun, type Schedule } from "../src/main/schedules";
+import { validateScheduleInput } from "../src/main/scheduleStore";
 
 // All dates are LOCAL wall-clock (§35: "Local time, DST follows the wall clock").
 const local = (y: number, m: number, d: number, h = 0, min = 0): Date => new Date(y, m - 1, d, h, min);
