@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { Schedule } from "../../../main/schedules";
 import { EmptyState } from "./EmptyState";
+import { usePresence } from "../usePresence";
+import { DUR } from "../motion";
 import { ScheduleDrawer } from "./ScheduleDrawer";
 import { Toggle } from "./Toggle";
 import {
@@ -43,6 +45,14 @@ export function SchedulesView({
   const [loginItem, setLoginItem] = useState<{ available: boolean; openAtLogin: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const now = new Date();
+  // The drawer stays mounted through its exit so the slide-out can play —
+  // React would otherwise remove it before any transition started.
+  const open = editing || (drawerRequest ? { ...drawerRequest.draft, id: drawerRequest.existingId, workspaceId: drawerRequest.workspaceId } : null);
+  const drawer = usePresence(!!open, DUR.panel);
+  // …and it has to keep its CONTENT through that exit: rendering on `open`
+  // alone unmounts the moment it closes, so nothing is left to animate.
+  const shown = useRef<{ initial: Partial<Schedule>; requestId?: string } | null>(null);
+  if (open) shown.current = { initial: open, requestId: drawerRequest?.requestId };
 
   useEffect(() => {
     void window.hv.loginItemGet().then(setLoginItem).catch(() => {});
@@ -85,13 +95,16 @@ export function SchedulesView({
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <div className="flex items-start gap-3 mb-2">
           <h1 className="font-black text-3xl tracking-tight flex-1">Schedules</h1>
-          {/* The settings pages' own add-affordance: outlined and quiet. The
-              honey fill belongs to a dialog's primary action, where it is the
-              one thing to press; on a page header it shouts over the title. */}
+          {/* Tangerine, the app's own accent, which is already what "add one"
+              looks like here — the sidebar's `+ add` and every `+` on a
+              workspace row. Honey was wrong for a different reason than being
+              loud: it is a DIALOG's primary action, the one thing to press in a
+              box with nothing else in it. The same filled shape as PromptRow's
+              Save and the ask-user modal's confirm. */}
           <button
             type="button"
             onClick={() => setEditing({ workspaceId: workspaces[0] })}
-            className="shrink-0 text-sm font-bold rounded-lg border-2 border-line px-3 py-1.5 hover:bg-paper-deep/40 cursor-pointer"
+            className="shrink-0 rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker hover:brightness-105 cursor-pointer"
           >
             New schedule
           </button>
@@ -239,14 +252,15 @@ export function SchedulesView({
         ))}
       </div>
 
-      {(editing || drawerRequest) && (
+      {drawer.mounted && shown.current && (
         <ScheduleDrawer
-          key={drawerRequest?.requestId ?? editing?.id ?? "new"}
-          initial={drawerRequest ? { ...drawerRequest.draft, id: drawerRequest.existingId, workspaceId: drawerRequest.workspaceId } : editing!}
+          key={shown.current.requestId ?? shown.current.initial.id ?? "new"}
+          initial={shown.current.initial}
           workspaces={workspaces}
           models={models}
           bypassHere={bypassHere}
-          requestId={drawerRequest?.requestId}
+          requestId={shown.current.requestId}
+          leaving={drawer.leaving}
           onSaved={() => {}}
           onClose={() => {
             setEditing(null);

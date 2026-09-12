@@ -145,6 +145,21 @@ describe("the drawer", () => {
     expect(dr).toContain('type="date"');
   });
 
+  it("slides in from its own edge, and survives its own exit", () => {
+    // The app's side-panel motion (the context and cost panels): 12px from its
+    // OWN edge, never from off-screen. And the exit needs BOTH halves — the
+    // presence hook to delay the unmount, and a held copy of the content,
+    // because rendering on the open flag alone removes the element the instant
+    // it closes and there is nothing left to animate.
+    expect(dr).toContain("data-leaving={leaving || undefined}");
+    expect(dr).toContain("motion-safe:starting:translate-x-3");
+    expect(dr).toContain("motion-safe:data-[leaving]:opacity-0");
+    const sv = R("src/renderer/src/components/SchedulesView.tsx");
+    expect(sv).toMatch(/usePresence\(!!open, DUR\.panel\)/);
+    expect(sv).toMatch(/if \(open\) shown\.current =/);
+    expect(sv).toMatch(/\{drawer\.mounted && shown\.current && \(/);
+  });
+
   it("answers a tool-opened request on BOTH Create and Cancel — a missed answer hangs the bridge", () => {
     expect(dr.match(/scheduleDrawerAnswer\(/g)!.length).toBeGreaterThanOrEqual(2);
     expect(dr).toMatch(/if \(requestId\) window\.hv\.scheduleDrawerAnswer\(requestId, \{ cancelled: true \}\)/);
@@ -183,13 +198,15 @@ describe("the run, on screen", () => {
 describe("the page", () => {
   const sv = R("src/renderer/src/components/SchedulesView.tsx");
 
-  it("the page header's action is outlined, not a dialog's honey fill", () => {
-    // The honey fill is a DIALOG's primary action, where it is the one thing to
-    // press. On a page header it shouts over the title.
+  it("the page header's action wears the app's accent, not a dialog's honey fill", () => {
+    // Tangerine is already what "add one" looks like here (the sidebar's `+ add`).
+    // Honey is a DIALOG's primary action — the one thing to press in a box with
+    // nothing else in it — which a page header is not.
     const sv = R("src/renderer/src/components/SchedulesView.tsx");
-    const header = sv.slice(sv.indexOf("New schedule") - 400, sv.indexOf("New schedule"));
+    const header = sv.slice(sv.indexOf("New schedule") - 500, sv.indexOf("New schedule"));
     expect(header).not.toContain("bg-honey");
-    expect(header).toContain("border-line");
+    expect(header).toContain("bg-tangerine");
+    expect(header).toContain("border-tangerine-deep");
   });
 
   it("shows the open-at-login toggle only when main says it is available", () => {

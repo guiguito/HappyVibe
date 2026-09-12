@@ -24,6 +24,7 @@ export function ScheduleDrawer({
   models,
   bypassHere,
   requestId,
+  leaving,
   onSaved,
   onClose,
 }: {
@@ -33,6 +34,8 @@ export function ScheduleDrawer({
   /** Whether the chosen workspace already bypasses permissions — said out loud, never hidden. */
   bypassHere: (ws: string) => boolean;
   requestId?: string;
+  /** Supplied by the page, which owns the conditional render and therefore owns the exit. */
+  leaving?: boolean;
   onSaved: (s: Schedule) => void;
   onClose: () => void;
 }): React.JSX.Element {
@@ -105,7 +108,13 @@ export function ScheduleDrawer({
     `px-2.5 py-1 rounded-lg text-xs font-bold border cursor-pointer ${on ? "bg-honey-soft border-honey text-ink" : "border-line text-ink-soft hover:bg-card"}`;
 
   return (
-    <div className="absolute inset-y-0 right-0 w-[420px] max-w-full border-l-2 border-line-strong bg-paper flex flex-col z-20 shadow-sticker-lg">
+    <div
+      // The app's side-panel motion, same as the context and cost panels: it
+      // slides in from its OWN edge, 12px, never from off-screen. Exits need
+      // `leaving` because React unmounts the element before CSS could play one.
+      data-leaving={leaving || undefined}
+      className="absolute inset-y-0 right-0 w-[420px] max-w-full border-l-2 border-line-strong bg-paper flex flex-col z-20 shadow-sticker-lg motion-safe:transition-[opacity,translate] motion-safe:duration-270 motion-safe:ease-hv-out motion-safe:starting:opacity-0 motion-safe:starting:translate-x-3 motion-safe:data-[leaving]:opacity-0 motion-safe:data-[leaving]:translate-x-3 motion-safe:data-[leaving]:duration-180 motion-safe:data-[leaving]:ease-hv-in"
+    >
       <div className="px-5 py-4 border-b border-line">
         <h2 className="font-black text-lg tracking-tight">{editing ? "Edit schedule" : "New schedule"}</h2>
         {requestId && <p className="text-xs text-ink-soft mt-1">{AGENT_PROPOSED}</p>}
