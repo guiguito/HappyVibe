@@ -2428,7 +2428,7 @@ export default function (pi: ExtensionAPI) {
     ], { description: "How often it repeats." });
     const AtSchema = Type.String({ description: "The time of day, as HH:MM in the user's local time." });
     const UntilSchema = Type.String({
-      description: "Optional end date, YYYY-MM-DD. It runs through that day and then stops on its own. Omit it for a schedule with no end, which is the default.",
+      description: "Optional end, as YYYY-MM-DD (the end of that day) or YYYY-MM-DDTHH:MM. The schedule stops on its own then. Omit it for a schedule with no end, which is the default.",
     });
     const ModeSchema = Type.Union([Type.Literal("readonly"), Type.Literal("full")], {
       description: "readonly = it can read, search and report but change nothing; full = this workspace's usual permission rules, and an `ask` waits for the user. Prefer readonly for reviews and reports.",

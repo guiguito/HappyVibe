@@ -108,6 +108,20 @@ export function ScheduleDrawer({
     );
   };
 
+  /**
+   * `datetime-local` speaks LOCAL wall clock with no zone, which is exactly what
+   * we store — an ISO instant would drift by an hour across a DST change, the
+   * same reason `at` is a wall-clock string.
+   */
+  const localNow = (): string => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+  const defaultUntil = (): string => {
+    const d = new Date(Date.now() + 7 * 86400_000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+
   const seg = (on: boolean): string =>
     `px-2.5 py-1 rounded-lg text-xs font-bold border cursor-pointer ${on ? "bg-honey-soft border-honey text-ink" : "border-line text-ink-soft hover:bg-card"}`;
 
@@ -216,35 +230,6 @@ export function ScheduleDrawer({
           {/* The cost is a fact about the choice just made, so it belongs beside
               the choice — not on the row after the schedule exists. */}
           {frequencyNote(repeat) && <p className="text-xs font-semibold text-berry mt-2">{frequencyNote(repeat)}</p>}
-          {/* A recurring schedule runs forever unless told otherwise, which is
-              the right default and also the one worth being able to bound. A
-              `once` schedule is already a single run, so it has no end date. */}
-          {repeat.kind !== "once" && (
-            <div className="mt-2">
-              <div className="flex flex-wrap gap-1.5">
-                <button type="button" onClick={() => setUntil(undefined)} className={seg(!until)}>
-                  {UNTIL_LABELS.none}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUntil(until ?? new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10))}
-                  className={seg(!!until)}
-                >
-                  {UNTIL_LABELS.date}
-                </button>
-                {until && (
-                  <input
-                    type="date"
-                    value={until}
-                    min={new Date().toISOString().slice(0, 10)}
-                    onChange={(e) => setUntil(e.target.value)}
-                    className="rounded-lg border border-line bg-card px-2 py-1 text-xs"
-                  />
-                )}
-              </div>
-              {until && <p className="text-xs text-ink-soft mt-1">It runs through that day, then stops on its own.</p>}
-            </div>
-          )}
           <label className="flex items-center gap-2 mt-2">
             <span className="font-bold">At</span>
             {/* A native time input: the platform's own picker already knows the
@@ -253,6 +238,35 @@ export function ScheduleDrawer({
             <input type="time" value={at} onChange={(e) => setAt(e.target.value)} className="rounded-lg border border-line bg-card px-2 py-1" />
           </label>
         </div>
+
+        {/* Its own section, like Repeat — it is a separate decision about the
+            schedule's life, not a detail of how often it runs. A `once`
+            schedule has none: it is already a single run. */}
+        {repeat.kind !== "once" && (
+          <div>
+            <span className="font-bold block mb-1">Until</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button type="button" onClick={() => setUntil(undefined)} className={seg(!until)}>
+                {UNTIL_LABELS.none}
+              </button>
+              <button type="button" onClick={() => setUntil(until ?? defaultUntil())} className={seg(!!until)}>
+                {UNTIL_LABELS.date}
+              </button>
+              {until && (
+                <input
+                  type="datetime-local"
+                  value={until}
+                  min={localNow()}
+                  onChange={(e) => setUntil(e.target.value)}
+                  className="rounded-lg border border-line bg-card px-2 py-1 text-xs"
+                />
+              )}
+            </div>
+            <p className="text-xs text-ink-soft mt-1">
+              {until ? "It stops on its own then — no need to come back and pause it." : "It runs until you pause it."}
+            </p>
+          </div>
+        )}
 
         <div>
           <span className="font-bold block mb-1">How careful</span>

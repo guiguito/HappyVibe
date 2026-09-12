@@ -46,10 +46,10 @@ export function validateScheduleInput(input: Partial<NewSchedule>, workspaces: s
   const until = input.until?.trim() || undefined;
   if (until !== undefined) {
     const cutoff = untilCutoff(until);
-    if (!cutoff) throw new Error("Give the end date as YYYY-MM-DD.");
+    if (!cutoff) throw new Error("Give the end as a date, optionally with a time.");
     // Refused rather than accepted-and-inert: a schedule created already past
     // its end has no next run and would sit there looking broken.
-    if (cutoff.getTime() < Date.now()) throw new Error("Pick an end date in the future, or leave it with no end.");
+    if (cutoff.getTime() < Date.now()) throw new Error("Pick an end in the future, or leave it with no end.");
   }
   const mode = input.mode ?? "full";
   if (!MODES.includes(mode)) throw new Error("Pick a mode: read-only or full.");

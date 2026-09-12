@@ -158,12 +158,21 @@ describe("the drawer", () => {
     expect(dr).toContain("BYPASS_WARNING");
   });
 
-  it("offers no end date by default, and hides the choice for a one-off", () => {
+  it("Until is its OWN section, defaults to no end, and is hidden for a one-off", () => {
+    expect(dr).toMatch(/<span className="font-bold block mb-1">Until<\/span>/);
     expect(dr).toContain("UNTIL_LABELS.none");
     expect(dr).toMatch(/setUntil\(undefined\)/);
     expect(dr).toMatch(/repeat\.kind !== "once" && \(/);
     // A `once` schedule must not carry one into the store either.
     expect(dr).toMatch(/until: repeat\.kind === "once" \? undefined : until/);
+  });
+
+  it("picks a moment, not just a day, on the user's own clock", () => {
+    expect(dr).toContain('type="datetime-local"');
+    // An ISO instant would drift an hour across a DST change — `at` is a
+    // wall-clock string for the same reason, so this one is too.
+    expect(dr).not.toMatch(/toISOString\(\)\.slice\(0, 16\)/);
+    expect(dr).toMatch(/const localNow = /);
   });
 
   it("names the model fall-through honestly — empty means this project's model", () => {

@@ -54,8 +54,12 @@ export interface Schedule {
   repeat: Repeat;
   at: string;                 // "HH:MM", local
   /**
-   * YYYY-MM-DD, local. The schedule stops after this DAY — inclusive, so a run
-   * on the date itself still happens.
+   * When the schedule stops, as a LOCAL wall-clock string:
+   * `YYYY-MM-DDTHH:MM`, or a bare `YYYY-MM-DD` meaning the end of that day.
+   *
+   * Local and unzoned for the same reason `at` is — the user picked a moment on
+   * their own clock, and storing an instant would move it by an hour twice a
+   * year.
    *
    * Absent means no limit, which is the default: a schedule runs until you
    * pause it. When the limit is reached the schedule stays `enabled` and simply
@@ -156,16 +160,39 @@ const clock = (at: string): string => {
   return t ? `${t.h}:${String(t.m).padStart(2, "0")}` : at;
 };
 
-/** The last instant a schedule with this end date may run: the END of that day, local. */
+/**
+ * The last moment a schedule with this end may run.
+ *
+ * A date with a time means exactly that moment; a bare date means the END of
+ * that day, so "until the 12th" includes the 12th rather than stopping at
+ * midnight on the 11th — which is what a user typing a date means.
+ */
 export function untilCutoff(until: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(until);
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?$/.exec(until);
   if (!m) return null;
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999);
+  const [y, mo, d] = [Number(m[1]), Number(m[2]) - 1, Number(m[3])];
+  const timed = m[4] !== undefined;
+  const h = timed ? Number(m[4]) : 23;
+  const min = timed ? Number(m[5]) : 59;
+  if (h > 23 || min > 59) return null;
+  const c = new Date(y, mo, d, h, min, timed ? 0 : 59, timed ? 0 : 999);
+  // The Date constructor ROLLS OVER rather than refusing, so month 13 becomes
+  // next January and Feb 30 becomes March. Reading the fields back is the only
+  // way to tell a real date from one it invented.
+  return c.getMonth() === mo && c.getDate() === d && c.getFullYear() === y ? c : null;
 }
 
 export function humanRecurrence(repeat: Repeat, at: string, until?: string): string {
-  const ends = until ? ` until ${MON[Number(until.slice(5, 7)) - 1]} ${Number(until.slice(8, 10))}` : "";
+  const ends = until ? ` until ${untilLabel(until)}` : "";
   return baseRecurrence(repeat, at) + (repeat.kind === "once" ? "" : ends);
+}
+
+/** "Oct 3" for a whole day, "Oct 3, 17:00" when a time was chosen. */
+export function untilLabel(until: string): string {
+  const c = untilCutoff(until);
+  if (!c) return until;
+  const day = `${MON[c.getMonth()]} ${c.getDate()}`;
+  return until.length > 10 ? `${day}, ${c.getHours()}:${String(c.getMinutes()).padStart(2, "0")}` : day;
 }
 
 function baseRecurrence(repeat: Repeat, at: string): string {

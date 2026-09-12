@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, hasEnded, humanRecurrence, nextFire, runsPerDay, runTitle, untilCutoff, withNextRun, type Schedule } from "../src/main/schedules";
+import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, hasEnded, humanRecurrence, nextFire, runsPerDay, runTitle, untilCutoff, untilLabel, withNextRun, type Schedule } from "../src/main/schedules";
 import { validateScheduleInput } from "../src/main/scheduleStore";
 
 // All dates are LOCAL wall-clock (§35: "Local time, DST follows the wall clock").
@@ -164,9 +164,33 @@ describe("an end date", () => {
     expect(humanRecurrence({ kind: "once", date: "2026-09-12" }, "09:00", "2026-10-03")).toBe("Once, Sep 12 at 9:00");
   });
 
-  it("the cutoff is the END of the day, so a run late on the last day still fires", () => {
+  it("a bare date means the END of that day — a user typing a date means to include it", () => {
     expect(untilCutoff("2026-09-12")).toEqual(local(2026, 9, 12, 23, 59, 59, 999));
-    expect(untilCutoff("nope")).toBeNull();
+  });
+
+  it("a date WITH a time means exactly that moment, local", () => {
+    expect(untilCutoff("2026-09-12T17:30")).toEqual(local(2026, 9, 12, 17, 30));
+    // `datetime-local` emits this shape; a space instead of T is accepted too.
+    expect(untilCutoff("2026-09-12 17:30")).toEqual(local(2026, 9, 12, 17, 30));
+  });
+
+  it("refuses what it cannot read, rather than guessing a moment", () => {
+    for (const bad of ["nope", "2026-09-12T25:00", "2026-09-12T10:61", "2026-13-01", "2026-02-30", ""]) {
+      expect(untilCutoff(bad), bad).toBeNull();
+    }
+  });
+
+  it("labels a whole day without a time, and names the time when there is one", () => {
+    expect(untilLabel("2026-10-03")).toBe("Oct 3");
+    expect(untilLabel("2026-10-03T17:00")).toBe("Oct 3, 17:00");
+    expect(humanRecurrence({ kind: "daily" }, "09:00", "2026-10-03T17:05")).toBe("Every day at 9:00 until Oct 3, 17:05");
+  });
+
+  it("stops at the MOMENT, not at the end of its day", () => {
+    const s = base({ until: "2026-09-12T10:00" });
+    expect(new Date(withNextRun(s, local(2026, 9, 11, 10)).nextRunAt!)).toEqual(local(2026, 9, 12, 9, 0));
+    // The 13th's 9:00 is past 10:00 on the 12th, so there is no next run.
+    expect(withNextRun(s, local(2026, 9, 12, 9, 30)).nextRunAt).toBeNull();
   });
 });
 
@@ -197,7 +221,7 @@ describe("validateScheduleInput", () => {
     // An end date already in the past would make a schedule with no next run —
     // refused rather than created and inert.
     expect(() => validateScheduleInput({ ...ok, until: "2020-01-01" }, ws)).toThrow(/future/i);
-    expect(() => validateScheduleInput({ ...ok, until: "next week" }, ws)).toThrow(/YYYY-MM-DD/);
+    expect(() => validateScheduleInput({ ...ok, until: "next week" }, ws)).toThrow(/date/i);
     const far = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10);
     expect(validateScheduleInput({ ...ok, until: far }, ws).until).toBe(far);
     expect(validateScheduleInput(ok, ws).until).toBeUndefined();

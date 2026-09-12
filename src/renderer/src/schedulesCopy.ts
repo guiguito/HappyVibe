@@ -65,7 +65,7 @@ export const OUTCOME_MARK: Record<RunOutcome | "never", string> = {
 
 export const PAUSED_COPY = "Paused after 3 failed runs — check the model or the key.";
 export const LOGIN_ITEM_COPY = "HappyVibe has to be open for schedules to run.";
-export const UNTIL_LABELS = { none: "No end date", date: "Until a date" } as const;
+export const UNTIL_LABELS = { none: "No end", date: "Ends at" } as const;
 export const REUSE_SUB = "Context builds up across runs; HappyVibe compacts it when it gets long.";
 export const PROMPT_HINT = "Slash prompts work here (/review), and so do @file mentions.";
 export const NOTIFY_ALWAYS = "You are always notified when a run needs your permission.";

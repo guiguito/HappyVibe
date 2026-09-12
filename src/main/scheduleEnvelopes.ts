@@ -12,7 +12,7 @@
  * silently dropped field is how "it asked for another workspace and we said
  * nothing" becomes a report nobody can reproduce.
  */
-import { humanRecurrence, nextFire, type CatchUp, type Repeat, type Schedule, type ScheduleMode } from "./schedules";
+import { humanRecurrence, nextFire, untilCutoff, type CatchUp, type Repeat, type Schedule, type ScheduleMode } from "./schedules";
 
 export interface ScheduleDraft {
   title: string;
@@ -20,7 +20,7 @@ export interface ScheduleDraft {
   repeat: Repeat;
   at: string;
   mode?: ScheduleMode;
-  /** YYYY-MM-DD; the schedule stops after that day. Absent = no limit. */
+  /** `YYYY-MM-DD` (end of that day) or `YYYY-MM-DDTHH:MM`. Absent = no limit. */
   until?: string;
   catchUp?: CatchUp;
   reuseSession?: boolean;
@@ -96,7 +96,7 @@ function parseDraft(v: unknown, partial: boolean): Partial<ScheduleDraft> | null
     out.catchUp = d.catchUp as CatchUp;
   }
   if (d.until !== undefined) {
-    if (typeof d.until !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.until)) return null;
+    if (typeof d.until !== "string" || untilCutoff(d.until) === null) return null;
     out.until = d.until;
   }
   if (typeof d.reuseSession === "boolean") out.reuseSession = d.reuseSession;
