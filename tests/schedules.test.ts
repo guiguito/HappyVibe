@@ -101,18 +101,12 @@ describe("applyOutcome / withNextRun", () => {
     expect(s.runs).toHaveLength(20);
     expect(s.runs.at(-1)!.firedAt).toBe("24");
   });
-  it("withNextRun clears a parked ask once its slot is superseded (recorded as skipped unanswered)", () => {
+  it("withNextRun leaves a parked ask alone — retiring it is the scheduler's call, on the deadline the park set", () => {
     const parked = base({ missed: { slotAt: local(2026, 9, 10, 9).toISOString() }, nextRunAt: local(2026, 9, 10, 9).toISOString() });
     const s = withNextRun(parked, local(2026, 9, 11, 9, 30));
-    expect(s.missed).toBeUndefined();
-    expect(s.runs.at(-1)).toMatchObject({ outcome: "skipped", reason: "unanswered" });
-    expect(new Date(s.nextRunAt!)).toEqual(local(2026, 9, 12, 9, 0));
-  });
-  it("withNextRun leaves a parked ask alone while its next slot is still ahead", () => {
-    const parked = base({ missed: { slotAt: local(2026, 9, 10, 9).toISOString() }, nextRunAt: local(2026, 9, 10, 9).toISOString() });
-    const s = withNextRun(parked, local(2026, 9, 10, 10, 0));
     expect(s.missed).toEqual({ slotAt: local(2026, 9, 10, 9).toISOString() });
     expect(s.runs).toEqual([]);
+    expect(new Date(s.nextRunAt!)).toEqual(local(2026, 9, 12, 9, 0));
   });
   it("withNextRun on a disabled or once-and-done schedule is null", () => {
     expect(withNextRun(base({ enabled: false }), local(2026, 9, 11)).nextRunAt).toBeNull();

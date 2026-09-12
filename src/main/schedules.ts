@@ -184,22 +184,18 @@ export function applyOutcome(s: Schedule, run: ScheduleRun): Schedule {
 }
 
 /**
- * Recompute `nextRunAt`, and retire a parked "ask me" whose moment has passed.
+ * Recompute `nextRunAt` — the next FUTURE slot, or null when the schedule is off
+ * or a `once` whose day has gone.
  *
- * An unanswered ask never fires and never nags (§5.3): it waits until the
- * schedule's NEXT slot arrives, at which point the question is moot — the miss
- * is recorded as `skipped: unanswered` and the new slot takes over.
+ * It deliberately leaves `missed` alone. A parked "ask me" is retired by the
+ * scheduler when `nextRunAt` actually arrives, and that is the whole reason
+ * parking advances this field: measuring "has the next slot arrived?" from the
+ * MISSED slot instead would retire a three-day-old question one tick after the
+ * app launched, turning "ask me" into "always" for anyone away for a weekend.
  */
 export function withNextRun(s: Schedule, now: Date): Schedule {
-  let out = s;
-  if (s.missed) {
-    const supersededBy = nextFire(s.repeat, s.at, new Date(s.missed.slotAt));
-    if (supersededBy && supersededBy <= now) {
-      out = applyOutcome({ ...out, missed: undefined }, { firedAt: s.missed.slotAt, outcome: "skipped", reason: "unanswered" });
-    }
-  }
-  const next = out.enabled ? nextFire(out.repeat, out.at, now) : null;
-  return { ...out, nextRunAt: next ? next.toISOString() : null };
+  const next = s.enabled ? nextFire(s.repeat, s.at, now) : null;
+  return { ...s, nextRunAt: next ? next.toISOString() : null };
 }
 
 export type NewSchedule = Omit<Schedule, "id" | "createdAt" | "nextRunAt" | "failStreak" | "runs">;
