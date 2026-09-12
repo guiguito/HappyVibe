@@ -113,11 +113,44 @@ interface FeedbackEvent {
   channel?: string;
 }
 
+/**
+ * §35: what a schedule did, as a sentence.
+ *
+ * DERIVED nowhere — this record is the labels, and a test asserts every
+ * `schedule.*` type main emits has one, so a new event type surfaces as a red
+ * test rather than as a row reading `schedule.whatever`.
+ */
+export const SCHEDULE_EVENT_LABELS: Record<string, string> = {
+  "schedule.create": "created schedule",
+  "schedule.update": "changed schedule",
+  "schedule.delete": "deleted schedule",
+  "schedule.fire": "schedule fired",
+  "schedule.skip": "schedule skipped",
+  "schedule.done": "schedule run ended",
+  "schedule.missed": "schedule missed its time",
+};
+
+interface ScheduleEvent {
+  ts: string;
+  workspaceId?: string;
+  sessionId?: string;
+  kind: string;
+  scheduleId?: string;
+  title?: string;
+  mode?: string;
+  recurrence?: string;
+  reason?: string;
+  outcome?: string;
+  durationMs?: number;
+  source?: "user" | "agent";
+}
+
 export type Row =
   | ({ row: "decision" } & Decision)
   | ({ row: "oneshot" } & OneShot)
   | ({ row: "excluded" } & ModelExcluded)
   | ({ row: "memory" } & MemoryEvent)
+  | ({ row: "schedule" } & ScheduleEvent)
   | ({ row: "feedback" } & FeedbackEvent);
 
 /**
@@ -136,6 +169,10 @@ export function toAuditRow(e: HvAuditEvent): Row {
   if (e.type === "assistant.oneshot") return { row: "oneshot", ...(e.data as unknown as OneShot), ...base };
   if (e.type === "model.excluded") return { row: "excluded", ...(e.data as unknown as ModelExcluded), ...base };
   if (e.type === "feedback.sent") return { row: "feedback", ...(e.data as unknown as FeedbackEvent), ...base };
+  // §35: same rule — discriminate on the TYPE main keyed the row by.
+  if (e.type.startsWith("schedule.")) {
+    return { row: "schedule", kind: e.type, ...(e.data as unknown as Omit<ScheduleEvent, "kind">), ...base };
+  }
   // §33: discriminate on the event TYPE, like every row above — the data payload carries a
   // `kind` field too, and reading THAT is the bug this function was extracted to fix.
   if (e.type.startsWith("memory.")) {
@@ -299,6 +336,10 @@ export function AuditView({
     // §34: not a decision either. Its own source name, so it can be isolated or
     // excluded, and hidden whenever a DECISION filter is on.
     if (r.row === "feedback") return !decision && (!source || source === "feedback");
+    // §35: a schedule event is not a permission decision — the run's own tool
+    // calls are those, under this same log. Its own source name so it can be
+    // isolated, which is how you answer "what has this thing been doing".
+    if (r.row === "schedule") return !decision && (!source || source === "schedule");
     return (!decision || r.decision === decision) && (!source || (SOURCE_LABEL[r.source] ?? r.source) === source);
   };
   const shown = rows?.filter(matches) ?? null;
@@ -365,6 +406,7 @@ export function AuditView({
             <option value="bypass">Bypass</option>
             <option value="plan">Plan mode</option>
             <option value="readonly">Read-only run</option>
+            <option value="schedule">Schedules</option>
             <option value="terminal">Terminal</option>
             <option value="web">Web tools</option>
             <option value="assistant">The app itself</option>
@@ -418,6 +460,25 @@ export function AuditView({
                     </div>
                     {(r.description || r.reason) && (
                       <div className="text-xs text-ink-soft mt-0.5 truncate">{r.reason ?? r.description}</div>
+                    )}
+                  </>
+                ) : r.row === "schedule" ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block rounded-full border border-line bg-paper-deep px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 text-ink-soft">
+                        schedule
+                      </span>
+                      <span className="font-bold shrink-0">{SCHEDULE_EVENT_LABELS[r.kind] ?? r.kind}</span>
+                      <span className="text-xs text-ink-soft truncate min-w-0">{r.title}</span>
+                      <span className="flex-1" />
+                      <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
+                        {new Date(r.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    {(r.reason || r.outcome || r.recurrence) && (
+                      <div className="text-xs text-ink-soft mt-0.5 truncate">
+                        {[r.recurrence, r.outcome, r.reason, r.source === "agent" ? "asked for by the agent" : null].filter(Boolean).join(" · ")}
+                      </div>
                     )}
                   </>
                 ) : r.row === "feedback" ? (

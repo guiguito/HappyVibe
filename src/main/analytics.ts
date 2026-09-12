@@ -173,6 +173,18 @@ export function aggregate(
         // number for the dashboard — it has no cost, no tokens and no decision.
         // Named here anyway so the switch stays an inventory of what main writes.
         break;
+      case "schedule.create":
+      case "schedule.update":
+      case "schedule.delete":
+      case "schedule.fire":
+      case "schedule.skip":
+      case "schedule.done":
+      case "schedule.missed":
+        // §35: a schedule's own bookkeeping. The SPEND is already counted — a
+        // run is an ordinary session and its calls are in the ledger — so
+        // counting these too would report the same money twice. Named here so
+        // the switch stays an inventory of what main writes.
+        break;
       case "feedback.sent":
         // §34: same shape of fact, one surface over — a submission the user chose
         // to send is for the audit log, not the dashboard. Named so the switch

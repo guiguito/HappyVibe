@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { SCHEDULE_EVENT_LABELS } from "../src/renderer/src/components/AuditView";
 
 /**
  * §35 source scans — the repo's own pattern for pinning an ABSENCE, which no
@@ -88,5 +89,27 @@ describe("main wires the scheduler to paths it already owns", () => {
   it("the read-only clamp is re-derived at every spawn rather than stored on the session", () => {
     expect(ipc).toMatch(/readonly: readonlyForSession\(sessionId\)/);
     expect(ipc).toMatch(/scheduleStore\.get\(scheduleId\)\?\.mode === "readonly"/);
+  });
+});
+
+describe("the audit log reads as sentences", () => {
+  it("every schedule event main emits has a label — a new one fails HERE, not on screen", () => {
+    const emitted = new Set(
+      [...(R("src/main/ipc.ts") + R("src/main/scheduler.ts")).matchAll(/"(schedule\.[a-z]+)"/g)].map((m) => m[1]!),
+    );
+    expect(emitted.size).toBeGreaterThanOrEqual(7);
+    for (const type of emitted) expect(Object.keys(SCHEDULE_EVENT_LABELS), type).toContain(type);
+  });
+
+  it("analytics NAMES them rather than falling through — a run's spend is already in the ledger", () => {
+    const a = R("src/main/analytics.ts");
+    for (const type of Object.keys(SCHEDULE_EVENT_LABELS)) expect(a, type).toContain(`case "${type}":`);
+  });
+
+  it("no label is a raw event type", () => {
+    for (const [type, label] of Object.entries(SCHEDULE_EVENT_LABELS)) {
+      expect(label, type).not.toContain(".");
+      expect(label, type).toMatch(/^[a-z]/);
+    }
   });
 });
