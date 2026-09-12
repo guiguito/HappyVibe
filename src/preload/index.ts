@@ -626,6 +626,8 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:providers-changed", listener);
     return () => ipcRenderer.removeListener("hv:providers-changed", listener);
   },
+  /** §35: blocking prompts raised before this window existed (see pendingPrompts.ts). */
+  pendingUiRequests: () => ipcRenderer.invoke("hv:pending-ui-requests"),
   onUiRequest: (
     cb: (r: { id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[] }) => void
   ): (() => void) => {

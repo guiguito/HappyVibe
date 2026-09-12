@@ -844,6 +844,8 @@ interface HvApi {
   copyClaudeMd(workspaceId: string): Promise<string>;
 
   onPiEvent(cb: (e: Record<string, unknown>) => void): () => void;
+  /** §35: outstanding blocking prompts, for a window that opened after they were raised. */
+  pendingUiRequests(): Promise<Array<{ id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[]; promptWindowId?: number }>>;
   onUiRequest(
     cb: (r: {
       id: string;

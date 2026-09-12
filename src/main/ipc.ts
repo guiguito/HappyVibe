@@ -123,6 +123,7 @@ import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 import { hasNodeRuntime } from "./nodePreflight";
 import { BLOCKING_UI_METHODS, isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
+import { PendingPrompts } from "./pendingPrompts";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 import type { WindowRegistry } from "./windows";
 import type { WindowRecord } from "./windowLayout";
@@ -1020,12 +1021,6 @@ export function registerIpc(
    * would report only the prompts it was chosen to show, so the OTHER window's
    * sidebar would claim nothing is pending.
    */
-  const pendingPrompts = new Map<string, string>();
-  const pendingChanged = (): void => {
-    const counts: Record<string, number> = {};
-    for (const sid of pendingPrompts.values()) if (sid !== UTILITY) counts[sid] = (counts[sid] ?? 0) + 1;
-    send("hv:pending-changed", counts);
-  };
   /**
    * BLOCKING ones only, and that is the whole point of a second map.
    *
@@ -1034,15 +1029,27 @@ export function registerIpc(
    * sidebar's attention count climb with every transcript card a session ever
    * drew, and kept counting sessions that had been deleted. The renderer's old
    * count could not have this bug: its queue only ever held parsed modals.
+   *
+   * §35: it now retains the ENVELOPE rather than just the owner id, because a
+   * scheduled run can raise a prompt when no window is open at all — see
+   * pendingPrompts.ts and the `hv:pending-ui-requests` handler below.
    */
-  const notePending = (id: string, sessionId: string, method?: string): void => {
-    if (!method || !BLOCKING_UI_METHODS.has(method)) return;
-    pendingPrompts.set(id, sessionId);
-    pendingChanged();
+  const pendingUi = new PendingPrompts(BLOCKING_UI_METHODS);
+  const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
+  const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
+    if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
   };
   const clearPending = (id: string): void => {
-    if (pendingPrompts.delete(id)) pendingChanged();
+    if (pendingUi.clear(id)) pendingChanged();
   };
+  /**
+   * §35: what a freshly opened window has to catch up on.
+   *
+   * Re-stamped HERE rather than replayed as recorded: `promptWindowId` names
+   * the window that was holding the session when the prompt was raised, and
+   * the case this exists for is precisely that no such window exists any more.
+   */
+  ipcMain.handle("hv:pending-ui-requests", () => pendingUi.list().map((r) => stampPrompt(r)));
   /**
    * What each window currently shows, declared by its own renderer on every
    * layout change. Main never derives this from a tab id.
@@ -1097,7 +1104,7 @@ export function registerIpc(
         return;
       }
       uiOwners.set(r.id, UTILITY);
-      notePending(r.id, UTILITY, r.method);
+      notePending(r, UTILITY);
       send("hv:ui-request", stampPrompt({ ...r, sessionId: UTILITY }));
       // Auth landed/left → the model list changed (OAuth results only flow as
       // hv.auth ui-requests, so this is where main learns about them).
@@ -2275,7 +2282,7 @@ export function registerIpc(
         return;
       }
       uiOwners.set(r.id, sessionId);
-      notePending(r.id, sessionId, r.method);
+      notePending(r, sessionId);
       // W1.3: an unanswered permission prompt protects the session from hibernation.
       if (isPermissionPrompt(r)) activity.promptOpened(sessionId);
       send("hv:ui-request", stampPrompt({ ...r, sessionId }));
@@ -2477,9 +2484,7 @@ export function registerIpc(
     }
     // §7 round 23: a crashed or closed session must not leave a phantom count
     // in every window's sidebar — the renderer does the same with dropSession.
-    let dropped = false;
-    for (const [id, owner] of pendingPrompts) if (owner === sessionId) { pendingPrompts.delete(id); dropped = true; }
-    if (dropped) pendingChanged();
+    if (pendingUi.dropSession(sessionId)) pendingChanged();
     send("hv:pi-exit", { sessionId, code, intentional, stderr });
   });
 

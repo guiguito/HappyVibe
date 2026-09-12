@@ -1006,7 +1006,22 @@ export default function App(): React.JSX.Element {
 
     // Only hv.permission select prompts open the modal. Other ui-requests
     // (setStatus etc.) are fire-and-forget — routing them here was a CRITICAL bug.
-    const offUiRequest = window.hv.onUiRequest((r) => {
+    /**
+     * §35: extracted from the subscription so a REPLAY can travel the same path.
+     * A prompt raised while no window was open (a scheduled run at 3 a.m.) is
+     * handed to the next window that opens, and it must land in the queue by
+     * exactly the route a live one takes — a second, parallel path is how the
+     * two would drift.
+     */
+    const handleUiRequest = (r: {
+      id: string;
+      sessionId?: string;
+      method?: string;
+      title?: string;
+      message?: string;
+      options?: string[];
+      promptWindowId?: number;
+    }): void => {
       /**
        * §7 round 23: a blocking prompt is shown in ONE window, and main names
        * it — the window holding this session's chat tab (promptRouting.ts).
@@ -1020,11 +1035,13 @@ export default function App(): React.JSX.Element {
        */
       const mine = r.promptWindowId === undefined || r.promptWindowId === window.hv.boot.windowId;
       const info = parsePermission(r);
-      if (info && mine) setUiQueue((q) => [...q, { kind: "permission", req: r, info }]);
+      // The dedupe is for the boot race only: the replay and a live push can
+      // both carry the same id in the instant a window opens.
+      if (info && mine) setUiQueue((q) => (q.some((x) => x.req.id === r.id) ? q : [...q, { kind: "permission", req: r, info }]));
       // V2.B: ask_user questions queue through the same machinery (badges,
       // headFor routing). Kind-based parse — hv.auth inputs stay untouched.
       const ask = parseAskUser(r);
-      if (ask && mine) setUiQueue((q) => [...q, { kind: "askUser", req: r, ask }]);
+      if (ask && mine) setUiQueue((q) => (q.some((x) => x.req.id === r.id) ? q : [...q, { kind: "askUser", req: r, ask }]));
       const dng = parseDangerous(r);
       if (dng !== null && r.sessionId) setDangerous((p) => ({ ...p, [r.sessionId!]: dng }));
       // §23: plan-mode toggle + plan-ready card + skipped-tool marking.
@@ -1238,7 +1255,15 @@ export default function App(): React.JSX.Element {
           }
         }
       }
-    });
+    };
+    const offUiRequest = window.hv.onUiRequest(handleUiRequest);
+    // Catch up on anything raised before this window existed. Errors are
+    // swallowed: a window that cannot reach main has larger problems, and the
+    // badge still reports the count.
+    void window.hv
+      .pendingUiRequests()
+      .then((rs) => rs.forEach(handleUiRequest))
+      .catch(() => {});
 
     const offSubStatus = window.hv.onSubagentStatus(({ sessionId, runId, status, cost }) => {
       setDelegations((p) => {
