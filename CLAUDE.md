@@ -1068,6 +1068,42 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   'BrowserWindow' not found"* that names line 2 rather than the cause; `!app.isPackaged` IS
   `is.dev`. The live test writes to its own **Smoke tests** database (`fdb_dcjfkk5yfhgt`) and
   deletes the row, and skips on no `.env` OR an unreachable server.
+- **A scheduled READ-ONLY run is `HV_READONLY=1`, not plan mode, and the reasons are both
+  mechanical.** `/hv-plan` is registered only inside `if (builtins.plan)`, so with the Built-in
+  tools Plan-mode switch off, sending that command puts the literal text in front of the model as
+  a user message and the run proceeds at FULL permissions with nothing on screen saying so. And
+  the planning prompt tells the model to finish with `plan_complete`, which main writes to
+  `.agents/plans/NNN-*.md` — a daily review would commit a plan file into the user's repo every
+  morning. `hv-readonly.ts` REUSES `gatePlanCall` (one gate, two entrances, same
+  `resolvePlanVerdict` and the same `hv.plan.blocked` notify so the renderer draws one card) and
+  adds `READONLY_BLOCKED`: the three plan tools plus the three schedule WRITERS, blocked outright
+  rather than floor-asked, because a prompt nobody is present to answer is a hang and not a
+  refusal. The clamp runs FIRST of all the gates and the bypass branch yields to it. The flag is
+  re-derived from the session's schedule at every spawn (`readonlyForSession` in ipc.ts), never
+  persisted, so a resume, a hibernation wake and an MCP reload all recompute it. It is `const` in
+  the bridge: nothing inside a session can flip it.
+- **`src/main/schedules.ts` imports NOTHING and must stay that way** — the renderer's
+  `schedulesCopy.ts` imports `humanRecurrence` and the types from it, so one `import fs` there puts
+  `node:fs` in the browser bundle. It TYPECHECKS and it runs in dev; `npm run build` fails with
+  *"randomUUID is not exported by __vite-browser-external"* naming `store.ts`, one level away from
+  the import that dragged it in. Everything filesystem-shaped lives in `scheduleStore.ts`.
+- **`hv:ui-request` envelopes are RETAINED for replay (`pendingPrompts.ts`), not just counted.** A
+  scheduled Full run can raise a permission prompt with every window closed (macOS keeps the app
+  alive, which is the state the feature exists for); main used to broadcast once and keep only
+  counts, so that prompt reached nobody and the run waited forever behind a badge of 1. A new
+  blocking method must be in `BLOCKING_UI_METHODS` or it is neither counted nor replayed — and only
+  BLOCKING ones may be retained, because a notify is never deleted and retaining those recreates
+  the badge-climbs-with-every-tool-card bug. Replays are re-stamped through `stampPrompt`: the
+  original `promptWindowId` names a window that, in this exact case, no longer exists.
+- **`schedule_create`/`schedule_update` are in `SAFE_TOOLS`, and that is not a hole.** Their only
+  effect is to open the drawer; main refuses to write a schedule without it, bypass or no bypass. A
+  permission modal in front of a confirmation dialog asks the same question twice and teaches
+  people to click through both — the `ask_user` argument. `schedule_delete` is NOT safe (it deletes
+  with no second dialog). This was found by a live test denying the modal and never reaching the
+  drawer, which failed as "the model ignored the tool"; the probe showed the call was perfect.
+- **A schedule prompting its own run must not `index.touch`.** `lastUsedAt` means "a human touched
+  this", and it is exactly what `archivePreviousRun` reads to decide whether the user adopted a run
+  and it should stay in the sidebar. `promptSession(..., { source: "schedule" })` is the seam.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array
