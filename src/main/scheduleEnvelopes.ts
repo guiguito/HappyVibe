@@ -45,9 +45,10 @@ function parseRepeat(v: unknown, at: string): Repeat | null {
     const days = r.days.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6);
     if (!days.length) return null;
     out = { kind: "weekly", days };
-  } else if (r.kind === "hours") {
-    if (!Number.isInteger(r.every) || (r.every as number) < 1 || (r.every as number) > 23) return null;
-    out = { kind: "hours", every: r.every as number };
+  } else if (r.kind === "hours" || r.kind === "minutes") {
+    const max = r.kind === "hours" ? 23 : 59;
+    if (!Number.isInteger(r.every) || (r.every as number) < 1 || (r.every as number) > max) return null;
+    out = { kind: r.kind, every: r.every as number };
   } else if (r.kind === "once") {
     if (typeof r.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(r.date)) return null;
     out = { kind: "once", date: r.date };

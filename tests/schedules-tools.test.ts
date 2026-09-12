@@ -28,6 +28,16 @@ describe("parseScheduleEnvelope", () => {
     expect(env && "draft" in env && Object.keys(env.draft).sort()).toEqual(["at", "prompt", "repeat", "title"]);
   });
 
+  it("accepts a minutes repeat, and bounds it", () => {
+    const at = (every: number): unknown =>
+      parseScheduleEnvelope(inp({ kind: "hv.schedule-create", draft: { ...draft, repeat: { kind: "minutes", every } } }));
+    expect(at(15)).toMatchObject({ draft: { repeat: { kind: "minutes", every: 15 } } });
+    expect(at(1)).toBeTruthy();
+    expect(at(0)).toBeNull();
+    expect(at(60)).toBeNull(); // 60+ is an hours schedule
+    expect(at(1.5)).toBeNull();
+  });
+
   it("refuses a malformed time, an unknown repeat, a bad mode and an empty weekly", () => {
     expect(parseScheduleEnvelope(inp({ kind: "hv.schedule-create", draft: { ...draft, at: "9am" } }))).toBeNull();
     expect(parseScheduleEnvelope(inp({ kind: "hv.schedule-create", draft: { ...draft, at: "25:00" } }))).toBeNull();

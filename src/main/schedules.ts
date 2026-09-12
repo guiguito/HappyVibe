@@ -24,6 +24,11 @@ export type Repeat =
   | { kind: "weekdays" }
   | { kind: "weekly"; days: number[] }      // 0 = Sunday … 6 = Saturday
   | { kind: "hours"; every: number }        // 1..23
+  /**
+   * 1..59. The tick is every 60 s, so one minute is the floor the scheduler can
+   * actually honour — anything finer would silently round up to it.
+   */
+  | { kind: "minutes"; every: number }
   | { kind: "once"; date: string };         // YYYY-MM-DD
 
 export type ScheduleMode = "readonly" | "full";
@@ -106,16 +111,21 @@ export function nextFire(repeat: Repeat, at: string, after: Date): Date | null {
       }
       return null;
     }
-    case "hours": {
+    case "hours":
+    case "minutes": {
       const every = Math.floor(repeat.every);
-      if (!Number.isFinite(every) || every < 1 || every > 23) return null;
+      const max = repeat.kind === "hours" ? 23 : 59;
+      if (!Number.isFinite(every) || every < 1 || every > max) return null;
+      const stepMinutes = repeat.kind === "hours" ? every * 60 : every;
       // Slots are `at` + k·every WITHIN a day; the series restarts at `at` each
       // day rather than free-running, so "every 6 hours from 1:00" is always
-      // 1:00/7:00/13:00/19:00 and never drifts.
+      // 1:00/7:00/13:00/19:00 and never drifts — and "every 5 minutes from
+      // 9:00" lands on :00/:05/:10 rather than wherever the app happened to
+      // start.
       for (let dayOff = 0; dayOff < 2; dayOff++) {
         const start = atOn(addDays(after, dayOff), t.h, t.m);
-        for (let k = 0; k * every < 24; k++) {
-          const c = new Date(start.getFullYear(), start.getMonth(), start.getDate(), start.getHours() + k * every, start.getMinutes(), 0, 0);
+        for (let k = 0; k * stepMinutes < 24 * 60; k++) {
+          const c = new Date(start.getFullYear(), start.getMonth(), start.getDate(), start.getHours(), start.getMinutes() + k * stepMinutes, 0, 0);
           if (k > 0 && c.getDate() !== start.getDate()) break; // past midnight — that is the next day's series
           if (c > after) return c;
         }
@@ -142,6 +152,7 @@ export function humanRecurrence(repeat: Repeat, at: string): string {
     case "weekdays": return `Weekdays at ${clock(at)}`;
     case "weekly": return `${repeat.days.map((d) => DAY[d]).join(", ")} at ${clock(at)}`;
     case "hours": return repeat.every === 1 ? "Every hour" : `Every ${repeat.every} hours from ${clock(at)}`;
+    case "minutes": return repeat.every === 1 ? "Every minute" : `Every ${repeat.every} minutes from ${clock(at)}`;
     case "once": {
       const [, m, d] = repeat.date.split("-").map(Number);
       return `Once, ${MON[(m ?? 1) - 1]} ${d} at ${clock(at)}`;
@@ -152,6 +163,19 @@ export function humanRecurrence(repeat: Repeat, at: string): string {
 /** A run session's title. Dated, so thirty daily runs are thirty distinguishable rows. */
 export function runTitle(title: string, firedAt: Date): string {
   return `${title} · ${MON[firedAt.getMonth()]} ${firedAt.getDate()}`;
+}
+
+/**
+ * Roughly how often a schedule fires in a day — for the drawer's own warning.
+ *
+ * A run is a real session with a real bill, so "every 5 minutes" is 288 of them
+ * and the user deserves to read that number BEFORE pressing Create rather than
+ * on the row afterwards. Null when the answer is not a per-day count.
+ */
+export function runsPerDay(repeat: Repeat): number | null {
+  if (repeat.kind === "minutes") return Math.floor((24 * 60) / repeat.every);
+  if (repeat.kind === "hours") return Math.floor(24 / repeat.every);
+  return null;
 }
 
 export type CatchUpDecision =

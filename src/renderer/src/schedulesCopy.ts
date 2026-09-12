@@ -8,15 +8,23 @@
  * drift these records exist to end.
  */
 import type { CatchUp, Repeat, RunOutcome, Schedule, ScheduleMode } from "../../main/schedules";
-import { humanRecurrence } from "../../main/schedules";
+import { humanRecurrence, runsPerDay } from "../../main/schedules";
 
 export const REPEAT_LABELS: Record<Repeat["kind"], string> = {
   daily: "Every day",
   weekdays: "Weekdays",
   weekly: "Weekly",
   hours: "Every N hours",
+  minutes: "Every N minutes",
   once: "Once",
 };
+
+/** Said BEFORE Create, not on the row afterwards — every run is a real session with a real bill. */
+export function frequencyNote(repeat: Repeat): string | null {
+  const n = runsPerDay(repeat);
+  if (n === null || n < 12) return null;
+  return `That is about ${n} runs a day, and each one costs like a session you ran yourself.`;
+}
 
 export const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"] as const;
 

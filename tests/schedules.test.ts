@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, humanRecurrence, nextFire, runTitle, withNextRun, type Schedule } from "../src/main/schedules";
+import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, humanRecurrence, nextFire, runsPerDay, runTitle, withNextRun, type Schedule } from "../src/main/schedules";
 import { validateScheduleInput } from "../src/main/scheduleStore";
 
 // All dates are LOCAL wall-clock (§35: "Local time, DST follows the wall clock").
@@ -29,6 +29,20 @@ describe("nextFire", () => {
     expect(nextFire({ kind: "hours", every: 6 }, "01:00", local(2026, 9, 11, 13, 30))).toEqual(local(2026, 9, 11, 19, 0));
     expect(nextFire({ kind: "hours", every: 6 }, "01:00", local(2026, 9, 11, 23, 0))).toEqual(local(2026, 9, 12, 1, 0));
   });
+  it("minutes: the next multiple of N from `at`, wrapping past midnight", () => {
+    expect(nextFire({ kind: "minutes", every: 15 }, "09:00", local(2026, 9, 11, 9, 7))).toEqual(local(2026, 9, 11, 9, 15));
+    expect(nextFire({ kind: "minutes", every: 5 }, "09:02", local(2026, 9, 11, 9, 2))).toEqual(local(2026, 9, 11, 9, 7));
+    // The series restarts at `at` each day rather than free-running, so the
+    // last slot before midnight is followed by tomorrow's first.
+    expect(nextFire({ kind: "minutes", every: 30 }, "00:00", local(2026, 9, 11, 23, 45))).toEqual(local(2026, 9, 12, 0, 0));
+  });
+
+  it("minutes: one minute is the floor the 60 s tick can honour, and 60+ is an hours schedule", () => {
+    expect(nextFire({ kind: "minutes", every: 1 }, "09:00", local(2026, 9, 11, 9, 0, 30))).toEqual(local(2026, 9, 11, 9, 1));
+    expect(nextFire({ kind: "minutes", every: 0 }, "09:00", local(2026, 9, 11))).toBeNull();
+    expect(nextFire({ kind: "minutes", every: 60 }, "09:00", local(2026, 9, 11))).toBeNull();
+  });
+
   it("once: null when the slot has passed", () => {
     expect(nextFire({ kind: "once", date: "2026-09-10" }, "09:00", local(2026, 9, 11))).toBeNull();
     expect(nextFire({ kind: "once", date: "2026-09-12" }, "09:00", local(2026, 9, 11))).toEqual(local(2026, 9, 12, 9, 0));
@@ -57,6 +71,8 @@ describe("humanRecurrence / runTitle", () => {
     expect(humanRecurrence({ kind: "weekly", days: [1, 3] }, "18:00")).toBe("Mon, Wed at 18:00");
     expect(humanRecurrence({ kind: "hours", every: 1 }, "00:00")).toBe("Every hour");
     expect(humanRecurrence({ kind: "hours", every: 6 }, "01:00")).toBe("Every 6 hours from 1:00");
+    expect(humanRecurrence({ kind: "minutes", every: 1 }, "00:00")).toBe("Every minute");
+    expect(humanRecurrence({ kind: "minutes", every: 15 }, "09:00")).toBe("Every 15 minutes from 9:00");
     expect(humanRecurrence({ kind: "once", date: "2026-09-12" }, "09:00")).toBe("Once, Sep 12 at 9:00");
   });
   it("titles a run with the schedule name and the day", () => {
@@ -115,6 +131,16 @@ describe("applyOutcome / withNextRun", () => {
   });
 });
 
+describe("runsPerDay", () => {
+  it("counts the interval kinds and refuses to guess for the rest", () => {
+    expect(runsPerDay({ kind: "minutes", every: 5 })).toBe(288);
+    expect(runsPerDay({ kind: "minutes", every: 1 })).toBe(1440);
+    expect(runsPerDay({ kind: "hours", every: 6 })).toBe(4);
+    expect(runsPerDay({ kind: "daily" })).toBeNull();
+    expect(runsPerDay({ kind: "weekly", days: [1] })).toBeNull();
+  });
+});
+
 describe("validateScheduleInput", () => {
   const ws = ["/ws"];
   const ok = { title: "T", prompt: "p", workspaceId: "/ws", repeat: { kind: "daily" as const }, at: "09:00", mode: "full" as const, reuseSession: false, notifyOnDone: true, catchUp: "ask" as const, enabled: true };
@@ -127,6 +153,8 @@ describe("validateScheduleInput", () => {
     expect(() => validateScheduleInput({ ...ok, workspaceId: "/nope" }, ws)).toThrow(/workspace/i);
     expect(() => validateScheduleInput({ ...ok, at: "25:00" }, ws)).toThrow(/time/i);
     expect(() => validateScheduleInput({ ...ok, repeat: { kind: "weekly", days: [] } }, ws)).toThrow(/day/i);
+    expect(() => validateScheduleInput({ ...ok, repeat: { kind: "minutes", every: 0 } }, ws)).toThrow(/run/i);
+    expect(validateScheduleInput({ ...ok, repeat: { kind: "minutes", every: 15 } }, ws).repeat).toEqual({ kind: "minutes", every: 15 });
     expect(() => validateScheduleInput({ ...ok, mode: "bypass" as never }, ws)).toThrow(/mode/i);
   });
   it("normalises a trailing-slash workspace to the registered spelling", () => {

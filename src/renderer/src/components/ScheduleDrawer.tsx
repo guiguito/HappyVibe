@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import type { CatchUp, Repeat, Schedule, ScheduleMode } from "../../../main/schedules";
 import {
-  AGENT_PROPOSED, BYPASS_WARNING, CATCH_UP_LABELS, DAY_LABELS, FOOTER_COPY, MODE_CARDS,
+  AGENT_PROPOSED, BYPASS_WARNING, CATCH_UP_LABELS, DAY_LABELS, FOOTER_COPY, frequencyNote, MODE_CARDS,
   NOTIFY_ALWAYS, PROMPT_HINT, REPEAT_LABELS, REUSE_SUB,
 } from "../schedulesCopy";
 import { ModelSelect } from "./ModelSelect";
@@ -99,8 +99,9 @@ export function ScheduleDrawer({
     setRepeat(
       kind === "weekly" ? { kind, days: repeat.kind === "weekly" ? repeat.days : [1] }
       : kind === "hours" ? { kind, every: repeat.kind === "hours" ? repeat.every : 6 }
+      : kind === "minutes" ? { kind, every: repeat.kind === "minutes" ? repeat.every : 15 }
       : kind === "once" ? { kind, date: repeat.kind === "once" ? repeat.date : new Date().toISOString().slice(0, 10) }
-      : { kind },
+      : { kind: kind as "daily" | "weekdays" },
     );
   };
 
@@ -184,18 +185,21 @@ export function ScheduleDrawer({
               ))}
             </div>
           )}
-          {repeat.kind === "hours" && (
+          {(repeat.kind === "hours" || repeat.kind === "minutes") && (
             <label className="flex items-center gap-2 mt-2 text-xs">
               Every
               <input
                 type="number"
                 min={1}
-                max={23}
+                max={repeat.kind === "hours" ? 23 : 59}
                 value={repeat.every}
-                onChange={(e) => setRepeat({ kind: "hours", every: Math.min(23, Math.max(1, Number(e.target.value) || 1)) })}
+                onChange={(e) => {
+                  const max = repeat.kind === "hours" ? 23 : 59;
+                  setRepeat({ kind: repeat.kind, every: Math.min(max, Math.max(1, Number(e.target.value) || 1)) });
+                }}
                 className="w-16 rounded-lg border border-line bg-card px-2 py-1"
               />
-              hours, starting at
+              {repeat.kind === "hours" ? "hours, starting at" : "minutes, starting at"}
             </label>
           )}
           {repeat.kind === "once" && (
@@ -206,6 +210,9 @@ export function ScheduleDrawer({
               className="mt-2 rounded-lg border border-line bg-card px-2 py-1"
             />
           )}
+          {/* The cost is a fact about the choice just made, so it belongs beside
+              the choice — not on the row after the schedule exists. */}
+          {frequencyNote(repeat) && <p className="text-xs font-semibold text-berry mt-2">{frequencyNote(repeat)}</p>}
           <label className="flex items-center gap-2 mt-2">
             <span className="font-bold">At</span>
             {/* A native time input: the platform's own picker already knows the

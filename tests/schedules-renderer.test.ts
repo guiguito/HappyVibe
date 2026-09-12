@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { CATCH_UP_LABELS, lastRunLabel, missedLabel, MODE_CARDS, nextRunLabel, scheduleSubtitle, TEMPLATES } from "../src/renderer/src/schedulesCopy";
+import { CATCH_UP_LABELS, frequencyNote, lastRunLabel, missedLabel, MODE_CARDS, nextRunLabel, REPEAT_LABELS, scheduleSubtitle, TEMPLATES } from "../src/renderer/src/schedulesCopy";
 import { EMPTY_COPY } from "../src/renderer/src/components/EmptyState";
 import { nextFire, type Schedule } from "../src/main/schedules";
 import { NAV, groupFor } from "../src/renderer/src/components/Sidebar";
@@ -25,6 +25,18 @@ const S = (o: Partial<Schedule> = {}): Schedule => ({
 describe("the copy is data, and it is the only copy", () => {
   it("exactly two mode cards — a third is how read-only stops meaning read-only", () => {
     expect(Object.keys(MODE_CARDS)).toEqual(["full", "readonly"]);
+  });
+
+  it("every recurrence kind has a label, minutes included", () => {
+    expect(Object.keys(REPEAT_LABELS)).toEqual(["daily", "weekdays", "weekly", "hours", "minutes", "once"]);
+  });
+
+  it("a frequent schedule states its cost BEFORE Create, not on the row afterwards", () => {
+    expect(frequencyNote({ kind: "minutes", every: 5 })).toMatch(/288 runs a day/);
+    expect(frequencyNote({ kind: "hours", every: 1 })).toMatch(/24 runs a day/);
+    // Quiet where the number is unremarkable — a warning on everything is a warning on nothing.
+    expect(frequencyNote({ kind: "hours", every: 6 })).toBeNull();
+    expect(frequencyNote({ kind: "daily" })).toBeNull();
   });
 
   it("three catch-up settings, and Ask me leads", () => {

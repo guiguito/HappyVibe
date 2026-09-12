@@ -2420,6 +2420,10 @@ export default function (pi: ExtensionAPI) {
       Type.Object({ kind: Type.Literal("weekdays") }),
       Type.Object({ kind: Type.Literal("weekly"), days: Type.Array(Type.Integer({ minimum: 0, maximum: 6 }), { minItems: 1, description: "0 = Sunday … 6 = Saturday" }) }),
       Type.Object({ kind: Type.Literal("hours"), every: Type.Integer({ minimum: 1, maximum: 23 }) }),
+      // Sub-hourly runs are real sessions with real bills, so the description
+      // says so — the user still confirms in the drawer, but the model should
+      // not reach for "every minute" as a neutral default.
+      Type.Object({ kind: Type.Literal("minutes"), every: Type.Integer({ minimum: 1, maximum: 59, description: "Minutes between runs. Each run is a full session — prefer 15 or more unless the user asked for something faster." }) }),
       Type.Object({ kind: Type.Literal("once"), date: Type.String({ description: "YYYY-MM-DD" }) }),
     ], { description: "How often it repeats." });
     const AtSchema = Type.String({ description: "The time of day, as HH:MM in the user's local time." });
