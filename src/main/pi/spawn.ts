@@ -76,7 +76,7 @@ export interface PiSpawnOptions {
       and §26's grouped Terminal entry), resolved at spawn → HV_BUILTINS (same
       pattern as HV_BYPASS). The keys are listed EXPLICITLY below, so a new
       toggle that is not added there never reaches the bridge. */
-  builtinTools?: { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string };
+  builtinTools?: { plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean };
   /** §33: the global memory scope's directory → HV_MEMORY_GLOBAL_DIR. Absent when the Memory
       built-in is off (and always for the utility client), and then the bridge registers no
       memory tool and injects nothing — off costs 0. */
