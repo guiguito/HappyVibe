@@ -2427,6 +2427,9 @@ export default function (pi: ExtensionAPI) {
       Type.Object({ kind: Type.Literal("once"), date: Type.String({ description: "YYYY-MM-DD" }) }),
     ], { description: "How often it repeats." });
     const AtSchema = Type.String({ description: "The time of day, as HH:MM in the user's local time." });
+    const UntilSchema = Type.String({
+      description: "Optional end date, YYYY-MM-DD. It runs through that day and then stops on its own. Omit it for a schedule with no end, which is the default.",
+    });
     const ModeSchema = Type.Union([Type.Literal("readonly"), Type.Literal("full")], {
       description: "readonly = it can read, search and report but change nothing; full = this workspace's usual permission rules, and an `ask` waits for the user. Prefer readonly for reviews and reports.",
     });
@@ -2454,12 +2457,16 @@ export default function (pi: ExtensionAPI) {
         repeat: RepeatSchema,
         at: AtSchema,
         mode: Type.Optional(ModeSchema),
+        until: Type.Optional(UntilSchema),
       }),
       async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-        const p = params as { title: string; prompt: string; repeat: unknown; at: string; mode?: string };
+        const p = params as { title: string; prompt: string; repeat: unknown; at: string; mode?: string; until?: string };
         const raw = await scheduleAsk(ctx, {
           kind: "hv.schedule-create",
-          draft: { title: p.title, prompt: p.prompt, repeat: p.repeat, at: p.at, ...(p.mode ? { mode: p.mode } : {}) },
+          draft: {
+            title: p.title, prompt: p.prompt, repeat: p.repeat, at: p.at,
+            ...(p.mode ? { mode: p.mode } : {}), ...(p.until ? { until: p.until } : {}),
+          },
         });
         const text = raw.startsWith("created ")
           ? `Created. It is on the Schedules page now.`
@@ -2482,11 +2489,12 @@ export default function (pi: ExtensionAPI) {
         repeat: Type.Optional(RepeatSchema),
         at: Type.Optional(AtSchema),
         mode: Type.Optional(ModeSchema),
+        until: Type.Optional(UntilSchema),
       }),
       async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-        const p = params as { id: string; title?: string; prompt?: string; repeat?: unknown; at?: string; mode?: string };
+        const p = params as { id: string; title?: string; prompt?: string; repeat?: unknown; at?: string; mode?: string; until?: string };
         const patch: Record<string, unknown> = {};
-        for (const k of ["title", "prompt", "repeat", "at", "mode"] as const) if (p[k] !== undefined) patch[k] = p[k];
+        for (const k of ["title", "prompt", "repeat", "at", "mode", "until"] as const) if (p[k] !== undefined) patch[k] = p[k];
         const raw = await scheduleAsk(ctx, { kind: "hv.schedule-update", id: p.id, patch });
         const text = raw.startsWith("updated ")
           ? "Updated."

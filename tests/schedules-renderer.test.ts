@@ -93,6 +93,12 @@ describe("the row's labels", () => {
     expect(lastRunLabel(S({ runs: [{ firedAt: "f", outcome: "skipped", reason: "busy" }] }))).toBe("– skipped: busy");
   });
 
+  it("a finished schedule says ENDED, never off — nobody switched it off", () => {
+    const done = S({ until: "2026-09-01", nextRunAt: null });
+    expect(nextRunLabel(done, now)).toBe("ended");
+    expect(nextRunLabel(S({ until: "2026-12-01", nextRunAt: new Date(2026, 8, 12, 9).toISOString() }), now)).toBe("in 14 h");
+  });
+
   it("next run distinguishes a fail-PAUSE from the user's own switch", () => {
     expect(nextRunLabel(S({ nextRunAt: new Date(2026, 8, 12, 9).toISOString() }), now)).toBe("in 14 h");
     expect(nextRunLabel(S({ nextRunAt: new Date(2026, 8, 11, 19, 30).toISOString() }), now)).toBe("in 30 min");
@@ -150,6 +156,25 @@ describe("the drawer", () => {
 
   it("says out loud when the workspace already bypasses permissions", () => {
     expect(dr).toContain("BYPASS_WARNING");
+  });
+
+  it("offers no end date by default, and hides the choice for a one-off", () => {
+    expect(dr).toContain("UNTIL_LABELS.none");
+    expect(dr).toMatch(/setUntil\(undefined\)/);
+    expect(dr).toMatch(/repeat\.kind !== "once" && \(/);
+    // A `once` schedule must not carry one into the store either.
+    expect(dr).toMatch(/until: repeat\.kind === "once" \? undefined : until/);
+  });
+
+  it("names the model fall-through honestly — empty means this project's model", () => {
+    expect(dr).toContain('clearLabel="Same as this project"');
+    expect(dr).not.toContain("Use the usual model");
+  });
+
+  it("Create wears the same accent as the page's own action", () => {
+    const footer = dr.slice(dr.lastIndexOf("Cancel"));
+    expect(footer).toContain("bg-tangerine");
+    expect(footer).not.toContain("bg-honey");
   });
 
   it("uses the platform's own time and date inputs", () => {

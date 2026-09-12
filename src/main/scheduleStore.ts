@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { normPath } from "./store";
-import { nextFire, withNextRun, type CatchUp, type Schedule, type ScheduleMode } from "./schedules";
+import { nextFire, untilCutoff, withNextRun, type CatchUp, type Schedule, type ScheduleMode } from "./schedules";
 
 export type NewSchedule = Omit<Schedule, "id" | "createdAt" | "nextRunAt" | "failStreak" | "runs">;
 
@@ -43,12 +43,21 @@ export function validateScheduleInput(input: Partial<NewSchedule>, workspaces: s
   // would silently ignore forever. `once` in the past is legal here (the drawer
   // shows "once, done"); everything else must produce a slot.
   if (repeat.kind !== "once" && nextFire(repeat, at, new Date()) === null) throw new Error("That repeat is not one HappyVibe can run.");
+  const until = input.until?.trim() || undefined;
+  if (until !== undefined) {
+    const cutoff = untilCutoff(until);
+    if (!cutoff) throw new Error("Give the end date as YYYY-MM-DD.");
+    // Refused rather than accepted-and-inert: a schedule created already past
+    // its end has no next run and would sit there looking broken.
+    if (cutoff.getTime() < Date.now()) throw new Error("Pick an end date in the future, or leave it with no end.");
+  }
   const mode = input.mode ?? "full";
   if (!MODES.includes(mode)) throw new Error("Pick a mode: read-only or full.");
   const catchUp = input.catchUp ?? "ask";
   if (!CATCH_UPS.includes(catchUp)) throw new Error("Pick what happens when it misses its time.");
   return {
     title, prompt, workspaceId: ws, repeat, at, mode,
+    ...(until ? { until } : {}),
     reuseSession: !!input.reuseSession,
     ...(input.reusedSessionId ? { reusedSessionId: input.reusedSessionId } : {}),
     ...(input.model ? { model: input.model } : {}),

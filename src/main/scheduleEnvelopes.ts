@@ -20,6 +20,8 @@ export interface ScheduleDraft {
   repeat: Repeat;
   at: string;
   mode?: ScheduleMode;
+  /** YYYY-MM-DD; the schedule stops after that day. Absent = no limit. */
+  until?: string;
   catchUp?: CatchUp;
   reuseSession?: boolean;
   notifyOnDone?: boolean;
@@ -93,6 +95,10 @@ function parseDraft(v: unknown, partial: boolean): Partial<ScheduleDraft> | null
     if (typeof d.catchUp !== "string" || !CATCH_UPS.has(d.catchUp)) return null;
     out.catchUp = d.catchUp as CatchUp;
   }
+  if (d.until !== undefined) {
+    if (typeof d.until !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.until)) return null;
+    out.until = d.until;
+  }
   if (typeof d.reuseSession === "boolean") out.reuseSession = d.reuseSession;
   if (typeof d.notifyOnDone === "boolean") out.notifyOnDone = d.notifyOnDone;
   if (!partial && (!out.title || !out.prompt || !out.repeat || !out.at)) return null;
@@ -135,12 +141,12 @@ export function parseScheduleEnvelope(r: { method?: string; title?: string }): S
  * (§7 round 1: the headline may be the model's words, the thing you are
  * approving may not).
  */
-export function describeScheduleCall(env: ScheduleEnvelope, existing?: Pick<Schedule, "title" | "repeat" | "at">): string {
-  const name = (s: Pick<Schedule, "title" | "repeat" | "at">): string => `“${s.title}” (${humanRecurrence(s.repeat, s.at)})`;
+export function describeScheduleCall(env: ScheduleEnvelope, existing?: Pick<Schedule, "title" | "repeat" | "at" | "until">): string {
+  const name = (s: Pick<Schedule, "title" | "repeat" | "at" | "until">): string => `“${s.title}” (${humanRecurrence(s.repeat, s.at, s.until)})`;
   switch (env.kind) {
     case "hv.schedule-list": return "List this workspace's schedules";
     case "hv.schedule-delete": return existing ? `Delete schedule ${name(existing)}` : "Delete a schedule";
-    case "hv.schedule-create": return `Create schedule ${name({ title: env.draft.title, repeat: env.draft.repeat, at: env.draft.at })}`;
+    case "hv.schedule-create": return `Create schedule ${name({ title: env.draft.title, repeat: env.draft.repeat, at: env.draft.at, until: env.draft.until })}`;
     case "hv.schedule-update": return existing ? `Change schedule ${name(existing)}` : "Change a schedule";
   }
 }
@@ -158,7 +164,7 @@ export function renderScheduleList(list: Schedule[], costOf: (s: Schedule) => nu
         : last.outcome === "needs_you" ? "last run needs permission"
         : `last run skipped${last.reason ? ` (${last.reason})` : ""}`;
       const next = !s.enabled ? "paused" : s.nextRunAt ? `next ${s.nextRunAt}` : "no next run";
-      return `• ${s.title} [${s.id}] — ${humanRecurrence(s.repeat, s.at)} — ${s.mode} — ${next} — ${outcome}`;
+      return `• ${s.title} [${s.id}] — ${humanRecurrence(s.repeat, s.at, s.until)} — ${s.mode} — ${next} — ${outcome}`;
     })
     .join("\n");
 }

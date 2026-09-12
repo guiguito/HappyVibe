@@ -38,6 +38,14 @@ describe("parseScheduleEnvelope", () => {
     expect(at(1.5)).toBeNull();
   });
 
+  it("accepts an end date and refuses a malformed one", () => {
+    const u = (until: unknown): unknown =>
+      parseScheduleEnvelope(inp({ kind: "hv.schedule-create", draft: { ...draft, until } }));
+    expect(u("2026-12-01")).toMatchObject({ draft: { until: "2026-12-01" } });
+    expect(u("next week")).toBeNull();
+    expect(u(7)).toBeNull();
+  });
+
   it("refuses a malformed time, an unknown repeat, a bad mode and an empty weekly", () => {
     expect(parseScheduleEnvelope(inp({ kind: "hv.schedule-create", draft: { ...draft, at: "9am" } }))).toBeNull();
     expect(parseScheduleEnvelope(inp({ kind: "hv.schedule-create", draft: { ...draft, at: "25:00" } }))).toBeNull();
@@ -66,6 +74,9 @@ const S = (o: Partial<Schedule> = {}): Schedule => ({
 describe("describeScheduleCall", () => {
   it("names the schedule and its recurrence — the FACTUAL display, never the model's intent", () => {
     expect(describeScheduleCall({ kind: "hv.schedule-delete", id: "x" }, S())).toBe("Delete schedule “Daily change review” (Weekdays at 9:00)");
+    // The end date is part of what you are approving.
+    expect(describeScheduleCall({ kind: "hv.schedule-delete", id: "x" }, S({ until: "2026-10-03" })))
+      .toBe("Delete schedule “Daily change review” (Weekdays at 9:00 until Oct 3)");
     expect(describeScheduleCall({ kind: "hv.schedule-create", draft: { ...draft, title: "New" } as never })).toBe("Create schedule “New” (Every day at 9:00)");
   });
 

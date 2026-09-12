@@ -170,7 +170,7 @@ export function SchedulesView({
                     <button type="button" onClick={() => setEditing(s)} className="flex-1 min-w-0 text-left cursor-pointer">
                       <span className="font-bold block truncate">{s.title}</span>
                       <span className="text-xs text-ink-soft">
-                        {humanRecurrence(s.repeat, s.at)} · {lastRunLabel(s)} · {nextRunLabel(s, now)}
+                        {humanRecurrence(s.repeat, s.at, s.until)} · {lastRunLabel(s)} · {nextRunLabel(s, now)}
                       </span>
                     </button>
                     {/* One click to change the mode, without opening the drawer. */}

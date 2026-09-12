@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, humanRecurrence, nextFire, runsPerDay, runTitle, withNextRun, type Schedule } from "../src/main/schedules";
+import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, hasEnded, humanRecurrence, nextFire, runsPerDay, runTitle, untilCutoff, withNextRun, type Schedule } from "../src/main/schedules";
 import { validateScheduleInput } from "../src/main/scheduleStore";
 
 // All dates are LOCAL wall-clock (§35: "Local time, DST follows the wall clock").
-const local = (y: number, m: number, d: number, h = 0, min = 0): Date => new Date(y, m - 1, d, h, min);
+const local = (y: number, m: number, d: number, h = 0, min = 0, s = 0, ms = 0): Date => new Date(y, m - 1, d, h, min, s, ms);
 
 const base = (over: Partial<Schedule> = {}): Schedule => ({
   id: "s1", title: "Daily change review", prompt: "review", workspaceId: "/ws",
@@ -131,6 +131,45 @@ describe("applyOutcome / withNextRun", () => {
   });
 });
 
+describe("an end date", () => {
+  const withUntil = (until?: string): Schedule => base({ until, nextRunAt: null });
+
+  it("is absent by default — a schedule runs until you pause it", () => {
+    expect(base().until).toBeUndefined();
+    expect(withNextRun(base(), local(2026, 9, 11, 10)).nextRunAt).not.toBeNull();
+  });
+
+  it("runs THROUGH its last day, then has no next run", () => {
+    const s = withUntil("2026-09-12");
+    // The 12th's own slot is still ahead of the 11th: it fires.
+    expect(new Date(withNextRun(s, local(2026, 9, 11, 10)).nextRunAt!)).toEqual(local(2026, 9, 12, 9, 0));
+    // After it, the next slot would be the 13th, which is past the end.
+    expect(withNextRun(s, local(2026, 9, 12, 10)).nextRunAt).toBeNull();
+  });
+
+  it("does NOT switch the schedule off — finished and paused are different states", () => {
+    const done = withNextRun(withUntil("2026-09-10"), local(2026, 9, 12));
+    expect(done.enabled).toBe(true);
+    expect(done.nextRunAt).toBeNull();
+    expect(hasEnded(done, local(2026, 9, 12))).toBe(true);
+    // A schedule the USER switched off has not "ended".
+    expect(hasEnded(base({ enabled: false, until: "2026-09-10" }), local(2026, 9, 12))).toBe(false);
+    expect(hasEnded(base(), local(2026, 9, 12))).toBe(false);
+  });
+
+  it("reads as part of the recurrence", () => {
+    expect(humanRecurrence({ kind: "weekdays" }, "09:00", "2026-10-03")).toBe("Weekdays at 9:00 until Oct 3");
+    expect(humanRecurrence({ kind: "weekdays" }, "09:00")).toBe("Weekdays at 9:00");
+    // A `once` schedule is already a single run; an end date would say nothing.
+    expect(humanRecurrence({ kind: "once", date: "2026-09-12" }, "09:00", "2026-10-03")).toBe("Once, Sep 12 at 9:00");
+  });
+
+  it("the cutoff is the END of the day, so a run late on the last day still fires", () => {
+    expect(untilCutoff("2026-09-12")).toEqual(local(2026, 9, 12, 23, 59, 59, 999));
+    expect(untilCutoff("nope")).toBeNull();
+  });
+});
+
 describe("runsPerDay", () => {
   it("counts the interval kinds and refuses to guess for the rest", () => {
     expect(runsPerDay({ kind: "minutes", every: 5 })).toBe(288);
@@ -155,6 +194,13 @@ describe("validateScheduleInput", () => {
     expect(() => validateScheduleInput({ ...ok, repeat: { kind: "weekly", days: [] } }, ws)).toThrow(/day/i);
     expect(() => validateScheduleInput({ ...ok, repeat: { kind: "minutes", every: 0 } }, ws)).toThrow(/run/i);
     expect(validateScheduleInput({ ...ok, repeat: { kind: "minutes", every: 15 } }, ws).repeat).toEqual({ kind: "minutes", every: 15 });
+    // An end date already in the past would make a schedule with no next run —
+    // refused rather than created and inert.
+    expect(() => validateScheduleInput({ ...ok, until: "2020-01-01" }, ws)).toThrow(/future/i);
+    expect(() => validateScheduleInput({ ...ok, until: "next week" }, ws)).toThrow(/YYYY-MM-DD/);
+    const far = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10);
+    expect(validateScheduleInput({ ...ok, until: far }, ws).until).toBe(far);
+    expect(validateScheduleInput(ok, ws).until).toBeUndefined();
     expect(() => validateScheduleInput({ ...ok, mode: "bypass" as never }, ws)).toThrow(/mode/i);
   });
   it("normalises a trailing-slash workspace to the registered spelling", () => {

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import type { CatchUp, Repeat, Schedule, ScheduleMode } from "../../../main/schedules";
 import {
   AGENT_PROPOSED, BYPASS_WARNING, CATCH_UP_LABELS, DAY_LABELS, FOOTER_COPY, frequencyNote, MODE_CARDS,
-  NOTIFY_ALWAYS, PROMPT_HINT, REPEAT_LABELS, REUSE_SUB,
+  NOTIFY_ALWAYS, PROMPT_HINT, REPEAT_LABELS, REUSE_SUB, UNTIL_LABELS,
 } from "../schedulesCopy";
 import { ModelSelect } from "./ModelSelect";
 
@@ -49,6 +49,8 @@ export function ScheduleDrawer({
   const [model, setModel] = useState(initial.model);
   const [notifyOnDone, setNotify] = useState(initial.notifyOnDone ?? true);
   const [catchUp, setCatchUp] = useState<CatchUp>(initial.catchUp ?? "ask");
+  // No end date is the default — a schedule runs until you pause it.
+  const [until, setUntil] = useState<string | undefined>(initial.until);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -84,6 +86,7 @@ export function ScheduleDrawer({
         model,
         notifyOnDone,
         catchUp,
+        until: repeat.kind === "once" ? undefined : until,
         enabled: initial.enabled ?? true,
       });
       if (requestId) window.hv.scheduleDrawerAnswer(requestId, { saved });
@@ -213,6 +216,35 @@ export function ScheduleDrawer({
           {/* The cost is a fact about the choice just made, so it belongs beside
               the choice — not on the row after the schedule exists. */}
           {frequencyNote(repeat) && <p className="text-xs font-semibold text-berry mt-2">{frequencyNote(repeat)}</p>}
+          {/* A recurring schedule runs forever unless told otherwise, which is
+              the right default and also the one worth being able to bound. A
+              `once` schedule is already a single run, so it has no end date. */}
+          {repeat.kind !== "once" && (
+            <div className="mt-2">
+              <div className="flex flex-wrap gap-1.5">
+                <button type="button" onClick={() => setUntil(undefined)} className={seg(!until)}>
+                  {UNTIL_LABELS.none}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUntil(until ?? new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10))}
+                  className={seg(!!until)}
+                >
+                  {UNTIL_LABELS.date}
+                </button>
+                {until && (
+                  <input
+                    type="date"
+                    value={until}
+                    min={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setUntil(e.target.value)}
+                    className="rounded-lg border border-line bg-card px-2 py-1 text-xs"
+                  />
+                )}
+              </div>
+              {until && <p className="text-xs text-ink-soft mt-1">It runs through that day, then stops on its own.</p>}
+            </div>
+          )}
           <label className="flex items-center gap-2 mt-2">
             <span className="font-bold">At</span>
             {/* A native time input: the platform's own picker already knows the
@@ -259,8 +291,11 @@ export function ScheduleDrawer({
             value={model ?? null}
             onPick={(m) => setModel({ provider: m.provider, modelId: m.id })}
             onClear={() => setModel(undefined)}
-            clearLabel="Use the usual model"
-            placeholder="Use the usual model"
+            // Accurate, not vague: leaving it empty stores no override, so the
+            // spawn falls through resolveSpawnModel's own tiers — this project's
+            // model, then the global default.
+            clearLabel="Same as this project"
+            placeholder="Same as this project"
             menuWidthClassName="w-full"
           />
         </div>
@@ -298,7 +333,7 @@ export function ScheduleDrawer({
             type="button"
             disabled={saving}
             onClick={() => void save()}
-            className="px-3 py-1.5 rounded-lg border-2 border-ink/60 bg-honey font-bold text-sm cursor-pointer disabled:opacity-50"
+            className="rounded-xl bg-tangerine text-paper font-bold text-sm px-4 py-2 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 cursor-pointer disabled:opacity-50"
           >
             {editing ? "Save" : "Create"}
           </button>

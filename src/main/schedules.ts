@@ -53,6 +53,16 @@ export interface Schedule {
   workspaceId: string;
   repeat: Repeat;
   at: string;                 // "HH:MM", local
+  /**
+   * YYYY-MM-DD, local. The schedule stops after this DAY — inclusive, so a run
+   * on the date itself still happens.
+   *
+   * Absent means no limit, which is the default: a schedule runs until you
+   * pause it. When the limit is reached the schedule stays `enabled` and simply
+   * has no next run, so the row can say "ended" rather than looking like
+   * something the user switched off.
+   */
+  until?: string;
   mode: ScheduleMode;
   reuseSession: boolean;
   /** Only when reuseSession: the one session every run prompts again. */
@@ -146,7 +156,19 @@ const clock = (at: string): string => {
   return t ? `${t.h}:${String(t.m).padStart(2, "0")}` : at;
 };
 
-export function humanRecurrence(repeat: Repeat, at: string): string {
+/** The last instant a schedule with this end date may run: the END of that day, local. */
+export function untilCutoff(until: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(until);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999);
+}
+
+export function humanRecurrence(repeat: Repeat, at: string, until?: string): string {
+  const ends = until ? ` until ${MON[Number(until.slice(5, 7)) - 1]} ${Number(until.slice(8, 10))}` : "";
+  return baseRecurrence(repeat, at) + (repeat.kind === "once" ? "" : ends);
+}
+
+function baseRecurrence(repeat: Repeat, at: string): string {
   switch (repeat.kind) {
     case "daily": return `Every day at ${clock(at)}`;
     case "weekdays": return `Weekdays at ${clock(at)}`;
@@ -220,6 +242,20 @@ export function applyOutcome(s: Schedule, run: ScheduleRun): Schedule {
  * app launched, turning "ask me" into "always" for anyone away for a weekend.
  */
 export function withNextRun(s: Schedule, now: Date): Schedule {
-  const next = s.enabled ? nextFire(s.repeat, s.at, now) : null;
+  let next = s.enabled ? nextFire(s.repeat, s.at, now) : null;
+  // Past its end date it simply has no next run. Deliberately NOT `enabled:
+  // false`: that is the switch the user owns, and conflating the two would make
+  // a finished schedule indistinguishable from one they paused.
+  if (next && s.until) {
+    const cutoff = untilCutoff(s.until);
+    if (cutoff && next > cutoff) next = null;
+  }
   return { ...s, nextRunAt: next ? next.toISOString() : null };
+}
+
+/** Its recurring life is over — it did not stop because anyone switched it off. */
+export function hasEnded(s: Schedule, now: Date): boolean {
+  if (!s.until || !s.enabled) return false;
+  const cutoff = untilCutoff(s.until);
+  return !!cutoff && now > cutoff;
 }

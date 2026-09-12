@@ -8,7 +8,7 @@
  * drift these records exist to end.
  */
 import type { CatchUp, Repeat, RunOutcome, Schedule, ScheduleMode } from "../../main/schedules";
-import { humanRecurrence, runsPerDay } from "../../main/schedules";
+import { hasEnded, humanRecurrence, runsPerDay } from "../../main/schedules";
 
 export const REPEAT_LABELS: Record<Repeat["kind"], string> = {
   daily: "Every day",
@@ -65,6 +65,7 @@ export const OUTCOME_MARK: Record<RunOutcome | "never", string> = {
 
 export const PAUSED_COPY = "Paused after 3 failed runs — check the model or the key.";
 export const LOGIN_ITEM_COPY = "HappyVibe has to be open for schedules to run.";
+export const UNTIL_LABELS = { none: "No end date", date: "Until a date" } as const;
 export const REUSE_SUB = "Context builds up across runs; HappyVibe compacts it when it gets long.";
 export const PROMPT_HINT = "Slash prompts work here (/review), and so do @file mentions.";
 export const NOTIFY_ALWAYS = "You are always notified when a run needs your permission.";
@@ -153,6 +154,10 @@ export function lastRunLabel(s: Schedule): string {
 
 /** The row's next-run cell. "paused" is a fail-pause; "off" is the user's own switch. */
 export function nextRunLabel(s: Schedule, now: Date): string {
+  // "ended" before "off": a schedule that reached its end date was not switched
+  // off by anyone, and saying so is the difference between a finished job and
+  // one the user has to wonder about.
+  if (hasEnded(s, now)) return "ended";
   if (!s.enabled) return s.failStreak >= 3 ? "paused" : "off";
   if (!s.nextRunAt) return s.repeat.kind === "once" ? "once, done" : "no next run";
   const ms = new Date(s.nextRunAt).getTime() - now.getTime();
@@ -170,4 +175,4 @@ export function missedLabel(slotAt: string): string {
   return `was due ${d.toLocaleDateString(undefined, { weekday: "short" })} ${clockOf(slotAt)}`;
 }
 
-export { humanRecurrence };
+export { hasEnded, humanRecurrence };
