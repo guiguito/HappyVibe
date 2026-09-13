@@ -151,6 +151,25 @@ export function describeScheduleCall(env: ScheduleEnvelope, existing?: Pick<Sche
   }
 }
 
+/**
+ * The delete permission prompt's headline, resolved in MAIN.
+ *
+ * The bridge holds only the id (it cannot read the schedules file), so it ships
+ * `scheduleId` on the `hv.permission` envelope and says `schedule <id>`. This
+ * is where that becomes a sentence naming the schedule and its recurrence —
+ * what PRD §35 promises the user is approving. Returns null for every other
+ * envelope, so the caller leaves them untouched.
+ */
+export function permissionSummary(
+  payload: Record<string, unknown>,
+  get: (id: string) => Pick<Schedule, "title" | "repeat" | "at" | "until"> | undefined,
+): string | null {
+  if (payload.kind !== "hv.permission" || payload.tool !== "schedule_delete") return null;
+  const id = typeof payload.scheduleId === "string" ? payload.scheduleId : null;
+  if (!id) return null;
+  return describeScheduleCall({ kind: "hv.schedule-delete", id }, get(id));
+}
+
 /** The `schedule_list` result: one line per schedule, in the words the page uses. */
 export function renderScheduleList(list: Schedule[], costOf: (s: Schedule) => number | undefined): string {
   if (!list.length) return "No schedules in this workspace.";

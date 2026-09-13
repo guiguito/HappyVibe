@@ -71,9 +71,10 @@ const sessionGrants = new Set<string>();
 function summarize(toolName: string, input: Record<string, unknown>): string {
   // §35: the only schedule tool that reaches a permission prompt is delete (the
   // other two confirm in the drawer), and what you are approving is a NAMED
-  // schedule. The bridge has only the id — main resolves the title when it
-  // renders the prompt — so the factual display is the id, never the model's
-  // `intent`, which is the §7 round-1 split.
+  // schedule. The bridge has only the id, so it says so here and ships the id
+  // on the envelope as `scheduleId`; MAIN rewrites this to the schedule's title
+  // and recurrence in `stampPrompt` (permissionSummary, scheduleEnvelopes.ts).
+  // Either way it is FACTUAL, never the model's `intent` — the §7 round-1 split.
   if (toolName === "schedule_delete" && typeof input.id === "string") {
     return `schedule ${input.id}`;
   }
@@ -1389,7 +1390,16 @@ export default function (pi: ExtensionAPI) {
     const title = JSON.stringify(
       v.source === "outside-workspace"
         ? { kind: "hv.permission", tool: permTool, summary, reason: "outside-workspace", path: v.outsidePath }
-        : { kind: "hv.permission", tool: permTool, summary, ...(boundary ? { boundary } : {}) },
+        : {
+            kind: "hv.permission",
+            tool: permTool,
+            summary,
+            // §35: the id travels as its OWN field so main can name the
+            // schedule. Parsing it back out of `summary` would be reading our
+            // own prose, and the prompt must show a NAME, not a uuid.
+            ...(tool === "schedule_delete" && typeof input.id === "string" ? { scheduleId: input.id } : {}),
+            ...(boundary ? { boundary } : {}),
+          },
     );
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).
     // NO timeout, NO auto-allow: permission prompts wait indefinitely by design.

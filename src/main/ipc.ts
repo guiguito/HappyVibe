@@ -127,7 +127,7 @@ import { BLOCKING_UI_METHODS, isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "
 import { PendingPrompts } from "./pendingPrompts";
 import { humanRecurrence, runTitle, type Schedule } from "./schedules";
 import { editPatch, ScheduleStore, validateScheduleInput, type NewSchedule } from "./scheduleStore";
-import { parseScheduleEnvelope, renderScheduleList } from "./scheduleEnvelopes";
+import { parseScheduleEnvelope, permissionSummary, renderScheduleList } from "./scheduleEnvelopes";
 import { Scheduler, type NotifyExtra, type ScheduleEventType } from "./scheduler";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 import type { WindowRegistry } from "./windows";
@@ -1032,14 +1032,32 @@ export function registerIpc(
    * transcript card, and every window keeps every session's transcript so that
    * moving a tab later finds the history already there.
    */
-  const stampPrompt = <T extends { sessionId?: string }>(r: T): T & { promptWindowId?: number } => {
+  /**
+   * §35: a `schedule_delete` prompt arrives naming a uuid, because the bridge
+   * cannot read the schedules file. Rewritten HERE because stampPrompt is the
+   * one choke point every `hv:ui-request` passes through — including the
+   * `hv:pending-ui-requests` replay, which is the case a scheduled run needs.
+   */
+  const nameSchedule = (title?: string): string | undefined => {
+    if (!title || !title.includes("schedule_delete")) return undefined;
+    try {
+      const p = JSON.parse(title) as Record<string, unknown>;
+      const named = permissionSummary(p, (id) => scheduleStore.get(id));
+      return named === null ? undefined : JSON.stringify({ ...p, summary: named });
+    } catch {
+      return undefined;
+    }
+  };
+  const stampPrompt = <T extends { sessionId?: string; title?: string }>(r: T): T & { promptWindowId?: number } => {
+    const named = nameSchedule(r.title);
+    const base = named === undefined ? r : { ...r, title: named };
     const id = promptWindowFor(
       r.sessionId === UTILITY ? undefined : r.sessionId,
       (sid) => windows.holderOf(sid),
       BrowserWindow.getFocusedWindow()?.id ?? null,
       windows.primary()?.id ?? null,
     );
-    return id === null ? r : { ...r, promptWindowId: id };
+    return id === null ? base : { ...base, promptWindowId: id };
   };
   /**
    * How many prompts each session is waiting on — computed in MAIN because it is

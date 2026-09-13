@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { describeScheduleCall, parseScheduleEnvelope, renderScheduleList } from "../src/main/scheduleEnvelopes";
+import { describeScheduleCall, parseScheduleEnvelope, permissionSummary, renderScheduleList } from "../src/main/scheduleEnvelopes";
 import { SAFE_TOOLS } from "../pi-runtime/extensions/hv-rules";
 import type { Schedule } from "../src/main/schedules";
 
@@ -82,6 +82,30 @@ describe("describeScheduleCall", () => {
 
   it("degrades to a sentence rather than to a raw id when the schedule is gone", () => {
     expect(describeScheduleCall({ kind: "hv.schedule-delete", id: "x" })).toBe("Delete a schedule");
+  });
+});
+
+/**
+ * The half that was missing: describeScheduleCall existed and had tests, and
+ * NOTHING in src/ called it — so the delete prompt shipped showing a uuid while
+ * these assertions stayed green. This is the production route.
+ */
+describe("permissionSummary — what main rewrites the delete prompt to", () => {
+  const env = { kind: "hv.permission", tool: "schedule_delete", summary: "schedule x", scheduleId: "x" };
+
+  it("turns the bridge's id into the schedule's name and recurrence", () => {
+    expect(permissionSummary(env, () => S())).toBe("Delete schedule “Daily change review” (Weekdays at 9:00)");
+  });
+
+  it("still answers a sentence when the schedule is already gone", () => {
+    expect(permissionSummary(env, () => undefined)).toBe("Delete a schedule");
+  });
+
+  it("leaves every other prompt alone", () => {
+    expect(permissionSummary({ kind: "hv.permission", tool: "bash", summary: "ls" }, () => S())).toBeNull();
+    // No id on the envelope: an older bridge, or a shape we do not recognise.
+    expect(permissionSummary({ kind: "hv.permission", tool: "schedule_delete", summary: "schedule x" }, () => S())).toBeNull();
+    expect(permissionSummary({ kind: "hv.audit", tool: "schedule_delete", scheduleId: "x" }, () => S())).toBeNull();
   });
 });
 

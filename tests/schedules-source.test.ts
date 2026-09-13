@@ -174,3 +174,25 @@ describe("an edit clears what the drawer cleared", () => {
     expect(body).not.toMatch(/scheduleStore\.update\(input\.id,\s*v\s*,/);
   });
 });
+
+describe("the delete prompt names the schedule, not its uuid", () => {
+  it("the bridge ships the id as its own envelope field", () => {
+    const src = R("pi-runtime/extensions/happyvibe-bridge.ts");
+    expect(src).toMatch(/schedule_delete" && typeof input\.id === "string" \? \{ scheduleId: input\.id \}/);
+  });
+
+  it("main rewrites the headline in stampPrompt — the one choke point, replay included", () => {
+    const src = R("src/main/ipc.ts");
+    const fn = src.slice(src.indexOf("const nameSchedule ="), src.indexOf("const stampPrompt ="));
+    expect(fn).toContain("permissionSummary(");
+    // stampPrompt is what the replay path re-stamps through, so the rewrite
+    // has to live inside it rather than beside one send site.
+    const stamp = src.slice(src.indexOf("const stampPrompt ="), src.indexOf("const stampPrompt =") + 900);
+    expect(stamp).toContain("nameSchedule(r.title)");
+  });
+
+  it("describeScheduleCall has a production caller — it shipped with none", () => {
+    expect(R("src/main/scheduleEnvelopes.ts")).toMatch(/permissionSummary[\s\S]*describeScheduleCall\(/);
+    expect(R("src/main/ipc.ts")).toContain("permissionSummary");
+  });
+});
