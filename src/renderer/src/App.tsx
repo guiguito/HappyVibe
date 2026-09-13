@@ -1294,7 +1294,18 @@ export default function App(): React.JSX.Element {
     void window.hv.listModels().then(setScheduleModels).catch(() => {});
     // §35: the schedules list feeds BOTH the page and the sidebar row's
     // subtitle — one fact, one reader path, so they cannot disagree.
-    void window.hv.schedulesList().then(setSchedules).catch(() => {});
+    void window.hv
+      .schedulesList()
+      .then((list) => {
+        setSchedules(list);
+        // The launch-time `hv:schedules-missed` push RACES this subscription and
+        // loses: catchUp runs inside registerIpc, which index.ts calls right
+        // after openWindow() returns — before this renderer exists — and
+        // broadcast has no replay. The boot list is the answer for the
+        // cold-start path, which is the case the dialog exists for.
+        if (list.some((s) => s.missed)) setMissedOpen(true);
+      })
+      .catch(() => {});
     const offSchedules = window.hv.onSchedulesChanged(setSchedules);
     // The agent proposed a schedule: the drawer is the confirm step, and it must
     // answer the pending envelope on Create AND on Cancel.
@@ -3184,6 +3195,7 @@ export default function App(): React.JSX.Element {
               onPrefillUsed={() => setSchedulePrefill(null)}
               onDrawerRequestUsed={() => setScheduleDrawerReq(null)}
               onOpenSession={(id) => void selectSession(id)}
+              onDecideMissed={() => setMissedOpen(true)}
             />
           )}
           {activeView === "skills" && (

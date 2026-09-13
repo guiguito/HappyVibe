@@ -288,8 +288,11 @@ describe("the page", () => {
     expect(ended).toContain("Reschedule");
     expect(ended).toContain("Delete");
     expect(ended).not.toContain("<Toggle");
-    expect(ended).not.toContain("Run now");
     expect(ended).not.toContain("flipMode");
+    // …but Run now STAYS. §35: "it is an explicit ask, and it does not restart
+    // the recurrence." Dropping it made the documented behaviour unreachable —
+    // the page was the only entry point.
+    expect(ended).toContain("Run now");
   });
 
   it("Reschedule clears the expired end, so saving cannot be refused for the date it opened with", () => {
@@ -311,6 +314,23 @@ describe("the page", () => {
     // It names what is lost and what is not.
     expect(sv).toMatch(/record of past runs goes too/);
     expect(sv).toMatch(/sessions those runs produced stay/);
+  });
+
+  it("a proposal arriving while the user is mid-edit is DECLINED, never silently dropped", () => {
+    // Two ways this went wrong: the user's own draft carried the agent's
+    // requestId (Save answered schedule_create with a schedule it never
+    // proposed), and closing cleared the request unanswered — a bridge call
+    // with no timeout by design, blocked until every window went away.
+    expect(sv).toMatch(/requestId: editing \? undefined : drawerRequest\?\.requestId/);
+    const eff = sv.slice(sv.indexOf("if (drawerRequest && editing)"), sv.indexOf("if (drawerRequest && editing)") + 320);
+    expect(eff).toContain("scheduleDrawerAnswer");
+    expect(eff).toContain("cancelled: true");
+    expect(eff).toContain("onDrawerRequestUsed()");
+  });
+
+  it("a missed row can re-open the dialog — \"Decide later\" is not a dead end", () => {
+    expect(sv).toContain("onDecideMissed");
+    expect(sv).toContain("MISSED_ROW");
   });
 
   it("a busy Run now explains itself rather than failing silently", () => {
@@ -338,5 +358,17 @@ describe("the missed dialog", () => {
 
   it("its rows come from the LIST, so answering one makes it leave", () => {
     expect(R("src/renderer/src/App.tsx")).toMatch(/missed=\{schedules\.filter\(\(s\) => s\.missed\)\}/);
+  });
+
+  it("it opens from the BOOT LIST, not only from the push", () => {
+    // The launch push loses a race it cannot win: catchUp runs inside
+    // registerIpc, which index.ts calls right after openWindow() returns —
+    // before this renderer exists — and broadcast has no replay. Cold start is
+    // the case the dialog exists for, so the boot list has to open it.
+    const app = R("src/renderer/src/App.tsx");
+    const boot = app.slice(app.indexOf("window.hv\n      .schedulesList()"));
+    expect(boot.slice(0, 700)).toMatch(/if \(list\.some\(\(s\) => s\.missed\)\) setMissedOpen\(true\)/);
+    // …and the push stays, because it is what a powerMonitor resume uses.
+    expect(app).toContain("onSchedulesMissed");
   });
 });

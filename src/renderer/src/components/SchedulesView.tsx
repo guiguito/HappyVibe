@@ -6,7 +6,8 @@ import { DUR } from "../motion";
 import { ScheduleDrawer } from "./ScheduleDrawer";
 import { Toggle } from "./Toggle";
 import {
-  ENDED_COPY, hasEnded, humanRecurrence, lastRunLabel, LOGIN_ITEM_COPY, nextRunLabel, OUTCOME_MARK, PAUSED_COPY, TEMPLATES,
+  ENDED_COPY, hasEnded, humanRecurrence, lastRunLabel, LOGIN_ITEM_COPY, MISSED_ROW, nextRunLabel, OUTCOME_MARK, PAUSED_COPY,
+  TEMPLATES,
 } from "../schedulesCopy";
 
 /**
@@ -26,6 +27,7 @@ export function SchedulesView({
   onPrefillUsed,
   onDrawerRequestUsed,
   onOpenSession,
+  onDecideMissed,
 }: {
   schedules: Schedule[];
   workspaces: string[];
@@ -38,6 +40,8 @@ export function SchedulesView({
   onPrefillUsed: () => void;
   onDrawerRequestUsed: () => void;
   onOpenSession: (sessionId: string) => void;
+  /** Re-opens the missed-runs dialog: "Decide later" must not be a dead end. */
+  onDecideMissed: () => void;
 }): React.JSX.Element {
   const [editing, setEditing] = useState<Partial<Schedule> | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -56,7 +60,22 @@ export function SchedulesView({
   // …and it has to keep its CONTENT through that exit: rendering on `open`
   // alone unmounts the moment it closes, so nothing is left to animate.
   const shown = useRef<{ initial: Partial<Schedule>; requestId?: string } | null>(null);
-  if (open) shown.current = { initial: open, requestId: drawerRequest?.requestId };
+  // The requestId belongs to the draft the drawer is SHOWING. Taking it from
+  // `drawerRequest` regardless of which one won meant the user's own open
+  // drawer carried the agent's request: pressing Save answered the agent's
+  // schedule_create with a schedule it never proposed.
+  if (open) shown.current = { initial: open, requestId: editing ? undefined : drawerRequest?.requestId };
+
+  // A proposal that arrives while the user is mid-edit is DECLINED, not queued.
+  // The bridge call has no timeout by design, and the alternative — holding it
+  // until the drawer frees up — is a tool call blocked on a form the user does
+  // not know is waiting. "declined" is true and the model can say so.
+  useEffect(() => {
+    if (drawerRequest && editing) {
+      window.hv.scheduleDrawerAnswer(drawerRequest.requestId, { cancelled: true });
+      onDrawerRequestUsed();
+    }
+  }, [drawerRequest, editing, onDrawerRequestUsed]);
 
   useEffect(() => {
     void window.hv.loginItemGet().then(setLoginItem).catch(() => {});
@@ -177,13 +196,14 @@ export function SchedulesView({
                         {humanRecurrence(s.repeat, s.at, s.until)} · {lastRunLabel(s)} · {nextRunLabel(s, now)}
                       </span>
                     </button>
-                    {/* An ENDED schedule gets the two actions that mean anything
-                        to it, and none that do not. Its on/off toggle was the
-                        worst kind of control: flipping it set `enabled` and left
-                        `nextRunAt` null, so it looked live and did nothing. Run
-                        now and the mode pill go too — one is a detail of runs
-                        that are over, the other invites a one-off from a row
-                        whose whole message is that it is finished. */}
+                    {/* An ENDED schedule gets the actions that mean something to
+                        it, and none that do not. Its on/off toggle was the worst
+                        kind of control: flipping it set `enabled` and left
+                        `nextRunAt` null, so it looked live and did nothing. The
+                        mode pill goes too — a detail of runs that are over.
+                        "Run now" STAYS: it is an explicit ask, it works (§35),
+                        and it does not restart the recurrence, because
+                        withNextRun still returns null past the cutoff. */}
                     {hasEnded(s, now) ? (
                       <>
                         <button
@@ -193,6 +213,9 @@ export function SchedulesView({
                           className="text-xs font-bold px-2 py-1 rounded-lg border border-line cursor-pointer hover:bg-paper shrink-0"
                         >
                           Reschedule
+                        </button>
+                        <button type="button" onClick={() => runNow(s.id)} className="text-xs font-bold px-2 py-1 rounded-lg border border-line cursor-pointer hover:bg-paper shrink-0">
+                          Run now
                         </button>
                         <button
                           type="button"
@@ -238,7 +261,14 @@ export function SchedulesView({
                     <p className="px-3 pb-2 text-xs font-semibold text-berry">{PAUSED_COPY}</p>
                   )}
                   {s.missed && (
-                    <p className="px-3 pb-2 text-xs font-semibold text-honey-deep">Missed its time — waiting for you to decide.</p>
+                    <p className="px-3 pb-2 text-xs font-semibold text-honey-deep">
+                      {MISSED_ROW}{" "}
+                      {/* "Decide later" closed the one dialog and left the row
+                          saying decide with nothing to decide with. */}
+                      <button type="button" onClick={onDecideMissed} className="underline font-bold cursor-pointer">
+                        Decide
+                      </button>
+                    </p>
                   )}
                   {hasEnded(s, now) && (
                     <p className="px-3 pb-2 text-xs text-ink-soft">{ENDED_COPY}</p>
