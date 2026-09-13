@@ -66,6 +66,8 @@ export const OUTCOME_MARK: Record<RunOutcome | "never", string> = {
 /** Says what state it is in AND what to do about it — "ended" alone is a dead end. */
 export const ENDED_COPY = "It reached its end and stopped on its own. Reschedule it to start again, or delete it.";
 export const PAUSED_COPY = "Paused after 3 failed runs — check the model or the key.";
+/** Shown in the DRAWER the paused row sends you to, so the repair is not silent. */
+export const PAUSED_IN_DRAWER = "Paused after 3 failed runs — saving will start it again.";
 export const LOGIN_ITEM_COPY = "HappyVibe has to be open for schedules to run.";
 export const UNTIL_LABELS = { none: "No end", date: "Ends at" } as const;
 export const REUSE_SUB = "Context builds up across runs; HappyVibe compacts it when it gets long.";

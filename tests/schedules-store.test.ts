@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ScheduleStore } from "../src/main/scheduleStore";
+import { editPatch, ScheduleStore, validateScheduleInput } from "../src/main/scheduleStore";
+import { hasEnded, withNextRun } from "../src/main/schedules";
 import type { NewSchedule } from "../src/main/schedules";
 import type { SessionMeta } from "../src/main/store";
 
@@ -40,6 +41,70 @@ describe("ScheduleStore", () => {
     const u = a.update(s.id, { enabled: true }, new Date(2026, 8, 11, 8, 0))!;
     expect(u.failStreak).toBe(0);
     expect(u.nextRunAt).not.toBeNull();
+  });
+
+  /**
+   * The drawer always sends every field, so an ABSENT optional one means the
+   * user CLEARED it — Reschedule, "No end", "Same as this project". This
+   * composes the exact two functions `hv:schedule-save` composes, because the
+   * bug lived between them: validate drops absent keys and update merges with a
+   * spread, so a clear left the old value in place and the row stayed "ended".
+   */
+  it("clearing the end date and the model on an edit actually clears them", () => {
+    const f = tmpFile();
+    const a = new ScheduleStore(f);
+    const now = new Date(2026, 8, 11, 8, 0);
+    const s = a.create({ ...input, until: "2026-09-12", model: "x/y" }, now);
+    expect(s.until).toBe("2026-09-12");
+    expect(s.nextRunAt).not.toBeNull();
+
+    const v = validateScheduleInput({ ...input }, ["/ws"]);
+    const u = a.update(s.id, editPatch(v), now)!;
+
+    expect(u.until).toBeUndefined();
+    expect(u.model).toBeUndefined();
+    expect(u.nextRunAt).not.toBeNull();
+    // …and the cleared key is gone from disk, not just from the in-memory copy.
+    expect(new ScheduleStore(f).get(s.id)!.until).toBeUndefined();
+  });
+
+  it("an expired schedule comes back to life when its end is cleared", () => {
+    const a = new ScheduleStore(tmpFile());
+    const made = new Date(2026, 8, 11, 8, 0);
+    const s = a.create({ ...input, until: "2026-09-12" }, made);
+    const past = new Date(2026, 8, 20, 8, 0);
+    a.replace(withNextRun(s, past));
+    expect(a.get(s.id)!.nextRunAt).toBeNull();
+
+    const v = validateScheduleInput({ ...input }, ["/ws"]);
+    const u = a.update(s.id, editPatch(v), past)!;
+    expect(hasEnded(u, past)).toBe(false);
+    expect(u.nextRunAt).not.toBeNull();
+  });
+
+  /**
+   * PAUSED_COPY sends the user to the drawer ("check the model or the key"),
+   * and the drawer re-sends the record's own `enabled: false` — so the repair
+   * landed back in the paused state with nothing on screen saying so.
+   */
+  it("editing a fail-paused schedule is the repair: it resumes", () => {
+    const a = new ScheduleStore(tmpFile());
+    const now = new Date(2026, 8, 11, 8, 0);
+    const s = a.create(input, now);
+    a.replace({ ...s, enabled: false, failStreak: 3, nextRunAt: null });
+    const u = a.update(s.id, { model: "good/model", enabled: false }, now)!;
+    expect(u.enabled).toBe(true);
+    expect(u.failStreak).toBe(0);
+    expect(u.nextRunAt).not.toBeNull();
+  });
+
+  it("a deliberately paused schedule stays paused through an edit", () => {
+    const a = new ScheduleStore(tmpFile());
+    const now = new Date(2026, 8, 11, 8, 0);
+    const s = a.create(input, now);
+    a.replace({ ...s, enabled: false, failStreak: 0 });
+    const u = a.update(s.id, { title: "renamed", enabled: false }, now)!;
+    expect(u.enabled).toBe(false);
   });
 
   it("remove forgets; an unknown id updates nothing; a corrupt file reads as empty", () => {

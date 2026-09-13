@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import type { CatchUp, Repeat, Schedule, ScheduleMode } from "../../../main/schedules";
+import { FAIL_PAUSE_AT, type CatchUp, type Repeat, type Schedule, type ScheduleMode } from "../../../main/schedules";
 import {
   AGENT_PROPOSED, BYPASS_WARNING, CATCH_UP_LABELS, DAY_LABELS, FOOTER_COPY, frequencyNote, MODE_CARDS,
-  NOTIFY_ALWAYS, PROMPT_HINT, REPEAT_LABELS, REUSE_SUB, UNTIL_LABELS,
+  NOTIFY_ALWAYS, PAUSED_IN_DRAWER, PROMPT_HINT, REPEAT_LABELS, REUSE_SUB, UNTIL_LABELS,
 } from "../schedulesCopy";
 import { ModelSelect } from "./ModelSelect";
 
@@ -136,6 +136,11 @@ export function ScheduleDrawer({
       <div className="px-5 py-4 border-b border-line">
         <h2 className="font-black text-lg tracking-tight">{editing ? "Edit schedule" : "New schedule"}</h2>
         {requestId && <p className="text-xs text-ink-soft mt-1">{AGENT_PROPOSED}</p>}
+        {/* PAUSED_COPY sends the user HERE to fix the model, so this is where
+            the repair has to be visible — the save re-enables it. */}
+        {(initial.failStreak ?? 0) >= FAIL_PAUSE_AT && (
+          <p className="text-xs text-ink-soft mt-1">{PAUSED_IN_DRAWER}</p>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 text-sm">

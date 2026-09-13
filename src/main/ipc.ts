@@ -126,7 +126,7 @@ import { hasNodeRuntime } from "./nodePreflight";
 import { BLOCKING_UI_METHODS, isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { PendingPrompts } from "./pendingPrompts";
 import { humanRecurrence, runTitle, type Schedule } from "./schedules";
-import { ScheduleStore, validateScheduleInput, type NewSchedule } from "./scheduleStore";
+import { editPatch, ScheduleStore, validateScheduleInput, type NewSchedule } from "./scheduleStore";
 import { parseScheduleEnvelope, renderScheduleList } from "./scheduleEnvelopes";
 import { Scheduler, type NotifyExtra, type ScheduleEventType } from "./scheduler";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
@@ -3240,7 +3240,7 @@ export function registerIpc(
 
   ipcMain.handle("hv:schedule-save", (_e, input: Partial<NewSchedule> & { id?: string }) => {
     const v = validateScheduleInput(input, workspaces.list());
-    const s = input.id ? scheduleStore.update(input.id, v, new Date()) : scheduleStore.create(v as NewSchedule, new Date());
+    const s = input.id ? scheduleStore.update(input.id, editPatch(v), new Date()) : scheduleStore.create(v as NewSchedule, new Date());
     if (!s) throw new Error("That schedule no longer exists.");
     void log.append({
       type: input.id ? "schedule.update" : "schedule.create",

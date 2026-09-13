@@ -161,3 +161,16 @@ describe("a scheduled run shows the prompt it was given", () => {
     expect(app).toMatch(/appendItem\(sessionId, \{ kind: "user", text, ts: Date\.now\(\) \}\)/);
   });
 });
+
+describe("an edit clears what the drawer cleared", () => {
+  it("the save handler patches through editPatch, never the raw validated record", () => {
+    const src = R("src/main/ipc.ts");
+    const h = src.slice(src.indexOf('ipcMain.handle("hv:schedule-save"'));
+    const body = h.slice(0, h.indexOf("});"));
+    // Passing `v` straight to update() is the bug: validate drops absent
+    // optional keys and update merges with a spread, so Reschedule, "No end"
+    // and "Same as this project" all saved and changed nothing.
+    expect(body).toContain("editPatch(v)");
+    expect(body).not.toMatch(/scheduleStore\.update\(input\.id,\s*v\s*,/);
+  });
+});

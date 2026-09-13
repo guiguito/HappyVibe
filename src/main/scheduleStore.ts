@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { normPath } from "./store";
-import { nextFire, untilCutoff, withNextRun, type CatchUp, type Schedule, type ScheduleMode } from "./schedules";
+import { FAIL_PAUSE_AT, nextFire, untilCutoff, withNextRun, type CatchUp, type Schedule, type ScheduleMode } from "./schedules";
 
 export type NewSchedule = Omit<Schedule, "id" | "createdAt" | "nextRunAt" | "failStreak" | "runs">;
 
@@ -68,6 +68,23 @@ export function validateScheduleInput(input: Partial<NewSchedule>, workspaces: s
   };
 }
 
+/**
+ * What an EDIT sends to `update`.
+ *
+ * The drawer always sends every field, so an optional one that is absent means
+ * the user cleared it — Reschedule (clears `until`), "No end", "Same as this
+ * project" (clears `model`). `validateScheduleInput` drops absent keys and
+ * `update` merges with a spread, so without naming them explicitly a clear kept
+ * the old value: Reschedule saved and the row was still "ended".
+ *
+ * `reusedSessionId` and `createdBy` are deliberately NOT here — they are
+ * scheduler bookkeeping and provenance, which the drawer never sends and an
+ * edit must not erase.
+ */
+export function editPatch(v: NewSchedule): Partial<Omit<Schedule, "id" | "createdAt">> {
+  return { ...v, until: v.until, model: v.model };
+}
+
 // ponytail: the same twelve lines as store.ts's private helpers. Exporting them
 // from store.ts would make this file import the session index to write a
 // different file; a copy is the smaller coupling.
@@ -122,7 +139,13 @@ export class ScheduleStore {
   update(id: string, patch: Partial<Omit<Schedule, "id" | "createdAt">>, now: Date): Schedule | undefined {
     const i = this.items.findIndex((s) => s.id === id);
     if (i < 0) return undefined;
-    const merged = { ...this.items[i]!, ...patch, ...(patch.enabled === true ? { failStreak: 0 } : {}) };
+    // An edit IS the repair the paused row asks for: PAUSED_COPY says "check the
+    // model or the key", which is a drawer round trip, and the drawer re-sends
+    // the record's own `enabled: false` — so the fix landed straight back in the
+    // paused state with nothing on screen saying so. A DELIBERATE pause has
+    // failStreak 0 and is left alone.
+    const repaired = this.items[i]!.failStreak >= FAIL_PAUSE_AT ? { enabled: true, failStreak: 0 } : {};
+    const merged = { ...this.items[i]!, ...patch, ...repaired, ...(patch.enabled === true ? { failStreak: 0 } : {}) };
     this.items[i] = withNextRun(merged, now);
     this.save();
     return this.items[i];
