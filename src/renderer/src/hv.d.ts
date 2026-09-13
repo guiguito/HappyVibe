@@ -1,3 +1,14 @@
+import type { Schedule as HvSchedule } from "../../main/schedules";
+
+/** §35: a create/update the agent proposed — the drawer opens prefilled and answers it. */
+export interface HvScheduleDrawerRequest {
+  requestId: string;
+  workspaceId: string;
+  draft: Partial<HvSchedule>;
+  existingId?: string;
+  sessionId: string;
+}
+
 declare global {
 /**
  * §34. Mirrors the client shape of Inlet's element union
@@ -239,6 +250,8 @@ interface SessionMeta {
   /** §16 round 16: per-session thinking override (session → global). */
   thinking?: string;
   titleSource: "fallback" | "model" | "user";
+  /** §35: the schedule that opened this session. Absent = you started it yourself. */
+  scheduleId?: string;
   /** When the user last opened or prompted it — what the sidebar orders by.
    *  Absent on sessions that predate the field; readers fall back to
    *  `updatedAt` (sessionOrder.ts). Mirror of the main-side SessionMeta. */
@@ -844,6 +857,24 @@ interface HvApi {
   copyClaudeMd(workspaceId: string): Promise<string>;
 
   onPiEvent(cb: (e: Record<string, unknown>) => void): () => void;
+  // §35 Schedules.
+  schedulesList(): Promise<HvSchedule[]>;
+  scheduleSave(input: Partial<HvSchedule> & { id?: string }): Promise<HvSchedule>;
+  scheduleDelete(id: string): Promise<void>;
+  scheduleMissedAnswer(id: string, answer: "run" | "skip"): Promise<void>;
+  scheduleRunNow(id: string): Promise<{ ok: true } | { ok: false; reason: "busy" | "disabled" | "gone" }>;
+  scheduleRunCosts(id: string): Promise<{ perRun: Record<string, number | null>; last30: number | null }>;
+  scheduleDrawerAnswer(requestId: string, res: { saved: HvSchedule } | { cancelled: true }): void;
+  loginItemGet(): Promise<{ available: boolean; openAtLogin: boolean }>;
+  loginItemSet(on: boolean): Promise<void>;
+  onSchedulesChanged(cb: (list: HvSchedule[]) => void): () => void;
+  onScheduleDrawerRequest(cb: (r: HvScheduleDrawerRequest) => void): () => void;
+  onSchedulesMissed(cb: (ids: string[]) => void): () => void;
+  /** §35: main prompted a session on a schedule's behalf — nothing else draws that user message. */
+  onSessionPrompted(cb: (r: { sessionId: string; text: string }) => void): () => void;
+  onShowSession(cb: (r: { sessionId: string; workspaceId: string }) => void): () => void;
+  /** §35: outstanding blocking prompts, for a window that opened after they were raised. */
+  pendingUiRequests(): Promise<Array<{ id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[]; promptWindowId?: number }>>;
   onUiRequest(
     cb: (r: {
       id: string;
@@ -966,8 +997,8 @@ interface HvApi {
   setWorkspaceModel(workspaceId: string, m: { provider: string; modelId: string } | null): Promise<void>;
 
   // §13 round 6: configurable built-in custom tools (plan mode, ask_user)
-  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string }>;
-  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string }): Promise<void>;
+  builtinsGet(): Promise<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean }>;
+  builtinsSet(t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean; memory?: boolean; memoryAppend?: string; schedules?: boolean }): Promise<void>;
   /** Read-only display of a built-in tool's real, unmodified prompt (currently "plan" only). */
   builtinPrompt(name: string): Promise<{ text: string }>;
 

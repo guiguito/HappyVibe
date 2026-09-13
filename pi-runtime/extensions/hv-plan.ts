@@ -193,6 +193,11 @@ const PLAN_PASS_TOOLS = new Set([
   // ENGINE decides, so save and forget still ask — plan mode neither widens nor narrows them.
   // They must be NAMED: an unnamed tool floor-asks, which would prompt on every recall.
   "memory_save", "memory_recall", "memory_forget",
+  // §35: reading the schedules is a read. It must be NAMED — an unnamed tool
+  // floor-asks, which would raise a modal every time a planning session looked
+  // at what is scheduled. The three WRITERS are deliberately absent: they are
+  // side effects and floor-ask is exactly right for them.
+  "schedule_list",
   // §32: headless reads of the public web — no cookies, no side effects, and
   // nothing in the workspace is touched. "pass" leaves the verdict alone, so
   // the browser:<host> gate still runs INSIDE plan mode; it only means the

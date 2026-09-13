@@ -30,6 +30,7 @@ import {
   parseDangerous,
   parsePermission,
   parsePlan,
+  parseReadonlyRun,
   parsePlanBlocked,
   type PermissionChoice,
   type QueuedPrompt,
@@ -40,6 +41,11 @@ import { applyQueueUpdate, emptyQueue, type QueueState } from "./queue";
 import { parseContextAck, parseContextFiles, parseContextSnapshot, type ContextSnapshot } from "./context";
 import { AgentsView } from "./components/AgentsView";
 import { MemoryView } from "./components/MemoryView";
+import { SchedulesView } from "./components/SchedulesView";
+import { MissedRunsDialog } from "./components/MissedRunsDialog";
+import { scheduleSubtitle } from "./schedulesCopy";
+import type { Schedule as HvSchedule } from "../../main/schedules";
+import type { HvScheduleDrawerRequest } from "./hv";
 import { SkillsView } from "./components/SkillsView";
 import { PromptTemplatesView } from "./components/PromptTemplatesView";
 import { PluginsView } from "./components/PluginsView";
@@ -103,6 +109,13 @@ export default function App(): React.JSX.Element {
   // Fresh sessions snapshot for the (stale-closure) ui-request handler — the
   // listener effect runs once, so it can't read the `sessions` state directly.
   const sessionsRef = useRef<SessionMeta[]>([]);
+  /**
+   * §35: the one-shot subscription effect is registered before `navigate` and
+   * `openSession` exist, and it must not re-run — resubscribing on every render
+   * would re-request the schedules list on each keystroke. Refs, not deps.
+   */
+  const navigateRef = useRef<((t: NavTarget) => void) | null>(null);
+  const openSessionRef = useRef<((id: string) => void | Promise<void>) | null>(null);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   // Per-session permission prompt queues (B4): the modal shows the focused
   // session's oldest pending prompt; the rest badge the sidebar + dock.
@@ -116,6 +129,15 @@ export default function App(): React.JSX.Element {
   // §23: per-session plan mode + current plan-file path (bridge-notified; SURVIVES
   // respawn — the bridge re-emits hv.plan on session_start).
   const [planMode, setPlanMode] = useState<Record<string, { enabled: boolean; planPath?: string }>>({});
+  // §35: sessions that are scheduled read-only runs, by id — the pill, and the
+  // reason the plan toggle is hidden for them.
+  const [readonlyRuns, setReadonlyRuns] = useState<Record<string, boolean>>({});
+  const [schedules, setSchedules] = useState<HvSchedule[]>([]);
+  const [schedulePrefill, setSchedulePrefill] = useState<Partial<HvSchedule> | null>(null);
+  const [scheduleDrawerReq, setScheduleDrawerReq] = useState<HvScheduleDrawerRequest | null>(null);
+  const [missedOpen, setMissedOpen] = useState(false);
+  /** The model list for the drawer's optional per-schedule override. */
+  const [scheduleModels, setScheduleModels] = useState<Array<{ provider: string; id: string; name: string }>>([]);
   // §23 round 9: the session's active plan, so a plan whose card was compacted
   // out of the transcript stays reachable. Seeded by openSession (survives a
   // renderer reload) and by the session_start hv.plan replay (survives a
@@ -1006,7 +1028,22 @@ export default function App(): React.JSX.Element {
 
     // Only hv.permission select prompts open the modal. Other ui-requests
     // (setStatus etc.) are fire-and-forget — routing them here was a CRITICAL bug.
-    const offUiRequest = window.hv.onUiRequest((r) => {
+    /**
+     * §35: extracted from the subscription so a REPLAY can travel the same path.
+     * A prompt raised while no window was open (a scheduled run at 3 a.m.) is
+     * handed to the next window that opens, and it must land in the queue by
+     * exactly the route a live one takes — a second, parallel path is how the
+     * two would drift.
+     */
+    const handleUiRequest = (r: {
+      id: string;
+      sessionId?: string;
+      method?: string;
+      title?: string;
+      message?: string;
+      options?: string[];
+      promptWindowId?: number;
+    }): void => {
       /**
        * §7 round 23: a blocking prompt is shown in ONE window, and main names
        * it — the window holding this session's chat tab (promptRouting.ts).
@@ -1020,11 +1057,17 @@ export default function App(): React.JSX.Element {
        */
       const mine = r.promptWindowId === undefined || r.promptWindowId === window.hv.boot.windowId;
       const info = parsePermission(r);
-      if (info && mine) setUiQueue((q) => [...q, { kind: "permission", req: r, info }]);
+      // The dedupe is for the boot race only: the replay and a live push can
+      // both carry the same id in the instant a window opens.
+      if (info && mine) setUiQueue((q) => (q.some((x) => x.req.id === r.id) ? q : [...q, { kind: "permission", req: r, info }]));
       // V2.B: ask_user questions queue through the same machinery (badges,
       // headFor routing). Kind-based parse — hv.auth inputs stay untouched.
       const ask = parseAskUser(r);
-      if (ask && mine) setUiQueue((q) => [...q, { kind: "askUser", req: r, ask }]);
+      if (ask && mine) setUiQueue((q) => (q.some((x) => x.req.id === r.id) ? q : [...q, { kind: "askUser", req: r, ask }]));
+      if (r.sessionId && parseReadonlyRun(r)) {
+        const sid = r.sessionId;
+        setReadonlyRuns((p) => ({ ...p, [sid]: true }));
+      }
       const dng = parseDangerous(r);
       if (dng !== null && r.sessionId) setDangerous((p) => ({ ...p, [r.sessionId!]: dng }));
       // §23: plan-mode toggle + plan-ready card + skipped-tool marking.
@@ -1238,6 +1281,49 @@ export default function App(): React.JSX.Element {
           }
         }
       }
+    };
+    const offUiRequest = window.hv.onUiRequest(handleUiRequest);
+    // Catch up on anything raised before this window existed. Errors are
+    // swallowed: a window that cannot reach main has larger problems, and the
+    // badge still reports the count.
+    void window.hv
+      .pendingUiRequests()
+      .then((rs) => rs.forEach(handleUiRequest))
+      .catch(() => {});
+
+    void window.hv.listModels().then(setScheduleModels).catch(() => {});
+    // §35: the schedules list feeds BOTH the page and the sidebar row's
+    // subtitle — one fact, one reader path, so they cannot disagree.
+    void window.hv
+      .schedulesList()
+      .then((list) => {
+        setSchedules(list);
+        // The launch-time `hv:schedules-missed` push RACES this subscription and
+        // loses: catchUp runs inside registerIpc, which index.ts calls right
+        // after openWindow() returns — before this renderer exists — and
+        // broadcast has no replay. The boot list is the answer for the
+        // cold-start path, which is the case the dialog exists for.
+        if (list.some((s) => s.missed)) setMissedOpen(true);
+      })
+      .catch(() => {});
+    const offSchedules = window.hv.onSchedulesChanged(setSchedules);
+    // The agent proposed a schedule: the drawer is the confirm step, and it must
+    // answer the pending envelope on Create AND on Cancel.
+    const offScheduleDrawer = window.hv.onScheduleDrawerRequest((r) => {
+      setScheduleDrawerReq(r);
+      navigateRef.current?.({ view: "schedules" });
+    });
+    const offMissed = window.hv.onSchedulesMissed(() => setMissedOpen(true));
+    // §35: a scheduled run's prompt came from main, so draw the user's message
+    // here — the composer never saw it, and a transcript that opens straight
+    // into the reply hides the one thing the run was asked to do.
+    const offPrompted = window.hv.onSessionPrompted(({ sessionId, text }) => {
+      appendItem(sessionId, { kind: "user", text, ts: Date.now() });
+    });
+    // A finish notification was clicked: land on the run, in its own workspace.
+    const offShowSession = window.hv.onShowSession(({ sessionId, workspaceId }) => {
+      setActiveWs(workspaceId);
+      void openSessionRef.current?.(sessionId);
     });
 
     const offSubStatus = window.hv.onSubagentStatus(({ sessionId, runId, status, cost }) => {
@@ -1674,6 +1760,11 @@ export default function App(): React.JSX.Element {
       offReloading();
       offUiUnhandled();
       offSubStatus();
+      offSchedules();
+      offScheduleDrawer();
+      offMissed();
+      offPrompted();
+      offShowSession();
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
   }, []);
@@ -2329,6 +2420,9 @@ export default function App(): React.JSX.Element {
     }
     await hydrateSession(id);
   };
+  // §35: kept fresh for the one-shot subscription effect above, which is
+  // registered before selectSession exists and must not re-run.
+  openSessionRef.current = selectSession;
 
   /**
    * Hydrate whatever chats are ON SCREEN.
@@ -2631,10 +2725,49 @@ export default function App(): React.JSX.Element {
   const navigate = useCallback((t: NavTarget) => {
     if (keyState !== "present") return;
     if (t.workspace) setWsSettings(t.workspace);
-    if (t.view !== "chat") setSettingsOpen(true);
+    // §35: Schedules is a top-level row, not a Settings page — expanding that
+    // group on the way there would point at the wrong place.
+    if (t.view !== "chat" && t.view !== "schedules") setSettingsOpen(true);
     revealGroup(t.view);
     setView(t.view);
   }, [keyState, revealGroup]);
+  // §35: same reason as openSessionRef — the subscription effect needs to
+  // navigate when the agent proposes a schedule, and it runs once.
+  navigateRef.current = navigate;
+
+  /**
+   * §4.1 — "Repeat this on a schedule…".
+   *
+   * The prompt comes from the transcript already in memory, so this costs no
+   * IPC and no model call. It is the creation path we expect people to use: do
+   * the task by hand once, like it, make it recurring.
+   */
+  /**
+   * §35: is this session a clamped read-only run?
+   *
+   * DERIVED from the session's own schedule, not only from the bridge's
+   * `hv.readonly` notify — that notify fires at session_start, so a renderer
+   * reload lost the pill while the run was still clamped. The schedule is the
+   * same thing the spawn reads to set the clamp, so the two cannot disagree;
+   * the notify stays as the live signal for the moment before the schedules
+   * list has been fetched.
+   */
+  const isReadonlyRun = (sid: string): boolean => {
+    if (readonlyRuns[sid]) return true;
+    const scheduleId = sessions.find((s) => s.id === sid)?.scheduleId;
+    return !!scheduleId && schedules.find((x) => x.id === scheduleId)?.mode === "readonly";
+  };
+
+  const repeatOnSchedule = (sid: string): void => {
+    const meta = sessionsRef.current.find((s) => s.id === sid);
+    const first = (transcripts[sid] ?? []).find((i) => i.kind === "user" && !!i.text);
+    setSchedulePrefill({
+      workspaceId: meta?.workspaceId,
+      prompt: first && "text" in first ? first.text : "",
+      title: meta?.titleSource === "fallback" ? "" : meta?.title,
+    });
+    navigate({ view: "schedules" });
+  };
 
   /**
    * §34 — may this session be asked how it is going?
@@ -2886,6 +3019,12 @@ export default function App(): React.JSX.Element {
 
   return (
     <NavContext.Provider value={navigate}>
+      {/* §35: one dialog for every missed schedule, not one per schedule. Its
+          rows come from the LIST rather than from the push that opened it, so
+          answering one makes it leave and the last answer closes the dialog. */}
+      {missedOpen && (
+        <MissedRunsDialog missed={schedules.filter((s) => s.missed)} onClose={() => setMissedOpen(false)} />
+      )}
     <div className="h-full flex">
       <Sidebar
         workspaces={workspaces}
@@ -2952,6 +3091,7 @@ export default function App(): React.JSX.Element {
         settingsOpen={settingsOpen}
         onToggleSettingsOpen={() => setSettingsOpen((o) => !o)}
         searchNonce={searchNonce}
+        scheduleSubtitle={scheduleSubtitle(schedules, new Date())}
         openGroups={openGroups}
         onToggleGroup={(g) =>
           setOpenGroups((p) => {
@@ -3044,6 +3184,20 @@ export default function App(): React.JSX.Element {
           {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
           {activeView === "changelog" && <ChangelogView />}
           {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
+          {activeView === "schedules" && (
+            <SchedulesView
+              schedules={schedules}
+              workspaces={workspaces}
+              models={scheduleModels}
+              bypassHere={() => false}
+              prefill={schedulePrefill}
+              drawerRequest={scheduleDrawerReq}
+              onPrefillUsed={() => setSchedulePrefill(null)}
+              onDrawerRequestUsed={() => setScheduleDrawerReq(null)}
+              onOpenSession={(id) => void selectSession(id)}
+              onDecideMissed={() => setMissedOpen(true)}
+            />
+          )}
           {activeView === "skills" && (
             <SkillsView
               sessionId={selectedId}
@@ -3157,6 +3311,7 @@ export default function App(): React.JSX.Element {
                       else if (isBrowserTab(tab)) closeBrowserTab(wsId, slot, tab);
                       else closeFileTab(wsId, slot, tab);
                     }}
+                    onRepeatOnSchedule={repeatOnSchedule}
                     onRename={(tab, title) => {
                       // §7 round 12: a chat tab renames the SESSION — the
                       // sidebar row changes with it, because it is the
@@ -3453,6 +3608,8 @@ export default function App(): React.JSX.Element {
             costOpen={costOpen && sid === selectedId}
             onCostOpenChange={setCostOpen}
             planEnabled={planMode[sid]?.enabled || false}
+            readonlyRun={isReadonlyRun(sid)}
+            onRepeatOnSchedule={() => repeatOnSchedule(sid)}
             sessionSkills={(skillsLoaded[sid] ?? []).map((s) => ({
               ...s,
               used: (skillsUsed[sid] ?? []).includes(s.name),

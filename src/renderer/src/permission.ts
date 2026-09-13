@@ -142,6 +142,23 @@ export function parsePlan(
 }
 
 /** §23: an hv.plan.blocked notify → the blocked tool-call id, null otherwise. */
+/**
+ * §35: this session is a scheduled READ-ONLY run.
+ *
+ * A notify rather than restored state, because the mode comes from the
+ * environment at every spawn — a respawn simply re-announces it, and there is
+ * nothing on disk that could go stale.
+ */
+export function parseReadonlyRun(r: UiRequest & { message?: string }): boolean {
+  if (r.method !== "notify") return false;
+  try {
+    const p = JSON.parse(r.message ?? "") as { kind?: string; enabled?: boolean };
+    return p?.kind === "hv.readonly" && p.enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 export function parsePlanBlocked(r: UiRequest & { message?: string }): { toolCallId: string } | null {
   if (r.method !== "notify") return null;
   try {

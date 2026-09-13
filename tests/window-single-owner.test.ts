@@ -297,15 +297,19 @@ describe("prompts are routed and counted by main (round 23)", () => {
     // sidebar climb with every transcript card and kept counting deleted
     // sessions — measured live as {sessionA:2, deletedSession:3, sessionB:4}
     // while exactly one prompt was open.
-    expect(ipc).toMatch(/const pendingPrompts = new Map<string, string>\(\)/);
-    expect(ipc).toMatch(/if \(!method \|\| !BLOCKING_UI_METHODS\.has\(method\)\) return;/);
-    expect(ipc).toMatch(/for \(const sid of pendingPrompts\.values\(\)\)/);
+    // §35 moved the store into PendingPrompts (it now retains the ENVELOPE, so a
+    // prompt raised with no window open can be replayed), but the rule it
+    // enforces is unchanged and still lives at the constructor's boundary set.
+    expect(ipc).toMatch(/const pendingUi = new PendingPrompts\(BLOCKING_UI_METHODS\)/);
+    expect(ipc).toMatch(/pendingUi\.counts\(UTILITY\)/);
     expect(ipc).not.toMatch(/for \(const sid of uiOwners\.values\(\)\)/);
+    const pp = readFileSync("src/main/pendingPrompts.ts", "utf8");
+    expect(pp).toMatch(/if \(!this\.blocking\.has\(env\.method\)\) return false;/);
   });
 
   it("a dead session leaves nothing pending", () => {
     const i = ipc.indexOf('send("hv:pi-exit"');
-    expect(ipc.slice(i - 400, i)).toMatch(/pendingPrompts\.delete\(id\)/);
+    expect(ipc.slice(i - 400, i)).toMatch(/pendingUi\.dropSession\(sessionId\)/);
   });
 
   it("the dock badge is summed in main — one number for the whole app", () => {

@@ -40,15 +40,23 @@ export interface BuiltinToggles {
    * OFF COSTS 0 — no policy, no index, no tool schemas. That is the row's whole argument.
    */
   memory: boolean;
+  /**
+   * §35: schedule_list / schedule_create / schedule_update / schedule_delete.
+   *
+   * Gates the MODEL's tools only. The scheduler itself is never gated by it —
+   * turning this off removes four tool schemas from the session, it does not
+   * stop the user's schedules from running.
+   */
+  schedules: boolean;
   /** §33: the user's append to the memory policy (PromptRow, Plan mode's shape). */
   memoryAppend: string;
 }
 
 export function parseBuiltins(raw: string | undefined): BuiltinToggles {
-  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "" };
+  const out: BuiltinToggles = { plan: true, askUser: true, planAppend: "", terminal: true, intent: true, browser: true, web: true, document: true, memory: true, memoryAppend: "", schedules: true };
   if (!raw) return out;
   try {
-    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string }>;
+    const p = JSON.parse(raw) as Partial<{ plan: boolean; askUser: boolean; planAppend: string; terminal: boolean; intent: boolean; browser: boolean; web: boolean; document: boolean; memory: boolean; memoryAppend: string; schedules: boolean }>;
     if (p.plan === false) out.plan = false;
     if (p.askUser === false) out.askUser = false;
     if (p.terminal === false) out.terminal = false;
@@ -57,6 +65,7 @@ export function parseBuiltins(raw: string | undefined): BuiltinToggles {
     if (p.web === false) out.web = false;
     if (p.document === false) out.document = false;
     if (p.memory === false) out.memory = false;
+    if (p.schedules === false) out.schedules = false;
     if (typeof p.memoryAppend === "string") out.memoryAppend = p.memoryAppend;
     if (typeof p.planAppend === "string") out.planAppend = p.planAppend;
     // Defence in depth (Important 3): Plan mode's prompt and applyPlanTools'

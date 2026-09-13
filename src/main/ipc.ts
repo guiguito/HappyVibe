@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, systemPreferences } from "electron";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
@@ -72,7 +73,7 @@ import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from ".
 import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } from "./modelExclusions";
-import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
+import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, normPath, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
@@ -123,6 +124,11 @@ import { statusKey } from "./mcpStatusKey";
 import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 import { hasNodeRuntime } from "./nodePreflight";
 import { BLOCKING_UI_METHODS, isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
+import { PendingPrompts } from "./pendingPrompts";
+import { humanRecurrence, runTitle, type Schedule } from "./schedules";
+import { editPatch, ScheduleStore, validateScheduleInput, type NewSchedule } from "./scheduleStore";
+import { parseScheduleEnvelope, permissionSummary, renderScheduleList } from "./scheduleEnvelopes";
+import { Scheduler, type NotifyExtra, type ScheduleEventType } from "./scheduler";
 import { catalogEntry, buildCatalogInstall } from "./mcpCatalog";
 import type { WindowRegistry } from "./windows";
 import type { WindowRecord } from "./windowLayout";
@@ -504,6 +510,13 @@ export function registerIpc(
   /** index.ts owns the layout file (it owns the registry); passed in rather than
       imported so ipc.ts and index.ts do not form a cycle. */
   persistLayout: () => void,
+  /**
+   * §35: open a window. Passed in for the same no-cycle reason as persistLayout.
+   * A scheduled run's notification can be clicked while the app is running with
+   * every window closed (macOS keeps it alive), and there is then nothing to
+   * focus — so the click has to be able to make one.
+   */
+  openWindow: () => BrowserWindow,
 ): void {
   /**
    * §7 round 23 — ONE push helper, and it fans out to every window.
@@ -539,6 +552,9 @@ export function registerIpc(
   // hv-scaffold → HappyVibe rename), else resume loads no history.
   index.rebaseSessionFiles(sessionDir());
   const workspaces = new WorkspaceRegistry(path.join(userData, "workspaces.json"));
+  // §35: declared up here because spawnOpts reads it — a read-only schedule's
+  // run is clamped by the ENVIRONMENT, re-derived at every spawn.
+  const scheduleStore = new ScheduleStore(path.join(userData, "schedules.json"));
   const log = new EventLog(path.join(userData, "events.jsonl"));
   const pidFile = path.join(userData, "pi-pids.json");
 
@@ -798,6 +814,13 @@ export function registerIpc(
   // W1.3: main-side activity knowledge (busy / pending prompt / subagent) —
   // hibernation must never touch a genuinely active session.
   const activity = new SessionActivity();
+  /** §35: when the current turn began, per session — the run duration a finish notification reports. */
+  const turnStartedAt = new Map<string, number>();
+  const readonlyForSession = (sessionId?: string): boolean => {
+    if (!sessionId) return false;
+    const scheduleId = index.get(sessionId)?.scheduleId;
+    return !!scheduleId && scheduleStore.get(scheduleId)?.mode === "readonly";
+  };
 
   /**
    * §16 (2026-07-30): every provider a spawn could legitimately use. Sent to the
@@ -894,6 +917,10 @@ export function registerIpc(
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
       bypass: resolveBypass(workspace ?? null),
+      // §35: a run whose schedule says Read-only spawns clamped. Re-derived here
+      // rather than stored on the session, so a resume, a hibernation wake and
+      // an MCP reload all recompute it — the clamp cannot be lost by a respawn.
+      readonly: readonlyForSession(sessionId),
       // §13 round 6: global on/off for built-in custom tools, re-applied on
       // every (re)spawn — mirrors bypass, but global-only (no workspace tier).
       builtinTools: builtins,
@@ -1005,14 +1032,32 @@ export function registerIpc(
    * transcript card, and every window keeps every session's transcript so that
    * moving a tab later finds the history already there.
    */
-  const stampPrompt = <T extends { sessionId?: string }>(r: T): T & { promptWindowId?: number } => {
+  /**
+   * §35: a `schedule_delete` prompt arrives naming a uuid, because the bridge
+   * cannot read the schedules file. Rewritten HERE because stampPrompt is the
+   * one choke point every `hv:ui-request` passes through — including the
+   * `hv:pending-ui-requests` replay, which is the case a scheduled run needs.
+   */
+  const nameSchedule = (title?: string): string | undefined => {
+    if (!title || !title.includes("schedule_delete")) return undefined;
+    try {
+      const p = JSON.parse(title) as Record<string, unknown>;
+      const named = permissionSummary(p, (id) => scheduleStore.get(id));
+      return named === null ? undefined : JSON.stringify({ ...p, summary: named });
+    } catch {
+      return undefined;
+    }
+  };
+  const stampPrompt = <T extends { sessionId?: string; title?: string }>(r: T): T & { promptWindowId?: number } => {
+    const named = nameSchedule(r.title);
+    const base = named === undefined ? r : { ...r, title: named };
     const id = promptWindowFor(
       r.sessionId === UTILITY ? undefined : r.sessionId,
       (sid) => windows.holderOf(sid),
       BrowserWindow.getFocusedWindow()?.id ?? null,
       windows.primary()?.id ?? null,
     );
-    return id === null ? r : { ...r, promptWindowId: id };
+    return id === null ? base : { ...base, promptWindowId: id };
   };
   /**
    * How many prompts each session is waiting on — computed in MAIN because it is
@@ -1020,12 +1065,6 @@ export function registerIpc(
    * would report only the prompts it was chosen to show, so the OTHER window's
    * sidebar would claim nothing is pending.
    */
-  const pendingPrompts = new Map<string, string>();
-  const pendingChanged = (): void => {
-    const counts: Record<string, number> = {};
-    for (const sid of pendingPrompts.values()) if (sid !== UTILITY) counts[sid] = (counts[sid] ?? 0) + 1;
-    send("hv:pending-changed", counts);
-  };
   /**
    * BLOCKING ones only, and that is the whole point of a second map.
    *
@@ -1034,15 +1073,35 @@ export function registerIpc(
    * sidebar's attention count climb with every transcript card a session ever
    * drew, and kept counting sessions that had been deleted. The renderer's old
    * count could not have this bug: its queue only ever held parsed modals.
+   *
+   * §35: it now retains the ENVELOPE rather than just the owner id, because a
+   * scheduled run can raise a prompt when no window is open at all — see
+   * pendingPrompts.ts and the `hv:pending-ui-requests` handler below.
    */
-  const notePending = (id: string, sessionId: string, method?: string): void => {
-    if (!method || !BLOCKING_UI_METHODS.has(method)) return;
-    pendingPrompts.set(id, sessionId);
-    pendingChanged();
+  const pendingUi = new PendingPrompts(BLOCKING_UI_METHODS);
+  const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
+  const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
+    if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
   };
   const clearPending = (id: string): void => {
-    if (pendingPrompts.delete(id)) pendingChanged();
+    if (pendingUi.clear(id)) pendingChanged();
   };
+  /**
+   * §35: what a freshly opened window has to catch up on.
+   *
+   * Re-stamped HERE rather than replayed as recorded: `promptWindowId` names
+   * the window that was holding the session when the prompt was raised, and
+   * the case this exists for is precisely that no such window exists any more.
+   */
+  ipcMain.handle("hv:pending-ui-requests", () => {
+    // The COUNTS have the same gap the envelopes had, and a GUI pass found it:
+    // `hv:pending-changed` is a push that only fires when something moves, so a
+    // window that opens while a prompt is already waiting starts with an empty
+    // badge. The replayed prompt reaches its queue, but nothing on screen says
+    // to go and look at it — which for an unattended run is the whole point.
+    pendingChanged();
+    return pendingUi.list().map((r) => stampPrompt(r));
+  });
   /**
    * What each window currently shows, declared by its own renderer on every
    * layout change. Main never derives this from a tab id.
@@ -1097,7 +1156,7 @@ export function registerIpc(
         return;
       }
       uiOwners.set(r.id, UTILITY);
-      notePending(r.id, UTILITY, r.method);
+      notePending(r, UTILITY);
       send("hv:ui-request", stampPrompt({ ...r, sessionId: UTILITY }));
       // Auth landed/left → the model list changed (OAuth results only flow as
       // hv.auth ui-requests, so this is where main learns about them).
@@ -1547,6 +1606,12 @@ export function registerIpc(
         });
       }
       if (e.type === "agent_end") {
+        // §35: a scheduled run's turn ending IS the run ending. The cost comes
+        // from the same ledger as the cost bubble; unknown stays unknown.
+        if (index.get(sessionId)?.scheduleId) {
+          const started = turnStartedAt.get(sessionId);
+          scheduler.onAgentEnd(sessionId, started ? Date.now() - started : 0, runCost(sessionId));
+        }
         maybeTitle(sessionId);
         if (meta && !index.get(sessionId)?.piSessionFile) void captureSessionFile(sessionId, client);
         drainPendingReload(sessionId); // apply a deferred MCP reload now the turn is done
@@ -2171,6 +2236,69 @@ export function registerIpc(
       // §23 Plan Mode. plan-write is a BLOCKING input: main writes the workspace
       // file and answers with its path (never forwards to the renderer, never
       // leaves the bridge hanging — an error still resolves with a message).
+      // §35: the four schedule tools. Blocking, like hv.plan-write, and main
+      // ALWAYS answers — a branch that returns without respondUi hangs the
+      // bridge, and an unanswered tool call hangs the whole turn.
+      const sched = parseScheduleEnvelope(r as { method?: string; title?: string });
+      if (sched) {
+        void (async () => {
+          const rid = r.id;
+          const ws = meta?.workspaceId;
+          const answer = (v: string): void => client.respondUi(rid, { value: v });
+          try {
+            if (!ws) return answer("ERROR: this session has no workspace.");
+            // SCOPING, and it lives here rather than in the bridge: an id from
+            // another workspace is simply not found. The model cannot name a
+            // workspace — there is no such parameter — so this is the only way
+            // one could be reached.
+            const mine = scheduleStore.list().filter((s) => normPath(s.workspaceId) === normPath(ws));
+            if (sched.kind === "hv.schedule-list") {
+              return answer(renderScheduleList(mine, (s) => s.runs.at(-1)?.costUsd));
+            }
+            if (sched.kind === "hv.schedule-delete") {
+              const s = mine.find((x) => x.id === sched.id);
+              if (!s) return answer("not found");
+              scheduleStore.remove(s.id);
+              void log.append({
+                type: "schedule.delete",
+                sessionId,
+                workspaceId: ws,
+                data: { scheduleId: s.id, title: s.title, source: "agent" },
+              });
+              schedulesChanged();
+              return answer("deleted");
+            }
+            const existing = sched.kind === "hv.schedule-update" ? mine.find((x) => x.id === sched.id) : undefined;
+            if (sched.kind === "hv.schedule-update" && !existing) return answer("not found");
+            // Never a write without the drawer, even under a workspace bypass:
+            // a schedule is future unattended spend, and the drawer is where the
+            // mode card and the cost line are actually visible.
+            const draft: Record<string, unknown> = sched.kind === "hv.schedule-update"
+              ? { ...existing!, ...sched.patch }
+              : { mode: "full", catchUp: "ask", reuseSession: false, notifyOnDone: true, enabled: true, ...sched.draft, workspaceId: ws };
+            const res = await requestScheduleDrawer({ workspaceId: ws, draft, existingId: existing?.id, sessionId });
+            if ("cancelled" in res) return answer("declined");
+            void log.append({
+              type: existing ? "schedule.update" : "schedule.create",
+              sessionId,
+              workspaceId: ws,
+              data: {
+                scheduleId: res.saved.id,
+                title: res.saved.title,
+                mode: res.saved.mode,
+                recurrence: humanRecurrence(res.saved.repeat, res.saved.at),
+                source: "agent",
+              },
+            });
+            return answer(`${existing ? "updated" : "created"} ${res.saved.id}`);
+          } catch (e) {
+            answer(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        })();
+        return;
+      }
+      // end schedule envelopes
+
       const planWrite = parsePlanWrite(r as { method?: string; title?: string });
       if (planWrite) {
         void (async () => {
@@ -2275,9 +2403,14 @@ export function registerIpc(
         return;
       }
       uiOwners.set(r.id, sessionId);
-      notePending(r.id, sessionId, r.method);
+      notePending(r, sessionId);
       // W1.3: an unanswered permission prompt protects the session from hibernation.
-      if (isPermissionPrompt(r)) activity.promptOpened(sessionId);
+      if (isPermissionPrompt(r)) {
+        activity.promptOpened(sessionId);
+        // §35: nobody is watching an unattended run, so say so — once per run,
+        // however many times it asks.
+        if (index.get(sessionId)?.scheduleId) scheduler.onNeedsYou(sessionId);
+      }
       send("hv:ui-request", stampPrompt({ ...r, sessionId }));
     });
   };
@@ -2477,9 +2610,12 @@ export function registerIpc(
     }
     // §7 round 23: a crashed or closed session must not leave a phantom count
     // in every window's sidebar — the renderer does the same with dropSession.
-    let dropped = false;
-    for (const [id, owner] of pendingPrompts) if (owner === sessionId) { pendingPrompts.delete(id); dropped = true; }
-    if (dropped) pendingChanged();
+    if (pendingUi.dropSession(sessionId)) pendingChanged();
+    // §35: a run whose child died never reaches agent_end, so its outcome has to
+    // be recorded here or the schedule waits on it forever.
+    if (!intentional && meta?.scheduleId) {
+      scheduler.onSessionCrash(sessionId, (stderr ? stderr.slice(-200).trim() : "") || `exit ${code}`);
+    }
     send("hv:pi-exit", { sessionId, code, intentional, stderr });
   });
 
@@ -2963,6 +3099,222 @@ export function registerIpc(
     sessionsChanged();
   });
 
+  // ── §35 Schedules ────────────────────────────────────────────────────────
+  const schedulesChanged = (): void => send("hv:schedules-changed", scheduleStore.list());
+
+  /**
+   * A run's cost, from the same ledger the cost bubble reads (§19: one source,
+   * and nothing is priced here — these are Pi's own figures). `undefined` means
+   * UNKNOWN, which the row renders as no figure at all rather than as $0.00.
+   */
+  const runCost = (sessionId: string): number | undefined => {
+    const meta = index.get(sessionId);
+    if (!meta) return undefined;
+    const calls = sessionCalls(sessionDir(), meta.piSessionFile, planProvidersFor(providerKeyStatus()));
+    if (!calls?.length) return undefined;
+    return ledgerTotal(calls).cost;
+  };
+
+  /**
+   * The app's first use of Electron's Notification (§5.4). Two messages only:
+   * a run needs you, and a run finished — plus the missed-runs nudge when the
+   * app woke with no window to show the dialog in.
+   */
+  const showScheduleNotification = (kind: "done" | "needs_you" | "missed", s: Schedule, x: NotifyExtra): void => {
+    if (!Notification.isSupported()) return;
+    const cost = x.costUsd !== undefined && x.costUsd > 0 ? ` · $${x.costUsd.toFixed(2)}` : "";
+    const mins = x.durationMs ? ` · ${Math.max(1, Math.round(x.durationMs / 60000))} min` : "";
+    const body =
+      kind === "needs_you" ? `${s.title} needs your permission`
+      : kind === "missed" ? `${x.count} schedule${x.count === 1 ? "" : "s"} missed ${x.count === 1 ? "its" : "their"} time`
+      : `${s.title} finished${mins}${cost}`;
+    const n = new Notification({ title: "HappyVibe", body, silent: kind === "done" });
+    n.on("click", () => {
+      // The app can be running with every window closed on macOS — which is the
+      // whole point of a scheduled run — so a click may have to open one.
+      const w = windows.primary() ?? openWindow();
+      w.show();
+      w.focus();
+      if (kind === "missed") send("hv:schedules-missed", scheduleStore.list().filter((x2) => x2.missed).map((x2) => x2.id));
+      else if (x.sessionId) send("hv:show-session", { sessionId: x.sessionId, workspaceId: s.workspaceId });
+    });
+    n.show();
+  };
+
+  const scheduler = new Scheduler(scheduleStore, {
+    now: () => new Date(),
+    workspaceExists: (ws) => workspaces.list().some((w) => normPath(w) === normPath(ws)),
+    // §5.2: the sessions of a workspace share one working tree, so a run waits
+    // for all of them — the same idle gate §29's git operations use.
+    workspaceIdle: (ws) => sessionsOfWorkspace(index.list(), ws).every((s) => manager.get(s.id) === null || activity.isIdle(s.id)),
+    sessionExists: (id) => !!index.get(id),
+    createRunSession: async (s, title) => {
+      await ensureDefaultModel();
+      const meta = index.create(s.workspaceId);
+      // titleSource "user": a run is named by its schedule, and the model's
+      // title generator must never rewrite it — the sidebar groups runs by that
+      // name and archivePreviousRun reads it to spot a rename.
+      index.update(meta.id, { scheduleId: s.id, title, titleSource: "user", ...(s.model ? { model: s.model } : {}) });
+      try {
+        await startClient(index.get(meta.id)!, false);
+      } catch (err) {
+        index.remove(meta.id); // never spawned — don't leave a ghost row
+        throw err;
+      }
+      sessionsChanged();
+      return meta.id;
+    },
+    resumeSession: async (id) => {
+      const meta = index.get(id);
+      if (!meta) throw new Error("that session is gone");
+      if (!manager.get(id)) await startClient(meta, !!meta.piSessionFile);
+    },
+    archivePreviousRun: async (s) => {
+      const prev = [...s.runs].reverse().find((r) => r.sessionId && index.get(r.sessionId) && !index.get(r.sessionId)!.archived);
+      const m = prev?.sessionId ? index.get(prev.sessionId) : undefined;
+      if (!m || !prev) return;
+      // §4.4: a run the user ADOPTED stays. Two tells, and both are facts we
+      // already record — they prompted it themselves (promptSession only
+      // touches lastUsedAt for a human) or they renamed it away from the title
+      // the schedule gave it.
+      const adopted = (!!m.lastUsedAt && m.lastUsedAt > prev.firedAt) || m.title !== runTitle(s.title, new Date(prev.firedAt));
+      if (adopted) return;
+      if (manager.get(m.id)) await endSession(m.id);
+      index.update(m.id, { archived: true });
+      sessionsChanged();
+    },
+    prompt: async (sessionId, text) => {
+      await promptSession(sessionId, text, undefined, undefined, undefined, undefined, undefined, { source: "schedule" });
+    },
+    log: (type: ScheduleEventType, s, data) => {
+      void log.append({
+        type,
+        workspaceId: s.workspaceId,
+        sessionId: typeof data.sessionId === "string" ? data.sessionId : undefined,
+        data: { scheduleId: s.id, title: s.title, ...data },
+      });
+    },
+    notify: showScheduleNotification,
+    changed: schedulesChanged,
+  });
+
+  /**
+   * The tick (§5.3). Sixty seconds, no cron library and no job runner.
+   *
+   * `powerMonitor` resume matters because setInterval does not fire while the
+   * Mac is asleep: without it, closing the lid on Friday means Monday's first
+   * tick is whenever the timer next happens to land.
+   */
+  const scheduleTick = setInterval(() => void scheduler.tick().catch(() => {}), 60_000);
+  app.on("will-quit", () => clearInterval(scheduleTick));
+  const catchUpAndTick = (): void => {
+    void scheduler
+      .catchUp()
+      .then((parked) => {
+        if (parked.length) send("hv:schedules-missed", parked);
+        return scheduler.tick();
+      })
+      .catch(() => { /* a scheduling failure must never take the app down */ });
+  };
+  powerMonitor.on("resume", catchUpAndTick);
+  catchUpAndTick();
+
+  /**
+   * The drawer as the confirm step for `schedule_create` / `schedule_update`.
+   *
+   * The renderer SAVES through the ordinary `hv:schedule-save` handler and then
+   * reports what happened, so main keeps exactly one write path — the drawer
+   * opened by a tool and the drawer opened by a click are the same drawer.
+   *
+   * There is no timeout, on purpose: this is a permission-shaped question and
+   * those never expire here. What does resolve it is every window going away,
+   * since there is then nothing left that could ever answer.
+   */
+  const scheduleDrawerWaits = new Map<string, (r: { saved: Schedule } | { cancelled: true }) => void>();
+  const requestScheduleDrawer = (req: {
+    workspaceId: string;
+    draft: Record<string, unknown>;
+    existingId?: string;
+    sessionId: string;
+  }): Promise<{ saved: Schedule } | { cancelled: true }> =>
+    new Promise((resolve) => {
+      const requestId = randomUUID();
+      scheduleDrawerWaits.set(requestId, resolve);
+      if (windows.all().length === 0) {
+        scheduleDrawerWaits.delete(requestId);
+        resolve({ cancelled: true });
+        return;
+      }
+      send("hv:schedule-drawer-request", { requestId, ...req });
+    });
+  ipcMain.on("hv:schedule-drawer-answer", (_e, requestId: string, res: { saved?: Schedule } | { cancelled?: boolean }) => {
+    const done = scheduleDrawerWaits.get(requestId);
+    if (!done) return;
+    scheduleDrawerWaits.delete(requestId);
+    done("saved" in res && res.saved ? { saved: res.saved } : { cancelled: true });
+  });
+
+  ipcMain.handle("hv:schedules-list", () => scheduleStore.list());
+
+  ipcMain.handle("hv:schedule-save", (_e, input: Partial<NewSchedule> & { id?: string }) => {
+    const v = validateScheduleInput(input, workspaces.list());
+    const s = input.id ? scheduleStore.update(input.id, editPatch(v), new Date()) : scheduleStore.create(v as NewSchedule, new Date());
+    if (!s) throw new Error("That schedule no longer exists.");
+    void log.append({
+      type: input.id ? "schedule.update" : "schedule.create",
+      workspaceId: s.workspaceId,
+      data: { scheduleId: s.id, title: s.title, mode: s.mode, recurrence: humanRecurrence(s.repeat, s.at), source: "user" },
+    });
+    schedulesChanged();
+    return s;
+  });
+
+  ipcMain.handle("hv:schedule-delete", (_e, id: string) => {
+    const s = scheduleStore.get(id);
+    scheduleStore.remove(id);
+    if (s) void log.append({ type: "schedule.delete", workspaceId: s.workspaceId, data: { scheduleId: id, title: s.title } });
+    schedulesChanged();
+  });
+
+  ipcMain.handle("hv:schedule-missed-answer", async (_e, id: string, answer: "run" | "skip") => {
+    if (answer !== "run" && answer !== "skip") throw new Error("Invalid answer");
+    // "Run all" / "Skip all" are the renderer calling this per id, so main keeps
+    // exactly ONE decision path.
+    await scheduler.answerMissed(id, answer);
+  });
+
+  ipcMain.handle("hv:schedule-run-now", (_e, id: string) => scheduler.runNow(id));
+
+  /** Each recorded run's cost, for the row's expanded history and its 30-day total. */
+  ipcMain.handle("hv:schedule-run-costs", (_e, id: string) => {
+    const s = scheduleStore.get(id);
+    if (!s) return { perRun: {}, last30: null };
+    const perRun: Record<string, number | null> = {};
+    let last30: number | null = null;
+    const since = Date.now() - 30 * 24 * 3600 * 1000;
+    for (const r of s.runs) {
+      if (!r.sessionId) continue;
+      const c = r.costUsd ?? runCost(r.sessionId);
+      perRun[r.sessionId] = c ?? null;
+      if (c !== undefined && new Date(r.firedAt).getTime() >= since) last30 = (last30 ?? 0) + c;
+    }
+    return { perRun, last30 };
+  });
+
+  /**
+   * "Open HappyVibe at login". Hidden in development rather than disabled: in
+   * dev this would register the Electron binary itself, which is not the app
+   * the user thinks they are launching at login.
+   */
+  ipcMain.handle("hv:login-item-get", () => ({
+    available: app.isPackaged,
+    openAtLogin: app.isPackaged ? app.getLoginItemSettings().openAtLogin : false,
+  }));
+  ipcMain.handle("hv:login-item-set", (_e, on: boolean) => {
+    if (!app.isPackaged) throw new Error("Opening at login is only available in the installed app.");
+    app.setLoginItemSettings({ openAtLogin: !!on });
+  });
+
   ipcMain.handle("hv:archive-session", async (_e, sessionId: string, archived: boolean) => {
     // §17 round 12: archiving used to flip a flag and leave the child running —
     // a defect rather than a design, and half of why "how do I stop a session?"
@@ -2979,18 +3331,30 @@ export function registerIpc(
   // mentions (F3, additive): workspace-relative paths of @file references. Main
   // assembles the hidden <file> context blocks (files.ts) and appends them to
   // the message the model sees; the raw msg is still used for the title/echo.
-  ipcMain.handle(
-    "hv:prompt-session",
-    async (
-      _e,
-      sessionId: string,
-      msg: string,
-      behavior?: PromptBehavior,
-      images?: PromptImage[],
-      mentions?: string[],
-      openFiles?: string[],
-      documents?: string[],
-    ) => {
+  /**
+   * Sending a prompt, factored out of the IPC handler so §35's scheduler can
+   * reach the SAME path a person's keystrokes take.
+   *
+   * Re-implementing it for scheduled runs was the obvious shortcut and the
+   * wrong one: @file mentions, prompt-template expansion, document conversion,
+   * the open-files block and the rewind snapshot all live in this body, and a
+   * second copy would drift from it silently — a schedule whose `/review`
+   * command stopped expanding would look like the model ignoring instructions.
+   *
+   * `source: "schedule"` is the one behavioural difference, and it is small on
+   * purpose: see the two guards below.
+   */
+  const promptSession = async (
+    sessionId: string,
+    msg: string,
+    behavior?: PromptBehavior,
+    images?: PromptImage[],
+    mentions?: string[],
+    openFiles?: string[],
+    documents?: string[],
+    opts: { source?: "user" | "schedule" } = {},
+  ): Promise<{ warnings: string[] }> => {
+    const bySchedule = opts.source === "schedule";
     if (behavior !== undefined && behavior !== "steer" && behavior !== "followUp") {
       throw new Error("Invalid prompt behavior");
     }
@@ -3019,9 +3383,14 @@ export function registerIpc(
     activity.prompted(sessionId);
     // The sidebar orders by last use, and prompting IS use. `touch` rather than
     // `update` so `updatedAt` keeps meaning "metadata changed" — see store.ts.
-    index.touch(sessionId);
+    //
+    // §35: a SCHEDULE prompting its own run is not use. The field has to keep
+    // meaning "the human touched this", because that is exactly what
+    // archivePreviousRun reads to decide whether the user adopted a run and it
+    // should therefore be left in the sidebar.
+    if (!bySchedule) index.touch(sessionId);
     sessionsChanged();
-    if (meta?.titleSource === "fallback" && !firstPrompt.has(sessionId) && meta.title === "New session") {
+    if (!bySchedule && meta?.titleSource === "fallback" && !firstPrompt.has(sessionId) && meta.title === "New session") {
       firstPrompt.set(sessionId, msg);
       index.update(sessionId, { title: truncateTitle(msg) }); // fallback until generation lands
       sessionsChanged();
@@ -3151,9 +3520,36 @@ export function registerIpc(
         });
       }
     }
+    // §35: when the turn started, for the run's duration. Set for every prompt
+    // so a user-prompted run is measured the same way.
+    turnStartedAt.set(sessionId, Date.now());
+    // §35: a prompt MAIN sent has no composer behind it, so nothing has drawn
+    // the user's message — the renderer only ever appends one for its own send
+    // or for a queue delivery. Without this a scheduled run's transcript opens
+    // straight into the reply, and the restore that would have filled it in is
+    // refused by the "don't clobber a live conversation" guard.
+    //
+    // Pushed BEFORE the send so it cannot land after the first streamed token,
+    // and it carries the TYPED text rather than `outgoing`: the user sees what
+    // they wrote, exactly as the composer shows it.
+    if (bySchedule) send("hv:session-prompted", { sessionId, text: msg });
     await client.send(promptCommand(outgoing, behavior, images));
     return { warnings };
-  });
+  };
+
+  ipcMain.handle(
+    "hv:prompt-session",
+    async (
+      _e,
+      sessionId: string,
+      msg: string,
+      behavior?: PromptBehavior,
+      images?: PromptImage[],
+      mentions?: string[],
+      openFiles?: string[],
+      documents?: string[],
+    ) => promptSession(sessionId, msg, behavior, images, mentions, openFiles, documents),
+  );
 
   ipcMain.handle("hv:abort-session", async (_e, sessionId: string) => {
     await (manager.get(sessionId) as PiClient | null)?.send({ type: "abort" });

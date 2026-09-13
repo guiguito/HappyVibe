@@ -29,6 +29,8 @@ interface Builtins {
   document: boolean;
   /** §33: Memory — the three tools, the policy and both indexes. */
   memory: boolean;
+  /** §35: the four schedule tools. The scheduler runs regardless — see SchedulesRow. */
+  schedules: boolean;
   /** §33: the user's append to the memory policy (never an override — PromptRow's rule). */
   memoryAppend: string;
 }
@@ -79,10 +81,10 @@ function PlanModeRow({
           onChange({ planAppend: v });
         }}
         error={error}
+        // Same rule as Memory's: the disclosure belongs inside this row, above
+        // its divider, or it reads as the heading of the row below.
+        footer={<HowItWorks copy="planMode" />}
       />
-      <div className="px-4 pb-3 -mt-1">
-        <HowItWorks copy="planMode" />
-      </div>
 
       {confirming && (
         <div
@@ -324,26 +326,26 @@ function MemoryRow({
   onAppend: (v: string) => Promise<void>;
 }): React.JSX.Element {
   return (
-    <>
-      <PromptRow
-        title="Memory — 3 tools"
-        subtitle={
-          <>
-            Lets the agent remember durable facts about you and about each project, across sessions. Saving and
-            forgetting ask you first; you can read, edit and delete every memory on the Memory page. Turning this off
-            saves the policy and three tool schemas from every turn. {RESPAWN_NOTE}
-          </>
-        }
-        on={on}
-        onToggle={onChange}
-        loadPrompt={() => window.hv.builtinPrompt("memory").then((r) => r.text)}
-        append={append}
-        onSaveAppend={onAppend}
-      />
-      <div className="px-4 pb-3 -mt-1">
-        <HowItWorks copy="memory" />
-      </div>
-    </>
+    <PromptRow
+      title="Memory — 3 tools"
+      subtitle={
+        <>
+          Lets the agent remember durable facts about you and about each project, across sessions. Saving and
+          forgetting ask you first; you can read, edit and delete every memory on the Memory page. Turning this off
+          saves the policy and three tool schemas from every turn. {RESPAWN_NOTE}
+        </>
+      }
+      on={on}
+      onToggle={onChange}
+      loadPrompt={() => window.hv.builtinPrompt("memory").then((r) => r.text)}
+      append={append}
+      onSaveAppend={onAppend}
+      // The disclosure belongs INSIDE this row, above its divider. Rendered
+      // after <PromptRow/> it sat below the line, reading as the heading of
+      // whatever row came next — which is exactly what it did the moment
+      // Schedules was added underneath.
+      footer={<HowItWorks copy="memory" />}
+    />
   );
 }
 
@@ -520,6 +522,34 @@ function DocumentsRow({
   );
 }
 
+/**
+ * §35. The switch removes the model's four schedule tools; it does NOT stop the
+ * scheduler, and the copy has to say so or a user turning it off to quieten the
+ * agent would reasonably expect their 9 a.m. review to stop arriving.
+ */
+function SchedulesRow({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (on: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <div className="border-b border-line last:border-b-0 px-4 py-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <span className="font-bold block">Schedules — 4 tools</span>
+        <span className="text-xs text-ink-soft">
+          Lets the agent list this workspace&apos;s schedules and propose new ones. Creating, changing and deleting always
+          open the drawer or a permission prompt for you first — the agent never writes a schedule on its own. Turning
+          this off takes the four tools away from the agent; your schedules keep running.
+        </span>
+        <span className="text-xs text-ink-soft block mt-0.5">{RESPAWN_NOTE}</span>
+      </div>
+      <TogglePill on={on} onClick={() => onChange(!on)} />
+    </div>
+  );
+}
+
 export function BuiltinToolsBlock({
   onPlanChange,
 }: {
@@ -607,6 +637,16 @@ export function BuiltinToolsBlock({
           onAppend={async (v) => {
             await window.hv.builtinsSet({ memoryAppend: v });
             patch({ memoryAppend: v });
+          }}
+        />
+        <SchedulesRow
+          on={builtins.schedules}
+          onChange={(on) => {
+            setAskUserError(null);
+            void window.hv.builtinsSet({ schedules: on }).then(
+              () => patch({ schedules: on }),
+              (e) => setAskUserError(e instanceof Error ? e.message : "Could not save."),
+            );
           }}
         />
         <DocumentsRow

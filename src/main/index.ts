@@ -395,7 +395,7 @@ app.whenReady().then(() => {
     if (seedDefaultGitRules(rulesFile(), false)) setGitRulesSeeded(true)
   }
 
-  registerIpc(windows, persistLayout)
+  registerIpc(windows, persistLayout, () => openWindow({ tabsByWs: {}, ui: {} }))
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

@@ -484,9 +484,14 @@ describe("the session list is ordered by LAST USED, and the workspace on screen 
     expect(IPC.slice(o, o + 1200)).not.toContain("touch(");
   });
 
-  it("prompting counts as use", () => {
+  it("prompting counts as use — unless a SCHEDULE did the prompting", () => {
     const i = IPC.indexOf("activity.prompted(sessionId);");
-    expect(IPC.slice(i, i + 300)).toContain("index.touch(sessionId)");
+    const after = IPC.slice(i, i + 900);
+    expect(after).toContain("index.touch(sessionId)");
+    // §35: lastUsedAt means "a human touched this", and archivePreviousRun reads
+    // exactly that to decide whether the user adopted a run. A schedule
+    // prompting its own run must not look like use, or no run is ever archived.
+    expect(after).toContain("if (!bySchedule) index.touch(sessionId)");
   });
 
   it("a failed window lookup is SURFACED, never swallowed", () => {

@@ -26,6 +26,7 @@ import {
   buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, resolvePlanVerdict, restorePlanState, shouldForcePlanOff,
   type PlanState, type PlanSessionEntry,
 } from "./hv-plan";
+import { buildReadonlyPrompt, gateReadonlyCall, readonlyFromEnv } from "./hv-readonly";
 import { parseBuiltins } from "./hv-builtins";
 import { memoryTokenLines, readIndex, renderMemorySection } from "./hv-memory";
 // PRD §12 (2026-08-21): the sub-agent boundary. `capability-ceiling` IS in
@@ -68,6 +69,15 @@ import { discoverAgentsAll } from "../node_modules/pi-subagents/src/agents/agent
 const sessionGrants = new Set<string>();
 
 function summarize(toolName: string, input: Record<string, unknown>): string {
+  // §35: the only schedule tool that reaches a permission prompt is delete (the
+  // other two confirm in the drawer), and what you are approving is a NAMED
+  // schedule. The bridge has only the id, so it says so here and ships the id
+  // on the envelope as `scheduleId`; MAIN rewrites this to the schedule's title
+  // and recurrence in `stampPrompt` (permissionSummary, scheduleEnvelopes.ts).
+  // Either way it is FACTUAL, never the model's `intent` — the §7 round-1 split.
+  if (toolName === "schedule_delete" && typeof input.id === "string") {
+    return `schedule ${input.id}`;
+  }
   // §26 + §13's MCP rule: the permission prompt shows what will RUN. `intent` is
   // the model's own words and must never be what a user approves against — so
   // terminal_run summarises as its command, exactly like bash.
@@ -246,7 +256,7 @@ function documentReply(raw: unknown): {
 // §26: terminal_run/terminal_kill take the REQUIRED intent, per the standing rule
 // above. `subagent`'s demotion to optional (below) is deliberately NOT copied — a
 // terminal that starts is a card in someone's transcript and must say why.
-const INTENT_TOOLS = ["ask_user", "mcp", "use_skill", "terminal_run", "terminal_kill"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
+const INTENT_TOOLS = ["ask_user", "mcp", "use_skill", "terminal_run", "terminal_kill", "schedule_create", "schedule_update", "schedule_delete"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
 // `subagent` advertises intent but does NOT require it: the delegation `task` is
 // already a fine customer-facing headline (the UI uses intent ?? task), and a
 // hard requirement made looser models (e.g. Kimi) fail their first delegation
@@ -377,6 +387,13 @@ let rulesError: string | null = null;
 // permissions" setting is delivered via HV_BYPASS at spawn and re-applied on
 // every respawn, so unlike the manual toggle it survives a respawn.
 let dangerous = process.env.HV_BYPASS === "1";
+/**
+ * §35: a scheduled read-only run. `const`, and that is the feature — there is
+ * no command, no tool and no toggle that can flip it, so nothing inside the
+ * session can widen its own permissions. Only main sets the env var, and only
+ * for a schedule whose mode is "readonly".
+ */
+const readonly = readonlyFromEnv(process.env);
 
 // ── §23 Plan Mode ───────────────────────────────────────────────────────────
 // Per-session read-only mode. State is {enabled, planPath?}; plan TEXT + STATUS
@@ -653,7 +670,7 @@ type AuditDecision = "allow" | "allow-session" | "deny";
 // logged the old value, in red, so the column stopped distinguishing anything —
 // it named the mode, once per row, forever. Old logs keep the old string and
 // the renderer maps both; red is now reserved for what a command DOES.
-type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "terminal" | "web" | "document";
+type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "readonly" | "terminal" | "web" | "document";
 
 /** Every permission decision emits one hv.audit notify — main's audit channel. */
 function audit(
@@ -822,6 +839,10 @@ export default function (pi: ExtensionAPI) {
     } else if (plan.enabled || plan.planPath) {
       emitPlan(ctx.ui, true);
     }
+    // §35: tell the renderer to raise the "Read-only run" pill. A notify rather
+    // than persisted state — the mode comes from the environment on every
+    // spawn, so a respawn re-announces it without anything to restore.
+    if (readonly) ctx.ui.notify(JSON.stringify({ kind: "hv.readonly", enabled: true }), "info");
     busUi = ctx.ui;
   });
 
@@ -882,6 +903,9 @@ export default function (pi: ExtensionAPI) {
     // §26: steer long-running commands to terminal_run rather than a
     // backgrounded bash call. Only while the group is registered — otherwise
     // the prompt would name a tool the model does not have.
+    // §35: a scheduled read-only run gets its own directive instead of the
+    // planning one — it reports in chat and writes no plan file.
+    const readonlySection = readonly ? "\n\n" + buildReadonlyPrompt(pi.getAllTools().map((t) => t.name)) : "";
     const terminalSection = builtins.terminal ? "\n\n" + TERMINAL_STEER_LINE : "";
     // §32: steer web reading to the web tools rather than `bash curl`, which
     // returns raw HTML, runs through the terminal gate as an arbitrary command
@@ -906,7 +930,7 @@ export default function (pi: ExtensionAPI) {
     // session; the memory INDEX changes on every save and the nested section
     // whenever a new subdirectory is touched. Those two used to sit first and
     // last-but-inside, so either one invalidated the whole HappyVibe tail.
-    const injected = sp + agentsSection + planSection + terminalSection + webSection + memorySection + section;
+    const injected = sp + agentsSection + readonlySection + planSection + terminalSection + webSection + memorySection + section;
     systemText = injected;
     const opts = (event.systemPromptOptions ?? {}) as {
       selectedTools?: unknown[];
@@ -1246,10 +1270,29 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
+    let planFloorAsk = false;
+
+    // §35 read-only RUN clamp — first of all the gates, so it wins over plan
+    // mode, over bypass and over every rule. Not gated on any builtins toggle:
+    // the whole promise of a read-only schedule is that nothing in the session
+    // can turn it off (hv-readonly.ts explains why this is not plan mode).
+    //
+    // The verdict shape is Plan mode's, resolved through the same typechecked
+    // resolvePlanVerdict and reported through the same hv.plan.blocked notify,
+    // so the renderer draws one "Skipped" card for both entrances.
+    if (readonly) {
+      const g = resolvePlanVerdict(gateReadonlyCall(tool, input), boundary);
+      if (g.kind === "block") {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "readonly" });
+        ctx.ui.notify(JSON.stringify({ kind: "hv.plan.blocked", toolName: tool, toolCallId: event.toolCallId, reason: g.reason }), "info");
+        return { block: true, reason: g.reason };
+      }
+      if (g.kind === "floor-ask") planFloorAsk = true;
+    }
+
     // §23 Plan Mode clamp — runs BEFORE dangerous/bypass and the rule engine, so
     // plan mode wins over bypass (read-only must mean read-only). Applies to NEW
     // calls only; an in-flight async delegation is untouched.
-    let planFloorAsk = false;
     if (builtins.plan && plan.enabled) {
       // §23: the verdict — including the read-only-delegation decision — is
       // resolved in hv-plan.ts, which is typechecked. See resolvePlanVerdict.
@@ -1259,13 +1302,13 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(JSON.stringify({ kind: "hv.plan.blocked", toolName: tool, toolCallId: event.toolCallId, reason: g.reason }), "info");
         return { block: true, reason: g.reason };
       }
-      planFloorAsk = g.kind === "floor-ask"; // clamp allow→ask below; deny still denies
+      if (g.kind === "floor-ask") planFloorAsk = true; // clamp allow→ask below; deny still denies
     }
 
     // Dangerous mode: everything runs without prompting, but NEVER silently —
     // each call is audit-flagged and the renderer shows a permanent banner.
     // (Skipped while planning: plan mode ignores bypass entirely.)
-    if (dangerous && !plan.enabled) {
+    if (dangerous && !plan.enabled && !readonly) {
       // Round 15: evaluate the rules ANYWAY and record the verdict the bypass
       // overrode. It costs one pure call on an object already in hand (evaluate
       // is the same pure engine the branch below uses), and it is what turns
@@ -1347,7 +1390,16 @@ export default function (pi: ExtensionAPI) {
     const title = JSON.stringify(
       v.source === "outside-workspace"
         ? { kind: "hv.permission", tool: permTool, summary, reason: "outside-workspace", path: v.outsidePath }
-        : { kind: "hv.permission", tool: permTool, summary, ...(boundary ? { boundary } : {}) },
+        : {
+            kind: "hv.permission",
+            tool: permTool,
+            summary,
+            // §35: the id travels as its OWN field so main can name the
+            // schedule. Parsing it back out of `summary` would be reading our
+            // own prose, and the prompt must show a NAME, not a uuid.
+            ...(tool === "schedule_delete" && typeof input.id === "string" ? { scheduleId: input.id } : {}),
+            ...(boundary ? { boundary } : {}),
+          },
     );
     // Surfaces as extension_ui_request over RPC (verified by D1 probe).
     // NO timeout, NO auto-allow: permission prompts wait indefinitely by design.
@@ -2350,6 +2402,137 @@ export default function (pi: ExtensionAPI) {
       },
     });
   } // builtins.memory
+
+  // ── §35 Schedules: four tools, and main owns every decision ───────────────
+  //
+  // The model PROPOSES and the user CONFIRMS: create and update open the
+  // drawer prefilled and the tool's result is whatever the user did. Nothing
+  // here writes a schedule, even under a workspace bypass — a schedule is
+  // future unattended spend, and the drawer is where the mode card and the
+  // cost line are visible.
+  //
+  // Scoping is main's job, not this file's: there is no workspaceId parameter
+  // on any of the four, so the model cannot name another workspace to begin
+  // with, and main answers `not found` for an id outside the calling session's.
+  if (builtins.schedules) {
+    const scheduleAsk = async (
+      ctx: { ui: { input: (title: string, value: string) => Promise<unknown> } },
+      payload: Record<string, unknown>,
+    ): Promise<string> => {
+      const raw = await ctx.ui.input(JSON.stringify(payload), "");
+      // Main ALWAYS answers (the hv.plan-write rule) — but if it ever did not,
+      // say so rather than returning an empty string the model reads as success.
+      return typeof raw === "string" && raw ? raw : "ERROR: HappyVibe did not answer.";
+    };
+
+    const RepeatSchema = Type.Union([
+      Type.Object({ kind: Type.Literal("daily") }),
+      Type.Object({ kind: Type.Literal("weekdays") }),
+      Type.Object({ kind: Type.Literal("weekly"), days: Type.Array(Type.Integer({ minimum: 0, maximum: 6 }), { minItems: 1, description: "0 = Sunday … 6 = Saturday" }) }),
+      Type.Object({ kind: Type.Literal("hours"), every: Type.Integer({ minimum: 1, maximum: 23 }) }),
+      // Sub-hourly runs are real sessions with real bills, so the description
+      // says so — the user still confirms in the drawer, but the model should
+      // not reach for "every minute" as a neutral default.
+      Type.Object({ kind: Type.Literal("minutes"), every: Type.Integer({ minimum: 1, maximum: 59, description: "Minutes between runs. Each run is a full session — prefer 15 or more unless the user asked for something faster." }) }),
+      Type.Object({ kind: Type.Literal("once"), date: Type.String({ description: "YYYY-MM-DD" }) }),
+    ], { description: "How often it repeats." });
+    const AtSchema = Type.String({ description: "The time of day, as HH:MM in the user's local time." });
+    const UntilSchema = Type.String({
+      description: "Optional end, as YYYY-MM-DD (the end of that day) or YYYY-MM-DDTHH:MM. The schedule stops on its own then. Omit it for a schedule with no end, which is the default.",
+    });
+    const ModeSchema = Type.Union([Type.Literal("readonly"), Type.Literal("full")], {
+      description: "readonly = it can read, search and report but change nothing; full = this workspace's usual permission rules, and an `ask` waits for the user. Prefer readonly for reviews and reports.",
+    });
+
+    pi.registerTool({
+      name: "schedule_list",
+      label: "List schedules",
+      description: "List this workspace's schedules: what each one runs, when, in which mode, and how its last run went.",
+      parameters: Type.Object({}),
+      async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+        const raw = await scheduleAsk(ctx, { kind: "hv.schedule-list" });
+        return { content: [{ type: "text", text: raw }], details: { count: raw.startsWith("•") ? raw.split("\n").length : 0 } };
+      },
+    });
+
+    pi.registerTool({
+      name: "schedule_create",
+      label: "Propose a schedule",
+      description:
+        "Propose a recurring run of a prompt in this workspace. The user sees your proposal in a form and confirms or declines it — nothing is created until they do.",
+      parameters: Type.Object({
+        intent: intentParam(),
+        title: Type.String({ description: "A short name for the schedule, e.g. 'Daily change review'." }),
+        prompt: Type.String({ description: "The prompt to send each time it runs. Write it to stand alone — nobody is watching the run." }),
+        repeat: RepeatSchema,
+        at: AtSchema,
+        mode: Type.Optional(ModeSchema),
+        until: Type.Optional(UntilSchema),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        const p = params as { title: string; prompt: string; repeat: unknown; at: string; mode?: string; until?: string };
+        const raw = await scheduleAsk(ctx, {
+          kind: "hv.schedule-create",
+          draft: {
+            title: p.title, prompt: p.prompt, repeat: p.repeat, at: p.at,
+            ...(p.mode ? { mode: p.mode } : {}), ...(p.until ? { until: p.until } : {}),
+          },
+        });
+        const text = raw.startsWith("created ")
+          ? `Created. It is on the Schedules page now.`
+          : raw === "declined" ? "The user declined the schedule, so nothing was created."
+          : raw;
+        return { content: [{ type: "text", text }], details: { result: raw } };
+      },
+    });
+
+    pi.registerTool({
+      name: "schedule_update",
+      label: "Propose a change",
+      description:
+        "Propose a change to one of this workspace's schedules (use schedule_list for its id). The user sees the change in a form and confirms or declines it. Set enabled through the form, not here.",
+      parameters: Type.Object({
+        intent: intentParam(),
+        id: Type.String({ description: "The schedule's id, from schedule_list." }),
+        title: Type.Optional(Type.String()),
+        prompt: Type.Optional(Type.String()),
+        repeat: Type.Optional(RepeatSchema),
+        at: Type.Optional(AtSchema),
+        mode: Type.Optional(ModeSchema),
+        until: Type.Optional(UntilSchema),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        const p = params as { id: string; title?: string; prompt?: string; repeat?: unknown; at?: string; mode?: string; until?: string };
+        const patch: Record<string, unknown> = {};
+        for (const k of ["title", "prompt", "repeat", "at", "mode", "until"] as const) if (p[k] !== undefined) patch[k] = p[k];
+        const raw = await scheduleAsk(ctx, { kind: "hv.schedule-update", id: p.id, patch });
+        const text = raw.startsWith("updated ")
+          ? "Updated."
+          : raw === "declined" ? "The user declined the change, so nothing was altered."
+          : raw === "not found" ? "There is no schedule with that id in this workspace."
+          : raw;
+        return { content: [{ type: "text", text }], details: { result: raw } };
+      },
+    });
+
+    pi.registerTool({
+      name: "schedule_delete",
+      label: "Delete a schedule",
+      description: "Delete one of this workspace's schedules (use schedule_list for its id). To pause one instead, propose a change.",
+      parameters: Type.Object({
+        intent: intentParam(),
+        id: Type.String({ description: "The schedule's id, from schedule_list." }),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        const p = params as { id: string };
+        const raw = await scheduleAsk(ctx, { kind: "hv.schedule-delete", id: p.id });
+        const text = raw === "deleted" ? "Deleted."
+          : raw === "not found" ? "There is no schedule with that id in this workspace."
+          : raw;
+        return { content: [{ type: "text", text }], details: { result: raw } };
+      },
+    });
+  } // builtins.schedules
 
   // ── §23 Plan Mode: registered tools ──────────────────────────────────────
   // Gated as a whole block: plan_start is the model's own entry point into Plan
