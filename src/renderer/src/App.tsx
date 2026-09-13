@@ -1303,6 +1303,12 @@ export default function App(): React.JSX.Element {
       navigateRef.current?.({ view: "schedules" });
     });
     const offMissed = window.hv.onSchedulesMissed(() => setMissedOpen(true));
+    // §35: a scheduled run's prompt came from main, so draw the user's message
+    // here — the composer never saw it, and a transcript that opens straight
+    // into the reply hides the one thing the run was asked to do.
+    const offPrompted = window.hv.onSessionPrompted(({ sessionId, text }) => {
+      appendItem(sessionId, { kind: "user", text, ts: Date.now() });
+    });
     // A finish notification was clicked: land on the run, in its own workspace.
     const offShowSession = window.hv.onShowSession(({ sessionId, workspaceId }) => {
       setActiveWs(workspaceId);
@@ -1746,6 +1752,7 @@ export default function App(): React.JSX.Element {
       offSchedules();
       offScheduleDrawer();
       offMissed();
+      offPrompted();
       offShowSession();
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
@@ -2724,6 +2731,22 @@ export default function App(): React.JSX.Element {
    * IPC and no model call. It is the creation path we expect people to use: do
    * the task by hand once, like it, make it recurring.
    */
+  /**
+   * §35: is this session a clamped read-only run?
+   *
+   * DERIVED from the session's own schedule, not only from the bridge's
+   * `hv.readonly` notify — that notify fires at session_start, so a renderer
+   * reload lost the pill while the run was still clamped. The schedule is the
+   * same thing the spawn reads to set the clamp, so the two cannot disagree;
+   * the notify stays as the live signal for the moment before the schedules
+   * list has been fetched.
+   */
+  const isReadonlyRun = (sid: string): boolean => {
+    if (readonlyRuns[sid]) return true;
+    const scheduleId = sessions.find((s) => s.id === sid)?.scheduleId;
+    return !!scheduleId && schedules.find((x) => x.id === scheduleId)?.mode === "readonly";
+  };
+
   const repeatOnSchedule = (sid: string): void => {
     const meta = sessionsRef.current.find((s) => s.id === sid);
     const first = (transcripts[sid] ?? []).find((i) => i.kind === "user" && !!i.text);
@@ -3573,7 +3596,7 @@ export default function App(): React.JSX.Element {
             costOpen={costOpen && sid === selectedId}
             onCostOpenChange={setCostOpen}
             planEnabled={planMode[sid]?.enabled || false}
-            readonlyRun={!!readonlyRuns[sid]}
+            readonlyRun={isReadonlyRun(sid)}
             onRepeatOnSchedule={() => repeatOnSchedule(sid)}
             sessionSkills={(skillsLoaded[sid] ?? []).map((s) => ({
               ...s,

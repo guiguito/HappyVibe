@@ -3505,6 +3505,16 @@ export function registerIpc(
     // §35: when the turn started, for the run's duration. Set for every prompt
     // so a user-prompted run is measured the same way.
     turnStartedAt.set(sessionId, Date.now());
+    // §35: a prompt MAIN sent has no composer behind it, so nothing has drawn
+    // the user's message — the renderer only ever appends one for its own send
+    // or for a queue delivery. Without this a scheduled run's transcript opens
+    // straight into the reply, and the restore that would have filled it in is
+    // refused by the "don't clobber a live conversation" guard.
+    //
+    // Pushed BEFORE the send so it cannot land after the first streamed token,
+    // and it carries the TYPED text rather than `outgoing`: the user sees what
+    // they wrote, exactly as the composer shows it.
+    if (bySchedule) send("hv:session-prompted", { sessionId, text: msg });
     await client.send(promptCommand(outgoing, behavior, images));
     return { warnings };
   };

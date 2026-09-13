@@ -130,3 +130,34 @@ describe("the Built-in tools rows keep their own trailers", () => {
     expect(pr.indexOf("{footer && <div")).toBeLessThan(pr.lastIndexOf("</div>"));
   });
 });
+
+describe("a scheduled run shows the prompt it was given", () => {
+  const ipc = R("src/main/ipc.ts");
+
+  it("main announces the prompt it sent, because no composer did", () => {
+    // The renderer only draws a user bubble for its OWN send or for a queue
+    // delivery. A prompt main sends has neither, so a scheduled run's
+    // transcript opened straight into the reply — and the restore that would
+    // have filled it in from the session file is refused by the "don't clobber
+    // a live conversation" guard, because the assistant had already streamed.
+    expect(ipc).toMatch(/if \(bySchedule\) send\("hv:session-prompted", \{ sessionId, text: msg \}\)/);
+  });
+
+  it("it is announced BEFORE the send, so it cannot land after the first token", () => {
+    const i = ipc.indexOf('send("hv:session-prompted"');
+    const j = ipc.indexOf("await client.send(promptCommand(outgoing, behavior, images))");
+    expect(i).toBeGreaterThan(0);
+    expect(i).toBeLessThan(j);
+  });
+
+  it("it carries the TYPED text, not the outgoing one with its @file blocks", () => {
+    expect(ipc).toMatch(/text: msg \}\)/);
+    expect(ipc).not.toMatch(/hv:session-prompted", \{ sessionId, text: outgoing/);
+  });
+
+  it("the renderer appends it as the user's own message", () => {
+    const app = R("src/renderer/src/App.tsx");
+    expect(app).toMatch(/onSessionPrompted\(\(\{ sessionId, text \}\) => \{/);
+    expect(app).toMatch(/appendItem\(sessionId, \{ kind: "user", text, ts: Date\.now\(\) \}\)/);
+  });
+});

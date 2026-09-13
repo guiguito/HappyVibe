@@ -218,6 +218,16 @@ describe("the drawer", () => {
 describe("the run, on screen", () => {
   const cv = R("src/renderer/src/components/ChatView.tsx");
 
+  it("the read-only pill is DERIVED from the schedule, so a reload does not lose it", () => {
+    // The bridge's hv.readonly notify fires at session_start only, so after a
+    // renderer reload a still-clamped run showed no pill at all. The schedule
+    // is what the spawn itself reads, so deriving cannot disagree with it.
+    const app = R("src/renderer/src/App.tsx");
+    expect(app).toMatch(/const isReadonlyRun = /);
+    expect(app).toMatch(/readonlyRun=\{isReadonlyRun\(sid\)\}/);
+    expect(app).toMatch(/schedules\.find\(\(x\) => x\.id === scheduleId\)\?\.mode === "readonly"/);
+  });
+
   it("a read-only run shows its own pill", () => {
     expect(cv).toContain("Read-only run");
     expect(cv).toMatch(/\{readonlyRun && \(/);

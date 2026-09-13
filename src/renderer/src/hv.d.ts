@@ -870,6 +870,8 @@ interface HvApi {
   onSchedulesChanged(cb: (list: HvSchedule[]) => void): () => void;
   onScheduleDrawerRequest(cb: (r: HvScheduleDrawerRequest) => void): () => void;
   onSchedulesMissed(cb: (ids: string[]) => void): () => void;
+  /** §35: main prompted a session on a schedule's behalf — nothing else draws that user message. */
+  onSessionPrompted(cb: (r: { sessionId: string; text: string }) => void): () => void;
   onShowSession(cb: (r: { sessionId: string; workspaceId: string }) => void): () => void;
   /** §35: outstanding blocking prompts, for a window that opened after they were raised. */
   pendingUiRequests(): Promise<Array<{ id: string; sessionId?: string; method?: string; title?: string; message?: string; options?: string[]; promptWindowId?: number }>>;

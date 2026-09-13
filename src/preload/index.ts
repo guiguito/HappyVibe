@@ -651,6 +651,11 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:schedules-missed", l);
     return () => ipcRenderer.removeListener("hv:schedules-missed", l);
   },
+  onSessionPrompted: (cb: (r: { sessionId: string; text: string }) => void): (() => void) => {
+    const l = (_e: Electron.IpcRendererEvent, r: { sessionId: string; text: string }): void => cb(r);
+    ipcRenderer.on("hv:session-prompted", l);
+    return () => ipcRenderer.removeListener("hv:session-prompted", l);
+  },
   onShowSession: (cb: (r: { sessionId: string; workspaceId: string }) => void): (() => void) => {
     const l = (_e: Electron.IpcRendererEvent, r: { sessionId: string; workspaceId: string }): void => cb(r);
     ipcRenderer.on("hv:show-session", l);
