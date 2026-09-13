@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { CATCH_UP_LABELS, frequencyNote, lastRunLabel, missedLabel, MODE_CARDS, nextRunLabel, REPEAT_LABELS, scheduleSubtitle, TEMPLATES } from "../src/renderer/src/schedulesCopy";
+import { CATCH_UP_LABELS, ENDED_COPY, frequencyNote, lastRunLabel, missedLabel, MODE_CARDS, nextRunLabel, REPEAT_LABELS, scheduleSubtitle, TEMPLATES } from "../src/renderer/src/schedulesCopy";
 import { EMPTY_COPY } from "../src/renderer/src/components/EmptyState";
 import { nextFire, type Schedule } from "../src/main/schedules";
 import { NAV, groupFor } from "../src/renderer/src/components/Sidebar";
@@ -267,6 +267,40 @@ describe("the page", () => {
   it("the mode pill flips without opening the drawer", () => {
     expect(sv).toMatch(/const flipMode/);
     expect(sv).toMatch(/mode: s\.mode === "readonly" \? "full" : "readonly"/);
+  });
+
+  it("an ENDED row drops the controls that cannot work, and offers the two that can", () => {
+    // The toggle was the worst kind of control on an ended schedule: flipping
+    // it set `enabled` and left `nextRunAt` null, so it looked live and did
+    // nothing. Reschedule and Delete are what that row is actually for.
+    expect(sv).toMatch(/hasEnded\(s, now\) \? \(/);
+    const ended = sv.slice(sv.indexOf("hasEnded(s, now) ? ("), sv.indexOf("</>\n                    ) : ("));
+    expect(ended).toContain("Reschedule");
+    expect(ended).toContain("Delete");
+    expect(ended).not.toContain("<Toggle");
+    expect(ended).not.toContain("Run now");
+    expect(ended).not.toContain("flipMode");
+  });
+
+  it("Reschedule clears the expired end, so saving cannot be refused for the date it opened with", () => {
+    // Without this the user opens the drawer, changes something else, and the
+    // validator rejects it for an end date they never chose to keep.
+    expect(sv).toMatch(/setEditing\(\{ \.\.\.s, until: undefined \}\)/);
+  });
+
+  it("an ended row says what to do next, not just what happened", () => {
+    expect(sv).toContain("ENDED_COPY");
+    expect(ENDED_COPY).toMatch(/Reschedule/);
+    expect(ENDED_COPY).toMatch(/delete/i);
+  });
+
+  it("deleting asks once, by ONE path — two routes to an irreversible thing is how one loses its confirm", () => {
+    expect(sv.match(/setConfirmDelete\(s\)/g)!.length).toBe(2); // the ended row, and the expanded panel
+    expect(sv).not.toMatch(/onClick=\{\(\) => void window\.hv\.scheduleDelete/);
+    expect(sv).toMatch(/Delete this schedule\?/);
+    // It names what is lost and what is not.
+    expect(sv).toMatch(/record of past runs goes too/);
+    expect(sv).toMatch(/sessions those runs produced stay/);
   });
 
   it("a busy Run now explains itself rather than failing silently", () => {

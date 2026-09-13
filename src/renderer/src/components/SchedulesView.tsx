@@ -6,7 +6,7 @@ import { DUR } from "../motion";
 import { ScheduleDrawer } from "./ScheduleDrawer";
 import { Toggle } from "./Toggle";
 import {
-  humanRecurrence, lastRunLabel, LOGIN_ITEM_COPY, nextRunLabel, OUTCOME_MARK, PAUSED_COPY, TEMPLATES,
+  ENDED_COPY, hasEnded, humanRecurrence, lastRunLabel, LOGIN_ITEM_COPY, nextRunLabel, OUTCOME_MARK, PAUSED_COPY, TEMPLATES,
 } from "../schedulesCopy";
 
 /**
@@ -44,6 +44,10 @@ export function SchedulesView({
   const [costs, setCosts] = useState<Record<string, { perRun: Record<string, number | null>; last30: number | null }>>({});
   const [loginItem, setLoginItem] = useState<{ available: boolean; openAtLogin: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Deleting takes the run history with it, so it asks — ONE confirm for both
+  // routes in (the ended row's button and the expanded panel's link), because
+  // two paths to an irreversible thing is how one of them ends up without it.
+  const [confirmDelete, setConfirmDelete] = useState<Schedule | null>(null);
   const now = new Date();
   // The drawer stays mounted through its exit so the slide-out can play —
   // React would otherwise remove it before any transition started.
@@ -173,23 +177,52 @@ export function SchedulesView({
                         {humanRecurrence(s.repeat, s.at, s.until)} · {lastRunLabel(s)} · {nextRunLabel(s, now)}
                       </span>
                     </button>
-                    {/* One click to change the mode, without opening the drawer. */}
-                    <button
-                      type="button"
-                      onClick={() => flipMode(s)}
-                      title="Click to switch between Read-only and Full"
-                      className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-paper border border-line cursor-pointer hover:border-line-strong shrink-0"
-                    >
-                      {s.mode === "readonly" ? "Read-only" : "Full"}
-                    </button>
-                    <button type="button" onClick={() => runNow(s.id)} className="text-xs font-bold px-2 py-1 rounded-lg border border-line cursor-pointer hover:bg-paper shrink-0">
-                      Run now
-                    </button>
-                    <Toggle
-                      on={s.enabled}
-                      onChange={(v) => void window.hv.scheduleSave({ ...s, enabled: v }).catch(() => {})}
-                      label={`${s.title} on`}
-                    />
+                    {/* An ENDED schedule gets the two actions that mean anything
+                        to it, and none that do not. Its on/off toggle was the
+                        worst kind of control: flipping it set `enabled` and left
+                        `nextRunAt` null, so it looked live and did nothing. Run
+                        now and the mode pill go too — one is a detail of runs
+                        that are over, the other invites a one-off from a row
+                        whose whole message is that it is finished. */}
+                    {hasEnded(s, now) ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setEditing({ ...s, until: undefined })}
+                          title="Give it a new end, or no end at all"
+                          className="text-xs font-bold px-2 py-1 rounded-lg border border-line cursor-pointer hover:bg-paper shrink-0"
+                        >
+                          Reschedule
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDelete(s)}
+                          className="text-xs font-bold px-2 py-1 rounded-lg border border-line text-berry cursor-pointer hover:bg-paper shrink-0"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {/* One click to change the mode, without opening the drawer. */}
+                        <button
+                          type="button"
+                          onClick={() => flipMode(s)}
+                          title="Click to switch between Read-only and Full"
+                          className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-paper border border-line cursor-pointer hover:border-line-strong shrink-0"
+                        >
+                          {s.mode === "readonly" ? "Read-only" : "Full"}
+                        </button>
+                        <button type="button" onClick={() => runNow(s.id)} className="text-xs font-bold px-2 py-1 rounded-lg border border-line cursor-pointer hover:bg-paper shrink-0">
+                          Run now
+                        </button>
+                        <Toggle
+                          on={s.enabled}
+                          onChange={(v) => void window.hv.scheduleSave({ ...s, enabled: v }).catch(() => {})}
+                          label={`${s.title} on`}
+                        />
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => setExpanded(expanded === s.id ? null : s.id)}
@@ -206,6 +239,9 @@ export function SchedulesView({
                   )}
                   {s.missed && (
                     <p className="px-3 pb-2 text-xs font-semibold text-honey-deep">Missed its time — waiting for you to decide.</p>
+                  )}
+                  {hasEnded(s, now) && (
+                    <p className="px-3 pb-2 text-xs text-ink-soft">{ENDED_COPY}</p>
                   )}
 
                   {expanded === s.id && (
@@ -238,7 +274,7 @@ export function SchedulesView({
                       {s.createdBy?.source === "agent" && <p className="text-xs text-ink-soft mt-2">Created by the agent.</p>}
                       <button
                         type="button"
-                        onClick={() => void window.hv.scheduleDelete(s.id).catch(() => {})}
+                        onClick={() => setConfirmDelete(s)}
                         className="text-xs font-bold text-berry cursor-pointer mt-2 hover:underline"
                       >
                         Delete this schedule
@@ -251,6 +287,37 @@ export function SchedulesView({
           </div>
         ))}
       </div>
+
+      {confirmDelete && (
+        <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/40 px-6" onMouseDown={() => setConfirmDelete(null)}>
+          <div className="hv-dialog-flow w-full max-w-sm rounded-2xl border-2 border-line-strong bg-paper shadow-sticker-lg p-5" onMouseDown={(e) => e.stopPropagation()}>
+            <h2 className="font-black text-lg tracking-tight">Delete this schedule?</h2>
+            <p className="text-sm text-ink-soft mt-2">&ldquo;{confirmDelete.title}&rdquo;</p>
+            <p className="text-sm text-ink-soft mt-2">
+              Its record of past runs goes too. The sessions those runs produced stay where they are.
+            </p>
+            <div className="flex gap-2 justify-end mt-4">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                className="px-3 py-1.5 rounded-lg border border-line font-bold text-sm cursor-pointer hover:bg-card"
+              >
+                Keep it
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void window.hv.scheduleDelete(confirmDelete.id).catch(() => {});
+                  setConfirmDelete(null);
+                }}
+                className="px-3 py-1.5 rounded-lg border-2 border-berry bg-berry text-paper font-bold text-sm cursor-pointer hover:brightness-105"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {drawer.mounted && shown.current && (
         <ScheduleDrawer
