@@ -8,7 +8,7 @@
  * clock is what the user set. Adding 24*3600*1000 would drift it by an hour
  * twice a year and nothing would say so.
  *
- * There is no cron library, deliberately (§6.4): five recurrence kinds are a
+ * There is no cron library, deliberately (§6.4): six recurrence kinds are a
  * switch, not a grammar, and a cron string is a syntax the user would have to
  * learn to read their own schedule back.
  *
