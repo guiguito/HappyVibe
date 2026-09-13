@@ -196,3 +196,40 @@ describe("the delete prompt names the schedule, not its uuid", () => {
     expect(R("src/main/ipc.ts")).toContain("permissionSummary");
   });
 });
+
+describe("clicking a notification lands somewhere (§5.4)", () => {
+  const ipc = (): string => R("src/main/ipc.ts");
+  const handler = (): string => {
+    const s = ipc();
+    const i = s.indexOf('n.on("click"');
+    return s.slice(i, s.indexOf("n.show();", i));
+  };
+
+  it("opens a window when there is none — the case a scheduled run is FOR", () => {
+    // macOS keeps the app alive with every window closed, which is exactly the
+    // state a 3 a.m. run finishes in. Reusing windows.primary() alone would
+    // click into nothing.
+    expect(handler()).toContain("windows.primary() ?? openWindow()");
+    expect(handler()).toMatch(/w\.show\(\);\s*w\.focus\(\);/);
+  });
+
+  it("routes by kind: the missed nudge opens the dialog, a finished run opens its session", () => {
+    expect(handler()).toContain("hv:schedules-missed");
+    expect(handler()).toContain("hv:show-session");
+    expect(handler()).toMatch(/workspaceId: s\.workspaceId/);
+  });
+});
+
+describe("the schedule tools are the parent session's alone", () => {
+  it("they are registered by the bridge, which children never load", () => {
+    // §12: children run under pi-node.sh + hv-child-guard; the bridge is an
+    // `-e` on the PARENT spawn only. Structural, and pinned here because every
+    // other §35 invariant is and this one was not.
+    const spawn = R("src/main/pi/spawn.ts");
+    for (const t of ["schedule_list", "schedule_create", "schedule_update", "schedule_delete"]) {
+      expect(R("pi-runtime/extensions/happyvibe-bridge.ts")).toContain(t);
+      expect(spawn).not.toContain(t);
+    }
+    expect(R("pi-runtime/extensions/hv-child-guard.ts")).not.toContain("schedule_");
+  });
+});

@@ -246,9 +246,4 @@ export class Scheduler {
     const s = this.store.get(f.scheduleId);
     if (s) this.host.notify("needs_you", s, { sessionId });
   }
-
-  scheduleOfSession(sessionId: string): Schedule | undefined {
-    const f = this.inflight.get(sessionId);
-    return f ? this.store.get(f.scheduleId) : undefined;
-  }
 }

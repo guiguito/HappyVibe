@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, hasEnded, humanRecurrence, nextFire, runsPerDay, runTitle, untilCutoff, untilLabel, withNextRun, type Schedule } from "../src/main/schedules";
+import { applyOutcome, catchUpDecision, FAIL_PAUSE_AT, hasEnded, humanRecurrence, MAX_RUNS, nextFire, runsPerDay, runTitle, untilCutoff, untilLabel, withNextRun, type Schedule } from "../src/main/schedules";
 import { validateScheduleInput } from "../src/main/scheduleStore";
 
 // All dates are LOCAL wall-clock (§35: "Local time, DST follows the wall clock").
@@ -112,10 +112,10 @@ describe("applyOutcome / withNextRun", () => {
     s = applyOutcome(base({ failStreak: 2 }), { firedAt: "t", outcome: "skipped", reason: "busy" });
     expect(s.failStreak).toBe(2);
   });
-  it("keeps only the last 20 runs, newest last", () => {
+  it("keeps only the last MAX_RUNS runs, newest last", () => {
     let s = base();
-    for (let i = 0; i < 25; i++) s = applyOutcome(s, { firedAt: String(i), outcome: "ok" });
-    expect(s.runs).toHaveLength(20);
+    for (let i = 0; i < MAX_RUNS + 5; i++) s = applyOutcome(s, { firedAt: String(i), outcome: "ok" });
+    expect(s.runs).toHaveLength(MAX_RUNS);
     expect(s.runs.at(-1)!.firedAt).toBe("24");
   });
   it("withNextRun leaves a parked ask alone — retiring it is the scheduler's call, on the deadline the park set", () => {

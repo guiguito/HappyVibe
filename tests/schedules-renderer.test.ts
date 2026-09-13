@@ -372,3 +372,29 @@ describe("the missed dialog", () => {
     expect(app).toContain("onSchedulesMissed");
   });
 });
+
+describe("no dead copy in schedulesCopy.ts", () => {
+  it("every exported constant has a call site in the renderer", () => {
+    // §20's rule, which §35 skipped: unreferenced copy is the drift the module
+    // exists to end, so an unused export is a failure rather than harmless.
+    // It also catches the inverse — a component that stopped reading its copy
+    // and inlined a string instead.
+    const root = path.resolve(__dirname, "../src/renderer/src");
+    const sources: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name.endsWith(".tsx")) sources.push(fs.readFileSync(p, "utf8"));
+      }
+    };
+    walk(root);
+    const all = sources.join("\n");
+    const src = R("src/renderer/src/schedulesCopy.ts");
+    // SHOUTY_CASE constants only: the functions (humanRecurrence, lastRunLabel,
+    // scheduleSubtitle…) are re-exports and helpers with their own tests.
+    const names = [...src.matchAll(/^export const ([A-Z][A-Z0-9_]+)/gm)].map((m) => m[1]!);
+    expect(names.length).toBeGreaterThan(8);
+    expect(names.filter((n) => !all.includes(n))).toEqual([]);
+  });
+});
