@@ -227,6 +227,13 @@ export function runsPerDay(repeat: Repeat): number | null {
   return null;
 }
 
+/** Its recurring life is over — it did not stop because anyone switched it off. */
+export function hasEnded(s: Schedule, now: Date): boolean {
+  if (!s.until || !s.enabled) return false;
+  const cutoff = untilCutoff(s.until);
+  return !!cutoff && now > cutoff;
+}
+
 export type CatchUpDecision =
   | { kind: "fire" }
   | { kind: "park"; slotAt: string }
@@ -242,6 +249,12 @@ export type CatchUpDecision =
 export function catchUpDecision(s: Schedule, now: Date): CatchUpDecision {
   if (!s.enabled || !s.nextRunAt || s.missed) return { kind: "none" };
   if (new Date(s.nextRunAt) > now) return { kind: "none" };
+  // Past its end there is nothing to catch up on and nothing to ask. "Stop
+  // after the 15th" outranks "this should have run on the 15th" — otherwise
+  // closing the app over the end date and opening it a week later fires a
+  // schedule the user had already ended. `advance` retires the slot, which
+  // leaves nextRunAt null because withNextRun refuses to look past the cutoff.
+  if (hasEnded(s, now)) return { kind: "advance" };
   if (s.catchUp === "always") return { kind: "fire" };
   if (s.catchUp === "never") return { kind: "advance" };
   return { kind: "park", slotAt: s.nextRunAt };
@@ -280,9 +293,4 @@ export function withNextRun(s: Schedule, now: Date): Schedule {
   return { ...s, nextRunAt: next ? next.toISOString() : null };
 }
 
-/** Its recurring life is over — it did not stop because anyone switched it off. */
-export function hasEnded(s: Schedule, now: Date): boolean {
-  if (!s.until || !s.enabled) return false;
-  const cutoff = untilCutoff(s.until);
-  return !!cutoff && now > cutoff;
-}
+

@@ -302,6 +302,41 @@ describe("catch-up", () => {
     expect(st.get(id)!.nextRunAt).toBe(deadline); // not advanced twice
   });
 
+  it("an EXPIRED schedule is not caught up — 'stop after the 15th' outranks 'this should have run'", async () => {
+    // The regression: close the app over the end date, open it a week later,
+    // and the schedule the user had already ended fires once more. Catch-up
+    // never consulted `until`.
+    const st = new ScheduleStore(tmp());
+    const s = st.create({ ...input, catchUp: "always", until: "2026-09-15" }, new Date(2026, 8, 14, 10));
+    expect(new Date(st.get(s.id)!.nextRunAt!)).toEqual(new Date(2026, 8, 15, 9, 0));
+    const now = new Date(2026, 8, 20, 10); // launched five days past the end
+    const { h } = host({ now: () => now });
+    await new Scheduler(st, h).catchUp();
+    expect(h.createRunSession).not.toHaveBeenCalled();
+    // And it is retired rather than left due, so the next tick has nothing to do.
+    expect(st.get(s.id)!.nextRunAt).toBeNull();
+  });
+
+  it("…and it is not PARKED to ask about either — the question is already answered", async () => {
+    const st = new ScheduleStore(tmp());
+    const s = st.create({ ...input, catchUp: "ask", until: "2026-09-15" }, new Date(2026, 8, 14, 10));
+    const now = new Date(2026, 8, 20, 10);
+    const { h } = host({ now: () => now });
+    expect(await new Scheduler(st, h).catchUp()).toEqual([]);
+    expect(st.get(s.id)!.missed).toBeUndefined();
+    expect(h.notify).not.toHaveBeenCalled();
+  });
+
+  it("a miss INSIDE its life is still caught up normally", async () => {
+    const st = new ScheduleStore(tmp());
+    const s = st.create({ ...input, catchUp: "always", until: "2026-09-15" }, new Date(2026, 8, 14, 10));
+    const now = new Date(2026, 8, 15, 12); // the 09:00 slot was missed, but the end is 23:59
+    const { h } = host({ now: () => now });
+    await new Scheduler(st, h).catchUp();
+    expect(h.createRunSession).toHaveBeenCalledTimes(1);
+    void s;
+  });
+
   it("a second catchUp does not re-park an already-parked schedule", async () => {
     const { st, id } = overdue();
     const sch = new Scheduler(st, host().h);
