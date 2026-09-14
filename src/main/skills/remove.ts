@@ -59,13 +59,22 @@ export function removeSkillDir(dir: string, allowedRoots: string[]): void {
     return abs !== r && abs.startsWith(r + path.sep);
   });
   if (!ok) throw new Error(`Refusing to delete ${path.resolve(dir)}: outside the managed skill roots.`);
+  // Containment FIRST — it is the security-relevant answer — then existence.
+  // Failing closed on a missing target used to be accidental rather than decided:
+  // realish() falls back to path.resolve for a missing path, and on macOS that
+  // mismatched the realpath'd root (/var vs /private/var) so the check above
+  // refused it for a reason that had nothing to do with existence. Windows and
+  // Linux have no such indirection, so the same call sailed through and died
+  // inside rmSync with a raw ENOENT where a refusal was intended.
+  if (!fs.existsSync(abs)) throw new Error(`Refusing to delete ${path.resolve(dir)}: it does not exist.`);
   fs.rmSync(abs, { recursive: true, force: true, maxRetries: 3 });
 }
 
 /**
  * realpath where possible, falling back to resolve for a path that doesn't exist
- * yet. Deliberately fails CLOSED: an unresolvable target simply won't match a
- * resolved root, so the delete is refused rather than attempted.
+ * yet. The caller refuses a missing target explicitly (above) — relying on the
+ * fallback to "simply not match a resolved root" only held on macOS, where /var
+ * realpaths to /private/var.
  */
 function realish(p: string): string {
   try {

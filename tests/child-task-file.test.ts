@@ -52,7 +52,7 @@ const REAL_ARGV = [
   "/var/folders/xx/T/pi-subagent-ltj8yX/writer.md",
   "@/var/folders/xx/T/pi-subagent-ltj8yX/task.md",
 ];
-const TASK = "/var/folders/xx/T/pi-subagent-ltj8yX/task.md";
+const TASK = path.resolve("/var/folders/xx/T/pi-subagent-ltj8yX/task.md");
 
 describe("the child's own task file is read from argv, never matched by shape", () => {
   it("finds the trailing @<abs path> positional", () => {
@@ -124,5 +124,38 @@ describe("upstream still delivers the task the way the exemption reads it", () =
   it("and this really is our platform, so the path is not hypothetical", () => {
     // Recorded rather than asserted: on Linux CI the clause simply does not fire.
     expect(["darwin", "linux", "win32"]).toContain(os.platform());
+  });
+});
+
+describe("the task positional is recognised whatever separators it uses", () => {
+  /**
+   * PRD §4 (Windows round). The matcher was `startsWith("@/")` +
+   * `endsWith("/task.md")`, both POSIX-only — so on Windows the child's own task file
+   * was never recognised. That is not cosmetic: an unrecognised task file means the
+   * child's read of its own instructions is judged by the parent's rules, lands
+   * outside the workspace, and `ask` means DENY in the guard. The child is refused
+   * the task it exists to do, and the audit row reads like it was snooping a tempdir.
+   *
+   * pi-args only takes the file route on Windows for tasks over 8,000 chars
+   * (`platform === "darwin" || task.length > 8000`), which made it rare, not absent.
+   */
+  it("finds a Windows-shaped positional", () => {
+    const argv = ["--extension", "guard.ts", "@C:\\Users\\G\\AppData\\Local\\Temp\\pi-subagent-A1\\task.md"];
+    expect(taskFileFromArgv(argv)).toBe(path.resolve("C:\\Users\\G\\AppData\\Local\\Temp\\pi-subagent-A1\\task.md"));
+  });
+
+  it("finds a POSIX-shaped positional", () => {
+    expect(taskFileFromArgv(["@/tmp/pi-subagent-A1/task.md"])).toBe(path.resolve("/tmp/pi-subagent-A1/task.md"));
+  });
+
+  it("still refuses a RELATIVE positional — absolute is what the @/ prefix was testing", () => {
+    expect(taskFileFromArgv(["@sub/task.md"])).toBeUndefined();
+    expect(taskFileFromArgv(["@task.md"])).toBeUndefined();
+  });
+
+  it("still refuses a sibling file in the same tempdir", () => {
+    // writer.md rides the same directory as --system-prompt; a directory-shaped
+    // match would exempt it too.
+    expect(taskFileFromArgv(["@C:\\T\\pi-subagent-A1\\writer.md"])).toBeUndefined();
   });
 });

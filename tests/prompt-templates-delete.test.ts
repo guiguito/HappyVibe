@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { CAN_SYMLINK } from "./canSymlink"; // symlink fixtures need elevation on Windows
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -49,7 +50,7 @@ describe("removePromptTemplateFile", () => {
     expect(() => removePromptTemplateFile(root, [root])).toThrow(/outside|root/i);
   });
 
-  it("refuses a target reached through a symlinked path prefix", () => {
+  it.skipIf(!CAN_SYMLINK)("refuses a target reached through a symlinked path prefix", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-cmd-del-link-"));
     const root = path.join(tmp, "prompts");
     const outside = path.join(tmp, "outside");
@@ -65,6 +66,8 @@ describe("removePromptTemplateFile", () => {
 
   it("fails closed for a path that does not exist", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-cmd-del-missing-"));
-    expect(() => removePromptTemplateFile(path.join(tmp, "nope.md"), [tmp])).toThrow(/outside/i);
+    // Refused for EXISTENCE, which is now an explicit branch. It used to pass only
+    // on macOS, and by accident: /var vs /private/var made the root comparison fail.
+    expect(() => removePromptTemplateFile(path.join(tmp, "nope.md"), [tmp])).toThrow(/does not exist/i);
   });
 });

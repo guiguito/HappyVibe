@@ -19,7 +19,7 @@
  * silently disables the whole gate rather than failing loudly.
  */
 import * as fs from "node:fs";
-import { containsPath } from "./hv-paths";
+import { containsPath, isAbsolutePath } from "./hv-paths";
 import * as path from "node:path";
 import { EMPTY_RULES, parseRulesFile, type RulesFile } from "./hv-rules";
 import { childDecision } from "./hv-child-rules";
@@ -69,7 +69,17 @@ export interface ChildAuditRow {
  * Exported for the contract test.
  */
 export function taskFileFromArgv(argv: readonly string[]): string | undefined {
-  const arg = argv.find((a) => a.startsWith("@/") && a.endsWith("/task.md"));
+  // Separator-agnostic (PRD §4, Windows round). The original matched `@/` and
+  // `/task.md`, both POSIX-only, so on Windows the positional `@C:\…\task.md` was
+  // never recognised — and an unrecognised task file is not a cosmetic miss: the
+  // child's read of its OWN instructions then resolves against the parent's rules,
+  // lands outside the workspace, and `ask` means DENY in here. The child is refused
+  // the task it was spawned to do. pi-args only takes the file route on Windows for
+  // tasks over 8,000 chars, which is what kept it rare rather than absent.
+  //
+  // `isAbsolutePath` is what the `@/` prefix was really testing — an absolute path,
+  // never a relative `@sub/task.md`.
+  const arg = argv.find((a) => a.startsWith("@") && isAbsolutePath(a.slice(1)) && /[\\/]task\.md$/.test(a));
   return arg ? path.resolve(arg.slice(1)) : undefined;
 }
 
