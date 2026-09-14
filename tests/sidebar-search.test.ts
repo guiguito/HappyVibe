@@ -22,7 +22,10 @@ describe("the input is conditional, the icon is not", () => {
   });
 
   it("the affordance carries its shortcut in the tooltip, like the collapse control", () => {
-    expect(SRC).toContain('title="Find a session (⌘K)"');
+    // The glyph comes from MOD now (PRD §4, Windows round) — a literal ⌘ named a key
+    // that is not on a Windows keyboard. What this test is FOR is that the affordance
+    // still carries its shortcut, not which glyph the shortcut is spelled with.
+    expect(SRC).toMatch(/title=\{`Find a session \(\$\{MOD\}K\)`\}/);
   });
 
   it("the placeholder is unchanged — this hides the input, not the capability", () => {

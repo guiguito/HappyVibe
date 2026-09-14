@@ -4190,17 +4190,28 @@ export function registerIpc(
    * the worst failure available: not an error the user can act on, but a
    * silent empty transcript.
    */
+  // §27 + §4 Windows round: Electron answers getMediaAccessStatus on darwin AND
+  // win32. The blanket "granted" now covers only linux, which has no such API — so a
+  // Windows user whose privacy toggle is off gets the same guidance as a Mac user,
+  // instead of a level meter that reads zero with nothing explaining why.
+  const HAS_MIC_API = process.platform === "darwin" || process.platform === "win32";
   ipcMain.handle("hv:voice-mic-status", () =>
-    process.platform === "darwin" ? systemPreferences.getMediaAccessStatus("microphone") : "granted",
+    HAS_MIC_API ? systemPreferences.getMediaAccessStatus("microphone") : "granted",
   );
   ipcMain.handle("hv:voice-ask-mic", async () => {
-    if (process.platform !== "darwin") return true;
+    if (!HAS_MIC_API) return true;
     if (systemPreferences.getMediaAccessStatus("microphone") !== "not-determined") {
       return systemPreferences.getMediaAccessStatus("microphone") === "granted";
     }
-    return systemPreferences.askForMediaAccess("microphone");
+    // askForMediaAccess is darwin-only. Windows has no prompt to raise: permission
+    // lives in Settings, which is what hv:voice-open-mic-settings opens.
+    return process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : false;
   });
   ipcMain.handle("hv:voice-open-mic-settings", () => {
+    if (process.platform === "win32") {
+      void shell.openExternal("ms-settings:privacy-microphone");
+      return;
+    }
     if (process.platform !== "darwin") return;
     // The pane identifier changed with System Settings (macOS 13+), and the old
     // one FAILS SOFTLY: `com.apple.preference.security` still launches Settings

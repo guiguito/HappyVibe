@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MOD } from "../platformCopy";
 import { uiGet, uiSet } from "../uiStore";
 import { timeago } from "../timeago";
 import { DOT_TITLE, SESSION_DOT, sessionDotState } from "../sessionDot";
@@ -911,7 +912,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={onToggleCollapsed}
-            title="Expand sidebar (⌘\)"
+            title={`Expand sidebar (${MOD}\\)`}
             aria-label="Expand sidebar"
             className="cursor-pointer hover:brightness-105 transition-all"
           >
@@ -1011,7 +1012,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={openSearch}
-            title="Find a session (⌘K)"
+            title={`Find a session (${MOD}K)`}
             aria-label="Find a session"
             className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1"
           >
@@ -1020,7 +1021,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={onToggleCollapsed}
-            title="Collapse sidebar (⌘\)"
+            title={`Collapse sidebar (${MOD}\\)`}
             aria-label="Collapse sidebar"
             className="shrink-0 text-ink-soft hover:text-ink cursor-pointer text-lg leading-none px-1"
           >

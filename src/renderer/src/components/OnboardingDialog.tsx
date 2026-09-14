@@ -73,6 +73,7 @@ function StepRow({
 export function OnboardingDialog({
   modelReady,
   workspaceReady,
+  agentShell,
   onRefreshModel,
   onOpenFolder,
   onStartFresh,
@@ -82,6 +83,8 @@ export function OnboardingDialog({
 }: {
   modelReady: boolean;
   workspaceReady: boolean;
+  /** §4: "powershell" means this Windows machine has no Git Bash. null = not yet probed. */
+  agentShell: "bash" | "powershell" | null;
   /** Re-read the credential gate — the local-runner door has no main-side event. */
   onRefreshModel: () => void;
   onOpenFolder: () => void;
@@ -276,6 +279,14 @@ export function OnboardingDialog({
                             </div>
                           )}
                         </StepRow>
+
+                        {/* §4 Windows round: only when the machine has no Git Bash.
+                            Not a Banner, not persisted, not shown again — it names
+                            the one thing that does not degrade, since the bundled
+                            sub-agents ask for `bash` in frontmatter. */}
+                        {agentShell === "powershell" && (
+                          <p className="text-xs text-ink-soft mt-4 leading-snug">{C.gitForWindows}</p>
+                        )}
                     </div>
                   ) : (
                     /* The celebration lands in the RIGHT panel, so the brand

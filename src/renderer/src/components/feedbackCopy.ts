@@ -1,3 +1,4 @@
+import { MOD } from "../platformCopy";
 /**
  * §34 — every word the feedback dialog says, in one record (§20's rule).
  *
@@ -24,7 +25,7 @@ export const FEEDBACK_COPY = {
   captureLabel: "Attach a picture of this window",
   /** Inlet's own advice to integrators, passed on to the user. */
   captureWarning: "A screenshot can show code, file names or keys. Check it before you send.",
-  paste: "Paste an image (⌘V) or",
+  paste: `Paste an image (${MOD}V) or`,
   choose: "choose a file…",
   unknown: "This question needs a newer HappyVibe.",
   rateLimited: "Too many sends from this network — try again in a minute.",

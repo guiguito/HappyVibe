@@ -43,6 +43,16 @@ export const ONBOARDING_COPY = {
   step2FreshLabel: "Name your project",
   step2FreshCreate: "Create it",
   step2FreshWhere: "Created in your Documents folder, under HappyVibe.",
+  /**
+   * §4 Windows round. Shown ONLY when the shell probe answers "powershell" — i.e. a
+   * Windows machine with no Git Bash. One line, no persistence, no nag, and never a
+   * Banner: §34's pulse decision already settled that a row like this is not one.
+   * It names sub-agents explicitly because that is the part that does not degrade —
+   * the bundled agents ask for `bash` in frontmatter, and that allowlist is
+   * upstream's to enforce, not ours to rewrite per platform.
+   */
+  gitForWindows:
+    "Install Git for Windows for the best experience — HappyVibe will use its shell automatically, and sub-agents need it.",
 
   skip: "I'll set up myself",
   doneTitle: "You're in.",

@@ -1,3 +1,4 @@
+import { IS_MAC, MOD } from "./platformCopy";
 /**
  * F6 → round 8: the keyboard-shortcut registry — the single source for the
  * shortcuts PAGE and for every site that dispatches a shortcut.
@@ -72,7 +73,7 @@ export const FIXED_SHORTCUTS: { keys: string; label: string }[] = [
   // returns null for a modifier key and again when no modifier accompanies it,
   // the canonical form carries no left/right (e.key is "Meta" for both ⌘s), and
   // one dispatch site is a CodeMirror keymap, which has no press-and-hold.
-  { keys: "Hold right ⌘", label: "Dictate into the composer (tap to keep recording)" },
+  { keys: `Hold right ${MOD}`, label: "Dictate into the composer (tap to keep recording)" },
 ];
 
 type KeyEventish = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">;
@@ -96,7 +97,12 @@ export function matchesBinding(e: KeyEventish, binding: string): boolean {
   return eventToBinding(e) === binding;
 }
 
-export function formatBinding(binding: string, mac = true): string {
+/**
+ * The DEFAULT is the running platform, not `true` (PRD §4, Windows round). Every call
+ * site omits the argument, so a hardcoded `true` printed ⌘ for every shortcut on the
+ * Shortcuts page and in the tab strip — on a keyboard with no ⌘ key.
+ */
+export function formatBinding(binding: string, mac = IS_MAC): string {
   return binding
     .split("-")
     .map((p) => {
