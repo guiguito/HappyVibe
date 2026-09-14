@@ -111,10 +111,11 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   own `401 User not found`, so the route is proven independently of any balance. Pricing is
   ~$0.08/M in, $0.17/M out — a full serial batch costs pennies. Resolver pinned by
   `tests/live-model.test.ts`.
-- Live-Pi tests (real model via the resolver above, skipIf-gated) — **17 files** as of
-  2026-08-16 (was 14; browser-bridge, terminal-bridge and git-message joined since).
+- Live-Pi tests (real model via the resolver above, skipIf-gated) — **23 files** as of
+  2026-09-14 (was 17 at 2026-08-16, 14 before that).
   Source of truth = `grep -rl "skipIf(!KEY" tests/` — RE-DERIVE IT, never trust a list in prose.
-  The count in this file has drifted twice; the grep has not.
+  The count in this file has drifted three times; the grep has not. Do not repair it by hand
+  either — run the grep, write what it says, and note the date.
   Note git-message is the odd one out: it is the only live file that is not a BRIDGE test —
   §29's "Write it for me" is a one-shot `pi -p` call, so it exercises the print-mode path
   (`titles.ts`'s pattern) rather than the RPC one.
@@ -128,19 +129,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   carries the change, not before (this reads as "the gate script regressed" if you forget).
   **A fresh WORKTREE has no `.env`, so the batch exits 0 having tested nothing — and it looks
   green.** `.env` is gitignored, so it does not travel with a worktree; `KEY` is then undefined
-  and all 18 files skip themselves, while the key-free tests inside them still report as passes
-  (measured 2026-08-31: `6 passed | 12 skipped`, exit 0). **The tell is the DURATION** — a real
-  batch is ~6 min, that one took 4.72 s. Always read the wall time before believing a green live
+  and every one of them skips itself, while the key-free tests inside them still report as passes
+  (measured 2026-08-31 at 18 files: `6 passed | 12 skipped`, exit 0). **The tell is the DURATION** —
+  a real batch is ~7-8 min (461 s / 23 files / 73 tests, measured 2026-09-14), that one took 4.72 s. Always read the wall time before believing a green live
   run, and symlink the key in first: `ln -s ~/Documents/Github/HappyVibe/.env .env` (still
   ignored through the link — `git check-ignore -v .env` confirms). Same silent-skip class as the
   `sk-REPLACE` rule above, one directory over.
   (`--no-file-parallelism` is load-bearing: concurrent files mean concurrent DeepSeek sessions,
   and the provider degrades under that — the residual "flakes" were turns that came back with no
-  tool call at all. Serial costs ~6 min and is green.)
+  tool call at all. Serial costs ~7-8 min and is green.)
   (use `xargs` — zsh does NOT word-split `$(…)`, so `npx vitest run $files` passes all 14
   paths as ONE argument and vitest reports "No test files found" while echoing the filter list.)
   (`skills-contract`/`builtins-contract` also spawn Pi but with a dummy key — key-free, they stay in the non-live run.)
-- **Background the live batch, not the fast one.** `test:live` is ~6 min and blocks, so run it
+- **Background the live batch, not the fast one.** `test:live` is ~7-8 min and blocks, so run it
   with Bash `run_in_background: true` and keep working — the harness re-invokes on exit with the
   raw output. **Only alongside work that does not touch the tree**: docs, docs/prd.md, Notion,
   reading, review. `vitest run` collects files as it goes and the live files spawn real Pi
@@ -157,12 +158,13 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   fills vars that are UNSET — so the shell value wins and every live file skips itself.
   **BOTH vars must be neutralised.** Setting only the DeepSeek one meant that the day an
   OpenRouter key landed in `.env`, `npm test` would silently stop being the non-live suite: 25-40 s
-  becomes ~6 min and starts spending money, with nothing in the output saying so. Verified in both
+  becomes ~7-8 min and starts spending money, with nothing in the output saying so. Verified in both
   directions (`tests/live-model.test.ts` plus an end-to-end check that `npm test` still skips with a
   real-looking key exported in the shell). This is exactly what CI runs (CI has no key at all), and it is STRICTLY MORE than
   the old exclude glob: 9 key-free tests live inside those 14 files (context-bridge ×2,
   rules-bridge ×3, agents-bridge ×2, agents-md-bridge, subagent-discovery-bridge) and the glob
-  threw them on the floor. Measured: 139 files, 1253 tests, 15 skipped, ~25-40 s (2026-08-04).
+  threw them on the floor. Measured: 306 files, 3921 tests, 47 skipped, ~50 s (2026-09-14; it read
+  139 files / 1253 tests / 15 skipped on 2026-08-04 — same drift as the live count, same fix: run it).
   **Never add an exclude list back — the list is the thing that drifted.**
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
@@ -596,7 +598,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   (OAuth-only here) and the only pinned env var is `anthropic`'s, which declares three.
 - **`npm test` stays key-free only if `sk-REPLACE` neutralisation covers EVERY catalog env var**,
   not the original five — `tests/providers.test.ts` asserts it per row. A provider where the
-  placeholder leaked through would silently turn the 40 s non-live suite into a paid ~6 min one.
+  placeholder leaked through would silently turn the 50 s non-live suite into a paid ~7-8 min one.
 
 ## Gotchas
 - One-shot pi CLI calls hang unless stdin is closed (`stdio: ["ignore", …]`). RPC mode unaffected.

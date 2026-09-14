@@ -257,15 +257,26 @@ describe("the pty write socket is guarded", () => {
    * nobody was watching. node-pty guards its OUTPUT socket and rethrows everything
    * else; the write path uses `_agent.inSocket`, a different socket with no handler.
    *
+   * BOTH arms are asserted rather than the win32 one skipped (the windows-skips
+   * rule): `_agent` belongs to WindowsPtyAgent and does not exist on a UnixTerminal,
+   * whose `_socket` node-pty already guards itself (unixTerminal.js). So off win32
+   * the honest answer is "nothing to attach", and asserting it is what stops a
+   * future silent true — a handler on a socket that is not the write path.
+   *
    * Both halves are pinned because both can rot: the private field can be renamed by
    * a bump, and the reason can be forgotten.
    */
-  it("finds node-pty's private write socket and attaches a handler", () => {
+  it("finds node-pty's private write socket where ConPTY has one, and says so where it does not", () => {
     const m = new TerminalManager(() => {}, () => {}, () => {});
     const t = m.create("ws1", process.cwd(), FAST, 80, 24);
     try {
       const entry = (m as unknown as { entries: Map<string, { pty: unknown }> }).entries.get(t.id);
-      expect(attachWriteErrorHandler(entry?.pty, "probe"), "node-pty renamed _agent.inSocket").toBe(true);
+      expect(
+        attachWriteErrorHandler(entry?.pty, "probe"),
+        process.platform === "win32"
+          ? "node-pty renamed _agent.inSocket"
+          : "a UnixTerminal has no _agent — node-pty guards its own _socket",
+      ).toBe(process.platform === "win32");
     } finally {
       m.killAll();
     }

@@ -127,7 +127,16 @@ export function makePlatform(deps: PlatformDeps): Platform {
         // branch deliberately skips the stdout flush.
         deps.exec("taskkill", ["/PID", String(pid), "/T", "/F"]);
       } else {
-        kill(pid, "SIGTERM");
+        // ESRCH is swallowed because "already gone" is the normal case, not an
+        // error: every caller here (hibernation, MCP live-reload, closing a
+        // crashed session) reaches stop() for a child that may have exited on its
+        // own. `child.kill()` — what PiClient used before the seam — swallows it
+        // internally, so raising it here turned a no-op into a throw in MAIN.
+        try {
+          kill(pid, "SIGTERM");
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException)?.code !== "ESRCH") throw e;
+        }
       }
     },
 

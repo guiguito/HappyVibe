@@ -3,9 +3,9 @@
  *
  * Both provider keys are forced to `sk-REPLACE`. tests/liveModel.ts treats that value
  * as ABSENT for either provider, and its .env loader only fills vars that are UNSET,
- * so this value wins and all 17 live files skip themselves. BOTH must be set: with
+ * so this value wins and every live file skips itself. BOTH must be set: with
  * only one neutralised, the day a key for the other provider lands in .env this
- * script silently stops being the non-live suite — 25-40 s becomes ~6 min and starts
+ * script silently stops being the non-live suite — ~50 s becomes ~7-8 min and starts
  * spending money, with nothing in the output saying so. Pinned by
  * tests/test-script.test.ts.
  *

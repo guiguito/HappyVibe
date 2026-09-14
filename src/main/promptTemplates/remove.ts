@@ -13,6 +13,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { resolveThroughLinks } from "../realpath";
 
 export type PromptTemplateDeleteAction = "delete" | "unlink" | "refused";
 export interface PromptTemplateDeletePlan {
@@ -59,33 +60,20 @@ export function planPromptTemplateRemoval(view: { id: string; source: string }):
  * Not recursive: a command is one file, and rmSync throws on a directory.
  */
 export function removePromptTemplateFile(file: string, allowedRoots: string[]): void {
-  const abs = realish(file);
+  const abs = resolveThroughLinks(file);
   const ok = allowedRoots.some((root) => {
-    const r = realish(root);
+    const r = resolveThroughLinks(root);
     return abs !== r && abs.startsWith(r + path.sep);
   });
   if (!ok) throw new Error(`Refusing to delete ${path.resolve(file)}: outside the managed prompt roots.`);
   // Containment FIRST — it is the security-relevant answer — then existence.
-  // Failing closed on a missing target used to be accidental rather than decided:
-  // realish() falls back to path.resolve for a missing path, and on macOS that
-  // mismatched the realpath'd root (/var vs /private/var) so the check above
-  // refused it for a reason that had nothing to do with existence. Windows and
-  // Linux have no such indirection, so the same call sailed through and died
-  // inside rmSync with a raw ENOENT where a refusal was intended.
+  // Both must be explicit branches. Failing closed on a missing target used to be
+  // accidental: the resolver returned a bare path.resolve() for a path that does
+  // not exist, which on macOS alone mismatched the realpath'd root (/var vs
+  // /private/var) and so refused it for a reason that had nothing to do with
+  // existence — while Windows and Linux, having no such indirection, sailed past
+  // and died inside rmSync with a raw ENOENT. resolveThroughLinks() now walks to
+  // the nearest existing ancestor, so every platform reaches this line.
   if (!fs.existsSync(abs)) throw new Error(`Refusing to delete ${path.resolve(file)}: it does not exist.`);
   fs.rmSync(abs, { maxRetries: 3 });
-}
-
-/**
- * realpath where possible, falling back to resolve for a path that doesn't exist
- * yet. The caller refuses a missing target explicitly (above) — relying on the
- * fallback to "simply not match a resolved root" only held on macOS, where /var
- * realpaths to /private/var.
- */
-function realish(p: string): string {
-  try {
-    return fs.realpathSync(p);
-  } catch {
-    return path.resolve(p);
-  }
 }

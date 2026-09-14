@@ -72,6 +72,35 @@ describe("killTree", () => {
     p.killTree(77);
     expect(killed).toEqual([[77, "SIGTERM"]]);
   });
+
+  // "Already gone" is the normal case here, not an error: hibernation, MCP
+  // live-reload and closing a crashed session all reach PiClient.stop() for a child
+  // that may have exited on its own. `child.kill()` — what stop() called before the
+  // seam — swallows ESRCH internally, so a raising killTree turned a no-op into a
+  // throw in MAIN. Caught live by tests/piclient.test.ts "emits exit on crash".
+  it("swallows ESRCH, because a process that already exited is not a failure", () => {
+    const gone = Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+    const p = makePlatform(
+      deps({
+        kill: () => {
+          throw gone;
+        },
+      }),
+    );
+    expect(() => p.killTree(77)).not.toThrow();
+  });
+
+  it("but still raises anything else — EPERM is a real problem worth seeing", () => {
+    const denied = Object.assign(new Error("kill EPERM"), { code: "EPERM" });
+    const p = makePlatform(
+      deps({
+        kill: () => {
+          throw denied;
+        },
+      }),
+    );
+    expect(() => p.killTree(77)).toThrow(/EPERM/);
+  });
 });
 
 describe("readCommand", () => {
