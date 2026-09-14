@@ -92,9 +92,18 @@ export function hasBackgroundAmpersand(cmd: string): boolean {
 // exactly when the model gets it wrong (X2: the tool description holds the how,
 // the system section one sentence of when, the refusal the why). Scope first,
 // exception second — the ordering the measurement above depends on.
-export const TERMINAL_STEER_LINE =
-  "`bash` runs commands that finish on their own; a command that would run indefinitely " +
-  "(a dev server, a watcher) goes to `terminal_run`, so the user can watch it and stop it.";
+export function shellSteerLine(shell: string): string {
+  return (
+    `\`${shell}\` runs commands that finish on their own; a command that would run indefinitely ` +
+    "(a dev server, a watcher) goes to `terminal_run`, so the user can watch it and stop it."
+  );
+}
+
+/** The running session's shell (PRD §4). `bash` everywhere except a Windows box with
+ *  no Git Bash, where spawn passes Pi's `powershell` tool instead. */
+export const AGENT_SHELL = process.env.HV_AGENT_SHELL ?? "bash";
+
+export const TERMINAL_STEER_LINE = shellSteerLine(AGENT_SHELL);
 
 /**
  * The three tool descriptions, HERE rather than inline at their registerTool

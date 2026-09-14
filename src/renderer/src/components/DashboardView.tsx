@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { basename } from "../basename";
 import { fmtCost, fmtDuration, fmtNum } from "../analytics-format";
 import { Section } from "./Section";
 import { EmptyState } from "./EmptyState";
@@ -6,9 +7,6 @@ import { EmptyState } from "./EmptyState";
 /** B7 — local-only analytics. Everything here is read from the JSONL event log
  * in main; nothing is ever sent anywhere. Money is labeled as an estimate. */
 
-function basename(p: string): string {
-  return p.split("/").filter(Boolean).pop() ?? p;
-}
 
 function Card({ label, value, sub }: { label: string; value: string; sub?: string }): React.JSX.Element {
   return (

@@ -267,7 +267,7 @@ export function TerminalView({
           {num(s.scrollback, (v) => patch({ scrollback: v }), 500, "w-28")}
         </Row>
         <Row label="Copy on select" field="copyOnSelect">{toggle(s.copyOnSelect, (v) => patch({ copyOnSelect: v }))}</Row>
-        <Row label="Right-click pastes" hint="Off by default — the macOS convention is a context menu." field="rightClickPastes">
+        <Row label="Right-click pastes" hint="Off by default — a right-click opens the context menu instead." field="rightClickPastes">
           {toggle(s.rightClickPastes, (v) => patch({ rightClickPastes: v }))}
         </Row>
         <Row

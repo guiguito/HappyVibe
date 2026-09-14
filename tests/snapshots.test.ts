@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { CAN_SYMLINK } from "./canSymlink"; // a symlink fixture needs elevation on Windows
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -45,7 +46,7 @@ describe("buildManifest", () => {
     expect(SNAPSHOT_EXCLUDE.has("dist")).toBe(true);
   });
 
-  test("skips symlinks rather than following them out of the workspace", () => {
+  test.skipIf(!CAN_SYMLINK)("skips symlinks rather than following them out of the workspace", () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "hv-outside-"));
     fs.writeFileSync(path.join(outside, "secret.txt"), "secret");
     fs.symlinkSync(path.join(outside, "secret.txt"), path.join(ws, "link.txt"));

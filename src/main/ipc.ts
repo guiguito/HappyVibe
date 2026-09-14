@@ -76,6 +76,7 @@ import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } f
 import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, normPath, readSessionFile, sessionFilePath, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { exportSessionHtml } from "./sessionExport";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
+import { platform } from "./platform";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
 import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
@@ -922,6 +923,10 @@ export function registerIpc(
       // rather than stored on the session, so a resume, a hibernation wake and
       // an MCP reload all recompute it — the clamp cannot be lost by a respawn.
       readonly: readonlyForSession(sessionId),
+      // §4 Windows round: Git Bash if Pi can find one, else Pi's powershell tool.
+      // Probed at EVERY spawn — installing Git for Windows then takes effect on the
+      // next session, with no restart and nothing to configure.
+      agentShell: platform.agentShell().shell,
       // §13 round 6: global on/off for built-in custom tools, re-applied on
       // every (re)spawn — mirrors bypass, but global-only (no workspace tier).
       builtinTools: builtins,
@@ -4004,8 +4009,20 @@ export function registerIpc(
   });
 
   // Settings "test a call" preview — the SAME pure engine the bridge runs.
+  // §4 Windows round: which shell the agent actually got, re-probed per call so
+  // installing Git for Windows takes effect on the next session with no restart.
+  ipcMain.handle("hv:agent-shell", () => platform.agentShell());
+  ipcMain.handle("hv:terminal-shells", () => ({
+    default: platform.terminalShell(),
+    found: platform.detectedShells(),
+  }));
+
   ipcMain.handle("hv:eval-rules", (_e, workspaceId: string, tool: string, input: Record<string, unknown>) =>
-    evaluate(readRules(), { tool, input, workspace: workspaceId }));
+    // caseInsensitivePaths from the platform seam, so the preview answers exactly what
+    // the bridge will answer — a preview that disagrees with the gate is worse than none.
+    evaluate(readRules(), {
+      tool, input, workspace: workspaceId, caseInsensitivePaths: platform.isWindows,
+    }));
 
   // ── §28 Embedded browser: the renderer's half ──────────────────────────────
   // Bounds and visibility are the whole cost of choosing WebContentsView: the
@@ -4126,7 +4143,7 @@ export function registerIpc(
   ipcMain.handle("hv:term-create", (_e, ws: string, cols?: number, rows?: number) => {
     // cwd comes from the REGISTRY, never from the renderer's string — the same
     // posture every other fs entry point in this file takes.
-    const known = workspaces.list().find((p) => p.replace(/\/+$/, "") === String(ws).replace(/\/+$/, ""));
+    const known = workspaces.list().find((p) => normPath(p) === normPath(String(ws)));
     if (!known) throw new Error("Unknown workspace");
     const settings = getTerminalSettings();
     const info = terminals.create(known, known, settings, cols ?? 80, rows ?? 24);
@@ -4136,7 +4153,7 @@ export function registerIpc(
     void log.append({
       type: "terminal.open",
       workspaceId: known,
-      data: { terminalId: info.id, shell: settings.shellPath ?? process.env.SHELL ?? "/bin/zsh" },
+      data: { terminalId: info.id, shell: settings.shellPath ?? platform.terminalShell() },
     });
     return info;
   });
@@ -4202,17 +4219,28 @@ export function registerIpc(
    * the worst failure available: not an error the user can act on, but a
    * silent empty transcript.
    */
+  // §27 + §4 Windows round: Electron answers getMediaAccessStatus on darwin AND
+  // win32. The blanket "granted" now covers only linux, which has no such API — so a
+  // Windows user whose privacy toggle is off gets the same guidance as a Mac user,
+  // instead of a level meter that reads zero with nothing explaining why.
+  const HAS_MIC_API = process.platform === "darwin" || process.platform === "win32";
   ipcMain.handle("hv:voice-mic-status", () =>
-    process.platform === "darwin" ? systemPreferences.getMediaAccessStatus("microphone") : "granted",
+    HAS_MIC_API ? systemPreferences.getMediaAccessStatus("microphone") : "granted",
   );
   ipcMain.handle("hv:voice-ask-mic", async () => {
-    if (process.platform !== "darwin") return true;
+    if (!HAS_MIC_API) return true;
     if (systemPreferences.getMediaAccessStatus("microphone") !== "not-determined") {
       return systemPreferences.getMediaAccessStatus("microphone") === "granted";
     }
-    return systemPreferences.askForMediaAccess("microphone");
+    // askForMediaAccess is darwin-only. Windows has no prompt to raise: permission
+    // lives in Settings, which is what hv:voice-open-mic-settings opens.
+    return process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : false;
   });
   ipcMain.handle("hv:voice-open-mic-settings", () => {
+    if (process.platform === "win32") {
+      void shell.openExternal("ms-settings:privacy-microphone");
+      return;
+    }
     if (process.platform !== "darwin") return;
     // The pane identifier changed with System Settings (macOS 13+), and the old
     // one FAILS SOFTLY: `com.apple.preference.security` still launches Settings

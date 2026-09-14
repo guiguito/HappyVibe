@@ -1,3 +1,4 @@
+import { platform } from "./platform";
 /**
  * Which live sessions an MCP config/auth change affects — PURE, electron-free,
  * vitest-importable. A global change (agentDir/mcp.json) touches every session;
@@ -11,7 +12,9 @@ export interface ReloadSession {
   workspaceId: string;
 }
 
-const norm = (p: string): string => p.replace(/\/+$/, "") || "/";
+// One workspace identity for the whole app (PRD §4, Windows round): separators and
+// case fold on win32, so a reload scoped to a workspace still finds its sessions.
+const norm = (p: string): string => platform.workspaceKey(p);
 
 export function affectedSessionIds(
   scope: "global" | "workspace",

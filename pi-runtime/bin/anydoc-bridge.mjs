@@ -31,7 +31,7 @@
 // There is deliberately NO options pass-through. This file must never grow a
 // way to ask for hosted conversion; the contract test scans its source.
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkgDir = path.join(here, "..", "node_modules", "@firecrawl", "anydoc");
@@ -39,7 +39,11 @@ const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
 
 let anydoc;
 try {
-  anydoc = await import(path.join(pkgDir, "index.js"));
+  // pathToFileURL, not a bare path: on Windows the ESM loader refuses an absolute
+  // path outright — "absolute paths must be valid file:// URLs. Received protocol
+  // 'c:'" — and the catch below would have reported that as this platform having no
+  // anydoc build at all, which is a different and wrong diagnosis.
+  anydoc = await import(pathToFileURL(path.join(pkgDir, "index.js")).href);
 } catch (e) {
   // Windows arm64 has no prebuilt (ad1.md §5). Answer, never throw: the row
   // and the `+` menu say "not available on this platform" off this reply.
@@ -69,7 +73,9 @@ if (!arg) {
 // Pi's OWN truncation, imported from the vendored tree, so the slice contract
 // is `read`'s by construction rather than by imitation (Principle 11).
 const { truncateHead } = await import(
-  path.join(here, "..", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "core", "tools", "truncate.js")
+  pathToFileURL(
+    path.join(here, "..", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "core", "tools", "truncate.js"),
+  ).href,
 );
 
 let markdown;

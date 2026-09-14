@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { platform } from "./platform";
 
 /**
  * Runs N concurrent Pi processes keyed by our sessionId (electron-free,
@@ -55,14 +55,6 @@ function writePids(file: string, pids: PidFile): void {
   fs.writeFileSync(file, JSON.stringify(pids));
 }
 
-function defaultReadCmd(pid: number): string | null {
-  try {
-    return execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" }).trim() || null;
-  } catch {
-    return null; // process gone
-  }
-}
-
 /**
  * Kill leftover pi processes from a previous app run. Only kills a pid when it
  * is BOTH in our pid file AND its current command looks like our Pi runtime —
@@ -70,8 +62,12 @@ function defaultReadCmd(pid: number): string | null {
  */
 export function sweepOrphans(
   pidFile: string,
-  readCmd: (pid: number) => string | null = defaultReadCmd,
-  kill: (pid: number) => void = (pid) => process.kill(pid, "SIGTERM")
+  // Both halves come from the platform seam (PRD §4, Windows round). `ps` does not
+  // exist on Windows, and the string matched below lives in the ARGUMENTS — which
+  // tasklist does not print — so a sweep built on either verifies nothing and kills
+  // nothing, leaving a crashed run's Pi processes alive with no signal at all.
+  readCmd: (pid: number) => string | null = (pid) => platform.readCommand(pid),
+  kill: (pid: number) => void = (pid) => platform.killTree(pid)
 ): number[] {
   const killed: number[] = [];
   for (const key of Object.keys(readPids(pidFile))) {

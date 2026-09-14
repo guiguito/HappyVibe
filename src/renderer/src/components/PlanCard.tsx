@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { basename } from "../basename";
 import { Unfold } from "./Unfold";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -107,7 +108,7 @@ export function PlanCard({ card, onOpenFile }: { card: PlanCardData; onOpenFile?
         <span className="text-[15px] shrink-0" aria-hidden>🧭</span>
         <button type="button" onClick={() => setExpanded((v) => !v)} className="flex items-center gap-2 text-left cursor-pointer flex-1 min-w-0">
           <span className="font-bold text-sm truncate">Implementation plan</span>
-          <span className="shrink-0 text-[11px] text-ink-soft truncate">{card.path.split("/").pop()}</span>
+          <span className="shrink-0 text-[11px] text-ink-soft truncate">{basename(card.path)}</span>
         </button>
         {card.total > 0 && (
           <span className="shrink-0 text-[11px] font-semibold text-ink-soft tabular-nums">{card.done}/{card.total} tasks</span>

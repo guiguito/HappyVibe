@@ -124,3 +124,10 @@ test("HV_READONLY=1 only for a read-only scheduled run", () => {
   expect(resolvePiSpawn("/ws", "/sessions", runtime, { readonly: false }).env.HV_READONLY).toBeUndefined();
   expect(resolvePiSpawn("/ws", "/sessions", runtime, { readonly: true }).env.HV_READONLY).toBe("1");
 });
+
+test("the Windows launcher prepends the guard too", () => {
+  // Same invariant as pi-node.sh above, on the file Windows actually runs.
+  const mjs = fs.readFileSync(path.join(runtime, "bin", "pi-child.mjs"), "utf8");
+  expect(mjs.indexOf('"--extension"')).toBeLessThan(mjs.indexOf("process.argv.slice(2)"));
+  expect(mjs).toMatch(/GUARD|hv-child-guard\.ts/);
+});

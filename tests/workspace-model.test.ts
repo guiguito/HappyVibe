@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
+import { makePlatform } from "../src/main/platform";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -170,4 +171,24 @@ describe("sessionsOfWorkspace", () => {
     const archived = { ...s("a", "/w"), archived: true };
     expect(sessionsOfWorkspace([archived], "/w")).toHaveLength(1);
   });
+});
+
+test("§4 Windows round: one workspace identity, however the folder is spelled", () => {
+  // normPath is the single comparison used by the registry, the session index, the
+  // schedule store and main's workspace lookups. On Windows the same folder reached
+  // as `C:\ws` and `c:/ws` is one project — without folding it became two sidebar
+  // rows, and a schedule could not find the workspace it was created in.
+  const win = makePlatform({
+    platform: "win32", execPath: "x", env: {}, existsSync: () => false,
+    exec: () => ({ status: 0, stdout: "" }),
+  });
+  expect(win.workspaceKey("C:\\Users\\G\\Proj\\")).toBe(win.workspaceKey("c:/users/g/proj"));
+  // An empty id must never resolve to the process cwd and match a real workspace.
+  expect(win.workspaceKey("")).toBe("");
+  const mac = makePlatform({
+    platform: "darwin", execPath: "x", env: {}, existsSync: () => false,
+    exec: () => ({ status: 0, stdout: "" }),
+  });
+  expect(mac.workspaceKey("")).toBe("");
+  expect(mac.workspaceKey("/Users/G/Proj")).not.toBe(mac.workspaceKey("/users/g/proj"));
 });

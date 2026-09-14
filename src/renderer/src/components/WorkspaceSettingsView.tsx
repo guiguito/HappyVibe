@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { basename } from "../basename";
+import { THIS_COMPUTER } from "../platformCopy";
 import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
@@ -22,9 +24,6 @@ import { MemorySection } from "./MemorySection";
  * unrelated.
  */
 
-function basename(p: string): string {
-  return p.split("/").filter(Boolean).pop() ?? p;
-}
 
 export function WorkspaceSettingsView({
   workspace,
@@ -557,7 +556,7 @@ function GitCapabilityLine({ workspace }: { workspace: string }): React.JSX.Elem
   return (
     <Section icon="permissions" title="Version control" subtitle="Saving versions of your work needs git.">
       <div className="flex items-center gap-2 text-sm">
-        <span className="text-ink-soft">git isn’t installed on this Mac, so the Changes panel is hidden.</span>
+        <span className="text-ink-soft">git isn’t installed on {THIS_COMPUTER}, so the Changes panel is hidden.</span>
         <button
           type="button"
           onClick={() => void window.hv.gitInstallPrompt()}

@@ -949,6 +949,12 @@ interface HvApi {
   /** null = unset (inherit global). */
   getWorkspaceBypass(workspace: string): Promise<boolean | null>;
   setWorkspaceBypass(workspace: string, on: boolean | null): Promise<void>;
+  /** §4 Windows round: "darwin" | "win32" | "linux" — the renderer's platform truth. */
+  platform: string;
+  /** Which shell tool the agent has this session. Drives the onboarding Git line. */
+  agentShell(): Promise<{ shell: "bash" | "powershell"; bashPath: string | null }>;
+  /** §26: the terminal default and the shells detected, for the Shell path hint. */
+  terminalShells(): Promise<{ default: string; found: Array<{ label: string; path: string }> }>;
   evalRules(workspaceId: string, tool: string, input: Record<string, unknown>): Promise<HvVerdict>;
   readAudit(filter?: { sessionId?: string; workspaceId?: string }): Promise<HvAuditEvent[]>;
   setBadgeCount(n: number): void;

@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { platform } from "./platform";
+import { containsPath } from "../../pi-runtime/extensions/hv-paths";
 import os from "node:os";
 import path from "node:path";
 
@@ -37,12 +39,16 @@ export function resolveInWorkspace(
   relPath: string
 ): string {
   const ws = path.resolve(workspaceId);
-  if (!registeredWorkspaces.some((w) => path.resolve(w) === ws)) {
+  // Identity and containment both fold case on win32 (PRD §4, Windows round) — the
+  // same folder reached as `C:\ws` and `c:/ws` is one workspace, and a string compare
+  // would refuse the second while the app had just handed it out.
+  const key = platform.workspaceKey(ws);
+  if (!registeredWorkspaces.some((w) => platform.workspaceKey(w) === key)) {
     throw new Error("Unknown workspace");
   }
   if (path.isAbsolute(relPath)) throw new Error("Path escapes workspace");
   const abs = path.resolve(ws, relPath);
-  if (abs !== ws && !abs.startsWith(ws + path.sep)) throw new Error("Path escapes workspace");
+  if (!containsPath(ws, abs, platform.isWindows)) throw new Error("Path escapes workspace");
   return abs;
 }
 

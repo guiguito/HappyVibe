@@ -80,6 +80,8 @@ function runSidecar(
       cwd: o.runtimeDir,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      // Windows: the sidecar must not flash a console window.
+      windowsHide: true,
     });
     let out = "";
     let err = "";

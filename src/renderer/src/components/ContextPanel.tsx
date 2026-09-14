@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { basename } from "../basename";
 import {
   categoryCount, compositionSegments, computeGauge, groupItems, summarizeGroups, totalEstTokens,
   type CategorySummary, type ContextItem, type ContextSnapshot, type Gauge, type SessionStats,
@@ -297,7 +298,7 @@ export function ContextPanel({
                   {snapshot.system.contextFiles.map((f) => (
                     <li key={f.path} className="flex items-center gap-2 text-xs">
                       <span className="font-mono truncate flex-1 min-w-0" title={f.path}>
-                        {f.path.split("/").pop()}
+                        {basename(f.path)}
                       </span>
                       <span className="text-ink-soft shrink-0">{estTok(f.estTokens)}</span>
                     </li>

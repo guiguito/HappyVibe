@@ -1,10 +1,11 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi, afterAll } from "vitest";
 import { TerminalManager } from "../src/main/terminals";
 import { AgentTerminals, MAX_AGENT_TERMINALS, HOLD_IDLE_MS } from "../src/main/agentTerminals";
 import { DEFAULT_TERMINAL_SETTINGS } from "../src/main/terminalSettings";
 
 /** `-f` skips the user's rc files, so a test does not depend on someone's dotfiles. */
-const FAST = { ...DEFAULT_TERMINAL_SETTINGS, shellArgs: ["-f"], shellPath: "/bin/zsh" };
+import { FAST, HAS_POSIX_SHELL } from "./shellFixture";
+import { FOREGROUND_SUPPORTED as FOREGROUND } from "./shellFixture";
 const WS = process.cwd();
 const S = "sess-1";
 
@@ -49,7 +50,7 @@ describe("soft cap", () => {
 });
 
 describe("busy-reuse refusal", () => {
-  it("refuses to reuse a terminal whose foreground is non-null, naming the process", async () => {
+  it.skipIf(!FOREGROUND)("refuses to reuse a terminal whose foreground is non-null, naming the process", async () => { // Windows has no foreground source (terminals.ts FOREGROUND_SUPPORTED)
     const r = await run("sleep 30");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -58,6 +59,18 @@ describe("busy-reuse refusal", () => {
     const reuse = await run("npm test", r.terminalId);
     expect(reuse.ok).toBe(false);
     if (!reuse.ok) expect(reuse.reason).toContain("sleep");
+  });
+
+  it.skipIf(FOREGROUND)("on Windows a busy terminal reads as idle, and reuse is ALLOWED rather than always refused", async () => {
+    // The documented gap, asserted rather than left silent: pty.process answers a
+    // constant there, so believing it would refuse every reuse forever and fill the
+    // agent's cap of 3 permanently. Null is the fail-open direction we chose.
+    const r = await run("sleep 30");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(mgr.foreground(r.terminalId)).toBeNull();
+    const reuse = await run("echo x", r.terminalId);
+    expect(reuse.ok).toBe(true);
   });
 
   it("allows reuse of an idle terminal", async () => {
@@ -183,4 +196,24 @@ describe("open-terminals context block", () => {
     expect(block.split("\n").filter((l) => l.startsWith("t"))).toHaveLength(1);
     expect(block).toContain(mine.terminalId);
   });
+});
+
+/**
+ * Let Windows finish tearing down the native handles this file opened before the
+ * worker process exits.
+ *
+ * `FSWatcher.close()` and `pty.kill()` both return immediately and complete
+ * ASYNCHRONOUSLY on Windows — the ConPTY teardown is visible in CI's own cleanup,
+ * which reports orphaned `conhost` and `bash` processes. When the worker exits with
+ * that work in flight, the completion lands on a dead process and the worker dies with
+ * ACCESS_VIOLATION (0xC0000005) or STATUS_STACK_BUFFER_OVERRUN (0xC0000409) — after
+ * every test in the file has PASSED, which is how it presented: a green file list and
+ * a failed run.
+ *
+ * Deterministic on the Windows runner, never reproducible on a Windows dev box. It is
+ * a test-harness accommodation for a platform behaviour, not a product bug: the app
+ * does not exit microseconds after killing a terminal.
+ */
+afterAll(async () => {
+  if (process.platform === "win32") await new Promise((r) => setTimeout(r, 300));
 });

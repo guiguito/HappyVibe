@@ -96,6 +96,13 @@ export default function App(): React.JSX.Element {
   const [keyState, setKeyState] = useState<KeyState>("loading");
   const [view, setView] = useState<View>("chat");
   const [workspaces, setWorkspaces] = useState<string[]>([]);
+  // §4 Windows round: which shell tool the agent actually got. Probed ONCE at boot —
+  // it only changes when the user installs Git, and that takes effect on the next
+  // session anyway (spawn re-probes), so a live subscription would buy nothing.
+  const [agentShell, setAgentShell] = useState<"bash" | "powershell" | null>(null);
+  useEffect(() => {
+    void window.hv.agentShell().then((r) => setAgentShell(r.shell)).catch(() => setAgentShell(null));
+  }, []);
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptItem[]>>({});
@@ -3885,6 +3892,7 @@ export default function App(): React.JSX.Element {
         <OnboardingDialog
           modelReady={keyState === "present"}
           workspaceReady={workspaces.length > 0}
+          agentShell={agentShell}
           onRefreshModel={refreshKeyState}
           onOpenFolder={() => void addWorkspace()}
           onStartFresh={async (name) => {

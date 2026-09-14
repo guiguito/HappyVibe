@@ -589,3 +589,29 @@ describe("the handover beat is actually visible", () => {
     }
   });
 });
+
+describe("§4 Windows round — the Git for Windows line", () => {
+  const DIALOG = fs.readFileSync(
+    path.join(__dirname, "..", "src", "renderer", "src", "components", "OnboardingDialog.tsx"),
+    "utf8",
+  );
+
+  it("names both halves of what Git buys: the shell, and sub-agents", () => {
+    expect(ONBOARDING_COPY.gitForWindows).toMatch(/Git for Windows/);
+    expect(ONBOARDING_COPY.gitForWindows).toMatch(/sub-agents/);
+  });
+
+  it("renders from the copy record, gated on the probe answering powershell", () => {
+    expect(DIALOG).toContain("C.gitForWindows");
+    expect(DIALOG).toMatch(/agentShell === "powershell"/);
+  });
+
+  it("is NOT a Banner and is NOT persisted", () => {
+    // §34's pulse decision: a row like this is not a Banner. And it must not be
+    // dismissible-and-remembered, because there is nothing to remember — the probe
+    // answers differently the moment Git is installed.
+    const block = DIALOG.slice(DIALOG.indexOf("C.gitForWindows") - 600, DIALOG.indexOf("C.gitForWindows") + 200);
+    expect(block).not.toMatch(/<Banner/);
+    expect(block).not.toMatch(/localStorage|dismiss/i);
+  });
+});

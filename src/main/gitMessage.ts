@@ -118,6 +118,8 @@ export function draftCommitMessage(
       {
         cwd: workspace,
         env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...env },
+        // Windows: a one-shot child must not flash a console window.
+        windowsHide: true,
         // README gotcha: a one-shot Pi call hangs unless stdin is closed.
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 60_000,
@@ -230,6 +232,8 @@ export function draftPullRequest(
       {
         cwd: workspace,
         env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...env },
+        // Windows: a one-shot child must not flash a console window.
+        windowsHide: true,
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 90_000,
       }

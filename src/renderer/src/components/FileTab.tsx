@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { MOD } from "../platformCopy";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { basename } from "../tabs";
@@ -335,8 +336,8 @@ export function FileTab({
               type="button"
               disabled={!dirty || saving}
               onClick={() => void save()}
-              title={dirty ? "Save (⌘S) — unsaved changes" : "Save (⌘S)"}
-              aria-label="Save (⌘S)"
+              title={dirty ? `Save (${MOD}S) — unsaved changes` : `Save (${MOD}S)`}
+              aria-label={`Save (${MOD}S)`}
               data-dirty={dirty ? "true" : "false"}
               className="flex items-center gap-1.5 rounded-lg bg-tangerine text-paper font-bold px-2.5 py-1 border-2 border-tangerine-deep shadow-sticker enabled:hover:brightness-105 enabled:cursor-pointer disabled:opacity-40 transition-all shrink-0"
             >
