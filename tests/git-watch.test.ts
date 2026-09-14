@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, afterAll } from "vitest";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "../src/main/gitWatch";
 
 /**
@@ -50,13 +50,11 @@ beforeEach(() => {
 
 afterEach(async () => {
   unwatchAllGit();
-  // Windows: FSWatcher.close() cancels the underlying ReadDirectoryChangesW request
-  // ASYNCHRONOUSLY, so deleting the watched directory in the same tick can reach
-  // libuv's completion handler after its state is gone. The worker then dies with
-  // STATUS_STACK_BUFFER_OVERRUN (exit 3221226505) and fails the whole run even though
-  // every test in the file passed — which is exactly how it presented on CI, twice,
-  // while never reproducing on a Windows dev box. One turn of the event loop is all
-  // the cancellation needs; the retries cover the directory still being handle-locked.
+  // One turn of the loop between close() and the delete: the cancellation of the
+  // underlying ReadDirectoryChangesW request is asynchronous on Windows, and the
+  // retries cover the directory still being handle-locked. The crash this file used to
+  // take is handled at EXIT, in the afterAll below — the delay here was not enough on
+  // its own, which is what said the problem was the worker exiting rather than the rm.
   await new Promise((r) => setTimeout(r, 50));
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
@@ -162,4 +160,24 @@ describe("watchGitDir", () => {
     expect(fired).toBeLessThanOrEqual(n);
     expect(fired).toBeGreaterThan(0);
   });
+});
+
+/**
+ * Let Windows finish tearing down the native handles this file opened before the
+ * worker process exits.
+ *
+ * `FSWatcher.close()` and `pty.kill()` both return immediately and complete
+ * ASYNCHRONOUSLY on Windows — the ConPTY teardown is visible in CI's own cleanup,
+ * which reports orphaned `conhost` and `bash` processes. When the worker exits with
+ * that work in flight, the completion lands on a dead process and the worker dies with
+ * ACCESS_VIOLATION (0xC0000005) or STATUS_STACK_BUFFER_OVERRUN (0xC0000409) — after
+ * every test in the file has PASSED, which is how it presented: a green file list and
+ * a failed run.
+ *
+ * Deterministic on the Windows runner, never reproducible on a Windows dev box. It is
+ * a test-harness accommodation for a platform behaviour, not a product bug: the app
+ * does not exit microseconds after killing a terminal.
+ */
+afterAll(async () => {
+  if (process.platform === "win32") await new Promise((r) => setTimeout(r, 300));
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi, afterAll } from "vitest";
 import { TerminalManager } from "../src/main/terminals";
 import { AgentTerminals, MAX_AGENT_TERMINALS, HOLD_IDLE_MS } from "../src/main/agentTerminals";
 import { DEFAULT_TERMINAL_SETTINGS } from "../src/main/terminalSettings";
@@ -196,4 +196,24 @@ describe("open-terminals context block", () => {
     expect(block.split("\n").filter((l) => l.startsWith("t"))).toHaveLength(1);
     expect(block).toContain(mine.terminalId);
   });
+});
+
+/**
+ * Let Windows finish tearing down the native handles this file opened before the
+ * worker process exits.
+ *
+ * `FSWatcher.close()` and `pty.kill()` both return immediately and complete
+ * ASYNCHRONOUSLY on Windows — the ConPTY teardown is visible in CI's own cleanup,
+ * which reports orphaned `conhost` and `bash` processes. When the worker exits with
+ * that work in flight, the completion lands on a dead process and the worker dies with
+ * ACCESS_VIOLATION (0xC0000005) or STATUS_STACK_BUFFER_OVERRUN (0xC0000409) — after
+ * every test in the file has PASSED, which is how it presented: a green file list and
+ * a failed run.
+ *
+ * Deterministic on the Windows runner, never reproducible on a Windows dev box. It is
+ * a test-harness accommodation for a platform behaviour, not a product bug: the app
+ * does not exit microseconds after killing a terminal.
+ */
+afterAll(async () => {
+  if (process.platform === "win32") await new Promise((r) => setTimeout(r, 300));
 });
