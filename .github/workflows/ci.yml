@@ -24,12 +24,14 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # Windows round (2026-09-14): the tripwire. Advisory until the parity walk is done —
-  # a red here is the real list of what Windows breaks, instead of a grep. Flip
-  # continue-on-error off once it is green.
+  # Windows round (2026-09-14). REQUIRED, and the flag that used to sit here is the
+  # reason: with `continue-on-error: true` a failing Windows job still reported the run
+  # as success, so a green tick on the PR hid a red `npm test` — the 8.3 short-name bug
+  # that neither developer machine could reproduce. This repo's plan has no branch
+  # protection, so that flag WAS the gate; there is nothing else to configure.
+  # Pinned by tests/ci-windows-required.test.ts.
   test-windows:
     runs-on: windows-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
