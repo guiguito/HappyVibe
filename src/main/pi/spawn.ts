@@ -1,6 +1,7 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { buildIdentity } from "../appendSystem";
+import { platform, type Platform } from "../platform";
 
 /**
  * Node-capable exec path for Electron-as-node children. On macOS, LaunchServices
@@ -10,13 +11,13 @@ import { buildIdentity } from "../appendSystem";
  * carry LSUIElement=1 (no Dock presence), so spawn through one instead (same
  * trick as VS Code's extension host). Works in dev (Electron.app) and packaged
  * builds (electron-builder renames helpers after productName).
+ *
+ * The logic moved to platform.ts in the Windows round (PRD §4) — one seam answers
+ * every platform question. Kept as an export here because the sidecar callers
+ * (documents.ts, mcpAdapterStore.ts, terminals) already import it from this module.
  */
 export function nodeExecPath(): string {
-  if (process.platform !== "darwin") return process.execPath;
-  const m = process.execPath.match(/^(.*)\/Contents\/MacOS\/([^/]+)$/);
-  if (!m) return process.execPath;
-  const helper = `${m[1]}/Contents/Frameworks/${m[2]} Helper (Plugin).app/Contents/MacOS/${m[2]} Helper (Plugin)`;
-  return existsSync(helper) ? helper : process.execPath;
+  return platform.nodeExecPath();
 }
 
 /** The embedded Pi CLI entry.
@@ -33,7 +34,12 @@ export const PI_SUBAGENTS_RELPATH = "node_modules/pi-subagents/src/extension/ind
 /** Embedded pi CLI the pi-subagents child spawn must use (no global `pi`; s0.3).
     A shell wrapper, not .bin/pi: the packaged app has no `node` for the shebang,
     so the wrapper routes through the bundled Electron helper (ELECTRON_RUN_AS_NODE)
-    and falls back to `node` in dev. */
+    and falls back to `node` in dev.
+
+    POSIX only. On win32 `platform.childLauncher()` answers `bin/pi-child.mjs`
+    instead — a shell script cannot run there and a `.cmd` shim is not a drop-in,
+    because Node refuses to spawn a `.cmd` without `shell: true`. Both files inject
+    the same §12 child guard; tests/pi-cli-entry.test.ts pins them to one CLI path. */
 export const PI_SUBAGENT_BIN_RELPATH = "bin/pi-node.sh";
 /** pi-mcp-adapter extension entry (its package.json `pi.extensions`) — MCP support. */
 export const PI_MCP_ADAPTER_RELPATH = "node_modules/pi-mcp-adapter/index.ts";
@@ -144,7 +150,14 @@ export interface PiSpawnOptions {
  *   tests). Keeping this param explicit ensures spawn.ts has NO electron import
  *   and remains importable by Vitest.
  */
-export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir: string, opts: PiSpawnOptions = {}) {
+export function resolvePiSpawn(
+  workspace: string,
+  sessionDir: string,
+  runtimeDir: string,
+  opts: PiSpawnOptions = {},
+  /** PRD §4 Windows round: injected so a Windows spawn can be asserted on macOS. */
+  plat: Platform = platform,
+) {
   // §16 finding 7, CLOSED 2026-08-29: no model resolved means NO model flags.
   // This used to pin the session to a hardcoded deepseek/deepseek-v4-flash — a
   // provider the user may never have configured, and increasingly likely to be
@@ -158,7 +171,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
   // provider is configured and never runs a model turn at all.
   const model = opts.model ?? null;
   return {
-    execPath: nodeExecPath(),
+    execPath: plat.nodeExecPath(),
     args: [
       path.join(runtimeDir, PI_CLI_RELPATH),
       "--mode", "rpc",
@@ -298,7 +311,7 @@ export function resolvePiSpawn(workspace: string, sessionDir: string, runtimeDir
       ...(opts.sessionId ? { HV_SUBAGENT_OWNER: `hv-${opts.sessionId}` } : {}),
       // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
       // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).
-      PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, PI_SUBAGENT_BIN_RELPATH),
+      PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, plat.childLauncher()),
       // §19 (2026-08-29): pi-subagents 0.57 caches "this model failed" verdicts and
       // silently skips the model afterwards. Main surfaces them as audit rows, so it
       // needs to READ that store — and its default location is an internal
