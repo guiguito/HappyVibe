@@ -4102,7 +4102,7 @@ export function registerIpc(
   ipcMain.handle("hv:term-create", (_e, ws: string, cols?: number, rows?: number) => {
     // cwd comes from the REGISTRY, never from the renderer's string — the same
     // posture every other fs entry point in this file takes.
-    const known = workspaces.list().find((p) => p.replace(/\/+$/, "") === String(ws).replace(/\/+$/, ""));
+    const known = workspaces.list().find((p) => normPath(p) === normPath(String(ws)));
     if (!known) throw new Error("Unknown workspace");
     const settings = getTerminalSettings();
     const info = terminals.create(known, known, settings, cols ?? 80, rows ?? 24);

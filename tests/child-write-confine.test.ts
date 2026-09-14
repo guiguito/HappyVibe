@@ -44,6 +44,24 @@ afterAll(() => {
   fs.rmSync(outside, { recursive: true, force: true });
 });
 
+/**
+ * Creating a symlink needs elevation (or Developer Mode) on Windows, so the FIXTURE —
+ * not the behaviour — is what fails there with EPERM. The confinement code is shared
+ * and identical on every platform, so this is a capability probe rather than a
+ * platform skip: a Windows box with Developer Mode on still runs these two.
+ */
+const CAN_SYMLINK = ((): boolean => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-symlink-probe-"));
+  try {
+    fs.symlinkSync(dir, path.join(dir, "l"), "dir");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+})();
+
 describe("a child write is confined to the workspace", () => {
   it("allows a relative path — the common case, and what passed all along", () => {
     expect(escapesWorkspace("write", { path: "ok.txt" }, ws)).toBeUndefined();
@@ -79,7 +97,7 @@ describe("a child write is confined to the workspace", () => {
     }
   });
 
-  it("refuses a SYMLINK planted inside the workspace that points out of it", () => {
+  it.skipIf(!CAN_SYMLINK)("refuses a SYMLINK planted inside the workspace that points out of it", () => { // symlink fixture needs elevation on Windows
     // A string-only check passes this: the path looks like it is under ws.
     const link = path.join(ws, "escape");
     fs.symlinkSync(outside, link, "dir");
@@ -91,7 +109,7 @@ describe("a child write is confined to the workspace", () => {
     }
   });
 
-  it("resolves through links for a path that does not exist yet", () => {
+  it.skipIf(!CAN_SYMLINK)("resolves through links for a path that does not exist yet", () => { // symlink fixture needs elevation on Windows
     // The file being written is by definition usually absent, so the resolution
     // has to work off the nearest EXISTING ancestor.
     const link = path.join(ws, "escape2");

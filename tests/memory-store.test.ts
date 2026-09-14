@@ -275,3 +275,17 @@ describe("save / read / list / forget / index", () => {
     expect(listMemories(dir).map((m) => m.slug)).toEqual(["new", "old"]);
   });
 });
+
+it("§4 Windows round: one memory folder per project, however the folder was opened", () => {
+  // The filesystem is case-insensitive on win32 and git answers forward slashes, so
+  // `C:\ws` and `c:/ws` are the same project. The slug already lower-cased; the KEY
+  // did not, which would split a project's memory in two depending on how it was
+  // opened, with nothing on screen saying so.
+  expect(workspaceMemoryKey("C:\\Users\\G\\WS", null, "win32")).toBe(
+    workspaceMemoryKey("c:/users/g/ws", null, "win32"),
+  );
+  // And case still matters where the filesystem says it does.
+  expect(workspaceMemoryKey("/tmp/WS", null, "darwin")).not.toBe(
+    workspaceMemoryKey("/tmp/ws", null, "darwin"),
+  );
+});

@@ -169,6 +169,10 @@ export function makePlatform(deps: PlatformDeps): Platform {
     },
 
     workspaceKey(p) {
+      // Empty in, empty out. scheduleStore compares `normPath(input.workspaceId ?? "")`,
+      // and path.resolve("") is the CWD — which would let an empty workspace id match a
+      // real workspace that happens to be the process's directory.
+      if (!p) return "";
       const resolved = (win ? path.win32 : path.posix).resolve(p);
       const trimmed = resolved.replace(/[\\/]+$/, "") || (win ? resolved : "/");
       return win ? trimmed.replace(/\//g, "\\").toLowerCase() : trimmed;

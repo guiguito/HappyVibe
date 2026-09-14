@@ -1,7 +1,8 @@
 /**
  * hv-child-guard — HappyVibe's permission gate INSIDE a sub-agent child.
  *
- * Injected by `pi-runtime/bin/pi-node.sh`, not by an agent's `extensions:` key.
+ * Injected by `pi-runtime/bin/pi-node.sh` (POSIX) or `bin/pi-child.mjs` (Windows),
+ * not by an agent's `extensions:` key.
  * That is upstream's own documented pattern for child bash policy and it has two
  * properties nothing else does: it reaches EVERY child with no per-agent
  * stamping, and a capability ceiling's `denyExtensions` cannot strip it, because
@@ -18,6 +19,7 @@
  * silently disables the whole gate rather than failing loudly.
  */
 import * as fs from "node:fs";
+import { containsPath } from "./hv-paths";
 import * as path from "node:path";
 import { EMPTY_RULES, parseRulesFile, type RulesFile } from "./hv-rules";
 import { childDecision } from "./hv-child-rules";
@@ -140,7 +142,10 @@ export function escapesWorkspace(
     .filter((r) => typeof r === "string" && r !== "")
     .map((r) => resolveThroughLinks(path.resolve(r)));
   for (const root of roots) {
-    if (target === root || target.startsWith(root + path.sep)) return undefined;
+    // containsPath folds separators and case on win32 (PRD §4, Windows round): a
+    // child writing to `c:/ws/out.md` is inside `C:\ws`, and a bare startsWith would
+    // have let `C:\ws-evil` through on any platform.
+    if (containsPath(root, target, CI_PATHS)) return undefined;
   }
   return target;
 }
