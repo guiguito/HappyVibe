@@ -1,4 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
+import { realpathCanonical } from "./realpath";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -189,7 +190,7 @@ async function computeState(workspace: string): Promise<RepoState> {
 
 function safeReal(p: string): string {
   try {
-    return fs.realpathSync(p);
+    return realpathCanonical(p);
   } catch {
     return path.resolve(p);
   }

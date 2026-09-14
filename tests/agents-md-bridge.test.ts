@@ -92,7 +92,7 @@ test.skipIf(!KEY)(
   "touching a file in a subdir with its own AGENTS.md injects it into the NEXT turn's system prompt",
   async () => {
     // realpath: Pi's process.cwd() resolves the macOS /var → /private/var symlink.
-    const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-amd-cwd-")));
+    const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-amd-cwd-")));
     fs.mkdirSync(path.join(cwd, "sub"));
     // Root file too — proves the root is NOT duplicated into the nested section.
     fs.writeFileSync(path.join(cwd, "AGENTS.md"), "ROOT-MARKER-A7Q");

@@ -12,6 +12,7 @@
  * by construction (CAPS.perScope lines).
  */
 import crypto from "node:crypto";
+import { realpathCanonical } from "../realpath";
 import fs from "node:fs";
 import path from "node:path";
 import { MEMORY_TYPES, parseMemoryFile, serializeMemoryFile, type MemoryDoc, type MemoryType } from "./frontmatter";
@@ -95,8 +96,8 @@ export interface MemorySummary {
  */
 function fileFor(dir: string, slug: string): string {
   const p = path.join(dir, `${slug}.md`);
-  const realDir = fs.realpathSync(dir);
-  const realParent = fs.realpathSync(path.dirname(p));
+  const realDir = realpathCanonical(dir);
+  const realParent = realpathCanonical(path.dirname(p));
   if (realParent !== realDir) throw new Error("memory path escapes its scope");
   return path.join(realParent, path.basename(p));
 }

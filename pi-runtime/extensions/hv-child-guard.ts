@@ -109,7 +109,13 @@ function resolveThroughLinks(target: string): string {
   const tail: string[] = [];
   for (;;) {
     try {
-      return path.join(fs.realpathSync(head), ...tail.reverse());
+      // `.native` expands Windows 8.3 SHORT NAMES, which the plain call leaves alone
+      // (`C:\PROGRA~1` stays `C:\PROGRA~1`). The child's task file lives under TEMP,
+      // which is exactly where Windows hands out short names — so without this the
+      // exemption compares two spellings of one path and the child is refused its own
+      // instructions. Its own copy because this tree is vendored and loads inside Pi.
+      const real = fs.realpathSync.native ? fs.realpathSync.native(head) : fs.realpathSync(head);
+      return path.join(real, ...tail.reverse());
     } catch {
       const parent = path.dirname(head);
       // Reached the filesystem root without finding anything that exists.

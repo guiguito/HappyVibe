@@ -37,8 +37,8 @@ const TOOLS = path.join(
 );
 const src = (f: string) => fs.readFileSync(path.join(TOOLS, f), "utf8");
 
-const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-ws-")));
-const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-out-")));
+const ws = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-ws-")));
+const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-out-")));
 afterAll(() => {
   fs.rmSync(ws, { recursive: true, force: true });
   fs.rmSync(outside, { recursive: true, force: true });
@@ -112,7 +112,7 @@ describe("a child write is confined to the workspace", () => {
     // running app: without the exemption the child's write was DENIED and it
     // burned a turn recovering. Main creates and sweeps this location, so it is
     // app state, not somewhere the agent chose.
-    const artifacts = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art-")));
+    const artifacts = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art-")));
     try {
       const out = path.join(artifacts, "outputs", "run-1", "context.md");
       expect(escapesWorkspace("write", { path: out }, ws, [artifacts])).toBeUndefined();
@@ -130,7 +130,7 @@ describe("a child write is confined to the workspace", () => {
 
   it("still refuses the TASK tempdir even with the artifacts root allowed", () => {
     // The two exemptions must not blur: the task dir is readable, never writable.
-    const artifacts = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art2-")));
+    const artifacts = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art2-")));
     try {
       const temp = path.join(os.tmpdir(), "pi-subagent-TDh4HY", "ok.txt");
       expect(escapesWorkspace("write", { path: temp }, ws, [artifacts])).toBeTruthy();

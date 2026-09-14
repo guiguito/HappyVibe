@@ -92,7 +92,7 @@ describe.skipIf(!GIT_OK)("probeWorkspace — the five outcomes", () => {
     const s = await probeWorkspace(dir);
     expect(s.kind).toBe("repo");
     if (s.kind !== "repo") throw new Error("unreachable");
-    expect(fs.realpathSync(s.root)).toBe(fs.realpathSync(dir));
+    expect(fs.realpathSync.native(s.root)).toBe(fs.realpathSync.native(dir));
     expect(s.subdir).toBeNull();
     expect(s.unborn).toBe(false);
   });
@@ -103,7 +103,7 @@ describe.skipIf(!GIT_OK)("probeWorkspace — the five outcomes", () => {
     invalidateProbe(sub);
     const s = await probeWorkspace(sub);
     if (s.kind !== "repo") throw new Error(`expected repo, got ${s.kind}`);
-    expect(fs.realpathSync(s.root)).toBe(fs.realpathSync(dir));
+    expect(fs.realpathSync.native(s.root)).toBe(fs.realpathSync.native(dir));
     expect(s.subdir).toBe("src");
   });
 
