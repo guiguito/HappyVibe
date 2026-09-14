@@ -2789,7 +2789,12 @@ export default function App(): React.JSX.Element {
   const exportSessionHtml = (sid: string): void => {
     void window.hv.exportSessionHtml(sid).then((r) => {
       if (r.ok) {
-        appendItem(sid, { kind: "notice", text: `Exported to ${r.path.split("/").pop()}`, title: r.path });
+        // `basename`, never `split("/")` — the save dialog hands back a native
+        // path, so on Windows a slash-only split never splits and the pill would
+        // read the whole `C:\Users\…\foo.html`. PRD §4's Windows round found
+        // fifteen sites doing this; `tests/mod-key-copy.test.ts` scans for a
+        // sixteenth, and this was it.
+        appendItem(sid, { kind: "notice", text: `Exported to ${tabBasename(r.path)}`, title: r.path });
         return;
       }
       if (r.canceled) return;
