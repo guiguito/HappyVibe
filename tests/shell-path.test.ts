@@ -32,7 +32,7 @@ describe("merging the login-shell PATH", () => {
 });
 
 describe("reading the login-shell PATH", () => {
-  it("parses the PATH out from between the sentinels", () => {
+  it.skipIf(process.platform === "win32")("parses the PATH out from between the sentinels", () => {
     const prior = process.env.SHELL;
     try {
       process.env.SHELL = "/bin/sh";

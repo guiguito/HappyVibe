@@ -10,6 +10,7 @@
  * so the bridge never re-derives trust — it only reflects what Pi loaded.
  */
 import * as fs from "node:fs";
+import { foldCase, toPosix } from "./hv-paths";
 import * as path from "node:path";
 
 export interface SkillManifestEntry {
@@ -56,9 +57,15 @@ export function matchReadPath(
   for (const [k, v] of Object.entries(input)) {
     if (PATH_KEYS.test(k) && typeof v === "string" && v) args.push(v);
   }
+  // Compared NORMALISED (PRD §4, Windows round): the manifest carries host-shaped
+  // paths from main, while the model writes whichever separator it likes — so on
+  // Windows a perfectly good `.agents/skills/x/SKILL.md` resolved to backslashes and
+  // matched nothing, and the raw-read fallback silently stopped detecting skill loads.
+  const ci = process.platform === "win32";
+  const key = (s: string): string => foldCase(toPosix(s), ci);
   for (const p of args) {
     const abs = path.isAbsolute(p) ? p : path.resolve(cwd, p);
-    const hit = m.skills.find((s) => s.skillMdPath === p || s.skillMdPath === abs);
+    const hit = m.skills.find((s) => key(s.skillMdPath) === key(p) || key(s.skillMdPath) === key(abs));
     if (hit) return hit;
   }
   return undefined;

@@ -32,7 +32,7 @@ describe("listPlanProgress", () => {
       { path: `${PLAN_DIR}/001-add-auth.md`, status: "draft", done: 0, total: 2 },
       { path: `${PLAN_DIR}/002-ship-it.md`, status: "draft", done: 1, total: 1 },
     ]);
-    expect(a).toBe(path.join(PLAN_DIR, "001-add-auth.md"));
+    expect(a).toBe(`${PLAN_DIR}/001-add-auth.md`);
   });
 
   test("re-reads boxes ticked after the file was last pushed", async () => {

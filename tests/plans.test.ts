@@ -15,10 +15,15 @@ afterEach(() => {
   fs.rmSync(ws, { recursive: true, force: true });
 });
 
+// A plan's relative path is an IDENTIFIER spelled with forward slashes, not a host
+// path: writePlanFile returns it, listPlanProgress rebuilds it and isPlanPath tests
+// its prefix, so the three have to agree. These expectations used path.join, which
+// spelled it with backslashes on Windows — where a written plan then never matched
+// its own listing (PRD §4, Windows round).
 describe("writePlanFile", () => {
   test("creates .agents/plans/001-<slug>.md with draft front-matter", async () => {
     const rel = await writePlanFile([ws], ws, PLAN, NOW);
-    expect(rel).toBe(path.join(PLAN_DIR, "001-add-auth.md"));
+    expect(rel).toBe(`${PLAN_DIR}/001-add-auth.md`);
     const md = fs.readFileSync(path.join(ws, rel), "utf8");
     expect(md).toContain("status: draft");
     expect(md).toContain(`createdAt: ${NOW}`);
@@ -29,7 +34,7 @@ describe("writePlanFile", () => {
   test("increments NNN for a fresh plan, revises the same file when given a path", async () => {
     const first = await writePlanFile([ws], ws, PLAN, NOW);
     const second = await writePlanFile([ws], ws, "# Second plan\n## Tasks\n- [ ] x\n## Verification\n- y", NOW);
-    expect(second).toBe(path.join(PLAN_DIR, "002-second-plan.md"));
+    expect(second).toBe(`${PLAN_DIR}/002-second-plan.md`);
 
     // Revision: overwrite the first file, preserving createdAt.
     const later = "2026-07-20T15:00:00.000Z";
@@ -42,8 +47,8 @@ describe("writePlanFile", () => {
   });
 
   test("falls back to a fresh file when the given path vanished", async () => {
-    const rel = await writePlanFile([ws], ws, PLAN, NOW, path.join(PLAN_DIR, "999-gone.md"));
-    expect(rel).toBe(path.join(PLAN_DIR, "001-add-auth.md"));
+    const rel = await writePlanFile([ws], ws, PLAN, NOW, `${PLAN_DIR}/999-gone.md`);
+    expect(rel).toBe(`${PLAN_DIR}/001-add-auth.md`);
   });
 
   test("refuses an unknown workspace", async () => {
@@ -67,6 +72,6 @@ describe("setPlanStatus", () => {
 
 describe("readPlan", () => {
   test("returns null for a missing file", () => {
-    expect(readPlan([ws], ws, path.join(PLAN_DIR, "nope.md"))).toBeNull();
+    expect(readPlan([ws], ws, `${PLAN_DIR}/nope.md`)).toBeNull();
   });
 });

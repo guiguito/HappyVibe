@@ -22,3 +22,13 @@ export const CAN_SYMLINK = ((): boolean => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 })();
+
+/**
+ * Can a chmod actually make a file unreadable to this process?
+ *
+ * On Windows it cannot: NTFS permissions are ACL-based and `chmod 0o000` is a no-op
+ * for the owner, so a "the store is unreadable" fixture simply reads fine. The
+ * behaviour under test (degrade to nothing rather than throw) is platform-neutral and
+ * covered by the missing and malformed cases either way.
+ */
+export const CAN_DENY_READ = process.platform !== "win32";

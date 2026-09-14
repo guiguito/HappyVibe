@@ -13,7 +13,10 @@ class FakeClient extends EventEmitter implements ManagedClient {
   readonly pid = ++FakeClient.nextPid;
   startedAt = 0;
   async start(): Promise<void> {
-    this.startedAt = Date.now();
+    // performance.now(), not Date.now(): the latter has ~16 ms granularity on
+    // Windows, so a 60 ms stagger measured as 36 and the test failed for the clock
+    // rather than for the scheduling it exists to check.
+    this.startedAt = performance.now();
   }
   stop(): void {
     // real kill() is async — emulate

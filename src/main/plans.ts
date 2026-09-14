@@ -72,7 +72,13 @@ export function writePlanFile(
     }
     if (!relPath) {
       const n = String(nextPlanNumber(dirAbs)).padStart(3, "0");
-      relPath = path.join(PLAN_DIR, `${n}-${planSlug(planMarkdown)}.md`);
+      // `/`, never path.join: this string is an IDENTIFIER, not a host path. It is
+      // returned to the renderer, compared against listPlanProgress's `${PLAN_DIR}/…`
+      // and tested by isPlanPath's `${PLAN_DIR}/` prefix — all of which spell it with
+      // forward slashes. path.join produced backslashes on Windows, so a written plan
+      // never matched its own listing and §23's live n/m progress silently stopped
+      // tracking. resolveInWorkspace resolves either form.
+      relPath = `${PLAN_DIR}/${n}-${planSlug(planMarkdown)}.md`;
     }
 
     const abs = resolveInWorkspace(registeredWorkspaces, workspaceId, relPath);

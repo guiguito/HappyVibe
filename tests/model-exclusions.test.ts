@@ -12,6 +12,7 @@
  * Key-free; stays in the non-live suite.
  */
 import { describe, expect, it } from "vitest";
+import { CAN_DENY_READ } from "./canSymlink";
 import { readFileSync, mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -84,11 +85,16 @@ describe("reading pi-subagents' exclusion store", () => {
     const bad = path.join(dir, "bad.json");
     writeFileSync(bad, "{not json");
     expect(readExclusions(bad, NOW)).toEqual([]);
-    const locked = path.join(dir, "locked.json");
-    writeFileSync(locked, JSON.stringify({ exclusions: [REAL] }));
-    chmodSync(locked, 0o000);
-    expect(readExclusions(locked, NOW)).toEqual([]);
-    chmodSync(locked, 0o600);
+    // chmod cannot deny the owner a read on NTFS, so the unreadable arm is POSIX-only.
+    // The missing and malformed cases above cover the same "degrade, never throw"
+    // contract on every platform.
+    if (CAN_DENY_READ) {
+      const locked = path.join(dir, "locked.json");
+      writeFileSync(locked, JSON.stringify({ exclusions: [REAL] }));
+      chmodSync(locked, 0o000);
+      expect(readExclusions(locked, NOW)).toEqual([]);
+      chmodSync(locked, 0o600);
+    }
   });
 
   it("reads the real captured file shape end to end", () => {
