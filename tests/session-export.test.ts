@@ -88,8 +88,19 @@ describe("exportSessionHtml", () => {
 });
 
 describe("the path the handler exports is confined", () => {
+  /**
+   * Built with `path.resolve`, never written as a literal: `sessionFilePath`
+   * resolves both sides, and on Windows a bare "/tmp/sessions/a.jsonl" comes
+   * back as "D:\tmp\sessions\a.jsonl" — which is the function working, not
+   * failing. The first cut hard-coded the POSIX spelling and was the one red
+   * test on CI's Windows job (PRD §4's round: portable first, skip last).
+   */
+  const dir = path.resolve(tmpdir(), "hv-sessions");
+  const evil = path.resolve(tmpdir(), "hv-sessions-evil");
+
   test("a session file inside the app's session dir resolves", () => {
-    expect(sessionFilePath("/tmp/sessions", "/tmp/sessions/a.jsonl")).toBe("/tmp/sessions/a.jsonl");
+    const inside = path.join(dir, "a.jsonl");
+    expect(sessionFilePath(dir, inside)).toBe(inside);
   });
 
   /**
@@ -97,8 +108,11 @@ describe("the path the handler exports is confined", () => {
    * touches it — delete, the cost read, and now the export.
    */
   test("an escape resolves to null rather than exporting someone's home directory", () => {
-    expect(sessionFilePath("/tmp/sessions", "/etc/passwd")).toBe(null);
-    expect(sessionFilePath("/tmp/sessions", "/tmp/sessions-evil/a.jsonl")).toBe(null);
-    expect(sessionFilePath("/tmp/sessions", undefined)).toBe(null);
+    expect(sessionFilePath(dir, path.resolve(tmpdir(), "elsewhere.jsonl"))).toBe(null);
+    // The sibling that merely shares the prefix — a bare startsWith lets it through.
+    expect(sessionFilePath(dir, path.join(evil, "a.jsonl"))).toBe(null);
+    // The directory itself is not a file inside it.
+    expect(sessionFilePath(dir, dir)).toBe(null);
+    expect(sessionFilePath(dir, undefined)).toBe(null);
   });
 });
