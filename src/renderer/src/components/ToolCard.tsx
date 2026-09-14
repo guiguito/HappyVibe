@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { REVEAL_IN_FILE_MANAGER } from "../platformCopy";
 import { Unfold } from "./Unfold";
 import { MEMORY_TYPE_LABEL } from "../memoryFact";
 import { toolDiff, type DiffLine } from "../diffs";
@@ -367,6 +368,8 @@ export function resultText(result: unknown): string | null {
  */
 export const OUTPUT_TOOLS: ReadonlySet<string> = new Set([
   "bash",
+  // §4 Windows round: the Windows shell tool, same card, same reason.
+  "powershell",
   "terminal_run",
   "terminal_read",
   // §32: a web result IS the thing the user wants to see, and its FIRST line
@@ -484,8 +487,8 @@ function PathActions({
         </span>
         <button
           type="button"
-          aria-label="Reveal in Finder"
-          title="Reveal in Finder"
+          aria-label={REVEAL_IN_FILE_MANAGER}
+          title={REVEAL_IN_FILE_MANAGER}
           onClick={() => void window.hv.revealDocument(raw)}
           className="hidden group-hover/path:block rounded p-0.5 text-ink-soft hover:text-ink cursor-pointer"
         >
@@ -517,8 +520,8 @@ function PathActions({
       <span className="hidden group-hover/path:flex items-center gap-0.5">
         <button
           type="button"
-          aria-label="Reveal in Finder"
-          title="Reveal in Finder"
+          aria-label={REVEAL_IN_FILE_MANAGER}
+          title={REVEAL_IN_FILE_MANAGER}
           onClick={() => void window.hv.revealPath(workspace!, rel)}
           className="rounded p-0.5 text-ink-soft hover:text-ink cursor-pointer"
         >

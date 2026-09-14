@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { CAN_SYMLINK } from "./canSymlink"; // symlink fixtures need elevation on Windows
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -67,7 +68,7 @@ describe("findLinkedRoot", () => {
 });
 
 describe("removeSkillDir — symlink confinement (the one escape the review found)", () => {
-  it("refuses a target reached through a symlinked path prefix", () => {
+  it.skipIf(!CAN_SYMLINK)("refuses a target reached through a symlinked path prefix", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-del-link-"));
     const root = path.join(tmp, "managed");
     const outside = path.join(tmp, "outside");
@@ -81,7 +82,7 @@ describe("removeSkillDir — symlink confinement (the one escape the review foun
     expect(fs.existsSync(path.join(outside, "precious", "keep.txt"))).toBe(true);
   });
 
-  it("still deletes a real directory inside the root when a sibling symlink exists", () => {
+  it.skipIf(!CAN_SYMLINK)("still deletes a real directory inside the root when a sibling symlink exists", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-del-link2-"));
     const root = path.join(tmp, "managed");
     const real = path.join(root, "pdf-tools");
@@ -95,6 +96,8 @@ describe("removeSkillDir — symlink confinement (the one escape the review foun
 
   it("fails closed for a path that does not exist", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-del-missing-"));
-    expect(() => removeSkillDir(path.join(tmp, "nope"), [tmp])).toThrow(/outside/i);
+    // Refused for EXISTENCE, which is an explicit branch now. This used to pass
+    // only on macOS, and by accident: /var vs /private/var made the root check fail.
+    expect(() => removeSkillDir(path.join(tmp, "nope"), [tmp])).toThrow(/does not exist/i);
   });
 });

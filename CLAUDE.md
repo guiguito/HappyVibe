@@ -32,6 +32,67 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   "versionMajorMinor"]` — every compiler function (`createProgram`, `transpileModule`,
   `parseJsonConfigFileContent`, …) is `undefined`. So a version probe SUCCEEDS and the failure
   lands later, at the first real call. Spec: Notion "TypeScript 6 → 7 migration".
+### Windows (PRD §4, round 2026-09-13)
+- **ONE checkout, installed only from Windows.** Claude Code edits from WSL; the app,
+  `npm test`, `npm run build` and `build:win` all run natively through interop
+  (`cmd.exe /c "cd /d C:\...\HappyVibe && npm test"`). A single `node_modules` cannot serve
+  both OSes — the Electron binary, `sherpa-onnx-*`, `@typescript/native` and rollup are
+  per-platform. **The tell that someone installed from WSL:** `ls node_modules/electron/dist`
+  shows a Linux `electron` instead of `electron.exe`; delete both trees and reinstall.
+- **Two interop traps, both of which have already cost real time.** `cmd.exe /c "a && b" | tail`
+  returns TAIL's exit code, so a failed install reads as success — the same rule as
+  §Tests' never-pipe-a-test-run, one shell over. And nested quotes are mangled through
+  WSL→cmd: `if exist "C:\Program Files\..."` answers NO for a directory that exists, so
+  anything with inner quotes goes in a `.bat` or `.mjs` file, never inline.
+- **`src/main/platform.ts` is the seam, and `process.platform` in `src/main` outside it is
+  a review red.** It answers `nodeExecPath`, `childLauncher`, `killTree`, `readCommand`,
+  `terminalShell`, `terminalShellArgs`, `agentShell`, `workspaceKey`, `detectedShells` from
+  INJECTED deps, so a Windows platform is constructed and asserted on macOS CI
+  (`tests/platform.test.ts`) before a Windows box runs it.
+- **`terminalSettings.ts` imports the seam TYPE-ONLY, and that is load-bearing.** Three
+  renderer components import values from it, so a runtime import puts `node:child_process`
+  in the browser bundle: it typechecks, it runs in dev, and `npm run build` fails with
+  *"spawnSync is not exported by __vite-browser-external"*. Same trap as `schedules.ts`.
+  Also: tests are NOT in `tsconfig.node.json`'s include, so a missing required argument
+  there surfaces at RUNTIME, not at typecheck.
+- **The child guard reaches Windows through `pi-runtime/bin/pi-child.mjs`**, selected by
+  pi-subagents' own win32 rule (a `.mjs` PI_SUBAGENT_PI_BINARY is run as
+  `process.execPath <script> …`). Pinned in `tests/pi-subagents-contract.test.ts`, including
+  that win32 with no env var THROWS rather than falling back to `pi` on PATH.
+  **`await import(<absolute path>)` is fatal there** — *"absolute paths must be valid
+  file:// URLs. Received protocol 'c:'"* — so every sidecar uses `pathToFileURL().href`.
+  That one bug also disguised itself as "anydoc has no build for this platform".
+- **Kill the TREE.** `child.kill()` is TerminateProcess: no handler runs, so Pi's SIGTERM
+  path never happens and every bash command and stdio MCP server outlives the session.
+  `taskkill /T /F`, with NO grace period — Pi appends its session file with `appendFileSync`
+  and its own SIGTERM branch already skips the stdout flush (measured).
+- **`pty.process` is useless on Windows** — the getter is `return this._name`, so it answers
+  the constant `"xterm-256color"`. Believed, every tab is titled that AND every terminal reads
+  as permanently busy. There is no second source: a Git Bash command never appears as a
+  descendant in the Win32 process tree (MSYS re-parents) and the query costs ~900 ms. And
+  **attach an error listener to `_agent.inSocket`** — node-pty guards its OUTPUT socket and
+  rethrows everything else, so a write racing a dying ConPTY is an uncaught `write EAGAIN`
+  that kills MAIN. Both in `terminals.ts`, both pinned.
+- **Paths: `hv-paths.ts` is the one answer** (import-free, shared by bridge, child guard, main
+  and the renderer). Permission rules, the outside-workspace ask and write confinement all
+  fold separators and case on win32 — without it a `src/**` rule matches nothing and `D:\other`
+  reads as inside the workspace. `normPath` (store.ts) is the ONE workspace identity, via the
+  seam. In the renderer, `basename()` splits on both separators; the two things that only LOOK
+  like paths (a URL host, a `provider/modelId`) stay forward-slash.
+- **Copy: no `⌘`, no "your Mac".** `formatBinding` defaults to the running platform, `MOD` and
+  the `platformCopy.ts` helpers carry the rest, and two source scans in
+  `tests/mod-key-copy.test.ts` keep them out — an absence cannot be screenshotted.
+- **`npm test` is `node scripts/test.mjs`** (the inline `VAR=… vitest` is POSIX-only), and
+  `tests/windows-skips.test.ts` pins the 11 platform/capability gates with a reason each.
+  Prefer a CAPABILITY probe (`CAN_SYMLINK`, `CAN_DENY_READ`) over a platform skip: a box with
+  Developer Mode on still runs the symlink tests.
+- **Installer:** NSIS x64 only (no win-arm64 build exists for sherpa or anydoc), per-user, user
+  data kept. `afterPack` drops `dist-types` and FAILS the build if the worst-case install path
+  exceeds MAX_PATH — currently 253 of 255, so the next deep dependency trips it. Signing is
+  `HV_WIN_SIGN=azure` plus four `AZURE_SIGN_*` secrets; a half-configured request throws.
+- Measurements, including the M1 exit test driven over CDP: `docs/validation/win1.md`.
+  Design + decisions: the Notion "Windows support" page.
+
 - Full gate = `npm run gate` (= `build` → non-live suite, ONE command), plus `npm run test:live`
   when `npm run live:why` prints anything. `build` runs BOTH typechecks first and fast-fails on
   them, so never run `npm run typecheck` before `gate` or `build` — that is the same check twice
@@ -50,10 +111,11 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   own `401 User not found`, so the route is proven independently of any balance. Pricing is
   ~$0.08/M in, $0.17/M out — a full serial batch costs pennies. Resolver pinned by
   `tests/live-model.test.ts`.
-- Live-Pi tests (real model via the resolver above, skipIf-gated) — **17 files** as of
-  2026-08-16 (was 14; browser-bridge, terminal-bridge and git-message joined since).
+- Live-Pi tests (real model via the resolver above, skipIf-gated) — **23 files** as of
+  2026-09-14 (was 17 at 2026-08-16, 14 before that).
   Source of truth = `grep -rl "skipIf(!KEY" tests/` — RE-DERIVE IT, never trust a list in prose.
-  The count in this file has drifted twice; the grep has not.
+  The count in this file has drifted three times; the grep has not. Do not repair it by hand
+  either — run the grep, write what it says, and note the date.
   Note git-message is the odd one out: it is the only live file that is not a BRIDGE test —
   §29's "Write it for me" is a one-shot `pi -p` call, so it exercises the print-mode path
   (`titles.ts`'s pattern) rather than the RPC one.
@@ -67,19 +129,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   carries the change, not before (this reads as "the gate script regressed" if you forget).
   **A fresh WORKTREE has no `.env`, so the batch exits 0 having tested nothing — and it looks
   green.** `.env` is gitignored, so it does not travel with a worktree; `KEY` is then undefined
-  and all 18 files skip themselves, while the key-free tests inside them still report as passes
-  (measured 2026-08-31: `6 passed | 12 skipped`, exit 0). **The tell is the DURATION** — a real
-  batch is ~6 min, that one took 4.72 s. Always read the wall time before believing a green live
+  and every one of them skips itself, while the key-free tests inside them still report as passes
+  (measured 2026-08-31 at 18 files: `6 passed | 12 skipped`, exit 0). **The tell is the DURATION** —
+  a real batch is ~7-8 min (461 s / 23 files / 73 tests, measured 2026-09-14), that one took 4.72 s. Always read the wall time before believing a green live
   run, and symlink the key in first: `ln -s ~/Documents/Github/HappyVibe/.env .env` (still
   ignored through the link — `git check-ignore -v .env` confirms). Same silent-skip class as the
   `sk-REPLACE` rule above, one directory over.
   (`--no-file-parallelism` is load-bearing: concurrent files mean concurrent DeepSeek sessions,
   and the provider degrades under that — the residual "flakes" were turns that came back with no
-  tool call at all. Serial costs ~6 min and is green.)
+  tool call at all. Serial costs ~7-8 min and is green.)
   (use `xargs` — zsh does NOT word-split `$(…)`, so `npx vitest run $files` passes all 14
   paths as ONE argument and vitest reports "No test files found" while echoing the filter list.)
   (`skills-contract`/`builtins-contract` also spawn Pi but with a dummy key — key-free, they stay in the non-live run.)
-- **Background the live batch, not the fast one.** `test:live` is ~6 min and blocks, so run it
+- **Background the live batch, not the fast one.** `test:live` is ~7-8 min and blocks, so run it
   with Bash `run_in_background: true` and keep working — the harness re-invokes on exit with the
   raw output. **Only alongside work that does not touch the tree**: docs, docs/prd.md, Notion,
   reading, review. `vitest run` collects files as it goes and the live files spawn real Pi
@@ -96,12 +158,13 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   fills vars that are UNSET — so the shell value wins and every live file skips itself.
   **BOTH vars must be neutralised.** Setting only the DeepSeek one meant that the day an
   OpenRouter key landed in `.env`, `npm test` would silently stop being the non-live suite: 25-40 s
-  becomes ~6 min and starts spending money, with nothing in the output saying so. Verified in both
+  becomes ~7-8 min and starts spending money, with nothing in the output saying so. Verified in both
   directions (`tests/live-model.test.ts` plus an end-to-end check that `npm test` still skips with a
   real-looking key exported in the shell). This is exactly what CI runs (CI has no key at all), and it is STRICTLY MORE than
   the old exclude glob: 9 key-free tests live inside those 14 files (context-bridge ×2,
   rules-bridge ×3, agents-bridge ×2, agents-md-bridge, subagent-discovery-bridge) and the glob
-  threw them on the floor. Measured: 139 files, 1253 tests, 15 skipped, ~25-40 s (2026-08-04).
+  threw them on the floor. Measured: 306 files, 3921 tests, 47 skipped, ~50 s (2026-09-14; it read
+  139 files / 1253 tests / 15 skipped on 2026-08-04 — same drift as the live count, same fix: run it).
   **Never add an exclude list back — the list is the thing that drifted.**
 - Run live files BATCHED in one vitest invocation — they flake under the full parallel
   suite (process + LLM contention). One live failure ⇒ rerun in isolation before calling it a regression.
@@ -535,7 +598,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   (OAuth-only here) and the only pinned env var is `anthropic`'s, which declares three.
 - **`npm test` stays key-free only if `sk-REPLACE` neutralisation covers EVERY catalog env var**,
   not the original five — `tests/providers.test.ts` asserts it per row. A provider where the
-  placeholder leaked through would silently turn the 40 s non-live suite into a paid ~6 min one.
+  placeholder leaked through would silently turn the 50 s non-live suite into a paid ~7-8 min one.
 
 ## Gotchas
 - One-shot pi CLI calls hang unless stdin is closed (`stdio: ["ignore", …]`). RPC mode unaffected.

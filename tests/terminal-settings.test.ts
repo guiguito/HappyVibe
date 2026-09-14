@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { makePlatform } from "../src/main/platform";
 import {
   DEFAULT_TERMINAL_SETTINGS,
   fontStack,
@@ -79,19 +80,38 @@ describe("mergeTerminalSettings", () => {
 describe("resolveSpawn", () => {
   const d = DEFAULT_TERMINAL_SETTINGS;
 
-  it("prefers the configured shell, then $SHELL, then /bin/zsh", () => {
-    expect(resolveSpawn(d, { SHELL: "/bin/bash" }).file).toBe("/bin/bash");
-    expect(resolveSpawn(d, {}).file).toBe("/bin/zsh");
-    expect(resolveSpawn({ ...d, shellPath: "/bin/sh" }, { SHELL: "/bin/bash" }).file).toBe("/bin/sh");
+  // The default comes from the platform seam (PRD §4), so these inject one instead of
+  // relying on the host — which is what lets the Windows arm be asserted from macOS,
+  // and the POSIX one from Windows.
+  const posix = (env: Record<string, string> = {}) =>
+    makePlatform({ platform: "darwin", execPath: "/x", env, existsSync: () => false, exec: () => ({ status: 0, stdout: "" }) });
+
+  it("prefers the configured shell, then $SHELL, then the platform default", () => {
+    expect(resolveSpawn(d, { SHELL: "/bin/bash" }, posix({ SHELL: "/bin/bash" })).file).toBe("/bin/bash");
+    expect(resolveSpawn(d, {}, posix({})).file).toBe("/bin/zsh");
+    expect(resolveSpawn({ ...d, shellPath: "/bin/sh" }, { SHELL: "/bin/bash" }, posix({ SHELL: "/bin/bash" })).file)
+      .toBe("/bin/sh");
+  });
+
+  it("and on Windows that default is PowerShell, with an explicit shell still winning", () => {
+    const win = makePlatform({
+      platform: "win32", execPath: "C:\\x.exe",
+      env: { PATH: "C:\\PS7", COMSPEC: "C:\\Windows\\System32\\cmd.exe" },
+      existsSync: (f: string) => f === "C:\\PS7\\pwsh.exe",
+      exec: () => ({ status: 0, stdout: "" }),
+    });
+    expect(resolveSpawn(d, {}, win).file).toBe("C:\\PS7\\pwsh.exe");
+    expect(resolveSpawn({ ...d, shellPath: "C:\\Git\\bin\\bash.exe" }, {}, win).file)
+      .toBe("C:\\Git\\bin\\bash.exe");
   });
 
   it("passes the shell arguments through", () => {
-    expect(resolveSpawn(d, {}).args).toEqual(["-l"]);
-    expect(resolveSpawn({ ...d, shellArgs: [] }, {}).args).toEqual([]);
+    expect(resolveSpawn(d, {}, posix({})).args).toEqual(["-l"]);
+    expect(resolveSpawn({ ...d, shellArgs: [] }, {}, posix({})).args).toEqual([]);
   });
 
   it("merges extra env OVER the inherited env", () => {
-    const r = resolveSpawn({ ...d, env: { FOO: "2" } }, { FOO: "1", BAR: "3" });
+    const r = resolveSpawn({ ...d, env: { FOO: "2" } }, { FOO: "1", BAR: "3" }, posix());
     expect(r.env.FOO).toBe("2");
     expect(r.env.BAR).toBe("3");
   });
@@ -101,20 +121,20 @@ describe("resolveSpawn", () => {
     // convention Vite honours) and otherwise throws the page at Chrome. The app
     // has its own browser (§28), so "none" is the default — but only a default:
     // the settings env field is how someone says they want the real thing.
-    expect(resolveSpawn(d, {}).env.BROWSER).toBe("none");
-    expect(resolveSpawn(d, { BROWSER: "firefox" }).env.BROWSER).toBe("none");
-    expect(resolveSpawn({ ...d, env: { BROWSER: "firefox" } }, {}).env.BROWSER).toBe("firefox");
+    expect(resolveSpawn(d, {}, posix({})).env.BROWSER).toBe("none");
+    expect(resolveSpawn(d, { BROWSER: "firefox" }, posix({})).env.BROWSER).toBe("none");
+    expect(resolveSpawn({ ...d, env: { BROWSER: "firefox" } }, {}, posix({})).env.BROWSER).toBe("firefox");
   });
 
   it("forces TERM last, so a stale inherited value cannot win", () => {
     // xterm.js IS xterm-256color. Inheriting "dumb" from a launchd env would
     // give a shell that renders none of the colours it is being sent.
-    expect(resolveSpawn(d, { TERM: "dumb" }).env.TERM).toBe("xterm-256color");
-    expect(resolveSpawn({ ...d, env: { TERM: "dumb" } }, {}).env.TERM).toBe("xterm-256color");
+    expect(resolveSpawn(d, { TERM: "dumb" }, posix({})).env.TERM).toBe("xterm-256color");
+    expect(resolveSpawn({ ...d, env: { TERM: "dumb" } }, {}, posix({})).env.TERM).toBe("xterm-256color");
   });
 
   it("drops undefined inherited values instead of stringifying them", () => {
-    const r = resolveSpawn(d, { GOOD: "1", GONE: undefined });
+    const r = resolveSpawn(d, { GOOD: "1", GONE: undefined }, posix());
     expect(r.env.GOOD).toBe("1");
     expect("GONE" in r.env).toBe(false);
   });
@@ -171,5 +191,34 @@ describe("fontStack", () => {
     for (const hostile of ['"; color: red; "', 'a", monospace; x:"b', '""""']) {
       expect([...fontStack(hostile)].filter((c) => c === '"')).toHaveLength(2);
     }
+  });
+});
+
+describe("§4 Windows round — the shell's arguments belong to the shell", () => {
+  const d = DEFAULT_TERMINAL_SETTINGS;
+  const win = makePlatform({
+    platform: "win32", execPath: "C:\\x.exe",
+    env: { PATH: "C:\\PS", COMSPEC: "C:\\Windows\\System32\\cmd.exe" },
+    existsSync: (f: string) => f === "C:\\PS\\powershell.exe",
+    exec: () => ({ status: 0, stdout: "" }),
+  });
+  const mac = makePlatform({
+    platform: "darwin", execPath: "/x", env: {}, existsSync: () => false,
+    exec: () => ({ status: 0, stdout: "" }),
+  });
+
+  it("drops the POSIX -l on Windows, where PowerShell rejects it outright", () => {
+    // Measured in the running app before the fix: the terminal opened, printed
+    // "The term '-l' is not recognized as the name of a cmdlet", and exited 1.
+    expect(resolveSpawn(d, {}, win).args).toEqual([]);
+    expect(resolveSpawn(d, {}, mac).args).toEqual(["-l"]);
+  });
+
+  it("never second-guesses an explicit choice", () => {
+    // A user who picked their own shell keeps their own arguments, on either platform.
+    expect(resolveSpawn({ ...d, shellPath: "C:\\Git\\bin\\bash.exe" }, {}, win).args).toEqual(["-l"]);
+    // And edited arguments survive even on the default shell.
+    expect(resolveSpawn({ ...d, shellArgs: ["-NoLogo"] }, {}, win).args).toEqual(["-NoLogo"]);
+    expect(resolveSpawn({ ...d, shellArgs: [] }, {}, mac).args).toEqual([]);
   });
 });

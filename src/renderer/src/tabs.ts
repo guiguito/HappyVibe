@@ -522,7 +522,9 @@ export function setSize(t: WorkspaceTabs, which: "main" | "cross", ratio: number
 /** Stable key for the per-file editor buffer map. */
 export const bufferKey = (workspaceId: string, relPath: string): string => `${workspaceId}\0${relPath}`;
 
-export const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
+// Separator-agnostic (PRD §4, Windows round) — re-exported so the many existing
+// importers keep working while there is ONE implementation.
+export { basename } from "./basename";
 
 /**
  * Resolve a path surfaced on a tool/diff card against the session workspace.

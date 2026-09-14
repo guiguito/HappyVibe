@@ -7,6 +7,13 @@
  * passed through verbatim by the renderer. Scope is GLOBAL (§26) — appearance
  * is a property of the person, not of the project.
  */
+// TYPE-ONLY, and that is load-bearing: three renderer components import values from
+// this module (fontStack, DEFAULT_TERMINAL_SETTINGS), so a runtime import of the
+// platform seam would put node:child_process in the BROWSER bundle. It typechecks and
+// it runs in dev; `npm run build` fails with "spawnSync is not exported by
+// __vite-browser-external". Same trap as src/main/schedules.ts, one module over — so
+// resolveSpawn takes the platform as an argument rather than reaching for it.
+import type { Platform } from "./platform";
 
 export type TerminalStyle = "workshop" | "paper" | "carbon";
 export type CursorStyle = "bar" | "block" | "underline";
@@ -147,22 +154,36 @@ export function mergeTerminalSettings(
 /**
  * What to actually spawn.
  *
- * `/bin/zsh` is the last resort rather than `/bin/sh`: it is macOS's default
- * login shell, and this app is macOS-first (§4). The extra environment is
+ * The default comes from the platform seam: `$SHELL` then `/bin/zsh` on macOS (its
+ * default login shell, not `/bin/sh`), `/bin/bash` on Linux, and pwsh → powershell →
+ * %COMSPEC% on Windows. An explicit `shellPath` always wins — that field is the
+ * escape hatch, which is why it ships as free text on every platform. The extra environment is
  * merged OVER the inherited one so a user can override an inherited value —
  * that is the point of the field — but TERM is forced last, because xterm.js
  * IS an xterm-256color terminal and letting a stale inherited TERM through
  * produces a shell that renders colours it is not being given.
  */
+const sameArgs = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
 export function resolveSpawn(
   s: TerminalSettings,
   env: NodeJS.ProcessEnv,
+  /** PRD §4 Windows round: REQUIRED — see the type-only import above. */
+  plat: Platform,
 ): { file: string; args: string[]; env: Record<string, string> } {
   const inherited: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) if (typeof v === "string") inherited[k] = v;
   return {
-    file: s.shellPath ?? (typeof env.SHELL === "string" && env.SHELL ? env.SHELL : "/bin/zsh"),
-    args: s.shellArgs,
+    file: s.shellPath ?? plat.terminalShell(),
+    // The platform's own arguments, but ONLY while the user is still on its own
+    // shell AND has not edited the arguments — an explicit choice is never
+    // second-guessed. Without this a Windows terminal spawns PowerShell with the
+    // POSIX `-l` and dies at once (PRD §4, Windows round).
+    args:
+      s.shellPath === null && sameArgs(s.shellArgs, DEFAULT_TERMINAL_SETTINGS.shellArgs)
+        ? plat.terminalShellArgs()
+        : s.shellArgs,
     // BROWSER=none stops a dev server started in here from throwing the page at
     // the SYSTEM browser. Not a Node behaviour — it is the create-react-app
     // convention Vite and react-scripts read (vite openBrowser: `.js` path ⇒ run

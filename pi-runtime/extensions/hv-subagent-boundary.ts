@@ -31,7 +31,11 @@ export const READ_ONLY_CHILD_TOOLS: ReadonlySet<string> = new Set(["find", "grep
  * would make "this agent can edit files" and "this agent can delegate" read the
  * same, and only one of them is a write.
  */
-export const WRITE_CAPABLE_TOOLS: ReadonlySet<string> = new Set(["bash", "edit", "write", "multi_edit"]);
+export const WRITE_CAPABLE_TOOLS: ReadonlySet<string> = new Set([
+  // `powershell` is the Windows shell tool (PRD §4) — as write-capable as bash, and a
+  // ceiling that missed it would read a PowerShell child as read-only.
+  "bash", "powershell", "edit", "write", "multi_edit",
+]);
 
 /**
  * The virtual rule name a delegation gates under — the same trick as

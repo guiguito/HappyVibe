@@ -12,6 +12,7 @@
  * by construction (CAPS.perScope lines).
  */
 import crypto from "node:crypto";
+import { realpathCanonical } from "../realpath";
 import fs from "node:fs";
 import path from "node:path";
 import { MEMORY_TYPES, parseMemoryFile, serializeMemoryFile, type MemoryDoc, type MemoryType } from "./frontmatter";
@@ -44,9 +45,19 @@ export function workspaceMemoryDir(agentDir: string, key: string): string {
  * limit. Moving a folder into or out of git changes its key, and the old folder then shows up
  * on the Memory page's housekeeping line rather than vanishing.
  */
-export function workspaceMemoryKey(wsPath: string, gitCommonDir: string | null): string {
+export function workspaceMemoryKey(
+  wsPath: string,
+  gitCommonDir: string | null,
+  plat: NodeJS.Platform = process.platform,
+): string {
   const basis = gitCommonDir ? path.dirname(path.resolve(gitCommonDir)) : path.resolve(wsPath);
-  return crypto.createHash("sha256").update(basis.replace(/[\\/]+$/, "")).digest("hex").slice(0, 16);
+  const trimmed = basis.replace(/[\\/]+$/, "");
+  // win32: the filesystem is case-insensitive and git answers forward slashes, so
+  // `C:\ws` and `c:/ws` must hash to ONE memory folder. The slug below already
+  // lower-cased; the key did not, which would have split a project's memory in two
+  // depending on how the folder was opened (PRD §4, Windows round).
+  const folded = plat === "win32" ? trimmed.replace(/\//g, "\\").toLowerCase() : trimmed;
+  return crypto.createHash("sha256").update(folded).digest("hex").slice(0, 16);
 }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -85,8 +96,8 @@ export interface MemorySummary {
  */
 function fileFor(dir: string, slug: string): string {
   const p = path.join(dir, `${slug}.md`);
-  const realDir = fs.realpathSync(dir);
-  const realParent = fs.realpathSync(path.dirname(p));
+  const realDir = realpathCanonical(dir);
+  const realParent = realpathCanonical(path.dirname(p));
   if (realParent !== realDir) throw new Error("memory path escapes its scope");
   return path.join(realParent, path.basename(p));
 }

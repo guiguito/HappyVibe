@@ -1,2 +1,27 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# LF in the working tree on EVERY platform. A Windows checkout with
+# core.autocrlf=true would otherwise turn every fixture into CRLF and break each
+# test that compares text with "\n" (Windows round, 2026-09-13).
+* text=auto eol=lf
+
+# POSIX launchers are executed by /bin/sh — a CR in the shebang line is fatal.
+*.sh text eol=lf
+
+# Byte-exact or nothing. The §31 document fixtures are what anydoc converts, so a
+# normalised byte is a converter test failing for a reason that is not the converter.
+# `.rtf` is textual markup and is HERE on purpose, for that exact reason.
+*.pdf   binary
+*.doc   binary
+*.docx  binary
+*.ppt   binary
+*.pptx  binary
+*.xls   binary
+*.xlsx  binary
+*.xlsb  binary
+*.odt   binary
+*.ods   binary
+*.odp   binary
+*.epub  binary
+*.rtf   binary
+*.png   binary
+*.ico   binary
+*.icns  binary

@@ -31,7 +31,11 @@ const tmps: string[] = [];
 const mk = (p = "hv-mem-"): string => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), p));
   tmps.push(d);
-  return d;
+  // Canonical, because os.tmpdir() can hand back a Windows 8.3 SHORT NAME
+  // (`C:\Users\RUNNER~1\…`) while git answers the long one — two spellings of the
+  // same directory, and the fixture would then compare one against the other.
+  // `.native` is the only call that expands them; plain realpathSync does not.
+  return fs.realpathSync.native(d);
 };
 afterEach(() => {
   while (tmps.length) fs.rmSync(tmps.pop()!, { recursive: true, force: true });
@@ -274,4 +278,29 @@ describe("save / read / list / forget / index", () => {
     await saveMemory(dir, { name: "new", description: "d", type: "user", content: "x", now: new Date("2026-09-01T00:00:00Z") });
     expect(listMemories(dir).map((m) => m.slug)).toEqual(["new", "old"]);
   });
+});
+
+it("§4 Windows round: one memory folder per project, however the folder was opened", () => {
+  // The filesystem is case-insensitive on win32 and git answers forward slashes, so
+  // `C:\ws` and `c:/ws` are the same project. The slug already lower-cased; the KEY
+  // did not, which would split a project's memory in two depending on how it was
+  // opened, with nothing on screen saying so.
+  expect(workspaceMemoryKey("C:\\Users\\G\\WS", null, "win32")).toBe(
+    workspaceMemoryKey("c:/users/g/ws", null, "win32"),
+  );
+  // And case still matters where the filesystem says it does.
+  expect(workspaceMemoryKey("/tmp/WS", null, "darwin")).not.toBe(
+    workspaceMemoryKey("/tmp/ws", null, "darwin"),
+  );
+});
+
+it.skipIf(process.platform !== "win32")("§4: a Windows 8.3 short name canonicalises, so one clone is one key", () => {
+  // The third spelling of a path, after separators and case — and it arrives on its
+  // own: TEMP is routinely the short form for a user name over 8 characters. On CI
+  // (user `runneradmin`) the main worktree resolved `.git` against a SHORT tmpdir
+  // while the linked worktree got git's LONG answer, so the two halves of one clone
+  // produced different memory keys and §33's "one memory folder per clone" quietly
+  // stopped holding. Invisible on a machine whose user name is already short.
+  expect(fs.realpathSync("C:\\PROGRA~1")).toBe("C:\\PROGRA~1"); // plain: leaves it alone
+  expect(fs.realpathSync.native("C:\\PROGRA~1")).toBe("C:\\Program Files"); // native: expands
 });

@@ -7,6 +7,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { resolveThroughLinks } from "../realpath";
 
 export type DeleteKind = "delete" | "unlink" | "refused";
 export interface DeletePlan {
@@ -53,24 +54,20 @@ export function findLinkedRoot(skillDir: string, linkedRoots: string[]): string 
  * arbitrary id from the renderer, so both sides are realpath'd before comparing.
  */
 export function removeSkillDir(dir: string, allowedRoots: string[]): void {
-  const abs = realish(dir);
+  const abs = resolveThroughLinks(dir);
   const ok = allowedRoots.some((root) => {
-    const r = realish(root);
+    const r = resolveThroughLinks(root);
     return abs !== r && abs.startsWith(r + path.sep);
   });
   if (!ok) throw new Error(`Refusing to delete ${path.resolve(dir)}: outside the managed skill roots.`);
+  // Containment FIRST — it is the security-relevant answer — then existence.
+  // Both must be explicit branches. Failing closed on a missing target used to be
+  // accidental: the resolver returned a bare path.resolve() for a path that does
+  // not exist, which on macOS alone mismatched the realpath'd root (/var vs
+  // /private/var) and so refused it for a reason that had nothing to do with
+  // existence — while Windows and Linux, having no such indirection, sailed past
+  // and died inside rmSync with a raw ENOENT. resolveThroughLinks() now walks to
+  // the nearest existing ancestor, so every platform reaches this line.
+  if (!fs.existsSync(abs)) throw new Error(`Refusing to delete ${path.resolve(dir)}: it does not exist.`);
   fs.rmSync(abs, { recursive: true, force: true, maxRetries: 3 });
-}
-
-/**
- * realpath where possible, falling back to resolve for a path that doesn't exist
- * yet. Deliberately fails CLOSED: an unresolvable target simply won't match a
- * resolved root, so the delete is refused rather than attempted.
- */
-function realish(p: string): string {
-  try {
-    return fs.realpathSync(p);
-  } catch {
-    return path.resolve(p);
-  }
 }

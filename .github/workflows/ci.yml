@@ -23,3 +23,26 @@ jobs:
       - run: cd pi-runtime && npm ci
       - run: npm test
       - run: npm run build
+
+  # Windows round (2026-09-14). REQUIRED, and the flag that used to sit here is the
+  # reason: with `continue-on-error: true` a failing Windows job still reported the run
+  # as success, so a green tick on the PR hid a red `npm test` — the 8.3 short-name bug
+  # that neither developer machine could reproduce. This repo's plan has no branch
+  # protection, so that flag WAS the gate; there is nothing else to configure.
+  # Pinned by tests/ci-windows-required.test.ts.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: cd pi-runtime && npm ci
+      - run: npm test
+      - run: npm run build

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { MIC_DENIED_HINT } from "../platformCopy";
 import { Toggle } from "./Toggle";
 import { Section } from "./Section";
 // Electron-free main modules, imported rather than restated — the pattern
@@ -379,7 +380,7 @@ export function VoiceView({
             label="Microphone access"
             hint={
               mic === "denied"
-                ? "Access is denied. Grant it in System Settings — macOS requires the app to be restarted before the change takes effect."
+                ? MIC_DENIED_HINT
                 : mic === "not-determined"
                   ? "Not requested yet. You will be asked the first time you dictate."
                   : undefined

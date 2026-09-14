@@ -1,3 +1,4 @@
+import { THIS_COMPUTER, YOUR_COMPUTER } from "./platformCopy";
 /**
  * §22 onboarding round (2026-09-01). Every first-run string in one place, plus
  * the two predicates the dialog derives from.
@@ -14,12 +15,12 @@ export const ONBOARDING_COPY = {
 
   step1Title: "Connect a model",
   step1Body:
-    "The brain. Sign in with a plan you already pay for, run a free one on this Mac, or paste an API key.",
+    `The brain. Sign in with a plan you already pay for, run a free one on ${THIS_COMPUTER}, or paste an API key.`,
   // The three rungs of §16's ladder, as the choice that opens step 1. Picking
   // one is what reveals its providers — showing all three lists at once was
   // what pushed step 2 below the fold.
   step1SignIn: "Sign in with a plan",
-  step1Local: "Free, on this Mac",
+  step1Local: `Free, on ${THIS_COMPUTER}`,
   step1Key: "Paste an API key",
   step1KeySave: "Save key",
   step1KeyUnverified: "Saved — couldn't verify this key.",
@@ -37,12 +38,22 @@ export const ONBOARDING_COPY = {
   // Honesty-checked: §10 asks before FILE access outside the workspace root. It
   // does NOT confine bash, so this says "asks first" and never "nowhere else".
   step2Body:
-    "A folder on your Mac. The agent works in there — and asks first before touching anything outside it.",
+    `A folder on ${YOUR_COMPUTER}. The agent works in there — and asks first before touching anything outside it.`,
   step2Open: "Open a folder…",
   step2Fresh: "Start fresh…",
   step2FreshLabel: "Name your project",
   step2FreshCreate: "Create it",
   step2FreshWhere: "Created in your Documents folder, under HappyVibe.",
+  /**
+   * §4 Windows round. Shown ONLY when the shell probe answers "powershell" — i.e. a
+   * Windows machine with no Git Bash. One line, no persistence, no nag, and never a
+   * Banner: §34's pulse decision already settled that a row like this is not one.
+   * It names sub-agents explicitly because that is the part that does not degrade —
+   * the bundled agents ask for `bash` in frontmatter, and that allowlist is
+   * upstream's to enforce, not ours to rewrite per platform.
+   */
+  gitForWindows:
+    "Install Git for Windows for the best experience — HappyVibe will use its shell automatically, and sub-agents need it.",
 
   skip: "I'll set up myself",
   doneTitle: "You're in.",

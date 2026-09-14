@@ -26,11 +26,20 @@ export interface RulesFile {
   workspaces: Record<string, Rule[]>;
 }
 
+import { containsPath, foldCase, isAbsolutePath, stripTrailingSep, toPosix } from "./hv-paths";
+
 export interface ToolCall {
   tool: string;
   input: Record<string, unknown>;
   /** Absolute workspace cwd the Pi session runs in. */
   workspace: string;
+  /**
+   * win32: the filesystem is case-insensitive, so paths fold case before matching.
+   *
+   * Set by the CALLER — the bridge from process.platform, main from the platform
+   * seam — because this module is import-free by contract (the renderer loads it).
+   */
+  caseInsensitivePaths?: boolean;
 }
 
 export interface Verdict {
@@ -75,6 +84,17 @@ export interface Verdict {
 // returns text the user has already reviewed on the Memory page and can read there any time —
 // the use_skill doctrine. Saving and forgetting CHANGE what every future session is told, so
 // they default to ask like any other write.
+/**
+ * Pi's arbitrary-shell tools. `bash` everywhere; `powershell` on a Windows box with
+ * no Git Bash, where spawn passes `--tools` naming it instead (PRD §4, Windows round).
+ *
+ * Any gate that treats `bash` as "the shell" must treat both the same, so this is the
+ * ONE list and `=== "bash"` is a bug wherever it means the shell. The terminal tools
+ * are deliberately NOT here — they are a different thing, with their own rules.
+ */
+export const SHELL_TOOLS: ReadonlySet<string> = new Set(["bash", "powershell"]);
+export const isShellTool = (tool: string): boolean => SHELL_TOOLS.has(tool);
+
 export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall",
   // §35: schedule_list is a read. schedule_create and schedule_update are here
   // for the ask_user reason rather than that one — their ONLY effect is to open
@@ -243,19 +263,22 @@ export const FILE_TOOLS = new Set([
 ]);
 
 /**
- * v5: does a file path point OUTSIDE the workspace root? Pure, posix-only
- * (the app is mac/linux-first). Absolute paths must sit under the workspace;
- * relative paths must not climb above it with `..`; `~` is treated as outside.
+ * v5: does a file path point OUTSIDE the workspace root? Pure and separator-agnostic
+ * (Windows round): absolute paths — posix, drive-letter or UNC — must sit under the
+ * workspace; relative paths must not climb above it with `..`; `~` is outside.
+ * `caseInsensitive` comes from the caller, because this module stays import-free.
  * ponytail: no realpath (this module is import-free) — a symlink inside the
  * workspace that points out won't be caught; upgrade to fs.realpath in main
  * if that ever matters.
  */
-export function escapesWorkspace(p: string, workspace: string): boolean {
-  const ws = workspace.replace(/\/+$/, "");
+export function escapesWorkspace(p: string, workspace: string, caseInsensitive = false): boolean {
   if (p.startsWith("~")) return true;
-  if (p.startsWith("/")) return p !== ws && !p.startsWith(ws + "/");
+  // Absolute covers `/x`, `C:\x` and `\\server\share` — a drive-letter path used to
+  // fall through to the relative branch, where its zero `..` count read as "inside".
+  if (isAbsolutePath(p)) return !containsPath(workspace, p, caseInsensitive);
   let depth = 0;
-  for (const seg of p.split("/")) {
+  // Split on the NORMALISED form, or `..\..\secrets.txt` is one segment and climbs free.
+  for (const seg of toPosix(p).split("/")) {
     if (seg === "" || seg === ".") continue;
     if (seg === "..") { depth--; if (depth < 0) return true; }
     else depth++;
@@ -339,10 +362,16 @@ function ruleMatches(rule: Rule, call: ToolCall): boolean {
     const cmd = call.input.command;
     return typeof cmd === "string" && globToRegExp(rule.pattern, "command").test(cmd.trim());
   }
-  // path layer — match any file-ish arg, relative to the workspace when inside it
-  const re = globToRegExp(rule.pattern, "path");
-  const ws = call.workspace.endsWith("/") ? call.workspace : call.workspace + "/";
-  return pathArgs(call.input).some((p) => {
+  // path layer — match any file-ish arg, relative to the workspace when inside it.
+  //
+  // Everything is POSIX-normalised FIRST: globToRegExp's path mode is built from
+  // `[^/]`, so without this a `src/**` rule could never match `C:\ws\src\a.ts` —
+  // the user writes a rule, the Permissions page shows it, and it applies to nothing.
+  const ci = call.caseInsensitivePaths === true;
+  const re = globToRegExp(foldCase(rule.pattern, ci), "path");
+  const ws = foldCase(stripTrailingSep(toPosix(call.workspace)), ci) + "/";
+  return pathArgs(call.input).some((raw) => {
+    const p = foldCase(toPosix(raw), ci);
     const rel = p.startsWith(ws) ? p.slice(ws.length) : p;
     return re.test(rel) || re.test(p);
   });
@@ -365,7 +394,8 @@ export function evaluate(rules: RulesFile, call: ToolCall): Verdict {
   // v5: a file tool reaching outside the workspace asks — even reads that would
   // otherwise be safe-default-allowed. Explicit rules above still win.
   if (FILE_TOOLS.has(call.tool)) {
-    const outside = pathArgs(call.input).find((p) => escapesWorkspace(p, call.workspace));
+    const outside = pathArgs(call.input).find((p) =>
+      escapesWorkspace(p, call.workspace, call.caseInsensitivePaths === true));
     if (outside) return { action: "ask", source: "outside-workspace", outsidePath: outside };
   }
   if (SAFE_TOOLS.has(call.tool)) return { action: "allow", source: "safe-default" };

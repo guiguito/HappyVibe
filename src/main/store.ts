@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { platform } from "./platform";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -557,7 +558,18 @@ export interface WorkspaceEntry {
  *  setModel silently no-op or getModel miss the override. */
 /** §35: schedules.ts and ipc.ts compare workspace paths with the SAME rule the registry uses —
     "/w/" and "/w" are one workspace. Exported rather than re-spelled (CLAUDE.md: never compare raw path strings). */
-export const normPath = (p: string): string => p.replace(/\/+$/, "") || "/";
+/**
+ * The canonical comparison key for a workspace path — the ONE answer to "are these
+ * the same workspace", used by the registry, the session index, the schedule store
+ * and main's workspace lookups.
+ *
+ * Via the platform seam since the Windows round (PRD §4): there a workspace is
+ * `C:\ws`, git answers `C:/ws` and the filesystem is case-insensitive, so a
+ * separator-only strip left the same folder with several identities — two sidebar
+ * rows for one project, and a schedule that cannot find its own workspace.
+ * Comparison only: never render this, it is lower-cased on win32.
+ */
+export const normPath = (p: string): string => platform.workspaceKey(p);
 
 /**
  * Round 11: every session belonging to a workspace, archived ones included.

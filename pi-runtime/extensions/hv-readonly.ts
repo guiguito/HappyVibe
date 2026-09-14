@@ -22,6 +22,7 @@
  * sets, and only for a schedule whose mode is "readonly".
  */
 import { gatePlanCall, type PlanGate } from "./hv-plan";
+import { AGENT_SHELL } from "./hv-terminal";
 
 /**
  * Blocked outright, on top of everything Plan mode blocks.
@@ -87,7 +88,7 @@ message IS the report: read, search and analyse, then say what you found and
 what it means, in full, in chat. Do not end a turn by announcing what you are
 about to do.
 
-Blocked here: ${names}; bash is limited to a read-only allowlist. Do not try to
+Blocked here: ${names}; ${AGENT_SHELL} is limited to a read-only allowlist. Do not try to
 plan, to schedule anything, or to ask a question — there is no one to answer.
 </happyvibe_readonly_run>`;
 }

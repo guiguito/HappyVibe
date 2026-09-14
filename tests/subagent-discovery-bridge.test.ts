@@ -69,7 +69,7 @@ const payload = (r: UiReq): Record<string, unknown> => {
 
 /** cwd with a project agent at .pi/agents/scout.md the bridge should enumerate. */
 function cwdWithAgent(): string {
-  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-disc-cwd-")));
+  const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-disc-cwd-")));
   fs.mkdirSync(path.join(cwd, ".pi", "agents"), { recursive: true });
   fs.writeFileSync(
     path.join(cwd, ".pi", "agents", "scout.md"),

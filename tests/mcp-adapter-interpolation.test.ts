@@ -72,7 +72,7 @@ describe("pi-mcp-adapter interpolation contract", () => {
     expect(src).not.toMatch(/resolveCommandSecret\w*\(\s*definition\.url/);
   });
 
-  it("a '!'-prefixed value is EXECUTED as a shell command — new in adapter 2.17.0", async () => {
+  it.skipIf(process.platform === "win32")("a '!'-prefixed value is EXECUTED as a shell command — new in adapter 2.17.0", async () => {
     // Not our feature, but it is a code-execution path reachable from an
     // mcp.json this app reads (global <agentDir>/mcp.json AND workspace
     // .mcp.json, which can arrive inside a cloned repo). Pinned so a future

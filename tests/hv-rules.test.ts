@@ -214,3 +214,90 @@ describe("globToRegExp anchoring", () => {
     expect(globToRegExp("a.ts", "path").test("aXts")).toBe(false); // "." is literal
   });
 });
+
+/**
+ * PRD §4 (Windows round): a path rule has to match a Windows path.
+ *
+ * globToRegExp's path mode is built from `[^/]`, so a `src/**` rule could never match
+ * `C:\ws\src\a.ts` — and `*` would span every segment instead of one. The user writes
+ * a rule, the Permissions page shows it, and it silently applies to nothing. The
+ * outside-workspace ask had the mirror bug: `escapesWorkspace` treated a
+ * drive-letter path as RELATIVE, counted its `..` depth (zero), and answered "inside".
+ *
+ * `caseInsensitivePaths` is set by the CALLER (the bridge from process.platform, main
+ * from the platform seam) — the engine stays import-free and platform-agnostic.
+ */
+describe("path rules on Windows paths", () => {
+  const ws = "C:\\Users\\G\\ws";
+  const deny = { global: [{ layer: "path" as const, pattern: "src/**", action: "deny" as const }], workspaces: {} };
+  const none = { global: [], workspaces: {} };
+
+  test("a src/** rule matches a backslash path under the workspace", () => {
+    const v = evaluate(deny, {
+      tool: "write",
+      input: { path: "C:\\Users\\G\\ws\\src\\a.ts" },
+      workspace: ws,
+      caseInsensitivePaths: true,
+    });
+    expect(v.action).toBe("deny");
+    expect(v.source).toBe("rule");
+  });
+
+  test("and matches whatever case the model writes", () => {
+    const v = evaluate(deny, {
+      tool: "write",
+      input: { path: "c:/users/g/WS/SRC/a.ts" },
+      workspace: ws,
+      caseInsensitivePaths: true,
+    });
+    expect(v.action).toBe("deny");
+  });
+
+  test("does NOT fold case on a case-sensitive platform", () => {
+    const v = evaluate(
+      { global: [{ layer: "path", pattern: "src/**", action: "deny" }], workspaces: {} },
+      { tool: "write", input: { path: "/tmp/ws/SRC/a.ts" }, workspace: "/tmp/ws" },
+    );
+    expect(v.source).not.toBe("rule");
+  });
+
+  test("a path on another drive is OUTSIDE, not a zero-depth relative path", () => {
+    const v = evaluate(none, {
+      tool: "read",
+      input: { path: "D:\\other\\x.txt" },
+      workspace: ws,
+      caseInsensitivePaths: true,
+    });
+    expect(v.source).toBe("outside-workspace");
+  });
+
+  test("a sibling sharing a prefix is outside", () => {
+    const v = evaluate(none, {
+      tool: "read",
+      input: { path: "C:\\Users\\G\\ws-evil\\x" },
+      workspace: ws,
+      caseInsensitivePaths: true,
+    });
+    expect(v.source).toBe("outside-workspace");
+  });
+
+  test("a path inside the workspace is not flagged, whatever its separators", () => {
+    const v = evaluate(none, {
+      tool: "read",
+      input: { path: "c:/users/g/ws/README.md" },
+      workspace: ws,
+      caseInsensitivePaths: true,
+    });
+    expect(v.source).not.toBe("outside-workspace");
+  });
+
+  test("still catches a climb above the workspace", () => {
+    const v = evaluate(none, {
+      tool: "read",
+      input: { path: "..\\..\\secrets.txt" },
+      workspace: ws,
+      caseInsensitivePaths: true,
+    });
+    expect(v.source).toBe("outside-workspace");
+  });
+});

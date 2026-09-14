@@ -10,10 +10,16 @@ beforeEach(() => {
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
+// Absolute paths are resolved per-platform (PRD §4, Windows round): a literal
+// "/ws/..." gains a drive letter under path.resolve on Windows, so the relative arm
+// below could never match a POSIX-literal manifest. The module compares normalised
+// forms; the FIXTURE has to be host-shaped for that comparison to mean anything.
+const WS = path.resolve("/ws");
+const G = path.resolve("/g");
 const manifest: SkillManifest = {
   skills: [
-    { name: "pdf", dir: "/g/skills/pdf", skillMdPath: "/g/skills/pdf/SKILL.md", scope: "global", estTokens: { card: 10, body: 100 } },
-    { name: "local", dir: "/ws/.agents/skills/local", skillMdPath: "/ws/.agents/skills/local/SKILL.md", scope: "workspace", estTokens: { card: 5, body: 50 } },
+    { name: "pdf", dir: path.join(G, "skills", "pdf"), skillMdPath: path.join(G, "skills", "pdf", "SKILL.md"), scope: "global", estTokens: { card: 10, body: 100 } },
+    { name: "local", dir: path.join(WS, ".agents", "skills", "local"), skillMdPath: path.join(WS, ".agents", "skills", "local", "SKILL.md"), scope: "workspace", estTokens: { card: 5, body: 50 } },
   ],
 };
 
@@ -28,17 +34,18 @@ test("loadManifest reads a file, tolerates missing/corrupt", () => {
 });
 
 test("findByName", () => {
-  expect(findByName(manifest, "pdf")?.dir).toBe("/g/skills/pdf");
+  expect(findByName(manifest, "pdf")?.dir).toBe(path.join(G, "skills", "pdf"));
   expect(findByName(manifest, "missing")).toBeUndefined();
 });
 
 test("matchReadPath detects a raw read of an active SKILL.md (absolute + relative)", () => {
-  expect(matchReadPath(manifest, { path: "/g/skills/pdf/SKILL.md" }, "/ws")?.name).toBe("pdf");
-  expect(matchReadPath(manifest, { file_path: "/ws/.agents/skills/local/SKILL.md" }, "/ws")?.name).toBe("local");
+  expect(matchReadPath(manifest, { path: path.join(G, "skills", "pdf", "SKILL.md") }, WS)?.name).toBe("pdf");
+  expect(matchReadPath(manifest, { file_path: path.join(WS, ".agents", "skills", "local", "SKILL.md") }, WS)?.name).toBe("local");
   // relative to cwd
-  expect(matchReadPath(manifest, { path: ".agents/skills/local/SKILL.md" }, "/ws")?.name).toBe("local");
+  // A forward-slash relative path from the model must still match on Windows.
+  expect(matchReadPath(manifest, { path: ".agents/skills/local/SKILL.md" }, WS)?.name).toBe("local");
   // an unrelated read is not a skill load
-  expect(matchReadPath(manifest, { path: "/ws/src/index.ts" }, "/ws")).toBeUndefined();
+  expect(matchReadPath(manifest, { path: path.join(WS, "src", "index.ts") }, WS)).toBeUndefined();
 });
 
 test("skillTokenLines sums tokens + counts per scope", () => {

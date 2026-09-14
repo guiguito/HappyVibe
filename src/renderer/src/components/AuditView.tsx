@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { basename } from "../basename";
 /**
  * §20 round 17 — the one thing this page never explained.
  *
@@ -281,9 +282,6 @@ const DECISION_TONE: Record<string, string> = {
   "allow-session": "bg-leaf-soft text-leaf border-leaf/50",
 };
 
-function basename(p: string): string {
-  return p.split("/").filter(Boolean).pop() ?? p;
-}
 
 export function AuditView({
   sessions,

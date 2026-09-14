@@ -1,7 +1,8 @@
 /**
  * hv-child-guard — HappyVibe's permission gate INSIDE a sub-agent child.
  *
- * Injected by `pi-runtime/bin/pi-node.sh`, not by an agent's `extensions:` key.
+ * Injected by `pi-runtime/bin/pi-node.sh` (POSIX) or `bin/pi-child.mjs` (Windows),
+ * not by an agent's `extensions:` key.
  * That is upstream's own documented pattern for child bash policy and it has two
  * properties nothing else does: it reaches EVERY child with no per-agent
  * stamping, and a capability ceiling's `denyExtensions` cannot strip it, because
@@ -18,9 +19,17 @@
  * silently disables the whole gate rather than failing loudly.
  */
 import * as fs from "node:fs";
+import { containsPath, isAbsolutePath } from "./hv-paths";
 import * as path from "node:path";
 import { EMPTY_RULES, parseRulesFile, type RulesFile } from "./hv-rules";
 import { childDecision } from "./hv-child-rules";
+
+/**
+ * PRD §4 (Windows round): the filesystem is case-insensitive on win32, so every path
+ * a rule inspects folds case and separators first. Read here rather than inside the
+ * engine, which stays import-free because the renderer loads it too.
+ */
+const CI_PATHS = process.platform === "win32";
 
 /** Exported for the contract test — the audit row shape main ingests (FR7). */
 export interface ChildAuditRow {
@@ -60,7 +69,17 @@ export interface ChildAuditRow {
  * Exported for the contract test.
  */
 export function taskFileFromArgv(argv: readonly string[]): string | undefined {
-  const arg = argv.find((a) => a.startsWith("@/") && a.endsWith("/task.md"));
+  // Separator-agnostic (PRD §4, Windows round). The original matched `@/` and
+  // `/task.md`, both POSIX-only, so on Windows the positional `@C:\…\task.md` was
+  // never recognised — and an unrecognised task file is not a cosmetic miss: the
+  // child's read of its OWN instructions then resolves against the parent's rules,
+  // lands outside the workspace, and `ask` means DENY in here. The child is refused
+  // the task it was spawned to do. pi-args only takes the file route on Windows for
+  // tasks over 8,000 chars, which is what kept it rare rather than absent.
+  //
+  // `isAbsolutePath` is what the `@/` prefix was really testing — an absolute path,
+  // never a relative `@sub/task.md`.
+  const arg = argv.find((a) => a.startsWith("@") && isAbsolutePath(a.slice(1)) && /[\\/]task\.md$/.test(a));
   return arg ? path.resolve(arg.slice(1)) : undefined;
 }
 
@@ -90,7 +109,13 @@ function resolveThroughLinks(target: string): string {
   const tail: string[] = [];
   for (;;) {
     try {
-      return path.join(fs.realpathSync(head), ...tail.reverse());
+      // `.native` expands Windows 8.3 SHORT NAMES, which the plain call leaves alone
+      // (`C:\PROGRA~1` stays `C:\PROGRA~1`). The child's task file lives under TEMP,
+      // which is exactly where Windows hands out short names — so without this the
+      // exemption compares two spellings of one path and the child is refused its own
+      // instructions. Its own copy because this tree is vendored and loads inside Pi.
+      const real = fs.realpathSync.native ? fs.realpathSync.native(head) : fs.realpathSync(head);
+      return path.join(real, ...tail.reverse());
     } catch {
       const parent = path.dirname(head);
       // Reached the filesystem root without finding anything that exists.
@@ -133,7 +158,10 @@ export function escapesWorkspace(
     .filter((r) => typeof r === "string" && r !== "")
     .map((r) => resolveThroughLinks(path.resolve(r)));
   for (const root of roots) {
-    if (target === root || target.startsWith(root + path.sep)) return undefined;
+    // containsPath folds separators and case on win32 (PRD §4, Windows round): a
+    // child writing to `c:/ws/out.md` is inside `C:\ws`, and a bare startsWith would
+    // have let `C:\ws-evil` through on any platform.
+    if (containsPath(root, target, CI_PATHS)) return undefined;
   }
   return target;
 }
@@ -207,7 +235,11 @@ export default function hvChildGuard(pi: {
     // is infrastructure noise in a log a user reads to see what the agent did.
     if (isOwnTaskRead(tool, input, taskFile)) return undefined;
     const workspace = process.cwd();
-    const d = childDecision(rules, { tool, input, workspace }, { bypass, rulesReadable });
+    const d = childDecision(
+      rules,
+      { tool, input, workspace, caseInsensitivePaths: CI_PATHS },
+      { bypass, rulesReadable },
+    );
     // PRD §12: a sub-agent's work belongs in the workspace. Applied AFTER
     // childDecision so `wouldHave` still reports what the RULES said (the
     // engine's RuleAction, per the audit-row convention) while `decision`

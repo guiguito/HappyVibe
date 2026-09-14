@@ -120,7 +120,7 @@ export function brandIconFor(identifier: string | undefined): string | undefined
   return undefined;
 }
 
-const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
+import { basename } from "./basename";
 
 /**
  * Name a pi-subagents artifact the model is reading, instead of showing its
@@ -150,7 +150,7 @@ const ARTIFACT_KINDS: Record<string, (agent: string) => string> = {
 };
 
 export function describeSubagentArtifact(filePath: string): string | null {
-  const parts = filePath.replace(/\/+$/, "").split("/");
+  const parts = filePath.replace(/[\\/]+$/, "").split(/[\\/]/);
   const file = parts.pop() ?? "";
   if (!ARTIFACT_DIRS.includes(parts.pop() ?? "")) return null;
   const m = /^([^_]+)_(.+?)(?:_(\d+))?_(input|output|transcript|meta)\.(?:md|jsonl|json)$/.exec(file);
@@ -247,6 +247,14 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       if (!cmd) return { icon: "terminal", label: "Running a command" };
       const d = describeCommand(cmd);
       return { icon: "terminal", label: d.label, ...(d.destructive ? { destructive: true } : {}) };
+    }
+    case "powershell": {
+      // §4 Windows round. No PowerShell grammar in V1 — describeCommand's table is
+      // POSIX, and a wrong parse of a shell command is worse than no parse, so the
+      // command IS the headline. It cannot mis-describe what is about to run.
+      const cmd = str("command");
+      if (!cmd) return { icon: "terminal", label: "Running a PowerShell command" };
+      return { icon: "terminal", label: `Run a PowerShell command: ${cmd.slice(0, 60)}` };
     }
     // §26 part 2. The CARD leads with the model's intent (§7); the permission
     // MODAL never does — it reconstructs {command} from the bridge's factual

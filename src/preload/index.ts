@@ -303,6 +303,13 @@ contextBridge.exposeInMainWorld("hv", {
   getWorkspaceBypass: (workspace: string) => ipcRenderer.invoke("hv:get-workspace-bypass", workspace),
   setWorkspaceBypass: (workspace: string, on: boolean | null) =>
     ipcRenderer.invoke("hv:set-workspace-bypass", workspace, on),
+  /** PRD §4 (Windows round): the renderer's ONE source of platform truth. A build-time
+      constant, not an IPC round trip — it IS a build-time fact for this process. */
+  platform: process.platform,
+  /** Which shell tool the agent got this spawn: "bash" (Git Bash found) or "powershell". */
+  agentShell: () => ipcRenderer.invoke("hv:agent-shell"),
+  /** The terminal default plus what was found, for the Shell path hint. */
+  terminalShells: () => ipcRenderer.invoke("hv:terminal-shells"),
   evalRules: (workspaceId: string, tool: string, input: Record<string, unknown>) =>
     ipcRenderer.invoke("hv:eval-rules", workspaceId, tool, input),
   readAudit: (filter?: { sessionId?: string; workspaceId?: string }) => ipcRenderer.invoke("hv:read-audit", filter),

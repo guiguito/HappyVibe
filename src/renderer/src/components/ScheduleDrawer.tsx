@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { basename } from "../basename";
 import { FAIL_PAUSE_AT, type CatchUp, type Repeat, type Schedule, type ScheduleMode } from "../../../main/schedules";
 import {
   AGENT_PROPOSED, BYPASS_WARNING, CATCH_UP_LABELS, DAY_LABELS, FOOTER_COPY, frequencyNote, MODE_CARDS,
@@ -175,7 +176,7 @@ export function ScheduleDrawer({
             className="w-full rounded-lg border border-line bg-card px-2.5 py-1.5"
           >
             {workspaces.map((w) => (
-              <option key={w} value={w}>{w.split("/").filter(Boolean).pop() ?? w}</option>
+              <option key={w} value={w}>{basename(w)}</option>
             ))}
           </select>
         </label>

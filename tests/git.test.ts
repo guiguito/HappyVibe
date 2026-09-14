@@ -48,6 +48,14 @@ function makeRepo(root: string): void {
   run(root, ["init", "-q", "-b", "main", "."]);
   run(root, ["config", "user.email", "t@example.com"]);
   run(root, ["config", "user.name", "T"]);
+  // The fixture owns its own line-ending policy (PRD §4, Windows round). Git for
+  // Windows ships core.autocrlf=true in its SYSTEM config, so `git apply -R`,
+  // `git restore` and `git stash pop` all write CRLF into the working tree — correct
+  // git behaviour for that config, and nothing to do with the code under test, but it
+  // turned every "the undone file now reads X" assertion red. Pinned here rather than
+  // normalised at each assertion, so the tests keep comparing exact bytes.
+  run(root, ["config", "core.autocrlf", "false"]);
+  run(root, ["config", "core.eol", "lf"]);
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.mkdirSync(path.join(root, "docs"), { recursive: true });
   fs.writeFileSync(path.join(root, "src/a.ts"), "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n");
@@ -84,7 +92,7 @@ describe.skipIf(!GIT_OK)("probeWorkspace — the five outcomes", () => {
     const s = await probeWorkspace(dir);
     expect(s.kind).toBe("repo");
     if (s.kind !== "repo") throw new Error("unreachable");
-    expect(fs.realpathSync(s.root)).toBe(fs.realpathSync(dir));
+    expect(fs.realpathSync.native(s.root)).toBe(fs.realpathSync.native(dir));
     expect(s.subdir).toBeNull();
     expect(s.unborn).toBe(false);
   });
@@ -95,7 +103,7 @@ describe.skipIf(!GIT_OK)("probeWorkspace — the five outcomes", () => {
     invalidateProbe(sub);
     const s = await probeWorkspace(sub);
     if (s.kind !== "repo") throw new Error(`expected repo, got ${s.kind}`);
-    expect(fs.realpathSync(s.root)).toBe(fs.realpathSync(dir));
+    expect(fs.realpathSync.native(s.root)).toBe(fs.realpathSync.native(dir));
     expect(s.subdir).toBe("src");
   });
 

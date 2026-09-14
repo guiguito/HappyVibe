@@ -37,12 +37,14 @@ const TOOLS = path.join(
 );
 const src = (f: string) => fs.readFileSync(path.join(TOOLS, f), "utf8");
 
-const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-ws-")));
-const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-out-")));
+const ws = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-ws-")));
+const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-out-")));
 afterAll(() => {
   fs.rmSync(ws, { recursive: true, force: true });
   fs.rmSync(outside, { recursive: true, force: true });
 });
+
+import { CAN_SYMLINK } from "./canSymlink";
 
 describe("a child write is confined to the workspace", () => {
   it("allows a relative path — the common case, and what passed all along", () => {
@@ -79,7 +81,7 @@ describe("a child write is confined to the workspace", () => {
     }
   });
 
-  it("refuses a SYMLINK planted inside the workspace that points out of it", () => {
+  it.skipIf(!CAN_SYMLINK)("refuses a SYMLINK planted inside the workspace that points out of it", () => { // symlink fixture needs elevation on Windows
     // A string-only check passes this: the path looks like it is under ws.
     const link = path.join(ws, "escape");
     fs.symlinkSync(outside, link, "dir");
@@ -91,7 +93,7 @@ describe("a child write is confined to the workspace", () => {
     }
   });
 
-  it("resolves through links for a path that does not exist yet", () => {
+  it.skipIf(!CAN_SYMLINK)("resolves through links for a path that does not exist yet", () => { // symlink fixture needs elevation on Windows
     // The file being written is by definition usually absent, so the resolution
     // has to work off the nearest EXISTING ancestor.
     const link = path.join(ws, "escape2");
@@ -110,7 +112,7 @@ describe("a child write is confined to the workspace", () => {
     // running app: without the exemption the child's write was DENIED and it
     // burned a turn recovering. Main creates and sweeps this location, so it is
     // app state, not somewhere the agent chose.
-    const artifacts = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art-")));
+    const artifacts = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art-")));
     try {
       const out = path.join(artifacts, "outputs", "run-1", "context.md");
       expect(escapesWorkspace("write", { path: out }, ws, [artifacts])).toBeUndefined();
@@ -128,7 +130,7 @@ describe("a child write is confined to the workspace", () => {
 
   it("still refuses the TASK tempdir even with the artifacts root allowed", () => {
     // The two exemptions must not blur: the task dir is readable, never writable.
-    const artifacts = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art2-")));
+    const artifacts = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "hv-confine-art2-")));
     try {
       const temp = path.join(os.tmpdir(), "pi-subagent-TDh4HY", "ok.txt");
       expect(escapesWorkspace("write", { path: temp }, ws, [artifacts])).toBeTruthy();
