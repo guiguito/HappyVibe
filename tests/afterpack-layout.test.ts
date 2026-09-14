@@ -75,11 +75,14 @@ describe("the Windows path budget", () => {
   });
 
   it("leaves room for the install prefix and a temp rename", () => {
-    // MAX_PATH is 260. The budget keeps 20 back so an updater's rename still fits.
+    // MAX_PATH is 260. The budget keeps 5 back so an updater's rename still fits.
     expect(WIN_PATH_LIMIT).toBeLessThan(260);
-    expect(WIN_INSTALL_PREFIX_BUDGET).toBeGreaterThan(
-      "C:\\Users\\Guiguito\\AppData\\Local\\Programs\\HappyVibe\\".length - 10,
-    );
+    // NSIS installs per-user at `C:\Users\<name>\AppData\Local\Programs\HappyVibe\`.
+    // Derived from the shape rather than from one machine's user, so the assertion
+    // means the same thing on anyone's checkout.
+    const prefix = (user: string): number =>
+      `C:\\Users\\${user}\\AppData\\Local\\Programs\\HappyVibe\\`.length;
+    expect(WIN_INSTALL_PREFIX_BUDGET).toBeGreaterThanOrEqual(prefix("a".repeat(20)));
   });
 });
 
