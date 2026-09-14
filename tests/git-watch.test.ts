@@ -76,7 +76,6 @@ afterAll(() => {
   if (process.platform === "win32") return;
   for (const d of made) fs.rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
-});
 
 describe("watchGitDir", () => {
   it("fires when HEAD changes — the outside-terminal branch switch", async () => {
