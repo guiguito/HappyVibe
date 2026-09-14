@@ -23,3 +23,24 @@ jobs:
       - run: cd pi-runtime && npm ci
       - run: npm test
       - run: npm run build
+
+  # Windows round (2026-09-14): the tripwire. Advisory until the parity walk is done —
+  # a red here is the real list of what Windows breaks, instead of a grep. Flip
+  # continue-on-error off once it is green.
+  test-windows:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: cd pi-runtime && npm ci
+      - run: npm test
+      - run: npm run build
