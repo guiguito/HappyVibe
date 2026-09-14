@@ -1342,3 +1342,37 @@ describe("F4 gate — bg_wait stays registered while upstream's receipt names it
     expect(waitTool).not.toMatch(/if \(!enabled\) return/);
   });
 });
+
+describe("the Windows child launcher rides upstream's own .mjs rule", () => {
+  /**
+   * PRD §12 on Windows. pi-node.sh cannot run there, and a .cmd shim is not a
+   * drop-in (Node refuses to spawn a .cmd without shell:true) — so the Windows
+   * launcher is a plain .mjs, and the ONLY reason that works is upstream's win32
+   * branch in getPiSpawnCommand. If a pin bump drops or narrows it, every Windows
+   * delegation dies at spawn with the child guard never loaded; this group is what
+   * says so, instead of 18 files going red for an unexplained reason.
+   */
+  const spawnSrc = readFileSync(
+    path.resolve(__dirname, "../pi-runtime/node_modules/pi-subagents/src/runs/shared/pi-spawn.ts"),
+    "utf8",
+  );
+
+  it("still runs a node-script PI_SUBAGENT_PI_BINARY through execPath on win32", () => {
+    expect(spawnSrc).toMatch(/platform === "win32" && isNodeScriptPath\(piBinary\)/);
+    expect(spawnSrc).toMatch(/args: \[piBinary, \.\.\.args\]/);
+  });
+
+  it("and its idea of a node script still admits .mjs", () => {
+    const m = spawnSrc.match(/function isNodeScriptPath[\s\S]*?return (\/[^\n]+?\/i)\.test/);
+    expect(m, "isNodeScriptPath regexp not found").toBeTruthy();
+    const re = new Function(`return ${m![1]}`)() as RegExp;
+    expect(re.test("C:\\HV\\pi-runtime\\bin\\pi-child.mjs")).toBe(true);
+  });
+
+  it("win32 with no PI_SUBAGENT_PI_BINARY THROWS rather than falling back to `pi` on PATH", () => {
+    // The POSIX arm ends `return { command: "pi", args }`, which would be a silent
+    // ENOENT in the packaged app. On win32 upstream refuses instead — so our env var
+    // is load-bearing in a way that announces itself.
+    expect(spawnSrc).toMatch(/if \(platform === "win32"\)\s*\{\s*throw new Error\(/);
+  });
+});
