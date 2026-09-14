@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { modKey } from "../src/renderer/src/platformCopy";
+import { modKey, revealLabel, THIS_COMPUTER, YOUR_COMPUTER } from "../src/renderer/src/platformCopy";
 import { formatBinding } from "../src/renderer/src/shortcuts";
+import { basename } from "../src/renderer/src/basename";
 
 /**
  * PRD §4 (Windows round), key-free — the renderer suite has no DOM, so a visual
@@ -77,5 +78,80 @@ describe("no literal ⌘ survives in rendered copy", () => {
   it("and the allowlist is exactly the three places it belongs", () => {
     // Kept small deliberately: each entry is a place the glyph is CHOSEN, not typed.
     expect([...ALLOW].sort()).toEqual(["platformCopy.ts", "shortcuts.ts", "voice/useDictation.ts"]);
+  });
+});
+
+describe("no copy claims the user is on a Mac", () => {
+  /**
+   * PRD §4 (Windows round). "A folder on your Mac" photographs perfectly on Windows
+   * and is simply untrue — the class of bug a green suite cannot see, found by
+   * looking at the running app. Where a neutral word is honest everywhere it wins
+   * ("this computer" needs no Linux variant); where the thing has a platform NAME,
+   * the name is what the user hunts for on screen, so it varies.
+   */
+  const MAC_WORDS = /\b(your Mac|this Mac|on a Mac|macOS|Finder)\b/;
+
+  it("scans every rendered string", () => {
+    const offenders: string[] = [];
+    for (const f of walk(SRC)) {
+      const rel = path.relative(SRC, f).split(path.sep).join("/");
+      if (rel === "platformCopy.ts") continue; // where the variants are DEFINED
+      for (const line of code(f).split("\n")) {
+        if (!MAC_WORDS.test(line)) continue;
+        if (!/["'`]/.test(line)) continue; // a bare identifier is not copy
+        offenders.push(`${rel}: ${line.trim().slice(0, 90)}`);
+      }
+    }
+    expect(offenders, "use platformCopy instead").toEqual([]);
+  });
+
+  it("the neutral words really are neutral — no platform name in them", () => {
+    expect(THIS_COMPUTER).not.toMatch(MAC_WORDS);
+    expect(YOUR_COMPUTER).not.toMatch(MAC_WORDS);
+    expect(THIS_COMPUTER).not.toMatch(/Windows|PC\b/);
+  });
+
+  it("and the ones that SHOULD name a platform still do, per platform", () => {
+    // The file manager is hunted for by name, so this is the opposite decision.
+    expect(revealLabel("darwin")).toBe("Reveal in Finder");
+    expect(revealLabel("win32")).toBe("Show in File Explorer");
+    expect(revealLabel("linux")).toBe("Show in file manager");
+  });
+});
+
+describe("a path's last segment is found on both separators", () => {
+  /**
+   * PRD §4 (Windows round). Fifteen renderer sites derived a basename with
+   * `split("/")`, which on Windows never splits — the sidebar showed
+   * `C:\Users\me\Documents\HappyVibe\winprobe` where it meant `winprobe`, and every
+   * file chip, plan row, schedule row and audit line did the same. Found by looking at
+   * the running app: a full path renders perfectly and reads as a bug only to a human.
+   */
+  it("splits on backslash and slash, and survives a trailing one", () => {
+    expect(basename("C:\\Users\\me\\Documents\\HappyVibe\\winprobe")).toBe("winprobe");
+    expect(basename("/Users/me/Projects/winprobe")).toBe("winprobe");
+    expect(basename("C:\\ws\\")).toBe("ws");
+    expect(basename("a/b/c.ts")).toBe("c.ts");
+  });
+
+  it("returns the input when there is nothing to strip", () => {
+    expect(basename("winprobe")).toBe("winprobe");
+    expect(basename("")).toBe("");
+  });
+
+  it("no renderer file derives a basename with a slash-only split any more", () => {
+    const offenders: string[] = [];
+    for (const f of walk(SRC)) {
+      const rel = path.relative(SRC, f).split(path.sep).join("/");
+      for (const line of code(f).split("\n")) {
+        if (!/\.split\("\/"\)/.test(line)) continue;
+        // Two things that only LOOK like paths and must stay forward-slash:
+        // a URL's host, and a `provider/modelId` identifier.
+        if (rel === "browserError.ts" || /provider:/.test(line)) continue;
+        if (!/pop\(\)|\.filter\(Boolean\)/.test(line)) continue;
+        offenders.push(`${rel}: ${line.trim().slice(0, 90)}`);
+      }
+    }
+    expect(offenders, "use basename() instead").toEqual([]);
   });
 });

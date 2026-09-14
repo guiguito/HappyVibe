@@ -24,7 +24,7 @@ const truncate = (s: string, n = 60): string => {
   return one.length > n ? `${one.slice(0, n)}…` : one;
 };
 
-const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
+import { basename } from "./basename";
 
 /**
  * First segment of a command list, split on the first UNQUOTED separator.

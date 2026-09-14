@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { basename } from "../basename";
 import { MOD } from "../platformCopy";
 import { uiGet, uiSet } from "../uiStore";
 import { timeago } from "../timeago";
@@ -30,9 +31,6 @@ export type View =
   | "schedules"
   | "workspace";
 
-function basename(p: string): string {
-  return p.split("/").filter(Boolean).pop() ?? p;
-}
 
 /** §35: the Schedules glyph, in both sidebar states and on a run's session row. */
 function ClockIcon(): React.JSX.Element {

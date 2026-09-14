@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { basename } from "../basename";
 import { MOD } from "../platformCopy";
 import { DUR, EASE, flipChildren, flyGhost, reducedMotion, snapshotRects } from "../motion";
 import { usePresence } from "../usePresence";
@@ -698,7 +699,7 @@ export function ChatView({
       ...p,
       ...paths
         .filter((abs) => !p.some((d) => d.path === abs))
-        .map((abs) => ({ path: abs, name: abs.split("/").pop() || abs, format: "", lines: 0, bytes: 0, pending: true })),
+        .map((abs) => ({ path: abs, name: basename(abs), format: "", lines: 0, bytes: 0, pending: true })),
     ]);
     await Promise.all(
       paths.map(async (abs) => {
@@ -712,7 +713,7 @@ export function ChatView({
         // forever on a promise that answered null.
         if (!chip) {
           setDocuments((p) => p.filter((d) => d.path !== abs));
-          setDocumentErrors((e) => [...e, `${abs.split("/").pop() || abs} could not be read.`]);
+          setDocumentErrors((e) => [...e, `${basename(abs)} could not be read.`]);
           return;
         }
         setDocuments((p) => p.map((d) => (d.path === abs ? { ...chip } : d)));

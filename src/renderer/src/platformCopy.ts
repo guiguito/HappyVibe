@@ -23,3 +23,33 @@ export const IS_WINDOWS: boolean = here === "win32";
 
 /** `true` when shortcut text should use Mac glyphs — what formatBinding's flag wants. */
 export const IS_MAC: boolean = here === "darwin";
+
+/**
+ * Words that named macOS in copy the whole app shows (PRD §4, Windows round).
+ *
+ * "this Mac" photographs perfectly well on Windows and is simply untrue, which is the
+ * class of bug a green test suite cannot see. Where a neutral word is honest on every
+ * platform it wins outright — "this computer" needs no third variant for Linux, and a
+ * beginner reads it the same way. Where the thing itself has a platform NAME, the name
+ * is what the user is looking for on screen, so it varies.
+ */
+
+/** Neutral on purpose — true on all three platforms, no Linux variant needed. */
+export const THIS_COMPUTER = "this computer";
+export const YOUR_COMPUTER = "your computer";
+
+/** The OS file manager, by the name it has in that OS's own UI. */
+export function revealLabel(platform: string): string {
+  if (platform === "darwin") return "Reveal in Finder";
+  if (platform === "win32") return "Show in File Explorer";
+  return "Show in file manager";
+}
+export const REVEAL_IN_FILE_MANAGER: string = revealLabel(here);
+
+/** Where a user turns the microphone back on, and what it takes to apply. */
+export const MIC_DENIED_HINT: string =
+  here === "darwin"
+    ? "Access is denied. Grant it in System Settings — macOS requires the app to be restarted before the change takes effect."
+    : here === "win32"
+      ? "Access is denied. Turn the microphone on for HappyVibe in Settings → Privacy & security → Microphone."
+      : "Access is denied. Grant microphone access to HappyVibe in your system settings.";

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { basename } from "../basename";
 /**
  * W2.2 — docked right pane: lazy workspace file tree.
  *
@@ -307,7 +308,7 @@ export function FileTree({
     <aside className="w-full h-full bg-paper flex flex-col min-h-0">
       <div className="px-3 py-3 border-b-2 border-line flex items-center gap-1.5">
         <span className="text-[11px] font-bold uppercase tracking-widest text-ink-soft flex-1 truncate" title={workspace}>
-          {workspace.split("/").filter(Boolean).pop()}
+          {basename(workspace)}
         </span>
         <HeaderBtn onClick={() => startCreate("file")} title="New file" label="New file"><NewFileGlyph /></HeaderBtn>
         <HeaderBtn onClick={() => startCreate("dir")} title="New folder" label="New folder"><NewFolderGlyph /></HeaderBtn>
@@ -407,7 +408,7 @@ export function FileTree({
       {details && (
         <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setDetails(null)}>
           <div className="hv-dialog-flow w-full max-w-sm rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="font-bold text-ink mb-3">{details.rel.split("/").pop()}</div>
+            <div className="font-bold text-ink mb-3">{basename(details.rel)}</div>
             <dl className="text-sm grid grid-cols-[5rem_1fr] gap-y-1.5">
               <dt className="text-ink-soft font-bold">Kind</dt><dd>{details.kind === "dir" ? "Folder" : "File"}</dd>
               <dt className="text-ink-soft font-bold">Size</dt><dd>{formatBytes(details.size)}</dd>

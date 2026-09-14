@@ -120,7 +120,7 @@ export function brandIconFor(identifier: string | undefined): string | undefined
   return undefined;
 }
 
-const basename = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
+import { basename } from "./basename";
 
 /**
  * Name a pi-subagents artifact the model is reading, instead of showing its
@@ -150,7 +150,7 @@ const ARTIFACT_KINDS: Record<string, (agent: string) => string> = {
 };
 
 export function describeSubagentArtifact(filePath: string): string | null {
-  const parts = filePath.replace(/\/+$/, "").split("/");
+  const parts = filePath.replace(/[\\/]+$/, "").split(/[\\/]/);
   const file = parts.pop() ?? "";
   if (!ARTIFACT_DIRS.includes(parts.pop() ?? "")) return null;
   const m = /^([^_]+)_(.+?)(?:_(\d+))?_(input|output|transcript|meta)\.(?:md|jsonl|json)$/.exec(file);

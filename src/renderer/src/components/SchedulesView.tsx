@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { basename } from "../basename";
 import type { Schedule } from "../../../main/schedules";
 import { EmptyState } from "./EmptyState";
 import { usePresence } from "../usePresence";
@@ -183,7 +184,7 @@ export function SchedulesView({
         {[...byWorkspace.entries()].map(([ws, list]) => (
           <div key={ws} className="mb-8">
             <span className="text-xs font-black tracking-wide text-ink-soft">
-              {(ws.split("/").filter(Boolean).pop() ?? ws).toUpperCase()}
+              {basename(ws).toUpperCase()}
             </span>
             <ul className="mt-2 space-y-2">
               {list.map((s) => (

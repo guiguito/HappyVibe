@@ -1,4 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { basename } from "../basename";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -194,7 +195,7 @@ export function AgentsMdPanel({
             <div className="min-w-0 flex-1">
               <Dialog.Title className="font-bold text-lg leading-tight">{isRoot ? "AGENTS.md" : relPath}</Dialog.Title>
               <Dialog.Description className="text-sm text-ink-soft truncate" title={workspace}>
-                {workspace.split("/").filter(Boolean).pop()} — applies to new or restarted sessions
+                {basename(workspace)} — applies to new or restarted sessions
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
