@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   fitsWindowsPathLimit,
+  isExcludedFromRuntime,
   longestRelativePath,
   runtimeDest,
   WIN_PATH_LIMIT,
@@ -26,7 +27,14 @@ export default async function afterPack(context) {
   console.log(`[afterPack] Copying pi-runtime/node_modules → ${dest}`);
   // verbatimSymlinks keeps npm's relative .bin symlinks relative — without it,
   // cpSync rewrites them to absolute paths on the build machine (broken on install).
-  cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
+  //
+  // The filter drops TypeScript declarations, which no packaged app can load and
+  // which happen to be the deepest paths in the tree — see isExcludedFromRuntime.
+  cpSync(src, dest, {
+    recursive: true,
+    verbatimSymlinks: true,
+    filter: (from) => !isExcludedFromRuntime(path.relative(src, from)),
+  });
 
   // A wrong destination used to SUCCEED silently: the path was hardcoded to
   // `${productName}.app`, so a Windows build created a .app folder nothing loads and

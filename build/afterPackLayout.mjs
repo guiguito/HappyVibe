@@ -45,13 +45,29 @@ export function longestRelativePath(dir) {
 }
 
 /**
- * Worst-case per-user install prefix: `C:\Users\<name>\AppData\Local\Programs\HappyVibe\`
- * is 54 characters for an 8-character user name, so 60 covers a longer one.
+ * The per-user install prefix NSIS uses:
+ * `C:\Users\<name>\AppData\Local\Programs\HappyVibe\` — that is 43 characters plus
+ * the user name, so 63 allows a generous 20-character one.
  */
-export const WIN_INSTALL_PREFIX_BUDGET = 60;
+export const WIN_INSTALL_PREFIX_BUDGET = 63;
 
-/** MAX_PATH is 260; keep 20 back for a temp rename during an update. */
-export const WIN_PATH_LIMIT = 240;
+/** MAX_PATH is 260. Keep 5 back so an updater's temp rename still fits. */
+export const WIN_PATH_LIMIT = 255;
+
+/**
+ * Paths excluded from the packaged runtime.
+ *
+ * `dist-types` is TypeScript DECLARATIONS — reached only through a package's `types`
+ * field, never by `main` or `module`, so a packaged app cannot load one. The AWS SDK
+ * that pi-coding-agent nests ships 3,056 of them (4.3 MB), and they are also the
+ * DEEPEST paths in the tree: dropping them takes the longest relative path from 190
+ * to 180 characters, which is what brings a real install inside MAX_PATH.
+ *
+ * Measured rather than assumed — the check below prints the number either way.
+ */
+export function isExcludedFromRuntime(relPath) {
+  return relPath.split(/[\\/]/).includes("dist-types");
+}
 
 /** Does the deepest path still fit once installed? */
 export function fitsWindowsPathLimit(longestLength, prefix = WIN_INSTALL_PREFIX_BUDGET) {

@@ -26,6 +26,20 @@ mac:
 # leaving this on means electron-builder asks for Visual Studio on Windows and the
 # build dies there. Pinned by tests/native-modules.test.ts.
 npmRebuild: false
+# §4 Windows round (2026-09-14). x64 ONLY: sherpa-onnx has no win-arm64 build and
+# @firecrawl/anydoc has none either, so an arm64 target would ship an app whose voice
+# and Documents features cannot load. arm64 Windows runs this under emulation.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: HappyVibe-${version}-Setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false                 # per-user: no UAC, which keeps the unsigned path bearable
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false   # sessions, audit log and memory are the user's data
 asarUnpack:
   # Native ONNX runtime — cannot be loaded from inside an asar archive.
   - "**/node_modules/sherpa-onnx-*/**"
