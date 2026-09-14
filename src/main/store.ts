@@ -185,7 +185,7 @@ export class SessionIndex {
  */
 export function isSessionEmpty(meta: SessionMeta, sessionDirPath: string): boolean {
   if (meta.titleSource === "user") return false;
-  const resolved = confinedSessionPath(sessionDirPath, meta.piSessionFile);
+  const resolved = sessionFilePath(sessionDirPath, meta.piSessionFile);
   if (!resolved) return true; // never spawned, or a path we will not read
   let raw: string;
   try {
@@ -212,7 +212,7 @@ export function isSessionEmpty(meta: SessionMeta, sessionDirPath: string): boole
  * Pi-reported — treat as untrusted); a missing file is fine.
  */
 export function deleteSessionFile(sessionDirPath: string, file: string | undefined): void {
-  const resolved = confinedSessionPath(sessionDirPath, file);
+  const resolved = sessionFilePath(sessionDirPath, file);
   if (!resolved) return;
   try {
     fs.rmSync(resolved, { force: true }); // force: missing file is fine
@@ -226,8 +226,11 @@ export function deleteSessionFile(sessionDirPath: string, file: string | undefin
  * app-owned session dir. Trailing path.sep matters twice: it rejects the dir
  * itself, and it stops a sibling that merely shares the name prefix
  * ("…/sessions-evil") from passing a plain startsWith.
+ *
+ * §17 round 24: exported, because the HTML export needs the confined PATH
+ * rather than the contents — three consumers now, one confinement.
  */
-function confinedSessionPath(sessionDirPath: string, file: string | undefined): string | null {
+export function sessionFilePath(sessionDirPath: string, file: string | undefined): string | null {
   if (!file) return null;
   const resolved = path.resolve(file);
   return resolved.startsWith(path.resolve(sessionDirPath) + path.sep) ? resolved : null;
@@ -240,7 +243,7 @@ function confinedSessionPath(sessionDirPath: string, file: string | undefined): 
  * session that has not had its first turn yet has no file).
  */
 export function readSessionFile(sessionDirPath: string, file: string | undefined): string | null {
-  const resolved = confinedSessionPath(sessionDirPath, file);
+  const resolved = sessionFilePath(sessionDirPath, file);
   if (!resolved) return null;
   try {
     return fs.readFileSync(resolved, "utf8");
@@ -295,7 +298,7 @@ export function childSessionFiles(
   piSessionFile: string | undefined,
   runId?: string,
 ): ChildSessionFile[] {
-  const parent = confinedSessionPath(sessionDirPath, piSessionFile);
+  const parent = sessionFilePath(sessionDirPath, piSessionFile);
   if (!parent) return [];
   const root = parent.replace(/\.jsonl$/, "");
   const runDirs = runId ? [path.join(root, runId)] : subdirs(root);
@@ -369,7 +372,7 @@ function deleteArtifactsFor(sessionDirPath: string, ids: ReadonlySet<string>): n
   // The per-run output directories, which are named by id alone (no `_`).
   for (const id of ids) {
     if (!plausibleRunId(id)) continue;
-    const resolved = confinedSessionPath(sessionDirPath, path.join(dir, OUTPUTS_DIR, id));
+    const resolved = sessionFilePath(sessionDirPath, path.join(dir, OUTPUTS_DIR, id));
     if (!resolved || !fs.existsSync(resolved)) continue;
     try {
       fs.rmSync(resolved, { recursive: true, force: true });
@@ -393,7 +396,7 @@ function deleteArtifactsFor(sessionDirPath: string, ids: ReadonlySet<string>): n
     if (sep <= 0) continue;
     const id = name.slice(0, sep);
     if (!ids.has(id)) continue;
-    const resolved = confinedSessionPath(sessionDirPath, path.join(dir, name));
+    const resolved = sessionFilePath(sessionDirPath, path.join(dir, name));
     if (!resolved) continue;
     try {
       fs.rmSync(resolved, { recursive: true, force: true });
@@ -424,7 +427,7 @@ function deleteArtifactsFor(sessionDirPath: string, ids: ReadonlySet<string>): n
  * Never throws — a cleanup failure must not block the delete the user asked for.
  */
 export function deleteSessionChildren(sessionDirPath: string, piSessionFile: string | undefined): void {
-  const parent = confinedSessionPath(sessionDirPath, piSessionFile);
+  const parent = sessionFilePath(sessionDirPath, piSessionFile);
   if (!parent) return;
   try {
     const ids = sessionRunIds(sessionDirPath, piSessionFile);
