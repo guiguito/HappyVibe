@@ -1759,9 +1759,16 @@ export function ChatView({
                   const n = command.items.length;
                   if (e.key === "ArrowDown") { e.preventDefault(); setCommand((c) => c && { ...c, sel: (c.sel + 1) % n }); return; }
                   if (e.key === "ArrowUp") { e.preventDefault(); setCommand((c) => c && { ...c, sel: (c.sel - 1 + n) % n }); return; }
-                  if (e.key === "Tab") { e.preventDefault(); pickCommand(command.items[command.sel].name); return; }
+                  // §7 round 24: Enter completes, exactly as the @-menu below
+                  // does. It used to SEND, on the reasoning that a typed command
+                  // already works verbatim — true, and beside the point: two
+                  // dropdowns in one composer must not answer one key
+                  // differently. A fully typed command therefore takes two
+                  // Enters, one to complete (which appends a trailing space and
+                  // leaves the caret after it) and one to send. That is the `@`
+                  // rhythm, and one rhythm for two menus is the whole change.
+                  if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); pickCommand(command.items[command.sel].name); return; }
                   if (e.key === "Escape") { e.preventDefault(); setCommand(null); return; }
-                  // Enter SENDS (the typed command already works verbatim) — Tab completes.
                 }
                 // F3: while the @-dropdown is open it owns the nav keys.
                 if (mention) {

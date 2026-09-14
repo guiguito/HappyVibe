@@ -73,7 +73,8 @@ import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from ".
 import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } from "./modelExclusions";
-import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, normPath, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
+import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, normPath, readSessionFile, sessionFilePath, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
+import { exportSessionHtml } from "./sessionExport";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { platform } from "./platform";
 import { SessionActivity } from "./activity";
@@ -3051,6 +3052,34 @@ export function registerIpc(
     sessionsChanged();
     return true;
   };
+
+  /**
+   * §17 round 24 — export a session as HTML.
+   *
+   * Reads the session FILE, so a live, hibernated, archived and closed session
+   * all export identically. The user picks where it lands: the app does not
+   * write to their disk unasked, and the default name is the session's own
+   * title. A cancel is not a failure and the renderer says nothing about it.
+   */
+  ipcMain.handle("hv:session-export-html", async (e, sessionId: string) => {
+    const meta = index.get(sessionId);
+    if (!meta) return { ok: false as const, error: "That session is gone." };
+    // piSessionFile is Pi-REPORTED, so it is untrusted on this route too.
+    const file = sessionFilePath(sessionDir(), meta.piSessionFile);
+    if (!file || !fs.existsSync(file)) {
+      return { ok: false as const, error: "Nothing to export yet — this session has no messages." };
+    }
+    // A session title is free text and routinely holds a slash or a colon,
+    // which macOS and Windows both refuse in a filename.
+    const safe = (meta.title || "session").replace(/[/\\?%*:|"<>]/g, "-").slice(0, 80).trim() || "session";
+    const r = await dialog.showSaveDialog(ownerOf(e), {
+      title: "Export session as HTML",
+      defaultPath: `${safe}.html`,
+      filters: [{ name: "HTML page", extensions: ["html"] }],
+    });
+    if (r.canceled || !r.filePath) return { ok: false as const, canceled: true };
+    return exportSessionHtml(piRuntimeDir(), file, r.filePath);
+  });
 
   ipcMain.handle("hv:close-session", async (_e, sessionId: string, terminals_?: "stop" | "keep") => {
     await endSession(sessionId, terminals_);

@@ -831,6 +831,9 @@ interface HvApi {
    * the default branch, or nothing pushed yet. `drafted` is false when the model
    * was unavailable and the commit list was used instead.
    */
+  /** §17 round 24: writes a self-contained HTML page wherever the user picks.
+      `canceled` is a dismissed save dialog — not a failure, and says nothing. */
+  exportSessionHtml(sessionId: string): Promise<{ ok: true; path: string } | { ok: false; error?: string; canceled?: boolean }>;
   gitPrUrl(workspaceId: string, draft?: boolean): Promise<{ url: string; drafted: boolean } | null>;
   onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;
 

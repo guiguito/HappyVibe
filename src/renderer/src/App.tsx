@@ -574,6 +574,10 @@ export default function App(): React.JSX.Element {
   // block and an answer never merge into one bubble. Committed at
   // thinking_end — the block is collapsed, so nothing repaints per delta.
   const thinkRef = useRef<Record<string, string>>({});
+  /** §7 round 24: when the current think started, so the committed block can
+      say how long it took. Live path only — a RESTORED block has no stamp
+      anywhere in the session file, and says a bare "Thought" instead. */
+  const thinkStart = useRef<Record<string, number>>({});
   const rafRef = useRef<number | null>(null);
   // Stable, monotonic id per committed item (see appendItem) so Transcript can
   // key on identity instead of the array index and skip re-parsing.
@@ -771,14 +775,21 @@ export default function App(): React.JSX.Element {
    */
   const commitThinking = (sid: string): void => {
     const thought = thinkRef.current[sid];
+    const started = thinkStart.current[sid];
     delete thinkRef.current[sid];
+    delete thinkStart.current[sid];
     setThinkingText((p) => {
       if (!(sid in p)) return p;
       const next = { ...p };
       delete next[sid];
       return next;
     });
-    if (thought?.trim()) appendItem(sid, { kind: "thinking", text: thought, ts: Date.now() });
+    if (thought?.trim()) {
+      // §7 round 24: `ms` is what turns the collapsed label into "Thought for
+      // 12s". Absent when the start was never seen (a resumed mid-turn stream),
+      // which reads as a bare "Thought" rather than a fabricated zero.
+      appendItem(sid, { kind: "thinking", text: thought, ts: Date.now(), ms: started ? Date.now() - started : undefined });
+    }
   };
 
   // Commit the in-progress streaming bubble as ONE assistant transcript item,
@@ -1610,6 +1621,7 @@ export default function App(): React.JSX.Element {
       // commitThinking for why the next action does.
       if (e.type === "message_update" && ame?.type === "thinking_start") {
         thinkRef.current[sid] = "";
+        thinkStart.current[sid] = Date.now();
         scheduleFlush();
       }
       if (e.type === "message_update" && (ame?.type === "thinking_delta" || ame?.type === "thinking") && ame.delta) {
@@ -2765,6 +2777,32 @@ export default function App(): React.JSX.Element {
     return !!scheduleId && schedules.find((x) => x.id === scheduleId)?.mode === "readonly";
   };
 
+  /**
+   * §17 round 24 — export this session as HTML.
+   *
+   * The outcome lands as a transcript NOTICE in that session's own pane rather
+   * than as a new toast mechanism: the export is per-session, the notice pill
+   * is already bounded (§7 round 16) and its `title` carries the full path or
+   * the full error without widening it. A cancel says NOTHING — dismissing a
+   * save dialog is not a failure and does not want a receipt.
+   */
+  const exportSessionHtml = (sid: string): void => {
+    void window.hv.exportSessionHtml(sid).then((r) => {
+      if (r.ok) {
+        // `basename`, never `split("/")` — the save dialog hands back a native
+        // path, so on Windows a slash-only split never splits and the pill would
+        // read the whole `C:\Users\…\foo.html`. PRD §4's Windows round found
+        // fifteen sites doing this; `tests/mod-key-copy.test.ts` scans for a
+        // sixteenth, and this was it.
+        appendItem(sid, { kind: "notice", text: `Exported to ${tabBasename(r.path)}`, title: r.path });
+        return;
+      }
+      if (r.canceled) return;
+      const why = r.error ?? "The export did not finish.";
+      appendItem(sid, { kind: "notice", text: why.split("\n")[0], title: why });
+    });
+  };
+
   const repeatOnSchedule = (sid: string): void => {
     const meta = sessionsRef.current.find((s) => s.id === sid);
     const first = (transcripts[sid] ?? []).find((i) => i.kind === "user" && !!i.text);
@@ -3319,6 +3357,7 @@ export default function App(): React.JSX.Element {
                       else closeFileTab(wsId, slot, tab);
                     }}
                     onRepeatOnSchedule={repeatOnSchedule}
+                    onExportHtml={exportSessionHtml}
                     onRename={(tab, title) => {
                       // §7 round 12: a chat tab renames the SESSION — the
                       // sidebar row changes with it, because it is the

@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   activeCommandQuery, commandSubtitle, completeCommand, composerCommands, filterCommands,
   type SlashCommand,
@@ -84,5 +86,35 @@ describe("completeCommand", () => {
     // Regression: replacing everything before the LIVE caret turned
     // "/graph" + ArrowLeft x3 + pick into "/graphify aph".
     expect(completeCommand("/graph", 6, "graphify")).toEqual({ text: "/graphify ", caret: 10 });
+  });
+});
+
+/**
+ * §7 round 24 — the `/` menu and the `@` menu answer Enter the same way.
+ *
+ * They did not: `/` sent the message while Tab completed, and the `@` dropdown
+ * SEVEN LINES BELOW in the same key handler completed on Enter. The in-code
+ * reasoning ("the typed command already works verbatim") is true and beside
+ * the point — two dropdowns in one composer must not answer one key
+ * differently. Pinned as a source scan because the renderer suite has no DOM.
+ */
+describe("the two composer dropdowns agree on Enter", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/renderer/src/components/ChatView.tsx"), "utf8");
+  const branch = src.slice(
+    src.indexOf("while the /command dropdown is open it owns the nav keys"),
+    src.indexOf("while the @-dropdown is open it owns the nav keys"),
+  );
+
+  test("the command branch completes on Enter as well as Tab", () => {
+    expect(branch).toMatch(/e\.key === "Tab" \|\| e\.key === "Enter"/);
+    expect(branch).toContain("pickCommand(command.items[command.sel].name)");
+  });
+
+  test("the reversed decision's comment is gone, so nobody re-applies it", () => {
+    expect(src).not.toContain("Enter SENDS");
+  });
+
+  test("Escape and the arrows still belong to the menu", () => {
+    for (const k of ["ArrowDown", "ArrowUp", "Escape"]) expect(branch).toContain(`e.key === "${k}"`);
   });
 });
