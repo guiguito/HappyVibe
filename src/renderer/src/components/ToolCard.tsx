@@ -367,6 +367,8 @@ export function resultText(result: unknown): string | null {
  */
 export const OUTPUT_TOOLS: ReadonlySet<string> = new Set([
   "bash",
+  // §4 Windows round: the Windows shell tool, same card, same reason.
+  "powershell",
   "terminal_run",
   "terminal_read",
   // §32: a web result IS the thing the user wants to see, and its FIRST line

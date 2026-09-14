@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { platform } from "../src/main/platform";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -85,7 +86,10 @@ beforeAll(async () => {
   // permission gate depends on) is owned by tests/mcp-spawn.test.ts, so adding an
   // extension updates one place instead of failing an unrelated suite's beforeAll.
   expect(spec.args.some((a) => a.includes("pi-subagents"))).toBe(true);
-  expect(spec.env.PI_SUBAGENT_PI_BINARY).toBe(path.join(runtime, "bin/pi-node.sh"));
+  // Derived, not hardcoded: the child launcher is .sh on POSIX and .mjs on Windows
+  // (PRD §4). What matters here is that pi-subagents is pointed at OUR launcher and
+  // that the file exists — pi-child-launcher.test.ts owns which one per platform.
+  expect(spec.env.PI_SUBAGENT_PI_BINARY).toBe(path.join(runtime, platform.childLauncher()));
   expect(fs.existsSync(spec.env.PI_SUBAGENT_PI_BINARY)).toBe(true);
 
   client = makeClient({});

@@ -214,6 +214,7 @@ const PLAN_PASS_TOOLS = new Set([
 ]);
 
 import { isReadOnlyBoundary, writeCapableIn } from "./hv-subagent-boundary";
+import { isShellTool } from "./hv-rules";
 
 export type PlanGate =
   | { kind: "block"; reason: string }
@@ -304,7 +305,9 @@ export function gatePlanCall(toolName: string, input: unknown): PlanGate {
   if (BLOCKED_PLAN_TOOLS.has(toolName)) {
     return { kind: "block", reason: `Plan mode is read-only — '${toolName}' is blocked. Explore and draft a plan; the user implements it later.` };
   }
-  if (toolName === "bash") {
+  // isShellTool, not === "bash": a PowerShell session would otherwise fall through to
+  // floor-ask, turning plan mode's block into a permission PROMPT for arbitrary shell.
+  if (isShellTool(toolName)) {
     const cmd = readCommand(input);
     if (isSafeCommand(cmd, PLAN_SAFE_SUBCOMMANDS)) return { kind: "pass" };
     return { kind: "block", reason: `Plan mode blocks mutating or non-allowlisted shell commands.\nCommand: ${cmd}` };

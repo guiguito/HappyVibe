@@ -164,7 +164,10 @@ describe("the bridge emits bypass, and what the rules would have said", () => {
   });
 
   it("still evaluates the rules under a bypass — the verdict has to come from somewhere", () => {
-    expect(BRIDGE).toMatch(/const shadow = evaluate\(rules, \{ tool: permTool, input, workspace: process\.cwd\(\) \}\)/);
+    // Matched across lines and without pinning the argument list: the call gained
+    // `caseInsensitivePaths` in the Windows round, and what this test is FOR is that
+    // a bypass still evaluates the rules — not how many fields the call passes.
+    expect(BRIDGE).toMatch(/const shadow = evaluate\(\s*rules,\s*\{[^}]*tool: permTool,[^}]*workspace: process\.cwd\(\)/);
   });
 
   it("types wouldHave as the ENGINE's action, which has an 'ask' that AuditDecision does not", () => {

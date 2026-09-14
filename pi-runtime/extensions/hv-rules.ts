@@ -84,6 +84,17 @@ export interface Verdict {
 // returns text the user has already reviewed on the Memory page and can read there any time —
 // the use_skill doctrine. Saving and forgetting CHANGE what every future session is told, so
 // they default to ask like any other write.
+/**
+ * Pi's arbitrary-shell tools. `bash` everywhere; `powershell` on a Windows box with
+ * no Git Bash, where spawn passes `--tools` naming it instead (PRD §4, Windows round).
+ *
+ * Any gate that treats `bash` as "the shell" must treat both the same, so this is the
+ * ONE list and `=== "bash"` is a bug wherever it means the shell. The terminal tools
+ * are deliberately NOT here — they are a different thing, with their own rules.
+ */
+export const SHELL_TOOLS: ReadonlySet<string> = new Set(["bash", "powershell"]);
+export const isShellTool = (tool: string): boolean => SHELL_TOOLS.has(tool);
+
 export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall",
   // §35: schedule_list is a read. schedule_create and schedule_update are here
   // for the ask_user reason rather than that one — their ONLY effect is to open

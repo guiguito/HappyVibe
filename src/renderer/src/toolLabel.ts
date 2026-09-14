@@ -248,6 +248,14 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
       const d = describeCommand(cmd);
       return { icon: "terminal", label: d.label, ...(d.destructive ? { destructive: true } : {}) };
     }
+    case "powershell": {
+      // §4 Windows round. No PowerShell grammar in V1 — describeCommand's table is
+      // POSIX, and a wrong parse of a shell command is worse than no parse, so the
+      // command IS the headline. It cannot mis-describe what is about to run.
+      const cmd = str("command");
+      if (!cmd) return { icon: "terminal", label: "Running a PowerShell command" };
+      return { icon: "terminal", label: `Run a PowerShell command: ${cmd.slice(0, 60)}` };
+    }
     // §26 part 2. The CARD leads with the model's intent (§7); the permission
     // MODAL never does — it reconstructs {command} from the bridge's factual
     // summary, so `intent` is absent there and the describeCommand fallback runs.

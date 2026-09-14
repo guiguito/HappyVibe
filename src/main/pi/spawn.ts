@@ -52,6 +52,15 @@ export interface PiSpawnOptions {
    *  settings.json default (`defaultThinkingLevel`) being consulted at all —
    *  the same reason --provider/--model never had this bug. */
   thinking?: string | null;
+  /**
+   * §4 (Windows round): which shell tool Pi should register for this session.
+   *
+   * "bash" everywhere Pi can find one — its own probe looks in %ProgramFiles%\Git and
+   * on PATH. On a Windows box with no Git Bash that probe THROWS on every call, so we
+   * hand the model Pi's `powershell` tool instead. Re-derived at every spawn, so
+   * installing Git for Windows takes effect on the next session with no restart.
+   */
+  agentShell?: "bash" | "powershell";
   /** App-owned Pi agent dir → PI_CODING_AGENT_DIR (auth.json, models.json). */
   agentDir?: string;
   /** Provider API-key env vars (providers.ts buildProviderEnv). */
@@ -249,6 +258,12 @@ export function resolvePiSpawn(
       // §24 Commands: add back exactly the approved+active ones, by FILE.
       ...(opts.promptTemplates ?? []).flatMap((f) => ["--prompt-template", f]),
       "--no-themes",
+      // §4 Windows round: Pi's builtins are exactly read/bash/edit/write/grep/find/ls
+      // (+powershell). This is that set with the shell swapped — never a narrowed one,
+      // or the session quietly loses tools nobody decided to remove.
+      ...(opts.agentShell === "powershell"
+        ? ["--tools", "read,powershell,edit,write,grep,find,ls"]
+        : []),
       // §16 round 21: identity first, the user's own additions LAST — Pi joins
       // the sources with "\n\n" in argv order, so last wins on a conflict.
       // A1 (2026-09-10): built here rather than imported as a constant — the
@@ -266,6 +281,8 @@ export function resolvePiSpawn(
       // See docs/validation/s0.3.md "Subagent spawn cost".
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
+      // The bridge names the shell in its prompts and refusals; never a literal "bash".
+      HV_AGENT_SHELL: opts.agentShell ?? "bash",
       // Same reason as the PTY's (terminalSettings.resolveSpawn): a dev server
       // the agent starts with `bash` must not throw the page at the system
       // browser. Inherited by pi-subagents children, so a delegated `npm run

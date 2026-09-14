@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, UNSUPPORTED_BUILTIN_AGENTS, displayableTask, evaluate, isExternalCliAgent, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, UNSUPPORTED_BUILTIN_AGENTS, displayableTask, evaluate, isExternalCliAgent, isShellTool, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
   SUBAGENT_TASKS_TYPE, bindRun, claimTask, dropPendingTask, emptyTaskMap, releaseTask, restoreTaskMap,
   serializeTaskMap, stashPendingTask, taskFor, type TaskMapState,
@@ -88,7 +88,7 @@ function summarize(toolName: string, input: Record<string, unknown>): string {
   // §26 + §13's MCP rule: the permission prompt shows what will RUN. `intent` is
   // the model's own words and must never be what a user approves against — so
   // terminal_run summarises as its command, exactly like bash.
-  if ((toolName === "bash" || toolName === "terminal_run") && typeof input.command === "string") {
+  if ((isShellTool(toolName) || toolName === "terminal_run") && typeof input.command === "string") {
     return input.command.slice(0, 300);
   }
   // §28: a navigation's factual action IS its URL — same rule, same shape.
@@ -1253,7 +1253,7 @@ export default function (pi: ExtensionAPI) {
     // because with the group OFF there is nowhere to redirect to, and blocking
     // `&` would turn a context-saving setting into a capability removal it never
     // advertised.
-    if (builtins.terminal && tool === "bash" && typeof input.command === "string" && hasBackgroundAmpersand(input.command)) {
+    if (builtins.terminal && isShellTool(tool) && typeof input.command === "string" && hasBackgroundAmpersand(input.command)) {
       audit(ctx.ui, { tool, summary, decision: "deny", source: "terminal" });
       return {
         block: true,

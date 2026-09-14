@@ -922,6 +922,10 @@ export function registerIpc(
       // rather than stored on the session, so a resume, a hibernation wake and
       // an MCP reload all recompute it — the clamp cannot be lost by a respawn.
       readonly: readonlyForSession(sessionId),
+      // §4 Windows round: Git Bash if Pi can find one, else Pi's powershell tool.
+      // Probed at EVERY spawn — installing Git for Windows then takes effect on the
+      // next session, with no restart and nothing to configure.
+      agentShell: platform.agentShell().shell,
       // §13 round 6: global on/off for built-in custom tools, re-applied on
       // every (re)spawn — mirrors bypass, but global-only (no workspace tier).
       builtinTools: builtins,
@@ -3976,6 +3980,14 @@ export function registerIpc(
   });
 
   // Settings "test a call" preview — the SAME pure engine the bridge runs.
+  // §4 Windows round: which shell the agent actually got, re-probed per call so
+  // installing Git for Windows takes effect on the next session with no restart.
+  ipcMain.handle("hv:agent-shell", () => platform.agentShell());
+  ipcMain.handle("hv:terminal-shells", () => ({
+    default: platform.terminalShell(),
+    found: platform.detectedShells(),
+  }));
+
   ipcMain.handle("hv:eval-rules", (_e, workspaceId: string, tool: string, input: Record<string, unknown>) =>
     // caseInsensitivePaths from the platform seam, so the preview answers exactly what
     // the bridge will answer — a preview that disagrees with the gate is worse than none.
