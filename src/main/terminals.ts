@@ -21,6 +21,7 @@
  */
 
 import path from "node:path";
+import { platform } from "./platform";
 import { Terminal } from "@xterm/headless";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { resolveSpawn, type TerminalSettings } from "./terminalSettings";
@@ -74,6 +75,47 @@ let seq = 0;
  */
 const TITLE_POLL_MS = 500;
 
+/**
+ * Can `pty.process` name the foreground command on this platform? (PRD §4, Windows
+ * round — measured, not assumed.)
+ *
+ * On Unix node-pty asks the OS for the tty's foreground process. On Windows the
+ * getter is literally `return this._name` — the `name` option we pass at spawn — so
+ * it answers the constant "xterm-256color" whether the shell is idle or running
+ * something. Two consequences if believed: every Windows tab is titled
+ * "xterm-256color", and `foreground()` never returns null, so every terminal reads as
+ * permanently busy.
+ *
+ * There is no second source. Walking the Win32 process tree was measured in a real
+ * Electron process: `pty.pid` is the ConPTY host, its only descendant is the shell,
+ * and a command run under Git Bash never appears as a child at all (MSYS re-parents)
+ * — while the query itself costs ~900 ms, far past a 500 ms poll.
+ *
+ * So on Windows the tab follows the SHELL name, and "is something running" is
+ * unanswerable. Both degrade to a quieter UI rather than a wrong one.
+ */
+const FOREGROUND_SUPPORTED = !platform.isWindows;
+
+/**
+ * node-pty's write socket, which upstream leaves unguarded (see the call site).
+ * Shaped as "whatever is there", because none of it is public API.
+ */
+interface PtyInternals {
+  _agent?: { inSocket?: { on?: (event: string, cb: (err: Error) => void) => void } };
+}
+
+/** True when the private write socket was found and a handler attached. */
+export function attachWriteErrorHandler(child: unknown, id: string): boolean {
+  const sock = (child as PtyInternals)?._agent?.inSocket;
+  if (typeof sock?.on !== "function") return false;
+  sock.on("error", (err: Error) => {
+    // Nothing to recover: the pty is going away. Log so a real pipe problem is
+    // visible, and swallow so main survives it.
+    console.error("[terminal] pty write error", id, err?.message ?? err);
+  });
+  return true;
+}
+
 export class TerminalManager {
   private readonly entries = new Map<string, Entry>();
   private poll: NodeJS.Timeout | null = null;
@@ -126,6 +168,7 @@ export class TerminalManager {
           rows: number;
           cwd: string;
           env: Record<string, string>;
+          useConpty?: boolean;
         },
       ) => Pty;
     };
@@ -156,7 +199,10 @@ export class TerminalManager {
 
     let child: Pty;
     try {
-      child = pty.spawn(file, args, { name: "xterm-256color", cols, rows, cwd, env });
+      // useConpty is the default on Windows >= 1809, and is stated because it is
+      // load-bearing: the winpty fallback renders a TUI wrong, and `pty.process`
+      // (which the title poll reads) only reports the real foreground under ConPTY.
+      child = pty.spawn(file, args, { name: "xterm-256color", cols, rows, cwd, env, useConpty: true });
     } catch (err) {
       // Some failures throw here (an unreadable cwd), and some do not — a bad
       // shell PATH does not: node-pty's posix path spawns its helper fine and
@@ -169,6 +215,20 @@ export class TerminalManager {
 
     entry.pty = child;
     this.startPolling();
+
+    // A write racing a dying ConPTY fails ASYNCHRONOUSLY on Windows (`write EAGAIN`,
+    // from the socket's completion callback). Uncaught, that is not a broken terminal
+    // — it is the whole app going down because a terminal nobody was watching went
+    // away, since this runs in MAIN.
+    //
+    // node-pty's own `error` handler does not cover it: it guards the OUTPUT socket
+    // (`_socket`), and `terminal.on("error")` forwards there too — but writes go to
+    // `_agent.inSocket`, a different socket with no handler at all (measured; the two
+    // are not the same object). So the listener has to go on that one.
+    //
+    // Private field, reached deliberately and pinned by tests/terminals.test.ts, so a
+    // node-pty bump that renames it fails loudly instead of quietly restoring a crash.
+    attachWriteErrorHandler(child, id);
 
     child.onData((data) => {
       entry.sawData = true;
@@ -206,6 +266,7 @@ export class TerminalManager {
     // §7 round 12: a name the user typed OUTRANKS the poller. Without this the
     // 500 ms tick above would take the tab's name back on the next command.
     if (entry.userTitle) return entry.userTitle;
+    if (!FOREGROUND_SUPPORTED) return entry.shellName;
     const fg = entry.pty?.process;
     return typeof fg === "string" && fg.length > 0 ? fg : entry.shellName;
   }
@@ -225,7 +286,18 @@ export class TerminalManager {
   }
 
   write(id: string, data: string): void {
-    this.entries.get(id)?.pty?.write(data);
+    const entry = this.entries.get(id);
+    // A write to a pty whose shell has already exited throws, and on Windows it
+    // throws ASYNCHRONOUSLY (`write EAGAIN`, from the socket's completion callback)
+    // — uncaught, that takes the main process down over a terminal nobody is
+    // watching any more. The `running` check covers the ordinary race (the shell
+    // exited a moment ago); the catch covers the pipe breaking under the write.
+    if (!entry?.pty || !entry.info.running) return;
+    try {
+      entry.pty.write(data);
+    } catch {
+      /* the pty died between the check and the write */
+    }
   }
 
   resize(id: string, cols: number, rows: number): void {
@@ -275,6 +347,12 @@ export class TerminalManager {
   foreground(id: string): string | null {
     const entry = this.entries.get(id);
     if (!entry?.pty) return null;
+    // Windows cannot answer this — see FOREGROUND_SUPPORTED. Returning null means
+    // "at a prompt", which is the fail-OPEN direction on purpose: the alternative,
+    // `pty.process`'s constant "xterm-256color", is !== shellName and would report
+    // EVERY Windows terminal as permanently busy — the close confirm always warning
+    // and the agent never able to reuse a terminal, filling its cap of 3 for good.
+    if (!FOREGROUND_SUPPORTED) return null;
     const fg = entry.pty.process;
     return typeof fg === "string" && fg.length > 0 && fg !== entry.shellName ? fg : null;
   }

@@ -4,7 +4,8 @@ import { AgentTerminals, MAX_AGENT_TERMINALS, HOLD_IDLE_MS } from "../src/main/a
 import { DEFAULT_TERMINAL_SETTINGS } from "../src/main/terminalSettings";
 
 /** `-f` skips the user's rc files, so a test does not depend on someone's dotfiles. */
-const FAST = { ...DEFAULT_TERMINAL_SETTINGS, shellArgs: ["-f"], shellPath: "/bin/zsh" };
+import { FAST, HAS_POSIX_SHELL } from "./shellFixture";
+import { FOREGROUND_SUPPORTED as FOREGROUND } from "./shellFixture";
 const WS = process.cwd();
 const S = "sess-1";
 
@@ -49,7 +50,7 @@ describe("soft cap", () => {
 });
 
 describe("busy-reuse refusal", () => {
-  it("refuses to reuse a terminal whose foreground is non-null, naming the process", async () => {
+  it.skipIf(!FOREGROUND)("refuses to reuse a terminal whose foreground is non-null, naming the process", async () => { // Windows has no foreground source (terminals.ts FOREGROUND_SUPPORTED)
     const r = await run("sleep 30");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -58,6 +59,18 @@ describe("busy-reuse refusal", () => {
     const reuse = await run("npm test", r.terminalId);
     expect(reuse.ok).toBe(false);
     if (!reuse.ok) expect(reuse.reason).toContain("sleep");
+  });
+
+  it.skipIf(FOREGROUND)("on Windows a busy terminal reads as idle, and reuse is ALLOWED rather than always refused", async () => {
+    // The documented gap, asserted rather than left silent: pty.process answers a
+    // constant there, so believing it would refuse every reuse forever and fill the
+    // agent's cap of 3 permanently. Null is the fail-open direction we chose.
+    const r = await run("sleep 30");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(mgr.foreground(r.terminalId)).toBeNull();
+    const reuse = await run("echo x", r.terminalId);
+    expect(reuse.ok).toBe(true);
   });
 
   it("allows reuse of an idle terminal", async () => {

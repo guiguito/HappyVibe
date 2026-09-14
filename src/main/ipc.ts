@@ -4124,7 +4124,7 @@ export function registerIpc(
     void log.append({
       type: "terminal.open",
       workspaceId: known,
-      data: { terminalId: info.id, shell: settings.shellPath ?? process.env.SHELL ?? "/bin/zsh" },
+      data: { terminalId: info.id, shell: settings.shellPath ?? platform.terminalShell() },
     });
     return info;
   });

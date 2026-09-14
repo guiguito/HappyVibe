@@ -2,21 +2,23 @@ import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
-import { TerminalManager } from "../src/main/terminals";
+import { attachWriteErrorHandler, TerminalManager } from "../src/main/terminals";
 import { DEFAULT_TERMINAL_SETTINGS } from "../src/main/terminalSettings";
 
 const require_ = createRequire(import.meta.url);
 const settle = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** `-f` skips the user's rc files, so a test does not depend on someone's dotfiles. */
-const FAST = { ...DEFAULT_TERMINAL_SETTINGS, shellArgs: ["-f"], shellPath: "/bin/zsh" };
+// A POSIX shell on every platform (Git Bash on Windows) — see tests/shellFixture.ts
+// for why these tests do not switch to PowerShell syntax.
+import { FAST, HAS_POSIX_SHELL } from "./shellFixture";
+import { FOREGROUND_SUPPORTED as FOREGROUND, SHELL_NAME } from "./shellFixture";
 
 describe("node-pty packaging", () => {
   // node-pty ships spawn-helper WITHOUT the executable bit through npm, and
   // every pty.spawn then fails with the entirely unhelpful "posix_spawnp
   // failed." — in dev, not only when packaged. scripts/fix-pty-helper.mjs runs
   // from postinstall; this is what stops it being deleted as mysterious.
-  it("ships an executable spawn-helper for every prebuilt platform", () => {
+  it.skipIf(process.platform === "win32")("ships an executable spawn-helper for every prebuilt platform", () => { // no exec bit on NTFS, and conpty ships no helper
     const lib = path.dirname(require_.resolve("node-pty"));
     const prebuilds = path.join(lib, "..", "prebuilds");
     const helpers = fs
@@ -80,7 +82,12 @@ describe("TerminalManager", () => {
       expect(m.foreground(t.id)).toBeNull();
       m.write(t.id, "sleep 4\n");
       await settle(1200);
-      expect(m.foreground(t.id)).toBe("sleep");
+      // Windows cannot answer this and says so by staying null (terminals.ts
+      // FOREGROUND_SUPPORTED, measured). The assertion is written for BOTH arms
+      // rather than skipped, so the Windows contract is covered rather than absent:
+      // what must never happen there is a non-null answer, which would mark every
+      // terminal permanently busy.
+      expect(m.foreground(t.id)).toBe(FOREGROUND ? "sleep" : null);
     } finally {
       m.killAll();
     }
@@ -91,11 +98,15 @@ describe("TerminalManager", () => {
     const m = new TerminalManager(() => {}, () => {}, (_id, t) => titles.push(t));
     const t = m.create("ws1", process.cwd(), FAST, 80, 24);
     try {
-      expect(t.title).toBe("zsh");
+      expect(t.title).toBe(SHELL_NAME);
       await settle(800);
       m.write(t.id, "sleep 4\n");
       await settle(1200);
-      expect(titles).toContain("sleep");
+      // On Windows the tab keeps the SHELL's name — there is no foreground source —
+      // and the one thing that must never happen is the terminal NAME leaking into
+      // the tab, which is what pty.process returns there.
+      if (FOREGROUND) expect(titles).toContain("sleep");
+      else expect(titles).not.toContain("xterm-256color");
     } finally {
       m.killAll();
     }
@@ -134,7 +145,10 @@ describe("TerminalManager", () => {
       m.rename(t.id, "   ");
       m.write(t.id, "sleep 4\n");
       await settle(1500);
-      expect(m.get(t.id)!.title).toBe("sleep");
+      // The point of the test is that clearing a user title RETURNS the tab to
+      // whatever the platform can follow — the command on POSIX, the shell name on
+      // Windows. What must not survive is the pinned title.
+      expect(m.get(t.id)!.title).toBe(FOREGROUND ? "sleep" : SHELL_NAME);
     } finally {
       m.killAll();
     }
@@ -234,4 +248,31 @@ describe("TerminalManager", () => {
       m.killAll();
     }
   }, 25_000);
+});
+
+describe("the pty write socket is guarded", () => {
+  /**
+   * A write racing a dying ConPTY fails asynchronously on Windows (`write EAGAIN`).
+   * This code runs in MAIN, so uncaught it takes the whole app down over a terminal
+   * nobody was watching. node-pty guards its OUTPUT socket and rethrows everything
+   * else; the write path uses `_agent.inSocket`, a different socket with no handler.
+   *
+   * Both halves are pinned because both can rot: the private field can be renamed by
+   * a bump, and the reason can be forgotten.
+   */
+  it("finds node-pty's private write socket and attaches a handler", () => {
+    const m = new TerminalManager(() => {}, () => {}, () => {});
+    const t = m.create("ws1", process.cwd(), FAST, 80, 24);
+    try {
+      const entry = (m as unknown as { entries: Map<string, { pty: unknown }> }).entries.get(t.id);
+      expect(attachWriteErrorHandler(entry?.pty, "probe"), "node-pty renamed _agent.inSocket").toBe(true);
+    } finally {
+      m.killAll();
+    }
+  });
+
+  it("says so rather than throwing when the shape is gone", () => {
+    expect(attachWriteErrorHandler({}, "x")).toBe(false);
+    expect(attachWriteErrorHandler(null, "x")).toBe(false);
+  });
 });
