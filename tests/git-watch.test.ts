@@ -48,9 +48,17 @@ beforeEach(() => {
   fs.writeFileSync(path.join(gitDir, "index"), "binary-ish");
 });
 
-afterEach(() => {
+afterEach(async () => {
   unwatchAllGit();
-  fs.rmSync(dir, { recursive: true, force: true });
+  // Windows: FSWatcher.close() cancels the underlying ReadDirectoryChangesW request
+  // ASYNCHRONOUSLY, so deleting the watched directory in the same tick can reach
+  // libuv's completion handler after its state is gone. The worker then dies with
+  // STATUS_STACK_BUFFER_OVERRUN (exit 3221226505) and fails the whole run even though
+  // every test in the file passed — which is exactly how it presented on CI, twice,
+  // while never reproducing on a Windows dev box. One turn of the event loop is all
+  // the cancellation needs; the retries cover the directory still being handle-locked.
+  await new Promise((r) => setTimeout(r, 50));
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 describe("watchGitDir", () => {
