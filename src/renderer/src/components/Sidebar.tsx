@@ -434,10 +434,19 @@ function FeedbackButton({ onClick, className }: { onClick: () => void; className
 }
 
 /** §34: an outlined speech bubble — "tell us something", not "chat with us". */
+/**
+ * §34 round 24: a megaphone, not a speech bubble.
+ *
+ * The old single-path bubble's tail geometry was wrong and it read as a badly
+ * formed chat bubble. A megaphone says *tell us* with no bubble ambiguity, and
+ * unlike the lightbulb the slot invites it carries no "AI" connotation — §19
+ * pins that word to exactly one use in this app.
+ */
 function FeedbackIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 1 1 21 12z" />
+      <path d="m3 11 18-5v12L3 14v-3z" />
+      <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
     </svg>
   );
 }

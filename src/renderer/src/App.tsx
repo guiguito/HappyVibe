@@ -567,6 +567,10 @@ export default function App(): React.JSX.Element {
   // block and an answer never merge into one bubble. Committed at
   // thinking_end — the block is collapsed, so nothing repaints per delta.
   const thinkRef = useRef<Record<string, string>>({});
+  /** §7 round 24: when the current think started, so the committed block can
+      say how long it took. Live path only — a RESTORED block has no stamp
+      anywhere in the session file, and says a bare "Thought" instead. */
+  const thinkStart = useRef<Record<string, number>>({});
   const rafRef = useRef<number | null>(null);
   // Stable, monotonic id per committed item (see appendItem) so Transcript can
   // key on identity instead of the array index and skip re-parsing.
@@ -764,14 +768,21 @@ export default function App(): React.JSX.Element {
    */
   const commitThinking = (sid: string): void => {
     const thought = thinkRef.current[sid];
+    const started = thinkStart.current[sid];
     delete thinkRef.current[sid];
+    delete thinkStart.current[sid];
     setThinkingText((p) => {
       if (!(sid in p)) return p;
       const next = { ...p };
       delete next[sid];
       return next;
     });
-    if (thought?.trim()) appendItem(sid, { kind: "thinking", text: thought, ts: Date.now() });
+    if (thought?.trim()) {
+      // §7 round 24: `ms` is what turns the collapsed label into "Thought for
+      // 12s". Absent when the start was never seen (a resumed mid-turn stream),
+      // which reads as a bare "Thought" rather than a fabricated zero.
+      appendItem(sid, { kind: "thinking", text: thought, ts: Date.now(), ms: started ? Date.now() - started : undefined });
+    }
   };
 
   // Commit the in-progress streaming bubble as ONE assistant transcript item,
@@ -1603,6 +1614,7 @@ export default function App(): React.JSX.Element {
       // commitThinking for why the next action does.
       if (e.type === "message_update" && ame?.type === "thinking_start") {
         thinkRef.current[sid] = "";
+        thinkStart.current[sid] = Date.now();
         scheduleFlush();
       }
       if (e.type === "message_update" && (ame?.type === "thinking_delta" || ame?.type === "thinking") && ame.delta) {

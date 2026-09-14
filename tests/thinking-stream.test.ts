@@ -90,14 +90,22 @@ describe("Transcript renders it collapsed", () => {
     expect(src).toContain('kind: "thinking"');
   });
 
-  test("a COMMITTED block is closed, a LIVE one is open", () => {
-    // NOT a bare `useState(false)` scan: Transcript.tsx already contains four
-    // of those, so that assertion would pass before the change was written.
-    // `useState(!!live)` carries both halves — the live block opens itself, and
-    // the committed one that replaces it is a fresh component, so it starts
-    // closed. That is what keeps §7's "collapsed by default" true after a turn.
-    expect(decl).toContain("useState(!!live)");
+  /**
+   * §7 round 24 INVERTED this assertion, and that is the finding.
+   *
+   * Round 16's decision always read "collapsed by default … live text is
+   * streamed only into an expanded block". The implementation was
+   * `useState(!!live)` — a live block opened itself — and this test PINNED
+   * that, so the drift from the app's own decision survived a whole round with
+   * a green gate. Reported as "thinking is too verbose".
+   *
+   * The slice is still the component's real body, because Transcript.tsx holds
+   * several `useState(false)` and a file-wide scan would pass vacuously.
+   */
+  test("NO block opens itself, live or committed", () => {
+    expect(decl).not.toContain("useState(!!live)");
     expect(decl).not.toContain("useState(true)");
+    expect(decl).toContain("useState(false)");
   });
 
   test("it renders MARKDOWN, with the answer bubble's own renderer", () => {

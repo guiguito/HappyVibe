@@ -9,6 +9,7 @@ import { basename } from "../tabs";
 import { ZoomableImage } from "./ZoomableImage";
 import { BrandLogo } from "./BrandLogo";
 import { formatDuration, timeagoLong } from "../timeago";
+import { thinkingLabel } from "../thinkingLabel";
 
 // Feedback round 3 #4: user messages longer than this render collapsed with a
 // "Show more" toggle. ponytail: single char threshold ~ "10 pages"; tune if needed.
@@ -107,7 +108,7 @@ export type TranscriptItem = { id?: number; live?: true } & (
   // §7 round 16: the agent's own reasoning. Collapsed by default and
   // re-collapsed on every send — the flow still reads as high-level working
   // state, and the reasoning is one click away for the turn you care about.
-  | { kind: "thinking"; text: string; ts?: number }
+  | { kind: "thinking"; text: string; ts?: number; ms?: number }
   // §9 round 9: the compaction boundary. Everything ABOVE it is out of the
   // agent's context; `loaded` flips once the user pulls that history in.
   | { kind: "boundary"; compactions: number; reason: string | null; loaded: boolean }
@@ -165,23 +166,28 @@ function thinkingKey(it: TranscriptItem, i: number, nonce?: number): string | nu
 }
 
 /**
- * §7 round 16 — the agent's reasoning.
- *
- * Three things GUI testing corrected on the first cut:
+ * §7 round 16 — the agent's reasoning. §7 round 24 corrected two things.
  *
  * 1. It renders MARKDOWN. The model writes `**Recommending X**` and the plain
  *    `whitespace-pre-wrap` showed the asterisks. Same ReactMarkdown + remarkGfm
  *    + MD_COMPONENTS as the answer bubble, so the two cannot drift.
- * 2. The label is lowercase and quiet. `THINKING` in the agent label's own
- *    uppercase treatment read as a peer of the answer; it is subordinate to it.
- * 3. It streams LIVE and expanded while the model is thinking (`live`), then
- *    collapses when the turn moves on — App commits it at the next action.
+ * 2. The label is quiet and subordinate to the answer, never in the agent
+ *    label's own uppercase treatment.
+ * 3. Round 24: it starts CLOSED even while live. Round 16's decision always
+ *    said "collapsed by default … live text is streamed only into an expanded
+ *    block"; `useState(!!live)` quietly did the opposite for a whole round, and
+ *    the flow stopped reading as high-level working state — which was the
+ *    entire safety of showing reasoning at all.
+ * 4. Round 24: the label says what is happening instead of showing it —
+ *    "Thinking" plus three dots while it streams, "Thought for 12s" after. A
+ *    RESTORED block has no measurable duration and says a bare "Thought"
+ *    rather than inventing one.
  *
- * `useState(live)` is what makes 3 work with 2: a live block opens itself, and
- * the committed one that replaces it is a fresh component, so it starts closed.
+ * Expanding mid-stream still streams into the open block: `text` keeps
+ * arriving either way, the block simply does not open itself.
  */
-function ThinkingBlock({ text, live }: { text: string; live?: boolean }): React.JSX.Element {
-  const [open, setOpen] = useState(!!live);
+function ThinkingBlock({ text, live, ms }: { text: string; live?: boolean; ms?: number }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
   return (
     <div className="self-start max-w-3xl w-full">
       <button
@@ -192,8 +198,14 @@ function ThinkingBlock({ text, live }: { text: string; live?: boolean }): React.
         className="flex items-center gap-1.5 text-[11px] font-medium text-ink-soft/60 hover:text-ink-soft cursor-pointer"
       >
         <span className={`transition-transform ${open ? "rotate-90" : ""}`}>›</span>
-        thinking
-        {live && <span className="size-1.5 rounded-full bg-honey animate-pulse" />}
+        {thinkingLabel({ live, ms })}
+        {live && (
+          <span className="hv-dots flex items-center gap-0.5" aria-hidden>
+            <span className="size-1 rounded-full bg-current" />
+            <span className="size-1 rounded-full bg-current" />
+            <span className="size-1 rounded-full bg-current" />
+          </span>
+        )}
       </button>
       {open && (
         <div className="md md-quiet mt-1 text-ink-soft break-words max-h-64 overflow-y-auto">
@@ -283,7 +295,7 @@ const MessageItem = memo(function MessageItem({
       </div>
     );
   }
-  if (it.kind === "thinking") return <ThinkingBlock text={it.text} />;
+  if (it.kind === "thinking") return <ThinkingBlock text={it.text} ms={it.ms} />;
   if (it.kind === "notice") {
     return (
       <div
