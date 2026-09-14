@@ -15,7 +15,7 @@
 //
 // Keep the CLI path in step with PI_CLI_RELPATH in src/main/pi/spawn.ts and with
 // pi-node.sh; tests/pi-cli-entry.test.ts pins all three to one entry.
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 const RUNTIME = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,4 +28,8 @@ const CLI = path.join(RUNTIME, "node_modules/@earendil-works/pi-coding-agent/dis
 const GUARD = path.join(RUNTIME, "extensions", "hv-child-guard.ts");
 
 process.argv = [process.argv[0], CLI, "--extension", GUARD, ...process.argv.slice(2)];
-await import(CLI);
+// pathToFileURL is REQUIRED here, not tidiness: Windows' ESM loader refuses an
+// absolute path — "absolute paths must be valid file:// URLs. Received protocol 'c:'"
+// — so a bare import() would fail every delegation on the platform this file exists
+// for. Pinned by tests/pi-child-launcher.test.ts.
+await import(pathToFileURL(CLI).href);

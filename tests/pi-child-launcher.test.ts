@@ -83,3 +83,16 @@ describe("spawn points PI_SUBAGENT_PI_BINARY at the platform's launcher", () => 
     expect(s.env.PI_SUBAGENT_PI_BINARY?.startsWith("C:\\HV\\resources\\pi-runtime")).toBe(true);
   });
 });
+
+describe("the launcher survives Windows' ESM loader", () => {
+  it("imports the CLI as a file:// URL, never as a bare absolute path", () => {
+    // Node's ESM loader refuses an absolute Windows path outright:
+    //   "absolute paths must be valid file:// URLs. Received protocol 'c:'"
+    // A bare import(CLI) therefore fails EVERY delegation on the one platform this
+    // file exists for — and the same bug was live in the anydoc sidecar, where its
+    // catch reported it as "no anydoc build for this platform".
+    expect(src).toMatch(/await import\(\s*pathToFileURL\(/);
+    expect(src).toMatch(/pathToFileURL/);
+    expect(src, "a bare import(CLI) is the bug").not.toMatch(/await import\(CLI\)/);
+  });
+});

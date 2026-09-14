@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { makePlatform } from "../src/main/platform";
 import {
   DEFAULT_TERMINAL_SETTINGS,
   fontStack,
@@ -79,10 +80,29 @@ describe("mergeTerminalSettings", () => {
 describe("resolveSpawn", () => {
   const d = DEFAULT_TERMINAL_SETTINGS;
 
-  it("prefers the configured shell, then $SHELL, then /bin/zsh", () => {
-    expect(resolveSpawn(d, { SHELL: "/bin/bash" }).file).toBe("/bin/bash");
-    expect(resolveSpawn(d, {}).file).toBe("/bin/zsh");
-    expect(resolveSpawn({ ...d, shellPath: "/bin/sh" }, { SHELL: "/bin/bash" }).file).toBe("/bin/sh");
+  // The default now comes from the platform seam (PRD §4), so these inject one
+  // instead of relying on the host — which is what lets the Windows arm below be
+  // asserted from macOS, and vice versa.
+  const posix = (env: Record<string, string>) =>
+    makePlatform({ platform: "darwin", execPath: "/x", env, existsSync: () => false, exec: () => ({ status: 0, stdout: "" }) });
+
+  it("prefers the configured shell, then $SHELL, then the platform default", () => {
+    expect(resolveSpawn(d, { SHELL: "/bin/bash" }, posix({ SHELL: "/bin/bash" })).file).toBe("/bin/bash");
+    expect(resolveSpawn(d, {}, posix({})).file).toBe("/bin/zsh");
+    expect(resolveSpawn({ ...d, shellPath: "/bin/sh" }, { SHELL: "/bin/bash" }, posix({ SHELL: "/bin/bash" })).file)
+      .toBe("/bin/sh");
+  });
+
+  it("and on Windows that default is PowerShell, with an explicit shell still winning", () => {
+    const win = makePlatform({
+      platform: "win32", execPath: "C:\\x.exe",
+      env: { PATH: "C:\\PS7", COMSPEC: "C:\\Windows\\System32\\cmd.exe" },
+      existsSync: (f: string) => f === "C:\\PS7\\pwsh.exe",
+      exec: () => ({ status: 0, stdout: "" }),
+    });
+    expect(resolveSpawn(d, {}, win).file).toBe("C:\\PS7\\pwsh.exe");
+    expect(resolveSpawn({ ...d, shellPath: "C:\\Git\\bin\\bash.exe" }, {}, win).file)
+      .toBe("C:\\Git\\bin\\bash.exe");
   });
 
   it("passes the shell arguments through", () => {
