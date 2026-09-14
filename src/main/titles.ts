@@ -70,6 +70,8 @@ export function generateTitle(
       {
         cwd: workspace,
         env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(opts.env ?? {}) },
+        // Windows: a one-shot child must not flash a console window.
+        windowsHide: true,
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 60_000,
       }

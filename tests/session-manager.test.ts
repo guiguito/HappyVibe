@@ -6,6 +6,7 @@ import path from "node:path";
 import { SessionManager, sweepOrphans, type ManagedClient, type SessionExit } from "../src/main/SessionManager";
 import { deleteSessionFile, SessionIndex } from "../src/main/store";
 import { EventLog } from "../src/main/log";
+import { makePlatform } from "../src/main/platform";
 
 class FakeClient extends EventEmitter implements ManagedClient {
   static nextPid = 1000;
@@ -215,4 +216,61 @@ test("delete flow: live session is stopped first, index entry and confined file 
   expect(fs.existsSync(piFile)).toBe(false);
   const types = (await log.read({ sessionId: meta.id })).map((e) => e.type);
   expect(types).toEqual(["session.end", "session.delete"]);
+});
+
+/**
+ * PRD §4 (Windows round): the orphan sweep has to work on Windows, and neither half
+ * of it did. `ps` does not exist there, and the string it matches — "pi-coding-agent"
+ * — lives in the ARGUMENTS, which tasklist does not print; so a sweep built on either
+ * would verify nothing and kill nothing, leaving a crashed run's Pi processes alive
+ * with no signal. Both halves now come from the platform seam.
+ */
+test("sweepOrphans verifies and kills through the platform seam on Windows", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-sweep-win-"));
+  const pidFile = path.join(dir, "pids.json");
+  fs.writeFileSync(pidFile, JSON.stringify({ "4242": "s1", "9": "s2" }));
+
+  const execs: string[] = [];
+  const win = makePlatform({
+    platform: "win32",
+    execPath: "C:\\HV\\HappyVibe.exe",
+    env: {},
+    existsSync: () => false,
+    exec: (cmd, args) => {
+      execs.push([cmd, ...args].join(" "));
+      if (cmd !== "powershell.exe") return { status: 0, stdout: "" };
+      return args.join(" ").includes("ProcessId=4242")
+        ? {
+            status: 0,
+            stdout:
+              '"C:\\HV\\HappyVibe.exe" C:\\HV\\resources\\pi-runtime\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js --mode rpc\r\n',
+          }
+        : { status: 0, stdout: "\r\n" }; // pid 9 is gone: exit 0, empty CommandLine
+    },
+  });
+
+  const killed = sweepOrphans(pidFile, (pid) => win.readCommand(pid), (pid) => win.killTree(pid));
+
+  expect(killed).toEqual([4242]);
+  expect(execs).toContain("taskkill /PID 4242 /T /F");
+  expect(execs.some((e) => e.startsWith("taskkill /PID 9 ")), "a dead pid must not be killed").toBe(false);
+  // The pid file is cleared either way — swept means start clean.
+  expect(JSON.parse(fs.readFileSync(pidFile, "utf8"))).toEqual({});
+});
+
+test("sweepOrphans still never kills blind — a recycled pid running something else survives", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-sweep-recycle-"));
+  const pidFile = path.join(dir, "pids.json");
+  fs.writeFileSync(pidFile, JSON.stringify({ "31337": "s1" }));
+  const win = makePlatform({
+    platform: "win32",
+    execPath: "C:\\HV\\HappyVibe.exe",
+    env: {},
+    existsSync: () => false,
+    exec: (cmd) =>
+      cmd === "powershell.exe"
+        ? { status: 0, stdout: '"C:\\Windows\\System32\\notepad.exe"\r\n' }
+        : { status: 0, stdout: "" },
+  });
+  expect(sweepOrphans(pidFile, (p) => win.readCommand(p), (p) => win.killTree(p))).toEqual([]);
 });

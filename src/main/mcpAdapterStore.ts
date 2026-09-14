@@ -113,6 +113,8 @@ export function createAdapterStore(opts: {
         // the first version's every-spawn hang went undiagnosed.
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(opts.env ?? {}) },
+        // Windows: a one-shot child must not flash a console window.
+        windowsHide: true,
       });
 
       let out = "";

@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { spawn, type ChildProcess } from "node:child_process";
 import { NdjsonDecoder, encodeCommand } from "./codec";
+import { platform } from "../platform";
 import type { PiResponse } from "./types";
 
 interface SpawnSpec { execPath: string; args: string[]; env: Record<string, string>; cwd: string }
@@ -51,6 +52,8 @@ export class PiClient extends EventEmitter {
   async start(): Promise<void> {
     this.child = spawn(this.spec.execPath, this.spec.args, {
       cwd: this.spec.cwd, env: this.spec.env, stdio: ["pipe", "pipe", "pipe"],
+      // Windows: without this every session pops a console window for a moment.
+      windowsHide: true,
     });
     this.child.stdout!.setEncoding("utf8");
     this.child.stdout!.on("data", (chunk: string) => {
@@ -98,5 +101,21 @@ export class PiClient extends EventEmitter {
     this.child!.stdin!.write(encodeCommand({ type: "extension_ui_response", id, ...payload }));
   }
 
-  stop(): void { this.child?.kill(); }
+  /**
+   * PRD §4 (Windows round): the tree, not the process.
+   *
+   * `child.kill()` is TerminateProcess on Windows, which runs no handler — so Pi's
+   * own SIGTERM path and its killTrackedDetachedChildren() never happen, and every
+   * running bash command and stdio MCP server outlives the session. Hibernation and
+   * MCP live-reload both come through here, so that is an orphan per reload.
+   *
+   * No grace period before /F, measured rather than assumed: Pi appends its session
+   * file with appendFileSync, so nothing already written is lost, and its own SIGTERM
+   * branch deliberately skips the stdout flush anyway.
+   */
+  stop(): void {
+    const pid = this.child?.pid;
+    if (pid !== undefined) platform.killTree(pid);
+    else this.child?.kill();
+  }
 }

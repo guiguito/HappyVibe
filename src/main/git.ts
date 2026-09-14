@@ -118,6 +118,7 @@ export function run(
         timeout: opts.network ? NETWORK_TIMEOUT_MS : READ_TIMEOUT_MS,
         maxBuffer: 64 * 1024 * 1024, // a big diff is normal; a truncated one is a lie
         encoding: "utf8",
+        windowsHide: true, // git.exe, polled — a console flash per poll is unusable
       },
       (err, stdout, stderr) => {
         const code = (err as NodeJS.ErrnoException & { code?: number })?.code;
@@ -231,6 +232,7 @@ export function gitCommonDir(workspace: string): string | null {
       encoding: "utf8",
       timeout: 5_000,
       stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
     }).trim();
     // Relative (".git") from a main worktree, absolute from a linked one — resolve BOTH or the
     // two halves of a clone key differently and worktree sharing silently does not happen.
