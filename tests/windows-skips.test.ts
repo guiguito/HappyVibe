@@ -45,6 +45,7 @@ const EXPECTED: Record<string, string> = {
   "terminals.test.ts": "the POSIX exec bit; conpty ships no spawn-helper",
   "shell-path.test.ts": "the login-shell PATH trick is `$SHELL -ilc`",
   "mcp-adapter-interpolation.test.ts": "the '!' secret form runs a POSIX shell command",
+  "git-watch.test.ts": "fs.watch kills the vitest worker on the runner; every test passes",
 };
 
 function filesWithSkips(): string[] {
