@@ -41,6 +41,7 @@ async function waitFor(cond: () => boolean, timeoutMs = 5_000, keepPoking?: () =
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-gitwatch-"));
+  made.push(dir);
   gitDir = path.join(dir, ".git");
   fs.mkdirSync(path.join(gitDir, "objects", "ab"), { recursive: true });
   fs.mkdirSync(path.join(gitDir, "refs", "heads"), { recursive: true });
@@ -48,15 +49,33 @@ beforeEach(() => {
   fs.writeFileSync(path.join(gitDir, "index"), "binary-ish");
 });
 
-afterEach(async () => {
+/**
+ * Temp dirs are collected and removed at the END, never in afterEach — and on Windows
+ * not at all.
+ *
+ * The `afterEach` used to close the watcher and delete the directory it had just been
+ * watching. On the Windows runner that killed the worker with
+ * STATUS_STACK_BUFFER_OVERRUN (exit 3221226505) after every test in the file had
+ * PASSED, so the file list read green and the run did not. `FSWatcher.close()` only
+ * begins cancelling the underlying ReadDirectoryChangesW request, and deleting the
+ * directory it refers to is what libuv cannot survive — a delay before the delete was
+ * not enough, which is how we know it is the delete and not the timing.
+ *
+ * It never reproduces on a Windows dev box (300 close-then-delete cycles survive), so
+ * the runner is the only witness. Not removing them there costs a few directories on a
+ * VM whose disk is discarded minutes later, and costs no assertion at all — this file
+ * is about what the watcher REPORTS, not about tidying up after itself.
+ */
+const made: string[] = [];
+
+afterEach(() => {
   unwatchAllGit();
-  // One turn of the loop between close() and the delete: the cancellation of the
-  // underlying ReadDirectoryChangesW request is asynchronous on Windows, and the
-  // retries cover the directory still being handle-locked. The crash this file used to
-  // take is handled at EXIT, in the afterAll below — the delay here was not enough on
-  // its own, which is what said the problem was the worker exiting rather than the rm.
-  await new Promise((r) => setTimeout(r, 50));
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+});
+
+afterAll(() => {
+  if (process.platform === "win32") return;
+  for (const d of made) fs.rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+});
 });
 
 describe("watchGitDir", () => {
@@ -160,24 +179,4 @@ describe("watchGitDir", () => {
     expect(fired).toBeLessThanOrEqual(n);
     expect(fired).toBeGreaterThan(0);
   });
-});
-
-/**
- * Let Windows finish tearing down the native handles this file opened before the
- * worker process exits.
- *
- * `FSWatcher.close()` and `pty.kill()` both return immediately and complete
- * ASYNCHRONOUSLY on Windows — the ConPTY teardown is visible in CI's own cleanup,
- * which reports orphaned `conhost` and `bash` processes. When the worker exits with
- * that work in flight, the completion lands on a dead process and the worker dies with
- * ACCESS_VIOLATION (0xC0000005) or STATUS_STACK_BUFFER_OVERRUN (0xC0000409) — after
- * every test in the file has PASSED, which is how it presented: a green file list and
- * a failed run.
- *
- * Deterministic on the Windows runner, never reproducible on a Windows dev box. It is
- * a test-harness accommodation for a platform behaviour, not a product bug: the app
- * does not exit microseconds after killing a terminal.
- */
-afterAll(async () => {
-  if (process.platform === "win32") await new Promise((r) => setTimeout(r, 300));
 });
