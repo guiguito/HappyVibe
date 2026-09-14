@@ -2770,6 +2770,27 @@ export default function App(): React.JSX.Element {
     return !!scheduleId && schedules.find((x) => x.id === scheduleId)?.mode === "readonly";
   };
 
+  /**
+   * §17 round 24 — export this session as HTML.
+   *
+   * The outcome lands as a transcript NOTICE in that session's own pane rather
+   * than as a new toast mechanism: the export is per-session, the notice pill
+   * is already bounded (§7 round 16) and its `title` carries the full path or
+   * the full error without widening it. A cancel says NOTHING — dismissing a
+   * save dialog is not a failure and does not want a receipt.
+   */
+  const exportSessionHtml = (sid: string): void => {
+    void window.hv.exportSessionHtml(sid).then((r) => {
+      if (r.ok) {
+        appendItem(sid, { kind: "notice", text: `Exported to ${r.path.split("/").pop()}`, title: r.path });
+        return;
+      }
+      if (r.canceled) return;
+      const why = r.error ?? "The export did not finish.";
+      appendItem(sid, { kind: "notice", text: why.split("\n")[0], title: why });
+    });
+  };
+
   const repeatOnSchedule = (sid: string): void => {
     const meta = sessionsRef.current.find((s) => s.id === sid);
     const first = (transcripts[sid] ?? []).find((i) => i.kind === "user" && !!i.text);
@@ -3324,6 +3345,7 @@ export default function App(): React.JSX.Element {
                       else closeFileTab(wsId, slot, tab);
                     }}
                     onRepeatOnSchedule={repeatOnSchedule}
+                    onExportHtml={exportSessionHtml}
                     onRename={(tab, title) => {
                       // §7 round 12: a chat tab renames the SESSION — the
                       // sidebar row changes with it, because it is the

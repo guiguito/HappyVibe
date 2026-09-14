@@ -41,6 +41,17 @@ function ClockGlyph(): React.JSX.Element {
   );
 }
 
+/** §17 round 24: the export row's mark — a line dropping into a tray. */
+function DownloadGlyph(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 4v10" />
+      <path d="m8 11 4 4 4-4" />
+      <path d="M4 18h16" />
+    </svg>
+  );
+}
+
 const menuItem =
   "w-full flex items-center gap-2 text-left px-3 py-1 hover:bg-paper-deep/40 cursor-pointer " +
   "disabled:cursor-not-allowed disabled:text-ink-soft disabled:hover:bg-transparent";
@@ -102,6 +113,7 @@ export function TabStrip({
   trailing,
   onRename,
   onRepeatOnSchedule,
+  onExportHtml,
   onMoveToWindow,
   canMoveToWindow,
   otherWindows,
@@ -135,6 +147,9 @@ export function TabStrip({
   onRename: (tab: TabId, title: string) => void;
   /** §35: a chat tab can become a schedule. Absent for terminals and browsers — there is no prompt to repeat. */
   onRepeatOnSchedule?: (sessionId: string) => void;
+  /** §17 round 24: export this session's transcript as a standalone HTML page.
+      Absent for terminals, browsers and files — there is no transcript. */
+  onExportHtml?: (sessionId: string) => void;
   /** §7 round 23: hand this tab to a brand-new window, or to a named one. */
   onMoveToWindow: (tab: TabId, target: "new" | number) => void;
   /** The OTHER windows, so moving between two open ones needs no drag. */
@@ -432,6 +447,24 @@ export function TabStrip({
               >
                 <ClockGlyph />
                 Repeat this on a schedule…
+              </button>
+            )}
+            {/* §17 round 24. Here for §35's reason, one row up: a session ROW
+                has no ⋯ menu — round 15 cleaned that slot down to one trash
+                icon and an age on purpose, and crowding it again was the wrong
+                trade. Same onMouseDown rule as its neighbours. */}
+            {onExportHtml && sessionOf(menu.tab) && (
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onExportHtml(sessionOf(menu.tab)!);
+                  setMenu(null);
+                }}
+                className={menuItem}
+              >
+                <DownloadGlyph />
+                Export as HTML…
               </button>
             )}
             {/* §7 round 23. onMouseDown + preventDefault, not onClick: pressing
