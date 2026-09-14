@@ -66,6 +66,13 @@ import { ASYNC_DIR } from "../node_modules/pi-subagents/src/shared/types.ts";
 // runtime (and with each other).
 import { discoverAgentsAll } from "../node_modules/pi-subagents/src/agents/agents.ts";
 
+/**
+ * PRD §4 (Windows round): the filesystem is case-insensitive on win32, so every path
+ * a rule inspects folds case and separators first. Read here rather than inside the
+ * engine, which stays import-free because the renderer loads it too.
+ */
+const CI_PATHS = process.platform === "win32";
+
 const sessionGrants = new Set<string>();
 
 function summarize(toolName: string, input: Record<string, unknown>): string {
@@ -1314,7 +1321,9 @@ export default function (pi: ExtensionAPI) {
       // is the same pure engine the branch below uses), and it is what turns
       // the audit log back into a record of decisions rather than a record of
       // one setting being on.
-      const shadow = evaluate(rules, { tool: permTool, input, workspace: process.cwd() });
+      const shadow = evaluate(rules, {
+        tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS,
+      });
       audit(ctx.ui, {
         tool: permTool,
         summary,
@@ -1333,7 +1342,9 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    const v = evaluate(rules, { tool: permTool, input, workspace: process.cwd() });
+    const v = evaluate(rules, {
+      tool: permTool, input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS,
+    });
 
     if (v.action === "deny") {
       audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule", rule: v.rule });

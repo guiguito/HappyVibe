@@ -75,6 +75,7 @@ import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } from "./modelExclusions";
 import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, normPath, readSessionFile, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
+import { platform } from "./platform";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
 import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
@@ -3976,7 +3977,11 @@ export function registerIpc(
 
   // Settings "test a call" preview — the SAME pure engine the bridge runs.
   ipcMain.handle("hv:eval-rules", (_e, workspaceId: string, tool: string, input: Record<string, unknown>) =>
-    evaluate(readRules(), { tool, input, workspace: workspaceId }));
+    // caseInsensitivePaths from the platform seam, so the preview answers exactly what
+    // the bridge will answer — a preview that disagrees with the gate is worse than none.
+    evaluate(readRules(), {
+      tool, input, workspace: workspaceId, caseInsensitivePaths: platform.isWindows,
+    }));
 
   // ── §28 Embedded browser: the renderer's half ──────────────────────────────
   // Bounds and visibility are the whole cost of choosing WebContentsView: the

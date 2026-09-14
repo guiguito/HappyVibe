@@ -22,6 +22,13 @@ import * as path from "node:path";
 import { EMPTY_RULES, parseRulesFile, type RulesFile } from "./hv-rules";
 import { childDecision } from "./hv-child-rules";
 
+/**
+ * PRD §4 (Windows round): the filesystem is case-insensitive on win32, so every path
+ * a rule inspects folds case and separators first. Read here rather than inside the
+ * engine, which stays import-free because the renderer loads it too.
+ */
+const CI_PATHS = process.platform === "win32";
+
 /** Exported for the contract test — the audit row shape main ingests (FR7). */
 export interface ChildAuditRow {
   ts: string;
@@ -207,7 +214,11 @@ export default function hvChildGuard(pi: {
     // is infrastructure noise in a log a user reads to see what the agent did.
     if (isOwnTaskRead(tool, input, taskFile)) return undefined;
     const workspace = process.cwd();
-    const d = childDecision(rules, { tool, input, workspace }, { bypass, rulesReadable });
+    const d = childDecision(
+      rules,
+      { tool, input, workspace, caseInsensitivePaths: CI_PATHS },
+      { bypass, rulesReadable },
+    );
     // PRD §12: a sub-agent's work belongs in the workspace. Applied AFTER
     // childDecision so `wouldHave` still reports what the RULES said (the
     // engine's RuleAction, per the audit-row convention) while `decision`
