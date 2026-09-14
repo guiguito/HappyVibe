@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { isNearBottom } from "../src/renderer/src/components/Transcript";
@@ -80,5 +80,53 @@ test("a send re-latches following, per the reported expectation", () => {
     path.join(__dirname, "..", "src", "renderer", "src", "components", "Transcript.tsx"), "utf8");
   // "When a prompt is sent autoscroll restarts" — the nonce effect must set the
   // flag, not merely scroll once.
-  expect(src).toMatch(/scrollNonce[\s\S]{0,400}follow\.current = true/);
+  // §7 round 24: the write goes through `setFollow`, which sets the ref AND the
+  // state the Jump-to-latest button reads. Same intent, one more consumer.
+  expect(src).toMatch(/scrollNonce[\s\S]{0,400}setFollow\(true\)/);
+});
+
+/**
+ * §7 round 24 — the follow flag became observable so it can be SHOWN.
+ *
+ * Round 11 made following track a scroll EVENT rather than post-commit
+ * geometry, which was right and left one gap: the flag lived in a ref, so
+ * nothing on screen ever said the follow had stopped, and re-latching meant
+ * landing inside a 120 px window whose bottom edge keeps moving away while the
+ * agent writes. The button IS the indicator — it exists only while the follow
+ * is off — so its absence is as load-bearing as its presence.
+ */
+describe("jump to latest", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/renderer/src/components/Transcript.tsx"), "utf8");
+
+  test("the follow flag drives a render, not just the effect", () => {
+    expect(src).toContain("setFollow");
+    expect(src).toContain("const [following, setFollowing]");
+  });
+
+  test("the ref is still the source of truth the scroll effect reads", () => {
+    // A state read inside that effect would be a frame stale, which is the bug
+    // round 11 spent a round removing. setFollow writes BOTH.
+    expect(src).toContain("if (!follow.current) return;");
+    expect(src).toMatch(/follow\.current = v;/);
+  });
+
+  test("the button renders only while the follow is OFF", () => {
+    expect(src).toContain("{!following && (");
+    expect(src).toContain("Jump to latest");
+  });
+
+  /**
+   * Deliberately absent. The stream commits once per animation frame, so a
+   * smooth scroll is interrupted ~60 times a second and stutters worse than
+   * the instant one. The search highlighter's own smooth scroll is a different
+   * call site and stays.
+   */
+  test("the follow does NOT use smooth scrolling", () => {
+    const follow = src.slice(src.indexOf("const onScroll"), src.indexOf("const [tailExpanded"));
+    expect(follow).not.toContain("smooth");
+  });
+
+  test("the scroll container keeps its own handler after the wrapper lands", () => {
+    expect(src).toContain("ref={scrollRef} onScroll={onScroll}");
+  });
 });

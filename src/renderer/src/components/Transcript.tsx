@@ -608,12 +608,30 @@ export function Transcript({
    */
   const follow = useRef(true);
 
+  /**
+   * §7 round 24 — the same flag, mirrored into state so the view can say so.
+   *
+   * The ref stays the source of truth: the scroll effect below reads it
+   * synchronously on every commit, and a state read there would be a frame
+   * stale — which is the exact bug round 11 spent a round removing. This only
+   * ever renders on a CHANGE, so a scroll-event storm costs nothing.
+   */
+  const [following, setFollowing] = useState(true);
+  const setFollow = (v: boolean): void => {
+    follow.current = v;
+    setFollowing((p) => (p === v ? p : v));
+  };
+  const jumpToLatest = (): void => {
+    setFollow(true);
+    bottom.current?.scrollIntoView({ block: "end" });
+  };
+
   // Both directions, deliberately: scrolling away stops the follow, and scrolling
   // back to the bottom resumes it. Our own scrollIntoView also lands here and
   // sets it true, which is harmless and keeps the two in agreement.
   const onScroll = (): void => {
     const box = scrollRef.current;
-    if (box) follow.current = isNearBottom(box);
+    if (box) setFollow(isNearBottom(box));
   };
 
   useEffect(() => {
@@ -637,7 +655,7 @@ export function Transcript({
   useEffect(() => {
     if (landed.current || items.length === 0) return;
     landed.current = true;
-    follow.current = true;
+    setFollow(true);
     bottom.current?.scrollIntoView({ block: "end" });
   }, [items]);
 
@@ -647,7 +665,7 @@ export function Transcript({
     if (!scrollNonce) return;
     // A send re-latches the follow: having scrolled up to read something is not a
     // decision to stop watching the NEXT answer.
-    follow.current = true;
+    setFollow(true);
     bottom.current?.scrollIntoView({ block: "end" });
   }, [scrollNonce]);
 
@@ -723,69 +741,90 @@ export function Transcript({
   }
 
   return (
-    <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-      {header}
-      <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
-        {/* Round 15: the held-back head of a long conversation. Same disclosure
-            shape as §9's compaction boundary, and deliberately a different
-            sentence: that one means "the agent cannot see this", this one only
-            means "not drawn yet". */}
-        {hiddenCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setTailExpanded(true)}
-            className="self-center rounded-full border-2 border-line bg-card px-3 py-1 text-[11px] font-bold text-ink-soft hover:border-honey hover:text-ink cursor-pointer"
-          >
-            Show earlier messages ({hiddenCount})
-          </button>
-        )}
-        {/* §9 round 9: the loaded pre-compaction region sits at the very top and
-            is labelled once, here, rather than per item. */}
-        {shown[0] && "outOfContext" in shown[0] && shown[0].outOfContext && (
-          <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wide text-ink-soft/70">
-            <span className="h-px flex-1 bg-line" />
-            <span>earlier — not in the agent&apos;s context</span>
-            <span className="h-px flex-1 bg-line" />
-          </div>
-        )}
-        {shown.map((it, i) => {
-          const item = (
-            <MessageItem
-              it={it}
-              onRetry={onRetry}
-              workspace={workspace}
-              sessionId={sessionId}
-              onOpenFile={onOpenFile}
-              onRewind={onRewind}
-              onLoadEarlier={onLoadEarlier}
-            />
-          );
-          // Dimmed items get a wrapper; everything else stays a direct flex
-          // child, so `self-end` / `self-center` positioning is untouched —
-          // which is why A7's enter rides a `display: contents` wrapper rather
-          // than a box of its own. The animation is on the ITEM's own subtree
-          // via `[data-live] > *`, since `contents` generates no box to animate.
-          return "outOfContext" in it && it.outOfContext ? (
-            <div key={thinkingKey(it, i, collapseNonce)} className="flex flex-col opacity-60">{item}</div>
-          ) : (
-            <div key={thinkingKey(it, i, collapseNonce)} className="contents" data-live={it.live || undefined}>
-              {item}
+    // §7 round 24: `relative` is the whole reason this wrapper exists — the
+    // Jump-to-latest button is `absolute` and positions against the nearest
+    // POSITIONED ancestor. `flex-1 min-h-0` moves up here so the parent's
+    // sizing is unchanged; the scroll box keeps its own `flex-1` inside it.
+    <div className="flex-1 min-h-0 relative flex flex-col">
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+        {header}
+        <div className="max-w-3xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
+          {/* Round 15: the held-back head of a long conversation. Same disclosure
+              shape as §9's compaction boundary, and deliberately a different
+              sentence: that one means "the agent cannot see this", this one only
+              means "not drawn yet". */}
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setTailExpanded(true)}
+              className="self-center rounded-full border-2 border-line bg-card px-3 py-1 text-[11px] font-bold text-ink-soft hover:border-honey hover:text-ink cursor-pointer"
+            >
+              Show earlier messages ({hiddenCount})
+            </button>
+          )}
+          {/* §9 round 9: the loaded pre-compaction region sits at the very top and
+              is labelled once, here, rather than per item. */}
+          {shown[0] && "outOfContext" in shown[0] && shown[0].outOfContext && (
+            <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wide text-ink-soft/70">
+              <span className="h-px flex-1 bg-line" />
+              <span>earlier — not in the agent&apos;s context</span>
+              <span className="h-px flex-1 bg-line" />
             </div>
-          );
-        })}
-        {/* Perf: the in-progress turn renders here, outside `items`, so a delta
-            re-renders only this bubble — committed messages stay memoized. */}
-        {thinking && <ThinkingBlock text={thinking} live />}
-        {streaming && <AssistantBubble text={streaming} />}
-        {busy && (
-          <div className="flex items-center gap-2 text-ink-soft text-sm">
-            <span className="size-2 rounded-full bg-honey animate-bounce [animation-delay:0ms]" />
-            <span className="size-2 rounded-full bg-honey animate-bounce [animation-delay:120ms]" />
-            <span className="size-2 rounded-full bg-honey animate-bounce [animation-delay:240ms]" />
-          </div>
-        )}
-        <div ref={bottom} />
+          )}
+          {shown.map((it, i) => {
+            const item = (
+              <MessageItem
+                it={it}
+                onRetry={onRetry}
+                workspace={workspace}
+                sessionId={sessionId}
+                onOpenFile={onOpenFile}
+                onRewind={onRewind}
+                onLoadEarlier={onLoadEarlier}
+              />
+            );
+            // Dimmed items get a wrapper; everything else stays a direct flex
+            // child, so `self-end` / `self-center` positioning is untouched —
+            // which is why A7's enter rides a `display: contents` wrapper rather
+            // than a box of its own. The animation is on the ITEM's own subtree
+            // via `[data-live] > *`, since `contents` generates no box to animate.
+            return "outOfContext" in it && it.outOfContext ? (
+              <div key={thinkingKey(it, i, collapseNonce)} className="flex flex-col opacity-60">{item}</div>
+            ) : (
+              <div key={thinkingKey(it, i, collapseNonce)} className="contents" data-live={it.live || undefined}>
+                {item}
+              </div>
+            );
+          })}
+          {/* Perf: the in-progress turn renders here, outside `items`, so a delta
+              re-renders only this bubble — committed messages stay memoized. */}
+          {thinking && <ThinkingBlock text={thinking} live />}
+          {streaming && <AssistantBubble text={streaming} />}
+          {busy && (
+            <div className="flex items-center gap-2 text-ink-soft text-sm">
+              <span className="size-2 rounded-full bg-honey animate-bounce [animation-delay:0ms]" />
+              <span className="size-2 rounded-full bg-honey animate-bounce [animation-delay:120ms]" />
+              <span className="size-2 rounded-full bg-honey animate-bounce [animation-delay:240ms]" />
+            </div>
+          )}
+          <div ref={bottom} />
+        </div>
       </div>
+      {/* The indicator that following STOPPED, not a permanent control — so it
+          is absent whenever the follow is on. Small box on purpose:
+          browserCoverage judges an `absolute` candidate by its RECTANGLE, and a
+          full-width strip is what blanked a browser pane in round 11. z-20 is
+          the readout layer; dialogs own 100 (tests/modal-layer.test.ts). */}
+      {!following && (
+        <button
+          type="button"
+          onClick={jumpToLatest}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-full border-2 border-ink/80 bg-card px-3 py-1.5 text-xs font-bold shadow-sticker hover:bg-paper-deep cursor-pointer"
+        >
+          Jump to latest
+          <span aria-hidden>↓</span>
+        </button>
+      )}
     </div>
   );
 }
