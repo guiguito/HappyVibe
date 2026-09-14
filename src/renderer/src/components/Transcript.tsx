@@ -198,14 +198,21 @@ function ThinkingBlock({ text, live, ms }: { text: string; live?: boolean; ms?: 
         className="flex items-center gap-1.5 text-[11px] font-medium text-ink-soft/60 hover:text-ink-soft cursor-pointer"
       >
         <span className={`transition-transform ${open ? "rotate-90" : ""}`}>›</span>
-        {thinkingLabel({ live, ms })}
-        {live && (
-          <span className="hv-dots flex items-center gap-0.5" aria-hidden>
-            <span className="size-1 rounded-full bg-current" />
-            <span className="size-1 rounded-full bg-current" />
-            <span className="size-1 rounded-full bg-current" />
-          </span>
-        )}
+        {/* ONE flex item, so the button's `gap-1.5` cannot open a space between
+            the word and its own ellipsis — "Thinking…", not "Thinking  …". */}
+        <span>
+          {thinkingLabel({ live, ms })}
+          {live && (
+            // Real period characters, inheriting the label's own font and size
+            // — not drawn circles, which read as a status light rather than as
+            // a sentence still being written.
+            <span className="hv-dots" aria-hidden>
+              <span>.</span>
+              <span>.</span>
+              <span>.</span>
+            </span>
+          )}
+        </span>
       </button>
       {open && (
         <div className="md md-quiet mt-1 text-ink-soft break-words max-h-64 overflow-y-auto">

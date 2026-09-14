@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { thinkingLabel } from "../src/renderer/src/thinkingLabel";
 
@@ -60,8 +60,93 @@ describe("the live block is collapsed, which is what the PRD already decided", (
   });
 
   test("the dots are rendered, and only while live", () => {
-    expect(src).toContain("hv-dots");
-    expect(src).toContain("thinkingLabel");
+    expect(decl).toContain("hv-dots");
+    expect(decl).toContain("thinkingLabel");
+    expect(decl).toMatch(/\{live && \([\s\S]{0,400}hv-dots/);
+  });
+
+  /**
+   * The ellipsis is TEXT, in the label's own font — "Thinking." → ".." → "..."
+   * on a loop. The first cut drew three `rounded-full` circles fading in and
+   * out, which reads as a status light rather than as a sentence still being
+   * written, and which ignores the font entirely.
+   */
+  test("the dots are period characters, not drawn circles", () => {
+    const dots = decl.slice(decl.indexOf('className="hv-dots"'), decl.indexOf("</span>", decl.indexOf('className="hv-dots"')) + 200);
+    expect(dots).toContain("<span>.</span>");
+    expect(dots).not.toContain("rounded-full");
+    expect(dots).not.toContain("bg-current");
+  });
+});
+
+describe("the ellipsis counts up rather than fading", () => {
+  /**
+   * `styles.css` is the ONE stylesheet the app loads — `src/renderer/src/main.tsx`
+   * imports it and nothing else. The first cut of this animation was appended
+   * to an `index.css` that did not exist, which Vite happily ignored: the
+   * component rendered its three dots and none of them ever moved, with a green
+   * gate and a clean build. Hence the built-bundle assertion below.
+   */
+  const css = readFileSync(path.join(process.cwd(), "src/renderer/src/styles.css"), "utf8");
+
+  test("only the second and third dots animate — an ellipsis rests at one dot", () => {
+    expect(css).toContain("hv-dots > span:nth-child(2)");
+    expect(css).toContain("hv-dots > span:nth-child(3)");
+    expect(css).not.toContain("hv-dots > span:nth-child(1)");
+  });
+
+  /** Sliced, not regexed: a keyframe body holds its own braces, so `[^}]*`
+      stops at the first inner block and never reaches the second stop. */
+  const frames = (name: string): string => {
+    const at = css.indexOf(`@keyframes ${name}`);
+    return at < 0 ? "" : css.slice(at, css.indexOf("\n}", at));
+  };
+
+  test("the two keyframes switch at the thirds, so the count is 1 → 2 → 3", () => {
+    const two = frames("hv-dot-2");
+    expect(two).toContain("32.9%");
+    expect(two).toContain("33%");
+    expect(two.indexOf("opacity: 0")).toBeLessThan(two.indexOf("opacity: 1"));
+
+    const three = frames("hv-dot-3");
+    expect(three).toContain("65.9%");
+    expect(three).toContain("66%");
+    expect(three.indexOf("opacity: 0")).toBeLessThan(three.indexOf("opacity: 1"));
+  });
+
+  test("both run on the same clock, or the dots drift apart", () => {
+    expect(css).toContain("animation: hv-dot-2 1.2s infinite");
+    expect(css).toContain("animation: hv-dot-3 1.2s infinite");
+  });
+
+  test("reduced motion shows a complete, still ellipsis", () => {
+    const rm = css.slice(css.lastIndexOf("prefers-reduced-motion"));
+    expect(rm).toContain("animation: none");
+    expect(rm).toContain("opacity: 1");
+  });
+
+  /**
+   * The assertion that would have caught the dead stylesheet.
+   *
+   * Every check above passes against a .css file nothing imports — the rules
+   * are real, they are just never loaded. Only the emitted bundle proves the
+   * animation can run. `npm run gate` builds before it tests, so in the gate
+   * this runs against fresh output; it skips rather than passing vacuously
+   * when `out/` is absent.
+   */
+  test("the keyframes reach the BUILT css bundle", () => {
+    const assets = path.join(process.cwd(), "out/renderer/assets");
+    if (!existsSync(assets)) {
+      expect(existsSync(assets), "no build output — run `npm run build` first").toBe(false);
+      return;
+    }
+    const bundled = readdirSync(assets)
+      .filter((f) => f.endsWith(".css"))
+      .map((f) => readFileSync(path.join(assets, f), "utf8"))
+      .join("\n");
+    expect(bundled).toContain("@keyframes hv-dot-2");
+    expect(bundled).toContain("@keyframes hv-dot-3");
+    expect(bundled).toContain("hv-dots");
   });
 });
 

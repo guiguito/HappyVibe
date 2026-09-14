@@ -432,3 +432,30 @@
   .hv-done-title,
   .hv-done-body { opacity: 1; transform: none; }
 }
+
+/* §7 round 24 — "Thinking." → "Thinking.." → "Thinking..." on a loop.
+
+   Three real period characters in the label's own font (see ThinkingBlock), so
+   it reads as a sentence still being written rather than as a status light.
+
+   Hidden with OPACITY and never by removing them: all three always occupy
+   their width, so the word beside them cannot jitter as the count changes.
+   The first dot is always on — the resting state of an ellipsis is one dot,
+   not none — so only the second and third animate.
+
+   The pairs of near-identical percentages are a hard switch, not a fade: the
+   dot appears at the third boundary instead of easing in over it. */
+@keyframes hv-dot-2 {
+  0%, 32.9% { opacity: 0; }
+  33%, 100% { opacity: 1; }
+}
+@keyframes hv-dot-3 {
+  0%, 65.9% { opacity: 0; }
+  66%, 100% { opacity: 1; }
+}
+.hv-dots > span:nth-child(2) { animation: hv-dot-2 1.2s infinite; }
+.hv-dots > span:nth-child(3) { animation: hv-dot-3 1.2s infinite; }
+@media (prefers-reduced-motion: reduce) {
+  /* Still the honest resting state: a complete ellipsis, standing still. */
+  .hv-dots > span { animation: none; opacity: 1; }
+}
