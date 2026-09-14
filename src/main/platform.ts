@@ -40,6 +40,8 @@ export interface Platform {
   readCommand(pid: number): string | null;
   /** The default interactive shell for §26 terminals. */
   terminalShell(): string;
+  /** The arguments that default shell wants. */
+  terminalShellArgs(): string[];
   /** Which shell tool the agent gets, probed where Pi probes. */
   agentShell(): { shell: AgentShell; bashPath: string | null };
   /** Canonical comparison key for a workspace path. */
@@ -160,6 +162,16 @@ export function makePlatform(deps: PlatformDeps): Platform {
       if (typeof s === "string" && s) return s;
       // /bin/zsh rather than /bin/sh on macOS: it is the OS default login shell.
       return deps.platform === "darwin" ? "/bin/zsh" : "/bin/bash";
+    },
+
+    terminalShellArgs() {
+      // `-l` is a POSIX LOGIN-shell flag, and it exists for a macOS reason: a
+      // GUI-launched app inherits launchd's minimal PATH, so the shell has to read the
+      // user's profile to find their tooling. Windows inherits correctly (shellPath.ts
+      // has said so since long before this round), and PowerShell rejects the flag
+      // outright — "The term '-l' is not recognized" — so the terminal died at spawn
+      // with exit code 1 and a tab full of a PowerShell error.
+      return win ? [] : ["-l"];
     },
 
     agentShell() {

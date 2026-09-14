@@ -193,3 +193,32 @@ describe("fontStack", () => {
     }
   });
 });
+
+describe("§4 Windows round — the shell's arguments belong to the shell", () => {
+  const d = DEFAULT_TERMINAL_SETTINGS;
+  const win = makePlatform({
+    platform: "win32", execPath: "C:\\x.exe",
+    env: { PATH: "C:\\PS", COMSPEC: "C:\\Windows\\System32\\cmd.exe" },
+    existsSync: (f: string) => f === "C:\\PS\\powershell.exe",
+    exec: () => ({ status: 0, stdout: "" }),
+  });
+  const mac = makePlatform({
+    platform: "darwin", execPath: "/x", env: {}, existsSync: () => false,
+    exec: () => ({ status: 0, stdout: "" }),
+  });
+
+  it("drops the POSIX -l on Windows, where PowerShell rejects it outright", () => {
+    // Measured in the running app before the fix: the terminal opened, printed
+    // "The term '-l' is not recognized as the name of a cmdlet", and exited 1.
+    expect(resolveSpawn(d, {}, win).args).toEqual([]);
+    expect(resolveSpawn(d, {}, mac).args).toEqual(["-l"]);
+  });
+
+  it("never second-guesses an explicit choice", () => {
+    // A user who picked their own shell keeps their own arguments, on either platform.
+    expect(resolveSpawn({ ...d, shellPath: "C:\\Git\\bin\\bash.exe" }, {}, win).args).toEqual(["-l"]);
+    // And edited arguments survive even on the default shell.
+    expect(resolveSpawn({ ...d, shellArgs: ["-NoLogo"] }, {}, win).args).toEqual(["-NoLogo"]);
+    expect(resolveSpawn({ ...d, shellArgs: [] }, {}, mac).args).toEqual([]);
+  });
+});

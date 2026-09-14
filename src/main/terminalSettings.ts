@@ -163,6 +163,9 @@ export function mergeTerminalSettings(
  * IS an xterm-256color terminal and letting a stale inherited TERM through
  * produces a shell that renders colours it is not being given.
  */
+const sameArgs = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
 export function resolveSpawn(
   s: TerminalSettings,
   env: NodeJS.ProcessEnv,
@@ -173,7 +176,14 @@ export function resolveSpawn(
   for (const [k, v] of Object.entries(env)) if (typeof v === "string") inherited[k] = v;
   return {
     file: s.shellPath ?? plat.terminalShell(),
-    args: s.shellArgs,
+    // The platform's own arguments, but ONLY while the user is still on its own
+    // shell AND has not edited the arguments — an explicit choice is never
+    // second-guessed. Without this a Windows terminal spawns PowerShell with the
+    // POSIX `-l` and dies at once (PRD §4, Windows round).
+    args:
+      s.shellPath === null && sameArgs(s.shellArgs, DEFAULT_TERMINAL_SETTINGS.shellArgs)
+        ? plat.terminalShellArgs()
+        : s.shellArgs,
     // BROWSER=none stops a dev server started in here from throwing the page at
     // the SYSTEM browser. Not a Node behaviour — it is the create-react-app
     // convention Vite and react-scripts read (vite openBrowser: `.js` path ⇒ run
