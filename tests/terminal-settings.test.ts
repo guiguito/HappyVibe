@@ -80,10 +80,10 @@ describe("mergeTerminalSettings", () => {
 describe("resolveSpawn", () => {
   const d = DEFAULT_TERMINAL_SETTINGS;
 
-  // The default now comes from the platform seam (PRD §4), so these inject one
-  // instead of relying on the host — which is what lets the Windows arm below be
-  // asserted from macOS, and vice versa.
-  const posix = (env: Record<string, string>) =>
+  // The default comes from the platform seam (PRD §4), so these inject one instead of
+  // relying on the host — which is what lets the Windows arm be asserted from macOS,
+  // and the POSIX one from Windows.
+  const posix = (env: Record<string, string> = {}) =>
     makePlatform({ platform: "darwin", execPath: "/x", env, existsSync: () => false, exec: () => ({ status: 0, stdout: "" }) });
 
   it("prefers the configured shell, then $SHELL, then the platform default", () => {
@@ -106,12 +106,12 @@ describe("resolveSpawn", () => {
   });
 
   it("passes the shell arguments through", () => {
-    expect(resolveSpawn(d, {}).args).toEqual(["-l"]);
-    expect(resolveSpawn({ ...d, shellArgs: [] }, {}).args).toEqual([]);
+    expect(resolveSpawn(d, {}, posix({})).args).toEqual(["-l"]);
+    expect(resolveSpawn({ ...d, shellArgs: [] }, {}, posix({})).args).toEqual([]);
   });
 
   it("merges extra env OVER the inherited env", () => {
-    const r = resolveSpawn({ ...d, env: { FOO: "2" } }, { FOO: "1", BAR: "3" });
+    const r = resolveSpawn({ ...d, env: { FOO: "2" } }, { FOO: "1", BAR: "3" }, posix());
     expect(r.env.FOO).toBe("2");
     expect(r.env.BAR).toBe("3");
   });
@@ -121,20 +121,20 @@ describe("resolveSpawn", () => {
     // convention Vite honours) and otherwise throws the page at Chrome. The app
     // has its own browser (§28), so "none" is the default — but only a default:
     // the settings env field is how someone says they want the real thing.
-    expect(resolveSpawn(d, {}).env.BROWSER).toBe("none");
-    expect(resolveSpawn(d, { BROWSER: "firefox" }).env.BROWSER).toBe("none");
-    expect(resolveSpawn({ ...d, env: { BROWSER: "firefox" } }, {}).env.BROWSER).toBe("firefox");
+    expect(resolveSpawn(d, {}, posix({})).env.BROWSER).toBe("none");
+    expect(resolveSpawn(d, { BROWSER: "firefox" }, posix({})).env.BROWSER).toBe("none");
+    expect(resolveSpawn({ ...d, env: { BROWSER: "firefox" } }, {}, posix({})).env.BROWSER).toBe("firefox");
   });
 
   it("forces TERM last, so a stale inherited value cannot win", () => {
     // xterm.js IS xterm-256color. Inheriting "dumb" from a launchd env would
     // give a shell that renders none of the colours it is being sent.
-    expect(resolveSpawn(d, { TERM: "dumb" }).env.TERM).toBe("xterm-256color");
-    expect(resolveSpawn({ ...d, env: { TERM: "dumb" } }, {}).env.TERM).toBe("xterm-256color");
+    expect(resolveSpawn(d, { TERM: "dumb" }, posix({})).env.TERM).toBe("xterm-256color");
+    expect(resolveSpawn({ ...d, env: { TERM: "dumb" } }, {}, posix({})).env.TERM).toBe("xterm-256color");
   });
 
   it("drops undefined inherited values instead of stringifying them", () => {
-    const r = resolveSpawn(d, { GOOD: "1", GONE: undefined });
+    const r = resolveSpawn(d, { GOOD: "1", GONE: undefined }, posix());
     expect(r.env.GOOD).toBe("1");
     expect("GONE" in r.env).toBe(false);
   });

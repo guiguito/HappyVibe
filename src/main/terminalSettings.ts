@@ -7,7 +7,13 @@
  * passed through verbatim by the renderer. Scope is GLOBAL (§26) — appearance
  * is a property of the person, not of the project.
  */
-import { platform, type Platform } from "./platform";
+// TYPE-ONLY, and that is load-bearing: three renderer components import values from
+// this module (fontStack, DEFAULT_TERMINAL_SETTINGS), so a runtime import of the
+// platform seam would put node:child_process in the BROWSER bundle. It typechecks and
+// it runs in dev; `npm run build` fails with "spawnSync is not exported by
+// __vite-browser-external". Same trap as src/main/schedules.ts, one module over — so
+// resolveSpawn takes the platform as an argument rather than reaching for it.
+import type { Platform } from "./platform";
 
 export type TerminalStyle = "workshop" | "paper" | "carbon";
 export type CursorStyle = "bar" | "block" | "underline";
@@ -160,8 +166,8 @@ export function mergeTerminalSettings(
 export function resolveSpawn(
   s: TerminalSettings,
   env: NodeJS.ProcessEnv,
-  /** PRD §4 Windows round: injected so a Windows default is asserted on macOS. */
-  plat: Platform = platform,
+  /** PRD §4 Windows round: REQUIRED — see the type-only import above. */
+  plat: Platform,
 ): { file: string; args: string[]; env: Record<string, string> } {
   const inherited: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) if (typeof v === "string") inherited[k] = v;

@@ -173,7 +173,7 @@ export class TerminalManager {
       ) => Pty;
     };
 
-    const { file, args, env } = resolveSpawn(settings, process.env);
+    const { file, args, env } = resolveSpawn(settings, process.env, platform);
     const id = `t${++seq}-${Date.now().toString(36)}`;
     const shellName = path.basename(file);
 
