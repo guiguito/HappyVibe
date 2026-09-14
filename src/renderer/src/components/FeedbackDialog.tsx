@@ -296,7 +296,9 @@ export function FeedbackDialog({
           {confirmDiscard ? (
             <div className="flex-1 min-h-0 flex flex-col gap-3">
               <p className="text-sm font-semibold">{C.discard}</p>
-              <div className="flex gap-2">
+              {/* §20 round 24: right-aligned, confirming action last — the
+                  house rule every other dialog already followed. */}
+              <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setConfirmDiscard(false)} className="rounded-xl border-2 border-line px-3 py-1.5 text-sm font-bold cursor-pointer hover:border-honey">
                   {C.keep}
                 </button>

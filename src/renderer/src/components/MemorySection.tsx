@@ -483,7 +483,13 @@ function ImportModal({
               </div>
             ))}
             <p className="text-xs text-ink-soft mb-3">The destination applies to a whole folder.</p>
-            <div className="flex gap-2">
+            {/* §20 round 24: the second row the sweep found — it was
+                left-aligned AND in the reverse order. Right-aligned now, with
+                the confirming action last, like every other dialog. */}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose} className="rounded-xl border-2 border-line bg-card px-3 py-1.5 text-sm font-bold shadow-sticker cursor-pointer">
+                Cancel
+              </button>
               <button
                 type="button"
                 disabled={busy}
@@ -491,9 +497,6 @@ function ImportModal({
                 className="rounded-xl border-2 border-ink/80 bg-honey px-3 py-1.5 text-sm font-bold shadow-sticker cursor-pointer disabled:opacity-50"
               >
                 {busy ? "Importing…" : "Import selected"}
-              </button>
-              <button type="button" onClick={onClose} className="rounded-xl border-2 border-line bg-card px-3 py-1.5 text-sm font-bold shadow-sticker cursor-pointer">
-                Cancel
               </button>
             </div>
           </>

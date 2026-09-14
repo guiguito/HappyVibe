@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, test, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -178,5 +178,34 @@ describe("a dialog's pop matches how it is centred", () => {
     const flow = css.slice(css.indexOf("@keyframes hv-pop-in-flow {"), css.indexOf(".hv-dialog-flow {"));
     expect(popIn).toContain("translate(-50%, -50%)");
     expect(flow).not.toContain("translate(");
+  });
+});
+
+/**
+ * §20 round 24 — a dialog's action row is right-aligned, confirming action last.
+ *
+ * Reported as one misaligned confirm; a sweep of every `.hv-dialog` /
+ * `.hv-overlay` surface found a second. The rule governs FOOTERS: an inline
+ * confirm inside a dialog's body (the memory detail panel's Edit / Forget) is
+ * a different thing and deliberately out of scope.
+ */
+describe("dialog action rows are right-aligned", () => {
+  const read = (f: string): string =>
+    fs.readFileSync(path.join(process.cwd(), "src/renderer/src/components", f), "utf8");
+
+  test("the feedback dialog's discard confirm", () => {
+    const src = read("FeedbackDialog.tsx");
+    const row = src.slice(src.indexOf("{confirmDiscard ? ("), src.indexOf("{C.discardYes}"));
+    expect(row).toContain("justify-end");
+    // Order: the destructive action is LAST, so it is not the one under the cursor.
+    expect(row).toContain("{C.keep}");
+  });
+
+  test("the memory importer's footer", () => {
+    const src = read("MemorySection.tsx");
+    const at = src.indexOf("Import selected");
+    const row = src.slice(at - 1200, at + 200);
+    expect(row).toContain("justify-end");
+    expect(row.lastIndexOf("Cancel")).toBeLessThan(row.indexOf("Import selected"));
   });
 });
