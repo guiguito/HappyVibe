@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "§25 brand-icon corrections for the generated plugin catalog.",
+    "\u00a725 brand-icon corrections for the generated plugin catalog.",
     "The generator auto-matches a plugin's name, then its repo owner, against the",
     "real simple-icons slugs parsed out of node_modules/simple-icons-font. Auto-match",
     "is right about 45% of the time and WRONG often enough to need this file: a logo",
@@ -15,11 +15,13 @@
   "overrides": {
     "circle-skills": "si-circleci",
     "context7": "si-upstash",
-    "aws-serverless": null
+    "aws-serverless": null,
+    "informatica-for-claude-platform": null
   },
   "_notes": {
     "circle-skills": "auto-match picked si-circle, a payments company; this is CircleCI",
     "context7": "a product of Upstash; simple-icons has no si-context7",
-    "aws-serverless": "auto-match picked si-serverless, which is a different vendor. simple-icons ships no AWS mark at all — it was removed in v13's 'request permission, or remove' batch (see BrandMark.tsx) — so this takes the monogram rather than someone else's logo."
+    "aws-serverless": "auto-match picked si-serverless, which is a different vendor. simple-icons ships no AWS mark at all \u2014 it was removed in v13's 'request permission, or remove' batch (see BrandMark.tsx) \u2014 so this takes the monogram rather than someone else's logo.",
+    "informatica-for-claude-platform": "auto-match picked si-claude off the 'claude' word in the name \u2014 Anthropic's mark on Informatica's plugin is a false publisher claim; simple-icons ships no Informatica mark, so monogram."
   }
 }

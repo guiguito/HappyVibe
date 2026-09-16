@@ -1,6 +1,6 @@
 {
   "source": "github.com/anthropics/skills",
   "ref": "main",
-  "commit": "1f630fdf9259cec4a14913127dfd7c3b69ef72eb",
+  "commit": "34040c9c568585f6929bedeaad110ad08f079624",
   "skills": ["skill-creator", "frontend-design", "brand-guidelines"]
 }
