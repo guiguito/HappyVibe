@@ -112,6 +112,8 @@ export const ALLOWED_MANIFEST_KEYS = new Set<string>([
   "categories",
   "defaultEnabled",
   "minClaudeCodeVersion",
+  // A URL to the vendor's privacy policy (real, from `dynatrace`, 2026-09-16).
+  "privacyPolicy",
   // Allowed as a KEY only — its contents are inspected for component types by
   // detectComponents, because `experimental.monitors` is how a monitor is
   // declared (real, from `convex`) and a monitor is an out-of-band shell-exec

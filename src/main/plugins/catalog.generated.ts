@@ -31,7 +31,7 @@ export interface PluginCatalogEntry {
 }
 
 /** When this catalog was generated, shown in the UI so staleness is disclosed. */
-export const CATALOG_GENERATED_AT = "2026-08-04";
+export const CATALOG_GENERATED_AT = "2026-09-16";
 /** The marketplace list ref these verdicts came from. */
 export const CATALOG_MARKETPLACE_REF = "main";
 
@@ -60,16 +60,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Harness Adobe's creative AI-powered tools to edit images, automate design workflows, and bring creative visions to life — from background removal to vectorization and professional retouching.",
     "category": "design",
     "homepage": "https://github.com/adobe/skills/tree/main/plugins/creative-cloud/adobe-for-creativity",
-    "sha": "17ef6fb53d2eb23158dec11823ff569258b7a26e",
+    "sha": "1307e2c03b9cd20c49872be8cbdfda7ee9aa8c7e",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/adobe/skills.git",
-      "sha": "17ef6fb53d2eb23158dec11823ff569258b7a26e",
+      "sha": "1307e2c03b9cd20c49872be8cbdfda7ee9aa8c7e",
       "ref": "main",
       "subdir": "plugins/creative-cloud/adobe-for-creativity"
     },
     "counts": {
-      "skills": 7,
+      "skills": 8,
       "commands": 0,
       "servers": 1
     }
@@ -78,10 +78,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "name": "aikido",
     "description": "Aikido Security scanning for Claude Code — SAST, secrets, and IaC vulnerability detection powered by the Aikido MCP server.",
     "homepage": "https://github.com/AikidoSec/aikido-claude-plugin",
-    "sha": "621557d37e4e1f28db40a57653577d3400880e70",
+    "sha": "02f018ad4da175a2a5ad6ca9451c3d309d105fab",
     "source": {
       "repoUrl": "https://github.com/AikidoSec/aikido-claude-plugin.git",
-      "sha": "621557d37e4e1f28db40a57653577d3400880e70",
+      "sha": "02f018ad4da175a2a5ad6ca9451c3d309d105fab",
       "subdir": ""
     },
     "counts": {
@@ -115,11 +115,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Bring Airwallex's global financial infrastructure to Claude. Orchestrate actions across your account in plain language, e.g., set up invoices from a PO, onboard suppliers from invoices, and check current cash position across currencies. AgentOS bundles pre-built finance Skills with MCP servers. A public CLI connects your agent to Airwallex's capabilities.",
     "category": "productivity",
     "homepage": "https://www.airwallex.com/docs",
-    "sha": "b0bd2c3d65da47e39db8c779501119376d91c431",
+    "sha": "d323dd68c85874f6311a1bd20184f803a96e09a9",
     "ref": "master",
     "source": {
       "repoUrl": "https://github.com/airwallex/airwallex-marketplace.git",
-      "sha": "b0bd2c3d65da47e39db8c779501119376d91c431",
+      "sha": "d323dd68c85874f6311a1bd20184f803a96e09a9",
       "ref": "master",
       "subdir": "plugins/airwallex-agentos"
     },
@@ -130,20 +130,56 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
+    "name": "airwallex-dev",
+    "description": "Build Airwallex payment integrations in your own codebase. Generates the checkout, card-element, onboarding, and subscription-billing code for an Airwallex integration and wires it into your project: Hosted Payment Page, Drop-in and Split Card elements, connected-account KYC onboarding, and Billing Hosted Checkout for subscriptions and card-saving. Also plans card-on-file merchant-initiated flows for AI providers such as top-ups and auto-recharge.",
+    "category": "development",
+    "homepage": "https://www.airwallex.com/docs",
+    "sha": "d4593e33a9e1177a44b895ca0a1d6e015215736f",
+    "ref": "master",
+    "source": {
+      "repoUrl": "https://github.com/airwallex/airwallex-marketplace.git",
+      "sha": "d4593e33a9e1177a44b895ca0a1d6e015215736f",
+      "ref": "master",
+      "subdir": "plugins/airwallex-dev"
+    },
+    "counts": {
+      "skills": 6,
+      "commands": 0,
+      "servers": 1
+    }
+  },
+  {
+    "name": "aiven",
+    "description": "Easily deploy managed PostgreSQL (pg), Kafka, OpenSearch, Clickhouse and other databases, streaming and apps. Free tier available, up and running in minutes.",
+    "category": "database",
+    "homepage": "https://aiven.io",
+    "sha": "634f41d6852957cb9280e9245f2ea6f74645b4f1",
+    "source": {
+      "repoUrl": "https://github.com/aiven/aiven-ai-plugins.git",
+      "sha": "634f41d6852957cb9280e9245f2ea6f74645b4f1",
+      "subdir": ""
+    },
+    "counts": {
+      "skills": 1,
+      "commands": 0,
+      "servers": 1
+    }
+  },
+  {
     "name": "alloydb",
     "description": "Create, connect, and interact with an AlloyDB for PostgreSQL database and data.",
     "category": "database",
     "homepage": "https://cloud.google.com/alloydb",
-    "sha": "3ce1fe143644c31c0ffeb904b31634f8cea06e0c",
+    "sha": "00ee6ce2bcf88b46da4bf298a3ad8c0ad85877c8",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/alloydb.git",
-      "sha": "3ce1fe143644c31c0ffeb904b31634f8cea06e0c",
+      "sha": "00ee6ce2bcf88b46da4bf298a3ad8c0ad85877c8",
       "subdir": ""
     },
     "counts": {
-      "skills": 7,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -151,16 +187,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Create, connect, and interact with an AlloyDB Omni database and data.",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/alloydb-omni",
-    "sha": "66a264765956d2b400c79044b8b92aed34688bf8",
+    "sha": "ae7e42c4e428e303adcc96942f4fc35cb6b27d61",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/alloydb-omni.git",
-      "sha": "66a264765956d2b400c79044b8b92aed34688bf8",
+      "sha": "ae7e42c4e428e303adcc96942f4fc35cb6b27d61",
       "subdir": ""
     },
     "counts": {
-      "skills": 9,
+      "skills": 2,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -168,11 +204,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Guide developers through adding maps, places search, geocoding, routing, and other geospatial features with Amazon Location Service, including authentication setup, SDK integration, and best practices.",
     "category": "location",
     "homepage": "https://github.com/awslabs/agent-plugins",
-    "sha": "c65ee436b0db77bb75d380aef6fbdc9b114edf2a",
+    "sha": "9898ddc4dcf7dd23ddb939cec1b905311dc7381d",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/awslabs/agent-plugins.git",
-      "sha": "c65ee436b0db77bb75d380aef6fbdc9b114edf2a",
+      "sha": "9898ddc4dcf7dd23ddb939cec1b905311dc7381d",
       "ref": "main",
       "subdir": "plugins/amazon-location-service"
     },
@@ -187,16 +223,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Use Amplitude as an expert analyst — instrument Amplitude, discover product opportunities, analyze charts, create dashboards, manage experiments, and understand users and accounts.",
     "category": "monitoring",
     "homepage": "https://github.com/amplitude/mcp-marketplace",
-    "sha": "f7ab391021b3a4edf1c81e6ac249a3c9afbf9fec",
+    "sha": "96fc7d4c58bb33b4e60c334d34ad944c8a246869",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/amplitude/mcp-marketplace.git",
-      "sha": "f7ab391021b3a4edf1c81e6ac249a3c9afbf9fec",
+      "sha": "96fc7d4c58bb33b4e60c334d34ad944c8a246869",
       "ref": "main",
       "subdir": "plugins/amplitude"
     },
     "counts": {
-      "skills": 27,
+      "skills": 37,
       "commands": 0,
       "servers": 1
     }
@@ -223,22 +259,22 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Appwrite tools for Claude Code, including SDK skills, Appwrite MCP servers, and deployment commands.",
     "category": "development",
     "homepage": "https://appwrite.io",
-    "sha": "a42b16918159183a0d556e305fea4d240a9e3823",
+    "sha": "ab3c90b37c95b7068f0c064dc562cf21958e8e19",
     "source": {
       "repoUrl": "https://github.com/appwrite/claude-plugin.git",
-      "sha": "a42b16918159183a0d556e305fea4d240a9e3823",
+      "sha": "ab3c90b37c95b7068f0c064dc562cf21958e8e19",
       "subdir": ""
     },
     "brand": "si-appwrite",
     "counts": {
       "skills": 11,
       "commands": 2,
-      "servers": 2
+      "servers": 1
     }
   },
   {
     "name": "asana",
-    "description": "Asana project management integration. Create and manage tasks, search projects, update assignments, track progress, and integrate your development workflow with Asana's work management platform.",
+    "description": "Asana project management integration. Connects Claude Code to Asana's V2 MCP server to create and manage tasks, search projects, update assignments, and track progress. Requires a one-time Asana OAuth app setup — run /asana-setup after installing.",
     "category": "productivity",
     "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/asana",
     "sha": null,
@@ -250,8 +286,8 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "brand": "si-asana",
     "counts": {
       "skills": 0,
-      "commands": 0,
-      "servers": 1
+      "commands": 1,
+      "servers": 0
     }
   },
   {
@@ -275,15 +311,15 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect to Atlassian products including Jira and Confluence. Search and create issues, access documentation, manage sprints, and integrate your development workflow with Atlassian's collaboration tools.",
     "category": "productivity",
     "homepage": "https://github.com/atlassian/atlassian-mcp-server",
-    "sha": "94a30436435fb526a29f820f5f46250870eb75a0",
+    "sha": "9de1ab435251042efbb6839a1ca748eacecf4727",
     "source": {
       "repoUrl": "https://github.com/atlassian/atlassian-mcp-server.git",
-      "sha": "94a30436435fb526a29f820f5f46250870eb75a0",
+      "sha": "9de1ab435251042efbb6839a1ca748eacecf4727",
       "subdir": ""
     },
     "brand": "si-atlassian",
     "counts": {
-      "skills": 6,
+      "skills": 12,
       "commands": 0,
       "servers": 1
     }
@@ -293,10 +329,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Teamwork Graph CLI is Atlassian's agent-first interface to your entire work context: Jira issues, Confluence pages, Bitbucket PRs, along with your connected third-party data sources. Purpose-built for coding agents like Claude Code (terminal or desktop), and powered by Atlassian's context graph. Try: \"draft a Jira issue from this PR and link it to the epic.\" Using Claude Code in the browser? Install the Atlassian Rovo MCP plugin instead. Run /twg-setup after install to connect Atlassian Teamwork Graph CLI to Claude Code.",
     "category": "productivity",
     "homepage": "https://developer.atlassian.com/cloud/twg-cli/",
-    "sha": "aa6b0b4aba2a083ba66ac11ac5fd5c03378a4265",
+    "sha": "d464e72e7750589e0f0867f171d2dd1d6eece924",
     "source": {
       "repoUrl": "https://github.com/atlassian-labs/twg-plugins.git",
-      "sha": "aa6b0b4aba2a083ba66ac11ac5fd5c03378a4265",
+      "sha": "d464e72e7750589e0f0867f171d2dd1d6eece924",
       "subdir": ""
     },
     "brand": "si-atlassian",
@@ -311,11 +347,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Enterprise-grade auth, easy to implement. Add login, SSO, MFA, and access control to any app with framework-aware guidance.",
     "category": "security",
     "homepage": "https://auth0.com",
-    "sha": "b4c7bc08d30c3ab017bfc43799a01bdebe71c2e8",
+    "sha": "f135610540ea41e4d99882dc1f06162030c7340b",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/auth0/agent-skills.git",
-      "sha": "b4c7bc08d30c3ab017bfc43799a01bdebe71c2e8",
+      "sha": "f135610540ea41e4d99882dc1f06162030c7340b",
       "ref": "main",
       "subdir": "plugins/auth0"
     },
@@ -331,16 +367,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Build, deploy, and operate AI agents on AWS. Skills for scaffolding agents with Amazon Bedrock AgentCore, connecting tools, memory, policies, evaluation, debugging, and production hardening.",
     "category": "development",
     "homepage": "https://github.com/aws/agent-toolkit-for-aws",
-    "sha": "5bf16f7b56b4723f5fdc0f90c1901ffaba8d693a",
+    "sha": "de9d0249ce33f56929dbf605a9e75773ab381f11",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/aws/agent-toolkit-for-aws.git",
-      "sha": "5bf16f7b56b4723f5fdc0f90c1901ffaba8d693a",
+      "sha": "de9d0249ce33f56929dbf605a9e75773ab381f11",
       "ref": "main",
       "subdir": "plugins/aws-agents"
     },
     "counts": {
-      "skills": 7,
+      "skills": 8,
       "commands": 0,
       "servers": 1
     }
@@ -350,11 +386,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Investigate incidents, review code and execute UAT for release readiness, scan code for vulnerabilities, and run penetration tests with AWS DevOps Agent and AWS Security Agent.",
     "category": "development",
     "homepage": "https://github.com/aws/agent-toolkit-for-aws",
-    "sha": "08025af3d27a1eb7c18fe06bf451df8b110e9e0e",
+    "sha": "68d9e8541c45afd2510662bcea69fe1e433ea9db",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/aws/agent-toolkit-for-aws.git",
-      "sha": "08025af3d27a1eb7c18fe06bf451df8b110e9e0e",
+      "sha": "68d9e8541c45afd2510662bcea69fe1e433ea9db",
       "ref": "main",
       "subdir": "plugins/aws-agents-for-devsecops"
     },
@@ -388,11 +424,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Data lake, analytics, and ETL workflows with S3 Tables, AWS Glue, and Athena.",
     "category": "development",
     "homepage": "https://github.com/aws/agent-toolkit-for-aws",
-    "sha": "b4416dddac9b6a0cc5412136e6dbf8f07ffdb31c",
+    "sha": "08ad220e4e9bbc498821ce9360b3dcdf4813121d",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/aws/agent-toolkit-for-aws.git",
-      "sha": "b4416dddac9b6a0cc5412136e6dbf8f07ffdb31c",
+      "sha": "08ad220e4e9bbc498821ce9360b3dcdf4813121d",
       "ref": "main",
       "subdir": "plugins/aws-data-analytics"
     },
@@ -403,34 +439,15 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
-    "name": "aws-startup-advisor",
-    "description": "Personalized architecture, cost, security, and migration guidance for startups. From day-one account setup and security baselines to production-ready infrastructure, cost optimization, and beyond. Includes AWS Activate Credits eligibility, 60+ exclusive startup offers, and multi-account multi-region support. Built on expertise from AWS Startup Solutions Architects and patterns from 350,000+ startups.",
-    "category": "development",
-    "homepage": "https://github.com/awslabs/startups",
-    "sha": "927def0cbf8e3c3d17b670f3054ef049ae84a09a",
-    "ref": "main",
-    "source": {
-      "repoUrl": "https://github.com/awslabs/startups.git",
-      "sha": "927def0cbf8e3c3d17b670f3054ef049ae84a09a",
-      "ref": "main",
-      "subdir": "advisor/plugins/aws-startup-advisor"
-    },
-    "counts": {
-      "skills": 5,
-      "commands": 0,
-      "servers": 2
-    }
-  },
-  {
     "name": "aws-transform",
     "description": "Migrate, modernize, and upgrade codebases to AWS. Transforms .NET Framework to .NET 8/10, mainframe COBOL to Java, VMware VMs to EC2, SQL Server to Aurora, and upgrades Java/Python/Node.js versions and AWS SDKs. AWS Transform - continuous modernization analyzes codebases for tech debt, security issues, and upgrade opportunities, then remediates them.",
     "category": "migration",
     "homepage": "https://github.com/awslabs/agent-plugins",
-    "sha": "34afdf5005325f17d5da2d1443b87f27a53b0a20",
+    "sha": "adc01133bbd01433dcb2c0f98641f2b85694f92f",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/awslabs/agent-plugins.git",
-      "sha": "34afdf5005325f17d5da2d1443b87f27a53b0a20",
+      "sha": "adc01133bbd01433dcb2c0f98641f2b85694f92f",
       "ref": "main",
       "subdir": "plugins/aws-transform"
     },
@@ -445,10 +462,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Agent skills for Azure SQL Developer, the Azure SQL Database engine running locally in a container. Teaches your agent to run the engine, connect, migrate, scaffold, build RAG, wire CI, and go local-to-cloud, using the real Private Preview image instead of the SQL Server image.",
     "category": "database",
     "homepage": "https://github.com/microsoft/azure-sql-database-container",
-    "sha": "eb6ab7ee1839564a3edc36c1e7bb754f3c8f1bf1",
+    "sha": "8a82f442df5bb7bbf65f1eb774e32d1f55a07e04",
     "source": {
       "repoUrl": "https://github.com/microsoft/azure-sql-database-container.git",
-      "sha": "eb6ab7ee1839564a3edc36c1e7bb754f3c8f1bf1",
+      "sha": "8a82f442df5bb7bbf65f1eb774e32d1f55a07e04",
       "subdir": ""
     },
     "counts": {
@@ -462,10 +479,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Build and deploy Base44 full-stack apps with CLI project management and JavaScript/TypeScript SDK development skills",
     "category": "development",
     "homepage": "https://docs.base44.com",
-    "sha": "ee5371011cb43a0dcdf1bab313ee704b461a2eb6",
+    "sha": "592535c8aa52a088eba364a4805e3c34612ff762",
     "source": {
       "repoUrl": "https://github.com/base44/skills.git",
-      "sha": "ee5371011cb43a0dcdf1bab313ee704b461a2eb6",
+      "sha": "592535c8aa52a088eba364a4805e3c34612ff762",
       "subdir": ""
     },
     "counts": {
@@ -479,17 +496,17 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Official Bigdata.com plugin providing financial research, analytics, and intelligence tools powered by Bigdata MCP.",
     "category": "database",
     "homepage": "https://docs.bigdata.com",
-    "sha": "76a043a08c0a10eb73756d04031a613568017067",
+    "sha": "2a52a001366227e205cfa7565d78e8198dc42fa8",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/Bigdata-com/bigdata-plugins-marketplace.git",
-      "sha": "76a043a08c0a10eb73756d04031a613568017067",
+      "sha": "2a52a001366227e205cfa7565d78e8198dc42fa8",
       "ref": "main",
       "subdir": "plugins/bigdata-com"
     },
     "counts": {
-      "skills": 1,
-      "commands": 27,
+      "skills": 27,
+      "commands": 0,
       "servers": 1
     }
   },
@@ -498,16 +515,33 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect, query, and generate data insights for BigQuery datasets and data.",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/bigquery-data-analytics",
-    "sha": "71ac358794f67830651a2de5a6fbdf6184a7d86d",
+    "sha": "8475b9c79e38c92a8e28cefc54890d48c74efebc",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/bigquery-data-analytics.git",
-      "sha": "71ac358794f67830651a2de5a6fbdf6184a7d86d",
+      "sha": "8475b9c79e38c92a8e28cefc54890d48c74efebc",
       "subdir": ""
     },
     "counts": {
-      "skills": 3,
+      "skills": 1,
       "commands": 0,
-      "servers": 0
+      "servers": 1
+    }
+  },
+  {
+    "name": "blackrock-advisor-center-plugin",
+    "description": "BlackRock Advisor Center 360° skills for financial advisors: portfolio review, opportunity and fund-health checks, guided benchmark selection, guided portfolio building, wealth projections, and routing to Advisor Center web workflows. Requires the BlackRock Advisor Center connector and an Advisor Center account.",
+    "category": "productivity",
+    "homepage": "https://github.com/blackrock/advisor-center-agent-skills",
+    "sha": "591c758960c18c26fe8342ddb8ad3ba4dcfac6fe",
+    "source": {
+      "repoUrl": "https://github.com/blackrock/advisor-center-agent-skills.git",
+      "sha": "591c758960c18c26fe8342ddb8ad3ba4dcfac6fe",
+      "subdir": ""
+    },
+    "counts": {
+      "skills": 6,
+      "commands": 0,
+      "servers": 1
     }
   },
   {
@@ -515,11 +549,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Predict structures, screen molecules and proteins, and design binders with Boltz from Claude Code.",
     "category": "development",
     "homepage": "https://boltz.bio",
-    "sha": "70e480ebb14baecfc4456b49eb8b724611470b7c",
+    "sha": "beafb3c16236347ab10fb54f78a5da49cbf7c7bb",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/boltz-bio/boltz-api-skills.git",
-      "sha": "70e480ebb14baecfc4456b49eb8b724611470b7c",
+      "sha": "beafb3c16236347ab10fb54f78a5da49cbf7c7bb",
       "ref": "main",
       "subdir": "plugins/boltz"
     },
@@ -533,11 +567,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "name": "box",
     "description": "Work with your Box content directly from Claude Code — search files, organize folders, collaborate with your team, and use Box AI to answer questions, summarize documents, and extract data without leaving your workflow.",
     "category": "productivity",
-    "homepage": "https://github.com/box/box-for-ai",
-    "sha": "172a8273f5d532c13ef6a3057e50c30e5368a2aa",
+    "homepage": "https://github.com/box/skills",
+    "sha": "35567f913a2bfd7f8b59367c9df3ae14b5ad4cfe",
     "source": {
-      "repoUrl": "https://github.com/box/box-for-ai.git",
-      "sha": "172a8273f5d532c13ef6a3057e50c30e5368a2aa",
+      "repoUrl": "https://github.com/box/skills.git",
+      "sha": "35567f913a2bfd7f8b59367c9df3ae14b5ad4cfe",
       "subdir": ""
     },
     "brand": "si-box",
@@ -604,10 +638,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Official Buildkite skills for Claude Code, Cursor, and other AI coding agents — pipelines, migration, preflight, agent runtime, CLI, and API",
     "category": "development",
     "homepage": "https://buildkite.com",
-    "sha": "5bbd53d496b9dd5cd7b3e0a2d8345daa333c3f4e",
+    "sha": "a4bb20c6bf9ae535335f782015f65b9975065f27",
     "source": {
       "repoUrl": "https://github.com/buildkite/skills.git",
-      "sha": "5bbd53d496b9dd5cd7b3e0a2d8345daa333c3f4e",
+      "sha": "a4bb20c6bf9ae535335f782015f65b9975065f27",
       "subdir": ""
     },
     "brand": "si-buildkite",
@@ -641,10 +675,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "AI-assisted development of SAP Cloud Application Programming Model (CAP) projects. Search CDS models and CAP documentation.",
     "category": "development",
     "homepage": "https://cap.cloud.sap/",
-    "sha": "06062a1520fe29479bee21148b00623c9f835315",
+    "sha": "92dcb0405545c78788303a4ae296da1a942423d5",
     "source": {
       "repoUrl": "https://github.com/cap-js/mcp-server.git",
-      "sha": "06062a1520fe29479bee21148b00623c9f835315",
+      "sha": "92dcb0405545c78788303a4ae296da1a942423d5",
       "subdir": ""
     },
     "counts": {
@@ -658,14 +692,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Control and inspect a live Chrome browser from your coding agent. Record performance traces, analyze network requests, check console messages with source-mapped stack traces, and automate browser actions with Puppeteer.",
     "category": "development",
     "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
-    "sha": "df2c753006ce77cdc8df8c7715d0b5c6675560d4",
+    "sha": "1cec9cd1a3bbf1895c98fa4b4e0e2da5a36e4075",
     "source": {
       "repoUrl": "https://github.com/ChromeDevTools/chrome-devtools-mcp.git",
-      "sha": "df2c753006ce77cdc8df8c7715d0b5c6675560d4",
+      "sha": "1cec9cd1a3bbf1895c98fa4b4e0e2da5a36e4075",
       "subdir": ""
     },
     "counts": {
-      "skills": 6,
+      "skills": 7,
       "commands": 0,
       "servers": 1
     }
@@ -675,17 +709,17 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Ship stablecoin apps faster. Best-practice skills for USDC payments, cross-chain transfers, wallets, and smart contracts — plus Circle's MCP server for real-time SDK and documentation guidance.",
     "category": "development",
     "homepage": "https://www.circle.com",
-    "sha": "c7d269a2025e26410e0e23fb5a73c769dc07d088",
+    "sha": "26dc09ea0746a038c969c6f197feee1267f834b5",
     "ref": "master",
     "source": {
       "repoUrl": "https://github.com/circlefin/skills.git",
-      "sha": "c7d269a2025e26410e0e23fb5a73c769dc07d088",
+      "sha": "26dc09ea0746a038c969c6f197feee1267f834b5",
       "ref": "master",
       "subdir": "plugins/circle"
     },
     "brand": "si-circleci",
     "counts": {
-      "skills": 17,
+      "skills": 18,
       "commands": 0,
       "servers": 1
     }
@@ -712,10 +746,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Install, configure, and integrate CKEditor 5 (free and premium) in any JavaScript project.",
     "category": "development",
     "homepage": "https://ckeditor.com",
-    "sha": "b20d58074d0c2a8737701e31e0d6690cb0f3f612",
+    "sha": "78a9e3fb6f54c6d0426e91510087e4f462d26d46",
     "source": {
       "repoUrl": "https://github.com/ckeditor/skills.git",
-      "sha": "b20d58074d0c2a8737701e31e0d6690cb0f3f612",
+      "sha": "78a9e3fb6f54c6d0426e91510087e4f462d26d46",
       "subdir": ""
     },
     "counts": {
@@ -747,10 +781,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect Claude to your ClickHouse Cloud databases. Browse organizations, services, databases, and table schemas. Run read-only SQL queries against your data and get instant analytical answers. Monitor service backups, review billing costs, and inspect ClickPipe configurations - all through natural conversation.",
     "category": "database",
     "homepage": "https://github.com/ClickHouse/clickhouse-claude-code-plugin",
-    "sha": "fcce1175a863f0833875ad696373ac9f2a408e6e",
+    "sha": "e3229ed4aafbe94e90dd91699e05eee4263d5efe",
     "source": {
       "repoUrl": "https://github.com/ClickHouse/clickhouse-claude-code-plugin.git",
-      "sha": "fcce1175a863f0833875ad696373ac9f2a408e6e",
+      "sha": "e3229ed4aafbe94e90dd91699e05eee4263d5efe",
       "subdir": ""
     },
     "brand": "si-clickhouse",
@@ -765,10 +799,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "28 best practice rules for ClickHouse schema design, query optimization, and data ingestion — prioritized by impact",
     "category": "database",
     "homepage": "https://clickhouse.com",
-    "sha": "6e5458d59b82f6f027bccb258a7be3c6cefe5e08",
+    "sha": "2f6ec4b17a81a435dd116f9ac19d7b45d44dbd61",
     "source": {
       "repoUrl": "https://github.com/ClickHouse/agent-skills.git",
-      "sha": "6e5458d59b82f6f027bccb258a7be3c6cefe5e08",
+      "sha": "2f6ec4b17a81a435dd116f9ac19d7b45d44dbd61",
       "subdir": ""
     },
     "brand": "si-clickhouse",
@@ -783,17 +817,17 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect and interact with a Cloud SQL for MySQL database and data.",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/cloud-sql-mysql",
-    "sha": "180673b26d2ceac50978ff1a82af0b071446b129",
+    "sha": "ed4fbfe3e0cb6770b15b2a66bd1192a684547678",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/cloud-sql-mysql.git",
-      "sha": "180673b26d2ceac50978ff1a82af0b071446b129",
+      "sha": "ed4fbfe3e0cb6770b15b2a66bd1192a684547678",
       "subdir": ""
     },
     "brand": "si-mysql",
     "counts": {
-      "skills": 4,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -801,17 +835,17 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Create, connect, and interact with a Cloud SQL for PostgreSQL database and data.",
     "category": "database",
     "homepage": "https://cloud.google.com/sql",
-    "sha": "201bb7d7110aed05bd0367c0ec0fe7fb7d57aa4d",
+    "sha": "6191fb93757355204a5f909d41ad6c9fa2900a83",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git",
-      "sha": "201bb7d7110aed05bd0367c0ec0fe7fb7d57aa4d",
+      "sha": "6191fb93757355204a5f909d41ad6c9fa2900a83",
       "subdir": ""
     },
     "brand": "si-postgresql",
     "counts": {
-      "skills": 8,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -819,16 +853,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect to Cloud SQL for SQL Server",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/cloud-sql-sqlserver",
-    "sha": "8b4e273da79b9bdd631a195b88e73ba78575fa77",
+    "sha": "8858b0fd066f1590ab7dad70ceacb1366af86a1f",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/cloud-sql-sqlserver.git",
-      "sha": "8b4e273da79b9bdd631a195b88e73ba78575fa77",
+      "sha": "8858b0fd066f1590ab7dad70ceacb1366af86a1f",
       "subdir": ""
     },
     "counts": {
-      "skills": 4,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -836,32 +870,32 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Skills for the Cloudflare developer platform: Workers, Durable Objects, Agents SDK, MCP servers, Wrangler CLI, and web performance.",
     "category": "deployment",
     "homepage": "https://github.com/cloudflare/skills",
-    "sha": "30553f89ae1ef1e3c2917cd09d72dac992bb4e9a",
+    "sha": "b052c32bab7dd493513260228a36c88294f343f1",
     "source": {
       "repoUrl": "https://github.com/cloudflare/skills.git",
-      "sha": "30553f89ae1ef1e3c2917cd09d72dac992bb4e9a",
+      "sha": "b052c32bab7dd493513260228a36c88294f343f1",
       "subdir": ""
     },
     "brand": "si-cloudflare",
     "counts": {
-      "skills": 10,
-      "commands": 2,
-      "servers": 5
+      "skills": 13,
+      "commands": 0,
+      "servers": 1
     }
   },
   {
     "name": "cloudinary",
     "description": "Use Cloudinary directly in Claude. Manage assets, apply transformations, optimize media, and more through natural conversation.",
     "homepage": "https://cloudinary.com/documentation",
-    "sha": "77ed3c5da085ef1d189948f9ff2a1bf5ab7b257b",
+    "sha": "86be53409e3fb1c465cd5ff4d1dc937a2860f45c",
     "source": {
       "repoUrl": "https://github.com/cloudinary-devs/cloudinary-plugin.git",
-      "sha": "77ed3c5da085ef1d189948f9ff2a1bf5ab7b257b",
+      "sha": "86be53409e3fb1c465cd5ff4d1dc937a2860f45c",
       "subdir": ""
     },
     "brand": "si-cloudinary",
     "counts": {
-      "skills": 2,
+      "skills": 3,
       "commands": 0,
       "servers": 0
     }
@@ -888,10 +922,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "CodSpeed is the all-in-one performance testing toolkit. Dive into benchmarking results, flamegraphs, and performance comparisons — give Claude granular profiling context to pinpoint bottlenecks and autonomously iterate on performance via the CodSpeed MCP server.",
     "category": "development",
     "homepage": "https://codspeed.io",
-    "sha": "6eac7570459afb367f2454b08768215171179323",
+    "sha": "37eba9ed92b0f1a17cf386303446475df380af37",
     "source": {
       "repoUrl": "https://github.com/CodSpeedHQ/codspeed.git",
-      "sha": "6eac7570459afb367f2454b08768215171179323",
+      "sha": "37eba9ed92b0f1a17cf386303446475df380af37",
       "subdir": ""
     },
     "counts": {
@@ -922,22 +956,22 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Access Confidence feature flags, experiments, and migration tools directly from Claude Code.",
     "category": "development",
     "homepage": "https://confidence.spotify.com",
-    "sha": "b8bdd156bcb386a02f8566e2775541ac3c52e3c0",
+    "sha": "c8eb4aefefc4e095759ef0e5d1dd7e4e5ae6dae7",
     "source": {
       "repoUrl": "https://github.com/spotify/confidence-ai-plugins.git",
-      "sha": "b8bdd156bcb386a02f8566e2775541ac3c52e3c0",
+      "sha": "c8eb4aefefc4e095759ef0e5d1dd7e4e5ae6dae7",
       "subdir": ""
     },
     "brand": "si-spotify",
     "counts": {
-      "skills": 11,
-      "commands": 6,
+      "skills": 13,
+      "commands": 17,
       "servers": 2
     }
   },
   {
     "name": "context7",
-    "description": "Upstash Context7 MCP server for up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.",
+    "description": "Upstash Context7 MCP server for up-to-date documentation lookup. Connects to Context7's hosted remote MCP server (https://mcp.context7.com/mcp) — no local Node.js or npx required — to pull version-specific documentation and code examples directly from source repositories into your LLM context. Works anonymously out of the box; set CONTEXT7_API_KEY for higher rate limits.",
     "category": "development",
     "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
     "sha": null,
@@ -958,14 +992,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Operational skill for installing, configuring, operating, and debugging CrowdSec (cscli, LAPI/CAPI, hub, bouncers, WAF/AppSec) across bare-metal, Docker, and Kubernetes.",
     "category": "security",
     "homepage": "https://www.crowdsec.net",
-    "sha": "2aa905ef2cfc025b6bb2d8085c9568910a09680a",
+    "sha": "24488e03c9c0b34596de3e21004b24d4d05a6df7",
     "source": {
       "repoUrl": "https://github.com/crowdsecurity/crowdsec-skill.git",
-      "sha": "2aa905ef2cfc025b6bb2d8085c9568910a09680a",
+      "sha": "24488e03c9c0b34596de3e21004b24d4d05a6df7",
       "subdir": ""
     },
     "counts": {
-      "skills": 1,
+      "skills": 2,
       "commands": 0,
       "servers": 0
     }
@@ -988,38 +1022,20 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
-    "name": "datadog",
-    "description": "Use Datadog directly in Claude Code through a preconfigured Datadog MCP server. Query logs, metrics, traces, dashboards, and more through natural conversation. This plugin is in preview.",
-    "category": "monitoring",
-    "homepage": "https://www.datadoghq.com/",
-    "sha": "c5c062abba0df33f6bfc2c0fd0f8d17857e3fa2c",
-    "source": {
-      "repoUrl": "https://github.com/datadog-labs/claude-code-plugin.git",
-      "sha": "c5c062abba0df33f6bfc2c0fd0f8d17857e3fa2c",
-      "subdir": ""
-    },
-    "brand": "si-datadog",
-    "counts": {
-      "skills": 3,
-      "commands": 0,
-      "servers": 0
-    }
-  },
-  {
     "name": "dataproc",
     "description": "Manage Dataproc clusters and jobs.",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/dataproc",
-    "sha": "67cf1d601920a6743ae4b12f68ddc2a9fd2e3218",
+    "sha": "afbd516845a34fcf460ec447b81868bc48962b0f",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/dataproc.git",
-      "sha": "67cf1d601920a6743ae4b12f68ddc2a9fd2e3218",
+      "sha": "afbd516845a34fcf460ec447b81868bc48962b0f",
       "subdir": ""
     },
     "counts": {
-      "skills": 1,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -1027,14 +1043,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "DataRobot skills for AI/ML workflows — model training, deployment, predictions, feature engineering, monitoring, explainability, data preparation, App Framework CI/CD, and external agent monitoring.",
     "category": "development",
     "homepage": "https://datarobot.com",
-    "sha": "db831e2ec0ba1c9271600e19c24e3d3e0a0ae27e",
+    "sha": "e6dddbe327dc2c83e9b7677a5577d33a1063feaf",
     "source": {
       "repoUrl": "https://github.com/datarobot-oss/datarobot-agent-skills.git",
-      "sha": "db831e2ec0ba1c9271600e19c24e3d3e0a0ae27e",
+      "sha": "e6dddbe327dc2c83e9b7677a5577d33a1063feaf",
       "subdir": ""
     },
     "counts": {
-      "skills": 13,
+      "skills": 14,
       "commands": 0,
       "servers": 0
     }
@@ -1044,16 +1060,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Agent skills for building on, analyzing, and managing Microsoft Dataverse — with Dataverse MCP, PAC CLI, and Python SDK.",
     "category": "database",
     "homepage": "https://github.com/microsoft/Dataverse-skills",
-    "sha": "e61db16db018b10807e6e270a34bd9a5275f5285",
+    "sha": "ee929195a7d724c315e45f6dc3ebc4e59370fce2",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/microsoft/Dataverse-skills.git",
-      "sha": "e61db16db018b10807e6e270a34bd9a5275f5285",
+      "sha": "ee929195a7d724c315e45f6dc3ebc4e59370fce2",
       "ref": "main",
       "subdir": ".github/plugins/dataverse"
     },
     "counts": {
-      "skills": 8,
+      "skills": 9,
       "commands": 0,
       "servers": 0
     }
@@ -1063,10 +1079,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Skills for adding DeepEval evaluations, tracing, datasets, Confident AI reports, and iterative improvement loops to AI applications.",
     "category": "development",
     "homepage": "https://github.com/confident-ai/deepeval",
-    "sha": "abce857e53da949570cc6ecf631a8baec9af6e4e",
+    "sha": "c144abbce848a6dfbd35bbdaaab49a62bb3fb7b6",
     "source": {
       "repoUrl": "https://github.com/confident-ai/deepeval.git",
-      "sha": "abce857e53da949570cc6ecf631a8baec9af6e4e",
+      "sha": "c144abbce848a6dfbd35bbdaaab49a62bb3fb7b6",
       "subdir": ""
     },
     "counts": {
@@ -1150,14 +1166,32 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
+    "name": "dynatrace",
+    "description": "Dynatrace observability skills: DQL query patterns, application and infrastructure monitoring, log analysis, problem investigation, and incident response workflows, with the Dynatrace MCP server for live platform access.",
+    "category": "monitoring",
+    "homepage": "https://www.dynatrace.com/hub/detail/claude-code-cli/",
+    "sha": "b7ae5e6c7b03bda6938133cd47ef7d69a425dcc6",
+    "source": {
+      "repoUrl": "https://github.com/Dynatrace/dynatrace-for-ai.git",
+      "sha": "b7ae5e6c7b03bda6938133cd47ef7d69a425dcc6",
+      "subdir": ""
+    },
+    "brand": "si-dynatrace",
+    "counts": {
+      "skills": 33,
+      "commands": 0,
+      "servers": 1
+    }
+  },
+  {
     "name": "exa",
     "description": "Exa AI web search, deep research, and content extraction. Provides MCP tools and research skills for comprehensive web search, people discovery, company research, academic papers, and more.",
     "category": "productivity",
     "homepage": "https://exa.ai/docs/reference/exa-mcp",
-    "sha": "a664592b5dd7c5598b70158c771dcc5c2a4fb2c1",
+    "sha": "15ffb50519e719dc791cdc750ce5ed1934c0a1ed",
     "source": {
       "repoUrl": "https://github.com/exa-labs/exa-mcp-server.git",
-      "sha": "a664592b5dd7c5598b70158c771dcc5c2a4fb2c1",
+      "sha": "15ffb50519e719dc791cdc750ce5ed1934c0a1ed",
       "subdir": ""
     },
     "counts": {
@@ -1186,15 +1220,15 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "name": "fastly-agent-toolkit",
     "description": "Fastly development tools and platform skills",
     "homepage": "https://github.com/fastly/fastly-agent-toolkit/blob/main/README.md",
-    "sha": "ea3623d5facc7053eaa802f5fc483dd7121a39aa",
+    "sha": "10ceb976c690d261bddaf5fd15a37c9d1f510f77",
     "source": {
       "repoUrl": "https://github.com/fastly/fastly-agent-toolkit.git",
-      "sha": "ea3623d5facc7053eaa802f5fc483dd7121a39aa",
+      "sha": "10ceb976c690d261bddaf5fd15a37c9d1f510f77",
       "subdir": ""
     },
     "brand": "si-fastly",
     "counts": {
-      "skills": 8,
+      "skills": 10,
       "commands": 0,
       "servers": 0
     }
@@ -1203,10 +1237,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "name": "fiftyone",
     "description": "Build high-quality datasets and computer vision models. Visualize datasets, analyze models, find duplicates, run inference, evaluate predictions, and develop custom plugins.",
     "homepage": "https://docs.voxel51.com/",
-    "sha": "4fedd6ee7aa88e6e540e31bf54602528c9ca529d",
+    "sha": "e28a9a3d453b15cbefa6ccc81c89fecf723c31b2",
     "source": {
       "repoUrl": "https://github.com/voxel51/fiftyone-skills.git",
-      "sha": "4fedd6ee7aa88e6e540e31bf54602528c9ca529d",
+      "sha": "e28a9a3d453b15cbefa6ccc81c89fecf723c31b2",
       "subdir": ""
     },
     "counts": {
@@ -1238,14 +1272,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Web scraping and crawling powered by Firecrawl. Turn any website into clean, LLM-ready markdown or structured data. Scrape single pages, crawl entire sites, search the web, and extract structured information. Includes an AI agent for autonomous multi-source data gathering - just describe what you need and it finds, navigates, and extracts automatically.",
     "category": "development",
     "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git",
-    "sha": "b1bd4442f4c935069ad83835c8eb69d7fe684db4",
+    "sha": "b5978f60d8308650821918bf4476fc3b701e88b9",
     "source": {
       "repoUrl": "https://github.com/firecrawl/firecrawl-claude-plugin.git",
-      "sha": "b1bd4442f4c935069ad83835c8eb69d7fe684db4",
+      "sha": "b5978f60d8308650821918bf4476fc3b701e88b9",
       "subdir": ""
     },
     "counts": {
-      "skills": 10,
+      "skills": 12,
       "commands": 1,
       "servers": 0
     }
@@ -1255,16 +1289,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect and interact with Firestore databases, collections, and documents.",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/firestore-native",
-    "sha": "dd5a519e9d54c4154154e570381e5a2a340eb3a8",
+    "sha": "502ff19b853e760539717d3c640300af3400bba3",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/firestore-native.git",
-      "sha": "dd5a519e9d54c4154154e570381e5a2a340eb3a8",
+      "sha": "502ff19b853e760539717d3c640300af3400bba3",
       "subdir": ""
     },
     "counts": {
-      "skills": 1,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -1272,10 +1306,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Forge-focused skills and MCP configuration for Atlassian Forge: scaffold and deploy apps (forge create, templates, dev spaces), build Teamwork Graph connectors for Rovo Search/Rovo Chat, pre-deploy review, systematic debugging, plus Forge docs and Atlassian Design System lookups via MCP.",
     "category": "development",
     "homepage": "https://developer.atlassian.com/platform/forge/",
-    "sha": "ea409cc73b8cac3b6710c3ca7976dd64e570a2fc",
+    "sha": "4f04ae02879435f23808a4798da28f75d3ab74c3",
     "source": {
       "repoUrl": "https://github.com/atlassian/forge-skills.git",
-      "sha": "ea409cc73b8cac3b6710c3ca7976dd64e570a2fc",
+      "sha": "4f04ae02879435f23808a4798da28f75d3ab74c3",
       "subdir": ""
     },
     "brand": "si-atlassian",
@@ -1334,6 +1368,24 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "brand": "si-gitlab",
     "counts": {
       "skills": 0,
+      "commands": 0,
+      "servers": 1
+    }
+  },
+  {
+    "name": "google-cloud-storage",
+    "description": "Official Google Cloud Storage (GCS) plugin. Manage buckets and objects, transfer data, and configure MCP, FUSE, IAM, security, lifecycle rules, signed URLs, Terraform, and the CLI.",
+    "category": "deployment",
+    "homepage": "https://cloud.google.com/storage",
+    "sha": "db08d0fdb8c133ca0cb82e742d9d54228c4a318b",
+    "source": {
+      "repoUrl": "https://github.com/gemini-cli-extensions/google-cloud-storage.git",
+      "sha": "db08d0fdb8c133ca0cb82e742d9d54228c4a318b",
+      "subdir": ""
+    },
+    "brand": "si-googlecloudstorage",
+    "counts": {
+      "skills": 5,
       "commands": 0,
       "servers": 1
     }
@@ -1400,18 +1452,20 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
   },
   {
     "name": "greptile",
-    "description": "AI-powered codebase search and understanding. Query your repositories using natural language to find relevant code, understand dependencies, and get contextual answers about your codebase architecture.",
+    "description": "AI code review agent for GitHub and GitLab. View and resolve Greptile's PR review comments, run reviews on your working branch, and search your organization's knowledge base and coding patterns, directly from Claude Code.",
     "category": "development",
-    "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/greptile",
-    "sha": null,
+    "homepage": "https://www.greptile.com/docs/mcp-v2/overview",
+    "sha": "6b725af2636072cab79e0a5426f6a960b0fd29ef",
+    "ref": "greptile--v1.2.3",
     "source": {
-      "repoUrl": null,
-      "sha": null,
-      "subdir": "external_plugins/greptile"
+      "repoUrl": "https://github.com/greptileai/claude-plugin.git",
+      "sha": "6b725af2636072cab79e0a5426f6a960b0fd29ef",
+      "ref": "greptile--v1.2.3",
+      "subdir": "plugins/greptile"
     },
     "counts": {
       "skills": 0,
-      "commands": 0,
+      "commands": 2,
       "servers": 1
     }
   },
@@ -1420,14 +1474,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "A suite of agent skills for the full GrowthBook feature flag and experimentation lifecycle.",
     "category": "testing",
     "homepage": "https://growthbook.io",
-    "sha": "2ba1f3608d15394b2881125fc4babdc761454cb5",
+    "sha": "a0c2bf9fcb98b1bccea13395d0eaceec68fd2ba0",
     "source": {
       "repoUrl": "https://github.com/growthbook/skills.git",
-      "sha": "2ba1f3608d15394b2881125fc4babdc761454cb5",
+      "sha": "a0c2bf9fcb98b1bccea13395d0eaceec68fd2ba0",
       "subdir": ""
     },
     "counts": {
-      "skills": 25,
+      "skills": 4,
       "commands": 0,
       "servers": 0
     }
@@ -1437,15 +1491,15 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Deploy, manage and monitor Hostinger services — Websites, Domains, Ecommerce, Email Marketing, Subscriptions & Payments, and VPS. Authenticate via browser (OAuth) or API token.",
     "category": "deployment",
     "homepage": "https://www.hostinger.com",
-    "sha": "10259650b82ceee43741ce2f8a7fa564a8c286c7",
+    "sha": "569880c60681a7068b3ca8ca84e2fe7ab6cfa7ff",
     "source": {
       "repoUrl": "https://github.com/hostinger/claude-plugin.git",
-      "sha": "10259650b82ceee43741ce2f8a7fa564a8c286c7",
+      "sha": "569880c60681a7068b3ca8ca84e2fe7ab6cfa7ff",
       "subdir": ""
     },
     "brand": "si-hostinger",
     "counts": {
-      "skills": 0,
+      "skills": 7,
       "commands": 0,
       "servers": 1
     }
@@ -1455,10 +1509,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Build, train, evaluate, and use open source AI models, datasets, and spaces.",
     "category": "development",
     "homepage": "https://github.com/huggingface/skills.git",
-    "sha": "32f8bb0928e95fc9d47ca9fbf69cbfbaf2bc2bda",
+    "sha": "f3186efbbc322121eb5d0f31e8a1d669ee961159",
     "source": {
       "repoUrl": "https://github.com/huggingface/skills.git",
-      "sha": "32f8bb0928e95fc9d47ca9fbf69cbfbaf2bc2bda",
+      "sha": "f3186efbbc322121eb5d0f31e8a1d669ee961159",
       "subdir": ""
     },
     "brand": "si-huggingface",
@@ -1473,33 +1527,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Find and verify professional email addresses, search contacts by domain, and enrich company data -- directly in Claude.",
     "category": "productivity",
     "homepage": "https://hunter.io",
-    "sha": "237908c676e718028746a2c5f7e4f45dc7948135",
+    "sha": "6a5c1bfdcb8f15d679b55222a9b8832602f511cd",
     "source": {
       "repoUrl": "https://github.com/hunter-io/claude-plugin.git",
-      "sha": "237908c676e718028746a2c5f7e4f45dc7948135",
+      "sha": "6a5c1bfdcb8f15d679b55222a9b8832602f511cd",
       "subdir": ""
     },
     "counts": {
       "skills": 13,
       "commands": 0,
       "servers": 1
-    }
-  },
-  {
-    "name": "hyperframes",
-    "description": "HyperFrames by HeyGen. Write HTML, render video. Compositions, GSAP and runtime adapter animations, captions, voiceovers, audio-reactive visuals, and website-to-video capture for HyperFrames.",
-    "category": "design",
-    "homepage": "https://hyperframes.heygen.com",
-    "sha": "1d0d4d8939d358edb7cdb017733b7641d5eec42c",
-    "source": {
-      "repoUrl": "https://github.com/heygen-com/hyperframes.git",
-      "sha": "1d0d4d8939d358edb7cdb017733b7641d5eec42c",
-      "subdir": ""
-    },
-    "counts": {
-      "skills": 19,
-      "commands": 0,
-      "servers": 0
     }
   },
   {
@@ -1539,6 +1576,25 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
+    "name": "informatica-for-claude-platform",
+    "description": "Governed catalog discovery for Informatica Intelligent Data Management Cloud (CDGC): find tables, columns, files, glossary terms and policies across the enterprise catalog, check ownership, certification, sensitivity and applicable policy, and get safe-usage guidance grounded in catalog metadata before querying any data. Requires an Informatica IDMC tenant and the Informatica Catalog Discovery connector.",
+    "category": "database",
+    "homepage": "https://github.com/forcedotcom/informatica-claude-plugins/tree/main/informatica-for-claude-platform",
+    "sha": "554d02e0f7f2adafeaeeedbde04435b7bd310a47",
+    "ref": "main",
+    "source": {
+      "repoUrl": "https://github.com/forcedotcom/informatica-claude-plugins.git",
+      "sha": "554d02e0f7f2adafeaeeedbde04435b7bd310a47",
+      "ref": "main",
+      "subdir": "informatica-for-claude-platform"
+    },
+    "counts": {
+      "skills": 1,
+      "commands": 0,
+      "servers": 2
+    }
+  },
+  {
     "name": "intercom",
     "description": "Intercom integration for Claude Code. Search conversations, analyze customer support patterns, look up contacts and companies, and install the Intercom Messenger. Connect your Intercom workspace to get real-time insights from customer data.",
     "category": "productivity",
@@ -1561,16 +1617,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect to Knowledge Catalog to discover, manage, monitor, and govern data and AI artifacts across your data platform",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/knowledge-catalog",
-    "sha": "6d8a1ad09b163203eca6100133448472ce60c499",
+    "sha": "930d73cfbb8e0637d79cb335ff0b8d80af383bd8",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/knowledge-catalog.git",
-      "sha": "6d8a1ad09b163203eca6100133448472ce60c499",
+      "sha": "930d73cfbb8e0637d79cb335ff0b8d80af383bd8",
       "subdir": ""
     },
     "counts": {
-      "skills": 1,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -1578,10 +1634,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Skills for working with Langfuse, the open-source LLM engineering platform for tracing, prompt management, and evaluation.",
     "category": "monitoring",
     "homepage": "https://langfuse.com",
-    "sha": "cf98ef9b6e154b821012f9773ec9ec3238b3b976",
+    "sha": "2ebaf1f238bf38a9ff0c6dc8f1bbff0d66215f64",
     "source": {
       "repoUrl": "https://github.com/langfuse/skills.git",
-      "sha": "cf98ef9b6e154b821012f9773ec9ec3238b3b976",
+      "sha": "2ebaf1f238bf38a9ff0c6dc8f1bbff0d66215f64",
       "subdir": ""
     },
     "counts": {
@@ -1670,17 +1726,17 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Add Logfire observability to Python applications with auto-instrumentation for FastAPI, httpx, asyncpg, SQLAlchemy, and more",
     "category": "monitoring",
     "homepage": "https://github.com/pydantic/skills/tree/main/plugins/logfire",
-    "sha": "07952dc4bcdfed05b63be8abab6ac277151ca18d",
+    "sha": "501b11a5b3f92b9c78bbe9bd76442df0ad68dadf",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/pydantic/skills.git",
-      "sha": "07952dc4bcdfed05b63be8abab6ac277151ca18d",
+      "sha": "501b11a5b3f92b9c78bbe9bd76442df0ad68dadf",
       "ref": "main",
       "subdir": "plugins/logfire"
     },
     "brand": "si-pydantic",
     "counts": {
-      "skills": 3,
+      "skills": 6,
       "commands": 4,
       "servers": 1
     }
@@ -1690,11 +1746,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect Claude Code to LogRocket to query session replays, metrics, issues, and user behavior using natural language.",
     "category": "monitoring",
     "homepage": "https://logrocket.com",
-    "sha": "60c1b83ea558771fa92d80d2e756920286c430f7",
+    "sha": "2e44dbb47faf9bb54e3405a8ae2714e7c5ce9791",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/LogRocket/logrocket-claude-plugin.git",
-      "sha": "60c1b83ea558771fa92d80d2e756920286c430f7",
+      "sha": "2e44dbb47faf9bb54e3405a8ae2714e7c5ce9791",
       "ref": "main",
       "subdir": "plugins/logrocket"
     },
@@ -1709,17 +1765,17 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect to Looker and interact with your data using LookML.",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/looker",
-    "sha": "8ca746f8d6b0079d1f872c96bd3e0530bf4571d3",
+    "sha": "eb4a1828dc7adc346f6f23d47a73421392b7f86b",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/looker.git",
-      "sha": "8ca746f8d6b0079d1f872c96bd3e0530bf4571d3",
+      "sha": "eb4a1828dc7adc346f6f23d47a73421392b7f86b",
       "subdir": ""
     },
     "brand": "si-looker",
     "counts": {
-      "skills": 2,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 2
     }
   },
   {
@@ -1744,10 +1800,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Prospect, enrich, and build call-ready lead lists using Lusha's B2B intelligence platform — verified phone numbers, company signals, and lookalike targeting.",
     "category": "productivity",
     "homepage": "https://www.lusha.com",
-    "sha": "f42bb8f65b3a62fd59711578b8e0446bca644e4b",
+    "sha": "ed34947a36754411f03cdeaba91c8cdaa153ef2e",
     "source": {
       "repoUrl": "https://github.com/lusha-oss/lusha-mcp-plugin.git",
-      "sha": "f42bb8f65b3a62fd59711578b8e0446bca644e4b",
+      "sha": "ed34947a36754411f03cdeaba91c8cdaa153ef2e",
       "subdir": ""
     },
     "counts": {
@@ -1761,15 +1817,15 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Mapbox skills and MCP servers for building location-aware applications with AI. Includes geospatial tools, style management, and patterns for web, iOS, Android, and AI agent frameworks.",
     "category": "location",
     "homepage": "https://www.mapbox.com",
-    "sha": "f5ae7dee38bafad844d8e15a867273ef75918652",
+    "sha": "209e8c408fd65edfff45e491c941e8a00025a1a6",
     "source": {
       "repoUrl": "https://github.com/mapbox/mapbox-agent-skills.git",
-      "sha": "f5ae7dee38bafad844d8e15a867273ef75918652",
+      "sha": "209e8c408fd65edfff45e491c941e8a00025a1a6",
       "subdir": ""
     },
     "brand": "si-mapbox",
     "counts": {
-      "skills": 19,
+      "skills": 20,
       "commands": 0,
       "servers": 3
     }
@@ -1796,14 +1852,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Matt Pocock's agent skills for real engineering — grilling, spec/ticket flows, TDD, code review, domain modelling and more. Plug-and-play, not vibe coding.",
     "category": "development",
     "homepage": "https://github.com/mattpocock/skills",
-    "sha": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+    "sha": "3cca18b368ae95cdbdebbff572ccafa662551015",
     "source": {
       "repoUrl": "https://github.com/mattpocock/skills.git",
-      "sha": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "sha": "3cca18b368ae95cdbdebbff572ccafa662551015",
       "subdir": ""
     },
     "counts": {
-      "skills": 41,
+      "skills": 37,
       "commands": 0,
       "servers": 0
     }
@@ -1813,11 +1869,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Skills for creating MCP Apps with the MCP Apps SDK",
     "category": "development",
     "homepage": "https://modelcontextprotocol.io",
-    "sha": "fa1274490873f869c9a084e1abb9cf3031d288c7",
+    "sha": "352f6ced4d80772e92b4e7a311854481a8d65b04",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/modelcontextprotocol/ext-apps.git",
-      "sha": "fa1274490873f869c9a084e1abb9cf3031d288c7",
+      "sha": "352f6ced4d80772e92b4e7a311854481a8d65b04",
       "ref": "main",
       "subdir": "plugins/mcp-apps"
     },
@@ -1867,14 +1923,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Skills for the Mergify CLI: manage merge queues, stacked pull requests, Test Insights (flaky tests, quarantine), merge protections, and Mergify configuration directly from the terminal.",
     "category": "development",
     "homepage": "https://mergify.com",
-    "sha": "73c2746a15d91636e5aa9f75f21bbc7354d27b06",
+    "sha": "b2ad1a08d8c0f6c386138e454a5db2e678f06197",
     "source": {
       "repoUrl": "https://github.com/mergifyio/mergify-cli.git",
-      "sha": "73c2746a15d91636e5aa9f75f21bbc7354d27b06",
+      "sha": "b2ad1a08d8c0f6c386138e454a5db2e678f06197",
       "subdir": ""
     },
     "counts": {
-      "skills": 5,
+      "skills": 6,
       "commands": 0,
       "servers": 0
     }
@@ -1884,10 +1940,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Access official Microsoft documentation, API references, and code samples for Azure, .NET, Windows, and more.",
     "category": "development",
     "homepage": "https://github.com/microsoftdocs/mcp",
-    "sha": "caa3d670bf2814171dba4f7346ece5080964021e",
+    "sha": "f8ffde185dfd232dbf5d187c22ce299eadc3d583",
     "source": {
       "repoUrl": "https://github.com/MicrosoftDocs/mcp.git",
-      "sha": "caa3d670bf2814171dba4f7346ece5080964021e",
+      "sha": "f8ffde185dfd232dbf5d187c22ce299eadc3d583",
       "subdir": ""
     },
     "counts": {
@@ -1919,17 +1975,17 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Secure access to Miro boards. Enables AI to read board context, create diagrams, and generate code with enterprise-grade security.",
     "category": "design",
     "homepage": "https://miro.com",
-    "sha": "85c2c7347542b3ce185eb1d2793f8d79ad485c63",
+    "sha": "c2494b24510d01ec3e50fad94a0c5fc3ca40e339",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/miroapp/miro-ai.git",
-      "sha": "85c2c7347542b3ce185eb1d2793f8d79ad485c63",
+      "sha": "c2494b24510d01ec3e50fad94a0c5fc3ca40e339",
       "ref": "main",
       "subdir": "claude-plugins/miro"
     },
     "brand": "si-miro",
     "counts": {
-      "skills": 7,
+      "skills": 8,
       "commands": 0,
       "servers": 1
     }
@@ -1939,10 +1995,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Keep your coding agent up to date with the latest web best practices",
     "category": "development",
     "homepage": "https://goo.gle/modern-web-guidance",
-    "sha": "684ab9d7c6b78fc2cd5677912d874397cb2e5dfa",
+    "sha": "16ed22b43fa56157adadfb25f18a354197d497b9",
     "source": {
       "repoUrl": "https://github.com/GoogleChrome/modern-web-guidance.git",
-      "sha": "684ab9d7c6b78fc2cd5677912d874397cb2e5dfa",
+      "sha": "16ed22b43fa56157adadfb25f18a354197d497b9",
       "subdir": ""
     },
     "brand": "si-googlechrome",
@@ -1957,16 +2013,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Run your monday CRM in plain language. Build a pipeline from scratch, start the day with a ranked deal briefing, spin up a forecast dashboard, audit board health, clean up messy data in bulk, and turn meeting notes into deal updates. Every skill writes back into monday as a real update, doc, or dashboard. Built on the official monday MCP connector.",
     "category": "productivity",
     "homepage": "https://monday.com",
-    "sha": "fc64cf88c2fd9e3081f70fa8bbfb6d2bbee809a8",
+    "sha": "5eb0835e921de42ba603d7a8315ab4a2575a46b2",
     "ref": "master",
     "source": {
       "repoUrl": "https://github.com/mondaycom/mcp.git",
-      "sha": "fc64cf88c2fd9e3081f70fa8bbfb6d2bbee809a8",
+      "sha": "5eb0835e921de42ba603d7a8315ab4a2575a46b2",
       "ref": "master",
       "subdir": "plugins/monday-crm"
     },
     "counts": {
-      "skills": 8,
+      "skills": 9,
       "commands": 0,
       "servers": 1
     }
@@ -1976,11 +2032,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Official Claude plugin for MongoDB (MCP Server + Skills). Connect to databases, explore data, manage collections, optimize queries, generate reliable code, implement best practices, develop advanced features, and more.",
     "category": "database",
     "homepage": "https://www.mongodb.com/docs/mcp-server/overview/",
-    "sha": "b4ea8150a020b9babaddc6c271c6dc177c06a83f",
+    "sha": "1e72df255e54e81eff078054c2cfb2b5d8c13503",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/mongodb/agent-skills.git",
-      "sha": "b4ea8150a020b9babaddc6c271c6dc177c06a83f",
+      "sha": "1e72df255e54e81eff078054c2cfb2b5d8c13503",
       "ref": "main",
       "subdir": "plugins/mongodb"
     },
@@ -1992,21 +2048,41 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
+    "name": "mongodb-atlas",
+    "description": "Connect to MongoDB Atlas clusters only through the Atlas Managed MCP Server. Sign in with your Atlas account to explore data, manage collections, optimize queries, generate reliable code with MongoDB best practices, and manage Atlas resources such as clusters, projects, database users, and network access. If you are running a different MongoDB deployment or want to run a local MongoDB MCP Server, install the MongoDB (Self-Managed MCP) plugin instead.",
+    "category": "database",
+    "homepage": "https://www.mongodb.com/docs/mcp-server/get-started/",
+    "sha": "1e72df255e54e81eff078054c2cfb2b5d8c13503",
+    "ref": "main",
+    "source": {
+      "repoUrl": "https://github.com/mongodb/agent-skills.git",
+      "sha": "1e72df255e54e81eff078054c2cfb2b5d8c13503",
+      "ref": "main",
+      "subdir": "plugins/mongodb-atlas"
+    },
+    "brand": "si-mongodb",
+    "counts": {
+      "skills": 6,
+      "commands": 0,
+      "servers": 1
+    }
+  },
+  {
     "name": "neon",
     "description": "Manage your Neon projects and databases with the neon-postgres agent skill and the Neon MCP Server.",
     "category": "database",
     "homepage": "https://github.com/neondatabase/agent-skills/tree/main/plugins/neon-postgres",
-    "sha": "69f205aa75e9b2cbaf8074d1ab881b744797f36d",
+    "sha": "2e0da3a1653bcdd227565ac14bb3e9e453a8b854",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/neondatabase/agent-skills.git",
-      "sha": "69f205aa75e9b2cbaf8074d1ab881b744797f36d",
+      "sha": "2e0da3a1653bcdd227565ac14bb3e9e453a8b854",
       "ref": "main",
       "subdir": "plugins/neon-postgres"
     },
     "brand": "si-neon",
     "counts": {
-      "skills": 8,
+      "skills": 7,
       "commands": 0,
       "servers": 0
     }
@@ -2016,10 +2092,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Netlify platform skills for Claude Code — functions, edge functions, blobs, database, image CDN, forms, config, CLI, frameworks, caching, AI gateway, and deployment.",
     "category": "development",
     "homepage": "https://github.com/netlify/context-and-tools",
-    "sha": "a0a9492f59492d8edfd588ea3378b0b1960508a4",
+    "sha": "5851a0e75f2065395efe5f242b4f0c6763911412",
     "source": {
       "repoUrl": "https://github.com/netlify/context-and-tools.git",
-      "sha": "a0a9492f59492d8edfd588ea3378b0b1960508a4",
+      "sha": "5851a0e75f2065395efe5f242b4f0c6763911412",
       "subdir": ""
     },
     "brand": "si-netlify",
@@ -2027,6 +2103,63 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
       "skills": 15,
       "commands": 0,
       "servers": 1
+    }
+  },
+  {
+    "name": "netsuite-ai-companion",
+    "description": "Guides AI assistants that use the NetSuite AI Connector: tool-selection order, output formatting, NetSuite domain knowledge, multi-subsidiary and currency handling, and SuiteQL safety guardrails. Requires the NetSuite AI Connector Service.",
+    "category": "productivity",
+    "homepage": "https://github.com/oracle/netsuite-suitecloud-sdk/tree/ai-plugins-dist/anthropic/netsuite-ai-companion",
+    "sha": "23793a10a9bb557c684c5cb8a97f926eb3463f12",
+    "ref": "ai-plugins-dist",
+    "source": {
+      "repoUrl": "https://github.com/oracle/netsuite-suitecloud-sdk.git",
+      "sha": "23793a10a9bb557c684c5cb8a97f926eb3463f12",
+      "ref": "ai-plugins-dist",
+      "subdir": "anthropic/netsuite-ai-companion"
+    },
+    "counts": {
+      "skills": 1,
+      "commands": 0,
+      "servers": 0
+    }
+  },
+  {
+    "name": "netsuite-finance-analyst",
+    "description": "Director-level finance analysis on live NetSuite data: financial reporting, period close, variance, aging and reconciliation reviews, cash reporting, and board-ready narratives with next actions. Requires the NetSuite AI Connector Service.",
+    "category": "productivity",
+    "homepage": "https://github.com/oracle/netsuite-suitecloud-sdk/tree/ai-plugins-dist/anthropic/netsuite-finance-analyst",
+    "sha": "23793a10a9bb557c684c5cb8a97f926eb3463f12",
+    "ref": "ai-plugins-dist",
+    "source": {
+      "repoUrl": "https://github.com/oracle/netsuite-suitecloud-sdk.git",
+      "sha": "23793a10a9bb557c684c5cb8a97f926eb3463f12",
+      "ref": "ai-plugins-dist",
+      "subdir": "anthropic/netsuite-finance-analyst"
+    },
+    "counts": {
+      "skills": 1,
+      "commands": 0,
+      "servers": 0
+    }
+  },
+  {
+    "name": "netsuite-suitecloud",
+    "description": "Develop NetSuite SuiteCloud solutions with SuiteScript, SDF, and best practices: SuiteScript records and upgrades, SDF objects, roles and permissions, UIF single-page apps, OWASP secure coding, project documentation, and the SAFE Guide.",
+    "category": "development",
+    "homepage": "https://github.com/oracle/netsuite-suitecloud-sdk/tree/ai-plugins-dist/anthropic/netsuite-suitecloud",
+    "sha": "23793a10a9bb557c684c5cb8a97f926eb3463f12",
+    "ref": "ai-plugins-dist",
+    "source": {
+      "repoUrl": "https://github.com/oracle/netsuite-suitecloud-sdk.git",
+      "sha": "23793a10a9bb557c684c5cb8a97f926eb3463f12",
+      "ref": "ai-plugins-dist",
+      "subdir": "anthropic/netsuite-suitecloud"
+    },
+    "counts": {
+      "skills": 8,
+      "commands": 0,
+      "servers": 0
     }
   },
   {
@@ -2068,16 +2201,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Built for ecommerce, the Noibu plugin bridges the gap between customer experience and revenue by connecting Claude directly to your store's session, error, and conversion data through Noibu — and to the marketing, support, and commerce platforms that put insight into motion. Go beyond analysis: surface what's costing you revenue, take action across your stack, build workflows to automate work end-to-end.",
     "category": "monitoring",
     "homepage": "https://help.noibu.com/articles/3918362002-overview-of-the-noibu-plugin-for-claude",
-    "sha": "bcf16c9762e54054902389d63a283837b0346c37",
+    "sha": "3ff530b2dac2efd6a070ea8318a9705cd5d2d40f",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/Noibu/ai-plugin.git",
-      "sha": "bcf16c9762e54054902389d63a283837b0346c37",
+      "sha": "3ff530b2dac2efd6a070ea8318a9705cd5d2d40f",
       "ref": "main",
       "subdir": "src"
     },
     "counts": {
-      "skills": 7,
+      "skills": 8,
       "commands": 0,
       "servers": 0
     }
@@ -2102,9 +2235,9 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
   },
   {
     "name": "nvidia-skills",
-    "description": "NVIDIA agent skills for accelerated-computing workflows — starting with cuOpt vehicle-routing optimization (VRP, TSP, PDP) via the cuOpt Python API.",
+    "description": "Find the right NVIDIA skill for GPU acceleration, CUDA, AI agents, data loading, training, inference, robotics, Physical AI, Omniverse, simulation, and other NVIDIA-powered workflows.",
     "category": "development",
-    "homepage": "https://github.com/NVIDIA/skills",
+    "homepage": "https://build.nvidia.com/skills/",
     "sha": "2455514388e984b7e5a78a30e928f39d1401f16b",
     "ref": "main",
     "source": {
@@ -2125,16 +2258,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Oracle AI Data Platform Workbench Spark connectors for Claude Code. 18 connector skills covering every data source workbench customers commonly need: Oracle Autonomous DB family (ALH/ADW/ATP) via wallet/IAM-DB-Token/API-key, ExaCS, Fusion ERP REST, Fusion BICC, EPM Cloud Planning, Essbase 21c, OCI Streaming (Kafka), OCI Object Storage, Apache Iceberg, plus external systems (PostgreSQL, MySQL/HeatWave, SQL Server, Snowflake, Azure ADLS Gen2, AWS S3, generic REST, custom JDBC, Excel). Live-validated on the workbench `tpcds` cluster (Spark 3.5.0): 17 PASS / 4 ship-as-is out of 21 test rows.",
     "category": "development",
     "homepage": "https://docs.oracle.com/en/cloud/paas/ai-data-platform/index.html",
-    "sha": "6d9934e9908388553fbe8f965abf25e09768c940",
+    "sha": "da0ce42f3b71cc16ee8b3a3e1ed2420c7eb180ad",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/oracle-samples/oracle-aidp-samples.git",
-      "sha": "6d9934e9908388553fbe8f965abf25e09768c940",
+      "sha": "da0ce42f3b71cc16ee8b3a3e1ed2420c7eb180ad",
       "ref": "main",
       "subdir": "ai/claude-code-plugins/oracle-ai-data-platform-workbench-spark-connectors"
     },
     "counts": {
-      "skills": 27,
+      "skills": 28,
       "commands": 0,
       "servers": 0
     }
@@ -2144,16 +2277,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect, query, and interact with Oracle Databases and their data.",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/oracledb",
-    "sha": "f0102543104deb4e34e6609bd1e753e5b8a1a566",
+    "sha": "f8606fea23c9e7cc5ff80470964c604e04db4cc9",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/oracledb.git",
-      "sha": "f0102543104deb4e34e6609bd1e753e5b8a1a566",
+      "sha": "f8606fea23c9e7cc5ff80470964c604e04db4cc9",
       "subdir": ""
     },
     "counts": {
-      "skills": 1,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -2179,10 +2312,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Analyze business data and build custom Pigment models, metrics, and boards through natural language.",
     "category": "productivity",
     "homepage": "https://www.pigment.com",
-    "sha": "decd3131a67ad618b9f914bbe908e6287f069382",
+    "sha": "673e6994c9cc9745e1b5655a0dc4ba3607bb08ee",
     "source": {
       "repoUrl": "https://github.com/gopigment/ai-plugins.git",
-      "sha": "decd3131a67ad618b9f914bbe908e6287f069382",
+      "sha": "673e6994c9cc9745e1b5655a0dc4ba3607bb08ee",
       "subdir": ""
     },
     "counts": {
@@ -2196,10 +2329,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "An authenticated hosted MCP server that accesses your PlanetScale organizations, databases, branches, schema, and Insights data. Query against your data, surface slow queries, and get organizational and account information.",
     "category": "database",
     "homepage": "https://planetscale.com/",
-    "sha": "849552445a90b17f2b17267593d0a10d41d4b316",
+    "sha": "95c80f9f391be9b1b6172bf82d4191e1ec11b637",
     "source": {
       "repoUrl": "https://github.com/planetscale/claude-plugin.git",
-      "sha": "849552445a90b17f2b17267593d0a10d41d4b316",
+      "sha": "95c80f9f391be9b1b6172bf82d4191e1ec11b637",
       "subdir": ""
     },
     "brand": "si-planetscale",
@@ -2241,6 +2374,23 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
       "skills": 0,
       "commands": 0,
       "servers": 1
+    }
+  },
+  {
+    "name": "postiz",
+    "description": "Social media automation CLI for scheduling posts, managing integrations, uploading media, and tracking analytics across 28+ platforms including X, LinkedIn, Reddit, YouTube, TikTok, Instagram, and more",
+    "homepage": "https://postiz.com/agent",
+    "sha": "51293500c1b1fb447205100cb09b2999085323ac",
+    "source": {
+      "repoUrl": "https://github.com/gitroomhq/postiz-agent.git",
+      "sha": "51293500c1b1fb447205100cb09b2999085323ac",
+      "subdir": ""
+    },
+    "brand": "si-postiz",
+    "counts": {
+      "skills": 1,
+      "commands": 0,
+      "servers": 0
     }
   },
   {
@@ -2301,11 +2451,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Write accurate Pydantic AI code from the start. Up-to-date patterns, decision trees, and common gotchas for agents, tools, structured output, streaming, and multi-agent apps.",
     "category": "development",
     "homepage": "https://github.com/pydantic/skills/tree/main/plugins/ai",
-    "sha": "1aeed6d5583484c854c457d68f03a7459f1897c8",
+    "sha": "501b11a5b3f92b9c78bbe9bd76442df0ad68dadf",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/pydantic/skills.git",
-      "sha": "1aeed6d5583484c854c457d68f03a7459f1897c8",
+      "sha": "501b11a5b3f92b9c78bbe9bd76442df0ad68dadf",
       "ref": "main",
       "subdir": "plugins/ai"
     },
@@ -2321,29 +2471,51 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Agent skills for Qdrant vector search covering scaling, performance optimization, search quality, monitoring, deployment, model migration, version upgrades, and SDK usage across Python, TypeScript, Rust, Go, .NET, and Java.",
     "category": "database",
     "homepage": "https://skills.qdrant.tech",
-    "sha": "aa2355fcf06b805110fb8cecbd1aa4d64c15eb73",
+    "sha": "f672f4c917d00a7dbf5888633dc3cb9469f0d804",
     "source": {
       "repoUrl": "https://github.com/qdrant/skills.git",
-      "sha": "aa2355fcf06b805110fb8cecbd1aa4d64c15eb73",
+      "sha": "f672f4c917d00a7dbf5888633dc3cb9469f0d804",
       "subdir": ""
     },
     "brand": "si-qdrant",
     "counts": {
-      "skills": 10,
+      "skills": 12,
       "commands": 0,
       "servers": 0
     }
   },
   {
     "name": "qodo",
-    "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC—from IDE to CI/CD—ensuring consistent standards and catching issues early.",
+    "description": "Qodo setup, code intelligence, and review workflows.",
     "category": "development",
     "homepage": "https://github.com/qodo-ai/qodo-skills.git",
-    "sha": "5c6306797ad2c9831546f9bbd6360d2515bf5c26",
+    "sha": "775e860574a35a47afcc7e708072e71f63486902",
+    "ref": "main",
     "source": {
       "repoUrl": "https://github.com/qodo-ai/qodo-skills.git",
-      "sha": "5c6306797ad2c9831546f9bbd6360d2515bf5c26",
-      "subdir": ""
+      "sha": "775e860574a35a47afcc7e708072e71f63486902",
+      "ref": "main",
+      "subdir": "packages/qodo"
+    },
+    "brand": "si-qodo",
+    "counts": {
+      "skills": 4,
+      "commands": 0,
+      "servers": 0
+    }
+  },
+  {
+    "name": "qodo-standards",
+    "description": "Optional Qodo rules discovery and standards administration workflows.",
+    "category": "development",
+    "homepage": "https://github.com/qodo-ai/qodo-skills.git",
+    "sha": "775e860574a35a47afcc7e708072e71f63486902",
+    "ref": "main",
+    "source": {
+      "repoUrl": "https://github.com/qodo-ai/qodo-skills.git",
+      "sha": "775e860574a35a47afcc7e708072e71f63486902",
+      "ref": "main",
+      "subdir": "packages/qodo-standards"
     },
     "brand": "si-qodo",
     "counts": {
@@ -2375,10 +2547,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "MCP server for AI coding agents to create, manage, and interact with Quarkus applications. Provides tools for project scaffolding, dev mode lifecycle, extension skills, Dev MCP proxy, and documentation search.",
     "category": "development",
     "homepage": "https://quarkus.io",
-    "sha": "d39fa1cf9c1b8bcdc39265ef64b5b128605557e9",
+    "sha": "31c9b96658d9afaf09f0013ad6c75b64b0019371",
     "source": {
       "repoUrl": "https://github.com/quarkusio/quarkus-agent-mcp.git",
-      "sha": "d39fa1cf9c1b8bcdc39265ef64b5b128605557e9",
+      "sha": "31c9b96658d9afaf09f0013ad6c75b64b0019371",
       "subdir": ""
     },
     "brand": "si-quarkus",
@@ -2393,15 +2565,15 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Configure RevenueCat projects, apps, products, entitlements, and offerings directly from Claude Code. Manage your in-app purchase backend without leaving your development workflow.",
     "category": "development",
     "homepage": "https://www.revenuecat.com",
-    "sha": "bcce7a3261b17fcd3a79a2b45b03cdbedab5ea1a",
+    "sha": "b9b77b12da33213c9c2e750b06cd6270c1d8ed65",
     "source": {
       "repoUrl": "https://github.com/RevenueCat/rc-claude-code-plugin.git",
-      "sha": "bcce7a3261b17fcd3a79a2b45b03cdbedab5ea1a",
+      "sha": "b9b77b12da33213c9c2e750b06cd6270c1d8ed65",
       "subdir": "revenuecat"
     },
     "brand": "si-revenuecat",
     "counts": {
-      "skills": 16,
+      "skills": 18,
       "commands": 0,
       "servers": 1
     }
@@ -2424,14 +2596,34 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
+    "name": "redis-development",
+    "description": "Redis development best practices — data structures, query engine, vector search, caching, and performance optimization",
+    "category": "database",
+    "homepage": "https://redis.io",
+    "sha": "172fb9effa139cd7432ac29a9ee81c45943e5a28",
+    "ref": "main",
+    "source": {
+      "repoUrl": "https://github.com/redis/agent-skills.git",
+      "sha": "172fb9effa139cd7432ac29a9ee81c45943e5a28",
+      "ref": "main",
+      "subdir": "plugins/redis-development"
+    },
+    "brand": "si-redis",
+    "counts": {
+      "skills": 8,
+      "commands": 0,
+      "servers": 0
+    }
+  },
+  {
     "name": "resend",
     "description": "Agent skills for working with Resend to send and receive emails — email API integration, agent inbox, CLI, React Email components, and deliverability best practices. Includes the Resend MCP server.",
     "category": "development",
     "homepage": "https://resend.com",
-    "sha": "044372f031ef4a6d2df60354504c757e8018466d",
+    "sha": "8938c2a6f17903f9168c31431c842c68a68b19f3",
     "source": {
       "repoUrl": "https://github.com/resend/resend-skills.git",
-      "sha": "044372f031ef4a6d2df60354504c757e8018466d",
+      "sha": "8938c2a6f17903f9168c31431c842c68a68b19f3",
       "subdir": ""
     },
     "brand": "si-resend",
@@ -2446,15 +2638,15 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Configure RevenueCat projects, apps, products, entitlements, and offerings directly from Claude Code. Manage your in-app purchase backend without leaving your development workflow.",
     "category": "development",
     "homepage": "https://www.revenuecat.com",
-    "sha": "bcce7a3261b17fcd3a79a2b45b03cdbedab5ea1a",
+    "sha": "b9b77b12da33213c9c2e750b06cd6270c1d8ed65",
     "source": {
       "repoUrl": "https://github.com/RevenueCat/rc-claude-code-plugin.git",
-      "sha": "bcce7a3261b17fcd3a79a2b45b03cdbedab5ea1a",
+      "sha": "b9b77b12da33213c9c2e750b06cd6270c1d8ed65",
       "subdir": "revenuecat"
     },
     "brand": "si-revenuecat",
     "counts": {
-      "skills": 16,
+      "skills": 18,
       "commands": 0,
       "servers": 1
     }
@@ -2464,10 +2656,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Skills for developing and querying projects in the Rill business intelligence platform",
     "category": "development",
     "homepage": "https://docs.rilldata.com/developers/build/ai-configuration",
-    "sha": "b69fe4d676f59da6547d054f6796c8a059885bca",
+    "sha": "3af884d1fcebd4319c17a36a36ab33ef02621da2",
     "source": {
       "repoUrl": "https://github.com/rilldata/agent-skills.git",
-      "sha": "b69fe4d676f59da6547d054f6796c8a059885bca",
+      "sha": "3af884d1fcebd4319c17a36a36ab33ef02621da2",
       "subdir": ""
     },
     "counts": {
@@ -2481,14 +2673,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Video generation at scale. Generate videos, images, and audio with Runway's API — batch ad campaigns, product videos, multishot stories, and creative iteration. Supports seedance2, gen4.5, veo3, Nano, Banana Pro, and more.",
     "category": "design",
     "homepage": "https://runwayml.com",
-    "sha": "16353db3500ea5e346460755205991081567902a",
+    "sha": "e3dffc15498e9588e7815f37b9ecf10e8bc2c902",
     "source": {
       "repoUrl": "https://github.com/runwayml/skills.git",
-      "sha": "16353db3500ea5e346460755205991081567902a",
+      "sha": "e3dffc15498e9588e7815f37b9ecf10e8bc2c902",
       "subdir": ""
     },
     "counts": {
-      "skills": 16,
+      "skills": 10,
       "commands": 0,
       "servers": 0
     }
@@ -2498,11 +2690,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Build, train, and deploy AI models with deep AWS AI/ML expertise brought directly into your coding assistants, covering the surface area of Amazon SageMaker AI.",
     "category": "development",
     "homepage": "https://github.com/awslabs/agent-plugins",
-    "sha": "153b28e3c10de3661b8744b80d72c3a96fcdb0ab",
+    "sha": "bab56a3b9991aa0c6857b05198a61ba14a60bce4",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/awslabs/agent-plugins.git",
-      "sha": "153b28e3c10de3661b8744b80d72c3a96fcdb0ab",
+      "sha": "bab56a3b9991aa0c6857b05198a61ba14a60bce4",
       "ref": "main",
       "subdir": "plugins/sagemaker-ai"
     },
@@ -2517,15 +2709,15 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Sanity content platform integration with MCP server, agent skills, and slash commands. Query and author content, build and optimize GROQ queries, design schemas, and set up Visual Editing.",
     "category": "development",
     "homepage": "https://www.sanity.io",
-    "sha": "dfcdd2844a0e72627d22f93d90ebdc53ef510a66",
+    "sha": "0b3376799826fc82937770605d671b612bfc2d4f",
     "source": {
       "repoUrl": "https://github.com/sanity-io/agent-toolkit.git",
-      "sha": "dfcdd2844a0e72627d22f93d90ebdc53ef510a66",
+      "sha": "0b3376799826fc82937770605d671b612bfc2d4f",
       "subdir": ""
     },
     "brand": "si-sanity",
     "counts": {
-      "skills": 7,
+      "skills": 8,
       "commands": 4,
       "servers": 1
     }
@@ -2535,10 +2727,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "AI-assisted development of SAP Cloud Application Programming Model (CAP) projects. Search CDS models and CAP documentation.",
     "category": "development",
     "homepage": "https://cap.cloud.sap/",
-    "sha": "06062a1520fe29479bee21148b00623c9f835315",
+    "sha": "92dcb0405545c78788303a4ae296da1a942423d5",
     "source": {
       "repoUrl": "https://github.com/cap-js/mcp-server.git",
-      "sha": "06062a1520fe29479bee21148b00623c9f835315",
+      "sha": "92dcb0405545c78788303a4ae296da1a942423d5",
       "subdir": ""
     },
     "brand": "si-sap",
@@ -2553,17 +2745,17 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "MCP server for SAP Fiori development tools for Claude Code. Build and modify SAP Fiori applications with AI assistance.",
     "category": "development",
     "homepage": "https://github.com/SAP/open-ux-tools/tree/main/packages/fiori-mcp-server",
-    "sha": "9d96f9c63e3522184355e304ae50625fa7f1dbf6",
+    "sha": "11fe889e0ba08d360df3fe99e932e75d915c025e",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/SAP/open-ux-tools.git",
-      "sha": "9d96f9c63e3522184355e304ae50625fa7f1dbf6",
+      "sha": "11fe889e0ba08d360df3fe99e932e75d915c025e",
       "ref": "main",
       "subdir": "packages/fiori-mcp-server"
     },
     "brand": "si-sap",
     "counts": {
-      "skills": 6,
+      "skills": 7,
       "commands": 0,
       "servers": 1
     }
@@ -2591,10 +2783,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "MCP server for SAP Mobile Development Kit (MDK). Build and modify MDK applications with AI assistance — schema lookups, action validation, rule editing, and project scaffolding.",
     "category": "development",
     "homepage": "https://help.sap.com/docs/MDK",
-    "sha": "8e646ba68b704720814d6f2ee76052a6b69729d7",
+    "sha": "68efb00cd62a905748c98c8533fecff2f3ff4a00",
     "source": {
       "repoUrl": "https://github.com/SAP/mdk-mcp-server.git",
-      "sha": "8e646ba68b704720814d6f2ee76052a6b69729d7",
+      "sha": "68efb00cd62a905748c98c8533fecff2f3ff4a00",
       "subdir": ""
     },
     "brand": "si-sap",
@@ -2625,14 +2817,31 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
+    "name": "scandit-sdk",
+    "description": "AI agent skills for integrating the Scandit Data Capture SDK — product selection, documentation, and implementation guides for barcode scanning, ID capture, and smart label capture.",
+    "category": "development",
+    "homepage": "https://www.scandit.com",
+    "sha": "2f0731a090eb9c23a64b6dcd9559cf113df3313f",
+    "source": {
+      "repoUrl": "https://github.com/Scandit/skills.git",
+      "sha": "2f0731a090eb9c23a64b6dcd9559cf113df3313f",
+      "subdir": ""
+    },
+    "counts": {
+      "skills": 86,
+      "commands": 0,
+      "servers": 0
+    }
+  },
+  {
     "name": "sentry",
     "description": "Sentry error monitoring integration. Access error reports, analyze stack traces, search issues by fingerprint, and debug production errors directly from your development environment.",
     "category": "monitoring",
     "homepage": "https://github.com/getsentry/plugin-claude",
-    "sha": "f5e8dd7c7e2678ecd7ca57a0b55a9e94cc556774",
+    "sha": "73e53541d7af21672e27428c7067f4264b8a3d65",
     "source": {
       "repoUrl": "https://github.com/getsentry/plugin-claude.git",
-      "sha": "f5e8dd7c7e2678ecd7ca57a0b55a9e94cc556774",
+      "sha": "73e53541d7af21672e27428c7067f4264b8a3d65",
       "subdir": ""
     },
     "brand": "si-sentry",
@@ -2647,13 +2856,13 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Skills for using the Sentry CLI to interact with Sentry from the command line",
     "category": "monitoring",
     "homepage": "https://sentry.io",
-    "sha": "ae9a84c5ac02ac3733b0946ca7538997d96ab80d",
+    "sha": "f5d863a6658185112128be97f9a36c0da0cc4a74",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/getsentry/cli.git",
-      "sha": "ae9a84c5ac02ac3733b0946ca7538997d96ab80d",
+      "sha": "f5d863a6658185112128be97f9a36c0da0cc4a74",
       "ref": "main",
-      "subdir": "plugins/sentry-cli"
+      "subdir": "packages/cli/plugins/sentry-cli"
     },
     "brand": "si-sentry",
     "counts": {
@@ -2775,10 +2984,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Code search and understanding across codebases. Search, read, and trace references across repositories; analyze refactor impact; investigate incidents via commit and diff search; run targeted security sweeps.",
     "category": "development",
     "homepage": "https://sourcegraph.com",
-    "sha": "332ee0ca9a409ccd791abee43c7abf2606469017",
+    "sha": "674a05e2e28677fc3fdce7491063459455ded573",
     "source": {
       "repoUrl": "https://github.com/sourcegraph-community/sourcegraph-claudecode-plugin.git",
-      "sha": "332ee0ca9a409ccd791abee43c7abf2606469017",
+      "sha": "674a05e2e28677fc3fdce7491063459455ded573",
       "subdir": ""
     },
     "counts": {
@@ -2792,16 +3001,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Connect and interact with Spanner data using natural language.",
     "category": "database",
     "homepage": "https://github.com/gemini-cli-extensions/spanner",
-    "sha": "d56cd5ba0efc521db9e9406bca7fe68616562dd3",
+    "sha": "a69b5f3449387a851648f8bd9be58d0b27e0411c",
     "source": {
       "repoUrl": "https://github.com/gemini-cli-extensions/spanner.git",
-      "sha": "d56cd5ba0efc521db9e9406bca7fe68616562dd3",
+      "sha": "a69b5f3449387a851648f8bd9be58d0b27e0411c",
       "subdir": ""
     },
     "counts": {
-      "skills": 1,
+      "skills": 0,
       "commands": 0,
-      "servers": 0
+      "servers": 1
     }
   },
   {
@@ -2809,11 +3018,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Query the StackHawk platform API for security posture reporting, findings analysis, and app management. Guides agents through authentication, data retrieval, and result presentation.",
     "category": "security",
     "homepage": "https://docs.stackhawk.com/ai-security/",
-    "sha": "ba4bab433d31dc313de2ac6e72a43318b31f28dd",
+    "sha": "d9b265ff67a4feaa579d37504009dd4292966460",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/stackhawk/agent-skills.git",
-      "sha": "ba4bab433d31dc313de2ac6e72a43318b31f28dd",
+      "sha": "d9b265ff67a4feaa579d37504009dd4292966460",
       "ref": "main",
       "subdir": "plugins/api"
     },
@@ -2825,20 +3034,73 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
+    "name": "streaming-skills-plugin",
+    "description": "Skills for streaming application developers, covering Kafka and Flink client libraries and Schema Registry",
+    "category": "development",
+    "homepage": "https://www.confluent.io",
+    "sha": "914d95eff7ff50513b34bfb9ac97eda7c7fce899",
+    "source": {
+      "repoUrl": "https://github.com/confluentinc/agent-skills.git",
+      "sha": "914d95eff7ff50513b34bfb9ac97eda7c7fce899",
+      "subdir": ""
+    },
+    "counts": {
+      "skills": 9,
+      "commands": 0,
+      "servers": 0
+    }
+  },
+  {
     "name": "sumup",
     "description": "SumUp payment integrations across terminal and online checkout flows. Build Android and iOS POS apps with SumUp card readers, online checkout with server SDKs and the checkout widget, and control card readers remotely via Cloud API.",
     "category": "development",
     "homepage": "https://www.sumup.com/",
-    "sha": "700da2e866a71c7acbfcb0f2940ad7fa19955ae4",
+    "sha": "cb72003b417cec5e717c6b788d63394b7e921938",
     "source": {
       "repoUrl": "https://github.com/sumup/sumup-skills.git",
-      "sha": "700da2e866a71c7acbfcb0f2940ad7fa19955ae4",
-      "subdir": "providers/claude/plugin"
+      "sha": "cb72003b417cec5e717c6b788d63394b7e921938",
+      "subdir": ""
     },
     "counts": {
       "skills": 6,
       "commands": 0,
+      "servers": 1
+    }
+  },
+  {
+    "name": "superdesign",
+    "description": "Design or redesign frontend UI and marketing graphics on the Superdesign infinite canvas. Reads your codebase for context, sets up a design system, and generates branchable design drafts you refine.",
+    "category": "design",
+    "homepage": "https://superdesign.dev",
+    "sha": "f9f05cd988c247dce6c072eaf9ac6b162f2ffc4b",
+    "source": {
+      "repoUrl": "https://github.com/superdesigndev/superdesign-skill.git",
+      "sha": "f9f05cd988c247dce6c072eaf9ac6b162f2ffc4b",
+      "subdir": ""
+    },
+    "counts": {
+      "skills": 1,
+      "commands": 0,
       "servers": 0
+    }
+  },
+  {
+    "name": "synthflow",
+    "description": "Connects Claude Code to the Synthflow AI voice-agent platform through its hosted MCP server, with skills for reviewing calls and auditing agent prompts, plus a docs-search connector.",
+    "category": "automation",
+    "homepage": "https://synthflow.ai",
+    "sha": "205871ee83508502d2c982ee1bb7e65a2a29190b",
+    "ref": "main",
+    "source": {
+      "repoUrl": "https://github.com/SynthFlowAI/AnthropicPlugin.git",
+      "sha": "205871ee83508502d2c982ee1bb7e65a2a29190b",
+      "ref": "main",
+      "subdir": "plugins/synthflow"
+    },
+    "counts": {
+      "skills": 2,
+      "commands": 0,
+      "servers": 2
     }
   },
   {
@@ -2846,10 +3108,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Build AI applications with real-time web data using Tavily's search, extract, crawl, and research APIs.",
     "category": "development",
     "homepage": "https://www.tavily.com/",
-    "sha": "ea5e8201b0d3ed9c10b70b71187589bd761fe2d2",
+    "sha": "778122e5f9c680f541eeceda5a5b36405eb7980c",
     "source": {
       "repoUrl": "https://github.com/tavily-ai/skills.git",
-      "sha": "ea5e8201b0d3ed9c10b70b71187589bd761fe2d2",
+      "sha": "778122e5f9c680f541eeceda5a5b36405eb7980c",
       "subdir": ""
     },
     "counts": {
@@ -2863,10 +3125,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Agent skill for interacting with TeamCity CI/CD using the teamcity CLI. Enables Claude to explore builds, view logs, start jobs, manage queues, agents, and more.",
     "category": "development",
     "homepage": "https://www.jetbrains.com/teamcity/",
-    "sha": "e9bbb01fe7c5b96790f7a60de9c2ee60138a9a6c",
+    "sha": "ac6c1fd83300b2e42df48fcfff365ba03f73bb92",
     "source": {
       "repoUrl": "https://github.com/JetBrains/teamcity-cli.git",
-      "sha": "e9bbb01fe7c5b96790f7a60de9c2ee60138a9a6c",
+      "sha": "ac6c1fd83300b2e42df48fcfff365ba03f73bb92",
       "subdir": ""
     },
     "brand": "si-teamcity",
@@ -2916,10 +3178,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Agent Skills for Together AI platform — inference, training, embeddings, audio, video, images, function calling, and infrastructure. Covers serverless chat completions, image/video generation, fine-tuning, batch inference, evaluations, sandboxes, dedicated endpoints, and GPU clusters.",
     "category": "development",
     "homepage": "https://www.together.ai",
-    "sha": "d93a87cdc7a4ac0d1a75ef70468ad14fcaa56bd2",
+    "sha": "644d38225bbdef0318462fe222f6f9883c8addcd",
     "source": {
       "repoUrl": "https://github.com/togethercomputer/skills.git",
-      "sha": "d93a87cdc7a4ac0d1a75ef70468ad14fcaa56bd2",
+      "sha": "644d38225bbdef0318462fe222f6f9883c8addcd",
       "subdir": ""
     },
     "counts": {
@@ -2933,10 +3195,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Twilio Skills provide procedural knowledge for AI coding agents — which APIs to use, in what order, and what to avoid. Covers SMS, Voice, WhatsApp, Verify, SendGrid, Compliance, and 30+ products.",
     "category": "development",
     "homepage": "https://www.twilio.com",
-    "sha": "d7b0f231468cd9a6a0bab9ebcde8c1a5c9220bba",
+    "sha": "8aba46fb65dc8d9a20f4b301a68352064b4159a5",
     "source": {
       "repoUrl": "https://github.com/twilio/ai.git",
-      "sha": "d7b0f231468cd9a6a0bab9ebcde8c1a5c9220bba",
+      "sha": "8aba46fb65dc8d9a20f4b301a68352064b4159a5",
       "subdir": ""
     },
     "brand": "si-kit",
@@ -2951,11 +3213,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Plugin for coding agents working with UI theme designer. Bundles two skills: how-to and conceptual answers about UI theme designer on BTP, and questions about the SAP Design System and SAP Fiori design tokens — theme parameters and component-level parameter usage in UI5, UI5 Web Components, and Fundamental Styles.",
     "category": "design",
     "homepage": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents",
-    "sha": "4e30f5750f760cca24a898c3a6daa8eebfa060a0",
+    "sha": "768de1f20d048f55748f8543e35cd7b2ebcb09fa",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents.git",
-      "sha": "4e30f5750f760cca24a898c3a6daa8eebfa060a0",
+      "sha": "768de1f20d048f55748f8543e35cd7b2ebcb09fa",
       "ref": "main",
       "subdir": "plugins/ui-theme-designer"
     },
@@ -2971,11 +3233,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "SAPUI5 / OpenUI5 plugin for coding agents. Create and validate UI5 projects, access API documentation, run UI5 linter, get development guidelines and best practices for UI5 development.",
     "category": "development",
     "homepage": "https://github.com/UI5/plugins-coding-agents",
-    "sha": "2b8c4a944e39609214bce7aef3b05260985f0e91",
+    "sha": "a99b882ce364ef4b9f52fb4054f5f410c1636563",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/UI5/plugins-coding-agents.git",
-      "sha": "2b8c4a944e39609214bce7aef3b05260985f0e91",
+      "sha": "a99b882ce364ef4b9f52fb4054f5f410c1636563",
       "ref": "main",
       "subdir": "plugins/ui5"
     },
@@ -3025,15 +3287,33 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     }
   },
   {
+    "name": "unity",
+    "description": "Unity's official plugin for Claude Code, with curated skills for game development, monetization, and performance optimization.",
+    "category": "development",
+    "homepage": "https://unity.com",
+    "sha": "c7055702b44e58402ee481ff408aee407bcf9483",
+    "source": {
+      "repoUrl": "https://github.com/Unity-Technologies/unity-agent-plugin.git",
+      "sha": "c7055702b44e58402ee481ff408aee407bcf9483",
+      "subdir": ""
+    },
+    "brand": "si-unity",
+    "counts": {
+      "skills": 27,
+      "commands": 0,
+      "servers": 0
+    }
+  },
+  {
     "name": "valtown",
     "description": "Build and deploy on Val Town. Bundles the Val Town MCP server and platform skills (HTTP vals, cron/intervals, SQLite, email, OAuth, React UI, third-party integrations, templates).",
     "category": "deployment",
     "homepage": "https://val.town",
-    "sha": "0afe7b73671e39021b945f1f154bd9059bc7f39a",
+    "sha": "2d3ec654b6a7d93e209afb8f2e8848eddcb9f17b",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/val-town/plugins.git",
-      "sha": "0afe7b73671e39021b945f1f154bd9059bc7f39a",
+      "sha": "2d3ec654b6a7d93e209afb8f2e8848eddcb9f17b",
       "ref": "main",
       "subdir": "plugin"
     },
@@ -3082,10 +3362,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Vibe Prospecting connects Claude to live B2B company and contact data so users can search, match, enrich, filter, and export prospects at scale. It turns natural-language requests into structured GTM workflows for lead generation, CRM enrichment, company research, executive discovery, and multi-step prospecting automation inside Claude Cowork and Claude Code.",
     "category": "productivity",
     "homepage": "https://www.vibeprospecting.ai/product/claude-plugin",
-    "sha": "804bab5e0500d7a0f8613a83a3cfe5b79e6a31c3",
+    "sha": "9b4067473305dbba80be0fa9a492be39b96f455e",
     "source": {
       "repoUrl": "https://github.com/explorium-ai/vibeprospecting-plugin.git",
-      "sha": "804bab5e0500d7a0f8613a83a3cfe5b79e6a31c3",
+      "sha": "9b4067473305dbba80be0fa9a492be39b96f455e",
       "subdir": ""
     },
     "counts": {
@@ -3099,14 +3379,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Builds a VillageSQL extension for MySQL end-to-end through a 7-phase persona-driven workflow. Commonly used to port PostgreSQL extensions to MySQL.",
     "category": "database",
     "homepage": "https://villagesql.com",
-    "sha": "3f1703cfc911d66b2270f057df9559a9d8a8231d",
+    "sha": "6e7edf8d984c9d50ad516d4f4fea3b167b9f573c",
     "source": {
       "repoUrl": "https://github.com/villagesql/villagesql-skills.git",
-      "sha": "3f1703cfc911d66b2270f057df9559a9d8a8231d",
+      "sha": "6e7edf8d984c9d50ad516d4f4fea3b167b9f573c",
       "subdir": ""
     },
     "counts": {
-      "skills": 1,
+      "skills": 2,
       "commands": 0,
       "servers": 0
     }
@@ -3116,15 +3396,15 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Build, manage, and deploy Wix sites and apps. CLI development skills for dashboard extensions, backend APIs, site widgets, and service plugins with the Wix Design System, plus MCP server for site management.",
     "category": "development",
     "homepage": "https://dev.wix.com/docs/wix-cli/guides/development/about-wix-skills",
-    "sha": "dadcea402c38e7f4860f39b3e69d80ebb42bdb3e",
+    "sha": "d1f7c3cb17d30071bb012062fd47c989260f0aba",
     "source": {
       "repoUrl": "https://github.com/wix/skills.git",
-      "sha": "dadcea402c38e7f4860f39b3e69d80ebb42bdb3e",
+      "sha": "d1f7c3cb17d30071bb012062fd47c989260f0aba",
       "subdir": ""
     },
     "brand": "si-wix",
     "counts": {
-      "skills": 7,
+      "skills": 10,
       "commands": 0,
       "servers": 1
     }
@@ -3134,11 +3414,11 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "WorkOS integration skills for AuthKit, SSO, Directory Sync, RBAC, Vault, Audit Logs, migrations, and API references.",
     "category": "security",
     "homepage": "https://workos.com",
-    "sha": "de1ed17cf03fce2b53973247361a1a47719b528c",
+    "sha": "6b7d596ae28fb0bf2ecc01a8737e4bdcc70f7ab8",
     "ref": "main",
     "source": {
       "repoUrl": "https://github.com/workos/skills.git",
-      "sha": "de1ed17cf03fce2b53973247361a1a47719b528c",
+      "sha": "6b7d596ae28fb0bf2ecc01a8737e4bdcc70f7ab8",
       "ref": "main",
       "subdir": "plugins/workos"
     },
@@ -3153,16 +3433,16 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "You.com agent skills for web search, research with citations, and content extraction. Guided integrations for Vercel AI SDK, Claude Agent SDK, OpenAI Agents SDK, crewAI, LangChain, Microsoft Teams.ai, direct REST API, and bash CLI.",
     "category": "productivity",
     "homepage": "https://you.com",
-    "sha": "7e29dc1a5eacd33575f79f99d2ba68b829d6e3c8",
+    "sha": "71eeb239f7abf4f70229f676918a80e1a5210c2d",
     "source": {
       "repoUrl": "https://github.com/youdotcom-oss/agent-skills.git",
-      "sha": "7e29dc1a5eacd33575f79f99d2ba68b829d6e3c8",
+      "sha": "71eeb239f7abf4f70229f676918a80e1a5210c2d",
       "subdir": ""
     },
     "counts": {
       "skills": 5,
       "commands": 0,
-      "servers": 0
+      "servers": 3
     }
   },
   {
@@ -3170,14 +3450,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Zilliz Cloud management plugin with 14 skills covering cluster lifecycle, collection schema, vector search, index tuning, bulk import, RBAC, backups, and monitoring.",
     "category": "database",
     "homepage": "https://docs.zilliz.com",
-    "sha": "768d3db5fdb69b74116ada2b371032a49bfb3fe1",
+    "sha": "35c86c000c91abb35f3eeed5cca15ebd69cba4d5",
     "source": {
       "repoUrl": "https://github.com/zilliztech/zilliz-plugin.git",
-      "sha": "768d3db5fdb69b74116ada2b371032a49bfb3fe1",
+      "sha": "35c86c000c91abb35f3eeed5cca15ebd69cba4d5",
       "subdir": "plugins/zilliz"
     },
     "counts": {
-      "skills": 21,
+      "skills": 22,
       "commands": 2,
       "servers": 0
     }
@@ -3187,17 +3467,17 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Claude plugin for planning, building, and debugging Zoom integrations across REST APIs, SDKs, webhooks, bots, and MCP workflows.",
     "category": "development",
     "homepage": "https://developers.zoom.us/",
-    "sha": "317077a5dbffc8713abe49403192e765669ba753",
+    "sha": "9311dd4b31e8e55c27b95479a84601576e449e97",
     "source": {
       "repoUrl": "https://github.com/zoom/zoom-plugin.git",
-      "sha": "317077a5dbffc8713abe49403192e765669ba753",
+      "sha": "9311dd4b31e8e55c27b95479a84601576e449e97",
       "subdir": ""
     },
     "brand": "si-zoom",
     "counts": {
       "skills": 33,
       "commands": 0,
-      "servers": 3
+      "servers": 7
     }
   },
   {
@@ -3205,14 +3485,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Search companies and contacts, enrich leads, find lookalikes, and get AI-ranked contact recommendations. Pre-built skills chain multiple ZoomInfo tools into complete B2B sales workflows.",
     "category": "productivity",
     "homepage": "https://www.zoominfo.com",
-    "sha": "66eae634f40f68bddc6027f0167bbecdb5f4b531",
+    "sha": "d07402feb2b9967ccc118f55bacd41a79c822d6a",
     "source": {
       "repoUrl": "https://github.com/Zoominfo/zoominfo-mcp-plugin.git",
-      "sha": "66eae634f40f68bddc6027f0167bbecdb5f4b531",
+      "sha": "d07402feb2b9967ccc118f55bacd41a79c822d6a",
       "subdir": ""
     },
     "counts": {
-      "skills": 14,
+      "skills": 35,
       "commands": 0,
       "servers": 1
     }
@@ -3222,10 +3502,10 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     "description": "Manage Zscaler cloud security platform including ZPA (private access), ZIA (internet access), ZDX (digital experience), ZCC (client connector), EASM (attack surface), and Z-Insights (analytics). Create and manage policies, troubleshoot connectivity, audit security configurations, and investigate incidents across the full Zscaler ecosystem.",
     "category": "security",
     "homepage": "https://github.com/zscaler/zscaler-mcp-server",
-    "sha": "1872e3bdad259457f9261801841b4a8d3f4a6074",
+    "sha": "809f68d6c921e0829fb2e07e9b797e7e70cf720b",
     "source": {
       "repoUrl": "https://github.com/zscaler/zscaler-mcp-server.git",
-      "sha": "1872e3bdad259457f9261801841b4a8d3f4a6074",
+      "sha": "809f68d6c921e0829fb2e07e9b797e7e70cf720b",
       "subdir": ""
     },
     "counts": {
