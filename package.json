@@ -1,6 +1,7 @@
 {
   "name": "happyvibe",
   "productName": "HappyVibe",
+  "desktopName": "happyvibe.desktop",
   "version": "0.1.0",
   "description": "Vibe coding you can actually watch.",
   "main": "./out/main/index.js",
@@ -27,6 +28,7 @@
     "test:live": "grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism",
     "gate": "npm run build && npm test",
     "live:why": "git diff --name-only main...HEAD | grep -E 'pi-runtime/extensions/|pi-runtime/package(-lock)?\\.json|src/main/pi/'; git diff --name-only main...HEAD | grep '^tests/' | xargs grep -l 'skipIf(!KEY' 2>/dev/null",
+    "icons": "electron scripts/icons.mjs",
     "catalog:plugins": "node --experimental-strip-types --import jiti/register tools/plugin-catalog/build.ts",
     "catalog:providers": "node --experimental-strip-types --import jiti/register tools/provider-catalog/build.ts"
   },

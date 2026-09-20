@@ -6,6 +6,18 @@ import { DEFAULT_TERMINAL_SETTINGS } from "../src/main/terminalSettings";
 /** `-f` skips the user's rc files, so a test does not depend on someone's dotfiles. */
 import { FAST, HAS_POSIX_SHELL } from "./shellFixture";
 import { FOREGROUND_SUPPORTED as FOREGROUND } from "./shellFixture";
+
+/**
+ * Assert a run succeeded, and SAY WHY when it did not.
+ *
+ * Every refusal in agentTerminals.run is fast, so `expect(r.ok).toBe(true)`
+ * fails as a bare "expected false to be true" — throwing away `reason`, which
+ * is the only part that identifies which of the five rules fired. This cost a
+ * whole debugging round on Linux.
+ */
+function expectOk<T extends { ok: boolean; reason?: string }>(r: T, what = "run"): void {
+  expect(r.ok, r.ok ? "" : `${what} refused: ${r.reason}`).toBe(true);
+}
 const WS = process.cwd();
 const S = "sess-1";
 
@@ -30,7 +42,7 @@ describe("soft cap", () => {
     const ids: string[] = [];
     for (let i = 0; i < MAX_AGENT_TERMINALS; i++) {
       const r = await run("true");
-      expect(r.ok).toBe(true);
+      expectOk(r);
       if (r.ok) ids.push(r.terminalId);
     }
     const over = await run("true");
@@ -42,7 +54,7 @@ describe("soft cap", () => {
 
   it("frees a slot when the agent kills one", async () => {
     const first = await run("true");
-    expect(first.ok).toBe(true);
+    expectOk(first);
     for (let i = 1; i < MAX_AGENT_TERMINALS; i++) await run("true");
     if (first.ok) expect(agent.kill(S, first.terminalId)).toEqual({ ok: true });
     expect((await run("true")).ok).toBe(true);
@@ -52,7 +64,7 @@ describe("soft cap", () => {
 describe("busy-reuse refusal", () => {
   it.skipIf(!FOREGROUND)("refuses to reuse a terminal whose foreground is non-null, naming the process", async () => { // Windows has no foreground source (terminals.ts FOREGROUND_SUPPORTED)
     const r = await run("sleep 30");
-    expect(r.ok).toBe(true);
+    expectOk(r);
     if (!r.ok) return;
     // The foreground process is POLLED by node-pty, not evented — give it a beat.
     await vi.waitFor(() => expect(mgr.foreground(r.terminalId)).toBe("sleep"), { timeout: 8000, interval: 100 });
@@ -66,20 +78,23 @@ describe("busy-reuse refusal", () => {
     // constant there, so believing it would refuse every reuse forever and fill the
     // agent's cap of 3 permanently. Null is the fail-open direction we chose.
     const r = await run("sleep 30");
-    expect(r.ok).toBe(true);
+    expectOk(r);
     if (!r.ok) return;
     expect(mgr.foreground(r.terminalId)).toBeNull();
     const reuse = await run("echo x", r.terminalId);
-    expect(reuse.ok).toBe(true);
+    expectOk(reuse);
   });
 
   it("allows reuse of an idle terminal", async () => {
     const r = await run("true");
-    expect(r.ok).toBe(true);
+    expectOk(r);
     if (!r.ok) return;
     await vi.waitFor(() => expect(mgr.foreground(r.terminalId)).toBeNull(), { timeout: 8000, interval: 100 });
     const again = await run("echo hello", r.terminalId);
-    expect(again.ok).toBe(true);
+    // The reason is the whole diagnostic: every refusal is fast, so a bare
+    // `.ok` assertion reports "expected false to be true" and throws away the
+    // one sentence that says which rule fired.
+    expectOk(again);
     if (again.ok) expect(again.terminalId).toBe(r.terminalId);
   });
 });
@@ -87,7 +102,7 @@ describe("busy-reuse refusal", () => {
 describe("ownership", () => {
   it("refuses a terminal another session owns", async () => {
     const r = await run("true");
-    expect(r.ok).toBe(true);
+    expectOk(r);
     if (!r.ok) return;
     expect(agent.kill("sess-2", r.terminalId).ok).toBe(false);
     expect(agent.read("sess-2", r.terminalId).ok).toBe(false);
@@ -96,7 +111,7 @@ describe("ownership", () => {
 
   it("releaseSession returns the ids it owned and forgets them without killing", async () => {
     const r = await run("sleep 30");
-    expect(r.ok).toBe(true);
+    expectOk(r);
     if (!r.ok) return;
     expect(agent.releaseSession(S)).toEqual([r.terminalId]);
     expect(agent.ownedBy(S)).toEqual([]);
@@ -108,7 +123,7 @@ describe("ownership", () => {
 describe("read", () => {
   it("caps lines at 200 even when the model asks for more", async () => {
     const r = await run("true");
-    expect(r.ok).toBe(true);
+    expectOk(r);
     if (!r.ok) return;
     const spy = vi.spyOn(mgr, "readText");
     agent.read(S, r.terminalId, 10_000);
@@ -117,7 +132,7 @@ describe("read", () => {
 
   it("reports userTyped once, then clears it", async () => {
     const r = await run("true");
-    expect(r.ok).toBe(true);
+    expectOk(r);
     if (!r.ok) return;
     agent.noteUserInput(r.terminalId, "x");
     const first = agent.read(S, r.terminalId);
@@ -136,7 +151,7 @@ describe("interleave hold", () => {
    */
   const idleTerminal = async (): Promise<string> => {
     const r = await run("true");
-    expect(r.ok).toBe(true);
+    expectOk(r);
     if (!r.ok) throw new Error("could not open a terminal");
     await vi.waitFor(() => expect(mgr.foreground(r.terminalId)).toBeNull(), { timeout: 8000, interval: 100 });
     return r.terminalId;
@@ -149,7 +164,7 @@ describe("interleave hold", () => {
     const started = Date.now();
     const res = await run("echo queued", id);
     const waited = Date.now() - started;
-    expect(res.ok).toBe(true);
+    expectOk(res);
     expect(spy).toHaveBeenCalled();
     // Held for the debounce rather than interleaving into the user's half-typed
     // line. Real timers: HOLD_IDLE_MS is 1.5s and this is the only place it runs.
@@ -159,10 +174,17 @@ describe("interleave hold", () => {
   it("does not hold once the user's line is ended", async () => {
     const id = await idleTerminal();
     for (const ender of ["npm ls\r", "\x03", "\x15"]) {
+      // Back to a prompt before EACH pass, not just before the first. This test
+      // measures the hold; a terminal still finishing the previous `echo` is
+      // refused by the busy-reuse rule instead — and a refusal is also fast, so
+      // the timing assertion below would pass while `ok` was false. macOS
+      // happened to return to idle inside the loop's own overhead and Linux does
+      // not, which is the whole reason this line exists.
+      await vi.waitFor(() => expect(mgr.foreground(id)).toBeNull(), { timeout: 8000, interval: 100 });
       agent.noteUserInput(id, ender);
       const started = Date.now();
       const res = await run("echo now", id);
-      expect(res.ok).toBe(true);
+      expectOk(res);
       expect(Date.now() - started).toBeLessThan(HOLD_IDLE_MS / 2);
     }
   }, 15_000);
@@ -172,7 +194,7 @@ describe("open-terminals context block", () => {
   it("is empty with no terminals and lists one line each otherwise", async () => {
     expect(agent.buildOpenTerminalsBlock(S)).toBe("");
     const r = await run("sleep 30");
-    expect(r.ok).toBe(true);
+    expectOk(r);
     if (!r.ok) return;
     const block = agent.buildOpenTerminalsBlock(S);
     expect(block).toContain("<open-terminals>");
@@ -190,7 +212,7 @@ describe("open-terminals context block", () => {
   it("shows only this session's terminals", async () => {
     const mine = await run("sleep 30");
     await agent.run("sess-2", WS, WS, FAST, "sleep 30");
-    expect(mine.ok).toBe(true);
+    expectOk(mine);
     if (!mine.ok) return;
     const block = agent.buildOpenTerminalsBlock(S);
     expect(block.split("\n").filter((l) => l.startsWith("t"))).toHaveLength(1);

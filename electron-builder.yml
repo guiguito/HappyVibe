@@ -40,6 +40,42 @@ nsis:
   perMachine: false                 # per-user: no UAC, which keeps the unsigned path bearable
   allowToChangeInstallationDirectory: true
   deleteAppDataOnUninstall: false   # sessions, audit log and memory are the user's data
+# §4 Linux round (2026-09-20). x64 ONLY — and for a DIFFERENT reason than `win:`
+# above, which is why the two are not collapsed into one comment. sherpa-onnx and
+# @firecrawl/anydoc both publish linux-arm64, so arm64 is AVAILABLE here; it is
+# excluded because nothing tests it. Windows arm64 unblocks when upstream ships a
+# binary, Linux arm64 when we add a runner.
+#
+# Two targets because neither alone is honest: AppImage runs anywhere but needs
+# libfuse2, absent by default on Ubuntu 22.04+, where a double-click does nothing
+# with no error to read; the deb works out of the box and is the only one of the
+# two that can declare its dependencies.
+#
+# There is deliberately NO `deb:` block. `deb.depends` REPLACES electron-builder's
+# defaults instead of extending them (FpmTarget.js:185-194), and those defaults
+# already include libsecret-1-0 — which is exactly what MCP OAuth's keychain needs
+# — alongside libgtk-3-0 and libnss3. Adding the one line that looks like it fixes
+# that would ship a package which installs cleanly and will not launch. Pinned by
+# tests/linux-package.test.ts.
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  # A rendered set (`npm run icons`), not electron-builder's downscale of the
+  # macOS .icns — the artwork is a squircle with a face and 1024→16 muddies it.
+  icon: build/icons
+  category: Development
+  synopsis: A desktop home for the Pi coding agent, with permissions you can see
+  # THE double-icon-in-the-dock fix, and it is an ASSOCIATION bug rather than an
+  # image one. Electron derives its app_id from `desktopName` in package.json;
+  # with this true, electron-builder names the installed .desktop file AND
+  # StartupWMClass from that same field, so a running window groups with its
+  # launcher instead of raising a second generic icon beside it. electron-builder
+  # #9103; its own default flips to true in v27. StartupWMClass is deliberately
+  # NOT set by hand — it is derived, and a second copy could only drift.
+  syncDesktopName: true
 asarUnpack:
   # Native ONNX runtime — cannot be loaded from inside an asar archive.
   - "**/node_modules/sherpa-onnx-*/**"
