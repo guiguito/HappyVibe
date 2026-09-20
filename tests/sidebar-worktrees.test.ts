@@ -49,6 +49,57 @@ describe("the sidebar shows worktrees and never acts on them", () => {
   });
 });
 
+describe("New worktree… lives in the branch menu", () => {
+  const c = code(panel);
+  it("is offered on a project and absent inside a worktree", () => {
+    expect(c).toMatch(/payload\?\.worktreeOf === null &&/);
+    expect(c).toMatch(/New worktree…/);
+  });
+
+  it("is disabled with the REASON rather than hidden, and never `disabled`", () => {
+    // round 14's lesson: a `disabled` control receives no pointer events, so its
+    // title never appears — and the reason is the entire point.
+    expect(c).toMatch(/aria-disabled=\{!payload\.worktreeAdd\.ok\}/);
+    expect(c).toMatch(/payload\.worktreeAdd\.reason/);
+    expect(c).not.toMatch(/[^-]\bdisabled=\{!payload\.worktreeAdd\.ok\}/);
+  });
+
+  it("previews the folder from the SHARED slug, never its own copy", () => {
+    expect(c).toMatch(/worktreeSlug\(branch \|\| "…"\)/);
+    expect(panel).toContain('from "../../../main/worktreeSlug"');
+  });
+
+  it("sends a branch name and nothing else — the folder is main's decision", () => {
+    expect(c).toMatch(/window\.hv\.worktreeAdd\(workspace, branch\)/);
+  });
+});
+
+describe("ChangesPanel calls no hook after its early returns", () => {
+  /**
+   * The Rules of Hooks, enforced here because this repo cannot run a linter:
+   * typescript-eslint refuses TS 7 outright (CLAUDE.md), so `react-hooks` is
+   * unavailable. This caught a real one — §29's `newWorktreeRef` was declared
+   * beside the function that uses it, which is below this component's four
+   * early returns. It typechecks, the DOM-less suite cannot see it, and the app
+   * rendered a BLANK window: "Rendered more hooks than during the previous
+   * render". The panel is the file with early returns AND the most hooks, so it
+   * is the one worth scanning.
+   */
+  it("every hook is above the first early return", () => {
+    const lines = panel.split("\n");
+    const start = lines.findIndex((l) => l.startsWith("export function ChangesPanel("));
+    const end = lines.findIndex((l, i) => i > start && l === "}");
+    const body = lines.slice(start, end);
+    const firstReturn = body.findIndex((l) => /^ {2}if \(.*\breturn\b/.test(l));
+    expect(firstReturn).toBeGreaterThan(0); // the panel does have early returns
+    const late = body
+      .slice(firstReturn)
+      .map((l, i) => [firstReturn + i + start + 1, l] as const)
+      .filter(([, l]) => /^ {2}(const |let )?[^ ].*\buse(State|Ref|Memo|Effect|Callback)\(/.test(l));
+    expect(late.map(([n, l]) => `${n}: ${l.trim()}`)).toEqual([]);
+  });
+});
+
 describe("the Changes panel names the project a worktree belongs to", () => {
   it("renders the parent's name from main's own answer", () => {
     expect(code(panel)).toMatch(/worktreeOf/);

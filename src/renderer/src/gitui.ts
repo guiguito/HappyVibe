@@ -137,3 +137,21 @@ export function summarise(files: HvGitFileChange[]): ChangeSummary {
   }
   return { files: files.length, additions, deletions, staged, changedLines: additions + deletions };
 }
+
+/**
+ * §29 — the line of a git failure that says WHY.
+ *
+ * `split("\n")[0]` is wrong for the verbs that narrate before they fail: a
+ * refused `worktree add` opens with "Preparing worktree (new branch 'x')" and
+ * puts `fatal: 'x' is not a valid branch name` on the SECOND line, so the first
+ * line reads as progress and the user is told nothing. Found in the GUI pass by
+ * typing a branch name with a space in it.
+ *
+ * git's own prefixes are the signal; `hint:` lines are advice about the error,
+ * never the error. Falls back to the first non-empty line, so an unfamiliar
+ * shape still says something rather than nothing.
+ */
+export function gitReason(stderr: string | undefined | null): string {
+  const lines = (stderr ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  return lines.find((l) => /^(fatal|error):/i.test(l)) ?? lines[0] ?? "git refused, without saying why.";
+}

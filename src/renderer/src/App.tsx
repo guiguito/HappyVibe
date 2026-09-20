@@ -3206,8 +3206,15 @@ export default function App(): React.JSX.Element {
         onBranchMenu={(ws) => {
           // The branch menu lives in the panel, where switching also gets the
           // three-choice dialog for a dirty tree — one implementation, not two.
+          //
+          // Keyed, not `setDrawerPanel`: that helper reads the CURRENT `activeWs`
+          // from its closure, so clicking the branch line of a workspace you are
+          // NOT on moved the active root and opened the drawer on the one you
+          // just left — the panel simply did not appear. Same fix as
+          // `cleanUpWorktrees` below, which routes here for a stale worktree.
           setActiveWs(ws);
-          setDrawerPanel("changes");
+          setView("chat");
+          setDrawerByWs((m) => ({ ...m, [ws]: "changes" }));
         }}
         onNewSession={newSession}
         onSelectSession={selectSession}
@@ -3933,6 +3940,7 @@ export default function App(): React.JSX.Element {
                       key={shownDrawer.ws}
                       workspace={shownDrawer.ws}
                       onOpenFile={(rel) => openFileTab(shownDrawer.ws, rel)}
+                      onWorktreeCreated={(p) => { activateRoot(p); void newSession(p); }}
                     />
                   ) : (
                     <FileTree

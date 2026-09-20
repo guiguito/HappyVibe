@@ -95,10 +95,11 @@ import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
   gitCommonDir, gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, listWorktrees,
   listWorktreesSync, probeWorkspace, publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile,
-  undoHunk,
+  undoHunk, addWorktree, worktreeVerbs,
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
-import { WorktreeIndex, sessionsOfProject } from "./worktrees";
+import { WorktreeIndex, sessionsOfProject, worktreeDir } from "./worktrees";
+import { worktreeSlug } from "./worktreeSlug";
 // §33 Memory — main is the ONE writer (agent envelopes + human edits, one serialized queue).
 import {
   CAPS as MEMORY_CAPS, estimateTokens as estimateMemoryTokens, forgetAll, forgetMemory, importMemories,
@@ -5228,7 +5229,12 @@ export function registerIpc(
     // §29 worktrees: naming the parent is main's job, not the renderer's — the
     // panel must never have to work out which root it is looking at.
     const parent = worktrees.parentOf(workspaceId);
-    return { ...payload, worktreeOf: parent ? { path: parent, name: path.basename(parent) } : null };
+    const b = payload.status?.branch;
+    return {
+      ...payload,
+      worktreeOf: parent ? { path: parent, name: path.basename(parent) } : null,
+      worktreeAdd: worktreeVerbs(payload.state, b?.oid ? { branch: b.branch, sha: b.oid } : null),
+    };
   });
 
   ipcMain.handle("hv:git-diff", (_e, workspaceId: string, baseline: "head" | "base", opts?: { staged?: boolean; path?: string }) =>
@@ -5276,6 +5282,36 @@ export function registerIpc(
       pushGitChanged(workspaceId, { force: true });
     }
     return r;
+  });
+
+  /**
+   * §29 worktrees — human-only, and the folder is MAIN's decision: the renderer
+   * sends a branch name and nothing else, so no path from the renderer can ever
+   * place a checkout. Keyed by §33's memory key, so every worktree of one clone
+   * files under one folder and the key needs no second derivation.
+   */
+  ipcMain.handle("hv:worktree-add", async (_e, workspaceId: string, branch: string) => {
+    if (!workspaces.list().some((w) => normPath(w) === normPath(workspaceId))) {
+      return { ok: false, error: "Unknown workspace" };
+    }
+    const name = String(branch).trim();
+    if (!name) return { ok: false, error: "A branch name is required." };
+
+    const payload = await gitStatus(workspaceId);
+    const b = payload.status?.branch;
+    const verbs = worktreeVerbs(payload.state, b?.oid ? { branch: b.branch, sha: b.oid } : null);
+    if (!verbs.ok) return { ok: false, error: verbs.reason };
+
+    const dir = worktreeDir(
+      agentDir(),
+      workspaceMemoryKey(workspaceId, gitCommonDir(workspaceId)),
+      worktreeSlug(name)
+    );
+    const r = await addWorktree(workspaceId, dir, name);
+    if (!r.ok) return r;
+    auditGit(workspaceId, "worktree-add", { branch: name, path: dir, base: verbs.base.sha });
+    await refreshWorktrees(workspaceId);
+    return { ok: true, path: dir };
   });
 
   ipcMain.handle("hv:git-fetch", (_e, workspaceId: string) => fetchRemote(workspaceId));

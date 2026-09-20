@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { badgeTint, countDiffLines, groupByDir, primaryAction, statusGlyph, summarise } from "../src/renderer/src/gitui";
+import { badgeTint, countDiffLines, gitReason, groupByDir, primaryAction, statusGlyph, summarise } from "../src/renderer/src/gitui";
 
 /** A file change with only the fields a given assertion cares about. */
 function f(over: Partial<HvGitFileChange> & { path: string }): HvGitFileChange {
@@ -144,5 +144,27 @@ describe("countDiffLines", () => {
 
   it("reads zero for a file with no hunks (a pure rename)", () => {
     expect(countDiffLines([])).toEqual({ additions: 0, deletions: 0 });
+  });
+});
+
+describe("gitReason", () => {
+  it("picks the fatal line, not the progress line git printed first", () => {
+    // Captured from git 2.50.1 refusing `worktree add -b 'feat/new demo!'`.
+    const out = [
+      "Preparing worktree (new branch 'feat/new demo!')",
+      "fatal: 'feat/new demo!' is not a valid branch name",
+      "hint: See `man git check-ref-format`",
+    ].join("\n");
+    expect(gitReason(out)).toBe("fatal: 'feat/new demo!' is not a valid branch name");
+  });
+
+  it("prefers an error: line over a hint about it", () => {
+    expect(gitReason("error: the branch 'x' is not fully merged.\nhint: delete it with -D")).toMatch(/^error:/);
+  });
+
+  it("falls back to the first real line, and never to an empty string", () => {
+    expect(gitReason("\n\nsomething odd\n")).toBe("something odd");
+    expect(gitReason("")).toMatch(/git refused/);
+    expect(gitReason(undefined)).toMatch(/git refused/);
   });
 });

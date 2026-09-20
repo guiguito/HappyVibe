@@ -231,6 +231,7 @@ contextBridge.exposeInMainWorld("hv", {
 
   // ── §29 worktrees ───────────────────────────────────────────────
   worktreeList: () => ipcRenderer.invoke("hv:worktree-list"),
+  worktreeAdd: (workspaceId: string, branch: string) => ipcRenderer.invoke("hv:worktree-add", workspaceId, branch),
   onWorktreesChanged: (cb: (p: { workspaceId: string; worktrees: unknown[] }) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, p: unknown): void =>
       cb(p as { workspaceId: string; worktrees: unknown[] });

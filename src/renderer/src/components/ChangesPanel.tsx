@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ASSISTANT_TASKS_CHANGED } from "./PromptRow";
 import { DiffView, StatusGlyph } from "./DiffView";
-import { groupByDir, primaryAction, summarise } from "../gitui";
+import { gitReason, groupByDir, primaryAction, summarise } from "../gitui";
+import { worktreeSlug } from "../../../main/worktreeSlug";
 
 /**
  * §29 — the Changes panel.
@@ -40,9 +41,12 @@ interface Confirm {
 export function ChangesPanel({
   workspace,
   onOpenFile,
+  onWorktreeCreated,
 }: {
   workspace: string;
   onOpenFile: (relPath: string) => void;
+  /** §29: a new worktree becomes the active root and opens a session there. */
+  onWorktreeCreated?: (path: string) => void;
 }): React.JSX.Element {
   const [payload, setPayload] = useState<HvGitStatusPayload | null>(null);
   const [message, setMessage] = useState("");
@@ -72,6 +76,20 @@ export function ChangesPanel({
   const [switchChoice, setSwitchChoice] = useState<{ branch: string; conflict: boolean } | null>(null);
   const toastTimer = useRef<number | null>(null);
   const messageRef = useRef<HTMLTextAreaElement | null>(null);
+  /**
+   * §29: the New worktree dialog's branch name.
+   *
+   * A REF because a `Confirm` body is a ReactNode captured once at `setConfirm`
+   * time — an input bound to panel state would never re-render as you type, so
+   * `NewWorktreeBody` owns the keystrokes and writes through to this.
+   *
+   * Declared HERE with the other refs, above this component's four early
+   * returns, and that placement is the point: next to its own `openNewWorktree`
+   * it sat below them, which is a conditional hook. It typechecks, the DOM-less
+   * suite cannot see it, and the app rendered a blank window with "Rendered
+   * more hooks than during the previous render".
+   */
+  const newWorktreeRef = useRef("");
 
   const state = payload?.state;
   const files = useMemo(() => payload?.status?.files ?? [], [payload]);
@@ -435,6 +453,39 @@ export function ChangesPanel({
   // (`origin/main`); the local branch it protects is the short name.
   const defaultShort = defaultBranch?.replace(/^origin\//, "") ?? null;
 
+  /**
+   * §29 worktrees — make one, from this project's current HEAD.
+   *
+   * The branch lives in a REF rather than in panel state because a `Confirm`
+   * body is a ReactNode captured once at `setConfirm` time: a controlled input
+   * reading panel state would never re-render as you type. `NewWorktreeBody`
+   * owns the keystrokes and writes through.
+   */
+  const openNewWorktree = (): void => {
+    if (!payload?.worktreeAdd.ok) return;
+    const base = payload.worktreeAdd.base;
+    newWorktreeRef.current = "";
+    setConfirm({
+      title: "New worktree",
+      body: <NewWorktreeBody base={base} onChange={(v) => { newWorktreeRef.current = v; }} />,
+      confirmLabel: "Make worktree",
+      onConfirm: async () => {
+        const branch = newWorktreeRef.current.trim();
+        if (!branch) return; // the dialog stays open; the field is the answer
+        setConfirm(null);
+        const r = await window.hv.worktreeAdd(workspace, branch);
+        if (!r.ok) {
+          // git narrates before it refuses — the reason is rarely line one.
+          flash(gitReason(r.error));
+          return;
+        }
+        setLastCommand(`git worktree add -b ${branch} ${r.path}`);
+        flash("Made a worktree — you’re in it now.");
+        onWorktreeCreated?.(r.path);
+      },
+    });
+  };
+
   const branchExists = branches.includes(newBranch.trim());
   const submitNewBranch = (): void => {
     const name = newBranch.trim();
@@ -619,6 +670,36 @@ export function ChangesPanel({
               </div>
               {branchError && (
                 <div className="px-1 pt-1 text-[10px] text-berry">{branchError}</div>
+              )}
+              {/* §29 worktrees — the ONE place worktrees are made. It sits under
+                  New branch because that is what it is: a branch, plus a second
+                  copy of the files to work in. Absent inside a worktree: a
+                  worktree of a worktree is the parent's worktree, and offering
+                  it here would say otherwise. */}
+              {payload?.worktreeOf === null && (
+                <div className="border-t-2 border-line mt-1 pt-1">
+                  <button
+                    type="button"
+                    /* aria-disabled, never `disabled`: a disabled control gets no
+                       pointer events, so its title never appears — and the reason
+                       IS the point (round 14's branch-delete lesson). */
+                    aria-disabled={!payload.worktreeAdd.ok}
+                    title={
+                      payload.worktreeAdd.ok
+                        ? `Branch from ${payload.worktreeAdd.base.branch ?? "HEAD"} @ ${payload.worktreeAdd.base.sha.slice(0, 7)}`
+                        : payload.worktreeAdd.reason
+                    }
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      if (!payload.worktreeAdd.ok) return;
+                      setBranchMenu(false);
+                      openNewWorktree();
+                    }}
+                    className="w-full text-left rounded-lg px-2 py-1 text-[11px] font-bold cursor-pointer hover:bg-honey-soft aria-disabled:opacity-40 aria-disabled:cursor-default"
+                  >
+                    New worktree…
+                  </button>
+                </div>
               )}
             </div>
           </>
@@ -1278,5 +1359,51 @@ function PrGlyph(): React.JSX.Element {
       <path d="M18 16V9a3 3 0 0 0-3-3h-3" />
       <path d="m13 3-2 3 2 3" />
     </svg>
+  );
+}
+
+/**
+ * §29 worktrees — the New worktree dialog's body.
+ *
+ * Its own component because a `Confirm` body is captured once: an input bound
+ * to the panel's state would not re-render as you type. It keeps the keystrokes
+ * and writes the value out through `onChange`.
+ *
+ * The folder is shown but not editable. Where a worktree lives is main's
+ * decision — app data, keyed by the project — and offering the choice here
+ * would be offering something the app then ignores.
+ */
+function NewWorktreeBody({
+  base,
+  onChange,
+}: {
+  base: { branch: string | null; sha: string };
+  onChange: (v: string) => void;
+}): React.JSX.Element {
+  const [branch, setBranch] = useState("");
+  return (
+    <div className="flex flex-col gap-2">
+      <div>
+        A second copy of this project’s files, on its own branch, so an agent can work there without
+        touching what you have open here.
+      </div>
+      <input
+        autoFocus
+        value={branch}
+        onChange={(e) => { setBranch(e.target.value); onChange(e.target.value); }}
+        placeholder="Branch name…"
+        className="rounded-lg border-2 border-line bg-paper px-2 py-1 text-[11px] focus:outline-none focus:border-tangerine"
+      />
+      <div className="text-ink-soft">
+        Branching from <span className="font-mono">{base.branch ?? "HEAD"}</span> @{" "}
+        <span className="font-mono">{base.sha.slice(0, 7)}</span>, into{" "}
+        <span className="font-mono">{worktreeSlug(branch || "…")}</span> in HappyVibe’s own folder — not
+        inside your project, so it never shows up as changes to save.
+      </div>
+      <div className="text-ink-soft">
+        Nothing runs there until you ask: a new copy has no dependencies installed yet, and the agent
+        will ask before installing any.
+      </div>
+    </div>
   );
 }

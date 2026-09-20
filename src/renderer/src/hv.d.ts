@@ -211,6 +211,10 @@ interface HvGitStatusPayload {
    * work out which root it is looking at.
    */
   worktreeOf: { path: string; name: string } | null;
+  /** §29: may *New worktree…* run here, and from which base — or why not. */
+  worktreeAdd:
+    | { ok: true; base: { branch: string | null; sha: string } }
+    | { ok: false; reason: string };
 }
 
 interface HvLogEntry {
@@ -858,6 +862,7 @@ interface HvApi {
   gitPrUrl(workspaceId: string, draft?: boolean): Promise<{ url: string; drafted: boolean } | null>;
   onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;
   worktreeList(): Promise<Record<string, HvWorktreeInfo[]>>;
+  worktreeAdd(workspaceId: string, branch: string): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   onWorktreesChanged(cb: (p: { workspaceId: string; worktrees: HvWorktreeInfo[] }) => void): () => void;
 
   // §23 Plan Mode
