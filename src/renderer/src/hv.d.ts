@@ -189,11 +189,28 @@ interface HvFileDiff {
   fileHeader: string;
 }
 
+/** §29 worktrees — one linked worktree of a project, as git reports it. */
+interface HvWorktreeInfo {
+  path: string;
+  /** Short branch name; null when the worktree is on a detached HEAD. */
+  branch: string | null;
+  head: string;
+  locked: boolean;
+  /** The folder is gone. The row is inert and offers Clean up, nothing else. */
+  prunable: boolean;
+}
+
 interface HvGitStatusPayload {
   state: HvRepoState;
   status?: { branch: HvGitBranchInfo; files: HvGitFileChange[] };
   stashes?: { index: number; message: string }[];
   lastSubject?: string;
+  /**
+   * §29 worktrees: set when THIS root is an unregistered worktree, naming the
+   * project it belongs to. Main resolves it — the renderer must never have to
+   * work out which root it is looking at.
+   */
+  worktreeOf: { path: string; name: string } | null;
 }
 
 interface HvLogEntry {
@@ -840,6 +857,8 @@ interface HvApi {
   exportSessionHtml(sessionId: string): Promise<{ ok: true; path: string } | { ok: false; error?: string; canceled?: boolean }>;
   gitPrUrl(workspaceId: string, draft?: boolean): Promise<{ url: string; drafted: boolean } | null>;
   onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;
+  worktreeList(): Promise<Record<string, HvWorktreeInfo[]>>;
+  onWorktreesChanged(cb: (p: { workspaceId: string; worktrees: HvWorktreeInfo[] }) => void): () => void;
 
   // §23 Plan Mode
   planSet(sessionId: string, enabled: boolean): Promise<void>;

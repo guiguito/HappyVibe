@@ -93,10 +93,11 @@ import { buildMentionBlocks, buildOpenFilesBlock, openFilesChanged, createDir, c
 import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
-  gitCommonDir, gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, probeWorkspace,
-  publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
+  gitCommonDir, gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, listWorktrees,
+  probeWorkspace, publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
+import { WorktreeIndex, sessionsOfProject } from "./worktrees";
 // §33 Memory — main is the ONE writer (agent envelopes + human edits, one serialized queue).
 import {
   CAPS as MEMORY_CAPS, estimateTokens as estimateMemoryTokens, forgetAll, forgetMemory, importMemories,
@@ -555,6 +556,29 @@ export function registerIpc(
   // hv-scaffold → HappyVibe rename), else resume loads no history.
   index.rebaseSessionFiles(sessionDir());
   const workspaces = new WorkspaceRegistry(path.join(userData, "workspaces.json"));
+  /**
+   * §29 worktrees — discovered roots beside the registered ones.
+   *
+   * Two directions, and mixing them is the mistake to avoid. `roots()` is the
+   * admission list for anything that touches FILES: a worktree's own checkout
+   * is what a session there reads and writes. `projectOf()` is the redirect for
+   * anything that reads CONFIG: a worktree is short-lived and has no settings
+   * page, so its model override, bypass, activations and memory toggle are the
+   * parent's.
+   */
+  const worktrees = new WorktreeIndex(() => workspaces.list());
+  const roots = (): string[] => worktrees.roots();
+  /**
+   * Ask git what worktrees a REGISTERED workspace has, and push only when the
+   * answer changed. Parents only: a worktree is not a parent, and discovering
+   * from one would nest rows under rows.
+   */
+  const refreshWorktrees = async (workspaceId: string): Promise<void> => {
+    if (!workspaces.list().some((w) => normPath(w) === normPath(workspaceId))) return;
+    if (worktrees.set(workspaceId, await listWorktrees(workspaceId))) {
+      send("hv:worktrees-changed", { workspaceId, worktrees: worktrees.of(workspaceId) });
+    }
+  };
   // §35: declared up here because spawnOpts reads it — a read-only schedule's
   // run is clamped by the ENVIRONMENT, re-derived at every spawn.
   const scheduleStore = new ScheduleStore(path.join(userData, "schedules.json"));
@@ -652,8 +676,13 @@ export function registerIpc(
   /** Global-scope skills (bundled + managed + linked), current on-disk snapshot. */
   const discoverGlobalSkills = (): DiscoveredSkill[] => discoverGlobal(globalScanDirs());
   /** The (skill, scope) entries a session in this workspace should spawn with. */
-  const activeSkillEntries = (workspace: string): Array<{ skill: DiscoveredSkill; scope: "global" | "workspace" }> => {
-    const activation = workspaces.getSkillsActive(workspace);
+  const activeSkillEntries = (
+    workspace: string,
+    project: string = workspace,
+  ): Array<{ skill: DiscoveredSkill; scope: "global" | "workspace" }> => {
+    // §29 worktrees: the activation checklist is the PROJECT's (a worktree has
+    // no settings page); the skill FILES are read from the root itself.
+    const activation = workspaces.getSkillsActive(project);
     const global = discoverGlobalSkills();
     const ws = discoverWorkspace(workspace);
     const activeGlobal = new Set(resolveActiveSkills(global, skillRegistry, activation));
@@ -695,8 +724,10 @@ export function registerIpc(
   });
   const globalPromptTemplates = (): DiscoveredPromptTemplate[] => discoverGlobalPromptTemplates(globalPromptTemplateDirs());
   /** The command FILES a session in this workspace should spawn with (--prompt-template args). */
-  const activePromptTemplateEntries = (workspace: string): string[] => {
-    const activation = workspaces.getPromptTemplatesActive(workspace);
+  const activePromptTemplateEntries = (workspace: string, project: string = workspace): string[] => {
+    // §29 worktrees: activation is the PROJECT's, the files are the root's —
+    // the same split as activeSkillEntries above.
+    const activation = workspaces.getPromptTemplatesActive(project);
     return [
       ...resolveActivePromptTemplates(globalPromptTemplates(), promptTemplateRegistry, activation),
       ...resolveActivePromptTemplates(discoverWorkspacePromptTemplates(workspace), promptTemplateRegistry, activation),
@@ -846,15 +877,21 @@ export function registerIpc(
    * proposal) so the resolution lives in exactly one place on this side.
    */
   const resolveSpawnModel = (
-    workspace?: string,
+    root?: string,
     sessionId?: string,
   ): { provider: string; modelId: string } | null => {
     const known = knownProviders();
     const live = (m: { provider: string; modelId: string } | null | undefined) =>
       m && known.includes(m.provider) ? m : null;
+    // §29 worktrees: the middle tier is the PROJECT's override, and the routing
+    // happens HERE rather than at the eight call sites — six of them hand over a
+    // session's own root, and one that forgot would silently run a worktree on
+    // the global default while its project says otherwise. `projectOf` is the
+    // identity for a registered workspace, so this changes nothing without one.
+    const project = root ? worktrees.projectOf(root) : undefined;
     return (
       live(sessionId ? index.get(sessionId)?.model : null) ??
-      live(workspace ? workspaces.getModel(workspace) : null) ??
+      live(project ? workspaces.getModel(project) : null) ??
       live(getDefaultModel())
     );
   };
@@ -876,11 +913,18 @@ export function registerIpc(
    * workspace-scoped call, or that workspace's own toggle off. Null is a refusal with a reason,
    * never a silent fallback to the other scope.
    */
-  const memoryDirFor = (scope: "global" | "workspace", workspaceId?: string | null): string | null => {
+  const memoryDirFor = (
+    scope: "global" | "workspace",
+    workspaceId?: string | null,
+    project: string | null | undefined = workspaceId,
+  ): string | null => {
     if (!getBuiltinTools().memory) return null;
     if (scope === "global") return memoryRoot(agentDir());
     if (!workspaceId) return null;
-    if (!workspaces.getMemoryActive(workspaceId)) return null;
+    // §29 worktrees: the on/off toggle is the PROJECT's. The KEY needs no
+    // routing — §33 already hashes the common dir's parent, so a worktree and
+    // its project resolve to one folder (pinned in memory-store.test.ts).
+    if (!workspaces.getMemoryActive(project ?? workspaceId)) return null;
     return workspaceMemoryDir(agentDir(), workspaceMemoryKey(workspaceId, gitCommonDir(workspaceId)));
   };
 
@@ -888,10 +932,17 @@ export function registerIpc(
    *  Model resolution (W2.1, full PRD hierarchy): session override → workspace
    *  override → global default. Mirrors resolveModel in renderer composer.ts. */
   const spawnOpts = (workspace?: string, resumeFile?: string, sessionId?: string) => {
+    /**
+     * §29 worktrees — `workspace` stays the CWD (a session in a worktree edits
+     * the worktree's files); `project` is who it reads config from. For a
+     * registered workspace the two are the same string, so nothing below
+     * changes meaning for a user who has no worktrees.
+     */
+    const project = workspace ? worktrees.projectOf(workspace) : undefined;
     // §14: resolve the approved ∩ enabled ∩ active-for-workspace skill set and
     // write the per-session manifest the bridge reads (HV_SKILLS_FILE). Only for
     // real chat sessions — the utility client ($HOME, no workspace/id) loads none.
-    const entries = workspace && sessionId ? activeSkillEntries(workspace) : [];
+    const entries = workspace && sessionId ? activeSkillEntries(workspace, project) : [];
     // §33: the two memory scopes, resolved per spawn like every other tier here.
     //
     // The utility client has no workspace and no session id and gets NEITHER — it drives
@@ -905,12 +956,12 @@ export function registerIpc(
     let memoryWorkspaceDir: string | undefined;
     if (sessionId) {
       memoryGlobalDir = memoryDirFor("global") ?? undefined;
-      memoryWorkspaceDir = (workspace ? memoryDirFor("workspace", workspace) : null) ?? undefined;
+      memoryWorkspaceDir = (workspace ? memoryDirFor("workspace", workspace, project) : null) ?? undefined;
       // Created eagerly so the bridge's first per-turn read cannot race the first save.
       for (const d of [memoryGlobalDir, memoryWorkspaceDir]) if (d) fs.mkdirSync(d, { recursive: true });
     }
     return {
-      model: resolveSpawnModel(workspace, sessionId),
+      model: resolveSpawnModel(project, sessionId),
       thinking: resolveSpawnThinking(sessionId),
       agentDir: agentDir(),
       providerEnv: providerEnv(),
@@ -919,7 +970,7 @@ export function registerIpc(
       childAuditDir: childAuditRoot(),
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
-      bypass: resolveBypass(workspace ?? null),
+      bypass: resolveBypass(project ?? null),
       // §35: a run whose schedule says Read-only spawns clamped. Re-derived here
       // rather than stored on the session, so a resume, a hibernation wake and
       // an MCP reload all recompute it — the clamp cannot be lost by a respawn.
@@ -943,7 +994,7 @@ export function registerIpc(
       skillsFile: sessionId ? writeSkillsManifest(sessionId, entries) : undefined,
       // §24: one --prompt-template per approved ∩ enabled ∩ active command. No
       // manifest counterpart — the bridge reads nothing about commands.
-      promptTemplates: workspace && sessionId ? activePromptTemplateEntries(workspace) : [],
+      promptTemplates: workspace && sessionId ? activePromptTemplateEntries(workspace, project) : [],
       // §19: a path we own, so main can read the cached model exclusions rather
       // than re-deriving upstream's tmp layout (modelExclusions.ts).
       modelExclusionsFile: modelExclusionsPath(),
@@ -1530,7 +1581,7 @@ export function registerIpc(
             stampSnapshot(snapshotDir(), sessionId, e.toolCallId);
           } else if (e.type === "agent_end") {
             captureSnapshot(
-              snapshotDir(), sessionId, workspaces.list(), snapWsId,
+              snapshotDir(), sessionId, roots(), snapWsId,
               "post", new Date().toISOString(),
             );
           }
@@ -1734,7 +1785,7 @@ export function registerIpc(
               .find((f) => f !== null);
             if (files) {
               try {
-                const written = writeAgentsMdFiles(workspaces.list(), ws, files);
+                const written = writeAgentsMdFiles(roots(), ws, files);
                 void log.append({ type: "agents_md.written", workspaceId: ws, data: { files: written, runId: sub.runId } });
                 send("hv:agents-md-written", { workspaceId: ws, files: written });
               } catch (e) {
@@ -2314,7 +2365,7 @@ export function registerIpc(
           try {
             if (!wsId) throw new Error("No workspace for this session");
             const now = new Date().toISOString();
-            const relPath = await writePlanFile(workspaces.list(), wsId, planWrite.plan, now, planState.get(sessionId)?.planPath);
+            const relPath = await writePlanFile(roots(), wsId, planWrite.plan, now, planState.get(sessionId)?.planPath);
             planState.set(sessionId, { enabled: true, planPath: relPath });
             void log.append({ type: "plan.ready", sessionId, workspaceId: wsId, data: { path: relPath } });
             client.respondUi(rid, { value: relPath });
@@ -2337,7 +2388,7 @@ export function registerIpc(
           // session isn't stuck read-only. Only on restore: a live toggle to "on"
           // (e.g. re-planning after implementing) must be honored, not reverted.
           if (planN.restored === true && planN.enabled && wsId && typeof planN.planPath === "string") {
-            const parsed = readPlan(workspaces.list(), wsId, planN.planPath);
+            const parsed = readPlan(roots(), wsId, planN.planPath);
             if (shouldReconcilePlanOff(true, true, parsed?.status ?? null)) {
               planCmd(sessionId, "/hv-plan off"); // emits a corrected hv.plan notify
               planState.set(sessionId, { enabled: false, planPath: planN.planPath });
@@ -2368,7 +2419,7 @@ export function registerIpc(
           // not otherwise know about on a respawn.
           const restoredPath = planState.get(sessionId)?.planPath;
           if (restoredPath && wsId) {
-            const parsed = readPlan(workspaces.list(), wsId, restoredPath);
+            const parsed = readPlan(roots(), wsId, restoredPath);
             if (parsed) {
               send("hv:plan-changed", {
                 sessionId, workspaceId: wsId, path: restoredPath,
@@ -2380,7 +2431,7 @@ export function registerIpc(
           const relPath = planState.get(sessionId)?.planPath;
           const status = planN.status;
           if (relPath && (status === "implemented" || status === "cancelled")) {
-            void setPlanStatus(workspaces.list(), wsId, relPath, status, new Date().toISOString())
+            void setPlanStatus(roots(), wsId, relPath, status, new Date().toISOString())
               .then((parsed) => {
                 void log.append({ type: "plan.status", sessionId, workspaceId: wsId, data: { path: relPath, status, who: "model", note: planN.note ?? "" } });
                 send("hv:plan-changed", { workspaceId: wsId, path: relPath, status: parsed.status, done: parsed.done, total: parsed.total });
@@ -2772,6 +2823,8 @@ export function registerIpc(
 
   // ── workspaces ───────────────────────────────────────────────────
   ipcMain.handle("hv:list-workspaces", () => workspaces.list());
+  /** §29: every project's worktrees in one call — the renderer's boot read. */
+  ipcMain.handle("hv:worktree-list", () => worktrees.all());
   // §22: the "Start fresh…" door. Path-confined by construction — the name is
   // a segment, never a path (files.ts createWorkspaceFolder).
   ipcMain.handle("hv:create-workspace-folder", (_e, name: string) => {
@@ -2798,7 +2851,11 @@ export function registerIpc(
    * `hv:delete-session`) rather than adding a second delete implementation.
    */
   ipcMain.handle("hv:remove-workspace", async (_e, ws: string, mode: "forget" | "delete" = "forget") => {
-    const affected = sessionsOfWorkspace(index.list(), ws);
+    // §29 worktrees: round 11's orphan defect, one level down. A worktree's
+    // sessions carry the WORKTREE's path, so `sessionsOfWorkspace` would leave
+    // every one of them pointing at a project that is no longer listed.
+    const wtPaths = worktrees.of(ws).map((w) => w.path);
+    const affected = sessionsOfProject(index.list(), ws, wtPaths);
     for (const s of affected) {
       if (mode === "delete") {
         if (manager.get(s.id)) await endSession(s.id);
@@ -2817,12 +2874,17 @@ export function registerIpc(
     // above touches it. Both outcomes kill them — "forget" stops showing the
     // workspace, and a shell you can no longer see or close is a leak.
     terminals.killWorkspace(ws);
+    for (const p of wtPaths) terminals.killWorkspace(p);
     workspaces.remove(ws);
+    // The cache is keyed by a parent that no longer exists; dropping it here
+    // means `roots()` stops admitting those paths in the same tick.
+    worktrees.remove(ws);
     sessionsChanged();
     return { sessions: affected.length };
   });
   /** Count for the confirm dialog — asked BEFORE anything is written. */
-  ipcMain.handle("hv:workspace-session-count", (_e, ws: string) => sessionsOfWorkspace(index.list(), ws).length);
+  ipcMain.handle("hv:workspace-session-count", (_e, ws: string) =>
+    sessionsOfProject(index.list(), ws, worktrees.of(ws).map((w) => w.path)).length);
 
   // ── sessions ─────────────────────────────────────────────────────
   ipcMain.handle("hv:list-sessions", () => index.list());
@@ -2884,7 +2946,7 @@ export function registerIpc(
       const planFor = (): { path: string; status: string; done: number; total: number } | null => {
         const p = planState.get(sessionId)?.planPath;
         if (!p) return null;
-        const parsed = readPlan(workspaces.list(), meta.workspaceId, p);
+        const parsed = readPlan(roots(), meta.workspaceId, p);
         return parsed ? { path: p, status: parsed.status, done: parsed.done, total: parsed.total } : null;
       };
 
@@ -2917,7 +2979,7 @@ export function registerIpc(
             continue;
           }
           if (it.kind !== "plan") continue;
-          const parsed = readPlan(workspaces.list(), meta.workspaceId, it.planPath);
+          const parsed = readPlan(roots(), meta.workspaceId, it.planPath);
           if (parsed) { it.status = parsed.status; it.done = parsed.done; it.total = parsed.total; }
         }
         return pairPromptTemplateItems(items, typedByHash);
@@ -3448,14 +3510,14 @@ export function registerIpc(
       // to its workspace-relative path instead and let the command do its job.
       // Skills are deliberately excluded (they APPEND args, so blocks already
       // land correctly) — see commandMentions.ts.
-      if (willExpand(msg, activePromptTemplateEntries(meta.workspaceId))) {
+      if (willExpand(msg, activePromptTemplateEntries(meta.workspaceId, worktrees.projectOf(meta.workspaceId)))) {
         outgoing = inlineMentionPaths(msg, textMentions);
         if (outgoing !== msg) {
           if (typedByOutgoing.size > 64) typedByOutgoing.clear();
           typedByOutgoing.set(outgoing, msg);
         }
       } else {
-        const { blocks, warnings: w } = buildMentionBlocks(workspaces.list(), meta.workspaceId, textMentions);
+        const { blocks, warnings: w } = buildMentionBlocks(roots(), meta.workspaceId, textMentions);
         if (blocks) outgoing = `${msg}\n\n${blocks}`;
         warnings = w;
       }
@@ -3479,7 +3541,7 @@ export function registerIpc(
         // written when a mention was actually rewritten, so a template command
         // carrying a document and no mentions would have fallen through here and
         // injected the blocks it exists to keep out.
-        const expands = !!meta?.workspaceId && willExpand(msg, activePromptTemplateEntries(meta.workspaceId));
+        const expands = !!meta?.workspaceId && willExpand(msg, activePromptTemplateEntries(meta.workspaceId, worktrees.projectOf(meta.workspaceId)));
         if (expands) {
           warnings = [...warnings, "Documents are not attached to a prompt-template command — send them in a plain message."];
         } else {
@@ -3545,7 +3607,7 @@ export function registerIpc(
     if (behavior !== "steer" && meta?.workspaceId) {
       try {
         captureSnapshot(
-          snapshotDir(), sessionId, workspaces.list(), meta.workspaceId,
+          snapshotDir(), sessionId, roots(), meta.workspaceId,
           "pre", new Date().toISOString(),
         );
       } catch (e) {
@@ -3624,7 +3686,7 @@ export function registerIpc(
     const hit = rewindTarget(sessionId, toolCallIds);
     if (!hit) return null;
     return previewRestore(
-      snapshotDir(), sessionId, workspaces.list(), hit.workspaceId, hit.target,
+      snapshotDir(), sessionId, roots(), hit.workspaceId, hit.target,
     );
   });
 
@@ -3632,7 +3694,7 @@ export function registerIpc(
     const hit = rewindTarget(sessionId, toolCallIds);
     if (!hit) return null;
     const result = restoreSnapshot(
-      snapshotDir(), sessionId, workspaces.list(), hit.workspaceId,
+      snapshotDir(), sessionId, roots(), hit.workspaceId,
       hit.target, new Date().toISOString(),
     );
     void log.append({
@@ -3730,7 +3792,7 @@ export function registerIpc(
       // must never block Implement.
       try {
         captureSnapshot(
-          snapshotDir(), sessionId, workspaces.list(), wsId,
+          snapshotDir(), sessionId, roots(), wsId,
           "pre", new Date().toISOString(), "implement",
         );
       } catch { /* never block the handoff */ }
@@ -3742,7 +3804,7 @@ export function registerIpc(
       }
       let parsed: Awaited<ReturnType<typeof setPlanStatus>> | null = null;
       try {
-        parsed = await setPlanStatus(workspaces.list(), wsId, relPath, "implementing", new Date().toISOString());
+        parsed = await setPlanStatus(roots(), wsId, relPath, "implementing", new Date().toISOString());
       } catch { /* file may have been removed; proceed to hand off anyway */ }
       planCmd(sessionId, "/hv-plan off");
       const busy = !activity.isIdle(sessionId);
@@ -3781,7 +3843,7 @@ export function registerIpc(
   ipcMain.handle("hv:plan-status", async (_e, sessionId: string, relPath: string, status: PlanStatus) => {
     const meta = index.get(sessionId);
     if (!meta?.workspaceId) throw new Error("Unknown session");
-    const parsed = await setPlanStatus(workspaces.list(), meta.workspaceId, relPath, status, new Date().toISOString());
+    const parsed = await setPlanStatus(roots(), meta.workspaceId, relPath, status, new Date().toISOString());
     void log.append({ type: "plan.status", sessionId, workspaceId: meta.workspaceId, data: { path: relPath, status, who: "human" } });
     send("hv:plan-changed", { workspaceId: meta.workspaceId, path: relPath, status: parsed.status, done: parsed.done, total: parsed.total });
   });
@@ -3797,7 +3859,7 @@ export function registerIpc(
       .pop();
     if (!target) return null;
     const result = restoreSnapshot(
-      snapshotDir(), sessionId, workspaces.list(), meta.workspaceId,
+      snapshotDir(), sessionId, roots(), meta.workspaceId,
       target, new Date().toISOString(),
     );
     void log.append({
@@ -4081,7 +4143,10 @@ export function registerIpc(
   // overrides any manual /hv-dangerous toggle on the affected sessions.
   const applyBypassLive = (id: string): void => {
     const ws = index.get(id)?.workspaceId ?? null;
-    const on = resolveBypass(ws);
+    // §29 worktrees: a session's root may be a worktree, whose bypass is its
+    // project's — the same resolution spawnOpts does, so the live toggle and
+    // the next respawn cannot disagree.
+    const on = resolveBypass(ws ? worktrees.projectOf(ws) : null);
     void (manager.get(id) as PiClient | null)?.send({ type: "prompt", message: `/hv-dangerous ${on ? "on" : "off"}` }).catch(() => {});
   };
   ipcMain.handle("hv:get-global-bypass", () => getGlobalBypass());
@@ -4144,7 +4209,7 @@ export function registerIpc(
   ipcMain.handle("hv:term-create", (_e, ws: string, cols?: number, rows?: number) => {
     // cwd comes from the REGISTRY, never from the renderer's string — the same
     // posture every other fs entry point in this file takes.
-    const known = workspaces.list().find((p) => normPath(p) === normPath(String(ws)));
+    const known = roots().find((p) => normPath(p) === normPath(String(ws)));
     if (!known) throw new Error("Unknown workspace");
     const settings = getTerminalSettings();
     const info = terminals.create(known, known, settings, cols ?? 80, rows ?? 24);
@@ -4383,23 +4448,36 @@ export function registerIpc(
    * two lists that happen to share a screen.
    */
   ipcMain.handle("hv:read-audit", async (_e, filter?: { sessionId?: string; workspaceId?: string }) => {
+    /**
+     * §29 worktrees: the page's workspace picker has one row per PROJECT, and a
+     * session in a worktree is work on that project — so its rows belong under
+     * it. Widened here and narrowed once below rather than per read: `log.read`
+     * matches one exact workspaceId and there are seven calls.
+     */
+    const wsKeys = filter?.workspaceId
+      ? new Set([filter.workspaceId, ...worktrees.of(filter.workspaceId).map((w) => w.path)].map(normPath))
+      : null;
+    const scoped = filter ? { ...filter, workspaceId: undefined } : undefined;
     const [decisions, oneShots, excluded, ...memory] = await Promise.all([
-      log.read({ type: "permission.decision", ...filter }),
-      log.read({ type: "assistant.oneshot", ...filter }),
+      log.read({ type: "permission.decision", ...scoped }),
+      log.read({ type: "assistant.oneshot", ...scoped }),
       // §19: a model the app is silently NOT using is the third thing this page
       // answers for — it is neither a decision nor a call, but it IS something
       // the app did on the user's behalf.
-      log.read({ type: "model.excluded", ...filter }),
+      log.read({ type: "model.excluded", ...scoped }),
       // §33: what the agent remembered, recalled, forgot or was refused, plus your own edits
       // and imports. Read per type, because `log.read` filters on an exact type — a prefix
       // match would be a second filter idiom in a file that has exactly one.
-      ...MEMORY_EVENT_TYPES.map((t) => log.read({ type: t, ...filter })),
+      ...MEMORY_EVENT_TYPES.map((t) => log.read({ type: t, ...scoped })),
     ]);
     // §34: a feedback submission is the fourth thing this page answers for — not a
     // decision and not a model call, but something that LEFT the machine on the
     // user's say-so, which is exactly what an audit log is for.
-    const feedback = await log.read({ type: "feedback.sent", ...filter });
-    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    const feedback = await log.read({ type: "feedback.sent", ...scoped });
+    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback]
+      // A row with no workspace never matched a workspace filter before either.
+      .filter((e) => !wsKeys || (e.workspaceId != null && wsKeys.has(normPath(e.workspaceId))))
+      .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   });
 
   // ── B7: local analytics (read + aggregate in main, never leaves the machine) ──
@@ -4409,7 +4487,13 @@ export function registerIpc(
     // plan spend excluded, unknown prices flagged. Resolved once per call
     // because planProvidersFor depends on which keys are configured.
     const plans = planProvidersFor(providerKeyStatus());
-    const events = await log.read();
+    // §29 worktrees: a worktree's cost is the project's cost — one row per
+    // project in Stats, the same rule the audit page's picker follows. Remapped
+    // before aggregation so every breakdown keyed on workspaceId agrees.
+    const events = (await log.read()).map((e) => {
+      const parent = e.workspaceId ? worktrees.parentOf(e.workspaceId) : null;
+      return parent ? { ...e, workspaceId: parent } : e;
+    });
     const agents = agentByFileFrom(events);
     const readCalls = (sessionId: string): ApiCall[] | null => {
       const meta = index.get(sessionId);
@@ -4726,21 +4810,21 @@ export function registerIpc(
 
   // ── AGENTS.md (B2, additive) — fs confined to <workspace>/AGENTS.md ──
   ipcMain.handle("hv:read-agents-md", (_e, workspaceId: string) =>
-    readAgentsMd(workspaces.list(), workspaceId));
+    readAgentsMd(roots(), workspaceId));
   ipcMain.handle("hv:write-agents-md", (_e, workspaceId: string, content: string) =>
-    writeAgentsMd(workspaces.list(), workspaceId, String(content)));
+    writeAgentsMd(roots(), workspaceId, String(content)));
   // WS5: write the agents-md-maker structured draft (root + nested) — the app
   // does the confined write + audit; the sub-agent stays read-only.
   ipcMain.handle("hv:write-agents-md-files", (_e, workspaceId: string, files: Record<string, string>) => {
-    const written = writeAgentsMdFiles(workspaces.list(), workspaceId, files);
+    const written = writeAgentsMdFiles(roots(), workspaceId, files);
     void log.append({ type: "agents_md.written", workspaceId, data: { files: written } });
     return written;
   });
   // W2.3 missing-file flow: CLAUDE.md → AGENTS.md copy (same confinement).
   ipcMain.handle("hv:has-claude-md", (_e, workspaceId: string) =>
-    hasClaudeMd(workspaces.list(), workspaceId));
+    hasClaudeMd(roots(), workspaceId));
   ipcMain.handle("hv:copy-claude-md", (_e, workspaceId: string) =>
-    copyClaudeMdToAgentsMd(workspaces.list(), workspaceId));
+    copyClaudeMdToAgentsMd(roots(), workspaceId));
 
   // ── B6: agents & tools ─────────────────────────────────────────────────
   // hv.agents / hv.tools ride the fire-and-forget /hv-* command channel (like
@@ -4992,46 +5076,46 @@ export function registerIpc(
 
   // ── W2.2: workspace file tree + editor (additive; files.ts confinement) ──
   ipcMain.handle("hv:fs-list", (_e, workspaceId: string, relDir: string) =>
-    listDir(workspaces.list(), workspaceId, relDir));
+    listDir(roots(), workspaceId, relDir));
   // F3: recursive listing for @-mention autocomplete (visible entries, capped).
   ipcMain.handle("hv:fs-list-recursive", (_e, workspaceId: string) =>
-    listRecursive(workspaces.list(), workspaceId));
+    listRecursive(roots(), workspaceId));
   ipcMain.handle("hv:fs-read", (_e, workspaceId: string, relPath: string) =>
-    readWorkspaceFile(workspaces.list(), workspaceId, relPath));
+    readWorkspaceFile(roots(), workspaceId, relPath));
   ipcMain.handle("hv:fs-write", (_e, workspaceId: string, relPath: string, content: string) =>
-    writeWorkspaceFile(workspaces.list(), workspaceId, relPath, content));
+    writeWorkspaceFile(roots(), workspaceId, relPath, content));
   ipcMain.handle("hv:fs-mtime", (_e, workspaceId: string, relPath: string) =>
-    statMtime(workspaces.list(), workspaceId, relPath));
+    statMtime(roots(), workspaceId, relPath));
   // Reveal in Finder from clickable card paths — workspace-confined.
   ipcMain.handle("hv:reveal-path", (_e, workspaceId: string, relPath: string) => {
-    shell.showItemInFolder(resolveInWorkspace(workspaces.list(), workspaceId, relPath));
+    shell.showItemInFolder(resolveInWorkspace(roots(), workspaceId, relPath));
   });
   // Round 4 #7: file-tree Details popup — kind/size/mtime, workspace-confined.
   ipcMain.handle("hv:fs-stat", (_e, workspaceId: string, relPath: string) =>
-    statDetails(workspaces.list(), workspaceId, relPath));
+    statDetails(roots(), workspaceId, relPath));
   // Round 4 #7: file-tree Delete — move to the OS Trash (recoverable, never a
   // hard delete), workspace-confined like every other fs op.
   ipcMain.handle("hv:fs-trash", (_e, workspaceId: string, relPath: string) =>
-    shell.trashItem(resolveInWorkspace(workspaces.list(), workspaceId, relPath)));
+    shell.trashItem(resolveInWorkspace(roots(), workspaceId, relPath)));
 
   // WS8: file-tree mutations (confined; refuse to clobber).
   ipcMain.handle("hv:fs-create-file", (_e, workspaceId: string, relPath: string) =>
-    createFile(workspaces.list(), workspaceId, relPath));
+    createFile(roots(), workspaceId, relPath));
   ipcMain.handle("hv:fs-create-dir", (_e, workspaceId: string, relPath: string) =>
-    createDir(workspaces.list(), workspaceId, relPath));
+    createDir(roots(), workspaceId, relPath));
   ipcMain.handle("hv:fs-move", (_e, workspaceId: string, srcRel: string, destDirRel: string) =>
-    moveEntry(workspaces.list(), workspaceId, srcRel, destDirRel));
+    moveEntry(roots(), workspaceId, srcRel, destDirRel));
   ipcMain.handle("hv:fs-import", (_e, workspaceId: string, destDirRel: string, srcAbsPaths: string[]) =>
-    importEntries(workspaces.list(), workspaceId, destDirRel, srcAbsPaths));
+    importEntries(roots(), workspaceId, destDirRel, srcAbsPaths));
   // §23: re-parse every plan file in a workspace and push its n/m + status.
   const pushPlanProgress = (workspaceId: string): void => {
-    for (const p of listPlanProgress(workspaces.list(), workspaceId)) {
+    for (const p of listPlanProgress(roots(), workspaceId)) {
       send("hv:plan-changed", { workspaceId, ...p });
     }
   };
   // WS8: native fs watching — auto-refresh the tree (replaces the refresh button).
   ipcMain.handle("hv:watch-workspace", (_e, workspaceId: string) => {
-    resolveInWorkspace(workspaces.list(), workspaceId, ""); // confinement gate
+    resolveInWorkspace(roots(), workspaceId, ""); // confinement gate
     // §23: plan progress only moves on a watcher event, so anything ticked while
     // nobody was watching is invisible until the NEXT write. Sync once up front.
     pushPlanProgress(workspaceId);
@@ -5120,11 +5204,18 @@ export function registerIpc(
   ipcMain.handle("hv:git-status", async (_e, workspaceId: string) => {
     await freshProbe(workspaceId);
     const payload = await gitStatus(workspaceId);
+    // §29 worktrees: the sidebar's branch load already calls this for every
+    // root, so discovery rides along rather than growing a poll of its own.
+    // A non-repo answers an empty list, which is the right answer.
+    void refreshWorktrees(workspaceId);
     // Start the narrow .git watch lazily, when someone first asks about this
     // workspace's git: the sidebar wants a fresh branch name for every
     // workspace, and the file-tree watcher filters .git so nothing else sees it.
     if (payload.state.kind === "repo") watchGitDir(workspaceId, () => pushGitChanged(workspaceId));
-    return payload;
+    // §29 worktrees: naming the parent is main's job, not the renderer's — the
+    // panel must never have to work out which root it is looking at.
+    const parent = worktrees.parentOf(workspaceId);
+    return { ...payload, worktreeOf: parent ? { path: parent, name: path.basename(parent) } : null };
   });
 
   ipcMain.handle("hv:git-diff", (_e, workspaceId: string, baseline: "head" | "base", opts?: { staged?: boolean; path?: string }) =>
@@ -5958,7 +6049,7 @@ export function registerIpc(
       if (!session) throw new Error("Import session expired — scan again.");
       const destParent =
         scope === "workspace"
-          ? resolveInWorkspace(workspaces.list(), workspaceId ?? "", path.join(".agents", "skills"))
+          ? resolveInWorkspace(roots(), workspaceId ?? "", path.join(".agents", "skills"))
           : managedSkillsDir(agentDir());
       fs.mkdirSync(destParent, { recursive: true });
       const now = new Date().toISOString();
@@ -6369,7 +6460,7 @@ export function registerIpc(
       }
       const destParent =
         scope === "workspace"
-          ? resolveInWorkspace(workspaces.list(), workspaceId ?? "", path.join(".agents", "prompts"))
+          ? resolveInWorkspace(roots(), workspaceId ?? "", path.join(".agents", "prompts"))
           : managedPromptTemplatesDir(agentDir());
       fs.mkdirSync(destParent, { recursive: true });
       const now = new Date().toISOString();
