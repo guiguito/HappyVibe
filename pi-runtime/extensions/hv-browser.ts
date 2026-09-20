@@ -63,7 +63,8 @@ export const BROWSER_TOOL_DESCRIPTIONS: Record<string, string> = {
   browser_open:
     "Open the session's embedded browser on a URL. Creates the pane if there isn't one; there is exactly ONE " +
     "browser per session, so re-open or navigate it rather than expecting a second. localhost needs no approval; " +
-    "any other host asks the user first.",
+    "any other host asks the user first. http(s) only \u2014 to view a local file, serve its directory " +
+    "(e.g. `python3 -m http.server`) and open that.",
   browser_navigate:
     "Navigate the session's embedded browser to a URL. localhost is silent; any other host asks the user first.",
   browser_screenshot:
@@ -102,6 +103,32 @@ export function hostOf(url: string): string | null {
 
 export function isLocalHost(host: string): boolean {
   return LOCAL_HOSTS.has(host);
+}
+
+/**
+ * The scheme refusal, said in the words the model needs.
+ *
+ * The SECURITY guard is `will-navigate` in browsers.ts (file:// is a sandbox
+ * escape and that is where it is closed). This one exists because the agent
+ * path had no scheme check at all: `browser_open("file:///…")` raised a
+ * permission prompt under the bare `browser_open` rule (browserRuleName is null
+ * with no host), the user answered it, and the pane then sat on "loading"
+ * forever — will-navigate cancels with ERR_ABORTED (-3), which did-fail-load
+ * deliberately skips. So: refuse BEFORE the prompt, and name the way round,
+ * because the localhost carve-out already covers the real use case.
+ *
+ * A scheme-less address is NOT our business — `resolveTypedUrl` owns that
+ * guess for the URL bar, and main refuses what it cannot parse.
+ */
+export function schemeRefusal(url: string): string | null {
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url.trim())?.[1]?.toLowerCase();
+  if (!scheme || scheme === "http" || scheme === "https") return null;
+  // `localhost:5173` parses as scheme "localhost" — the resolveTypedUrl rule.
+  if (/^[^/]+:\d+(\/|$)/.test(url.trim())) return null;
+  return (
+    `HappyVibe's browser only opens http and https — not ${scheme}:. ` +
+    "To view a local file, serve its directory (e.g. `python3 -m http.server 8000`) and open that URL instead."
+  );
 }
 
 /**
