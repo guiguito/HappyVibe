@@ -23,7 +23,11 @@ import path from "node:path";
  *   exist there: a POSIX exec bit, a login shell's `-ilc` PATH, a `sh -c` command.
  *
  * Deliberately NOT a skip, and the distinction is the point: the foreground-process
- * tests assert BOTH arms instead. Windows cannot name a pty's foreground command, and
+ * tests assert BOTH arms instead. Same shape, added by the Linux round:
+ * native-modules.test.ts BRANCHES on linux — node-pty ships no Linux prebuild and is
+ * compiled at install, so that arm asserts the BUILT binary — rather than skipping.
+ * It is listed here so the sweep is complete, and it is correctly absent from
+ * EXPECTED below, which records only gates SKIP_RE can see. Windows cannot name a pty's foreground command, and
  * the thing that must never happen there is a non-null answer — so that contract is
  * asserted rather than left uncovered.
  *

@@ -1,6 +1,7 @@
 {
   "name": "happyvibe",
   "productName": "HappyVibe",
+  "desktopName": "happyvibe.desktop",
   "version": "0.1.0",
   "description": "Vibe coding you can actually watch.",
   "main": "./out/main/index.js",
