@@ -233,7 +233,14 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
     ...(at ? { x: at.x, y: at.y } : record.bounds ? { x: record.bounds.x, y: record.bounds.y } : {}),
     show: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    // macOS IGNORES the window icon — there the Dock is the surface, set below
+    // via app.dock.setIcon. Windows and Linux both read this option, and in DEV
+    // it is the only thing that sets the window and taskbar icon: the packaged
+    // icon is written into the exe by electron-builder's `win.icon` at pack time,
+    // which never runs here. Gated to linux, a Windows dev window therefore showed
+    // Electron's own icon — the same gap the dock line below already closed for
+    // macOS, one platform over (PRD §4, Windows round).
+    ...(process.platform === 'darwin' ? {} : { icon }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
