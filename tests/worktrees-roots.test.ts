@@ -97,6 +97,25 @@ describe("ipc.ts admits worktree roots at every fs entry point", () => {
     expect(src).toMatch(/hv:git-merge"[\s\S]{0,200}?worktrees\.parentOf\(worktreePath\)/);
   });
 
+  it("sessions are STOPPED before the folder goes, and archived only after", () => {
+    // Removing first left Pi running with its cwd deleted; `endSession` then
+    // asked that child for stats it could never answer, which hung the handler
+    // and wedged the app. Ending a session is reversible, so it can happen
+    // before a remove that might fail; archiving claims the folder is gone.
+    const h = src.slice(src.indexOf('ipcMain.handle("hv:worktree-remove"'));
+    const stop = h.indexOf("await endSession(s.id)");
+    const remove = h.indexOf("await removeWorktree(parent");
+    const archive = h.indexOf("index.update(s.id, { archived: true })");
+    expect(stop).toBeGreaterThan(0);
+    expect(stop).toBeLessThan(remove);
+    expect(archive).toBeGreaterThan(remove);
+  });
+
+  it("endSession cannot hang on a child that will never answer", () => {
+    // PiClient.send has no timeout of its own.
+    expect(src).toMatch(/get_session_stats[\s\S]{0,400}?Promise\.race/);
+  });
+
   it("the discovery push only ever fires for a registered parent", () => {
     // refreshWorktrees is the ONE writer of the index. A worktree is not a
     // parent, and letting one in would nest rows under rows.

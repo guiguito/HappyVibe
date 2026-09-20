@@ -100,6 +100,46 @@ describe("ChangesPanel calls no hook after its early returns", () => {
   });
 });
 
+describe("the worktree cluster — finishing one", () => {
+  const c = code(panel);
+
+  it("exists only in a worktree's own panel", () => {
+    expect(c).toMatch(/payload\.worktreeOf && \([\s\S]{0,1400}?Merge into[\s\S]{0,900}?Remove worktree…/);
+  });
+
+  it("merge is disabled with the precondition that is false, never hidden", () => {
+    expect(c).toMatch(/aria-disabled=\{!mergeInfo\?\.ok\}/);
+    expect(c).toMatch(/mergeInfo\?\.busy/);
+    expect(c).toMatch(/mergeInfo\?\.reason/);
+  });
+
+  it("remove is two-stage: git's dirty refusal raises the force question", () => {
+    expect(c).toMatch(/r\.dirty[\s\S]{0,600}?doRemove\(true, alsoDeleteBranch\)/);
+    // …and deleting the branch is `-d`, never `-D`: git's refusal is the guard.
+    expect(c).toMatch(/gitDeleteBranch\(parent, r\.branch, false\)/);
+  });
+
+  it("removing after a merge is OFFERED, never automatic", () => {
+    expect(c).toMatch(/Merged — remove this worktree\?/);
+    expect(c).toMatch(/confirmLabel: "Remove worktree and delete branch"/);
+  });
+
+  it("a conflict offers the pull request instead, and says nothing changed", () => {
+    expect(c).toMatch(/r\.aborted \? "Couldn’t merge cleanly — nothing changed"/);
+    expect(c).toMatch(/prUrl !== null \? "Open a pull request"/);
+  });
+
+  it("clean-up is on the PROJECT's panel, and the dialog says prune is repo-wide", () => {
+    expect(c).toMatch(/!payload\.worktreeOf && staleWorktrees > 0/);
+    expect(panel).toMatch(/every stale entry of this repository/);
+  });
+
+  it("every git failure is read with gitReason, never split\(\)\[0\]", () => {
+    expect(c).not.toMatch(/\.error[^\n]*split\("\\n"\)\[0\]/);
+    expect((c.match(/gitReason\(/g) ?? []).length).toBeGreaterThanOrEqual(4);
+  });
+});
+
 describe("the Changes panel names the project a worktree belongs to", () => {
   it("renders the parent's name from main's own answer", () => {
     expect(code(panel)).toMatch(/worktreeOf/);

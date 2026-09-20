@@ -3941,6 +3941,8 @@ export default function App(): React.JSX.Element {
                       workspace={shownDrawer.ws}
                       onOpenFile={(rel) => openFileTab(shownDrawer.ws, rel)}
                       onWorktreeCreated={(p) => { activateRoot(p); void newSession(p); }}
+                      onWorktreeRemoved={(parent) => activateRoot(parent)}
+                      staleWorktrees={(worktrees[shownDrawer.ws] ?? []).filter((w) => w.prunable).length}
                     />
                   ) : (
                     <FileTree

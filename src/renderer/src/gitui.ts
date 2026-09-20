@@ -148,10 +148,13 @@ export function summarise(files: HvGitFileChange[]): ChangeSummary {
  * typing a branch name with a space in it.
  *
  * git's own prefixes are the signal; `hint:` lines are advice about the error,
- * never the error. Falls back to the first non-empty line, so an unfamiliar
- * shape still says something rather than nothing.
+ * never the error. A failed merge has no `fatal:` at all — it narrates
+ * ("Auto-merging x") and then states `CONFLICT (add/add): …`, so that counts
+ * too. Falls back to the first non-empty line, so an unfamiliar shape still
+ * says something rather than nothing.
  */
 export function gitReason(stderr: string | undefined | null): string {
   const lines = (stderr ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
-  return lines.find((l) => /^(fatal|error):/i.test(l)) ?? lines[0] ?? "git refused, without saying why.";
+  const stated = lines.find((l) => /^(fatal|error):/i.test(l)) ?? lines.find((l) => /^CONFLICT\b/.test(l));
+  return stated ?? lines[0] ?? "git refused, without saying why.";
 }

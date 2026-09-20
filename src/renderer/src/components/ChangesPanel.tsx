@@ -42,11 +42,20 @@ export function ChangesPanel({
   workspace,
   onOpenFile,
   onWorktreeCreated,
+  onWorktreeRemoved,
+  staleWorktrees = 0,
 }: {
   workspace: string;
   onOpenFile: (relPath: string) => void;
   /** §29: a new worktree becomes the active root and opens a session there. */
   onWorktreeCreated?: (path: string) => void;
+  /** §29: the worktree is gone — go back to the project it belonged to. */
+  onWorktreeRemoved?: (parentPath: string) => void;
+  /**
+   * §29: how many of THIS project's worktrees git still lists but cannot find.
+   * The sidebar cannot act, so a click on a stale row sends the user here.
+   */
+  staleWorktrees?: number;
 }): React.JSX.Element {
   const [payload, setPayload] = useState<HvGitStatusPayload | null>(null);
   const [message, setMessage] = useState("");
@@ -69,6 +78,8 @@ export function ChangesPanel({
   const [drafting, setDrafting] = useState(false);
   // §29 §7: null while unknown or when there is nothing to open.
   const [prUrl, setPrUrl] = useState<string | null>(null);
+  /** §29: whether this worktree's branch can go back into its project, and why not. */
+  const [mergeInfo, setMergeInfo] = useState<HvMergeCheck | null>(null);
   const [openingPr, setOpeningPr] = useState(false);
   const [canDraft, setCanDraft] = useState(false);
   const [working, setWorking] = useState(false);
@@ -149,6 +160,21 @@ export function ChangesPanel({
       .gitPrUrl(workspace, false)
       .then((r) => { if (alive) setPrUrl(r?.url ?? null); })
       .catch(() => { if (alive) setPrUrl(null); });
+    return () => { alive = false; };
+  }, [workspace, payload]);
+
+  /**
+   * §29: the merge preconditions, refreshed on the same beat as the PR
+   * eligibility — both answer "what can I do with this branch now", and both go
+   * stale for the same reasons (a commit, a dirty parent, a session starting).
+   */
+  useEffect(() => {
+    if (!payload?.worktreeOf) { setMergeInfo(null); return; }
+    let alive = true;
+    void window.hv
+      .gitMergeCheck(workspace)
+      .then((r) => { if (alive) setMergeInfo(r); })
+      .catch(() => { if (alive) setMergeInfo(null); });
     return () => { alive = false; };
   }, [workspace, payload]);
 
@@ -382,7 +408,7 @@ export function ChangesPanel({
     // A failure here belongs IN the menu: it is the only surface the user is
     // looking at, and a toast at the panel's foot sits behind it.
     if (r && !r.ok && !r.busy?.length && !r.wouldConflict) {
-      setBranchError(r.error?.split("\n")[0] ?? "Could not switch branch.");
+      setBranchError(r.error ? gitReason(r.error) : "Could not switch branch.");
       void window.hv.gitBranches(workspace).then(setBranches);
     }
     // §1: not git's refusal — a first-class choice, because this is the most
@@ -482,6 +508,132 @@ export function ChangesPanel({
         setLastCommand(`git worktree add -b ${branch} ${r.path}`);
         flash("Made a worktree — you’re in it now.");
         onWorktreeCreated?.(r.path);
+      },
+    });
+  };
+
+  /**
+   * §29 — finishing a worktree. Both verbs live HERE rather than in the sidebar:
+   * they are git words, and §0's altitude rule keeps those below the human verb
+   * set, in the panel that already owns the confirm idiom.
+   */
+  const doRemove = async (force: boolean, alsoDeleteBranch: boolean): Promise<void> => {
+    if (!payload?.worktreeOf) return;
+    const parent = payload.worktreeOf.path;
+    const r = await window.hv.worktreeRemove(workspace, force);
+    setLastCommand(`git worktree remove${force ? " --force" : ""} ${workspace}`);
+
+    if (!r.ok) {
+      if (r.busy?.length) { setBusyNotice(`Waiting for: ${r.busy.join(", ")}`); return; }
+      if (r.dirty) {
+        // git's refusal IS the guard; force is opt-in per removal, never the
+        // first offer — the same shape as round 14's branch delete.
+        setConfirm({
+          title: "This worktree has changes that aren’t saved",
+          body: <div className="font-mono text-[10px] whitespace-pre-wrap">{gitReason(r.error)}</div>,
+          confirmLabel: "Remove it anyway",
+          danger: true,
+          onConfirm: async () => { setConfirm(null); await doRemove(true, alsoDeleteBranch); },
+        });
+        return;
+      }
+      flash(gitReason(r.error));
+      return;
+    }
+
+    if (alsoDeleteBranch && r.branch) {
+      // `-d`, never `-D`: git's refusal on an unmerged branch is a better check
+      // than any of ours, and losing the branch is not part of "remove a folder".
+      const d = await window.hv.gitDeleteBranch(parent, r.branch, false);
+      flash(d.ok
+        ? `Removed the worktree and deleted ${r.branch}.`
+        : `Removed the worktree. ${r.branch} kept: ${gitReason(d.error)}`);
+    } else {
+      flash("Removed the worktree.");
+    }
+    onWorktreeRemoved?.(parent);
+  };
+
+  const confirmRemove = (): void => {
+    if (!payload?.worktreeOf) return;
+    const b = branch?.branch;
+    setConfirm({
+      title: "Remove this worktree?",
+      body: (
+        <>
+          <div className="mb-2">
+            The folder goes. {b ? <>The branch <span className="font-mono">{b}</span> stays</> : "Nothing on the branch changes"},
+            {" "}unless you say otherwise.
+          </div>
+          <div className="text-ink-soft">Sessions in this worktree move to Archived.</div>
+        </>
+      ),
+      confirmLabel: "Remove worktree",
+      secondary: b
+        ? { label: "Remove and delete branch", onPick: async () => { setConfirm(null); await doRemove(false, true); } }
+        : undefined,
+      onConfirm: async () => { setConfirm(null); await doRemove(false, false); },
+    });
+  };
+
+  const confirmMerge = (): void => {
+    if (!mergeInfo?.ok || !payload?.worktreeOf) return;
+    const parentName = payload.worktreeOf.name;
+    const dirtyHere = files.length > 0;
+    setConfirm({
+      title: `Merge into ${mergeInfo.parentBranch ?? parentName}`,
+      body: (
+        <>
+          <div className="mb-2">
+            {mergeInfo.ahead} {mergeInfo.ahead === 1 ? "version" : "versions"} from{" "}
+            <span className="font-mono">{branch?.branch}</span> will land in {parentName}. If they don’t
+            apply cleanly nothing changes, and you’ll see why.
+          </div>
+          {dirtyHere && (
+            <div className="text-ink-soft">
+              Your unsaved changes here do not come along — save a version first if you want them in.
+            </div>
+          )}
+        </>
+      ),
+      confirmLabel: "Merge",
+      onConfirm: async () => {
+        setConfirm(null);
+        const r = await window.hv.gitMerge(workspace);
+        setLastCommand(`git merge --no-edit ${branch?.branch}`);
+        if (r.ok) {
+          flash(r.fastForward ? "Merged." : "Merged, with a merge commit.");
+          // Offered, never automatic: the branch landing is not the same
+          // decision as the folder going away.
+          setConfirm({
+            title: "Merged — remove this worktree?",
+            body: <div>Its work is in {parentName} now. You can keep working here instead.</div>,
+            confirmLabel: "Remove worktree and delete branch",
+            onConfirm: async () => { setConfirm(null); await doRemove(false, true); },
+          });
+          return;
+        }
+        if (r.busy?.length) { setBusyNotice(`Waiting for: ${r.busy.join(", ")}`); return; }
+        setConfirm({
+          title: r.aborted ? "Couldn’t merge cleanly — nothing changed" : "Couldn’t merge",
+          body: (
+            <>
+              <div className="mb-2 font-mono text-[10px] whitespace-pre-wrap">{gitReason(r.error)}</div>
+              {!!r.conflicts?.length && (
+                <div className="mb-2">
+                  Conflicting:{" "}
+                  {r.conflicts.map((c) => <span key={c} className="font-mono mr-1">{c}</span>)}
+                </div>
+              )}
+              {prUrl !== null && (
+                <div className="text-ink-soft">A pull request can carry this branch instead.</div>
+              )}
+            </>
+          ),
+          hideCancel: prUrl === null,
+          confirmLabel: prUrl !== null ? "Open a pull request" : "OK",
+          onConfirm: () => { setConfirm(null); if (prUrl !== null) openPr(); },
+        });
       },
     });
   };
@@ -879,6 +1031,79 @@ export function ChangesPanel({
               >
                 <PrGlyph />
                 {openingPr ? "Writing it up…" : "Open a pull request"}
+              </button>
+            )}
+            {/*
+             * §29 worktrees — the two ways to finish one, beside the third
+             * (Open a pull request) that was already here. Present ONLY in a
+             * worktree's own panel: on the project these verbs have no subject.
+             *
+             * Both are git's words, and that is why they live down here rather
+             * than in the sidebar — §0's altitude rule. Merge names the branch
+             * it would rewrite, or says which precondition is false.
+             */}
+            {payload.worktreeOf && (
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  aria-disabled={!mergeInfo?.ok}
+                  title={
+                    mergeInfo?.ok
+                      ? `git merge --no-edit ${branch?.branch} · ${mergeInfo.ahead} ${mergeInfo.ahead === 1 ? "version" : "versions"}`
+                      : mergeInfo?.busy?.length
+                        ? `Waiting for: ${mergeInfo.busy.join(", ")}`
+                        : (mergeInfo?.reason ?? "Checking…")
+                  }
+                  onClick={() => { if (mergeInfo?.ok) confirmMerge(); }}
+                  className="flex items-center gap-1.5 rounded-xl border-2 border-line bg-card px-3 py-1.5 text-xs font-bold cursor-pointer hover:border-tangerine aria-disabled:opacity-40 aria-disabled:cursor-default aria-disabled:hover:border-line"
+                >
+                  Merge into {mergeInfo?.parentBranch ?? payload.worktreeOf.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmRemove}
+                  title="Deletes this worktree's folder. The branch stays unless you say otherwise."
+                  className="flex items-center gap-1.5 rounded-xl border-2 border-line bg-card px-3 py-1.5 text-xs font-bold cursor-pointer hover:border-tangerine"
+                >
+                  Remove worktree…
+                </button>
+              </div>
+            )}
+            {/*
+             * §29: a worktree git still lists but whose folder is gone. It is
+             * shown on the PROJECT's panel because prune is repo-wide — the
+             * dialog says so, because that is what the command does.
+             */}
+            {!payload.worktreeOf && staleWorktrees > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setConfirm({
+                    title: "Clean up stale worktrees",
+                    body: (
+                      <>
+                        <div className="mb-2">
+                          git still lists {staleWorktrees === 1 ? "a worktree" : `${staleWorktrees} worktrees`} of this
+                          project whose folder is gone.
+                        </div>
+                        <div className="text-ink-soft">
+                          This clears every stale entry of this repository — that is what the command does. Nothing on
+                          disk is deleted.
+                        </div>
+                      </>
+                    ),
+                    confirmLabel: "Clean up",
+                    onConfirm: async () => {
+                      setConfirm(null);
+                      const r = await window.hv.worktreePrune(workspace);
+                      setLastCommand("git worktree prune");
+                      flash(r.ok ? "Cleaned up." : gitReason(r.error));
+                    },
+                  })
+                }
+                className="self-start rounded-xl border-2 border-line bg-card px-3 py-1.5 text-xs font-bold cursor-pointer hover:border-tangerine"
+              >
+                Clean up {staleWorktrees === 1 ? "a stale worktree" : `${staleWorktrees} stale worktrees`}
               </button>
             )}
             {busyNotice && <Notice text={busyNotice} />}

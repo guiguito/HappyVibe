@@ -3074,10 +3074,24 @@ export function registerIpc(
     const meta = index.get(sessionId);
     let stats: unknown = null;
     if (client) {
+      /**
+       * Bounded, because `PiClient.send` has no timeout of its own: the promise
+       * settles only when the child answers, and a child that CANNOT answer
+       * hangs this await forever — taking the ipc handler that called us with
+       * it. §29 found the case: removing a worktree deleted the child's cwd out
+       * from under it, and the app wedged. The catch below already says this
+       * path tolerates a dying process; a hang is just the other way to die.
+       */
+      let timer: NodeJS.Timeout | undefined;
       try {
-        stats = (await client.send({ type: "get_session_stats" })).data ?? null;
+        const answered = client.send({ type: "get_session_stats" });
+        const gaveUp = new Promise<null>((r) => { timer = setTimeout(() => r(null), 3_000); });
+        const res = await Promise.race([answered, gaveUp]);
+        stats = (res as { data?: unknown } | null)?.data ?? null;
       } catch {
         /* dying process — end without stats */
+      } finally {
+        if (timer) clearTimeout(timer);
       }
     }
     void log.append({
@@ -5376,15 +5390,26 @@ export function registerIpc(
     }
 
     const branch = worktreeBranch(parent, worktreePath);
+
+    /**
+     * Stop the agents BEFORE the folder goes, and archive only after it has.
+     *
+     * The order is the whole lesson here. Removing first left Pi running with
+     * its cwd deleted, and `endSession` then asked that child for its stats —
+     * a request it could never answer, which hung the handler and wedged the
+     * app (found in the GUI pass). Ending a session is reversible, so doing it
+     * ahead of a remove that might still fail costs nothing; archiving is a
+     * claim that the folder is gone, so it waits until that is true.
+     */
+    const here = sessionsOfWorkspace(index.list(), worktreePath);
+    for (const s of here) if (manager.get(s.id)) await endSession(s.id);
+
     const r = await removeWorktree(parent, worktreePath, force);
     if (!r.ok) return r;
 
     // §5's Forget path, one level down: the folder is gone, so reopening a
     // session here must fail honestly rather than resolve to nothing.
-    for (const s of sessionsOfWorkspace(index.list(), worktreePath)) {
-      if (manager.get(s.id)) await endSession(s.id);
-      if (!s.archived) index.update(s.id, { archived: true });
-    }
+    for (const s of here) if (!s.archived) index.update(s.id, { archived: true });
     sessionsChanged();
     auditGit(parent, "worktree-remove", { path: worktreePath, branch, force });
     await refreshWorktrees(parent);

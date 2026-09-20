@@ -162,6 +162,17 @@ describe("gitReason", () => {
     expect(gitReason("error: the branch 'x' is not fully merged.\nhint: delete it with -D")).toMatch(/^error:/);
   });
 
+  it("a failed merge has no fatal: — the CONFLICT line is the statement", () => {
+    // Captured from git 2.50.1 on an add/add conflict; the first line is
+    // narration, which is what the user was being shown before.
+    const out = [
+      "Auto-merging clash.txt",
+      "CONFLICT (add/add): Merge conflict in clash.txt",
+      "Automatic merge failed; fix conflicts and then commit the result.",
+    ].join("\n");
+    expect(gitReason(out)).toBe("CONFLICT (add/add): Merge conflict in clash.txt");
+  });
+
   it("falls back to the first real line, and never to an empty string", () => {
     expect(gitReason("\n\nsomething odd\n")).toBe("something odd");
     expect(gitReason("")).toMatch(/git refused/);
