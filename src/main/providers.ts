@@ -127,6 +127,117 @@ export async function detectOllama(baseUrl = OLLAMA_BASE_URL): Promise<{ running
 }
 
 /**
+ * Ollama's documented default runtime window (`OLLAMA_CONTEXT_LENGTH`).
+ *
+ * Used ONLY when nothing is loaded and the server has therefore told us
+ * nothing. It is a floor, not a guess dressed as a fact — see the resolver.
+ */
+export const OLLAMA_DEFAULT_NUM_CTX = 4096;
+
+/**
+ * The window Ollama will ACTUALLY allocate per model — not the window the model
+ * was trained for.
+ *
+ * WHY this exists, measured 2026-09-19 against a real server: `gemma4:12b`
+ * reports `gemma4.context_length: 262144` from `/api/show` (the trained maximum)
+ * while `/api/ps` reports `context_length: 4096` for the same model loaded —
+ * because the runtime window is `num_ctx`, not the architecture's ceiling. And
+ * HappyVibe wrote NEITHER: `ollamaEndpoint` omitted `contextWindow`, so Pi fell
+ * back to its own 128,000 default, which `contextUsage` then reports and
+ * `context.ts` labels `source: "measured"`. The gauge read **3% of 128,000**
+ * where the truth was **96% of 4,096** — a 32x overstatement, in the app's most
+ * confident state, immediately before silent front-truncation. This is Cline
+ * issue #10375, which this project cites as a competitor failure.
+ *
+ * ONE request, not one per model: `/api/ps` answers for everything loaded, and
+ * a loaded model also REVEALS the server's effective default for the unloaded
+ * ones (a user who raised `OLLAMA_CONTEXT_LENGTH` shows up here). So the
+ * resolution is: what the server says for this model → what the server says for
+ * any other model → Ollama's documented default.
+ *
+ * ponytail: an unloaded model on a fresh server resolves to the 4,096 floor, so
+ * a raised `OLLAMA_CONTEXT_LENGTH` UNDER-states until something has been loaded
+ * once — deliberately the safe direction (an early warning is visible and
+ * self-corrects at the next spawn; a calm gauge over a truncating context is
+ * neither). Upgrade path if that is ever not good enough: `/api/show` per model
+ * for a Modelfile-pinned `num_ctx`, N requests instead of 1.
+ */
+export async function resolveOllamaWindows(
+  models: string[],
+  baseUrl = OLLAMA_BASE_URL,
+): Promise<Record<string, number>> {
+  let loaded: { name?: string; context_length?: number }[] = [];
+  try {
+    const res = await fetch(`${baseUrl}/api/ps`, { signal: AbortSignal.timeout(1200) });
+    if (res.ok) loaded = ((await res.json()) as { models?: typeof loaded }).models ?? [];
+  } catch {
+    // Nothing loaded, or an Ollama too old for /api/ps. The floor below still
+    // beats Pi's 128,000, which is the failure this function exists to end.
+  }
+  const byName = new Map(
+    loaded.flatMap((m) => (m.name && (m.context_length ?? 0) > 0 ? [[m.name, m.context_length!] as const] : [])),
+  );
+  const observedDefault = byName.size ? Math.min(...byName.values()) : undefined;
+  const out: Record<string, number> = {};
+  for (const id of models) out[id] = byName.get(id) ?? observedDefault ?? OLLAMA_DEFAULT_NUM_CTX;
+  return out;
+}
+
+/**
+ * The same question for LM Studio and llama.cpp, each through its OWN native
+ * endpoint — the OpenAI-compatible `/v1/models` both expose carries no window.
+ *
+ * Unlike the Ollama resolver above this one is NOT measured against a running
+ * server (neither is installed here), which is exactly why it is written to
+ * fail into today's behaviour: any shape it does not recognise yields `{}`, the
+ * `contextWindow` field is then omitted, and the endpoint is built precisely as
+ * it is built now. It can improve the gauge; it cannot regress it. Remove the
+ * hedge in this comment once someone has run it against both.
+ */
+export async function resolveRunnerWindows(
+  runner: LocalRunner,
+  models: string[],
+): Promise<Record<string, number>> {
+  const root = runner.baseUrl.replace(/\/v1\/?$/, "");
+  const get = async (path: string): Promise<unknown> => {
+    try {
+      const res = await fetch(`${root}${path}`, { signal: AbortSignal.timeout(1200) });
+      return res.ok ? await res.json() : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const pos = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+  const out: Record<string, number> = {};
+
+  if (runner.id === "lmstudio") {
+    // /api/v0/models is per-model: prefer what is LOADED over what the model
+    // could take, the same preference the Ollama resolver makes.
+    const rows = (dataRows(await get("/api/v0/models")) ?? []) as Record<string, unknown>[];
+    for (const r of rows) {
+      const id = typeof r.id === "string" ? r.id : undefined;
+      const n = pos(r.loaded_context_length) ?? pos(r.max_context_length);
+      if (id && n) out[id] = n;
+    }
+    return out;
+  }
+
+  // llama.cpp serves ONE model, so /props answers for every id in the list.
+  const props = (await get("/props")) as { default_generation_settings?: Record<string, unknown> } | undefined;
+  const n = pos(props?.default_generation_settings?.n_ctx) ?? pos((props as Record<string, unknown> | undefined)?.n_ctx);
+  if (n) for (const id of models) out[id] = n;
+  return out;
+}
+
+/** `{data:[…]}` or a bare array — LM Studio has shipped both. */
+function dataRows(v: unknown): unknown[] | undefined {
+  if (Array.isArray(v)) return v;
+  const d = (v as { data?: unknown } | undefined)?.data;
+  return Array.isArray(d) ? d : undefined;
+}
+
+/**
  * The other two local runners the "free local" rung should cover (2026-08-29).
  * Ollama keeps its own detector because it speaks its own `/api/tags`; these
  * two are OpenAI-compatible, so detection IS the custom-endpoint probe and the
@@ -149,7 +260,11 @@ export async function detectLocalRunner(
 }
 
 /** A detected runner as a CustomEndpoint, on the shared models.json path. */
-export function localRunnerEndpoint(runner: LocalRunner, models: string[]): CustomEndpoint {
+export function localRunnerEndpoint(
+  runner: LocalRunner,
+  models: string[],
+  windows?: Record<string, number>,
+): CustomEndpoint {
   return {
     id: runner.id,
     // Namespaced `hv-<id>` like every other custom endpoint. Ollama's bare
@@ -162,7 +277,11 @@ export function localRunnerEndpoint(runner: LocalRunner, models: string[]): Cust
     // Placeholder — these servers ignore it, but Pi requires auth before models
     // appear in get_available_models (docs/models.md).
     auth: { kind: "placeholder", value: runner.id },
-    models: models.map((id) => ({ id })), // contextWindow unknown for local models
+    // A window when the runner told us one, omitted when it did not. NEVER a
+    // guess: an omitted field lets Pi fall back to 128,000, which is wrong but
+    // is today's behaviour; a wrong number here would be reported back through
+    // `contextUsage` and labelled `source: "measured"`. See resolveOllamaWindows.
+    models: models.map((id) => ({ id, ...(windows?.[id] ? { contextWindow: windows[id] } : {}) })),
   };
 }
 
@@ -174,12 +293,16 @@ export function localRunnerEndpoint(runner: LocalRunner, models: string[]): Cust
  * Ollama is now just one preset on the shared custom-endpoint path (PRD §16,
  * 2026-07-30) — the emitted JSON is unchanged.
  */
-export function mergeOllamaModelsJson(existingRaw: string | null, models: string[]): string {
-  return mergeModelsJson(existingRaw, models.length === 0 ? [] : [ollamaEndpoint(models)]);
+export function mergeOllamaModelsJson(
+  existingRaw: string | null,
+  models: string[],
+  windows?: Record<string, number>,
+): string {
+  return mergeModelsJson(existingRaw, models.length === 0 ? [] : [ollamaEndpoint(models, windows)]);
 }
 
 /** The Ollama entry as a CustomEndpoint. */
-function ollamaEndpoint(models: string[]): CustomEndpoint {
+function ollamaEndpoint(models: string[], windows?: Record<string, number>): CustomEndpoint {
   return {
     id: "ollama",
     // Historical key — Ollama predates the hv- namespace and users' sessions
@@ -191,7 +314,9 @@ function ollamaEndpoint(models: string[]): CustomEndpoint {
     // Placeholder — Ollama ignores it, but Pi requires auth before models
     // appear in get_available_models (docs/models.md).
     auth: { kind: "placeholder", value: "ollama" },
-    models: models.map((id) => ({ id })), // contextWindow unknown for local models
+    // Resolved from the SERVER (resolveOllamaWindows), not from the model's
+    // trained maximum — the two differ by 64x on a stock gemma4:12b.
+    models: models.map((id) => ({ id, ...(windows?.[id] ? { contextWindow: windows[id] } : {}) })),
   };
 }
 
@@ -207,6 +332,8 @@ export async function syncModelsJson(
   detectors: {
     ollama: () => Promise<{ running: boolean; models: string[] }>;
     runner: (r: LocalRunner) => Promise<{ running: boolean; models: string[] }>;
+    ollamaWindows?: (models: string[]) => Promise<Record<string, number>>;
+    runnerWindows?: (r: LocalRunner, models: string[]) => Promise<Record<string, number>>;
   } = { ollama: detectOllama, runner: detectLocalRunner },
 ): Promise<{ running: boolean; models: string[] }> {
   // All three probes run together: they are independent localhost requests and
@@ -220,11 +347,19 @@ export async function syncModelsJson(
   // with bare model ids. Compared by URL, not by id, because the user names
   // their endpoint whatever they like.
   const claimed = new Set(custom.map((e) => e.baseUrl.replace(/\/$/, "")));
+  const live = runners.filter((r) => r.models.length && !claimed.has(r.runner.baseUrl.replace(/\/$/, "")));
+  // Windows are resolved only for servers that actually answered, and again all
+  // together — this still sits in front of every spawn. A resolver that throws
+  // or times out yields {}, which is exactly the pre-2026-09-19 behaviour.
+  const windowsOf = detectors.ollamaWindows ?? ((m: string[]) => resolveOllamaWindows(m));
+  const runnerWindowsOf = detectors.runnerWindows ?? resolveRunnerWindows;
+  const [ollamaWindows, ...runnerWindows] = await Promise.all([
+    detected.models.length ? windowsOf(detected.models) : Promise.resolve({}),
+    ...live.map((r) => runnerWindowsOf(r.runner, r.models)),
+  ]);
   const endpoints: CustomEndpoint[] = [
-    ...(detected.models.length ? [ollamaEndpoint(detected.models)] : []),
-    ...runners
-      .filter((r) => r.models.length && !claimed.has(r.runner.baseUrl.replace(/\/$/, "")))
-      .map((r) => localRunnerEndpoint(r.runner, r.models)),
+    ...(detected.models.length ? [ollamaEndpoint(detected.models, ollamaWindows)] : []),
+    ...live.map((r, i) => localRunnerEndpoint(r.runner, r.models, runnerWindows[i])),
     ...custom,
   ];
   const file = path.join(agentDir, "models.json");

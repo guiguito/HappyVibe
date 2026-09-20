@@ -81,6 +81,7 @@ export const CHIP_TONE = {
 /** Stable empty ledger so the pill renders before the first fetch lands. */
 const emptyLedger: HvLedgerTotal = {
   calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, metered: 0, plan: 0, unknown: 0,
+  partial: 0,
 };
 
 /** V2.A: chip subtext — which tier of session → workspace → global won. */

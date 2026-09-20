@@ -345,10 +345,12 @@ interface HvApiCall {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  /** Pi's cost estimate. Owed only when `billing` is "metered". */
+  /** Pi's cost estimate. Owed only when `billing` is "metered"; a FLOOR when `unpriced` is set. */
   cost: number;
   /** metered = per-token; plan = flat subscription (cost NOT owed); unknown = no rate. */
   billing: "metered" | "plan" | "unknown";
+  /** Token classes burned but not priced by this build's table — `cost` is then a floor. */
+  unpriced?: readonly ("input" | "output" | "cacheRead" | "cacheWrite")[];
   /** The sub-agent that made this call; absent for the session's own calls. */
   agent?: string;
 }
@@ -367,6 +369,8 @@ interface HvLedgerTotal {
   plan: number;
   /** Calls whose price is unknown — surfaced, never silently summed as $0. */
   unknown: number;
+  /** Metered calls with an unpriced token class — summed, so the total is a floor. */
+  partial: number;
 }
 
 interface HvModel {
