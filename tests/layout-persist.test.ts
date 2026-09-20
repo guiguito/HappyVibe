@@ -43,6 +43,16 @@ describe("restoreLayout", () => {
     expect(allTerminals(back.ws1!)).toEqual(["t1"]);
   });
 
+  it("keeps a WORKTREE's tabs when the alive set names it (§29 worktrees)", () => {
+    // A worktree is a ROOT, so its path is a key in the layout exactly like a
+    // workspace's. The alive set is registered ∪ discovered — miss the second
+    // half and every tab open in a worktree is pruned on restart.
+    const wt = "/p/main-wt";
+    const tabs = openFile(emptyTabs, "src/a.ts");
+    expect(Object.keys(restoreLayout(stored({ [wt]: tabs }), alive([], [], [], ["/p/main", wt])))).toEqual([wt]);
+    expect(Object.keys(restoreLayout(stored({ [wt]: tabs }), alive([], [], [], ["/p/main"])))).toEqual([]);
+  });
+
   it("round-trips a full 2x2 including its divider positions", () => {
     let t = openFile(emptyTabs, "a.ts");
     t = splitAt(t, 0, "v");

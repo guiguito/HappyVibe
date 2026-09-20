@@ -524,6 +524,14 @@ export function ChangesPanel({
               <span className="flex items-center gap-1"><DownloadGlyph />Fetch</span>
             </button>
           </div>
+          {/* §29 worktrees: say which project this checkout belongs to, so a
+              diff is never mistaken for the main tree's. Main answers it —
+              the renderer never works out which root it is looking at. */}
+          {payload?.worktreeOf && (
+            <div className="text-[10px] text-ink-soft truncate" title={payload.worktreeOf.path}>
+              worktree of {payload.worktreeOf.name}
+            </div>
+          )}
           {/* §5c: the workspace is BELOW the repo root — say so, because branch
               switching and push act above the workspace and cannot be scoped. */}
           {state.subdir && (
