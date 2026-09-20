@@ -46,3 +46,41 @@ jobs:
       - run: cd pi-runtime && npm ci
       - run: npm test
       - run: npm run build
+
+  # §4 Linux round (2026-09-20). REQUIRED, for the same recorded reason as the
+  # Windows job above — an advisory job is a green tick over a red suite.
+  #
+  # This one also PACKAGES, which the other two do not. `npm run build` is
+  # electron-vite only, so the `linux:` block, the rendered icon set, the
+  # generated .desktop entry and the afterPack pi-runtime copy are exercised by
+  # nothing else in the repo; a broken package would otherwise reach a user
+  # rather than a runner. Pinned by tests/ci-platforms-required.test.ts.
+  #
+  # node-pty ships no Linux prebuild and is compiled through node-gyp during
+  # `npm ci` here. ubuntu-latest already carries build-essential and python3, so
+  # there is no install step for it — but that is why a Linux CONTRIBUTOR needs
+  # them, and why this is called out rather than left to be rediscovered.
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: cd pi-runtime && npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx electron-builder --linux --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: happyvibe-linux-x64
+          path: |
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error

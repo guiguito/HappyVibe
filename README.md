@@ -12,7 +12,9 @@ Terminals, a browser, documents, git, schedules, sub-agents, MCP and skills are 
 plugins to hunt down, no config to write, no restart. Bring any model, including a local one. And
 nothing loads itself until you say yes to that specific thing.
 
-> **Status:** pre-1.0 and moving fast. macOS and Windows ship today; Linux is coming.
+> **Status:** pre-1.0 and moving fast. macOS and Windows ship today. Linux builds, packages and
+> passes its suite on every commit, but nobody has launched it on real hardware yet — see
+> Honest limitations.
 
 ## What it does
 
@@ -36,7 +38,8 @@ is actually about to happen. That split is the one thing here no other tool ship
 
 ## Install
 
-Download the latest release for macOS or Windows.
+Download the latest release for macOS or Windows. Linux packages (AppImage and `.deb`, x64) are
+built on every commit but are not attached to a release yet.
 
 **macOS:** the app is ad-hoc signed and not yet notarized, so Gatekeeper blocks the first launch.
 Either right-click → **Open** → **Open**, or clear the quarantine flag once:
@@ -58,6 +61,11 @@ npm install
 cd pi-runtime && npm ci && cd ..   # BOTH installs are required
 npm run dev
 ```
+
+On **Linux** the first install also compiles `node-pty`, which publishes prebuilt binaries for
+macOS and Windows only — so you need `build-essential` and `python3` (`sudo apt install -y
+build-essential python3`). This is a prerequisite for building the app, never for running it: the
+compiled binary ships inside the package.
 
 `pi-runtime/` is a separate vendored tree; a fresh clone without its install will fail in
 confusing ways. No system Node is needed at runtime — the app routes child processes through its
@@ -111,7 +119,17 @@ must never be able to load.
 ## Honest limitations
 
 - **Nothing is signed yet.** One extra click on first launch, on both platforms.
-- **Linux is not configured yet**, though it is committed.
+- **Linux has never been launched by a human.** CI builds it, packages it as an AppImage and a
+  `.deb`, and runs the full suite on it — but "the suite is green" is not "the window opens", and
+  nobody has yet opened a terminal tab or signed into an MCP server there. It is also **x64 only**,
+  for a different reason than Windows below: linux-arm64 binaries *do* exist for both native
+  dependencies, and the target is excluded simply because nothing tests it.
+- **The Linux file tree does not refresh itself.** Recursive filesystem watching does not exist on
+  Linux, so a file created outside the app shows up on the next manual refresh. macOS and Windows
+  update live.
+- **The Linux AppImage needs `libfuse2`**, which Ubuntu 22.04 and later do not install by default —
+  without it a double-click does nothing at all, with no error. The `.deb` has no such problem, and
+  that is why both are built.
 - **The Windows build is x64 only.** `sherpa-onnx` (voice) and `@firecrawl/anydoc` (documents)
   publish no win-arm64 binary, so arm64 machines run the x64 installer under emulation.
 - **The cost meter is an estimate**, computed from a price table pinned at the vendored Pi version.

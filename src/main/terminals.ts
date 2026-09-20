@@ -57,6 +57,8 @@ interface Entry {
   file: string;
   /** Did this terminal ever emit a byte? Distinguishes "died" from "ran". */
   sawData: boolean;
+  /** node-pty's spawn-helper reported a failed exec — see EXEC_FAILED. */
+  execFailed: boolean;
   /** §7 round 12: a name the user typed. Beats the foreground-process poll;
    *  cleared by renaming to "", which returns the tab to following the command.
    *  Not on TerminalInfo — the renderer reads one `title`, whoever won it. */
@@ -95,6 +97,33 @@ const TITLE_POLL_MS = 500;
  * unanswerable. Both degrade to a quieter UI rather than a wrong one.
  */
 const FOREGROUND_SUPPORTED = !platform.isWindows;
+
+/**
+ * What `pty.process` actually answers, normalised.
+ *
+ * node-pty reports argv[0] of the tty's foreground process, and that is NOT the
+ * same shape per platform: macOS answers the command's NAME (`bash`, `sleep`),
+ * Linux answers its PATH (`/bin/bash`) for the shell — because that is how the
+ * shell was exec'd — while still answering a bare `sleep` for a command typed at
+ * the prompt.
+ *
+ * `shellName` is a basename (`path.basename(file)`), so comparing the raw value
+ * against it made `"/bin/bash" !== "bash"` true at an idle prompt and reported
+ * EVERY Linux terminal as permanently busy: the close confirm always warning and
+ * the agent never able to reuse a terminal, filling its cap of 3 for good. That
+ * is the same failure `FOREGROUND_SUPPORTED` exists to prevent on Windows,
+ * arriving by a different route — which is why the normalisation lives here,
+ * where both readers pass through it, rather than at either call site.
+ *
+ * The leading `-` is a login shell's convention (`-bash`), so it is stripped too:
+ * a user whose shellArgs are `["-l"]` would otherwise hit exactly the bug above.
+ */
+/** node-pty's spawn-helper, when the shell path cannot be exec'd. */
+const EXEC_FAILED = /execvp\(\d\) failed/;
+
+function processName(raw: string): string {
+  return (raw.split(/[\\/]/).pop() ?? raw).replace(/^-/, "");
+}
 
 /**
  * node-pty's write socket, which upstream leaves unguarded (see the call site).
@@ -194,7 +223,7 @@ export class TerminalManager {
       exitCode: null,
     };
 
-    const entry: Entry = { info, pty: null, mirror, serializer, shellName, file, sawData: false };
+    const entry: Entry = { info, pty: null, mirror, serializer, shellName, file, sawData: false, execFailed: false };
     this.entries.set(id, entry);
 
     let child: Pty;
@@ -231,6 +260,13 @@ export class TerminalManager {
     attachWriteErrorHandler(child, id);
 
     child.onData((data) => {
+      // Recorded HERE, off the raw bytes, and not by reading the mirror back in
+      // onExit: @xterm/headless's write() is asynchronous, so the mirror may not
+      // have parsed this line yet when the exit handler runs. That race passed
+      // in a container and failed on the CI runner, which is the worst split
+      // available. (A chunk boundary inside the literal would lose the signal
+      // and degrade to the old behaviour — the helper writes it in one go.)
+      if (!entry.sawData && EXEC_FAILED.test(data)) entry.execFailed = true;
       entry.sawData = true;
       mirror.write(data);
       this.onData(id, data);
@@ -244,7 +280,14 @@ export class TerminalManager {
       // A shell that dies without ever printing a byte did not "exit" — it
       // never started. §26 wants the path it tried named, because otherwise a
       // typo'd shell path is an empty tab with no explanation anywhere.
-      if (exitCode !== 0 && !entry.sawData) {
+      //
+      // `!sawData` alone stopped being that test on Linux: node-pty's
+      // spawn-helper writes "execvp(3) failed.: No such file or directory" INTO
+      // the pty when the exec fails, so the terminal has seen a byte, the guard
+      // skips, and the user is told an exec failed without being told which path
+      // was tried — the exact failure this branch exists to prevent, restored by
+      // a platform difference. The helper names the errno, never the path.
+      if (exitCode !== 0 && (!entry.sawData || entry.execFailed)) {
         mirror.write(`\r\n\x1b[31mCould not start ${file} (exit ${exitCode})\x1b[0m\r\n`);
       }
       this.onExit(id, exitCode);
@@ -268,7 +311,8 @@ export class TerminalManager {
     if (entry.userTitle) return entry.userTitle;
     if (!FOREGROUND_SUPPORTED) return entry.shellName;
     const fg = entry.pty?.process;
-    return typeof fg === "string" && fg.length > 0 ? fg : entry.shellName;
+    // Normalised, or a Linux tab reads "/bin/bash" instead of "bash".
+    return typeof fg === "string" && fg.length > 0 ? processName(fg) : entry.shellName;
   }
 
   /**
@@ -354,7 +398,9 @@ export class TerminalManager {
     // and the agent never able to reuse a terminal, filling its cap of 3 for good.
     if (!FOREGROUND_SUPPORTED) return null;
     const fg = entry.pty.process;
-    return typeof fg === "string" && fg.length > 0 && fg !== entry.shellName ? fg : null;
+    if (typeof fg !== "string" || fg.length === 0) return null;
+    const name = processName(fg);
+    return name !== entry.shellName ? name : null;
   }
 
   get(id: string): TerminalInfo | null {

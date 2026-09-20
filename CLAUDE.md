@@ -93,6 +93,77 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - Measurements, including the M1 exit test driven over CDP: `docs/validation/win1.md`.
   Design + decisions: the Notion "Windows support" page.
 
+### Linux (PRD §4, round 2026-09-20)
+- **`npm ci` COMPILES node-pty on Linux** — it ships prebuilds for `darwin-*` and
+  `win32-*` only (verified against the package; there is no `linux-x64` entry), so a
+  Linux checkout needs `build-essential` and `python3`. **Users are unaffected and §3
+  is untouched:** node-pty is N-API, so the binary the build machine compiles serves
+  both Node and Electron exactly as a prebuild would, and it rides in the artifact.
+  `npmRebuild: false` stays correct. Both arms of `tests/native-modules.test.ts`
+  assert — neither skips.
+- **Never add a `deb:` block with `depends`.** It REPLACES electron-builder's defaults
+  rather than extending them (`FpmTarget.js:185-194` assigns straight to
+  `customDepends`), and those defaults already carry **`libsecret-1-0`** — precisely
+  what MCP OAuth's keychain needs — beside `libgtk-3-0`, `libnss3`, `libxss1`,
+  `libxtst6`, `xdg-utils`, `libatspi2.0-0` and `libuuid1`. The obvious one-line "fix"
+  ships a deb that installs cleanly and will not launch. `tests/linux-package.test.ts`
+  asserts the ABSENCE *and* asserts upstream still defaults to libsecret, so the
+  decision inverts loudly instead of rotting.
+- **The icon bug is an ASSOCIATION bug, not an image bug, and `desktopName` is the one
+  answer.** electron-builder derives the installed `.desktop` FILENAME
+  (`LinuxTargetHelper.js:203-215`) and `StartupWMClass` (`:276`) from `desktopName` in
+  `package.json`, and Electron derives its `app_id` from the same field (its own
+  typings say so). Without it `StartupWMClass` falls back to `productName`
+  (`HappyVibe`) while the filename falls back to `executableName` (`happyvibe`) — two
+  different strings, so a running window stops grouping with its launcher and a second
+  generic icon appears beside it. Set `desktopName` + `linux.syncDesktopName: true`,
+  and **never hand-write `StartupWMClass`**: it is derived, so a copy can only drift.
+  (electron-builder's own default for `syncDesktopName` flips to `true` in v27.)
+- **`build/icons/` is GENERATED** by `npm run icons` from `build/icon.svg` — never
+  hand-edit a PNG in there. Four things in `scripts/icons.mjs` look like style and are
+  load-bearing, each having caused a silent hang or a wrong file: **no top-level
+  `await`** (`app.whenReady()` at module scope deadlocks — ready fires only after the
+  entry module finishes evaluating, and Electron then hangs printing NOTHING);
+  `createRequire` rather than a static `electron` import; **`offscreen: true`** (a
+  hidden ordinary window has no compositor output on macOS and `capturePage` never
+  settles); and **one capture then resize**, because a window per size answered
+  `ERR_FAILED (-2)` on every load after the first AND because `capturePage` answers at
+  the DISPLAY scale factor — a 128px window wrote 256px files, which electron-builder
+  would never complain about since it matches icons by FILENAME.
+- **`pty.process` answers a NAME on macOS and a PATH on Linux**, and that one difference
+  was a shipped Linux bug. node-pty reports argv[0] of the foreground process: macOS
+  gives `bash`, Linux gives `/bin/bash` for the SHELL (that is how it was exec'd) while
+  still giving a bare `sleep` for a command typed at the prompt. `shellName` is a
+  basename, so `"/bin/bash" !== "bash"` was TRUE at an idle prompt — every Linux terminal
+  read as permanently busy, the close confirm always warned, and the agent could never
+  reuse a terminal, filling its cap of 3 for good. Exactly what `FOREGROUND_SUPPORTED`
+  prevents on Windows, by another route. `processName()` (terminals.ts) normalises at the
+  ONE point both `titleOf` and `foreground` pass through — never compare `pty.process`
+  raw, and never re-inline the basename at a call site. It strips a login shell's leading
+  `-` too, because `shellArgs: ["-l"]` reproduces the bug precisely.
+- **A shell that never started DOES print a byte on Linux**, so `!sawData` is not the test
+  for it. node-pty's spawn-helper writes `execvp(3) failed.: No such file or directory`
+  INTO the pty on a failed exec — naming the errno and never the path — so §26's
+  "name the path it tried" branch skipped and a typo'd shell path became an unexplained
+  tab again. `onExit` now also matches `EXEC_FAILED`.
+- **A missing shell is diagnosed three assertions away from where it fails.** `pty.spawn`
+  does NOT throw on a bad shell path (pinned in `terminals.test.ts`), so the whole
+  terminal suite fails on its own terms — `expected null to be 'sleep'`, `expected [] to
+  include 'sleep'` — with one `execvp(3) failed.` buried in a scrollback buffer. If the
+  terminal tests go red en masse on a new platform, check the SHELL first:
+  `tests/shellFixture.ts` picks zsh on macOS and bash elsewhere, and the rc-skip flag
+  (`-f` vs `--norc`) is derived from the shell chosen, never from the platform.
+- **The file tree does not live-refresh** — recursive `fs.watch` does not exist on
+  Linux (`src/main/watch.ts:10`), so `watchWorkspace` returns early and the renderer
+  keeps its manual path. Accepted ceiling, not a bug to re-report.
+- **x64 only, and NOT for Windows' reason.** `sherpa-onnx` and `@firecrawl/anydoc` both
+  publish linux-arm64, so arm64 is *available* here and excluded only because nothing
+  tests it. Windows arm64 unblocks when upstream ships a binary; Linux arm64 unblocks
+  when we add a runner. Keep the two reasons apart.
+- **A branch push does not run CI** — `ci.yml` fires on `main` pushes and pull requests
+  only, so platform work needs a (draft) PR to reach a runner at all.
+- Measurements: `docs/validation/lin1.md`.
+
 - Full gate = `npm run gate` (= `build` → non-live suite, ONE command), plus `npm run test:live`
   when `npm run live:why` prints anything. `build` runs BOTH typechecks first and fast-fails on
   them, so never run `npm run typecheck` before `gate` or `build` — that is the same check twice

@@ -45,10 +45,34 @@ describe("the native modules load with no build step", () => {
     expect(typeof sherpa.OfflineRecognizer).toBe("function");
   });
 
-  it("node-pty ships a prebuild for THIS platform, rather than a local build", () => {
+  it("node-pty is usable here with no manual build step", () => {
     const lib = path.dirname(require_.resolve("node-pty"));
-    const prebuilds = path.join(lib, "..", "prebuilds");
     const mine = `${process.platform}-${process.arch}`;
+
+    // §4 Linux round: node-pty 1.1.0 ships NO Linux prebuild. Verified against
+    // the package itself — prebuilds/ holds darwin-arm64, darwin-x64,
+    // win32-arm64, win32-x64 and nothing else — so on Linux it is compiled
+    // through node-gyp at install, which makes build-essential and python3 a
+    // DEVELOPER prerequisite there.
+    //
+    // Users are unaffected and §3's self-sufficiency promise is untouched:
+    // node-pty is N-API (node-addon-api ^7.1.0), so the binary the build
+    // machine compiles is ABI-stable across Node AND Electron exactly as a
+    // prebuild would be, and the packaged artifact carries it. `npmRebuild:
+    // false` therefore stays correct on Linux for the same reason it is correct
+    // on Windows.
+    //
+    // Both arms ASSERT rather than one of them skipping — the same shape the
+    // foreground-process tests use for Windows — because the claim ("this
+    // native module works here with no manual step") is true on all three
+    // platforms and only the evidence for it differs.
+    if (process.platform === "linux") {
+      const built = path.join(lib, "..", "build", "Release", "pty.node");
+      expect(fs.existsSync(built), `no built pty.node at ${built}`).toBe(true);
+      return;
+    }
+
+    const prebuilds = path.join(lib, "..", "prebuilds");
     expect(fs.readdirSync(prebuilds), `no prebuild for ${mine}`).toContain(mine);
   });
 });
