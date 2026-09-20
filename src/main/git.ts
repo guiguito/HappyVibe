@@ -15,6 +15,8 @@ import {
   parsePorcelainV2,
   parseStashList,
   parseUnifiedDiff,
+  parseWorktreeList,
+  type WorktreeEntry,
 } from "./gitParse";
 import { loginShellPath, mergePath } from "./shellPath";
 
@@ -430,6 +432,40 @@ export async function listBranches(workspace: string): Promise<string[]> {
   if (!state) return [];
   const r = await run(state.root, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]);
   return r.ok ? r.stdout.split("\n").filter(Boolean) : [];
+}
+
+/**
+ * §29 worktrees — the OTHER linked worktrees of this repo.
+ *
+ * Two entries are dropped, and both drops matter:
+ *  - **the main checkout**, identified as the parent of `--git-common-dir`
+ *    (§33's memory key basis, already resolved for a relative answer) rather
+ *    than by list order. It is the project itself and must never render as
+ *    somebody's child — which is reachable, because a user can register a
+ *    linked worktree as a workspace of its own and we discover from there too.
+ *  - **the caller's own root**, so a row never lists itself.
+ *
+ * Paths are `path.resolve`d so the renderer, the session index and the registry
+ * all compare one spelling; realpath is used only for the two drops, because
+ * macOS answers `/private/var` to a `/var` question and a string compare would
+ * then drop nothing.
+ */
+export async function listWorktrees(workspace: string): Promise<WorktreeEntry[]> {
+  const state = await requireRepo(workspace);
+  if (!state) return [];
+  const r = await run(state.root, ["worktree", "list", "--porcelain"]);
+  if (!r.ok) return [];
+
+  const commonDir = gitCommonDir(state.root);
+  const mainRoot = commonDir ? safeReal(path.dirname(commonDir)) : null;
+  const self = safeReal(state.root);
+  return parseWorktreeList(r.stdout)
+    .filter((e) => {
+      if (e.bare) return false;
+      const real = safeReal(e.path);
+      return real !== self && real !== mainRoot;
+    })
+    .map((e) => ({ ...e, path: path.resolve(e.path) }));
 }
 
 export interface DeleteBranchResult {
