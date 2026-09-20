@@ -159,6 +159,13 @@ describe("interleave hold", () => {
   it("does not hold once the user's line is ended", async () => {
     const id = await idleTerminal();
     for (const ender of ["npm ls\r", "\x03", "\x15"]) {
+      // Back to a prompt before EACH pass, not just before the first. This test
+      // measures the hold; a terminal still finishing the previous `echo` is
+      // refused by the busy-reuse rule instead — and a refusal is also fast, so
+      // the timing assertion below would pass while `ok` was false. macOS
+      // happened to return to idle inside the loop's own overhead and Linux does
+      // not, which is the whole reason this line exists.
+      await vi.waitFor(() => expect(mgr.foreground(id)).toBeNull(), { timeout: 8000, interval: 100 });
       agent.noteUserInput(id, ender);
       const started = Date.now();
       const res = await run("echo now", id);
