@@ -264,6 +264,32 @@ It did leave one permanent improvement. Every refusal in `agentTerminals.run` is
 investigation went to the wrong rule. `expectOk()` now carries the reason into the
 assertion message at all 16 call sites.
 
+### The full gate on Linux at `d821b56`, after CI was blocked
+
+GitHub Actions billing failed mid-round (see below), leaving the last terminal fix
+committed but unverified on a runner. The container covered as much of that job as it can:
+
+```
+BUILD_EXIT=0        # all three typechecks + electron-vite, green
+TEST_EXIT=1         # Test Files 3 failed | 306 passed | 20 skipped (329)
+                    #      Tests 3 failed | 3968 passed | 55 skipped (4026)
+```
+
+**`terminals.test.ts` is fully green**, which is the point: the one test the last CI run
+failed on (`an unspawnable shell yields an inert exited terminal`) now passes on Linux, so
+the `execFailed` fix has platform evidence behind it even though no runner has seen it.
+
+The three remaining failures are the known container artifacts —
+`mcp-adapter-store` (no Electron to spawn), `model-exclusions` (root), and the
+`agent-terminals` emulation flake described above. None reproduce on `ubuntu-latest`.
+
+**Running `npm run build` in the container is worth the five seconds it costs**, and this
+round did not do it consistently — only the first probe ran it, and every later iteration
+dropped it to shorten the loop. Most of the build is platform-independent (the typechecks,
+esbuild) so macOS covers it, but **rollup's native module and `@typescript/native` are
+per-platform binaries**, which is the same class of Linux-only break `win1.md` records for
+Windows. The install dominates the cycle either way.
+
 ### Net
 
 | | Docker (root, no shell, no Electron) | `ubuntu-latest` |
