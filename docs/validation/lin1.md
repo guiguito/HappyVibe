@@ -240,6 +240,30 @@ warns about. macOS returned to idle inside the loop's overhead; Linux does not.
 Final: **`terminals.test.ts` + `agent-terminals.test.ts` = 28 passed | 1 skipped** on
 linux/amd64.
 
+### A caveat on the Docker proxy, learned the hard way
+
+After the defects were fixed, `agent-terminals.test.ts` failed **3 passes out of 3** in the
+container — and the failing test MOVED between runs (`allows reuse of an idle terminal`,
+then `does not hold once the user's line is ended`). Both are the same shape: a
+`run(cmd, existingId)` refused.
+
+It is not a Linux bug. On the real `ubuntu-latest` runner that file passed throughout;
+the only Linux failure at that point was the `execvp` one in `terminals.test.ts`. The
+container reproduces it because **amd64 Docker on an arm64 Mac is emulated**, so it is
+slow enough for pty timing to matter, and vitest runs the two terminal files in parallel
+— `terminals.test.ts` spawns a PTY per test. Run `agent-terminals.test.ts` alone in the
+same container and it passes 3/3.
+
+So the proxy's standing is narrower than run 2 suggested: **Docker is reliable for
+"does this platform behave differently" and unreliable for anything timing-sensitive.**
+The same rule the live-Pi batch already follows, arriving from the other direction.
+
+It did leave one permanent improvement. Every refusal in `agentTerminals.run` is fast, so
+`expect(r.ok).toBe(true)` fails as a bare *"expected false to be true"* and discards
+`reason` — the only part naming which of the five rules fired. That is why the first
+investigation went to the wrong rule. `expectOk()` now carries the reason into the
+assertion message at all 16 call sites.
+
 ### Net
 
 | | Docker (root, no shell, no Electron) | `ubuntu-latest` |
