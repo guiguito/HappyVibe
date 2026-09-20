@@ -278,7 +278,7 @@ export class TerminalManager {
       // skips, and the user is told an exec failed without being told which path
       // was tried — the exact failure this branch exists to prevent, restored by
       // a platform difference. The helper names the errno, never the path.
-      if (exitCode !== 0 && (!entry.sawData || EXEC_FAILED.test(this.readText(id)))) {
+      if (exitCode !== 0 && (!entry.sawData || EXEC_FAILED.test(this.readText(id) ?? ""))) {
         mirror.write(`\r\n\x1b[31mCould not start ${file} (exit ${exitCode})\x1b[0m\r\n`);
       }
       this.onExit(id, exitCode);
