@@ -500,6 +500,55 @@ export function listWorktreesSync(workspace: string): WorktreeEntry[] {
   return linkedWorktrees(out, workspace);
 }
 
+export type WorktreeAdd =
+  | { ok: true; base: { branch: string | null; sha: string } }
+  | { ok: false; reason: string };
+
+/**
+ * §29 worktrees — may *New worktree…* run here?
+ *
+ * Pure over the probe so the renderer's disabled item names the same reason the
+ * handler refuses with; §20's rule that guidance describing a gate is DERIVED
+ * from the gate rather than re-typed beside it.
+ *
+ * Unborn is a refusal rather than a pass-through because git ≥2.42 SUCCEEDS
+ * there: `worktree add -b x` on a repo with no commits silently makes an
+ * `--orphan` branch sharing no history, so merging it back would be
+ * meaningless. Subdir is §5c's deferral — the worktree would hold the whole
+ * repo and the session's cwd would have to be re-derived.
+ */
+export function worktreeVerbs(
+  state: RepoState,
+  head: { branch: string | null; sha: string } | null
+): WorktreeAdd {
+  if (state.kind !== "repo") return { ok: false, reason: "This folder isn’t tracking versions." };
+  if (state.unborn || !head) return { ok: false, reason: "Save a first version before branching." };
+  if (state.subdir) {
+    return {
+      ok: false,
+      reason: "This workspace is a subfolder of its repository — open the repository root to make worktrees.",
+    };
+  }
+  return { ok: true, base: head };
+}
+
+/**
+ * `git worktree add`. An existing local branch is used as-is; anything else is
+ * created with `-b`. The folder check runs BEFORE git so a collision cannot
+ * leave a new branch behind pointing at nothing.
+ */
+export async function addWorktree(workspace: string, dir: string, branch: string): Promise<WriteResult> {
+  const state = await requireRepo(workspace);
+  if (!state) return { ok: false, error: "Not a git repository." };
+  if (fs.existsSync(dir)) return { ok: false, error: `${dir} already exists.` };
+
+  const exists = (await run(state.root, ["branch", "--list", branch])).stdout.trim() !== "";
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  const args = exists ? ["worktree", "add", dir, branch] : ["worktree", "add", "-b", branch, dir];
+  const r = await run(state.root, args, { write: true });
+  return r.ok ? { ok: true } : { ok: false, error: r.stderr.trim() };
+}
+
 export interface DeleteBranchResult {
   ok: boolean;
   error?: string;
