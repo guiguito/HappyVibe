@@ -982,6 +982,18 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   description param because it documents none (a key that silently does nothing is
   worse than an absent one). Unrecognised host → `null` → no button, never a guessed
   URL that 404s. Shapes pinned in `tests/git-forge.test.ts`.
+- **§36's star nudge is the one surface that ACCEPTS being covered, and that is a
+  decision.** It is `fixed bottom-6 right-6 w-[340px]` (`StarNudge.tsx`), so a browser
+  pane in that corner blanks for as long as the card is up and comes back on dismiss —
+  BrowserTab's MutationObserver re-checks when it unmounts. The card is small, transient
+  and appears once every few days, so it is not worth the gate. Two things keep it from
+  becoming the voice-pill bug: it has **no `fixed inset-0` positioner** (that shape is
+  what `tests/browser-coverage.test.ts` pins as covering, and a viewport-wide box around
+  small content blanks every pane on screen), and it sits at **z-40**, so a permission
+  modal paints over it with no gating code. `tests/star-nudge.test.ts` asserts both by
+  scanning the card's CLASS lists only — scanning the file would fail on the comment that
+  explains the rule. Upgrade path if it grates: skip the run when a `:browser:` tab is
+  mounted, never loosen the coverage check.
 - **The drawer is the ONE overlay a browser pane makes ROOM for instead of hiding
   under** (§7 round 13). Nothing in the DOM can ever paint above a `WebContentsView`
   — but the view can be made SMALLER, and the drawer is a stable rectangle pinned to

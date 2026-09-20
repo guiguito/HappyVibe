@@ -22,6 +22,8 @@ import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
 import { FeedbackDialog } from "./components/FeedbackDialog";
 import { drawOffset, pulseDecision, PULSE_TIMING } from "./sessionPulse";
+import { STAR_DELAY_MS, STAR_SNOOZE_DAYS, STAR_URL, starDue } from "./starNudge";
+import { StarNudge } from "./components/StarNudge";
 import { ShortcutsView } from "./components/ShortcutsView";
 import { eventToBinding, formatBinding, resolveBindings, type ShortcutId } from "./shortcuts";
 import {
@@ -183,6 +185,11 @@ export default function App(): React.JSX.Element {
   // it is permanent: §7 round 8 deleted the Help entry and §22 round 17
   // confirmed no re-open path.
   const [onboarding, setOnboarding] = useState(false);
+  /**
+   * §36: the star nudge. Armed by a timer below, not by a render-driven
+   * decision — unlike §34's pulse it depends on nothing but wall time.
+   */
+  const [starNudge, setStarNudge] = useState(false);
   /**
    * §34: whether this build can collect feedback at all. `available` is false
    * when the channel has no publishable key, and then NEITHER surface mounts —
@@ -2377,6 +2384,25 @@ export default function App(): React.JSX.Element {
     void window.hv.setOnboardingSeen(true);
   };
 
+  // §36 — the two ways out of the star nudge. Both close it; they differ only
+  // in how long it stays closed. The ✕ shares `starLater`, because closing is
+  // not a stronger signal than "Later", it is the same one with less clicking.
+  const starClicked = (): void => {
+    setStarNudge(false);
+    // The long snooze is written only once the browser actually opened.
+    // shell.openExternal REJECTS when the OS refuses (ChangesPanel's lesson —
+    // swallowing that is what made the PR button read as "it did something and
+    // then nothing happened"), and someone who never reached GitHub has not
+    // had their chance: the 3-day stamp written at show then stands, and we
+    // ask again rather than going quiet for a month over a failed launch.
+    void window.hv
+      .openExternal(STAR_URL)
+      .then(() => window.hv.snoozeStarNudge(STAR_SNOOZE_DAYS.starred))
+      .catch(() => {});
+  };
+
+  const starLater = (): void => setStarNudge(false); // the 3-day stamp landed at show
+
   /**
    * The wizard's handover (§22 round 19). It closes by DOING the next thing:
    * creating the session it just set the user up for, with chips chosen from
@@ -2813,6 +2839,40 @@ export default function App(): React.JSX.Element {
     });
     navigate({ view: "schedules" });
   };
+
+  /**
+   * §36 — arm the star nudge, ten minutes into an eligible app run.
+   *
+   * A one-shot timer rather than an effect keyed on app state: the only input
+   * is wall time, so there is no beat to hook the way §34's pulse hooks the
+   * turn counter. Quitting before the ten minutes are up simply means this run
+   * did not ask.
+   *
+   * Like every other hook here it MUST sit above the `keyState === "loading"`
+   * early return further down — a hook after a conditional return changes the
+   * hook count between renders and React tears the whole app down to a white
+   * window.
+   */
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(() => {
+      // Re-read rather than trusting a value fetched at boot: a second window
+      // opened inside the same ten minutes must see the first one's stamp and
+      // stay quiet, instead of both of them asking.
+      void window.hv.getStarNudge().then((until) => {
+        if (!alive || !starDue(until, Date.now())) return;
+        setStarNudge(true);
+        // Stamped at SHOW, the same rule as §34's `pulseAskedAt`: quitting with
+        // the card up must not re-ask on the next launch. A star click
+        // overwrites this with the longer snooze.
+        void window.hv.snoozeStarNudge(STAR_SNOOZE_DAYS.later);
+      });
+    }, STAR_DELAY_MS);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, []);
 
   /**
    * §34 — may this session be asked how it is going?
@@ -3910,6 +3970,9 @@ export default function App(): React.JSX.Element {
           onDone={() => void finishOnboarding()}
         />
       )}
+      {/* §36: the star nudge. Not gated on onboarding — it cannot coincide,
+          because it needs ten minutes and onboarding is decided at boot. */}
+      <StarNudge show={starNudge} onStar={starClicked} onLater={starLater} />
       {/* WS7: AGENTS.md editor — root from the "+" menu, any AGENTS.md from the tree. */}
       {agentsMd && wsId && (
         <AgentsMdPanel

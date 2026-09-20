@@ -26,6 +26,13 @@ interface ConfigFile {
   defaultThinking?: string;
   /** B7: user has seen (or dismissed) the onboarding wow-flow. */
   onboardingSeen?: boolean;
+  /**
+   * §36: the star nudge stays silent until this ISO instant. Absent = due now.
+   * One field rather than three (shown-count + last-shown + starred): one field
+   * cannot disagree with itself, and both outcomes are the same write with a
+   * different number of days.
+   */
+  starNudgeUntil?: string;
   // §30 round 18: the changelog dot's stored version lived here and is gone
   // with the dot. A stale key left in an existing config.json is inert —
   // nothing reads it and `load()` does not validate unknown fields — so there
@@ -283,6 +290,19 @@ export function getOnboardingSeen(): boolean {
 export function setOnboardingSeen(seen: boolean): void {
   const cfg = load();
   cfg.onboardingSeen = seen;
+  save(cfg);
+}
+
+// §36: the star nudge's one stored fact. The renderer names a duration and main
+// does the date maths — the renderer never invents the instant it is compared
+// against, so a clock read and a clock write cannot drift apart.
+export function getStarNudgeUntil(): string | null {
+  return load().starNudgeUntil ?? null;
+}
+
+export function snoozeStarNudge(days: number): void {
+  const cfg = load();
+  cfg.starNudgeUntil = new Date(Date.now() + days * 86_400_000).toISOString();
   save(cfg);
 }
 
