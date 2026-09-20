@@ -57,6 +57,8 @@ interface Entry {
   file: string;
   /** Did this terminal ever emit a byte? Distinguishes "died" from "ran". */
   sawData: boolean;
+  /** node-pty's spawn-helper reported a failed exec — see EXEC_FAILED. */
+  execFailed: boolean;
   /** §7 round 12: a name the user typed. Beats the foreground-process poll;
    *  cleared by renaming to "", which returns the tab to following the command.
    *  Not on TerminalInfo — the renderer reads one `title`, whoever won it. */
@@ -221,7 +223,7 @@ export class TerminalManager {
       exitCode: null,
     };
 
-    const entry: Entry = { info, pty: null, mirror, serializer, shellName, file, sawData: false };
+    const entry: Entry = { info, pty: null, mirror, serializer, shellName, file, sawData: false, execFailed: false };
     this.entries.set(id, entry);
 
     let child: Pty;
@@ -258,6 +260,13 @@ export class TerminalManager {
     attachWriteErrorHandler(child, id);
 
     child.onData((data) => {
+      // Recorded HERE, off the raw bytes, and not by reading the mirror back in
+      // onExit: @xterm/headless's write() is asynchronous, so the mirror may not
+      // have parsed this line yet when the exit handler runs. That race passed
+      // in a container and failed on the CI runner, which is the worst split
+      // available. (A chunk boundary inside the literal would lose the signal
+      // and degrade to the old behaviour — the helper writes it in one go.)
+      if (!entry.sawData && EXEC_FAILED.test(data)) entry.execFailed = true;
       entry.sawData = true;
       mirror.write(data);
       this.onData(id, data);
@@ -278,7 +287,7 @@ export class TerminalManager {
       // skips, and the user is told an exec failed without being told which path
       // was tried — the exact failure this branch exists to prevent, restored by
       // a platform difference. The helper names the errno, never the path.
-      if (exitCode !== 0 && (!entry.sawData || EXEC_FAILED.test(this.readText(id) ?? ""))) {
+      if (exitCode !== 0 && (!entry.sawData || entry.execFailed)) {
         mirror.write(`\r\n\x1b[31mCould not start ${file} (exit ${exitCode})\x1b[0m\r\n`);
       }
       this.onExit(id, exitCode);

@@ -218,7 +218,17 @@ typo'd shell path was told an exec failed without being told which path — the 
 failure that branch was written to prevent, restored by a platform difference. The helper
 names the errno, never the path.
 
-### Run 3 — and one last fixture
+### Run 3 — the fix for the second defect was itself racy
+
+The first attempt at the `execvp` fix read the mirror back inside `onExit`
+(`EXEC_FAILED.test(this.readText(id))`). **`@xterm/headless`'s `write()` is
+asynchronous**, so the line may not be parsed when the exit handler runs — and the race
+landed the worst possible way: green in Docker, red on the CI runner, on the one test it
+was written for. Recorded because the lesson generalises past this bug: *do not read a
+buffer back to learn something you were handed synchronously.* The signal is now taken
+off the raw `onData` bytes into an `execFailed` flag.
+
+### Run 4 — and one last fixture
 
 With both defects fixed, one test remained: `interleave hold > does not hold once the
 user's line is ended`. It loops over three line-enders but waited for a prompt only
