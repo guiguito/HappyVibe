@@ -454,18 +454,50 @@ export async function listWorktrees(workspace: string): Promise<WorktreeEntry[]>
   const state = await requireRepo(workspace);
   if (!state) return [];
   const r = await run(state.root, ["worktree", "list", "--porcelain"]);
-  if (!r.ok) return [];
+  return r.ok ? linkedWorktrees(r.stdout, state.root) : [];
+}
 
-  const commonDir = gitCommonDir(state.root);
+/** The two drops and the path normalisation, shared by the async and sync reads. */
+function linkedWorktrees(porcelain: string, root: string): WorktreeEntry[] {
+  const commonDir = gitCommonDir(root);
   const mainRoot = commonDir ? safeReal(path.dirname(commonDir)) : null;
-  const self = safeReal(state.root);
-  return parseWorktreeList(r.stdout)
+  const self = safeReal(root);
+  return parseWorktreeList(porcelain)
     .filter((e) => {
       if (e.bare) return false;
       const real = safeReal(e.path);
       return real !== self && real !== mainRoot;
     })
     .map((e) => ({ ...e, path: path.resolve(e.path) }));
+}
+
+/**
+ * §29 worktrees — the same list, synchronously, for the ONE caller that cannot
+ * await: `WorktreeIndex.roots()` is the admission list every fs entry point
+ * consults, and it is reached from synchronous code. Its cache must therefore
+ * be warm the first time anything asks, not after some other call happened to
+ * fill it — two GUI bugs came from trusting a cold cache (a worktree's tabs
+ * pruned on restart, and its file tree refused as "Unknown workspace" when the
+ * drawer opened before the first git-status).
+ *
+ * Same precedent and the same shape as `gitCommonDir` above: one `execFileSync`,
+ * paid once per parent, and never on a hot path afterwards.
+ */
+export function listWorktreesSync(workspace: string): WorktreeEntry[] {
+  let out = "";
+  try {
+    out = execFileSync(gitBinary, ["--no-optional-locks", "worktree", "list", "--porcelain"], {
+      cwd: workspace,
+      env: gitEnv(),
+      encoding: "utf8",
+      timeout: 5_000,
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+    });
+  } catch {
+    return []; // not a repo, no git, or an unreadable cwd — no worktrees to admit
+  }
+  return linkedWorktrees(out, workspace);
 }
 
 export interface DeleteBranchResult {

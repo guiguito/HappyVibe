@@ -59,13 +59,50 @@ describe("WorktreeIndex", () => {
     expect(idx.roots()).toEqual(["/p/main", "/p/orca-wt", "/p/wt1"]);
   });
 
-  it("set() reports change, remove() forgets a parent", () => {
-    const i2 = new WorktreeIndex(() => ["/a"]);
+  it("warms itself the FIRST time it is asked — a cold cache must not refuse a root", () => {
+    // Both GUI bugs of this round: `roots()` is reached from synchronous code
+    // and was answering out of a cache nothing had filled, so a worktree's tabs
+    // were pruned on restart and its file tree was refused as "Unknown
+    // workspace". Discovery must therefore happen on demand, not on a hope.
+    let calls = 0;
+    const cold = new WorktreeIndex(
+      () => ["/a"],
+      (root) => {
+        calls++;
+        return root === "/a" ? [entry("/a-wt", "feat")] : [];
+      },
+    );
+    expect(cold.roots()).toEqual(["/a", "/a-wt"]); // discovered without anyone calling `set`
+    expect(cold.parentOf("/a-wt")).toBe("/a");
+    expect(cold.all()).toEqual({ "/a": [{ path: "/a-wt", branch: "feat", head: "abc", locked: false, prunable: false }] });
+    expect(calls).toBe(1); // …and warmed exactly once, cached after
+  });
+
+  it("a parent with NO worktrees is warmed once, not on every question", () => {
+    let calls = 0;
+    const none = new WorktreeIndex(() => ["/b"], () => { calls++; return []; });
+    none.roots(); none.roots(); none.parentOf("/x");
+    expect(calls).toBe(1);
+  });
+
+  it("set() reports change, and remove() makes the next question re-discover", () => {
+    let discovered = 0;
+    const i2 = new WorktreeIndex(() => ["/a"], () => { discovered++; return []; });
     expect(i2.set("/a", [entry("/a-wt")])).toBe(true);
-    expect(i2.set("/a", [entry("/a-wt")])).toBe(false);
+    expect(i2.set("/a", [entry("/a-wt")])).toBe(false); // the push is gated on this
+    expect(i2.of("/a").map((w) => w.path)).toEqual(["/a-wt"]);
+    expect(discovered).toBe(0); // an explicit set() is already warm
     i2.remove("/a");
     expect(i2.of("/a")).toEqual([]);
-    expect(i2.all()).toEqual({});
+    expect(discovered).toBe(1); // …and forgetting it makes the next answer honest
+  });
+
+  it("all() reports every REGISTERED project, including the ones with none", () => {
+    // The renderer keys its map by project, and a project that has no worktrees
+    // must still be a key — otherwise it reads as "not asked yet".
+    const i3 = new WorktreeIndex(() => ["/a", "/b"], (r) => (r === "/a" ? [entry("/a-wt")] : []));
+    expect(Object.keys(i3.all())).toEqual(["/a", "/b"]);
+    expect(i3.all()["/b"]).toEqual([]);
   });
 });
 

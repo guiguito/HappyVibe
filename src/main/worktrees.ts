@@ -25,7 +25,33 @@ export type WorktreeInfo = Pick<WorktreeEntry, "path" | "branch" | "head" | "loc
 export class WorktreeIndex {
   private byParent = new Map<string, { parent: string; list: WorktreeInfo[] }>();
 
-  constructor(private readonly registered: () => string[]) {}
+  /**
+   * @param registered   the workspace registry's current paths.
+   * @param discoverSync a SYNCHRONOUS `git worktree list` for one parent. Not
+   *   optional in production and injected only so the unit tests can drive the
+   *   index without a real repo.
+   *
+   * The sync discovery exists because `roots()` — the admission list every fs
+   * entry point consults — is reached from synchronous code and must be right
+   * the FIRST time anything asks. Both GUI bugs of this round came from it
+   * answering out of a cache nothing had warmed yet: a worktree's tabs were
+   * pruned on restart, and its file tree was refused as "Unknown workspace"
+   * when the drawer opened before the first git-status. One `execFileSync` per
+   * parent, once; every later answer is the cache, refreshed asynchronously by
+   * `set` on the normal paths.
+   */
+  constructor(
+    private readonly registered: () => string[],
+    private readonly discoverSync: (root: string) => WorktreeEntry[] = () => [],
+  ) {}
+
+  /** Warm this parent if nothing has discovered it yet. */
+  private ensure(parent: string): void {
+    const key = normPath(parent);
+    if (this.byParent.has(key)) return;
+    this.byParent.set(key, { parent, list: [] }); // claim first: a repo with none must not re-spawn git
+    this.set(parent, this.discoverSync(parent));
+  }
 
   private isRegistered(p: string): boolean {
     const k = normPath(p);
@@ -53,12 +79,13 @@ export class WorktreeIndex {
 
   /** Shown under `parent`: git's list minus any path that is a registered workspace. */
   of(parent: string): WorktreeInfo[] {
+    this.ensure(parent);
     return (this.byParent.get(normPath(parent))?.list ?? []).filter((w) => !this.isRegistered(w.path));
   }
 
   all(): Record<string, WorktreeInfo[]> {
     const out: Record<string, WorktreeInfo[]> = {};
-    for (const { parent } of this.byParent.values()) out[parent] = this.of(parent);
+    for (const parent of this.registered()) out[parent] = this.of(parent);
     return out;
   }
 
@@ -66,7 +93,9 @@ export class WorktreeIndex {
   parentOf(p: string): string | null {
     if (this.isRegistered(p)) return null;
     const k = normPath(p);
-    for (const { parent } of this.byParent.values()) {
+    // Over the REGISTRY, not over what happens to be cached: an unwarmed parent
+    // is exactly the case this has to answer for.
+    for (const parent of this.registered()) {
       if (this.of(parent).some((w) => normPath(w.path) === k)) return parent;
     }
     return null;

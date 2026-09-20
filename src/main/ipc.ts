@@ -94,7 +94,8 @@ import { unwatchAll, unwatchWorkspace, watchWorkspace } from "./watch";
 import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
   gitCommonDir, gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, listWorktrees,
-  probeWorkspace, publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile, undoHunk,
+  listWorktreesSync, probeWorkspace, publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile,
+  undoHunk,
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
 import { WorktreeIndex, sessionsOfProject } from "./worktrees";
@@ -566,7 +567,7 @@ export function registerIpc(
    * page, so its model override, bypass, activations and memory toggle are the
    * parent's.
    */
-  const worktrees = new WorktreeIndex(() => workspaces.list());
+  const worktrees = new WorktreeIndex(() => workspaces.list(), listWorktreesSync);
   const roots = (): string[] => worktrees.roots();
   /**
    * Ask git what worktrees a REGISTERED workspace has, and push only when the
@@ -2823,8 +2824,20 @@ export function registerIpc(
 
   // ── workspaces ───────────────────────────────────────────────────
   ipcMain.handle("hv:list-workspaces", () => workspaces.list());
-  /** §29: every project's worktrees in one call — the renderer's boot read. */
-  ipcMain.handle("hv:worktree-list", () => worktrees.all());
+  /**
+   * §29: every project's worktrees in one call — the renderer's boot read.
+   *
+   * It DISCOVERS rather than reading the cache, and that is load-bearing: the
+   * first call is the boot one, the layout's alive set is built from its answer,
+   * and at that moment no `hv:git-status` has run so the cache is empty. Cold,
+   * it answered `{}` and every tab open in a worktree was pruned on restart —
+   * found in the GUI pass, invisible to the unit test, which feeds the alive set
+   * directly. One `git worktree list` per registered project, in parallel.
+   */
+  ipcMain.handle("hv:worktree-list", async () => {
+    await Promise.all(workspaces.list().map((w) => refreshWorktrees(w)));
+    return worktrees.all();
+  });
   // §22: the "Start fresh…" door. Path-confined by construction — the name is
   // a segment, never a path (files.ts createWorkspaceFolder).
   ipcMain.handle("hv:create-workspace-folder", (_e, name: string) => {
@@ -5475,7 +5488,19 @@ export function registerIpc(
 
   // Per-workspace model override (spawn resolution: workspace → global default).
   // Applies to sessions spawned/restarted after the change.
-  ipcMain.handle("hv:get-workspace-model", (_e, workspaceId: string) => workspaces.getModel(workspaceId));
+  /**
+   * §29 worktrees: routed through `projectOf`, because the COMPOSER reads this
+   * for a session's own root — and CLAUDE.md's standing rule is that main's
+   * `spawnOpts` and the renderer's `resolveModel` resolve the same tiers or
+   * neither. Unrouted, a session in a worktree spawned on the project's
+   * override while the composer displayed the global default.
+   *
+   * The SETTER deliberately does not route: a worktree has no settings page, so
+   * `setModel` on one is already a silent no-op (unknown entry), and routing it
+   * would let a future worktree UI edit the project's model without saying so.
+   */
+  ipcMain.handle("hv:get-workspace-model", (_e, workspaceId: string) =>
+    workspaces.getModel(worktrees.projectOf(workspaceId)));
   ipcMain.handle("hv:set-workspace-model", (_e, workspaceId: string, m: { provider: string; modelId: string } | null) => {
     workspaces.setModel(workspaceId, m && typeof m.provider === "string" && typeof m.modelId === "string"
       ? { provider: m.provider, modelId: m.modelId }
