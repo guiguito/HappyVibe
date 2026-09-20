@@ -208,9 +208,72 @@ describe("ledgerTotal billing split", () => {
     expect(t.unknown).toBe(0);
   });
 
+  // The partial-price bug, fixed 2026-09-19. Before it, `cost.total > 0` was
+  // taken as "fully priced", so a call whose cache reads priced to zero rendered
+  // a confident figure understated by the bulk of its spend. Measured at this
+  // pin: 91 of the 340 input-priced OpenRouter models price cacheRead at 0.
+  test("a metered call with an unpriced token class names it, and the total is a floor", () => {
+    const [call] = parseCalls(
+      assistant({
+        provider: "openrouter",
+        usage: {
+          input: 2000, output: 500, cacheRead: 80000, cacheWrite: 0,
+          cost: { input: 0.004, output: 0.008, cacheRead: 0, cacheWrite: 0, total: 0.012 },
+        },
+      }),
+    );
+    expect(call!.billing).toBe("metered"); // we DO owe something — not "unknown"
+    expect(call!.unpriced).toEqual(["cacheRead"]);
+    expect(ledgerTotal([call!]).partial).toBe(1);
+    // cacheWrite priced at 0 is NOT flagged: it burned no tokens.
+    expect(call!.unpriced).not.toContain("cacheWrite");
+  });
+
+  test("a fully priced call carries no unpriced marker", () => {
+    const [call] = parseCalls(
+      assistant({
+        usage: {
+          input: 100, output: 10, cacheRead: 50, cacheWrite: 0,
+          cost: { input: 1, output: 2, cacheRead: 3, cacheWrite: 0, total: 6 },
+        },
+      }),
+    );
+    expect(call!.unpriced).toBeUndefined();
+    expect(ledgerTotal([call!]).partial).toBe(0);
+  });
+
+  // The guard that matters on a pin bump: if Pi ever stops writing the
+  // per-component breakdown, an absent field must read as "cannot tell", never
+  // as "free" — otherwise every class on every call flags as unpriced.
+  test("a cost object with only a total flags nothing", () => {
+    const [call] = parseCalls(
+      assistant({ usage: { input: 100, output: 10, cacheRead: 50, cacheWrite: 0, cost: { total: 6 } } }),
+    );
+    expect(call!.billing).toBe("metered");
+    expect(call!.unpriced).toBeUndefined();
+  });
+
+  // A whole-call zero was already `unknown`; it must not ALSO carry the partial
+  // marker, or the panel shows both warnings for one call.
+  test("a fully unpriced call stays unknown and is not marked partial", () => {
+    const [call] = parseCalls(
+      assistant({
+        provider: "hv-x",
+        usage: {
+          input: 100, output: 10, cacheRead: 0, cacheWrite: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      }),
+    );
+    expect(call!.billing).toBe("unknown");
+    expect(call!.unpriced).toBeUndefined();
+    expect(ledgerTotal([call!]).partial).toBe(0);
+  });
+
   test("an empty ledger splits to zeroes", () => {
     expect(ledgerTotal([])).toEqual({
       calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, metered: 0, plan: 0, unknown: 0,
+      partial: 0,
     });
   });
 
@@ -261,6 +324,7 @@ describe("ledgerTotal", () => {
       metered: 1,
       plan: 0,
       unknown: 1,
+      partial: 0,
     });
   });
 });

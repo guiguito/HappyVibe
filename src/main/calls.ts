@@ -47,6 +47,22 @@
 export type Billing = "metered" | "plan" | "unknown";
 
 /**
+ * The four token classes Pi prices a call in — `usage.cost.{input,output,
+ * cacheRead,cacheWrite}`, each computed from its own rate in the pinned table
+ * (pi-ai models.js `calculateCost`).
+ *
+ * They exist as a list because `cost.total` alone CANNOT answer "do we know
+ * what this cost?". A table that prices input and output but leaves `cacheRead`
+ * at 0 produces a non-zero total, which the three-state rule below then reads
+ * as fully `metered` — a confident dollar figure understated by the bulk of the
+ * spend, since cache reads are most of a coding agent's prompt tokens. Measured
+ * at this pin: **91 of the 340 input-priced OpenRouter models price cacheRead
+ * at 0.** So the classification is per-component, and `unpriced` names the gap.
+ */
+export const COST_COMPONENTS = ["input", "output", "cacheRead", "cacheWrite"] as const;
+export type CostComponent = (typeof COST_COMPONENTS)[number];
+
+/**
  * Providers that are ALWAYS a flat subscription, so per-token dollars are
  * meaningless. These are the OAuth-ONLY ids in providers.ts OAUTH_PROVIDERS —
  * they never appear in BYOK_PROVIDERS, so the provider id alone classifies them
@@ -110,9 +126,23 @@ export interface ApiCall {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  /** Pi's `usage.cost.total`. Owed only when `billing` is "metered". */
+  /**
+   * Pi's `usage.cost.total`. Owed only when `billing` is "metered" — and a
+   * FLOOR rather than the amount owed whenever `unpriced` is present.
+   */
   cost: number;
   billing: Billing;
+  /**
+   * Token classes this call burned that the pinned table does not price, on an
+   * otherwise-metered call. Absent in the common case, and absent when the
+   * WHOLE call priced to zero — that is already `billing: "unknown"`.
+   *
+   * ponytail: a rate of exactly 0 is indistinguishable from "genuinely free",
+   * and we do not try — no mainstream provider bills input while giving cache
+   * reads away, so a 0 beside a priced input is a table gap in practice. The
+   * copy says "not priced in this build's table", which is true either way.
+   */
+  unpriced?: readonly CostComponent[];
   /**
    * The sub-agent that made this call. Absent for the session's own calls —
    * which is how a reader tells a delegation's row from the session's.
@@ -133,6 +163,12 @@ export interface LedgerTotal {
   plan: number;
   /** Calls whose price is unknown — surfaced, never silently summed as $0. */
   unknown: number;
+  /**
+   * Metered calls carrying at least one unpriced token class. They ARE summed
+   * into `cost` — we owe at least that — which is exactly why the count has to
+   * travel with it: without it the total reads as exact.
+   */
+  partial: number;
 }
 
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -165,9 +201,31 @@ export function parseCalls(
     const output = num(usage.output);
     const cacheRead = num(usage.cacheRead);
     const cacheWrite = num(usage.cacheWrite);
-    const cost = num((usage.cost as { total?: unknown } | undefined)?.total);
+    const costs = (usage.cost ?? {}) as Record<string, unknown>;
+    const cost = num(costs.total);
     const tokens = input + output + cacheRead + cacheWrite;
     const provider = typeof m.provider === "string" ? m.provider : "?";
+    const burned: Record<CostComponent, number> = { input, output, cacheRead, cacheWrite };
+    // Plan wins over everything: a subscription call's dollars are wrong
+    // whether Pi computed them (openai-codex, API rates) or zeroed them
+    // (github-copilot). Otherwise tokens-at-$0 means the price is unknown; no
+    // tokens at all really was free (an aborted or empty turn).
+    const billing: Billing = planProviders.has(provider)
+      ? "plan"
+      : cost === 0 && tokens > 0
+        ? "unknown"
+        : "metered";
+    // Per-component, and ONLY for metered: a plan call's arithmetic is not
+    // shown at all, and an `unknown` call is already fully flagged.
+    //
+    // `typeof === "number"` is load-bearing, not defensive noise: if a Pi pin
+    // ever stops writing the per-component breakdown, an absent field would
+    // read as 0 and flag EVERY class on EVERY call as unpriced. Missing means
+    // "cannot tell", which is the current behaviour, not "free".
+    const unpriced =
+      billing === "metered"
+        ? COST_COMPONENTS.filter((k) => burned[k] > 0 && typeof costs[k] === "number" && costs[k] === 0)
+        : [];
     calls.push({
       ts: new Date(num(m.timestamp)).toISOString(),
       provider,
@@ -177,11 +235,8 @@ export function parseCalls(
       cacheRead,
       cacheWrite,
       cost,
-      // Plan wins over everything: a subscription call's dollars are wrong
-      // whether Pi computed them (openai-codex, API rates) or zeroed them
-      // (github-copilot). Otherwise tokens-at-$0 means the price is unknown; no
-      // tokens at all really was free (an aborted or empty turn).
-      billing: planProviders.has(provider) ? "plan" : cost === 0 && tokens > 0 ? "unknown" : "metered",
+      billing,
+      ...(unpriced.length ? { unpriced } : {}),
       ...(agent ? { agent } : {}),
     });
   }
@@ -191,7 +246,7 @@ export function parseCalls(
 export function ledgerTotal(calls: ApiCall[]): LedgerTotal {
   const t: LedgerTotal = {
     calls: calls.length, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0,
-    metered: 0, plan: 0, unknown: 0,
+    metered: 0, plan: 0, unknown: 0, partial: 0,
   };
   for (const c of calls) {
     // Tokens are real whoever pays for them.
@@ -202,7 +257,10 @@ export function ledgerTotal(calls: ApiCall[]): LedgerTotal {
     t[c.billing] += 1;
     // Only metered dollars are owed. A plan call's cost is Pi's API-rate
     // arithmetic on a flat subscription — adding it would invent spend.
-    if (c.billing === "metered") t.cost += c.cost;
+    if (c.billing === "metered") {
+      t.cost += c.cost;
+      if (c.unpriced?.length) t.partial += 1;
+    }
   }
   return t;
 }

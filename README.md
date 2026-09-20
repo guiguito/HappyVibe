@@ -1,94 +1,128 @@
-# HappyVibe Spike — Walking Skeleton
+# HappyVibe
 
-A minimal Electron app embedding the [Pi coding agent](https://pi.dev), built to validate the HappyVibe stack end-to-end. **Feasibility confirmed 2026-07-03** — see [`docs/validation/RESULTS.md`](docs/validation/RESULTS.md) for the full V1–V7 gate results.
+**Good vibes, real code.**
 
-> Product context: HappyVibe PRD + Spike PRD live in Notion (HappyVibe workspace). This repo is the walking skeleton HappyVibe V1 grows from: the **UI is disposable**, the **architecture underneath is built to keep**.
+Everything set up. Nothing happens behind your back.
 
-## What was proven
+---
 
-- **A desktop UI can drive an embedded, pinned Pi over its RPC protocol** (spawn, stream, tool events, session stats) — Gates V1/V2/V3.
-- **A bundled bridge extension can gate tool calls with UI approval** over Pi's native `extension_ui_request`/`extension_ui_response` sub-protocol ("Path A" — no custom IPC sidecar needed) — Gates V4/V5. Deny blocks the tool call with a real model (`deepseek-v4-flash`); the agent continues gracefully.
-- **True embedding**: a packaged unsigned `.app` runs its bundled Pi runtime — Gate V7.
-- **Key negative finding (V6)**: `@gotgenes/pi-permission-system` is TUI-only (all prompt paths gate on `ctx.hasUI`, which is `false` in `--mode rpc`). **The HappyVibe bridge owns all permission UI in RPC mode.** See [`docs/validation/v6.md`](docs/validation/v6.md).
+A desktop app for coding with AI, where everything is already set up and you can see everything it does.
 
-## Architecture
+Terminals, a browser, documents, git, schedules, sub-agents, MCP and skills are wired and ready — no
+plugins to hunt down, no config to write, no restart. Bring any model, including a local one. And
+nothing loads itself until you say yes to that specific thing.
 
-```
-┌─ Electron renderer (React + TS + Vite)      src/renderer/   ← disposable
-│      ↕ typed IPC (contextBridge, window.hv)  src/preload/
-├─ Electron main                                src/main/
-│    config.ts     API key (.env in dev, safeStorage otherwise)
-│    ipc.ts        session lifecycle + event forwarding
-│    pi/PiClient   ← KEEP: JSON-lines RPC client (spawn, correlate, events)
-│    pi/spawn.ts   ← KEEP: electron-free spawn spec (vitest-importable)
-│    pi/codec.ts   ← KEEP: NDJSON decoder (buffers partials, skips garbage)
-│    pi/runtimeDir electron-only dev/packaged path resolution
-│      ↕ stdio (Pi RPC protocol)
-└─ Pi subprocess (vendored, pinned)             pi-runtime/
-     @earendil-works/pi-coding-agent@0.80.3 (exact pin)
-     extensions/happyvibe-bridge.ts ← KEEP: tool_call gate → ctx.ui.select
-```
+> **Status:** pre-1.0 and moving fast. macOS and Windows ship today; Linux is coming.
 
-Rules that keep this sound:
+## What it does
 
-- Pi is **always a subprocess** (spawned via `process.execPath` + `ELECTRON_RUN_AS_NODE=1`), never imported as a library. The RPC protocol is the coupling surface.
-- `src/main/pi/{codec,spawn,PiClient,types}.ts` are **electron-free** so Vitest can import them.
-- Permission wire shapes (empirically proven, see [`docs/validation/d1.md`](docs/validation/d1.md)): `confirm` responses use `confirmed: boolean`; `select` responses use `value: string`. The renderer only routes `method === "select"` requests to the permission modal (fire-and-forget `setStatus` etc. would crash it otherwise).
-- Permission prompts never auto-allow and never time out.
+**Everything is already here.** A chat that streams, with tool cards and real diffs. A file tree and
+editor. Terminals you drive and terminals the agent drives. An embedded browser the agent can read
+and click. PDFs and Office documents converted on-device. A git panel that speaks human on top and
+real git underneath. Scheduled runs. Sub-agents. Memory.
 
-## Run it
+**Any model, including your own.** 29 providers covering over a thousand models, six one-click
+sign-ins, and Ollama / LM Studio / llama.cpp detected automatically. Keys live in your OS keychain.
+Nothing leaves your machine that you did not send.
 
-```bash
-npm install
-cd pi-runtime && npm ci && cd ..       # restores the pinned Pi runtime
-echo 'DEEPSEEK_API_KEY=sk-...' > .env  # gitignored; BYOK (DeepSeek)
-npm run dev
-```
+**Nothing happens behind your back.** Every command is shown before it runs, in plain language.
+Nothing auto-loads — no skill, extension, prompt template or theme enters a session until you
+approve that specific resource. You can read the system prompt on a settings page. Every model call
+the app makes on your behalf is itemised.
 
-Flow: setup screen is auto-skipped when `.env` has a key → pick a project folder → chat. Ask for a change; tool calls show as cards; shell commands raise the Allow / Allow for session / Deny modal.
+**And the description you approve is written by the app, never by the model.** Model-authored
+narration goes in the activity feed; the approval dialog shows an app-derived description of what
+is actually about to happen. That split is the one thing here no other tool ships as a stated rule.
 
-Debugging (Chrome DevTools / `electron-debug` MCP): `HV_DEBUG_PORT=9222 npm run dev` — see [`docs/debugging.md`](docs/debugging.md).
+## Install
 
-```bash
-npm test           # the non-live suite: 107 files, ~908 tests, ~30 s.
-                   # Never makes a model call — the 14 live-Pi files skip
-                   # themselves regardless of whether .env has a key.
-npm run test:live  # those 14, against real DeepSeek (needs DEEPSEEK_API_KEY);
-                   # serial, ~6 min, costs real API calls
-npm run gate       # typecheck + build + non-live suite, one command
-npm run package    # unsigned .app in release/mac-arm64/ (bundles pi-runtime
-                   # via build/afterPack.mjs — electron-builder drops
-                   # node_modules on its own)
-npm run build:mac  # installable .dmg in release/ (ad-hoc re-signed)
-```
+Download the latest release for macOS or Windows.
 
-## Installing the .dmg (macOS)
-
-The app is **ad-hoc signed, not notarized** by Apple. After dragging it to
-Applications, macOS Gatekeeper blocks it. Clear the quarantine flag once:
+**macOS:** the app is ad-hoc signed and not yet notarized, so Gatekeeper blocks the first launch.
+Either right-click → **Open** → **Open**, or clear the quarantine flag once:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/HappyVibe.app
 ```
 
-(Or right-click the app → **Open** → **Open**.) Without this you'll see
-"HappyVibe is damaged and can't be opened" — that's Gatekeeper on an
-un-notarized app, not a broken download. Notarizing (needs a $99/yr Apple
-Developer ID) would remove this step.
+Without it you will see *"HappyVibe is damaged and can't be opened"* — that is Gatekeeper on an
+un-notarized app, not a broken download.
 
-## Gotchas discovered during the spike
+**Windows:** a per-user NSIS installer, also unsigned for now, so SmartScreen shows a warning on
+first run.
 
-- **One-shot Pi CLI calls hang if stdin stays open** (TTY read). Always close stdin for `--version`/`--list-models` (`stdio: ["ignore", ...]`). RPC mode is unaffected.
-- `pi --list-models` lists only *configured* providers — it is not a catalog; native provider support was confirmed from Pi's model registry.
-- Extensions calling `ctx.ui.*` inside `session_start` must fire **async-detached** (Pi's JSONL stdin reader attaches after the handler returns).
-- The Pi npm package moved to the `@earendil-works` scope (`@mariozechner` is stale).
-- Upgrading Pi = a deliberate change: bump the pin in `pi-runtime/package.json`, re-run the whole test suite, re-check the wire shapes in `docs/validation/d1.md`.
-- **`pi-subagents` is a second pinned-exact runtime dep** (`pi-runtime/package.json`, `0.33.1`) with the SAME upgrade-gate treatment as Pi: bump deliberately, re-run `tests/agents-bridge.test.ts` (it asserts the observed subagent `tool_execution_*` trace shapes — they moved between the S0.3 spike and 0.33.1) and re-check `docs/validation/d1.md §B6`. It loads as a second `-e` extension; its child Pi spawn is pinned to the embedded bin via `PI_SUBAGENT_PI_BINARY` (spawn env). The two built-in agents ship as `pi-runtime/agents/*.md` and install idempotently into the app-owned agent dir at startup.
+## Run from source
 
-## Known limitations
+```bash
+npm install
+cd pi-runtime && npm ci && cd ..   # BOTH installs are required
+npm run dev
+```
 
-- **Queued messages can't be removed.** Pi 0.80.3's `queue_update` is read-only state — there is no dequeue RPC, so the chat bar can show queued steering/follow-up messages but never unqueue them. An upstream Pi feature request is the path; the chips say so honestly in their tooltip.
+`pi-runtime/` is a separate vendored tree; a fresh clone without its install will fail in
+confusing ways. No system Node is needed at runtime — the app routes child processes through its
+own bundled Electron helper.
 
-## Where to build next (per the HappyVibe PRD)
+```bash
+npm test      # the non-live suite — 327 files, ~3,900 tests, ~40 s. Never makes a model call.
+npm run gate  # typecheck + build + the non-live suite, one command
+npm run build:mac / build:win
+```
 
-Sessions list & parallel sessions · MCP via `pi-mcp-adapter` · sub-agents via `pi-subagents` (Code Explorer + Summarizer) · context inspection/editing · audit log · pretty diffs · real design. The PiClient event stream and the bridge pattern generalize to all of these.
+Set a key from the app's own Models page, or drop one in `.env` for development.
+
+## How it is built
+
+An Electron app driving a **pinned, vendored** [Pi coding agent](https://pi.dev) as a subprocess
+over its JSON-lines RPC protocol. Pi is never imported as a library — process isolation is
+load-bearing for crash isolation and session hibernation, and the RPC protocol is the only coupling
+surface.
+
+```
+Electron renderer (React + TS + Vite)     src/renderer/
+   ↕ typed IPC (contextBridge, window.hv)  src/preload/
+Electron main                              src/main/
+   pi/{spawn,codec,PiClient}.ts            electron-free, so tests can import them
+   ↕ stdio, Pi RPC
+Pi subprocess (vendored, pinned)           pi-runtime/
+   extensions/happyvibe-bridge.ts          the permission gate + 30 registered tools
+```
+
+The five runtime pins move deliberately, together with their contract tests:
+
+| | |
+|---|---|
+| `@earendil-works/pi-coding-agent` | `0.85.0` |
+| `pi-subagents` | `0.64.0` |
+| `pi-mcp-adapter` | `2.32.1` |
+| `@firecrawl/anydoc` | `0.2.4` |
+| `@earendil-works/pi-server` | `0.85.0` |
+
+**The bridge owns all permission UI.** Pi's own permission package is TUI-only — every prompt path
+gates on `ctx.hasUI`, which is false in RPC mode — so the gate, the audit log and every approval
+dialog are HappyVibe's. Evidence is in [`docs/validation/`](docs/validation/), which is also where
+wire shapes get recorded before anything depends on them.
+
+**Resources are deny-by-default.** The Pi subprocess is spawned with `--no-skills --no-extensions
+--no-prompt-templates --no-themes`; approved resources are then passed back in explicitly. `bash` is
+the one filesystem writer that is not path-confined, which is exactly why an unapproved extension
+must never be able to load.
+
+## Honest limitations
+
+- **Nothing is signed yet.** One extra click on first launch, on both platforms.
+- **Linux is not configured yet**, though it is committed.
+- **The Windows build is x64 only.** `sherpa-onnx` (voice) and `@firecrawl/anydoc` (documents)
+  publish no win-arm64 binary, so arm64 machines run the x64 installer under emulation.
+- **The cost meter is an estimate**, computed from a price table pinned at the vendored Pi version.
+  It says `unknown` rather than `$0.00` when it cannot price a call — but a provider that prices
+  only part of a call is reported as a floor, marked `+`.
+- **It is not a sandbox** and does not claim to be. The gate is an in-process extension. It asks
+  before it acts; it is not a security boundary.
+
+## Docs
+
+- [`docs/prd.md`](docs/prd.md) — the product spec, decisions folded in place
+- [`docs/validation/`](docs/validation/) — measurements and wire shapes, including the negative results
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed, in user terms
+- [`CLAUDE.md`](CLAUDE.md) — the working notes an agent needs to change this repo safely

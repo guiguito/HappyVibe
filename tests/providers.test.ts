@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   BYOK_PROVIDERS, buildProviderEnv, isByokProvider, keySource, detectLocalRunner, localRunnerEndpoint, LOCAL_RUNNERS, mergeOllamaModelsJson, OAUTH_PROVIDERS, probeProviderKey, syncModelsJson,
+  OLLAMA_DEFAULT_NUM_CTX, resolveOllamaWindows,
 } from "../src/main/providers";
 import { PROVIDER_CATALOG } from "../src/main/providerCatalog.generated";
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -282,5 +283,63 @@ describe("syncModelsJson with local runners", () => {
     });
     const out = JSON.parse(readFileSync(path.join(dir, "models.json"), "utf8"));
     expect(Object.keys(out.providers ?? {})).toEqual([]);
+  });
+});
+
+/**
+ * Local models used to get Pi's invented 128,000 window, which `context.ts`
+ * then labelled `source: "measured"`. Measured against a real Ollama on
+ * 2026-09-19: `gemma4:12b` reports a TRAINED length of 262,144 from /api/show
+ * while /api/ps reports the allocated 4,096 — so the gauge read 3% where the
+ * truth was 96%, immediately before silent front-truncation.
+ *
+ * These pin the resolution ORDER, because every rung is a different wrongness:
+ * the server's answer for this model, then the server's answer for another
+ * (which reveals a raised OLLAMA_CONTEXT_LENGTH), then the documented floor.
+ */
+describe("resolveOllamaWindows", () => {
+  const withPs = (models: unknown[]) => {
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      ({ ok: true, json: async () => ({ models }) }) as unknown as Response) as typeof fetch;
+    return () => { globalThis.fetch = orig; };
+  };
+
+  test("a loaded model uses the window the server actually allocated", async () => {
+    const restore = withPs([{ name: "gemma4:12b", context_length: 4096 }]);
+    try {
+      // NOT 262144, the trained maximum /api/show reports for the same model.
+      expect(await resolveOllamaWindows(["gemma4:12b"])).toEqual({ "gemma4:12b": 4096 });
+    } finally { restore(); }
+  });
+
+  test("an unloaded model inherits the default a loaded one reveals", async () => {
+    const restore = withPs([{ name: "loaded:7b", context_length: 32768 }]);
+    try {
+      const out = await resolveOllamaWindows(["loaded:7b", "cold:3b"]);
+      // The user raised OLLAMA_CONTEXT_LENGTH; the cold model gets that, not 4096.
+      expect(out).toEqual({ "loaded:7b": 32768, "cold:3b": 32768 });
+    } finally { restore(); }
+  });
+
+  test("nothing loaded falls back to the documented default, never to Pi's 128000", async () => {
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async () => { throw new Error("connection refused"); }) as typeof fetch;
+    try {
+      const out = await resolveOllamaWindows(["cold:3b"]);
+      expect(out).toEqual({ "cold:3b": OLLAMA_DEFAULT_NUM_CTX });
+      expect(out["cold:3b"]).not.toBe(128_000);
+    } finally { globalThis.fetch = orig; }
+  });
+
+  test("the resolved window reaches models.json, which is the only thing Pi reads", () => {
+    const out = JSON.parse(mergeOllamaModelsJson(null, ["gemma4:12b"], { "gemma4:12b": 4096 }));
+    const model = out.providers.ollama.models[0];
+    expect(model.contextWindow).toBe(4096);
+  });
+
+  test("no resolved window omits the field rather than writing a guess", () => {
+    const out = JSON.parse(mergeOllamaModelsJson(null, ["gemma4:12b"], {}));
+    expect(out.providers.ollama.models[0]).not.toHaveProperty("contextWindow");
   });
 });

@@ -16,6 +16,32 @@ export const COST_COPY = {
 } as const;
 
 /**
+ * Human names for the token classes a price table can leave unpriced. Exported
+ * as DATA because the renderer suite has no DOM — the mapping is asserted
+ * directly, the way STATUS_MARK is (`tests/cost-panel.test.ts`).
+ */
+export const UNPRICED_LABEL = {
+  input: "input",
+  output: "output",
+  cacheRead: "cache reads",
+  cacheWrite: "cache writes",
+} as const;
+
+/**
+ * The tooltip for a call whose total is a FLOOR rather than the amount owed.
+ *
+ * It says "not priced in this build's table" rather than "unpriced by the
+ * provider" on purpose: a rate of exactly 0 cannot be told apart from genuinely
+ * free, and the table is the only thing we can honestly speak for.
+ */
+export function unpricedNote(unpriced: readonly (keyof typeof UNPRICED_LABEL)[]): string {
+  const names = unpriced.map((k) => UNPRICED_LABEL[k]);
+  const list =
+    names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+  return `${list} are not priced in this build's table, so the real cost is higher than this figure.`;
+}
+
+/**
  * The ⓘ exists to make the tooltip DISCOVERABLE — a bare title= on a plain
  * <th> gives no sign that hovering does anything. The tooltip itself is still
  * the browser's, so this adds no floating surface to fight the z-index scale or
@@ -176,6 +202,20 @@ export function CostPanel({
           </div>
         )}
 
+        {/* Partial-price warning. Separate from the one above because it is a
+            different failure: the price is not missing, it is INCOMPLETE, and
+            the total below is a floor rather than an estimate either side of
+            the truth. Measured at this pin: 91 of the 340 input-priced
+            OpenRouter models price cache reads at 0, and cache reads are most
+            of a coding agent's prompt tokens. */}
+        {total.partial > 0 && (
+          <div className="px-5 py-2.5 border-b-2 border-honey/40 bg-honey-soft text-xs text-tangerine-deep">
+            <strong>{total.partial}</strong> of {total.calls} call{total.calls === 1 ? "" : "s"} burned
+            tokens this build&rsquo;s price table does not price — those rows show{" "}
+            <span className="font-mono">+</span>, and the total is a floor, not the amount owed.
+          </div>
+        )}
+
         {/* Calls */}
         <div className="px-5 py-2 text-xs text-ink-soft border-b-2 border-line">
           {COST_COPY.estimates}
@@ -233,20 +273,41 @@ export function CostPanel({
                     </td>
                     {/* "plan" is muted (a fact), "?" is amber (a gap). Pi's
                         API-rate arithmetic for a plan call is never shown — it
-                        would read as money owed. */}
+                        would read as money owed.
+
+                        A PARTIAL call is the third shape and the reason this
+                        column exists at all: priced input and output, an
+                        unpriced cache read, and a total that is therefore a
+                        floor. It renders the figure with a trailing "+" in
+                        amber but NOT bold — bold is reserved for "?", which is
+                        a bigger gap. Before this, a call understated by the
+                        bulk of its spend was indistinguishable from an exact
+                        one. */}
                     <td
                       className={`px-3 py-1.5 font-mono text-right ${
-                        c.billing === "unknown" ? "text-tangerine-deep font-bold" : c.billing === "plan" ? "text-ink-soft" : ""
+                        c.billing === "unknown"
+                          ? "text-tangerine-deep font-bold"
+                          : c.billing === "plan"
+                            ? "text-ink-soft"
+                            : c.unpriced?.length
+                              ? "text-tangerine-deep"
+                              : ""
                       }`}
                       title={
                         c.billing === "unknown"
                           ? "No price for this model — cost unknown"
                           : c.billing === "plan"
                             ? `Covered by your ${c.provider} subscription — no per-token charge`
-                            : undefined
+                            : c.unpriced?.length
+                              ? unpricedNote(c.unpriced)
+                              : undefined
                       }
                     >
-                      {c.billing === "metered" ? fmtCost(c.cost) : c.billing === "plan" ? "plan" : "?"}
+                      {c.billing === "metered"
+                        ? `${fmtCost(c.cost)}${c.unpriced?.length ? "+" : ""}`
+                        : c.billing === "plan"
+                          ? "plan"
+                          : "?"}
                     </td>
                   </tr>
                 ))}
