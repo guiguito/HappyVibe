@@ -321,6 +321,8 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.invoke("hv:get-analytics", filter),
   getOnboardingSeen: () => ipcRenderer.invoke("hv:get-onboarding-seen"),
   setOnboardingSeen: (seen: boolean) => ipcRenderer.invoke("hv:set-onboarding-seen", seen),
+  getStarNudge: () => ipcRenderer.invoke("hv:get-star-nudge"),
+  snoozeStarNudge: (days: number) => ipcRenderer.invoke("hv:snooze-star-nudge", days),
 
   // ── §34: collect feedback (dialog + session pulse) ───────────────────────
   feedbackInfo: () => ipcRenderer.invoke("hv:feedback-info"),

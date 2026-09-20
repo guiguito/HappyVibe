@@ -1285,6 +1285,10 @@ interface HvApi {
   getAnalytics(filter?: { workspaceId?: string; sinceTs?: string }): Promise<HvAnalytics>;
   getOnboardingSeen(): Promise<boolean>;
   setOnboardingSeen(seen: boolean): Promise<void>;
+  /** §36: the ISO instant the star nudge stays silent until, or null if never shown. */
+  getStarNudge(): Promise<string | null>;
+  /** §36: stay silent for `days` from now. STAR_SNOOZE_DAYS names the two values. */
+  snoozeStarNudge(days: number): Promise<void>;
 
   // §34: collect feedback. `available` is false when the channel has no
   // publishable key — the icon and the pulse are then not mounted at all.

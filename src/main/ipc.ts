@@ -20,6 +20,7 @@ import {
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
   saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
   childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
+  getStarNudgeUntil, snoozeStarNudge,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
   getTerminalSettings, setTerminalSettings,
@@ -4425,6 +4426,11 @@ export function registerIpc(
   // once, and once only — there is no re-open path (§22 round 17).
   ipcMain.handle("hv:get-onboarding-seen", () => getOnboardingSeen());
   ipcMain.handle("hv:set-onboarding-seen", (_e, seen: boolean) => setOnboardingSeen(!!seen));
+
+  // §36 — the star nudge. Global, not per-workspace: whether this person has
+  // been asked for a star is a fact about the person, not about a folder.
+  ipcMain.handle("hv:get-star-nudge", () => getStarNudgeUntil());
+  ipcMain.handle("hv:snooze-star-nudge", (_e, days: number) => snoozeStarNudge(Number(days)));
 
   // ── §34 Collect feedback ───────────────────────────────────────────────────
   /**
