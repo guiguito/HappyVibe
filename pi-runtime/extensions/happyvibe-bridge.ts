@@ -12,7 +12,7 @@ import {
   createChildOutputStore, rememberChildOutputs, substituteDeliveries,
 } from "./hv-subagent-delivery";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
-import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, wrapUntrusted } from "./hv-browser";
+import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, wrapUntrusted } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
 import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
 import { unwrapMcpCall } from "./hv-mcp";
@@ -1971,8 +1971,15 @@ export default function (pi: ExtensionAPI) {
   const browserInput = async (
     ctx: { ui: { input(title: string, initial: string): Promise<unknown> } },
     payload: Record<string, unknown>,
-  ): Promise<Awaited<ReturnType<typeof browserReply>>> =>
-    browserReply(await ctx.ui.input(JSON.stringify(payload), ""), "browser", asUrl(payload.url));
+  ): Promise<Awaited<ReturnType<typeof browserReply>>> => {
+    // ONE choke point for every browser tool that takes a url, so open and
+    // navigate cannot disagree and a future url-taking tool inherits it.
+    // Before ctx.ui.input on purpose: a scheme we will never load must not
+    // spend a permission prompt (see schemeRefusal for what that cost).
+    const refusal = typeof payload.url === "string" ? schemeRefusal(payload.url) : null;
+    if (refusal) return { content: [{ type: "text", text: refusal }], details: {} };
+    return browserReply(await ctx.ui.input(JSON.stringify(payload), ""), "browser", asUrl(payload.url));
+  };
 
   pi.registerTool({
     name: "browser_open",

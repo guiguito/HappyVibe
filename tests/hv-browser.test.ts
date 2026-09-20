@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  BROWSER_TOOLS, BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, UNTRUSTED_OPEN, wrapUntrusted,
+  BROWSER_TOOLS, BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, UNTRUSTED_OPEN,
+  wrapUntrusted,
 } from "../pi-runtime/extensions/hv-browser";
 import { SAFE_TOOLS, evaluate } from "../pi-runtime/extensions/hv-rules";
 import { gatePlanCall } from "../pi-runtime/extensions/hv-plan";
@@ -45,6 +46,23 @@ describe("hv-browser pure module (§28)", () => {
     expect(browserRuleName("https://api.stripe.com/v1")).toBe("browser:api.stripe.com");
     expect(browserRuleName("http://localhost:5173")).toBe("browser:localhost");
     expect(browserRuleName("garbage")).toBeNull();
+  });
+
+  it("refuses a non-http scheme BEFORE the prompt, and names the way round", () => {
+    // The agent path had no scheme check: the prompt was spent and the pane
+    // then sat on "loading" forever (will-navigate cancels with -3, which
+    // did-fail-load skips). The refusal must TEACH, hence the localhost line.
+    const file = schemeRefusal("file:///Users/x/.ssh/id_rsa");
+    expect(file).toContain("only opens http and https");
+    expect(file).toContain("file:");
+    expect(file).toContain("http.server");
+    expect(schemeRefusal("about:blank")).toContain("about:");
+    expect(schemeRefusal("chrome://settings")).toContain("chrome:");
+    // http(s) and the shapes resolveTypedUrl resolves are none of its business.
+    expect(schemeRefusal("https://example.com")).toBeNull();
+    expect(schemeRefusal("http://localhost:5173/x")).toBeNull();
+    expect(schemeRefusal("localhost:5173")).toBeNull();
+    expect(schemeRefusal("example.com")).toBeNull();
   });
 
   it("WRAPS page-derived text, naming the source and closing the element", () => {
