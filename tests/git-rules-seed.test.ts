@@ -38,6 +38,7 @@ describe("seedDefaultGitRules", () => {
     expect(patterns).toContain("ask git clean*");
     expect(patterns).toContain("ask git rebase*");
     expect(patterns).toContain("deny git push --force*");
+    expect(patterns).toContain("ask git worktree remove --force*");
   });
 
   it("does nothing at all when already seeded", () => {

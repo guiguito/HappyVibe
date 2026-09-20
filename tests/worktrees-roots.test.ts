@@ -79,6 +79,24 @@ describe("ipc.ts admits worktree roots at every fs entry point", () => {
     expect(src).toMatch(/hv:worktree-list"[\s\S]{0,200}?await Promise\.all\(workspaces\.list\(\)\.map\(\(w\) => refreshWorktrees\(w\)\)\)/);
   });
 
+  it("merge gates on the PARENT's idle, remove on the WORKTREE's", () => {
+    // Different roots on purpose: a merge rewrites the parent's tree, a remove
+    // deletes the worktree's. Gating both on one of them would either block a
+    // merge for no reason or rewrite a tree an agent is mid-edit in.
+    expect(src).toMatch(/hv:git-merge"[\s\S]{0,700}?gitGate\(parent\)/);
+    expect(src).toMatch(/hv:worktree-remove"[\s\S]{0,400}?gitGate\(worktreePath\)/);
+  });
+
+  it("remove refuses while a terminal is open in that worktree", () => {
+    expect(src).toMatch(/hv:worktree-remove"[\s\S]{0,700}?terminals\.list\(worktreePath\)/);
+  });
+
+  it("the parent of a merge comes from the index, never from the renderer", () => {
+    // A merge rewrites a working tree; which tree that is must not be a
+    // parameter the UI can get wrong.
+    expect(src).toMatch(/hv:git-merge"[\s\S]{0,200}?worktrees\.parentOf\(worktreePath\)/);
+  });
+
   it("the discovery push only ever fires for a registered parent", () => {
     // refreshWorktrees is the ONE writer of the index. A worktree is not a
     // parent, and letting one in would nest rows under rows.

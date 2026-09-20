@@ -189,6 +189,24 @@ interface HvFileDiff {
   fileHeader: string;
 }
 
+/** §29 worktrees — can this worktree's branch be merged into its project, and why not. */
+interface HvMergeCheck {
+  ok: boolean;
+  reason?: string;
+  ahead: number;
+  parentBranch: string | null;
+  /** Sessions in the PARENT that are mid-turn: the merge rewrites their tree. */
+  busy?: string[];
+}
+
+type HvMergeResult =
+  | { ok: true; fastForward: boolean }
+  | { ok: false; error?: string; conflicts?: string[]; aborted?: boolean; busy?: string[] };
+
+type HvRemoveResult =
+  | { ok: true; branch: string | null }
+  | { ok: false; error?: string; dirty?: boolean; busy?: string[]; terminals?: number };
+
 /** §29 worktrees — one linked worktree of a project, as git reports it. */
 interface HvWorktreeInfo {
   path: string;
@@ -863,6 +881,10 @@ interface HvApi {
   onGitChanged(cb: (p: { workspaceId: string }) => void): () => void;
   worktreeList(): Promise<Record<string, HvWorktreeInfo[]>>;
   worktreeAdd(workspaceId: string, branch: string): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  worktreeRemove(worktreePath: string, force?: boolean): Promise<HvRemoveResult>;
+  worktreePrune(workspaceId: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  gitMergeCheck(worktreePath: string): Promise<HvMergeCheck>;
+  gitMerge(worktreePath: string): Promise<HvMergeResult>;
   onWorktreesChanged(cb: (p: { workspaceId: string; worktrees: HvWorktreeInfo[] }) => void): () => void;
 
   // §23 Plan Mode

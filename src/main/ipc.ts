@@ -95,7 +95,7 @@ import {
   appendGitignore, branchCommits, defaultBranch, deleteBranch, detectJunk, discardUntracked, fetchRemote, gitAvailable, gitDiff,
   gitCommonDir, gitHistory, gitShow, gitStatus, initPreview, initRepo, invalidateProbe, listBranches, listWorktrees,
   listWorktreesSync, probeWorkspace, publish, remoteUrl, saveVersion, stageFile, stash, switchBranch, sync, undoFile,
-  undoHunk, addWorktree, worktreeVerbs,
+  undoHunk, addWorktree, mergeBranch, mergeCheck, pruneWorktrees, removeWorktree, worktreeVerbs,
 } from "./git";
 import { unwatchAllGit, unwatchGit, watchGitDir } from "./gitWatch";
 import { WorktreeIndex, sessionsOfProject, worktreeDir } from "./worktrees";
@@ -5312,6 +5312,95 @@ export function registerIpc(
     auditGit(workspaceId, "worktree-add", { branch: name, path: dir, base: verbs.base.sha });
     await refreshWorktrees(workspaceId);
     return { ok: true, path: dir };
+  });
+
+  /**
+   * §29 worktrees — finishing one. The PARENT is resolved from the index, never
+   * sent by the renderer: a merge rewrites a working tree, and which tree that
+   * is must not be a parameter the UI can get wrong.
+   *
+   * The two gates point at different roots on purpose. Merge waits on the
+   * PARENT being idle, because that is the tree it rewrites. Remove waits on
+   * the WORKTREE's, because that is the one that disappears.
+   */
+  const worktreeBranch = (parent: string, worktreePath: string): string | null =>
+    worktrees.of(parent).find((w) => normPath(w.path) === normPath(worktreePath))?.branch ?? null;
+
+  ipcMain.handle("hv:git-merge-check", async (_e, worktreePath: string) => {
+    const parent = worktrees.parentOf(worktreePath);
+    if (!parent) return { ok: false, reason: "Not a worktree of a project.", ahead: 0, parentBranch: null };
+    const branch = worktreeBranch(parent, worktreePath);
+    if (!branch) return { ok: false, reason: "This worktree is on no branch.", ahead: 0, parentBranch: null };
+    const check = await mergeCheck(parent, branch);
+    const gate = gitGate(parent);
+    return gate ? { ...check, ok: false, busy: gate.busy } : check;
+  });
+
+  ipcMain.handle("hv:git-merge", async (_e, worktreePath: string) => {
+    const parent = worktrees.parentOf(worktreePath);
+    if (!parent) return { ok: false, error: "Not a worktree of a project." };
+    const gate = gitGate(parent);
+    if (gate) return { ok: false, busy: gate.busy };
+    const branch = worktreeBranch(parent, worktreePath);
+    if (!branch) return { ok: false, error: "This worktree is on no branch." };
+
+    // Re-checked here rather than trusted from the renderer's last poll: the
+    // parent can have been dirtied between the button appearing and the click.
+    const check = await mergeCheck(parent, branch);
+    if (!check.ok) return { ok: false, error: check.reason ?? "Cannot merge." };
+
+    const r = await mergeBranch(parent, branch);
+    auditGit(parent, "merge", {
+      branch,
+      from: worktreePath,
+      ok: r.ok,
+      ...(r.ok ? { fastForward: r.fastForward } : { aborted: r.aborted ?? false, conflicts: r.conflicts ?? [] }),
+    });
+    invalidateProbe(parent);
+    // force: the session that asked is still marked busy at this instant, and a
+    // gated push would drop the one refresh the user is waiting for.
+    pushGitChanged(parent, { force: true });
+    return r;
+  });
+
+  ipcMain.handle("hv:worktree-remove", async (_e, worktreePath: string, force = false) => {
+    const parent = worktrees.parentOf(worktreePath);
+    if (!parent) return { ok: false, error: "Not a worktree of a project." };
+    const gate = gitGate(worktreePath);
+    if (gate) return { ok: false, busy: gate.busy };
+    // §26: on Windows a shell holding the directory makes the remove fail, and
+    // on macOS it leaves that shell in a deleted cwd. Ask first, either way.
+    const open = terminals.list(worktreePath).length;
+    if (open > 0) {
+      return { ok: false, terminals: open, error: "Close the terminal tabs in this worktree first." };
+    }
+
+    const branch = worktreeBranch(parent, worktreePath);
+    const r = await removeWorktree(parent, worktreePath, force);
+    if (!r.ok) return r;
+
+    // §5's Forget path, one level down: the folder is gone, so reopening a
+    // session here must fail honestly rather than resolve to nothing.
+    for (const s of sessionsOfWorkspace(index.list(), worktreePath)) {
+      if (manager.get(s.id)) await endSession(s.id);
+      if (!s.archived) index.update(s.id, { archived: true });
+    }
+    sessionsChanged();
+    auditGit(parent, "worktree-remove", { path: worktreePath, branch, force });
+    await refreshWorktrees(parent);
+    return { ok: true, branch };
+  });
+
+  ipcMain.handle("hv:worktree-prune", async (_e, workspaceId: string) => {
+    if (!workspaces.list().some((w) => normPath(w) === normPath(workspaceId))) {
+      return { ok: false, error: "Unknown workspace" };
+    }
+    const r = await pruneWorktrees(workspaceId);
+    if (r.ok) {
+      auditGit(workspaceId, "worktree-prune", {});
+      await refreshWorktrees(workspaceId);
+    }
+    return r;
   });
 
   ipcMain.handle("hv:git-fetch", (_e, workspaceId: string) => fetchRemote(workspaceId));

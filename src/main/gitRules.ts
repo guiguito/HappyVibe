@@ -31,6 +31,10 @@ export const DEFAULT_GIT_RULES: readonly Rule[] = [
   { layer: "command", pattern: "git clean*", action: "ask" },
   { layer: "command", pattern: "git rebase*", action: "ask" },
   { layer: "command", pattern: "git push --force*", action: "deny" },
+  // §29 worktrees: `git worktree *` is not destructive to history, but the
+  // forced remove deletes a checkout with uncommitted work in it — the same
+  // class as `git clean*`, beside which it sits.
+  { layer: "command", pattern: "git worktree remove --force*", action: "ask" },
 ];
 
 /**
