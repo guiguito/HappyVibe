@@ -7,6 +7,7 @@
   "main": "./out/main/index.js",
   "author": "Guilhem Duché <guilhem.duche@gmail.com>",
   "homepage": "https://happyvibe.dev",
+  "license": "Apache-2.0",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",

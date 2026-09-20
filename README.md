@@ -138,6 +138,17 @@ must never be able to load.
 - **It is not a sandbox** and does not claim to be. The gate is an in-process extension. It asks
   before it acts; it is not a security boundary.
 
+## Licence
+
+**Apache-2.0** — see [`LICENSE`](LICENSE). Third-party attributions are in [`NOTICE`](NOTICE).
+
+Permissive on purpose: use it, fork it, ship it in something commercial. The name and the logo are
+not covered (Apache-2.0 §6), so a fork needs its own.
+
+Everything HappyVibe does runs on your machine with your own API keys. The one exception is the web
+search and scraping service, which is ours by default and which you can repoint at your own
+Firecrawl-compatible endpoint under **Settings → Built-in tools → Web service**.
+
 ## Docs
 
 - [`docs/prd.md`](docs/prd.md) — the product spec, decisions folded in place
