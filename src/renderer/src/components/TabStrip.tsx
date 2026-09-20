@@ -261,7 +261,16 @@ export function TabStrip({
       {/* Sized to its tabs, NOT flex-1: the `+` belongs immediately after the last
           tab, and a growing strip would push it to the far edge. `min-w-0` still
           lets it shrink and scroll when the tabs outgrow the pane. */}
-      <div className="min-w-0 flex items-stretch overflow-x-auto">
+      {/* `overflow-y-hidden` is NOT redundant beside `overflow-x-auto`, and leaving
+          it off is a Windows-only bug (PRD §4). CSS computes a `visible` axis to
+          `auto` the moment the other axis is not visible, so asking for a
+          horizontal scroller silently made this a VERTICAL scroller too. macOS
+          hides that: its scrollbars are overlay — zero layout width, invisible at
+          rest. Windows scrollbars are classic, so the strip rendered a full track
+          with arrow buttons between the last tab and the `+`. Nothing here is meant
+          to overflow upwards: the tabs are `items-stretch`, the `+` and its menu are
+          SIBLINGS of this div, and the tab context menu is `fixed`. */}
+      <div className="min-w-0 flex items-stretch overflow-x-auto overflow-y-hidden">
         {pane.tabs.length === 0 && (
           <span className="flex items-center px-3.5 text-[12px] italic text-ink-soft select-none">
             Drag a tab here
