@@ -3,7 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { addWorktree, listWorktrees, resetGitAvailability, worktreeVerbs } from "../src/main/git";
+import {
+  addWorktree, listWorktrees, mergeBranch, mergeCheck, pruneWorktrees, removeWorktree, resetGitAvailability,
+  worktreeVerbs,
+} from "../src/main/git";
 
 describe("worktreeVerbs (pure)", () => {
   const head = { branch: "main", sha: "abc1234" };
@@ -102,6 +105,126 @@ describe.skipIf(!HAVE_GIT)("addWorktree over a real repo", () => {
     const c = await addWorktree(m, path.join(root, "taken"), "feat/y");
     expect(c).toMatchObject({ ok: false, error: expect.stringMatching(/already exists/) });
     expect(git(m, "branch", "--list", "feat/y").trim()).toBe(""); // git never ran
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+const commitIn = (dir: string, file: string, text: string): void => {
+  fs.writeFileSync(path.join(dir, file), text);
+  git(dir, "add", "-A");
+  git(dir, "commit", "-qm", `${file}: ${text}`);
+};
+
+describe.skipIf(!HAVE_GIT)("mergeCheck — the three preconditions, each named", () => {
+  it("refuses when the branch is not ahead", async () => {
+    const { root, m } = mkRepo();
+    git(m, "worktree", "add", "-q", path.join(root, "wt"), "-b", "side");
+    expect(await mergeCheck(m, "side")).toMatchObject({
+      ok: false,
+      ahead: 0,
+      reason: expect.stringMatching(/nothing to merge/i),
+    });
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("refuses while the parent has TRACKED changes, but untracked ones are fine", async () => {
+    const { root, m } = mkRepo();
+    const wt = path.join(root, "wt");
+    git(m, "worktree", "add", "-q", wt, "-b", "side");
+    commitIn(wt, "b", "1");
+
+    fs.writeFileSync(path.join(m, "a"), "dirty");
+    expect(await mergeCheck(m, "side")).toMatchObject({ reason: expect.stringMatching(/unsaved changes/i) });
+
+    git(m, "checkout", "--", "a");
+    fs.writeFileSync(path.join(m, "untracked.txt"), "x");
+    // git refuses cleanly if an untracked file would be overwritten, changing
+    // nothing — so it is not our job to pre-refuse for one.
+    expect(await mergeCheck(m, "side")).toMatchObject({ ok: true, ahead: 1, parentBranch: "main" });
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe.skipIf(!HAVE_GIT)("mergeBranch — and the abort rule", () => {
+  it("fast-forwards when it can", async () => {
+    const { root, m } = mkRepo();
+    const wt = path.join(root, "wt");
+    git(m, "worktree", "add", "-q", wt, "-b", "side");
+    commitIn(wt, "b", "1");
+    expect(await mergeBranch(m, "side")).toEqual({ ok: true, fastForward: true });
+    expect(git(m, "log", "--oneline").split("\n").filter(Boolean)).toHaveLength(2);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("makes a merge commit when both sides moved", async () => {
+    const { root, m } = mkRepo();
+    const wt = path.join(root, "wt");
+    git(m, "worktree", "add", "-q", wt, "-b", "side");
+    commitIn(wt, "b", "1");
+    commitIn(m, "c", "2");
+    expect(await mergeBranch(m, "side")).toEqual({ ok: true, fastForward: false });
+    expect(git(m, "rev-list", "--count", "HEAD").trim()).toBe("4");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a conflict is ABORTED: the parent tree is byte-identical and the files are named", async () => {
+    const { root, m } = mkRepo();
+    const wt = path.join(root, "wt");
+    git(m, "worktree", "add", "-q", wt, "-b", "side");
+    commitIn(wt, "a", "side version");
+    commitIn(m, "a", "main version");
+
+    const treeBefore = git(m, "write-tree").trim();
+    const headBefore = git(m, "rev-parse", "HEAD").trim();
+
+    const r = await mergeBranch(m, "side");
+    expect(r).toMatchObject({ ok: false, aborted: true, conflicts: ["a"] });
+    // §7 ships no conflict UI, so the ONLY acceptable outcome is "nothing happened".
+    expect(fs.existsSync(path.join(m, ".git", "MERGE_HEAD"))).toBe(false);
+    expect(git(m, "write-tree").trim()).toBe(treeBefore);
+    expect(git(m, "rev-parse", "HEAD").trim()).toBe(headBefore);
+    expect(git(m, "status", "--porcelain")).toBe("");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe.skipIf(!HAVE_GIT)("removeWorktree / pruneWorktrees", () => {
+  it("refuses a dirty worktree in git's words, then removes with force", async () => {
+    const { root, m } = mkRepo();
+    const wt = path.join(root, "wt");
+    git(m, "worktree", "add", "-q", wt, "-b", "side");
+    fs.writeFileSync(path.join(wt, "x"), "x");
+
+    const r = await removeWorktree(m, wt);
+    expect(r).toMatchObject({ ok: false, dirty: true, error: expect.stringMatching(/modified or untracked/i) });
+    expect(fs.existsSync(wt)).toBe(true); // …and nothing was destroyed on the way
+
+    expect(await removeWorktree(m, wt, true)).toEqual({ ok: true });
+    expect(fs.existsSync(wt)).toBe(false);
+    expect(await listWorktrees(m)).toEqual([]);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a LOCKED worktree is refused and gets no force path — the lock was a decision", async () => {
+    const { root, m } = mkRepo();
+    const wt = path.join(root, "wt");
+    git(m, "worktree", "add", "-q", wt, "-b", "side");
+    git(m, "worktree", "lock", wt);
+    const r = await removeWorktree(m, wt, true);
+    expect(r.ok).toBe(false);
+    expect((r as { dirty?: boolean }).dirty).toBeUndefined();
+    expect((r as { error: string }).error).toMatch(/locked/i);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("prune clears an entry whose folder is gone", async () => {
+    const { root, m } = mkRepo();
+    const wt = path.join(root, "wt");
+    git(m, "worktree", "add", "-q", wt, "-b", "side");
+    fs.rmSync(wt, { recursive: true, force: true });
+    expect((await listWorktrees(m))[0]?.prunable).toBe(true);
+    expect(await pruneWorktrees(m)).toEqual({ ok: true });
+    expect(await listWorktrees(m)).toEqual([]);
     fs.rmSync(root, { recursive: true, force: true });
   });
 });

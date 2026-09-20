@@ -549,6 +549,106 @@ export async function addWorktree(workspace: string, dir: string, branch: string
   return r.ok ? { ok: true } : { ok: false, error: r.stderr.trim() };
 }
 
+export interface MergeCheck {
+  ok: boolean;
+  reason?: string;
+  ahead: number;
+  parentBranch: string | null;
+}
+
+/**
+ * §29 worktrees — the three preconditions of *Merge into `<parent>`*, each named
+ * so the disabled button can say which one is false.
+ *
+ * Untracked files in the parent are deliberately NOT a refusal: git itself
+ * refuses cleanly if one would be overwritten, changing nothing, and
+ * pre-refusing for a stray file the merge would never touch is a gate the user
+ * cannot understand or clear.
+ */
+export async function mergeCheck(parentRoot: string, branch: string): Promise<MergeCheck> {
+  const state = await requireRepo(parentRoot);
+  if (!state) return { ok: false, reason: "Not a git repository.", ahead: 0, parentBranch: null };
+
+  const head = (await run(state.root, ["branch", "--show-current"])).stdout.trim() || null;
+  const ahead = Number((await run(state.root, ["rev-list", "--count", `HEAD..${branch}`])).stdout.trim() || 0);
+  if (ahead === 0) {
+    return { ok: false, reason: "Nothing to merge — save a version in the worktree first.", ahead, parentBranch: head };
+  }
+  const dirty = (await run(state.root, ["status", "--porcelain", "--untracked-files=no"])).stdout.trim() !== "";
+  if (dirty) {
+    return {
+      ok: false,
+      reason: "This project has unsaved changes — save a version or stash them first.",
+      ahead,
+      parentBranch: head,
+    };
+  }
+  return { ok: true, ahead, parentBranch: head };
+}
+
+export type MergeResult =
+  | { ok: true; fastForward: boolean }
+  | { ok: false; error: string; conflicts?: string[]; aborted?: boolean };
+
+/**
+ * `git merge --no-edit <branch>` in the PARENT. Fast-forward when it can, a
+ * merge commit otherwise — `--ff-only` is Sync's rule for pulling a REMOTE, not
+ * this one.
+ *
+ * On failure with a merge in progress the conflicting paths are read and the
+ * merge is aborted AT ONCE, so the parent tree is byte-identical to before:
+ * §7 ships no conflict UI, and a beginner left mid-merge is the worst state
+ * this panel could produce. The test pins `write-tree` across the attempt.
+ */
+export async function mergeBranch(parentRoot: string, branch: string): Promise<MergeResult> {
+  const state = await requireRepo(parentRoot);
+  if (!state) return { ok: false, error: "Not a git repository." };
+
+  const r = await run(state.root, ["merge", "--no-edit", branch], { write: true });
+  // git says "Fast-forward" on stdout for that case and "Merge made by …" otherwise.
+  if (r.ok) return { ok: true, fastForward: /^Fast-forward$/m.test(r.stdout) };
+
+  const mergeHead = (await run(state.root, ["rev-parse", "--git-path", "MERGE_HEAD"])).stdout.trim();
+  if (mergeHead && fs.existsSync(path.resolve(state.root, mergeHead))) {
+    const conflicts = (await run(state.root, ["diff", "--name-only", "--diff-filter=U"])).stdout
+      .split("\n")
+      .filter(Boolean);
+    await run(state.root, ["merge", "--abort"], { write: true });
+    return { ok: false, error: r.stderr.trim() || r.stdout.trim(), conflicts, aborted: true };
+  }
+  return { ok: false, error: r.stderr.trim() || r.stdout.trim() };
+}
+
+export type RemoveResult = { ok: true } | { ok: false; error: string; dirty?: boolean };
+
+/**
+ * `git worktree remove`. git refuses a dirty tree — "contains modified or
+ * untracked files, use --force to delete it" (measured 2.50.1) — which comes
+ * back as `dirty` so the panel can ask a second, sharper question; force is
+ * opt-in per removal, the same shape as round 14's branch delete.
+ *
+ * A LOCKED worktree is refused in git's own words and gets NO force path from
+ * here: the lock was somebody's decision, and `remove -f -f` is a thing to type
+ * deliberately rather than a button.
+ */
+export async function removeWorktree(parentRoot: string, wtPath: string, force = false): Promise<RemoveResult> {
+  const state = await requireRepo(parentRoot);
+  if (!state) return { ok: false, error: "Not a git repository." };
+
+  const r = await run(state.root, ["worktree", "remove", ...(force ? ["--force"] : []), wtPath], { write: true });
+  if (r.ok) return { ok: true };
+  const dirty = /modified or untracked files/i.test(r.stderr);
+  return { ok: false, error: r.stderr.trim(), ...(dirty ? { dirty: true } : {}) };
+}
+
+/** `git worktree prune` — clears every entry of this repo whose folder is gone. */
+export async function pruneWorktrees(parentRoot: string): Promise<WriteResult> {
+  const state = await requireRepo(parentRoot);
+  if (!state) return { ok: false, error: "Not a git repository." };
+  const r = await run(state.root, ["worktree", "prune"], { write: true });
+  return r.ok ? { ok: true } : { ok: false, error: r.stderr.trim() };
+}
+
 export interface DeleteBranchResult {
   ok: boolean;
   error?: string;
