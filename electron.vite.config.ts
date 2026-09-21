@@ -27,6 +27,12 @@ const runtimePins =
 
 export default defineConfig({
   main: {
+    // §37: main tags every crash report with the runtime pins, so the same
+    // string the Changelog shows answers "which Pi was inside when it broke".
+    // It was computed for the renderer alone until then.
+    define: {
+      __RUNTIME_PINS__: JSON.stringify(runtimePins)
+    },
     build: {
       rollupOptions: {
         // §27: the voice inference worker is a SECOND entry, emitted beside the
@@ -55,6 +61,12 @@ export default defineConfig({
       }
     },
     build: {
+      // §37: source maps are emitted but NOT referenced from the bundle, and
+      // electron-builder excludes them from the artifact — so a shipped crash
+      // report carries minified frames that we symbolicate locally against the
+      // release's own out/. Shipping the maps would hand the whole renderer
+      // source to anyone with the DMG.
+      sourcemap: 'hidden',
       // §27: the audio worklet MUST stay a real emitted file. Vite inlines
       // assets under 4 kB as `data:` URLs, and the renderer's CSP is
       // `script-src 'self'`, which covers neither `data:` nor `blob:` — so an

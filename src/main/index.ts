@@ -12,6 +12,7 @@ import { navAction } from './navGuard'
 import { parseLayoutFile, type WindowRecord } from './windowLayout'
 import { insideAny } from './tearOff'
 import { WindowRegistry } from './windows'
+import { installCrash } from './crash'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
 // AND userData resolves to .../HappyVibe — in dev the process runs inside
@@ -38,6 +39,13 @@ try {
   /* non-fatal: fall back to a fresh userData dir */
 }
 
+// §37: as early as possible, and immediately after the migration because the
+// queue lives under userData. Everything from here on is covered; the imports
+// above already ran, so an exception in one of those is beyond any handler.
+// Deliberately not awaited — main must not wait on a network-capable module to
+// start — and `installCrash` never throws, so there is no floating rejection.
+void installCrash((channel, payload) => windows.broadcast(channel, payload))
+
 /**
  * §7 round 23 — every window in the app is made here, and only here.
  *
@@ -48,6 +56,10 @@ try {
  * whole life, which is the dock-click bug this fixes on the way past.
  */
 export const windows = new WindowRegistry<BrowserWindow>()
+
+/** §37: webContents ids already reloaded after a renderer crash — one repair
+    attempt each, so a view that dies on load does not loop. */
+const reloadedAfterCrash = new Set<number>()
 
 /**
  * The layout file: one record per live window, primary first. Debounced because
@@ -282,6 +294,17 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
     if (action === 'allow') return
     event.preventDefault()
     if (action === 'external') void shell.openExternal(url)
+  })
+
+  // §37: the repair, not the report — the SDK's own `render-process-gone`
+  // handler on `app` files that. Once per window, because a view that crashes
+  // on load would otherwise reload forever; and never for `clean-exit`, which
+  // is what a normal close looks like from here.
+  win.webContents.on('render-process-gone', (_e, details) => {
+    if (details.reason === 'clean-exit') return
+    if (reloadedAfterCrash.has(win.webContents.id)) return
+    reloadedAfterCrash.add(win.webContents.id)
+    win.webContents.reload()
   })
 
   // HMR for renderer base on electron-vite cli.

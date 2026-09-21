@@ -39,6 +39,11 @@ export const HOWTO_COPY = {
     body:
       "A worktree is a second copy of this project's files, on its own branch, in its own folder — so an agent can work there without touching what you have open here. Its settings are the project's: the same model, the same permissions, the same memory. Its files are its own. HappyVibe keeps the ones it makes in its own data folder rather than inside your project, so they never show up as changes to save. Make one from the branch menu in Changes, and finish it from the same panel: merge it back, open a pull request, or remove it.",
   },
+  crashReports: {
+    title: "What a crash report contains",
+    body:
+      "When HappyVibe itself breaks \u2014 not your code, the app \u2014 it sends us a short technical report so the bug can be found and fixed. A report says what kind of failure it was, the error's type, where in HappyVibe's own code it happened, which version you are running and which operating system. That is all. It never contains your prompts, your files, your file names, your folder paths, the pages you visited, your keys, or anything the agent read or wrote. Error messages are redacted before they leave, so an address or a path inside one is replaced rather than sent. Native crashes leave a memory snapshot on your computer and it stays there \u2014 nothing uploads it, and Reveal below shows you the folder. Every report that leaves is recorded in your Audit log, which is also where you can see exactly what left and when. Turning this off stops reporting immediately and deletes anything still waiting to send.",
+  },
   webTools: {
     title: "How web tools work",
     body:

@@ -29,6 +29,11 @@ import {
   getAssistantTasks, setAssistantTask, type AssistantTaskId, type AssistantTask,
 } from "./config";
 import { fastPulse, resolveFeedbackConfig } from "./feedback/config";
+// `./crash` itself is NOT imported here: it reaches @electron-toolkit/utils,
+// which under vitest takes three unrelated test files down (CLAUDE.md). The
+// §37 IPC handlers live in that module and register themselves.
+import { attachCrashAudit, captureCrash } from "./crash/client";
+import { piErrorType, piFrames } from "./crash/stderrFrames";
 import { createInletClient, InletError, sendSubmission, type Answers, type FormDefinition, type Upload } from "./feedback/inlet";
 import { clampView, generalContext, pulseContext, type HostFacts, type ModelRef, type SessionFacts } from "./feedback/context";
 import { captureWindow, type Capture } from "./feedback/capture";
@@ -585,6 +590,9 @@ export function registerIpc(
   // run is clamped by the ENVIRONMENT, re-derived at every spawn.
   const scheduleStore = new ScheduleStore(path.join(userData, "schedules.json"));
   const log = new EventLog(path.join(userData, "events.jsonl"));
+  // §37: crash rows written before this point (a boot crash, which is the one
+  // we most want) were buffered — hand them the log now.
+  attachCrashAudit(log);
   const pidFile = path.join(userData, "pi-pids.json");
 
   // ── §26 Terminals ──────────────────────────────────────────────────────────
@@ -2649,7 +2657,7 @@ export function registerIpc(
     for (const r of runs) startSubagentPoll(sessionId, r.runId, r.asyncDir);
   };
 
-  manager.on("session-exit", ({ sessionId, code, intentional, stderr }: SessionExit) => {
+  manager.on("session-exit", ({ sessionId, code, intentional, stderr, stderrLines }: SessionExit) => {
     activity.remove(sessionId);
     pendingMcpReload.delete(sessionId); // don't reload a session that's gone
     // Stop this session's status pollers. The detached runners survive (they're
@@ -2667,6 +2675,24 @@ export function registerIpc(
         workspaceId: meta?.workspaceId,
         data: { code, ...(stderr ? { stderr } : {}) },
       });
+      // §37: report it remotely ONLY when the stderr yields a frame inside our
+      // own bundle. Pi dies for user reasons constantly — a bad provider key,
+      // `402 Insufficient Balance`, the EPERM uv_cwd path, a terminal the user
+      // killed — and none of those is our bug. With no frames they all collapse
+      // onto ONE fingerprint (`reason|signal|name`, code excluded), so a single
+      // empty account would file the same report every day and bury the Pi
+      // crash that IS ours. A frame is the line between the two.
+      //
+      // `message` is empty on purpose: the sentence after the colon is where a
+      // path or a prompt would be, and it stays in the local row above.
+      const frames = piFrames(stderrLines ?? []);
+      if (frames.length > 0) {
+        captureCrash({
+          kind: "child-exit",
+          exit: { code: code ?? undefined, name: "pi" },
+          exception: { type: piErrorType(stderrLines ?? []), message: "", handled: false, frames },
+        });
+      }
     }
     // §7 round 23: a crashed or closed session must not leave a phantom count
     // in every window's sidebar — the renderer does the same with dropSession.
@@ -4226,6 +4252,7 @@ export function registerIpc(
   ipcMain.handle("hv:get-open-files-context", () => getOpenFilesContext());
   ipcMain.handle("hv:set-open-files-context", (_e, on: boolean) => setOpenFilesContext(!!on));
 
+
   // Round 8: keyboard-shortcut overrides. Stored whole; the renderer merges
   // them with the defaults (shortcuts.ts), so main stays ignorant of the action list.
   ipcMain.handle("hv:get-shortcuts", () => getShortcuts());
@@ -4502,7 +4529,10 @@ export function registerIpc(
     // decision and not a model call, but something that LEFT the machine on the
     // user's say-so, which is exactly what an audit log is for.
     const feedback = await log.read({ type: "feedback.sent", ...scoped });
-    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback]
+    // §37: a crash report is the fifth thing this page answers for, and the
+    // only one that left WITHOUT a click — which is precisely why it is here.
+    const crashes = await log.read({ type: "crash.sent", ...scoped });
+    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback, ...crashes]
       // A row with no workspace never matched a workspace filter before either.
       .filter((e) => !wsKeys || (e.workspaceId != null && wsKeys.has(normPath(e.workspaceId))))
       .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));

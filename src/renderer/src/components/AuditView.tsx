@@ -146,13 +146,34 @@ interface ScheduleEvent {
   source?: "user" | "agent";
 }
 
+/**
+ * §37 — a crash report that left the machine WITHOUT the user's say-so, which
+ * is why it is in this log rather than nowhere.
+ *
+ * Ids, a kind and two counts. There is deliberately no message field, no frames
+ * field and no context field to render: main writes the row from `onSent` with
+ * exactly these keys, so this page cannot display content even by accident.
+ */
+interface CrashEvent {
+  ts: string;
+  workspaceId?: string;
+  sessionId?: string;
+  reportId: string;
+  groupId: string;
+  isNewGroup: boolean;
+  kind: string;
+  bytes: number;
+  channel?: string;
+}
+
 export type Row =
   | ({ row: "decision" } & Decision)
   | ({ row: "oneshot" } & OneShot)
   | ({ row: "excluded" } & ModelExcluded)
   | ({ row: "memory" } & MemoryEvent)
   | ({ row: "schedule" } & ScheduleEvent)
-  | ({ row: "feedback" } & FeedbackEvent);
+  | ({ row: "feedback" } & FeedbackEvent)
+  | ({ row: "crash" } & CrashEvent);
 
 /**
  * One EventLog row → one display row.
@@ -170,6 +191,9 @@ export function toAuditRow(e: HvAuditEvent): Row {
   if (e.type === "assistant.oneshot") return { row: "oneshot", ...(e.data as unknown as OneShot), ...base };
   if (e.type === "model.excluded") return { row: "excluded", ...(e.data as unknown as ModelExcluded), ...base };
   if (e.type === "feedback.sent") return { row: "feedback", ...(e.data as unknown as FeedbackEvent), ...base };
+  // §37: the TYPE again — the crash payload carries its own `kind` ("exception",
+  // "child-exit"…) and reading that is the same bug this function was extracted to fix.
+  if (e.type === "crash.sent") return { row: "crash", ...(e.data as unknown as CrashEvent), ...base };
   // §35: same rule — discriminate on the TYPE main keyed the row by.
   if (e.type.startsWith("schedule.")) {
     return { row: "schedule", kind: e.type, ...(e.data as unknown as Omit<ScheduleEvent, "kind">), ...base };
@@ -192,6 +216,17 @@ export function toAuditRow(e: HvAuditEvent): Row {
  * The app's own words for a submission. Exported for tests: the renderer suite
  * has no DOM, so wording is pinned as data (§20's two-halves rule).
  */
+/**
+ * §37 — the app's own words for a crash send. The KIND and whether it is new,
+ * and nothing else: a row that named the error or the file would put content
+ * into the one log that is exportable and long-lived.
+ *
+ * Exported for tests, like its neighbours — the renderer suite has no DOM.
+ */
+export function crashText(r: CrashEvent): string {
+  return `Sent a crash report · ${r.kind}${r.isNewGroup ? " · new" : ""}`;
+}
+
 export function feedbackText(r: FeedbackEvent): string {
   if (r.database === "session") return "Rated the session";
   if (r.status === "duplicate") return "Sent feedback · already received";
@@ -334,6 +369,8 @@ export function AuditView({
     // §34: not a decision either. Its own source name, so it can be isolated or
     // excluded, and hidden whenever a DECISION filter is on.
     if (r.row === "feedback") return !decision && (!source || source === "feedback");
+    // §37: not a decision either — nobody decided anything, which is the point.
+    if (r.row === "crash") return !decision && (!source || source === "crash");
     // §35: a schedule event is not a permission decision — the run's own tool
     // calls are those, under this same log. Its own source name so it can be
     // isolated, which is how you answer "what has this thing been doing".
@@ -411,6 +448,7 @@ export function AuditView({
             <option value="model">Model availability</option>
             <option value="memory">Memory</option>
             <option value="feedback">Feedback</option>
+            <option value="crash">Crash reports</option>
           </select>
         </div>
 
@@ -478,6 +516,28 @@ export function AuditView({
                         {[r.recurrence, r.outcome, r.reason, r.source === "agent" ? "asked for by the agent" : null].filter(Boolean).join(" · ")}
                       </div>
                     )}
+                  </>
+                ) : r.row === "crash" ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block rounded-full border border-line bg-paper-deep px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 text-ink-soft">
+                        crash
+                      </span>
+                      <span className="font-bold shrink-0">{crashText(r)}</span>
+                      <span className="flex-1" />
+                      <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
+                        {new Date(r.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <code className="font-mono text-xs text-ink-soft truncate flex-1 min-w-0">
+                        {r.reportId}
+                        {r.bytes > 0 ? ` · ${Math.max(1, Math.round(r.bytes / 1024))} KB` : ""}
+                      </code>
+                      <span className="text-[10px] text-ink-soft/70 shrink-0" title={r.workspaceId}>
+                        {r.workspaceId ? basename(r.workspaceId) : ""}
+                      </span>
+                    </div>
                   </>
                 ) : r.row === "feedback" ? (
                   <>

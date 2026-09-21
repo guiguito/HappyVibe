@@ -72,7 +72,11 @@ export class PiClient extends EventEmitter {
       for (const p of this.pending.values()) p.reject(new Error("pi exited"));
       this.pending.clear();
       // Carried on the exit event so a crash can say WHY, not just a number.
-      this.emit("exit", { code, stderr: stderrTail(this.stderrLines) });
+      // §37: the TAIL is the human-readable cause and stays local (the
+      // `session.crash` row). The full ring goes too, for frame extraction
+      // only — `stderrTail` is 8 lines and a stack is longer than that, so
+      // reporting from the tail would find no frames at all.
+      this.emit("exit", { code, stderr: stderrTail(this.stderrLines), stderrLines: [...this.stderrLines] });
     });
   }
 

@@ -29,6 +29,21 @@ describe("feedback secrets never reach src/", () => {
     expect(hits).toEqual([]);
   });
 
+  /**
+   * §37 — the crash module is new surface that talks to the same Inlet
+   * deployment, so it is the obvious next place for a server key to be pasted
+   * "just to read the reports back". It carries the publishable key only.
+   */
+  it("no isk_ and no env read of a server key under src/main/crash", () => {
+    const crashFiles = files.filter((f) => f.includes(path.join("src", "main", "crash")));
+    expect(crashFiles.length, "non-vacuity: the crash module must exist").toBeGreaterThan(0);
+    for (const f of crashFiles) {
+      const src = fs.readFileSync(f, "utf8");
+      expect(src, f).not.toMatch(/\bisk_/);
+      expect(src, f).not.toMatch(/FEEDBACK_API_KEY/);
+    }
+  });
+
   it("nothing under src/ reads FEEDBACK_API_KEY (either channel)", () => {
     const hits = files.filter((f) => /FEEDBACK_API_KEY/.test(fs.readFileSync(f, "utf8")));
     expect(hits).toEqual([]);
