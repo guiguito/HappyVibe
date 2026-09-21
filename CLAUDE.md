@@ -305,7 +305,16 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `{runId, agent, asyncDir}`. Gate: `tests/pi-subagents-contract.test.ts` (key-free) pins the
   relative form, the exports map, and the three fields. Bumped 0.34.0 → 0.40.0 on 2026-08-02,
   0.40.0 → 0.50.0 on 2026-08-17, 0.53.0 → 0.58.0 on 2026-08-28, 0.58.0 → 0.64.0 on 2026-09-04
-  (0.65.0 deliberately skipped — see the native-AgentSession entry below). At 0.58 the map lists **13** subpaths
+  (0.65.0 deliberately skipped — see the native-AgentSession entry below), and **HELD at 0.64.0
+  through the Pi 0.86.1 bump on 2026-09-21 for the same reason, now stated in upstream's own
+  words**: 0.65.0's changelog says `PI_SUBAGENT_PI_BINARY` "now applies only to Herdr project
+  panes and the profile model probe", and 0.68.0's says such a child "never loads the parent's
+  ambient extensions". That env var is the ONLY route `hv-child-guard.ts` reaches a sub-agent
+  (`pi-node.sh` + `pi-child.mjs`, nothing else), so taking 0.65+ deletes §12's third enforcement
+  layer with NO test failing. 0.68.0 also removed persistent model exclusions outright, which
+  makes `src/main/modelExclusions.ts` and the `model.excluded` audit row dead the same day.
+  Mixing pins is fine and was measured: 0.64.0 runs against Pi 0.86.1 (see the typecheck entry
+  for the one price it charges). At 0.58 the map lists **13** subpaths
   (11 at 0.50) and `./shared-types`
   looks like ASYNC_DIR's home but re-exports TYPES ONLY — re-derive, never hand-list.
 - **Two PRD §12 invariants are enforced by matching an upstream NAME or SHAPE, and 0.40.0 broke
@@ -561,7 +570,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   together.** The bridge does `import { Type } from "typebox"` (bare), so it resolves to whatever
   `pi-runtime/node_modules` hoists. It used not to be a direct dep at all, and the pi-subagents 0.40
   bump silently moved it 1.1.24 → 1.1.38 — every registered tool's schema built by a library nobody
-  chose. The bridge BUILDS those schemas and Pi CONSUMES them, so the pin tracks Pi (1.3.7), not
+  chose. The bridge BUILDS those schemas and Pi CONSUMES them, so the pin tracks Pi (1.3.27 at Pi 0.86.1 — re-read Pi's own `dependencies`, never this number), not
   "latest" and not pi-subagents' nested 1.1.38. `tests/pi-subagents-contract.test.ts` asserts the
   RELATIONSHIP, so a Pi pin bump fails until typebox follows. (For the record: the emitted JSON
   Schema was byte-identical across 1.1.38/1.3.7 for all seven constructors we use, and typebox
@@ -585,10 +594,18 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   §12 child-guard route), so the parent and its sub-agents could break independently.
   `tests/pi-cli-entry.test.ts` derives the entry from the installed package's own `bin.pi`, BOOTS it
   rather than stat-ing it (the whole failure was a file that resolves on disk and dies on import),
-  pins the two paths together, and asserts Pi still does NOT declare pi-server — so that assertion
-  INVERTS when upstream fixes it and the workaround gets removed instead of carried. Free side
+  pins the two paths together, and INVERTED when upstream fixed it. Free side
   benefit, measured on our own suite: the bundled entry boots faster, 152 s → 42 s for the same
   264 files.
+  **The pi-server half is now HISTORY — do not re-add it.** Pi 0.85.1 shipped "Fixed SDK import
+  failures caused by unintentionally publishing internal experimental code and dependencies in
+  0.85.0"; measured at 0.86.1, NOTHING under `dist/` imports `experimental/server.js`, both CLI
+  entries boot and `dist/index.js` imports clean, so `pi-runtime` no longer declares the package.
+  `bin.pi` is still `dist/bundle/cli.js`, so `PI_CLI_RELPATH` did not move. The test now asserts
+  the INVERSE — no file under `dist/` reaches a package Pi declares nowhere — which is the same
+  tripwire pointing the other way: if Pi re-acquires such an import, that fails instead of ~18
+  unrelated-looking red files. This is what an inverting assertion is FOR; it removed a workaround
+  that would otherwise have been carried forever.
 
 - **A sub-agent's task arrives as a FILE on macOS from pi-subagents 0.63, and that one clause set
   off a two-bug chain.** `shouldDeliverTaskViaFile` gained `platform === "darwin"` (#1793), so what
@@ -622,12 +639,26 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   Residual, not fixed: a refused child does not always retry, so a delegation can still end with no
   file — loud now instead of silent. Product question, not a pin one.
 
-- **A pin bump can now fail TYPECHECK, with errors pointing under `node_modules` — never patch
-  vendored source.** `tsconfig.extensions.json` typechecks a slice of pi-subagents' raw `.ts`
-  source under our flags, and its `paths` encode the nested `pi-ai`/`pi-agent-core` layout. If a
-  bump breaks it, adjust OUR config (a hoisted/renamed nested dep shows as `TS2307` naming the
-  exact specifier), or use the `.mjs`+`.d.ts` shim escape hatch recorded in the Notion "Deferred
-  housekeeping" doc (item 1) — tsc trusts declarations and never opens the implementation.
+- **A pin bump can fail TYPECHECK with errors pointing under `node_modules`, and since 2026-09-21
+  those do NOT fail the gate — `npm run typecheck:ext` is `node scripts/typecheck-ext.mjs`, not
+  raw tsc.** `tsconfig.extensions.json` necessarily pulls pi-subagents' raw `.ts` into the program
+  (the bridge imports three of its modules by relative path), so tsc reports diagnostics from code
+  we have a standing rule never to patch. The wrapper PRINTS every vendored diagnostic with a
+  count and exits non-zero only for `pi-runtime/extensions/` — the directory the check exists for.
+  A suppression nobody can see is the bug this repo keeps paying for, which is why it prints.
+  Pi 0.86.1 + pi-subagents 0.64.0 is the live case: 0.86 made `ToolResultMessage` a conditional
+  type, collapsing a narrowing in upstream's `setupAbortResumeParams` to `never` — six errors,
+  defensive at runtime, in a scripted-workflow path a single-child delegation never takes.
+  **Two traps already paid for.** The `paths` shim escape hatch (Notion "Deferred housekeeping"
+  item 1 — tsc trusts declarations and never opens the implementation) **cannot reach this**:
+  `paths` only rewrites BARE specifiers, and the failing file arrives through
+  `../node_modules/pi-subagents/src/...`, which is itself load-bearing (the exports map lists
+  neither file). And the wrapper's first version read a prefix-less `error TS5058:` from a broken
+  config as vendored and passed SILENTLY — a compiler-level error names no path, so it can never
+  be vendored. Both directions plus that crash case are driven through the real script against
+  fixture projects in `tests/extensions-typecheck.test.ts`. If a bump breaks the check for a
+  different reason, still adjust OUR config first: a hoisted or renamed nested dep shows as
+  `TS2307` naming the exact specifier.
 
 ## Architecture (keep layer)
 - src/main/pi/{spawn,codec,PiClient}.ts — spawns the pinned Pi CLI per session, `--mode rpc`,
@@ -667,6 +698,16 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   DERIVED (no `auth.apiKey`, zero models, >1 env var, no usable base URL), so the PRD-deferred
   multi-field cloud providers fall out on their own; the only hand-listed id is `github-copilot`
   (OAuth-only here) and the only pinned env var is `anthropic`'s, which declares three.
+  **A derived exclusion can EXPIRE, and `radius` did.** It sat in the catalog test's multi-field
+  stay-out list as a double-check on a derived refusal; Pi 0.86.1's offline Radius catalog gave it
+  one `RADIUS_API_KEY` and a base URL, the refusal evaporated, and the test failed as designed —
+  offering it was then a product decision (taken 2026-09-21), not a pin side effect. `meta` (Muse)
+  arrived the same way. **`OAUTH_NOT_ENABLED` is empty by design**: adding an id there is how a
+  flow gets withheld WITH its reason, and the test fails on any flow that is neither offered nor
+  listed. A new provider that is BOTH `isSubscription` and `auth.apiKey` must also join
+  `KEY_RESOLVED_PLAN_PROVIDERS` (calls.ts) or §19 reports a covered subscription's tokens as
+  dollars owed — that set is DERIVED from upstream's own flags by the same test, which caught
+  `meta`.
 - **`npm test` stays key-free only if `sk-REPLACE` neutralisation covers EVERY catalog env var**,
   not the original five — `tests/providers.test.ts` asserts it per row. A provider where the
   placeholder leaked through would silently turn the 50 s non-live suite into a paid ~7-8 min one.
@@ -719,7 +760,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   forever, while a real edit inside the 1 ms tolerance read as unedited and got clobbered. Legacy
   `{version, installedMtime}` stamps can't prove authorship, so they are repaired towards the
   bundle leaving a one-time `<agent>.md.bak`. Pinned by `tests/builtin-agents-uninstall.test.ts`.
-- **`yaml` is a ROOT dep pinned to what Pi depends on (2.9.0 at Pi 0.85.0; verify, do not trust
+- **`yaml` is a ROOT dep pinned to what Pi depends on (2.9.0, unchanged at Pi 0.86.1; verify, do not trust
   this number — it read 2.8.3 here for two pins after Pi had moved on) — move it with the Pi pin.** Same
   relationship as pi-runtime's typebox, for a sharper reason: Pi decides what loads, and Pi's
   frontmatter reader IS `yaml.parse` (`dist/utils/frontmatter.js`). Both `parseSkillFrontmatter`
