@@ -1334,11 +1334,26 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   upstream) and it finds main through `globalThis.inletCrash.send`, which is why the preload's
   `exposeInMainWorld("inletCrash", …)` is a contract rather than a convention. Same
   works-in-dev-broken-in-release shape as §27's worklet.
-- **`clean-exit` and `killed` still arrive, and dropping them is load-bearing.** The SDK's
-  `render-process-gone` hook fires on **every normal window close** and `child-process-gone` on
-  the voice host's own `kill()`. `scrubEnvelope` (crash/policy.ts) nulls both. Forget it and
-  every user files a crash report every time they close a window. Note the narrowness: a
-  `clean-exit` reason on a kind that is NOT an exit kind must still report.
+- **`killed` is deliberate for a CHILD and a real crash for a RENDERER — one set for both is
+  wrong, and it was silent.** `scrubEnvelope` (crash/policy.ts) drops `clean-exit` for either
+  kind, but drops `killed` only for `child-exit`, where it is the voice host's own `kill()`. A
+  renderer is never killed on purpose by this app, so `killed` there is the OS — an OOM kill is
+  the textbook case. Measured on macOS/Electron 44.2.0: a forcefully crashed renderer reports
+  **`killed`, exitCode 2**, so the broad rule swallowed every renderer death and the server got
+  zero `renderer-gone` reports. Narrowness matters the other way too: a `clean-exit` on a kind
+  that is NOT an exit kind must still report. **And do not repeat the claim that a normal window
+  close emits `clean-exit` here** — measured, `window.close()` emits NO `render-process-gone` at
+  all (listeners on both `app` and the `webContents`, neither fired). The close files no report,
+  but not for the reason the design assumed; the `clean-exit` arm is unobserved defence.
+- **`BrowserWindow.getFocusedWindow()` is null whenever the app is not frontmost**, which is
+  always when a GUI pass drives it over CDP. `hv:crash-test` used it with `?.` and so did
+  nothing while still answering `true` — a test control that reports success having tested
+  nothing. It takes `event.sender` now. The same trap is live in `index.ts`'s New Window menu
+  item, which tolerates it; anything that must ACT on a window should not.
+- **A deduped crash report raises no banner, and that is correct.** The SDK dedupes 24 h per
+  fingerprint, persisted in `dedupe.json`, so firing the same `hv:crash-test` twice shows a
+  banner once — the banner tracks SENDS, not captures. Test it with a unique message (an
+  uncaught renderer `throw` carrying a timestamp) or you will chase a bug that is not there.
 - **A Pi child exit is reported only when `piFrames` finds a frame inside our own bundle**, and
   that condition is the difference between a signal and a stream. Pi dies for user reasons
   constantly — a bad provider key, `402 Insufficient Balance`, the `EPERM: uv_cwd` path, a

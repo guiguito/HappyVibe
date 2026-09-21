@@ -290,3 +290,54 @@ that never appears again. Perform: (1) `crashTest('message')` → banner appears
 (5) open a **second** window → that window shows it once too, independently. If step 3 raises a
 banner the dismissal is not held; if step 4 raises none the mount read is dead and a user who
 crashes while the window is closed is never told.
+
+---
+
+# GUI pass — RUN 2026-09-21, and what it changed
+
+Driven over CDP against `HV_DEBUG_PORT=9223 HV_CRASH_DEV=1 npm run dev`. Every assertion above
+was executed. Results, including the two that were wrong as written.
+
+**Held as specified.** The App-features group reads Terminal · Voice · AI autofill · Keyboard
+shortcuts · **Privacy**, in that order. The toggle reads **On** on the page, with no "next
+launch" caveat anywhere. "Show the last report" is disabled before any crash ("Nothing has been
+sent from this computer yet.") and afterwards renders the whole 683-character envelope: `tags`
+exactly `{runtime, channel}` with the real pin string, **no `context` key**, `message:
+"<redacted>"`, and no `/Users/` anywhere. The Audit log shows one row under the **Crash reports**
+filter reading `Sent a crash report · message · new` with `crp_… · 1 KB` beneath it — ids and a
+size, no message and no frames. `throw` left the app **alive with all 66 sessions intact**
+(`{ exitCode: false }` proven, not assumed); `reject` filed `unhandled-rejection`. An uncaught
+**renderer** error reached main over `inlet:crash` and sent as `exception`, which exercises the
+whole `crash/electron-renderer` → preload → `sanitizeRendererReport` path. With the toggle
+**OFF**, a fatal main exception sent nothing **and left `queue.json` as `[]`** — the 0.1.0 hole,
+verified closed on the fatal path. Turning it back ON reported immediately, no relaunch.
+
+**Two bugs found, both invisible to every test.**
+
+1. **`BrowserWindow.getFocusedWindow()` is null when the app is not frontmost**, which is always
+   under CDP. The `crash` branch of `hv:crash-test` used it with `?.`, so it did nothing and
+   still returned `true`. The tell was two registered `render-process-gone` listeners and zero
+   events. Now takes `event.sender`.
+2. **The `killed` filter was too broad and silently dropped every renderer death.** Measured: a
+   forcefully crashed renderer reports `reason: "killed"`, not `"crashed"`. The first version
+   dropped `killed` for `renderer-gone` as well as `child-exit`, so the server received **zero**
+   `renderer-gone` reports. `killed` is now dropped only for `child-exit` (the voice host's own
+   `kill()`); for a renderer it is the OS, and an OOM kill is exactly what we want to hear about.
+
+**Two expectations in this plan were wrong, and are corrected here rather than quietly dropped.**
+
+- *"Closing a second window produces NO audit row … if a row appears the filter is dead."* The
+  outcome holds — a normal `window.close()` files nothing, and the server's `reportCount` was
+  identical before and after — but **not for the stated reason**: no `render-process-gone` is
+  emitted for that path at all, on either `app` or the `webContents`. The `clean-exit` arm of the
+  filter is therefore unobserved defence, covered by `crash-policy.test.ts` and **not** something
+  to cite as measured.
+- *"Send a `message`, dismiss, send another and confirm no second banner this window."* The
+  implementation re-raises the banner on every SEND, and that is the better behaviour: a second
+  crash ten minutes later is a new fact the user should be told. The observed "no banner" was the
+  SDK's 24-hour per-fingerprint dedupe — the second capture never became a send. Re-tested with a
+  unique fingerprint: dismissed, then a fresh renderer throw, and the banner **came back**, as it
+  should. Test the banner with a unique message or you will chase a bug that is not there.
+
+**Not exercised:** `unclean-exit` (the sentinel is `app.isPackaged`-only by design, so it needs a
+packaged build, not a dev run) and the minidump reveal path beyond the button existing.

@@ -28,18 +28,27 @@ import type { CrashEnvelope } from "inlet-sdk/crash";
 export const TAG_ALLOW = ["runtime", "channel"] as const;
 
 /**
- * An exit the app ASKED for. The SDK reports `renderer-gone` for a normal
- * window close and `child-process-gone` for the voice host's own `kill()` —
- * both are correct at its level and neither is a crash at ours. Dropping them
- * here rather than not installing the handler keeps the real crashes.
+ * An exit the app ASKED for, and the two rules are NOT the same — which the GUI
+ * pass caught after a first version used one set for both kinds.
+ *
+ * `clean-exit` is deliberate for either: the SDK reports `renderer-gone` on
+ * every normal window close, and without dropping it each user files a crash
+ * report every time they close a window.
+ *
+ * **`killed` is deliberate only for a CHILD.** That one is the voice host's own
+ * `kill()`, which we asked for. A RENDERER is never killed on purpose by this
+ * app, so `killed` there is the OS killing it — an OOM kill is the textbook
+ * case — which is exactly the crash worth hearing about. Measured: a forcefully
+ * crashed renderer reports `killed`, so the broader rule silently swallowed
+ * every renderer death and the server received nothing at all.
  */
-const DELIBERATE_EXITS = new Set(["clean-exit", "killed"]);
-
-/** Kinds whose `exit.reason` can name a deliberate shutdown. */
-const EXIT_KINDS = new Set(["child-exit", "renderer-gone"]);
+const DELIBERATE: Record<string, ReadonlySet<string>> = {
+  "child-exit": new Set(["clean-exit", "killed"]),
+  "renderer-gone": new Set(["clean-exit"]),
+};
 
 export function scrubEnvelope(e: CrashEnvelope): CrashEnvelope | null {
-  if (EXIT_KINDS.has(e.kind) && DELIBERATE_EXITS.has(String(e.exit?.reason ?? ""))) return null;
+  if (DELIBERATE[e.kind]?.has(String(e.exit?.reason ?? ""))) return null;
 
   // `context` is free-form by type and therefore unbounded by construction:
   // anything a future call site puts in it would travel. Dropped always, and a

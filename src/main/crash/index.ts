@@ -6,7 +6,7 @@
  * because the handlers cover only what happens AFTER they exist and the most
  * interesting failures are boot failures.
  */
-import { app, BrowserWindow, crashReporter, ipcMain, shell } from "electron";
+import { app, crashReporter, ipcMain, shell } from "electron";
 import { is } from "@electron-toolkit/utils";
 import { join } from "node:path";
 import { installElectronMain } from "inlet-sdk/crash/electron";
@@ -75,11 +75,16 @@ function registerCrashIpc(): void {
   // Dev-only, and deliberately without a button anywhere: the GUI pass drives
   // it from electron-debug. Four controls that render only in development are
   // UI built for a test, on a page whose whole job is to be believable.
-  ipcMain.handle("hv:crash-test", (_e, kind: string) => {
+  ipcMain.handle("hv:crash-test", (e, kind: string) => {
     if (app.isPackaged) return false;
     if (kind === "throw") setTimeout(() => { throw new Error("hv:crash-test throw"); }, 0);
     else if (kind === "reject") void Promise.reject(new Error("hv:crash-test reject"));
-    else if (kind === "crash") BrowserWindow.getFocusedWindow()?.webContents.forcefullyCrashRenderer();
+    // The SENDER's webContents, never `getFocusedWindow()`. That returns null
+    // whenever the app is not frontmost — which is always, when the GUI pass
+    // drives it over CDP — so the optional call silently did nothing while this
+    // handler still answered `true`. Measured: zero `render-process-gone`
+    // events with two listeners registered, i.e. nothing crashed at all.
+    else if (kind === "crash") (e.sender as Electron.WebContents).forcefullyCrashRenderer();
     else if (kind === "message") captureCrash({ kind: "message", exception: { type: "Probe", message: "hv:crash-test", handled: true, frames: [] } });
     else return false;
     return true;
