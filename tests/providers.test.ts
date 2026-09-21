@@ -119,9 +119,11 @@ describe("mergeOllamaModelsJson", () => {
 });
 
 describe("OAuth sign-in list (2026-08-29 round)", () => {
-  test("one source of truth, five providers, our labels", () => {
+  test("one source of truth, eight providers, our labels", () => {
+    // `meta` and `radius` arrived with Pi 0.86.1 and are offered (decided 2026-09-21);
+    // tests/provider-catalog.test.ts is what derives this list from upstream.
     expect(OAUTH_PROVIDERS.map((p) => p.id)).toEqual(
-      ["anthropic", "github-copilot", "kimi-coding", "openai-codex", "openrouter", "xai"],
+      ["anthropic", "github-copilot", "kimi-coding", "meta", "openai-codex", "openrouter", "radius", "xai"],
     );
     const by = new Map(OAUTH_PROVIDERS.map((p) => [p.id, p]));
     // The app names the SUBSCRIPTION, not the vendor — upstream says
