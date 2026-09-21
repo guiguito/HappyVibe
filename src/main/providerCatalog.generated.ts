@@ -58,7 +58,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Baseten",
     "envVar": "BASETEN_API_KEY",
     "baseUrl": "https://inference.baseten.co/v1",
-    "modelCount": 20,
+    "modelCount": 21,
     "providerIds": [
       "baseten"
     ]
@@ -78,7 +78,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "DeepSeek",
     "envVar": "DEEPSEEK_API_KEY",
     "baseUrl": "https://api.deepseek.com",
-    "modelCount": 3,
+    "modelCount": 2,
     "providerIds": [
       "deepseek"
     ]
@@ -88,7 +88,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Fireworks",
     "envVar": "FIREWORKS_API_KEY",
     "baseUrl": "https://api.fireworks.ai/inference",
-    "modelCount": 19,
+    "modelCount": 33,
     "providerIds": [
       "fireworks"
     ]
@@ -118,7 +118,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Hugging Face",
     "envVar": "HF_TOKEN",
     "baseUrl": "https://router.huggingface.co/v1",
-    "modelCount": 71,
+    "modelCount": 75,
     "providerIds": [
       "huggingface"
     ]
@@ -131,6 +131,16 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "modelCount": 4,
     "providerIds": [
       "kimi-coding"
+    ]
+  },
+  {
+    "id": "meta",
+    "label": "Meta",
+    "envVar": "META_API_KEY",
+    "baseUrl": "https://api.meta.ai/v1",
+    "modelCount": 5,
+    "providerIds": [
+      "meta"
     ]
   },
   {
@@ -158,7 +168,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Mistral",
     "envVar": "MISTRAL_API_KEY",
     "baseUrl": "https://api.mistral.ai",
-    "modelCount": 32,
+    "modelCount": 33,
     "providerIds": [
       "mistral"
     ]
@@ -168,7 +178,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Moonshot AI",
     "envVar": "MOONSHOT_API_KEY",
     "baseUrl": "https://api.moonshot.ai/v1",
-    "modelCount": 20,
+    "modelCount": 8,
     "providerIds": [
       "moonshotai",
       "moonshotai-cn"
@@ -189,7 +199,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "OpenAI",
     "envVar": "OPENAI_API_KEY",
     "baseUrl": "https://api.openai.com/v1",
-    "modelCount": 38,
+    "modelCount": 39,
     "providerIds": [
       "openai"
     ]
@@ -199,7 +209,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "OpenCode Zen",
     "envVar": "OPENCODE_API_KEY",
     "baseUrl": "https://opencode.ai/zen",
-    "modelCount": 90,
+    "modelCount": 97,
     "providerIds": [
       "opencode",
       "opencode-go"
@@ -210,7 +220,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "OpenRouter",
     "envVar": "OPENROUTER_API_KEY",
     "baseUrl": "https://openrouter.ai/api/v1",
-    "modelCount": 362,
+    "modelCount": 380,
     "providerIds": [
       "openrouter"
     ]
@@ -220,7 +230,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Qwen Token Plan",
     "envVar": "QWEN_TOKEN_PLAN_API_KEY",
     "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
-    "modelCount": 27,
+    "modelCount": 29,
     "providerIds": [
       "qwen-token-plan",
       "qwen-token-plan-individual"
@@ -231,9 +241,19 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Qwen Token Plan CN",
     "envVar": "QWEN_TOKEN_PLAN_CN_API_KEY",
     "baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-    "modelCount": 18,
+    "modelCount": 20,
     "providerIds": [
       "qwen-token-plan-cn"
+    ]
+  },
+  {
+    "id": "radius",
+    "label": "Radius",
+    "envVar": "RADIUS_API_KEY",
+    "baseUrl": "https://radius.pi.dev/v1",
+    "modelCount": 27,
+    "providerIds": [
+      "radius"
     ]
   },
   {
@@ -241,7 +261,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Together",
     "envVar": "TOGETHER_API_KEY",
     "baseUrl": "https://api.together.ai/v1",
-    "modelCount": 21,
+    "modelCount": 22,
     "providerIds": [
       "together"
     ]
@@ -251,7 +271,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Vercel AI Gateway",
     "envVar": "AI_GATEWAY_API_KEY",
     "baseUrl": "https://ai-gateway.vercel.sh",
-    "modelCount": 233,
+    "modelCount": 236,
     "providerIds": [
       "vercel-ai-gateway"
     ]
@@ -321,7 +341,7 @@ export const PROVIDER_CATALOG: readonly CatalogProvider[] = [
     "label": "Z.AI Coding CN",
     "envVar": "ZAI_CODING_CN_API_KEY",
     "baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
-    "modelCount": 10,
+    "modelCount": 4,
     "providerIds": [
       "zai-coding-cn"
     ]
@@ -350,6 +370,12 @@ export const OAUTH_CATALOG: readonly CatalogOAuthProvider[] = [
     "isSubscription": true
   },
   {
+    "id": "meta",
+    "label": "Meta",
+    "loginLabel": "Sign in with Meta",
+    "isSubscription": true
+  },
+  {
     "id": "openai-codex",
     "label": "OpenAI Codex",
     "isSubscription": true
@@ -358,6 +384,10 @@ export const OAUTH_CATALOG: readonly CatalogOAuthProvider[] = [
     "id": "openrouter",
     "label": "OpenRouter",
     "loginLabel": "Sign in with OpenRouter"
+  },
+  {
+    "id": "radius",
+    "label": "Radius"
   },
   {
     "id": "xai",

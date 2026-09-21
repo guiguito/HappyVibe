@@ -64,8 +64,16 @@ describe("pi-mcp-adapter interpolation contract", () => {
       new URL("../pi-runtime/node_modules/pi-mcp-adapter/server-manager.ts", import.meta.url),
       "utf8",
     );
-    expect(src).toMatch(/function resolveEnv[\s\S]{0,400}resolveCommandSecretsRecord\(\s*env/);
+    //
+    // 2.32.1 -> 2.35.0 grew resolveEnv two more parameters and an inheritEnv block
+    // (2.33's `inheritEnv: false`), pushing the call past the old 400-char window.
+    // The invariant is unchanged; only the distance moved.
+    expect(src).toMatch(/function resolveEnv[\s\S]{0,900}resolveCommandSecretsRecord\(\s*env/);
     expect(src).toMatch(/resolveCommandSecretsRecord\(\s*definition\.headers/);
+    // 2.34 added a `literalEnv` early return that skips command resolution for
+    // built-in Agent Plugin definitions. That NARROWS the execution surface, so it
+    // is pinned: losing it would silently re-arm `!`-commands on that path.
+    expect(src).toMatch(/if \(literalEnv\) return/);
     // If a pin bump adds URL interpolation this assertion fails and we may
     // relax the "no secret in a URL path" catalog rule.
     expect(src).not.toMatch(/interpolate\w*\(\s*definition\.url/);

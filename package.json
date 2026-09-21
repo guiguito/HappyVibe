@@ -13,7 +13,7 @@
     "lint": "eslint --cache .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
-    "typecheck:ext": "tsc --noEmit -p tsconfig.extensions.json",
+    "typecheck:ext": "node scripts/typecheck-ext.mjs",
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:ext",
     "start": "electron-vite preview",
     "predev": "node scripts/dev-brand-macos.mjs",

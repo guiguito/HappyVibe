@@ -102,36 +102,46 @@ describe("the embedded Pi CLI entry tracks upstream's own bin", () => {
   });
 });
 
-describe("Pi's undeclared @earendil-works/pi-server", () => {
-  it("is still undeclared upstream — drop our copy when this fails", () => {
-    const pi = json(PI_PKG);
-    const declared =
-      pi.dependencies?.[SERVER] ?? pi.peerDependencies?.[SERVER] ?? pi.optionalDependencies?.[SERVER];
+// RESOLVED UPSTREAM at Pi 0.85.1 ("Fixed SDK import failures caused by unintentionally
+// publishing internal experimental code and dependencies in 0.85.0"). Measured at
+// 0.86.1: nothing under dist/ imports experimental/server.js any more, both CLI entries
+// boot and dist/index.js imports clean — so pi-runtime no longer declares pi-server.
+// The block below is the INVERSE of the workaround it replaces: it fails if Pi ever
+// re-acquires an import of a package it does not declare, which is what made ~18 test
+// files go red at once with the real cause buried one level down in [pi:stderr].
+describe("Pi's entrypoints import only packages Pi declares", () => {
+  it("nothing under dist/ reaches @earendil-works/pi-server", () => {
+    const dist = path.join(path.dirname(PI_PKG), "dist");
+    const offenders: string[] = [];
+    const walk = (p: string) => {
+      for (const e of fs.readdirSync(p, { withFileTypes: true })) {
+        const full = path.join(p, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (e.name.endsWith(".js") && read(full).includes(SERVER)) offenders.push(full);
+      }
+    };
+    walk(dist);
     expect(
-      declared,
-      `Pi now declares ${SERVER} (${declared}) — remove it from pi-runtime/package.json`,
-    ).toBeUndefined();
+      offenders.map((f) => path.relative(dist, f)),
+      `Pi imports ${SERVER} again — it declares it in no dependency field, so declare it ` +
+        "in pi-runtime/package.json at Pi's own version (see git history for the fix)",
+    ).toEqual([]);
   });
 
-  it("is reachable, because Pi's own entrypoints import it", () => {
-    // Proof the dependency is real rather than defensive: the library `.` export
-    // reaches it, which is the path every vendored extension takes.
-    const dist = path.dirname(PI_PKG) + "/dist";
-    expect(read(`${dist}/index.js`)).toContain('from "./main.js"');
-    expect(read(`${dist}/main.js`)).toContain('from "./experimental/server.js"');
-    expect(read(`${dist}/experimental/server.js`)).toContain(SERVER);
+  it("the library `.` export imports clean, which is the path every extension takes", () => {
+    const dist = path.join(path.dirname(PI_PKG), "dist");
+    // Importing it is the test: the original failure was a file that resolves on
+    // disk and dies on import, so a source scan alone would have passed through it.
+    const out = execFileSync(
+      process.execPath,
+      ["-e", `import(${JSON.stringify(path.join(dist, "index.js"))}).then(()=>console.log("ok"))`],
+      { encoding: "utf8", timeout: 60_000 },
+    );
+    expect(out.trim()).toBe("ok");
   });
 
-  it("we declare it, pinned exact to Pi's own version", () => {
+  it("we no longer carry the workaround copy", () => {
     const deps = json(path.join(RUNTIME, "package.json")).dependencies as Record<string, string>;
-    expect(deps[SERVER], `pi-runtime must declare ${SERVER}`).toBeTruthy();
-    // Lockstep, like pi-tui: pi-server ships only alongside a matching Pi.
-    expect(deps[SERVER]).toBe(deps["@earendil-works/pi-coding-agent"]);
-  });
-
-  it("resolves from pi-runtime, so the library import works", () => {
-    const p = path.join(RUNTIME, "node_modules", SERVER, "package.json");
-    expect(fs.existsSync(p), `${SERVER} is not installed`).toBe(true);
-    expect(json(p).version).toBe(json(PI_PKG).version);
+    expect(deps[SERVER], `${SERVER} is declared again — is the import back?`).toBeUndefined();
   });
 });

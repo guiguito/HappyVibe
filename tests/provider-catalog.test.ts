@@ -150,7 +150,11 @@ describe.skipIf(!HAVE_RUNTIME)("generated provider catalog (Pi pin-bump gate)", 
       "pi-ai ships an OAuth flow HappyVibe neither offers nor names as refused — " +
         "enabling one is a product decision, not a pin side effect",
     ).toEqual(shipped);
-    expect(offered).toEqual(["anthropic", "github-copilot", "kimi-coding", "openai-codex", "openrouter", "xai"]);
+    // Pi 0.86.1 added `meta` (Muse) and `radius`; both offered — decided 2026-09-21,
+    // consistent with OAUTH_NOT_ENABLED being empty by design.
+    expect(offered).toEqual([
+      "anthropic", "github-copilot", "kimi-coding", "meta", "openai-codex", "openrouter", "radius", "xai",
+    ]);
   });
 
   test("every subscription provider that also takes a key is key-resolved for billing", async () => {
@@ -178,7 +182,11 @@ describe.skipIf(!HAVE_RUNTIME)("generated provider catalog (Pi pin-bump gate)", 
 
   test("the multi-field cloud providers stay out (PRD-deferred)", () => {
     const ids = PROVIDER_CATALOG.flatMap((r) => r.providerIds);
-    for (const id of ["amazon-bedrock", "google-vertex", "azure-openai-responses", "cloudflare-ai-gateway", "cloudflare-workers-ai", "radius"]) {
+    // `radius` GRADUATED off this list at Pi 0.86.1: the offline Radius catalog gave
+    // it a single RADIUS_API_KEY and a base URL, so the derived exclusion that kept
+    // it out stopped applying. It is now offered (decided 2026-09-21). The rest
+    // still need more than one field, which is what this pins.
+    for (const id of ["amazon-bedrock", "google-vertex", "azure-openai-responses", "cloudflare-ai-gateway", "cloudflare-workers-ai"]) {
       expect(ids, `${id} must not be offered as a one-key provider`).not.toContain(id);
     }
   });

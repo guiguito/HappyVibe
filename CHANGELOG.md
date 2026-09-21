@@ -7,8 +7,12 @@
 - **The bundled coding agent moved up a version**, and with it more models to choose from on
   most providers. Sub-agents pick up watchdog reviews, per-agent tool deny-lists and quieter
   progress reporting.
+- **Two more providers to connect: Meta and Radius.** Meta works with a Muse subscription or a
+  key; Radius adds 27 models on a key or a sign-in. Both sit with the rest under Providers.
+- **MCP servers reconnect more reliably after a sign-in expires**, and a server that asks a long
+  question can now finish the work instead of timing out.
 
-Runtime: Pi 0.85.0 · sub-agents 0.64.0 · MCP adapter 2.32.1
+Runtime: Pi 0.86.1 · sub-agents 0.64.0 · MCP adapter 2.35.0
 
 ## [0.1.0] — 2026-08-30
 
