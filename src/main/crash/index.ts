@@ -87,13 +87,17 @@ function registerCrashIpc(): void {
 }
 
 export async function installCrash(broadcast: (channel: string, payload?: unknown) => void): Promise<void> {
+  // Synchronous, and BEFORE every gate: with reporting off or dev-gated the
+  // Privacy page must still open, still read as Off, and still be able to turn
+  // it back on. (Nothing is awaited above this line, so the handlers exist by
+  // the time the first window can ask.)
+  registerCrashIpc();
+
   // FIRST gate, ahead of the user's setting: development does not report unless
   // asked. Your own half-written code is the loudest crasher on this machine,
   // and it would bury the one report that came from a real dev-channel user.
   // `HV_FEEDBACK_FAST_PULSE`'s rule, one feature over — and an env flag rather
   // than `is.dev` alone so the GUI pass can turn the whole thing on.
-  registerCrashIpc();
-
   if (is.dev && process.env.HV_CRASH_DEV !== "1") return;
 
   const cfg = resolveFeedbackConfig(process.env, is.dev);
