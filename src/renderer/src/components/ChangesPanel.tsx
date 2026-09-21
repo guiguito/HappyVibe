@@ -1495,6 +1495,31 @@ function SaveMenu({
 }
 
 function ConfirmDialog({ c, onCancel }: { c: Confirm; onCancel: () => void }): React.JSX.Element {
+  /**
+   * Esc closes it. `FIXED_SHORTCUTS` has promised "Esc — close a dialog or
+   * search" since round 8 and this dialog never honoured it: the scrim and the
+   * Cancel button were the only two ways out, so a dialog whose Cancel does not
+   * respond — however that happens — has no keyboard escape at all. Found while
+   * investigating exactly that report.
+   *
+   * On `window`, not the dialog, because the focus may be inside the body: the
+   * New worktree dialog autofocuses its input, and a handler on the container
+   * would never see the key.
+   *
+   * Capture phase and stopPropagation, so Esc reaches the dialog on top rather
+   * than also closing whatever is behind it.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onCancel]);
+
   return (
     <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={onCancel}>
       <div

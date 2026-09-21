@@ -200,6 +200,28 @@ describe("the worktree cluster — finishing one", () => {
   });
 });
 
+describe("a confirm dialog always has a way out", () => {
+  const c = code(panel);
+
+  it("Esc closes it — the promise FIXED_SHORTCUTS has been making since round 8", () => {
+    // The scrim and the Cancel button were the only two ways out, so a dialog
+    // whose Cancel does not respond had no keyboard escape at all. Found while
+    // investigating exactly that report.
+    expect(c).toMatch(/function ConfirmDialog[\s\S]{0,900}?e\.key !== "Escape"/);
+    expect(c).toMatch(/function ConfirmDialog[\s\S]{0,1100}?window\.addEventListener\("keydown", onKey, true\)/);
+  });
+
+  it("listens on WINDOW, because the focus may be inside the dialog body", () => {
+    // The New worktree dialog autofocuses its input; a handler on the container
+    // would never see the key.
+    expect(c).not.toMatch(/function ConfirmDialog[\s\S]{0,900}?onKeyDown=/);
+  });
+
+  it("and removes the listener, so a closed dialog cannot still eat Esc", () => {
+    expect(c).toMatch(/removeEventListener\("keydown", onKey, true\)/);
+  });
+});
+
 describe("the Changes panel names the project a worktree belongs to", () => {
   it("renders the parent's name from main's own answer", () => {
     expect(code(panel)).toMatch(/worktreeOf/);

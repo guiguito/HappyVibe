@@ -215,6 +215,27 @@ Two things measured in the app that a source scan could not settle:
 - **The conflict refusal names the holder.** Rebinding it to ⌘T on the Shortcuts page answers
   *"⌘T is already used by \"New terminal in the current workspace\"."* and keeps ⌘⇧T.
 
+### A dialog with no keyboard way out
+
+Reported as *"Cancel button not responding"* on the New worktree dialog. **Not reproduced**, on
+either route into it (the sidebar `+` menu and the branch menu), across a clean reload: all three
+mouse events reach the button, nothing overlaps it (`elementFromPoint` at its centre returns the
+button itself), there is exactly one scrim, and the dialog closes and stays closed. Cancel is a
+plain `onClick={onCancel}` calling `setConfirm(null)`, with no async step to lose.
+
+What the investigation DID find is real and was fixed: **Esc did not close it**, and never had —
+`ConfirmDialog` had no key handling at all, so every confirm in the Changes panel offered exactly
+two ways out, the scrim and the button. `FIXED_SHORTCUTS` has promised *"Esc — close a dialog or
+search"* since round 8. A dialog whose Cancel does not respond, for whatever reason, therefore had
+no escape at all. The listener goes on `window` rather than the dialog because the focus may be
+inside the body — the New worktree dialog autofocuses its input — and it is capture-phase with
+`stopPropagation` so Esc reaches the top dialog only.
+
+Left open, honestly: the original report has no confirmed cause. If it recurs, the things to
+capture are whether the REST of the app still responds (a wedged main behind a native modal looks
+exactly like one dead button, and happened twice during this round) and whether the dialog
+re-appears rather than never closing.
+
 Also worth knowing for anyone driving this app over CDP: opening a browser pane adds a SECOND page
 target, and the debug tools default to the first one — two `evaluate` calls hung against the blank
 guest before the app target was named explicitly. Nothing was wrong with the app.
