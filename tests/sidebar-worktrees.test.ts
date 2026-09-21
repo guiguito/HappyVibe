@@ -3,12 +3,15 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * §29 worktrees — the sidebar NAVIGATES, the Changes panel ACTS.
+ * §29 worktrees — the sidebar navigates and STARTS; the Changes panel acts.
  *
- * The sidebar has had no hover control that *acts* since round 11 took the `×`
- * out, and §29's altitude rule keeps git words below the human verbs. So the
- * absence asserted here is the design: a worktree row offers a chevron, a click
- * and a `+`, and every git verb lives one surface over.
+ * Amended 2026-09-21 by the first real use: with no worktree yet the sidebar
+ * said nothing about them at all, so the only route in was two clicks deep in a
+ * menu labelled with a branch name. People look under `+`. The project row's
+ * `+` is therefore a split control — click still makes a session, the caret
+ * offers New worktree… — and that is the ONE git word the sidebar carries.
+ * Everything that changes a tree (merge, remove, clean up) still lives in the
+ * panel, and the assertions below pin that line where it now is.
  *
  * Source scans because the renderer suite has no DOM (vitest.config includes
  * `tests/**\/*.test.ts` only) — and because an ABSENCE is exactly what a render
@@ -30,10 +33,32 @@ describe("the sidebar shows worktrees and never acts on them", () => {
     expect(sidebar).toContain('copy="worktrees"');
   });
 
-  it("has no git verb anywhere in it", () => {
+  it("carries no verb that CHANGES a tree — those stay in the panel", () => {
     expect(code(sidebar)).not.toMatch(/Merge into/);
     expect(code(sidebar)).not.toMatch(/Remove worktree/);
-    expect(code(sidebar)).not.toMatch(/New worktree/);
+    expect(code(sidebar)).not.toMatch(/Clean up/);
+  });
+
+  it("offers New worktree… under the project's split `+`, and only on a repo", () => {
+    const c = code(sidebar);
+    // The caret is inside the same `gitInfo…branch` guard as the branch line:
+    // a folder that is not a repository has nothing to branch from.
+    expect(c).toMatch(/gitInfo\?\.\[ws\]\?\.branch && \([\s\S]{0,2400}?New worktree…/);
+    // It ASKS; the panel still owns the dialog.
+    expect(c).toMatch(/onNewWorktree\?\.\(ws\)/);
+  });
+
+  it("the menu acts on mousedown and dismisses with a click-catcher, never onBlur", () => {
+    // Twice-reported trap: a blur-dismissed menu unmounts between mousedown and
+    // mouseup, so the click lands on nothing.
+    const c = code(sidebar);
+    expect(c).toMatch(/onMouseDown=\{\(e\) => \{ e\.preventDefault\(\); setStartMenu\(null\); onNewWorktree/);
+    expect(c).toMatch(/fixed inset-0 z-40" onClick=\{\(\) => setStartMenu\(null\)\}/);
+    expect(c).not.toMatch(/onBlur[\s\S]{0,80}setStartMenu/);
+  });
+
+  it("clicking `+` itself still makes a session — the split costs the common action nothing", () => {
+    expect(code(sidebar)).toMatch(/title="New session"\s*\n\s*onClick=\{\(\) => onNewSession\(ws\)\}/);
   });
 
   it("a prunable row offers Clean up instead of becoming the active root", () => {
@@ -49,7 +74,21 @@ describe("the sidebar shows worktrees and never acts on them", () => {
   });
 });
 
-describe("New worktree… lives in the branch menu", () => {
+describe("the panel serves the sidebar's request, and still owns the dialog", () => {
+  const c = code(panel);
+  it("opens on request for THIS workspace, once, and waits for the payload", () => {
+    expect(c).toMatch(/pendingNewWorktree !== workspace \|\| !payload/);
+    // Consumed, because the panel remounts on every return to it — a nonce
+    // would re-raise the dialog each time you came back.
+    expect(c).toMatch(/onNewWorktreeConsumed\?\.\(\)/);
+  });
+
+  it("says why when the verb is unavailable, so the menu item is never a dead end", () => {
+    expect(c).toMatch(/flashRef\.current\?\.\(payload\.worktreeAdd\.reason\)/);
+  });
+});
+
+describe("New worktree… lives in the branch menu too", () => {
   const c = code(panel);
   it("is offered on a project and absent inside a worktree", () => {
     expect(c).toMatch(/payload\?\.worktreeOf === null &&/);

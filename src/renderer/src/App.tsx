@@ -2401,6 +2401,21 @@ export default function App(): React.JSX.Element {
    * the CURRENT `activeWs` from its closure and would open the drawer on the
    * workspace we are leaving.
    */
+  /**
+   * §29: the sidebar asks, the panel acts.
+   *
+   * Carried as the WORKSPACE PATH rather than a nonce, and consumed by the
+   * panel, because the panel remounts whenever you come back to it (`key` is
+   * the workspace) — a nonce would re-open the dialog on every return.
+   */
+  const [pendingNewWorktree, setPendingNewWorktree] = useState<string | null>(null);
+  const startNewWorktree = (ws: string): void => {
+    setActiveWs(ws);
+    setView("chat");
+    setDrawerByWs((m) => ({ ...m, [ws]: "changes" }));
+    setPendingNewWorktree(ws);
+  };
+
   const cleanUpWorktrees = (parent: string): void => {
     setActiveWs(parent);
     setView("chat");
@@ -3203,6 +3218,7 @@ export default function App(): React.JSX.Element {
         worktrees={worktrees}
         onActivateRoot={activateRoot}
         onCleanUp={cleanUpWorktrees}
+        onNewWorktree={startNewWorktree}
         onBranchMenu={(ws) => {
           // The branch menu lives in the panel, where switching also gets the
           // three-choice dialog for a dirty tree — one implementation, not two.
@@ -3943,6 +3959,8 @@ export default function App(): React.JSX.Element {
                       onWorktreeCreated={(p) => { activateRoot(p); void newSession(p); }}
                       onWorktreeRemoved={(parent) => activateRoot(parent)}
                       staleWorktrees={(worktrees[shownDrawer.ws] ?? []).filter((w) => w.prunable).length}
+                      pendingNewWorktree={pendingNewWorktree}
+                      onNewWorktreeConsumed={() => setPendingNewWorktree(null)}
                     />
                   ) : (
                     <FileTree

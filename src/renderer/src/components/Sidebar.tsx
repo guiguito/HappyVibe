@@ -664,6 +664,7 @@ export function Sidebar({
   worktrees,
   onActivateRoot,
   onCleanUp,
+  onNewWorktree,
   onNewSession,
   onSelectSession,
   onRenameSession,
@@ -747,6 +748,8 @@ export function Sidebar({
   worktrees?: Record<string, HvWorktreeInfo[]>;
   onActivateRoot?: (path: string) => void;
   onCleanUp?: (parent: string) => void;
+  /** §29: open the New worktree dialog for this project (the panel owns it). */
+  onNewWorktree?: (ws: string) => void;
   onNewSession: (ws: string) => void;
   onSelectSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
@@ -869,6 +872,9 @@ export function Sidebar({
       else next.add(ws);
       return next;
     });
+
+  /** §29: which project's `+ ▾` menu is open, by path. One at a time. */
+  const [startMenu, setStartMenu] = useState<string | null>(null);
 
   const archivedCount = sessions.filter((s) => s.archived).length;
 
@@ -1203,6 +1209,61 @@ export function Sidebar({
                   >
                     +
                   </button>
+                  {/*
+                   * §29 (2026-09-21): the `+` is a SPLIT control on a git
+                   * project — click makes a session, the caret offers the other
+                   * thing you can start here.
+                   *
+                   * It reverses this round's "no git verb in the sidebar" rule,
+                   * and the report that reversed it is the argument: with no
+                   * worktree yet, the sidebar said nothing about them at all,
+                   * so the only route in was two clicks deep in a menu labelled
+                   * with a branch name. People look under `+`. Costing the
+                   * common action nothing is what the split buys.
+                   *
+                   * Absent when the folder is not a repository — the same
+                   * condition that hides the branch line below, reusing what the
+                   * row already knows rather than threading more state in.
+                   */}
+                  {gitInfo?.[ws]?.branch && (
+                    <div className="relative shrink-0">
+                      <button
+                        type="button"
+                        title="More ways to start"
+                        aria-haspopup="menu"
+                        aria-expanded={startMenu === ws}
+                        onClick={() => setStartMenu((m) => (m === ws ? null : ws))}
+                        className="text-tangerine hover:text-tangerine-deep cursor-pointer text-[9px] leading-none px-0.5"
+                      >
+                        ▾
+                      </button>
+                      {startMenu === ws && (
+                        <>
+                          {/* Click-catcher dismissal, the idiom every other menu
+                              here uses — NOT onBlur, which unmounts between
+                              mousedown and mouseup and eats the click. */}
+                          <div className="fixed inset-0 z-40" onClick={() => setStartMenu(null)} />
+                          <div className="absolute right-0 top-5 z-50 w-44 rounded-xl border-2 border-line bg-card shadow-sticker-lg p-1 flex flex-col">
+                            <button
+                              type="button"
+                              onMouseDown={(e) => { e.preventDefault(); setStartMenu(null); onNewSession(ws); }}
+                              className="text-left rounded-lg px-2 py-1 text-[11px] font-bold cursor-pointer hover:bg-honey-soft"
+                            >
+                              New session
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => { e.preventDefault(); setStartMenu(null); onNewWorktree?.(ws); }}
+                              title="A second copy of this project on its own branch"
+                              className="text-left rounded-lg px-2 py-1 text-[11px] font-bold cursor-pointer hover:bg-honey-soft"
+                            >
+                              New worktree…
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {/* §29 1b: the branch, on its own line under the name. Absent —
                     not greyed — when this folder is not a repository. */}

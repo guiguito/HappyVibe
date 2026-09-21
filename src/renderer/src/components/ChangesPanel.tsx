@@ -44,6 +44,8 @@ export function ChangesPanel({
   onWorktreeCreated,
   onWorktreeRemoved,
   staleWorktrees = 0,
+  pendingNewWorktree = null,
+  onNewWorktreeConsumed,
 }: {
   workspace: string;
   onOpenFile: (relPath: string) => void;
@@ -56,6 +58,13 @@ export function ChangesPanel({
    * The sidebar cannot act, so a click on a stale row sends the user here.
    */
   staleWorktrees?: number;
+  /**
+   * §29: this workspace's path when the sidebar has just asked for the New
+   * worktree dialog. Consumed on open, so returning to this panel later — which
+   * remounts it — does not re-raise the dialog.
+   */
+  pendingNewWorktree?: string | null;
+  onNewWorktreeConsumed?: () => void;
 }): React.JSX.Element {
   const [payload, setPayload] = useState<HvGitStatusPayload | null>(null);
   const [message, setMessage] = useState("");
@@ -101,6 +110,14 @@ export function ChangesPanel({
    * more hooks than during the previous render".
    */
   const newWorktreeRef = useRef("");
+  /**
+   * §29: the sidebar's request arrives as a prop and is served by two functions
+   * declared far below the early returns. Refs are the seam — an effect cannot
+   * call something that is not defined yet, and hoisting the functions instead
+   * would mean hoisting everything they close over.
+   */
+  const openNewWorktreeRef = useRef<(() => void) | null>(null);
+  const flashRef = useRef<((t: string) => void) | null>(null);
 
   const state = payload?.state;
   const files = useMemo(() => payload?.status?.files ?? [], [payload]);
@@ -162,6 +179,28 @@ export function ChangesPanel({
       .catch(() => { if (alive) setPrUrl(null); });
     return () => { alive = false; };
   }, [workspace, payload]);
+
+  /**
+   * §29: the sidebar's `+ ▾` asked for the New worktree dialog.
+   *
+   * Waits for `payload`, because the panel MOUNTS into this request — the
+   * sidebar sets the active root and the drawer in the same tick, so on the
+   * first render there is nothing to branch from yet. When the verb is not
+   * available the reason is flashed rather than nothing happening, so the menu
+   * item is never a dead end.
+   *
+   * Declared with the other effects, above this component's early returns:
+   * a hook below one rendered a blank window earlier in this round.
+   */
+  useEffect(() => {
+    if (pendingNewWorktree !== workspace || !payload) return;
+    onNewWorktreeConsumed?.();
+    if (payload.worktreeAdd.ok) openNewWorktreeRef.current?.();
+    else flashRef.current?.(payload.worktreeAdd.reason);
+    // openNewWorktree/flash are read through refs: they close over state that
+    // changes every render, and listing them here would re-run this on typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNewWorktree, workspace, payload]);
 
   /**
    * §29: the merge preconditions, refreshed on the same beat as the PR
@@ -637,6 +676,9 @@ export function ChangesPanel({
       },
     });
   };
+
+  openNewWorktreeRef.current = openNewWorktree;
+  flashRef.current = flash;
 
   const branchExists = branches.includes(newBranch.trim());
   const submitNewBranch = (): void => {

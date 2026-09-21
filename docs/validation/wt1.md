@@ -166,6 +166,31 @@ wedged at 0% CPU behind an `-[NSAlert runModal]`. Sessions are now stopped BEFOR
 and archived only after; the stats call is bounded, which is what the "dying process" catch beside
 it already intended. Same sequence after the fix: **627 ms**, session archived, app responsive.
 
+## Amended by the first real use (2026-09-21)
+
+Guilhem opened the app, clicked `+` on a project and looked for worktrees there. Nothing.
+
+That is the design working as decided and the decision being wrong: until a project HAS a worktree
+the sidebar says nothing about them (§20, nothing empty is drawn), so the only entry point was
+Changes → the branch button → the last row of that menu. The feature was two clicks deep behind a
+label that says `main`.
+
+The project row's `+` is now a split control on a repository: click still makes a session, a caret
+opens *New session / New worktree…*. Measured in the app afterwards — the caret appears on the
+three registered repos and on none of the three non-repo folders, and on an unborn repo the item
+opens the panel and flashes *"Save a first version before branching."* rather than doing nothing.
+
+Two things that look like detail and are not. The request travels as the workspace PATH and is
+CONSUMED by the panel, not as a nonce: the panel's `key` is the workspace, so it remounts on every
+return and a nonce would re-raise the dialog each time (verified: leave the panel, come back, no
+dialog). And the effect waits for `payload`, because the panel mounts INTO the request — the
+sidebar sets the active root and the drawer in the same tick, so on the first render there is
+nothing to branch from yet.
+
+The general lesson, which cost nothing this time because it was caught in minutes: an altitude rule
+about where words belong lost to where a person actually looks, and the person looking was the one
+who locked the rule.
+
 ## Fixed in passing, adjacent to the round
 
 The sidebar's branch line called `setDrawerPanel`, which reads `activeWs` from its closure — so
