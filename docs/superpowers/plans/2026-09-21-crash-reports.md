@@ -224,6 +224,14 @@ Crashreporting page).
    batch is ~7-8 min; 5 s means every file skipped).
 3. `npx vitest run tests/crash-live.test.ts` alone, with `.env` symlinked.
 4. `npm run build:unpack` → no `*.map` under `release/`, maps present under `out/renderer/assets/`.
+   **Run 2026-09-21 and it passes, but read the number carefully:** `find release -name '*.map'`
+   answers **6,833**, which looks like a failure and is not. Scoped to what the exclusion covers,
+   `find release -path '*out/*' -name '*.map'` is **0** — no HappyVibe source map ships. The 6,833
+   are **pre-existing and not ours**: 6,814 under `Resources/pi-runtime` (vendored, shipped as
+   `extraResources`, so `files:` never touches them) and 19 under `app.asar.unpacked` (native
+   dependencies). Whether the vendored runtime's maps should ship at all is a separate question
+   that predates §37 and is not decided here. `out/` keeps 112 maps for local symbolication, and
+   `inlet-sdk` is packed into the asar.
 5. Read one dev report back. **There is no `/reports` collection route** — measured
    2026-09-21, it 404s; the server groups first. Two calls, with the `isk_` server key:
    `…/v1/crash-databases/cdb_aamshzzkjx9c/groups` then
