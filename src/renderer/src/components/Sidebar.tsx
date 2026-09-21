@@ -8,6 +8,8 @@ import { flipChildren, snapshotRects } from "../motion";
 import { Unfold } from "./Unfold";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
+import { MenuItem } from "./MenuItem";
+import { HowItWorks } from "./HowItWorks";
 import { bySidebarOrder, lastUsed } from "../sessionOrder";
 import { AUTO, fractionFor, isSized, readSplit, writeSplit } from "../sidebarSplit";
 import { BrandLogo } from "./BrandLogo";
@@ -660,6 +662,12 @@ export function Sidebar({
   onWorkspaceSettings,
   gitInfo,
   onBranchMenu,
+  worktrees,
+  onActivateRoot,
+  onCleanUp,
+  onNewWorktree,
+  newSessionKey,
+  newWorktreeKey,
   onNewSession,
   onSelectSession,
   onRenameSession,
@@ -735,6 +743,21 @@ export function Sidebar({
    */
   gitInfo?: Record<string, { branch: string | null; changes: number | null; tint: "green" | "amber" }>;
   onBranchMenu?: (ws: string) => void;
+  /**
+   * §29: the linked worktrees of each project, keyed by the project's path.
+   * The sidebar NAVIGATES between them — every verb (new, merge, remove) lives
+   * in the Changes panel, where git's words already belong.
+   */
+  worktrees?: Record<string, HvWorktreeInfo[]>;
+  onActivateRoot?: (path: string) => void;
+  onCleanUp?: (parent: string) => void;
+  /** §29: open the New worktree dialog for this project (the panel owns it). */
+  onNewWorktree?: (ws: string) => void;
+  /** §29: the two shortcuts shown in the project `+` menu, ALREADY formatted —
+   *  `formatBinding` stays in App, because tests/mod-key-copy.test.ts allows a
+   *  literal ⌘ in exactly three files and pins that allowlist at three. */
+  newSessionKey?: string;
+  newWorktreeKey?: string;
   onNewSession: (ws: string) => void;
   onSelectSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
@@ -858,6 +881,9 @@ export function Sidebar({
       return next;
     });
 
+  /** §29: which project's `+ ▾` menu is open, by path. One at a time. */
+  const [startMenu, setStartMenu] = useState<string | null>(null);
+
   const archivedCount = sessions.filter((s) => s.archived).length;
 
   /**
@@ -869,6 +895,28 @@ export function Sidebar({
     Object.entries(statuses)
       .filter(([, st]) => st === "running" || st === "waking")
       .map(([id]) => id),
+  );
+
+  /**
+   * One session row, used by a project and by each of its worktrees (§29). The
+   * two lists are the same list at different depths — a second copy of these
+   * eleven props is a second place to forget one.
+   */
+  const renderSession = (s: SessionMeta): React.JSX.Element => (
+    <SessionRow
+      key={s.id}
+      rowId={s.id}
+      session={s}
+      status={statuses[s.id]}
+      busy={!!busy[s.id]}
+      pending={pending[s.id] ?? 0}
+      planning={planning?.[s.id] ?? false}
+      selected={view === "chat" && s.id === selectedId}
+      open={openSessionIds.has(s.id)}
+      onSelect={() => onSelectSession(s.id)}
+      onRename={(title) => onRenameSession(s.id, title)}
+      onDelete={() => setConfirmDelete(s)}
+    />
   );
 
   // F6: collapsed icon rail — brand, workspace initials (click expands), and the
@@ -1160,15 +1208,70 @@ export function Sidebar({
                   </button>
                   {/* Round 11: the "×" is gone. An unconfirmed one-click remove sat
                       next to "New session"; removal now lives in a confirmed danger
-                      zone at the bottom of the workspace settings page (the gear). */}
-                  <button
-                    type="button"
-                    title="New session"
-                    onClick={() => onNewSession(ws)}
-                    className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
-                  >
-                    +
-                  </button>
+                      zone at the bottom of the workspace settings page (the gear).
+
+                      §29 (2026-09-21): on a git project the `+` OPENS A MENU
+                      rather than acting — the same control as the tab strip's
+                      pane `+`, down to the shared row and the shortcut printed
+                      beside each label. A split `+ ▾` was tried first and was
+                      two controls where one was asked for.
+
+                      On a folder that is not a repository it stays a plain
+                      button: a `+` with one action is a button, not a menu. That
+                      is `gitInfo…branch` again, the condition that already hides
+                      the branch line, so the row learns nothing new. */}
+                  {gitInfo?.[ws]?.branch ? (
+                    <div
+                      className="relative shrink-0"
+                      /* Blur with a containment guard, NOT a `fixed inset-0`
+                         click-catcher. The catcher is this app's majority idiom
+                         and it is wrong HERE: browserCoverage judges candidates
+                         by BOX, so a full-viewport catcher reads as covering
+                         every embedded browser pane and blanks them for as long
+                         as the menu is open. The tab strip's `+` avoids a
+                         backdrop for exactly this reason, and it is safe because
+                         the rows act on mousedown. */
+                      onBlur={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setStartMenu(null);
+                      }}
+                    >
+                      <button
+                        type="button"
+                        title="New session or worktree"
+                        aria-haspopup="menu"
+                        aria-expanded={startMenu === ws}
+                        onClick={() => setStartMenu((m) => (m === ws ? null : ws))}
+                        className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
+                      >
+                        +
+                      </button>
+                      {startMenu === ws && (
+                        <div className="absolute hv-menu-in origin-top-right right-0 top-full z-50 mt-0.5 w-52 rounded-xl border-2 border-line bg-card shadow-sticker-lg p-1 flex flex-col">
+                          <MenuItem
+                            compact
+                            label="New session"
+                            hint={newSessionKey}
+                            onPick={() => { setStartMenu(null); onNewSession(ws); }}
+                          />
+                          <MenuItem
+                            compact
+                            label="New worktree…"
+                            hint={newWorktreeKey}
+                            onPick={() => { setStartMenu(null); onNewWorktree?.(ws); }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      title="New session"
+                      onClick={() => onNewSession(ws)}
+                      className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
+                    >
+                      +
+                    </button>
+                  )}
                 </div>
                 {/* §29 1b: the branch, on its own line under the name. Absent —
                     not greyed — when this folder is not a repository. */}
@@ -1199,22 +1302,98 @@ export function Sidebar({
                         {q ? "No matching sessions." : "No sessions yet — hit + next to a workspace."}
                       </div>
                     )}
-                    {wsSessions.map((s) => (
-                      <SessionRow
-                        key={s.id}
-                        rowId={s.id}
-                        session={s}
-                        status={statuses[s.id]}
-                        busy={!!busy[s.id]}
-                        pending={pending[s.id] ?? 0}
-                        planning={planning?.[s.id] ?? false}
-                        selected={view === "chat" && s.id === selectedId}
-                        open={openSessionIds.has(s.id)}
-                        onSelect={() => onSelectSession(s.id)}
-                        onRename={(title) => onRenameSession(s.id, title)}
-                        onDelete={() => setConfirmDelete(s)}
-                      />
-                    ))}
+                    {wsSessions.map(renderSession)}
+                  </div>
+                )}
+                {/* §29 worktrees — a second copy of this project on its own
+                    branch. Absent entirely when there are none (§20: nothing
+                    empty is drawn), and shown even while the project row is
+                    collapsed would be wrong: these ARE part of the project. */}
+                {!isCollapsed && (worktrees?.[ws]?.length ?? 0) > 0 && (
+                  <div className="ml-3 mt-1.5">
+                    <div className="px-1.5 text-[10px] font-bold uppercase tracking-wide text-ink-soft">
+                      Worktrees
+                    </div>
+                    {worktrees![ws].map((w) => {
+                      const wtSessions = sessions
+                        .filter((s) => s.workspaceId === w.path && visible(s))
+                        .sort(bySidebarOrder(live));
+                      const wtCollapsed = collapsed.has(w.path) && !q;
+                      return (
+                        <div key={w.path} className={w.prunable ? "opacity-60" : undefined}>
+                          <div className="group flex items-center gap-1 px-1.5 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => toggle(w.path)}
+                              aria-expanded={!wtCollapsed}
+                              title={wtCollapsed ? "Show its sessions" : "Hide its sessions"}
+                              className="shrink-0 cursor-pointer text-ink-soft"
+                            >
+                              <Chevron open={!wtCollapsed} />
+                            </button>
+                            {/* A prunable row is the ONE row that cannot be
+                                activated: its folder is gone, so making it the
+                                active root would point every panel at nothing.
+                                It offers the only thing that helps instead. */}
+                            <button
+                              type="button"
+                              onClick={() => (w.prunable ? onCleanUp?.(ws) : onActivateRoot?.(w.path))}
+                              aria-current={w.path === activeWs ? "true" : undefined}
+                              title={
+                                w.prunable
+                                  ? `${w.path} — this folder is gone. Click to clean up.`
+                                  : w.path === activeWs
+                                    ? `${w.path} — showing`
+                                    : w.path
+                              }
+                              className="flex-1 min-w-0 flex flex-col items-start text-left cursor-pointer"
+                            >
+                              <span
+                                className={`truncate max-w-full text-xs font-bold ${
+                                  w.path === activeWs ? "rounded bg-honey-soft px-0.5" : "text-ink-soft"
+                                }`}
+                              >
+                                {basename(w.path)}
+                              </span>
+                              <span className="flex items-center gap-1 max-w-full text-[10px] text-ink-soft">
+                                <span aria-hidden>⎇</span>
+                                <span className="truncate font-mono">
+                                  {w.branch ?? `(detached) ${w.head.slice(0, 7)}`}
+                                </span>
+                                {gitInfo?.[w.path]?.changes != null && gitInfo[w.path].changes! > 0 && (
+                                  <span
+                                    className={
+                                      gitInfo[w.path].tint === "amber"
+                                        ? "text-honey font-bold"
+                                        : "text-leaf font-bold"
+                                    }
+                                  >
+                                    · {gitInfo[w.path].changes}{" "}
+                                    {gitInfo[w.path].changes === 1 ? "change" : "changes"}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                            {!w.prunable && (
+                              <button
+                                type="button"
+                                title="New session"
+                                onClick={() => onNewSession(w.path)}
+                                className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
+                              >
+                                +
+                              </button>
+                            )}
+                          </div>
+                          {!wtCollapsed && wtSessions.length > 0 && (
+                            <div className="ml-5 flex flex-col gap-0.5">{wtSessions.map(renderSession)}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <div className="px-1.5 [&>details]:mt-1">
+                      <HowItWorks copy="worktrees" />
+                    </div>
                   </div>
                 )}
               </div>

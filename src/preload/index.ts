@@ -229,6 +229,21 @@ contextBridge.exposeInMainWorld("hv", {
     return () => ipcRenderer.removeListener("hv:git-changed", h);
   },
 
+  // ── §29 worktrees ───────────────────────────────────────────────
+  worktreeList: () => ipcRenderer.invoke("hv:worktree-list"),
+  worktreeAdd: (workspaceId: string, branch: string) => ipcRenderer.invoke("hv:worktree-add", workspaceId, branch),
+  worktreeRemove: (worktreePath: string, force?: boolean) =>
+    ipcRenderer.invoke("hv:worktree-remove", worktreePath, force),
+  worktreePrune: (workspaceId: string) => ipcRenderer.invoke("hv:worktree-prune", workspaceId),
+  gitMergeCheck: (worktreePath: string) => ipcRenderer.invoke("hv:git-merge-check", worktreePath),
+  gitMerge: (worktreePath: string) => ipcRenderer.invoke("hv:git-merge", worktreePath),
+  onWorktreesChanged: (cb: (p: { workspaceId: string; worktrees: unknown[] }) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown): void =>
+      cb(p as { workspaceId: string; worktrees: unknown[] });
+    ipcRenderer.on("hv:worktrees-changed", h);
+    return () => ipcRenderer.removeListener("hv:worktrees-changed", h);
+  },
+
   // ── §23 Plan Mode (additive) ────────────────────────────────────
   // Enter/leave plan mode; implement / discard / status are human-only
   // transitions (the model has no way to invoke them). hv.plan mode notifies

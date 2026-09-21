@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ASSISTANT_TASKS_CHANGED } from "./PromptRow";
 import { DiffView, StatusGlyph } from "./DiffView";
-import { groupByDir, primaryAction, summarise } from "../gitui";
+import { gitReason, groupByDir, primaryAction, summarise } from "../gitui";
+import { worktreeSlug } from "../../../main/worktreeSlug";
 
 /**
  * §29 — the Changes panel.
@@ -40,9 +41,30 @@ interface Confirm {
 export function ChangesPanel({
   workspace,
   onOpenFile,
+  onWorktreeCreated,
+  onWorktreeRemoved,
+  staleWorktrees = 0,
+  pendingNewWorktree = null,
+  onNewWorktreeConsumed,
 }: {
   workspace: string;
   onOpenFile: (relPath: string) => void;
+  /** §29: a new worktree becomes the active root and opens a session there. */
+  onWorktreeCreated?: (path: string) => void;
+  /** §29: the worktree is gone — go back to the project it belonged to. */
+  onWorktreeRemoved?: (parentPath: string) => void;
+  /**
+   * §29: how many of THIS project's worktrees git still lists but cannot find.
+   * The sidebar cannot act, so a click on a stale row sends the user here.
+   */
+  staleWorktrees?: number;
+  /**
+   * §29: this workspace's path when the sidebar has just asked for the New
+   * worktree dialog. Consumed on open, so returning to this panel later — which
+   * remounts it — does not re-raise the dialog.
+   */
+  pendingNewWorktree?: string | null;
+  onNewWorktreeConsumed?: () => void;
 }): React.JSX.Element {
   const [payload, setPayload] = useState<HvGitStatusPayload | null>(null);
   const [message, setMessage] = useState("");
@@ -65,13 +87,44 @@ export function ChangesPanel({
   const [drafting, setDrafting] = useState(false);
   // §29 §7: null while unknown or when there is nothing to open.
   const [prUrl, setPrUrl] = useState<string | null>(null);
+  /** §29: whether this worktree's branch can go back into its project, and why not. */
+  const [mergeInfo, setMergeInfo] = useState<HvMergeCheck | null>(null);
   const [openingPr, setOpeningPr] = useState(false);
   const [canDraft, setCanDraft] = useState(false);
   const [working, setWorking] = useState(false);
+  /**
+   * Sync specifically, not `working`. Every write in this panel sets `working`
+   * — Fetch, stage, undo, stash, a branch switch — so spinning the Sync arrows
+   * off it would have them turning for an action Sync did not run, on a button
+   * that is merely disabled like everything else.
+   */
+  const [syncing, setSyncing] = useState(false);
   const [initPreview, setInitPreview] = useState<{ refused: string | null; branch: string; gitignore: string } | null>(null);
   const [switchChoice, setSwitchChoice] = useState<{ branch: string; conflict: boolean } | null>(null);
   const toastTimer = useRef<number | null>(null);
   const messageRef = useRef<HTMLTextAreaElement | null>(null);
+  /**
+   * §29: the New worktree dialog's branch name.
+   *
+   * A REF because a `Confirm` body is a ReactNode captured once at `setConfirm`
+   * time — an input bound to panel state would never re-render as you type, so
+   * `NewWorktreeBody` owns the keystrokes and writes through to this.
+   *
+   * Declared HERE with the other refs, above this component's four early
+   * returns, and that placement is the point: next to its own `openNewWorktree`
+   * it sat below them, which is a conditional hook. It typechecks, the DOM-less
+   * suite cannot see it, and the app rendered a blank window with "Rendered
+   * more hooks than during the previous render".
+   */
+  const newWorktreeRef = useRef("");
+  /**
+   * §29: the sidebar's request arrives as a prop and is served by two functions
+   * declared far below the early returns. Refs are the seam — an effect cannot
+   * call something that is not defined yet, and hoisting the functions instead
+   * would mean hoisting everything they close over.
+   */
+  const openNewWorktreeRef = useRef<(() => void) | null>(null);
+  const flashRef = useRef<((t: string) => void) | null>(null);
 
   const state = payload?.state;
   const files = useMemo(() => payload?.status?.files ?? [], [payload]);
@@ -131,6 +184,43 @@ export function ChangesPanel({
       .gitPrUrl(workspace, false)
       .then((r) => { if (alive) setPrUrl(r?.url ?? null); })
       .catch(() => { if (alive) setPrUrl(null); });
+    return () => { alive = false; };
+  }, [workspace, payload]);
+
+  /**
+   * §29: the sidebar's `+ ▾` asked for the New worktree dialog.
+   *
+   * Waits for `payload`, because the panel MOUNTS into this request — the
+   * sidebar sets the active root and the drawer in the same tick, so on the
+   * first render there is nothing to branch from yet. When the verb is not
+   * available the reason is flashed rather than nothing happening, so the menu
+   * item is never a dead end.
+   *
+   * Declared with the other effects, above this component's early returns:
+   * a hook below one rendered a blank window earlier in this round.
+   */
+  useEffect(() => {
+    if (pendingNewWorktree !== workspace || !payload) return;
+    onNewWorktreeConsumed?.();
+    if (payload.worktreeAdd.ok) openNewWorktreeRef.current?.();
+    else flashRef.current?.(payload.worktreeAdd.reason);
+    // openNewWorktree/flash are read through refs: they close over state that
+    // changes every render, and listing them here would re-run this on typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNewWorktree, workspace, payload]);
+
+  /**
+   * §29: the merge preconditions, refreshed on the same beat as the PR
+   * eligibility — both answer "what can I do with this branch now", and both go
+   * stale for the same reasons (a commit, a dirty parent, a session starting).
+   */
+  useEffect(() => {
+    if (!payload?.worktreeOf) { setMergeInfo(null); return; }
+    let alive = true;
+    void window.hv
+      .gitMergeCheck(workspace)
+      .then((r) => { if (alive) setMergeInfo(r); })
+      .catch(() => { if (alive) setMergeInfo(null); });
     return () => { alive = false; };
   }, [workspace, payload]);
 
@@ -364,7 +454,7 @@ export function ChangesPanel({
     // A failure here belongs IN the menu: it is the only surface the user is
     // looking at, and a toast at the panel's foot sits behind it.
     if (r && !r.ok && !r.busy?.length && !r.wouldConflict) {
-      setBranchError(r.error?.split("\n")[0] ?? "Could not switch branch.");
+      setBranchError(r.error ? gitReason(r.error) : "Could not switch branch.");
       void window.hv.gitBranches(workspace).then(setBranches);
     }
     // §1: not git's refusal — a first-class choice, because this is the most
@@ -434,6 +524,168 @@ export function ChangesPanel({
   // `defaultBranch()` answers with a ref that is usually remote-qualified
   // (`origin/main`); the local branch it protects is the short name.
   const defaultShort = defaultBranch?.replace(/^origin\//, "") ?? null;
+
+  /**
+   * §29 worktrees — make one, from this project's current HEAD.
+   *
+   * The branch lives in a REF rather than in panel state because a `Confirm`
+   * body is a ReactNode captured once at `setConfirm` time: a controlled input
+   * reading panel state would never re-render as you type. `NewWorktreeBody`
+   * owns the keystrokes and writes through.
+   */
+  const openNewWorktree = (): void => {
+    if (!payload?.worktreeAdd.ok) return;
+    const base = payload.worktreeAdd.base;
+    newWorktreeRef.current = "";
+    setConfirm({
+      title: "New worktree",
+      body: <NewWorktreeBody base={base} onChange={(v) => { newWorktreeRef.current = v; }} />,
+      confirmLabel: "Make worktree",
+      onConfirm: async () => {
+        const branch = newWorktreeRef.current.trim();
+        if (!branch) return; // the dialog stays open; the field is the answer
+        setConfirm(null);
+        const r = await window.hv.worktreeAdd(workspace, branch);
+        if (!r.ok) {
+          // git narrates before it refuses — the reason is rarely line one.
+          flash(gitReason(r.error));
+          return;
+        }
+        setLastCommand(`git worktree add -b ${branch} ${r.path}`);
+        flash("Made a worktree — you’re in it now.");
+        onWorktreeCreated?.(r.path);
+      },
+    });
+  };
+
+  /**
+   * §29 — finishing a worktree. Both verbs live HERE rather than in the sidebar:
+   * they are git words, and §0's altitude rule keeps those below the human verb
+   * set, in the panel that already owns the confirm idiom.
+   */
+  const doRemove = async (force: boolean, alsoDeleteBranch: boolean): Promise<void> => {
+    if (!payload?.worktreeOf) return;
+    const parent = payload.worktreeOf.path;
+    const r = await window.hv.worktreeRemove(workspace, force);
+    setLastCommand(`git worktree remove${force ? " --force" : ""} ${workspace}`);
+
+    if (!r.ok) {
+      if (r.busy?.length) { setBusyNotice(`Waiting for: ${r.busy.join(", ")}`); return; }
+      if (r.dirty) {
+        // git's refusal IS the guard; force is opt-in per removal, never the
+        // first offer — the same shape as round 14's branch delete.
+        setConfirm({
+          title: "This worktree has changes that aren’t saved",
+          body: <div className="font-mono text-[10px] whitespace-pre-wrap">{gitReason(r.error)}</div>,
+          confirmLabel: "Remove it anyway",
+          danger: true,
+          onConfirm: async () => { setConfirm(null); await doRemove(true, alsoDeleteBranch); },
+        });
+        return;
+      }
+      flash(gitReason(r.error));
+      return;
+    }
+
+    if (alsoDeleteBranch && r.branch) {
+      // `-d`, never `-D`: git's refusal on an unmerged branch is a better check
+      // than any of ours, and losing the branch is not part of "remove a folder".
+      const d = await window.hv.gitDeleteBranch(parent, r.branch, false);
+      flash(d.ok
+        ? `Removed the worktree and deleted ${r.branch}.`
+        : `Removed the worktree. ${r.branch} kept: ${gitReason(d.error)}`);
+    } else {
+      flash("Removed the worktree.");
+    }
+    onWorktreeRemoved?.(parent);
+  };
+
+  const confirmRemove = (): void => {
+    if (!payload?.worktreeOf) return;
+    const b = branch?.branch;
+    setConfirm({
+      title: "Remove this worktree?",
+      body: (
+        <>
+          <div className="mb-2">
+            The folder goes. {b ? <>The branch <span className="font-mono">{b}</span> stays</> : "Nothing on the branch changes"},
+            {" "}unless you say otherwise.
+          </div>
+          <div className="text-ink-soft">Sessions in this worktree move to Archived.</div>
+        </>
+      ),
+      confirmLabel: "Remove worktree",
+      secondary: b
+        ? { label: "Remove and delete branch", onPick: async () => { setConfirm(null); await doRemove(false, true); } }
+        : undefined,
+      onConfirm: async () => { setConfirm(null); await doRemove(false, false); },
+    });
+  };
+
+  const confirmMerge = (): void => {
+    if (!mergeInfo?.ok || !payload?.worktreeOf) return;
+    const parentName = payload.worktreeOf.name;
+    const dirtyHere = files.length > 0;
+    setConfirm({
+      title: `Merge into ${mergeInfo.parentBranch ?? parentName}`,
+      body: (
+        <>
+          <div className="mb-2">
+            {mergeInfo.ahead} {mergeInfo.ahead === 1 ? "version" : "versions"} from{" "}
+            <span className="font-mono">{branch?.branch}</span> will land in {parentName}. If they don’t
+            apply cleanly nothing changes, and you’ll see why.
+          </div>
+          {dirtyHere && (
+            <div className="text-ink-soft">
+              Your unsaved changes here do not come along — save a version first if you want them in.
+            </div>
+          )}
+        </>
+      ),
+      confirmLabel: "Merge",
+      onConfirm: async () => {
+        setConfirm(null);
+        const r = await window.hv.gitMerge(workspace);
+        setLastCommand(`git merge --no-edit ${branch?.branch}`);
+        if (r.ok) {
+          flash(r.fastForward ? "Merged." : "Merged, with a merge commit.");
+          // Offered, never automatic: the branch landing is not the same
+          // decision as the folder going away.
+          setConfirm({
+            title: "Merged — remove this worktree?",
+            body: <div>Its work is in {parentName} now. You can keep working here instead.</div>,
+            confirmLabel: "Remove worktree and delete branch",
+            onConfirm: async () => { setConfirm(null); await doRemove(false, true); },
+          });
+          return;
+        }
+        if (r.busy?.length) { setBusyNotice(`Waiting for: ${r.busy.join(", ")}`); return; }
+        setConfirm({
+          title: r.aborted ? "Couldn’t merge cleanly — nothing changed" : "Couldn’t merge",
+          body: (
+            <>
+              <div className="mb-2 font-mono text-[10px] whitespace-pre-wrap">{gitReason(r.error)}</div>
+              {!!r.conflicts?.length && (
+                <div className="mb-2">
+                  Conflicting:{" "}
+                  {r.conflicts.map((c) => <span key={c} className="font-mono mr-1">{c}</span>)}
+                </div>
+              )}
+              {prUrl !== null && (
+                <div className="text-ink-soft">A pull request can carry this branch instead.</div>
+              )}
+            </>
+          ),
+          hideCancel: prUrl === null,
+          confirmLabel: prUrl !== null ? "Open a pull request" : "OK",
+          onConfirm: () => { setConfirm(null); if (prUrl !== null) openPr(); },
+        });
+      },
+    });
+  };
+
+  openNewWorktreeRef.current = openNewWorktree;
+  flashRef.current = flash;
 
   const branchExists = branches.includes(newBranch.trim());
   const submitNewBranch = (): void => {
@@ -524,6 +776,14 @@ export function ChangesPanel({
               <span className="flex items-center gap-1"><DownloadGlyph />Fetch</span>
             </button>
           </div>
+          {/* §29 worktrees: say which project this checkout belongs to, so a
+              diff is never mistaken for the main tree's. Main answers it —
+              the renderer never works out which root it is looking at. */}
+          {payload?.worktreeOf && (
+            <div className="text-[10px] text-ink-soft truncate" title={payload.worktreeOf.path}>
+              worktree of {payload.worktreeOf.name}
+            </div>
+          )}
           {/* §5c: the workspace is BELOW the repo root — say so, because branch
               switching and push act above the workspace and cannot be scoped. */}
           {state.subdir && (
@@ -611,6 +871,36 @@ export function ChangesPanel({
               </div>
               {branchError && (
                 <div className="px-1 pt-1 text-[10px] text-berry">{branchError}</div>
+              )}
+              {/* §29 worktrees — the ONE place worktrees are made. It sits under
+                  New branch because that is what it is: a branch, plus a second
+                  copy of the files to work in. Absent inside a worktree: a
+                  worktree of a worktree is the parent's worktree, and offering
+                  it here would say otherwise. */}
+              {payload?.worktreeOf === null && (
+                <div className="border-t-2 border-line mt-1 pt-1">
+                  <button
+                    type="button"
+                    /* aria-disabled, never `disabled`: a disabled control gets no
+                       pointer events, so its title never appears — and the reason
+                       IS the point (round 14's branch-delete lesson). */
+                    aria-disabled={!payload.worktreeAdd.ok}
+                    title={
+                      payload.worktreeAdd.ok
+                        ? `Branch from ${payload.worktreeAdd.base.branch ?? "HEAD"} @ ${payload.worktreeAdd.base.sha.slice(0, 7)}`
+                        : payload.worktreeAdd.reason
+                    }
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      if (!payload.worktreeAdd.ok) return;
+                      setBranchMenu(false);
+                      openNewWorktree();
+                    }}
+                    className="w-full text-left rounded-lg px-2 py-1 text-[11px] font-bold cursor-pointer hover:bg-honey-soft aria-disabled:opacity-40 aria-disabled:cursor-default"
+                  >
+                    New worktree…
+                  </button>
+                </div>
               )}
             </div>
           </>
@@ -712,21 +1002,24 @@ export function ChangesPanel({
               <button
                 type="button"
                 disabled={working}
-                onClick={() =>
-                  void act("git fetch && git pull --ff-only && git push", () => window.hv.gitSync(workspace), () => flash("Synced with the remote.")).then((r) => {
-                    // §1: ff-only. A non-fast-forward says so and STOPS — this
-                    // panel ships no conflict UI, and a beginner mid-conflict is
-                    // the worst state it could produce.
-                    if (r && !r.ok && r.nonFF) {
-                      flash("The remote has changes that can’t be combined automatically. Nothing was merged.");
-                    }
-                  })
-                }
+                onClick={() => {
+                  setSyncing(true);
+                  void act("git fetch && git pull --ff-only && git push", () => window.hv.gitSync(workspace), () => flash("Synced with the remote."))
+                    .then((r) => {
+                      // §1: ff-only. A non-fast-forward says so and STOPS — this
+                      // panel ships no conflict UI, and a beginner mid-conflict is
+                      // the worst state it could produce.
+                      if (r && !r.ok && r.nonFF) {
+                        flash("The remote has changes that can’t be combined automatically. Nothing was merged.");
+                      }
+                    })
+                    .finally(() => setSyncing(false));
+                }}
                 // ahead/behind is git-speak: it lives here, not in the bar.
                 title={`${branch?.ahead ?? 0} to send, ${branch?.behind ?? 0} to receive`}
                 className="flex items-center justify-center gap-1.5 rounded-xl bg-tangerine text-paper font-bold text-sm px-3 py-2 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105 disabled:opacity-50"
               >
-                <SyncGlyph />
+                <SyncGlyph spinning={syncing} />
                 {primary.label}
               </button>
             )}
@@ -790,6 +1083,79 @@ export function ChangesPanel({
               >
                 <PrGlyph />
                 {openingPr ? "Writing it up…" : "Open a pull request"}
+              </button>
+            )}
+            {/*
+             * §29 worktrees — the two ways to finish one, beside the third
+             * (Open a pull request) that was already here. Present ONLY in a
+             * worktree's own panel: on the project these verbs have no subject.
+             *
+             * Both are git's words, and that is why they live down here rather
+             * than in the sidebar — §0's altitude rule. Merge names the branch
+             * it would rewrite, or says which precondition is false.
+             */}
+            {payload.worktreeOf && (
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  aria-disabled={!mergeInfo?.ok}
+                  title={
+                    mergeInfo?.ok
+                      ? `git merge --no-edit ${branch?.branch} · ${mergeInfo.ahead} ${mergeInfo.ahead === 1 ? "version" : "versions"}`
+                      : mergeInfo?.busy?.length
+                        ? `Waiting for: ${mergeInfo.busy.join(", ")}`
+                        : (mergeInfo?.reason ?? "Checking…")
+                  }
+                  onClick={() => { if (mergeInfo?.ok) confirmMerge(); }}
+                  className="flex items-center gap-1.5 rounded-xl border-2 border-line bg-card px-3 py-1.5 text-xs font-bold cursor-pointer hover:border-tangerine aria-disabled:opacity-40 aria-disabled:cursor-default aria-disabled:hover:border-line"
+                >
+                  Merge into {mergeInfo?.parentBranch ?? payload.worktreeOf.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmRemove}
+                  title="Deletes this worktree's folder. The branch stays unless you say otherwise."
+                  className="flex items-center gap-1.5 rounded-xl border-2 border-line bg-card px-3 py-1.5 text-xs font-bold cursor-pointer hover:border-tangerine"
+                >
+                  Remove worktree…
+                </button>
+              </div>
+            )}
+            {/*
+             * §29: a worktree git still lists but whose folder is gone. It is
+             * shown on the PROJECT's panel because prune is repo-wide — the
+             * dialog says so, because that is what the command does.
+             */}
+            {!payload.worktreeOf && staleWorktrees > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setConfirm({
+                    title: "Clean up stale worktrees",
+                    body: (
+                      <>
+                        <div className="mb-2">
+                          git still lists {staleWorktrees === 1 ? "a worktree" : `${staleWorktrees} worktrees`} of this
+                          project whose folder is gone.
+                        </div>
+                        <div className="text-ink-soft">
+                          This clears every stale entry of this repository — that is what the command does. Nothing on
+                          disk is deleted.
+                        </div>
+                      </>
+                    ),
+                    confirmLabel: "Clean up",
+                    onConfirm: async () => {
+                      setConfirm(null);
+                      const r = await window.hv.worktreePrune(workspace);
+                      setLastCommand("git worktree prune");
+                      flash(r.ok ? "Cleaned up." : gitReason(r.error));
+                    },
+                  })
+                }
+                className="self-start rounded-xl border-2 border-line bg-card px-3 py-1.5 text-xs font-bold cursor-pointer hover:border-tangerine"
+              >
+                Clean up {staleWorktrees === 1 ? "a stale worktree" : `${staleWorktrees} stale worktrees`}
               </button>
             )}
             {busyNotice && <Notice text={busyNotice} />}
@@ -1139,6 +1505,31 @@ function SaveMenu({
 }
 
 function ConfirmDialog({ c, onCancel }: { c: Confirm; onCancel: () => void }): React.JSX.Element {
+  /**
+   * Esc closes it. `FIXED_SHORTCUTS` has promised "Esc — close a dialog or
+   * search" since round 8 and this dialog never honoured it: the scrim and the
+   * Cancel button were the only two ways out, so a dialog whose Cancel does not
+   * respond — however that happens — has no keyboard escape at all. Found while
+   * investigating exactly that report.
+   *
+   * On `window`, not the dialog, because the focus may be inside the body: the
+   * New worktree dialog autofocuses its input, and a handler on the container
+   * would never see the key.
+   *
+   * Capture phase and stopPropagation, so Esc reaches the dialog on top rather
+   * than also closing whatever is behind it.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onCancel]);
+
   return (
     <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={onCancel}>
       <div
@@ -1247,10 +1638,18 @@ function DownloadGlyph(): React.JSX.Element {
   );
 }
 
-/** Sync: two arrows chasing each other round a circle — send AND receive. */
-function SyncGlyph(): React.JSX.Element {
+/**
+ * Sync: two arrows chasing each other round a circle — send AND receive.
+ *
+ * They turn while the sync runs. `animate-spin` is the app's existing idiom for
+ * "this is running" (five other surfaces use it) and it is deliberately NOT
+ * neutralised under `prefers-reduced-motion`: the reduced-motion block kills
+ * DECORATION and restates the settled frame, where a spinner is the only thing
+ * saying work is in flight. Removing it would remove information, not motion.
+ */
+function SyncGlyph({ spinning = false }: { spinning?: boolean }): React.JSX.Element {
   return (
-    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg viewBox="0 0 24 24" className={`size-4${spinning ? " animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.4-3.9" />
       <path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.4 3.9" />
       <path d="M20 3v4h-4" />
@@ -1270,5 +1669,51 @@ function PrGlyph(): React.JSX.Element {
       <path d="M18 16V9a3 3 0 0 0-3-3h-3" />
       <path d="m13 3-2 3 2 3" />
     </svg>
+  );
+}
+
+/**
+ * §29 worktrees — the New worktree dialog's body.
+ *
+ * Its own component because a `Confirm` body is captured once: an input bound
+ * to the panel's state would not re-render as you type. It keeps the keystrokes
+ * and writes the value out through `onChange`.
+ *
+ * The folder is shown but not editable. Where a worktree lives is main's
+ * decision — app data, keyed by the project — and offering the choice here
+ * would be offering something the app then ignores.
+ */
+function NewWorktreeBody({
+  base,
+  onChange,
+}: {
+  base: { branch: string | null; sha: string };
+  onChange: (v: string) => void;
+}): React.JSX.Element {
+  const [branch, setBranch] = useState("");
+  return (
+    <div className="flex flex-col gap-2">
+      <div>
+        A second copy of this project’s files, on its own branch, so an agent can work there without
+        touching what you have open here.
+      </div>
+      <input
+        autoFocus
+        value={branch}
+        onChange={(e) => { setBranch(e.target.value); onChange(e.target.value); }}
+        placeholder="Branch name…"
+        className="rounded-lg border-2 border-line bg-paper px-2 py-1 text-[11px] focus:outline-none focus:border-tangerine"
+      />
+      <div className="text-ink-soft">
+        Branching from <span className="font-mono">{base.branch ?? "HEAD"}</span> @{" "}
+        <span className="font-mono">{base.sha.slice(0, 7)}</span>, into{" "}
+        <span className="font-mono">{worktreeSlug(branch || "…")}</span> in HappyVibe’s own folder — not
+        inside your project, so it never shows up as changes to save.
+      </div>
+      <div className="text-ink-soft">
+        Nothing runs there until you ask: a new copy has no dependencies installed yet, and the agent
+        will ask before installing any.
+      </div>
+    </div>
   );
 }

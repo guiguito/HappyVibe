@@ -17,8 +17,9 @@ import path from "node:path";
  * one a name filter lets through, so a single commit's object churn would
  * trigger a `git status` per object — the exact stampede the filter was meant to
  * prevent. So every event is debounced down to one check of what actually
- * matters: the contents of HEAD (which branch) and the mtime+size of the index
- * (what is staged). Unchanged fingerprint, no callback.
+ * matters: the contents of HEAD (which branch), the mtime+size of the index (what is
+ * staged), and the mtime of `.git/worktrees` (§29). Unchanged fingerprint, no
+ * callback.
  */
 
 interface GitWatch {
@@ -35,8 +36,13 @@ const DEBOUNCE_MS = 120;
  * Cheap and exact: HEAD is one short line naming the branch, and the index's
  * mtime+size moves whenever the staged set does. Reading the index itself would
  * mean hashing a file that is megabytes in a large repo, for no extra signal.
+ *
+ * §29 worktrees adds a third component, `.git/worktrees`' mtime. `git worktree
+ * add` and `git worktree remove` touch NEITHER HEAD nor the index, so without
+ * it a worktree made or removed in an outside terminal never reached the
+ * sidebar until the app restarted. Exported for the test that pins exactly that.
  */
-function fingerprint(gitPath: string): string {
+export function gitFingerprint(gitPath: string): string {
   let head = "";
   try {
     head = fs.readFileSync(path.join(gitPath, "HEAD"), "utf8").trim();
@@ -50,7 +56,15 @@ function fingerprint(gitPath: string): string {
   } catch {
     index = "";
   }
-  return `${head}|${index}`;
+  // The directory's own mtime moves when an entry is added or removed; a repo
+  // that has never had a worktree has no such directory, which reads as "".
+  let worktrees = "";
+  try {
+    worktrees = String(fs.statSync(path.join(gitPath, "worktrees")).mtimeMs);
+  } catch {
+    worktrees = "";
+  }
+  return `${head}|${index}|${worktrees}`;
 }
 
 /**
@@ -80,7 +94,7 @@ export function watchGitDir(workspace: string, onChange: () => void): void {
     return; // watching unsupported here; the fs watcher and turn-end still refresh
   }
 
-  const w: GitWatch = { watcher, timer: null, fingerprint: fingerprint(gitPath) };
+  const w: GitWatch = { watcher, timer: null, fingerprint: gitFingerprint(gitPath) };
   watches.set(workspace, w);
 
   watcher.on("error", () => unwatchGit(workspace));
@@ -88,7 +102,7 @@ export function watchGitDir(workspace: string, onChange: () => void): void {
     if (w.timer) return;
     w.timer = setTimeout(() => {
       w.timer = null;
-      const next = fingerprint(gitPath);
+      const next = gitFingerprint(gitPath);
       if (next === w.fingerprint) return; // object churn, packing, a gc — not our business
       w.fingerprint = next;
       onChange();

@@ -34,6 +34,11 @@ export const HOWTO_COPY = {
     body:
       "Two kinds of number live here. The gauge is measured — it is what the model itself reported for the last turn. Everything in the breakdown is estimated, at roughly one token per four characters, because nothing reports a per-item cost. Right after the conversation is compacted there is no measured figure at all, so the gauge says “measuring…” rather than showing you a zero it would have made up.",
   },
+  worktrees: {
+    title: "What a worktree is",
+    body:
+      "A worktree is a second copy of this project's files, on its own branch, in its own folder — so an agent can work there without touching what you have open here. Its settings are the project's: the same model, the same permissions, the same memory. Its files are its own. HappyVibe keeps the ones it makes in its own data folder rather than inside your project, so they never show up as changes to save. Make one from the branch menu in Changes, and finish it from the same panel: merge it back, open a pull request, or remove it.",
+  },
   webTools: {
     title: "How web tools work",
     body:

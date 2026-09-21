@@ -1133,6 +1133,31 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   down to one comparison of HEAD's contents plus the index's mtime+size. The watch exists at all
   because `watch.ts` deliberately filters `.git` (`isVisibleEntry`), so nothing else in the app can
   see a branch switched in an outside terminal.
+- **§29 worktrees: the app creates them in APP DATA (`<agentDir>/worktrees/<memory-key>/<slug>`),
+  never `<ws>/.worktrees/`, and `worktrees.roots()` is the ONE admission list.** Inside the repo a
+  second checkout is walked by every tool AND by the parent's own agent — `grep -r` finds two
+  copies of every file and it edits the wrong one. That cost decided it, not confinement, which
+  `roots()` had to provide anyway for the worktrees Orca and Claude Code make. **A registered path
+  WINS:** a worktree the user added as a workspace of its own stays a project row with its own
+  settings and is deduplicated out of its parent's list, so an existing Orca setup does not change
+  meaning on upgrade. Two directions, and mixing them is the mistake: every fs entry point admits
+  `roots()` (a session in a worktree edits that checkout), every CONFIG read goes through
+  `worktrees.projectOf()` (a worktree grows no settings page). `tests/worktrees-roots.test.ts`
+  scans `ipc.ts` for a call that re-spells either — including `hv:get-workspace-model`, which the
+  COMPOSER reads with a session's own root, so unrouted it displayed the global default for a
+  worktree main was about to spawn on the project's override.
+  **`roots()` is reached from synchronous code and must be right the FIRST time it is asked** —
+  it discovers per parent via `execFileSync`, once, the shape `gitCommonDir` set. Trusting a cache
+  that only `hv:git-status` filled cost two GUI-only bugs: every tab open in a worktree pruned at
+  boot (and the pruned layout saved back over the record), and the Files drawer refused as
+  "Unknown workspace". A linked worktree's `.git` is a FILE, so `watchGitDir` returns early inside
+  one; an outside add or remove reaches the sidebar through the PARENT's `.git/worktrees` mtime,
+  which is why the fingerprint has a third component.
+  **Removing one stops its sessions BEFORE the folder goes.** `PiClient.send` has no timeout, so
+  `endSession`'s stats request never settles for a child whose cwd we just deleted — that hung the
+  handler and wedged the whole app behind a native modal at 0% CPU. Archiving still waits until
+  the remove succeeded. Measurements, git's verbatim refusals and the abort-rule hashes:
+  `docs/validation/wt1.md`.
 - **Git's idle gate covers the WORKING TREE, not "git".** Switch, stash, sync, undo, discard and
   init are blocked while any session in the workspace is busy (`activity.isIdle`, the gate MCP
   live-reload already uses) because sessions share one tree; commit, push, fetch and stage are NOT

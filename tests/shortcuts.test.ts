@@ -94,6 +94,27 @@ describe("§7 round 18 — finding a session is its own action", () => {
     expect(findConflict(resolveBindings(null), "findSession", "Mod-k")).toBeNull();
   });
 
+  it("§29: New worktree is registered, so the Shortcuts page lists it for free", () => {
+    const a = SHORTCUT_ACTIONS.find((x) => x.id === "newWorktree");
+    expect(a?.defaultKey).toBe("Mod-Shift-t");
+    expect(a?.label).toMatch(/worktree/i);
+  });
+
+  it("§29: and its default avoids the two combos Electron's app menu owns", () => {
+    // CmdOrCtrl+Shift+N (New Window) and CmdOrCtrl+Shift+W (close window) are
+    // ACCELERATORS — served before the renderer sees the key, and invisible to
+    // findConflict, which only knows this list. A default that took one of them
+    // would simply never fire, with nothing anywhere saying why.
+    const d = SHORTCUT_ACTIONS.find((x) => x.id === "newWorktree")?.defaultKey;
+    expect(d).not.toBe("Mod-Shift-n");
+    expect(d).not.toBe("Mod-Shift-w");
+  });
+
+  it("§29: it is a Shift combo, because macOS composes Alt into a dead key", () => {
+    // e.key for ⌘⌥N can arrive as "˜", which no binding string would match.
+    for (const a of SHORTCUT_ACTIONS) expect(a.defaultKey, a.id).not.toMatch(/Alt/);
+  });
+
   it("every default binding is still unique", () => {
     const keys = SHORTCUT_ACTIONS.map((a) => a.defaultKey);
     expect(new Set(keys).size).toBe(keys.length);

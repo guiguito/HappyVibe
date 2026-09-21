@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MenuItem } from "./MenuItem";
 import { basename, browserOf, sessionOf, terminalOf, type Pane, type TabId } from "../tabs";
 
 /**
@@ -587,45 +588,6 @@ function NewTabButton({
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
 
-  /** One row. `hint` is the shortcut, omitted where there is no exact one.
-      Round 15: each row leads with the glyph of the tab kind it opens — the
-      same glyphs the tabs themselves carry, so the menu previews its result. */
-  const Item = ({
-    label,
-    hint,
-    icon,
-    onPick,
-  }: {
-    label: string;
-    hint?: string;
-    icon: React.ReactNode;
-    onPick: () => void;
-  }): React.JSX.Element => (
-    <button
-      type="button"
-      className="flex w-full items-center justify-between gap-6 px-3 py-2 text-left text-[13px] whitespace-nowrap hover:bg-paper-deep/60 cursor-pointer"
-      // onMouseDown, NOT onClick, and the preventDefault is the load-bearing
-      // half. Pressing a button does not focus it, so the wrapper's blur fires
-      // with relatedTarget === null, the containment guard below cannot see that
-      // the pointer is still inside, and the menu unmounted between mousedown and
-      // mouseup — the click then had nothing to land on. Measured in the running
-      // app: after mousePressed the menu was already gone and focus had fallen to
-      // BODY. Acting on the press sidesteps the race entirely, and preventDefault
-      // stops the focus shift that starts it.
-      onMouseDown={(e) => {
-        e.preventDefault();
-        setOpen(false);
-        onPick();
-      }}
-    >
-      <span className="flex items-center gap-2 text-ink-soft">
-        {icon}
-        <span className="text-ink">{label}</span>
-      </span>
-      {hint && <span className="text-[11px] text-ink-soft font-mono">{hint}</span>}
-    </button>
-  );
-
   return (
     <div
       className="relative shrink-0 flex items-stretch"
@@ -649,10 +611,14 @@ function NewTabButton({
           a right-aligned menu would extend leftward off the pane. */}
       {open && (
         <div className="absolute hv-menu-in origin-top-left left-0 top-full z-30 mt-0.5 rounded-xl border-2 border-line-strong bg-paper shadow-pop overflow-hidden">
-          <Item label="New session" hint={newSessionKey} icon={<ChatGlyph />} onPick={onNewSession} />
-          <Item label="New terminal" hint={newTerminalKey} icon={<TerminalGlyph />} onPick={onNewTerminal} />
-          <Item label="New browser" hint={newBrowserKey} icon={<BrowserGlyph />} onPick={onNewBrowser} />
-          <Item label="Open file…" icon={<FileGlyph />} onPick={onOpenFilePanel} />
+          {/* Round 15: each row leads with the glyph of the tab kind it opens —
+              the same glyphs the tabs themselves carry, so the menu previews its
+              result. Closing is the call site's job now that the row is shared
+              (MenuItem), which is also why every onPick does it explicitly. */}
+          <MenuItem label="New session" hint={newSessionKey} icon={<ChatGlyph />} onPick={() => { setOpen(false); onNewSession(); }} />
+          <MenuItem label="New terminal" hint={newTerminalKey} icon={<TerminalGlyph />} onPick={() => { setOpen(false); onNewTerminal(); }} />
+          <MenuItem label="New browser" hint={newBrowserKey} icon={<BrowserGlyph />} onPick={() => { setOpen(false); onNewBrowser(); }} />
+          <MenuItem label="Open file…" icon={<FileGlyph />} onPick={() => { setOpen(false); onOpenFilePanel(); }} />
         </div>
       )}
     </div>

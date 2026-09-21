@@ -98,6 +98,12 @@ export default function App(): React.JSX.Element {
   const [keyState, setKeyState] = useState<KeyState>("loading");
   const [view, setView] = useState<View>("chat");
   const [workspaces, setWorkspaces] = useState<string[]>([]);
+  /**
+   * §29: each project's linked worktrees, keyed by the project's path. Pushed
+   * by main whenever git's answer changes — including a worktree somebody made
+   * in their own terminal, which reaches us through the `.git` watch.
+   */
+  const [worktrees, setWorktrees] = useState<Record<string, HvWorktreeInfo[]>>({});
   // §4 Windows round: which shell tool the agent actually got. Probed ONCE at boot —
   // it only changes when the user installs Git, and that takes effect on the next
   // session anyway (spawn re-probes), so a live subscription would buy nothing.
@@ -869,7 +875,7 @@ export default function App(): React.JSX.Element {
         // exists, so an hv:tab-arrive push at that moment reaches nobody.
         const bootDraft = window.hv.boot.draft;
         if (bootDraft) arrivedDrafts.current[bufferKey(bootDraft.ws, bootDraft.tab)] = bootDraft.draft;
-        const [sessionList, termList, browserList, wsList] = await Promise.all([
+        const [sessionList, termList, browserList, wsList, wtMap] = await Promise.all([
           window.hv.listSessions(),
           window.hv.termList(),
           // §28: normally empty at boot — panes do not survive the app, so their
@@ -878,7 +884,11 @@ export default function App(): React.JSX.Element {
           // A workspace the user removed keeps its layout entry otherwise, and
           // its file tabs remount against a workspace main no longer knows.
           window.hv.listWorkspaces(),
+          // §29: a worktree is a root too, so its path must be in the alive set
+          // below — otherwise every tab open in a worktree vanishes on restart.
+          window.hv.worktreeList(),
         ]);
+        setWorktrees(wtMap);
         setTerminals(Object.fromEntries(termList.map((t) => [t.id, t])));
         // §7 round 23: seed the PANES too, not just their alive-set. A window
         // that opens holding a browser tab (⌘⇧N + move, or a restore) has never
@@ -889,7 +899,7 @@ export default function App(): React.JSX.Element {
           sessions: new Set(sessionList.map((x) => x.id)),
           terminals: new Set(termList.map((t) => t.id)),
           browsers: new Set(browserList.map((b) => b.id)),
-          workspaces: new Set(wsList),
+          workspaces: new Set([...wsList, ...Object.values(wtMap).flat().map((w) => w.path)]),
         });
         setTabsByWs(layout);
         // Land on a workspace that actually has restored tabs. The remembered
@@ -1835,6 +1845,15 @@ export default function App(): React.JSX.Element {
    * watcher filters `.git`, so nothing else would ever notice).
    */
   const [gitBranches, setGitBranches] = useState<Record<string, string | null>>({});
+  /**
+   * §29: every root that draws a branch line — the projects and their
+   * worktrees. `gitStatus` for a worktree is also what makes main refresh
+   * discovery for it, so this one loop feeds both.
+   */
+  const roots = useMemo(
+    () => [...workspaces, ...Object.values(worktrees).flat().map((w) => w.path)],
+    [workspaces, worktrees],
+  );
   useEffect(() => {
     let alive = true;
     const load = (ws: string): void => {
@@ -1843,14 +1862,22 @@ export default function App(): React.JSX.Element {
         setGitBranches((m) => ({ ...m, [ws]: p.status?.branch.branch ?? null }));
       }).catch(() => {});
     };
-    for (const ws of workspaces) load(ws);
+    for (const ws of roots) load(ws);
     const off = window.hv.onGitChanged(({ workspaceId }) => load(workspaceId));
     return () => { alive = false; off(); };
-  }, [workspaces]);
+  }, [roots]);
+
+  useEffect(
+    () =>
+      window.hv.onWorktreesChanged(({ workspaceId, worktrees: list }) =>
+        setWorktrees((p) => ({ ...p, [workspaceId]: list })),
+      ),
+    [],
+  );
 
   const gitInfo = useMemo(() => {
     const out: Record<string, { branch: string | null; changes: number | null; tint: "green" | "amber" }> = {};
-    for (const ws of workspaces) {
+    for (const ws of roots) {
       out[ws] = {
         branch: gitBranches[ws] ?? null,
         changes: ws === activeWs ? gitSummary.files : null,
@@ -1858,7 +1885,7 @@ export default function App(): React.JSX.Element {
       };
     }
     return out;
-  }, [workspaces, gitBranches, activeWs, gitSummary]);
+  }, [roots, gitBranches, activeWs, gitSummary]);
 
   /**
    * §29: the working tree of the ACTIVE workspace. Refetched when the workspace
@@ -2354,6 +2381,52 @@ export default function App(): React.JSX.Element {
   };
 
   const surface = (err: unknown): void => setError(ipcMessage(err));
+
+  /**
+   * §29: a worktree is a root, so "open it" is just the active root moving —
+   * tabs, the drawer and the composer's New-session target all key off `wsId`
+   * and follow with no further wiring.
+   */
+  const activateRoot = (rootPath: string): void => {
+    setActiveWs(rootPath);
+    setView("chat");
+  };
+
+  /**
+   * §29: a worktree whose folder is gone cannot be opened, so its row sends you
+   * to the PROJECT's Changes panel, where the clean-up lives. The sidebar
+   * navigates and the panel acts — the same split as the branch line above.
+   *
+   * The drawer is set by key rather than through `setDrawerPanel`, which reads
+   * the CURRENT `activeWs` from its closure and would open the drawer on the
+   * workspace we are leaving.
+   */
+  /**
+   * §29: the sidebar asks, the panel acts.
+   *
+   * Carried as the WORKSPACE PATH rather than a nonce, and consumed by the
+   * panel, because the panel remounts whenever you come back to it (`key` is
+   * the workspace) — a nonce would re-open the dialog on every return.
+   */
+  const [pendingNewWorktree, setPendingNewWorktree] = useState<string | null>(null);
+  /**
+   * §29: the project a root belongs to. The active root may BE a worktree, and
+   * we do not nest them — so ⌘⇧T inside one makes a worktree of its PROJECT.
+   */
+  const projectOfRoot = (root: string): string =>
+    Object.entries(worktrees).find(([, list]) => list.some((w) => w.path === root))?.[0] ?? root;
+  const startNewWorktree = (ws: string): void => {
+    setActiveWs(ws);
+    setView("chat");
+    setDrawerByWs((m) => ({ ...m, [ws]: "changes" }));
+    setPendingNewWorktree(ws);
+  };
+
+  const cleanUpWorktrees = (parent: string): void => {
+    setActiveWs(parent);
+    setView("chat");
+    setDrawerByWs((m) => ({ ...m, [parent]: "changes" }));
+  };
 
   const addWorkspace = async (): Promise<void> => {
     const ws = await window.hv.addWorkspace();
@@ -3026,6 +3099,14 @@ export default function App(): React.JSX.Element {
       if (ws) void newBrowser(ws);
       return;
     }
+    if (is("newWorktree")) {
+      e.preventDefault();
+      // Same `wsId ?? workspaces[0]` fallback as newTerminal/newBrowser above,
+      // so the key works before anything has been focused.
+      const root = wsId ?? workspaces[0];
+      if (root) startNewWorktree(projectOfRoot(root));
+      return;
+    }
     if (is("findSession")) {
       e.preventDefault();
       // A shortcut that silently does nothing is a bug: the 48px rail has no
@@ -3148,11 +3229,24 @@ export default function App(): React.JSX.Element {
         onAddWorkspace={addWorkspace}
         onWorkspaceSettings={(ws) => { setWsSettings(ws); setView("workspace"); }}
         gitInfo={gitInfo}
+        worktrees={worktrees}
+        onActivateRoot={activateRoot}
+        onCleanUp={cleanUpWorktrees}
+        onNewWorktree={startNewWorktree}
+        newSessionKey={formatBinding(bindings.newSession)}
+        newWorktreeKey={formatBinding(bindings.newWorktree)}
         onBranchMenu={(ws) => {
           // The branch menu lives in the panel, where switching also gets the
           // three-choice dialog for a dirty tree — one implementation, not two.
+          //
+          // Keyed, not `setDrawerPanel`: that helper reads the CURRENT `activeWs`
+          // from its closure, so clicking the branch line of a workspace you are
+          // NOT on moved the active root and opened the drawer on the one you
+          // just left — the panel simply did not appear. Same fix as
+          // `cleanUpWorktrees` below, which routes here for a stale worktree.
           setActiveWs(ws);
-          setDrawerPanel("changes");
+          setView("chat");
+          setDrawerByWs((m) => ({ ...m, [ws]: "changes" }));
         }}
         onNewSession={newSession}
         onSelectSession={selectSession}
@@ -3878,6 +3972,11 @@ export default function App(): React.JSX.Element {
                       key={shownDrawer.ws}
                       workspace={shownDrawer.ws}
                       onOpenFile={(rel) => openFileTab(shownDrawer.ws, rel)}
+                      onWorktreeCreated={(p) => { activateRoot(p); void newSession(p); }}
+                      onWorktreeRemoved={(parent) => activateRoot(parent)}
+                      staleWorktrees={(worktrees[shownDrawer.ws] ?? []).filter((w) => w.prunable).length}
+                      pendingNewWorktree={pendingNewWorktree}
+                      onNewWorktreeConsumed={() => setPendingNewWorktree(null)}
                     />
                   ) : (
                     <FileTree

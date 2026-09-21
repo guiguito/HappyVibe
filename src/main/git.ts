@@ -15,6 +15,8 @@ import {
   parsePorcelainV2,
   parseStashList,
   parseUnifiedDiff,
+  parseWorktreeList,
+  type WorktreeEntry,
 } from "./gitParse";
 import { loginShellPath, mergePath } from "./shellPath";
 
@@ -430,6 +432,221 @@ export async function listBranches(workspace: string): Promise<string[]> {
   if (!state) return [];
   const r = await run(state.root, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]);
   return r.ok ? r.stdout.split("\n").filter(Boolean) : [];
+}
+
+/**
+ * §29 worktrees — the OTHER linked worktrees of this repo.
+ *
+ * Two entries are dropped, and both drops matter:
+ *  - **the main checkout**, identified as the parent of `--git-common-dir`
+ *    (§33's memory key basis, already resolved for a relative answer) rather
+ *    than by list order. It is the project itself and must never render as
+ *    somebody's child — which is reachable, because a user can register a
+ *    linked worktree as a workspace of its own and we discover from there too.
+ *  - **the caller's own root**, so a row never lists itself.
+ *
+ * Paths are `path.resolve`d so the renderer, the session index and the registry
+ * all compare one spelling; realpath is used only for the two drops, because
+ * macOS answers `/private/var` to a `/var` question and a string compare would
+ * then drop nothing.
+ */
+export async function listWorktrees(workspace: string): Promise<WorktreeEntry[]> {
+  const state = await requireRepo(workspace);
+  if (!state) return [];
+  const r = await run(state.root, ["worktree", "list", "--porcelain"]);
+  return r.ok ? linkedWorktrees(r.stdout, state.root) : [];
+}
+
+/** The two drops and the path normalisation, shared by the async and sync reads. */
+function linkedWorktrees(porcelain: string, root: string): WorktreeEntry[] {
+  const commonDir = gitCommonDir(root);
+  const mainRoot = commonDir ? safeReal(path.dirname(commonDir)) : null;
+  const self = safeReal(root);
+  return parseWorktreeList(porcelain)
+    .filter((e) => {
+      if (e.bare) return false;
+      const real = safeReal(e.path);
+      return real !== self && real !== mainRoot;
+    })
+    .map((e) => ({ ...e, path: path.resolve(e.path) }));
+}
+
+/**
+ * §29 worktrees — the same list, synchronously, for the ONE caller that cannot
+ * await: `WorktreeIndex.roots()` is the admission list every fs entry point
+ * consults, and it is reached from synchronous code. Its cache must therefore
+ * be warm the first time anything asks, not after some other call happened to
+ * fill it — two GUI bugs came from trusting a cold cache (a worktree's tabs
+ * pruned on restart, and its file tree refused as "Unknown workspace" when the
+ * drawer opened before the first git-status).
+ *
+ * Same precedent and the same shape as `gitCommonDir` above: one `execFileSync`,
+ * paid once per parent, and never on a hot path afterwards.
+ */
+export function listWorktreesSync(workspace: string): WorktreeEntry[] {
+  let out = "";
+  try {
+    out = execFileSync(gitBinary, ["--no-optional-locks", "worktree", "list", "--porcelain"], {
+      cwd: workspace,
+      env: gitEnv(),
+      encoding: "utf8",
+      timeout: 5_000,
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+    });
+  } catch {
+    return []; // not a repo, no git, or an unreadable cwd — no worktrees to admit
+  }
+  return linkedWorktrees(out, workspace);
+}
+
+export type WorktreeAdd =
+  | { ok: true; base: { branch: string | null; sha: string } }
+  | { ok: false; reason: string };
+
+/**
+ * §29 worktrees — may *New worktree…* run here?
+ *
+ * Pure over the probe so the renderer's disabled item names the same reason the
+ * handler refuses with; §20's rule that guidance describing a gate is DERIVED
+ * from the gate rather than re-typed beside it.
+ *
+ * Unborn is a refusal rather than a pass-through because git ≥2.42 SUCCEEDS
+ * there: `worktree add -b x` on a repo with no commits silently makes an
+ * `--orphan` branch sharing no history, so merging it back would be
+ * meaningless. Subdir is §5c's deferral — the worktree would hold the whole
+ * repo and the session's cwd would have to be re-derived.
+ */
+export function worktreeVerbs(
+  state: RepoState,
+  head: { branch: string | null; sha: string } | null
+): WorktreeAdd {
+  if (state.kind !== "repo") return { ok: false, reason: "This folder isn’t tracking versions." };
+  if (state.unborn || !head) return { ok: false, reason: "Save a first version before branching." };
+  if (state.subdir) {
+    return {
+      ok: false,
+      reason: "This workspace is a subfolder of its repository — open the repository root to make worktrees.",
+    };
+  }
+  return { ok: true, base: head };
+}
+
+/**
+ * `git worktree add`. An existing local branch is used as-is; anything else is
+ * created with `-b`. The folder check runs BEFORE git so a collision cannot
+ * leave a new branch behind pointing at nothing.
+ */
+export async function addWorktree(workspace: string, dir: string, branch: string): Promise<WriteResult> {
+  const state = await requireRepo(workspace);
+  if (!state) return { ok: false, error: "Not a git repository." };
+  if (fs.existsSync(dir)) return { ok: false, error: `${dir} already exists.` };
+
+  const exists = (await run(state.root, ["branch", "--list", branch])).stdout.trim() !== "";
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  const args = exists ? ["worktree", "add", dir, branch] : ["worktree", "add", "-b", branch, dir];
+  const r = await run(state.root, args, { write: true });
+  return r.ok ? { ok: true } : { ok: false, error: r.stderr.trim() };
+}
+
+export interface MergeCheck {
+  ok: boolean;
+  reason?: string;
+  ahead: number;
+  parentBranch: string | null;
+}
+
+/**
+ * §29 worktrees — the three preconditions of *Merge into `<parent>`*, each named
+ * so the disabled button can say which one is false.
+ *
+ * Untracked files in the parent are deliberately NOT a refusal: git itself
+ * refuses cleanly if one would be overwritten, changing nothing, and
+ * pre-refusing for a stray file the merge would never touch is a gate the user
+ * cannot understand or clear.
+ */
+export async function mergeCheck(parentRoot: string, branch: string): Promise<MergeCheck> {
+  const state = await requireRepo(parentRoot);
+  if (!state) return { ok: false, reason: "Not a git repository.", ahead: 0, parentBranch: null };
+
+  const head = (await run(state.root, ["branch", "--show-current"])).stdout.trim() || null;
+  const ahead = Number((await run(state.root, ["rev-list", "--count", `HEAD..${branch}`])).stdout.trim() || 0);
+  if (ahead === 0) {
+    return { ok: false, reason: "Nothing to merge — save a version in the worktree first.", ahead, parentBranch: head };
+  }
+  const dirty = (await run(state.root, ["status", "--porcelain", "--untracked-files=no"])).stdout.trim() !== "";
+  if (dirty) {
+    return {
+      ok: false,
+      reason: "This project has unsaved changes — save a version or stash them first.",
+      ahead,
+      parentBranch: head,
+    };
+  }
+  return { ok: true, ahead, parentBranch: head };
+}
+
+export type MergeResult =
+  | { ok: true; fastForward: boolean }
+  | { ok: false; error: string; conflicts?: string[]; aborted?: boolean };
+
+/**
+ * `git merge --no-edit <branch>` in the PARENT. Fast-forward when it can, a
+ * merge commit otherwise — `--ff-only` is Sync's rule for pulling a REMOTE, not
+ * this one.
+ *
+ * On failure with a merge in progress the conflicting paths are read and the
+ * merge is aborted AT ONCE, so the parent tree is byte-identical to before:
+ * §7 ships no conflict UI, and a beginner left mid-merge is the worst state
+ * this panel could produce. The test pins `write-tree` across the attempt.
+ */
+export async function mergeBranch(parentRoot: string, branch: string): Promise<MergeResult> {
+  const state = await requireRepo(parentRoot);
+  if (!state) return { ok: false, error: "Not a git repository." };
+
+  const r = await run(state.root, ["merge", "--no-edit", branch], { write: true });
+  // git says "Fast-forward" on stdout for that case and "Merge made by …" otherwise.
+  if (r.ok) return { ok: true, fastForward: /^Fast-forward$/m.test(r.stdout) };
+
+  const mergeHead = (await run(state.root, ["rev-parse", "--git-path", "MERGE_HEAD"])).stdout.trim();
+  if (mergeHead && fs.existsSync(path.resolve(state.root, mergeHead))) {
+    const conflicts = (await run(state.root, ["diff", "--name-only", "--diff-filter=U"])).stdout
+      .split("\n")
+      .filter(Boolean);
+    await run(state.root, ["merge", "--abort"], { write: true });
+    return { ok: false, error: r.stderr.trim() || r.stdout.trim(), conflicts, aborted: true };
+  }
+  return { ok: false, error: r.stderr.trim() || r.stdout.trim() };
+}
+
+export type RemoveResult = { ok: true } | { ok: false; error: string; dirty?: boolean };
+
+/**
+ * `git worktree remove`. git refuses a dirty tree — "contains modified or
+ * untracked files, use --force to delete it" (measured 2.50.1) — which comes
+ * back as `dirty` so the panel can ask a second, sharper question; force is
+ * opt-in per removal, the same shape as round 14's branch delete.
+ *
+ * A LOCKED worktree is refused in git's own words and gets NO force path from
+ * here: the lock was somebody's decision, and `remove -f -f` is a thing to type
+ * deliberately rather than a button.
+ */
+export async function removeWorktree(parentRoot: string, wtPath: string, force = false): Promise<RemoveResult> {
+  const state = await requireRepo(parentRoot);
+  if (!state) return { ok: false, error: "Not a git repository." };
+
+  const r = await run(state.root, ["worktree", "remove", ...(force ? ["--force"] : []), wtPath], { write: true });
+  if (r.ok) return { ok: true };
+  const dirty = /modified or untracked files/i.test(r.stderr);
+  return { ok: false, error: r.stderr.trim(), ...(dirty ? { dirty: true } : {}) };
+}
+
+/** `git worktree prune` — clears every entry of this repo whose folder is gone. */
+export async function pruneWorktrees(parentRoot: string): Promise<WriteResult> {
+  const state = await requireRepo(parentRoot);
+  if (!state) return { ok: false, error: "Not a git repository." };
+  const r = await run(state.root, ["worktree", "prune"], { write: true });
+  return r.ok ? { ok: true } : { ok: false, error: r.stderr.trim() };
 }
 
 export interface DeleteBranchResult {

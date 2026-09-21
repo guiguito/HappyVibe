@@ -388,3 +388,44 @@ export function parseLog(out: string): LogEntry[] {
   }
   return entries;
 }
+
+export interface WorktreeEntry {
+  path: string;
+  head: string;
+  /** Short name (`refs/heads/` stripped); null when detached. */
+  branch: string | null;
+  bare: boolean;
+  locked: boolean;
+  prunable: boolean;
+}
+
+/**
+ * `git worktree list --porcelain` — one record per blank-line-separated block.
+ *
+ * Four of the seven keys are BARE (`detached`, `bare`, and `locked`/`prunable`
+ * when git has no reason to give), so splitting on a space and reading the tail
+ * is wrong for them: `line.indexOf(" ")` answering -1 IS the flag. `locked` and
+ * `prunable` also arrive WITH a reason attached, which we drop — the row says
+ * what it can do, and git's own message is shown when a verb refuses.
+ */
+export function parseWorktreeList(out: string): WorktreeEntry[] {
+  const entries: WorktreeEntry[] = [];
+  for (const block of out.split(/\n\n+/)) {
+    let e: WorktreeEntry | null = null;
+    for (const line of block.split("\n")) {
+      const sp = line.indexOf(" ");
+      const key = sp === -1 ? line : line.slice(0, sp);
+      const val = sp === -1 ? "" : line.slice(sp + 1);
+      if (key === "worktree") {
+        e = { path: val, head: "", branch: null, bare: false, locked: false, prunable: false };
+      } else if (!e) continue;
+      else if (key === "HEAD") e.head = val;
+      else if (key === "branch") e.branch = val.replace(/^refs\/heads\//, "");
+      else if (key === "bare") e.bare = true;
+      else if (key === "locked") e.locked = true;
+      else if (key === "prunable") e.prunable = true;
+    }
+    if (e) entries.push(e);
+  }
+  return entries;
+}
