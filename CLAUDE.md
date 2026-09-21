@@ -1316,6 +1316,51 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - **A schedule prompting its own run must not `index.touch`.** `lastUsedAt` means "a human touched
   this", and it is exactly what `archivePreviousRun` reads to decide whether the user adopted a run
   and it should stay in the sidebar. `promptSession(..., { source: "schedule" })` is the seam.
+- **§37 crash reports: `src/main/crash/client.ts` is the seam, and `ipc.ts` must never import
+  `./crash`.** `crash/index.ts` imports `electron` and `@electron-toolkit/utils`; under vitest
+  `electron` is a CommonJS stub with no named exports, so reaching it from a vitest-imported
+  module kills that whole FILE with *"Named export 'BrowserWindow' not found"* — naming line 10
+  of the crash module and never the cause. Measured: `captureCrash` living beside the Electron
+  code took **six** files red at once (`documents.ts`, `mcpAdapterStore.ts` and the three tests
+  that import `ipc.ts`). This is the SAME rule CLAUDE.md already states for `ipc.ts` and
+  `@electron-toolkit/utils`, one hop away, and the same class as `schedules.ts` and
+  `terminalSettings.ts`. So `captureCrash`/`attachCrashAudit`/`recordCrashSent` live in the
+  import-free `client.ts`, and the five `hv:crash-*` handlers live **inside** `crash/index.ts`
+  (`registerCrashIpc`, called before every gate so the Privacy page still opens with reporting
+  off). Pinned by `tests/crash-wiring.test.ts`.
+- **The renderer cannot import `inlet-sdk/crash/electron`** — it statically imports `node:fs`,
+  `node:os`, `node:crypto` and `node:path`. It TYPECHECKS and it runs in dev; `npm run build`
+  fails. The renderer entry is `inlet-sdk/crash/electron-renderer` (build-enforced node-free
+  upstream) and it finds main through `globalThis.inletCrash.send`, which is why the preload's
+  `exposeInMainWorld("inletCrash", …)` is a contract rather than a convention. Same
+  works-in-dev-broken-in-release shape as §27's worklet.
+- **`clean-exit` and `killed` still arrive, and dropping them is load-bearing.** The SDK's
+  `render-process-gone` hook fires on **every normal window close** and `child-process-gone` on
+  the voice host's own `kill()`. `scrubEnvelope` (crash/policy.ts) nulls both. Forget it and
+  every user files a crash report every time they close a window. Note the narrowness: a
+  `clean-exit` reason on a kind that is NOT an exit kind must still report.
+- **A Pi child exit is reported only when `piFrames` finds a frame inside our own bundle**, and
+  that condition is the difference between a signal and a stream. Pi dies for user reasons
+  constantly — a bad provider key, `402 Insufficient Balance`, the `EPERM: uv_cwd` path, a
+  terminal the user killed — and with no frames they all collapse onto ONE fingerprint
+  (`reason|signal|name`, code excluded), so one empty account would file the same report daily
+  and bury the Pi crash that IS ours. `piErrorType`'s `PiExit` fallback is the tell. The stderr
+  TAIL never travels: it stays in the local `session.crash` row, and `message` is sent empty.
+- **`{ exitCode: false }` and the absent `appRoots` are both deliberate.** The first is now
+  upstream's default and stays spelled out because main exiting takes every live Pi session with
+  it, including an in-flight delegation. The second is the opposite: `appRoots` defaults to
+  `app.getAppPath()`, which is exactly what makes every frame root-relative, so **overriding it
+  is how the developer's own repo path starts travelling**. Likewise no `redaction` option —
+  0.1.2's `defaultRedaction` IS the policy, pinned in `crash-policy.test.ts` rather than
+  reimplemented, because a wrapper that agrees with the default can only drift from it.
+- **Crash reports are OFF in development unless `HV_CRASH_DEV=1`** (the `HV_FEEDBACK_FAST_PULSE`
+  idiom), and that gate runs FIRST — before the user's setting — so a dev launch creates no
+  client, no handlers and no `inlet-crash` queue directory at all. The GUI pass sets the flag.
+- **Reading crashes back: there is no `/reports` collection route.** `GET
+  /v1/crash-databases/<id>/reports` 404s with *"No route matches"*, which reads like a
+  permissions problem and is not. Group first: `…/groups`, then `…/groups/<groupId>/reports`.
+  Inlet's MCP has **no crash verbs** at all (`list_submissions` and friends are feedback-only).
+  Shapes and the measured envelope: `docs/validation/d1.md` §37.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array
