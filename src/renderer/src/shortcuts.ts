@@ -14,6 +14,7 @@ export type ShortcutId =
   | "newSession"
   | "newTerminal"
   | "newBrowser"
+  | "newWorktree"
   | "closeTab"
   | "save"
   | "search"
@@ -38,6 +39,19 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   // gets it and the sidebar moves to ⌘\ — findConflict refuses duplicates, so
   // this is a swap, never an addition.
   { id: "newBrowser", label: "New browser in the current workspace", defaultKey: "Mod-b" },
+  // §29 (2026-09-21). Mod-Shift-t sits beside Mod-t "new terminal": both start
+  // something in this project, and the shifted one starts the bigger thing.
+  //
+  // Mod-Shift-n is NOT available however well it would read beside Mod-n:
+  // Electron's app menu owns it for New Window (src/main/index.ts), an
+  // accelerator is served before the renderer ever sees the key, and
+  // findConflict only knows about THIS list — so it could not even warn.
+  // Mod-Shift-w is gone the same way (close window).
+  //
+  // Mod-Shift rather than Mod-Alt on purpose: macOS composes an Option key into
+  // a dead character, so e.key for ⌘⌥N can arrive as "˜" and never match. The
+  // two bindings already proving this shape work are Mod-Shift-e and Mod-Shift-g.
+  { id: "newWorktree", label: "New worktree in the current project", defaultKey: "Mod-Shift-t" },
   // §26 widened this from files to "file or terminal". A chat is still exempt:
   // closing a chat tab only hides a session, so it needs no keyboard route,
   // whereas closing a terminal KILLS a process and therefore confirms first.

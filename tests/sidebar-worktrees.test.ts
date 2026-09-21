@@ -8,10 +8,13 @@ import { describe, expect, it } from "vitest";
  * Amended 2026-09-21 by the first real use: with no worktree yet the sidebar
  * said nothing about them at all, so the only route in was two clicks deep in a
  * menu labelled with a branch name. People look under `+`. The project row's
- * `+` is therefore a split control — click still makes a session, the caret
- * offers New worktree… — and that is the ONE git word the sidebar carries.
- * Everything that changes a tree (merge, remove, clean up) still lives in the
- * panel, and the assertions below pin that line where it now is.
+ * `+` therefore OPENS A MENU — the same control as the tab strip's pane `+`,
+ * down to the shared row and the shortcut printed beside each label. A split
+ * `+ ▾` was tried in between and was two controls where one was asked for.
+ *
+ * New worktree is the ONE git word the sidebar carries. Everything that CHANGES
+ * a tree (merge, remove, clean up) still lives in the panel, and the assertions
+ * below pin that line where it now is.
  *
  * Source scans because the renderer suite has no DOM (vitest.config includes
  * `tests/**\/*.test.ts` only) — and because an ABSENCE is exactly what a render
@@ -39,26 +42,44 @@ describe("the sidebar shows worktrees and never acts on them", () => {
     expect(code(sidebar)).not.toMatch(/Clean up/);
   });
 
-  it("offers New worktree… under the project's split `+`, and only on a repo", () => {
+  it("the `+` OPENS the menu on a repo — one control, not a split", () => {
     const c = code(sidebar);
-    // The caret is inside the same `gitInfo…branch` guard as the branch line:
-    // a folder that is not a repository has nothing to branch from.
-    expect(c).toMatch(/gitInfo\?\.\[ws\]\?\.branch && \([\s\S]{0,2400}?New worktree…/);
+    expect(c).toMatch(/aria-haspopup="menu"/);
+    expect(c).toMatch(/setStartMenu\(\(m\) => \(m === ws \? null : ws\)\)/);
+    // The split that was tried in between is gone, caret and all.
+    expect(c).not.toMatch(/More ways to start/);
+    expect(c).not.toContain("▾");
+  });
+
+  it("both rows go through the SHARED row, each showing its shortcut", () => {
+    const c = code(sidebar);
+    expect(c).toMatch(/<MenuItem[\s\S]{0,200}?label="New session"[\s\S]{0,120}?hint=\{newSessionKey\}/);
+    expect(c).toMatch(/<MenuItem[\s\S]{0,200}?label="New worktree…"[\s\S]{0,120}?hint=\{newWorktreeKey\}/);
     // It ASKS; the panel still owns the dialog.
     expect(c).toMatch(/onNewWorktree\?\.\(ws\)/);
   });
 
-  it("the menu acts on mousedown and dismisses with a click-catcher, never onBlur", () => {
-    // Twice-reported trap: a blur-dismissed menu unmounts between mousedown and
-    // mouseup, so the click lands on nothing.
-    const c = code(sidebar);
-    expect(c).toMatch(/onMouseDown=\{\(e\) => \{ e\.preventDefault\(\); setStartMenu\(null\); onNewWorktree/);
-    expect(c).toMatch(/fixed inset-0 z-40" onClick=\{\(\) => setStartMenu\(null\)\}/);
-    expect(c).not.toMatch(/onBlur[\s\S]{0,80}setStartMenu/);
+  it("the hints arrive ALREADY formatted — no key formatting in the sidebar", () => {
+    // tests/mod-key-copy.test.ts allows a literal ⌘ in exactly three files and
+    // pins that allowlist at three, so formatBinding stays in App.
+    expect(code(sidebar)).not.toMatch(/formatBinding/);
+    // Comments may name a key (mod-key-copy strips them too); rendered copy may not.
+    expect(code(sidebar)).not.toContain("⌘");
   });
 
-  it("clicking `+` itself still makes a session — the split costs the common action nothing", () => {
-    expect(code(sidebar)).toMatch(/title="New session"\s*\n\s*onClick=\{\(\) => onNewSession\(ws\)\}/);
+  it("a folder that is not a repository keeps a plain `+`", () => {
+    // A `+` with one action is a button, not a menu.
+    const c = code(sidebar);
+    expect(c).toMatch(/\) : \([\s\S]{0,400}?title="New session"[\s\S]{0,120}?onClick=\{\(\) => onNewSession\(ws\)\}/);
+  });
+
+  it("dismisses on blur, NOT with a click-catcher that would blank browser panes", () => {
+    // browserCoverage judges candidates by BOX, so a `fixed inset-0` catcher
+    // reads as covering every embedded browser pane for as long as it is up.
+    // The rows act on mousedown (MenuItem), which is what makes blur safe here.
+    const c = code(sidebar);
+    expect(c).toMatch(/onBlur=\{\(e\) => \{\s*if \(!e\.currentTarget\.contains\(e\.relatedTarget as Node \| null\)\) setStartMenu\(null\)/);
+    expect(c).not.toMatch(/fixed inset-0[^\n]*setStartMenu/);
   });
 
   it("a prunable row offers Clean up instead of becoming the active root", () => {

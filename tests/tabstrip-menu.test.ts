@@ -20,16 +20,19 @@ import path from "node:path";
  * A DOM test would need a React renderer this suite does not have, so this pins
  * the SHAPE of the fix — cheap, and it fails the moment someone "tidies" the
  * handler back to onClick.
+ *
+ * §29 (2026-09-21): the row moved to `MenuItem.tsx`, shared with the SIDEBAR's
+ * project `+`. The assertions follow it there, so one check now guards both
+ * menus — which is the reason for sharing it rather than copying it.
  */
+const ITEM = fs.readFileSync(
+  path.join(process.cwd(), "src/renderer/src/components/MenuItem.tsx"),
+  "utf8",
+);
 const SRC = fs.readFileSync(
   path.join(process.cwd(), "src/renderer/src/components/TabStrip.tsx"),
   "utf8",
 );
-
-/** Just the `Item` component — bounded before NewTabButton's own body, whose
- *  `+` toggle legitimately uses onClick. */
-const ITEM_START = SRC.indexOf("const Item = (");
-const ITEM = SRC.slice(ITEM_START, SRC.indexOf("\n  return (", ITEM_START));
 
 describe("the pane + menu (§28 round 1)", () => {
   it("acts on mousedown, because the menu is gone by mouseup", () => {
@@ -40,6 +43,17 @@ describe("the pane + menu (§28 round 1)", () => {
     // The attribute, not the word: the comment above the handler names onClick
     // precisely to explain why it is not used.
     expect(ITEM).not.toContain("onClick={");
+  });
+
+  it("is SHARED, so the sidebar's + menu cannot drift back to onClick", () => {
+    const sidebar = fs.readFileSync(
+      path.join(process.cwd(), "src/renderer/src/components/Sidebar.tsx"),
+      "utf8",
+    );
+    for (const f of [SRC, sidebar]) {
+      expect(f).toContain('from "./MenuItem"');
+      expect(f).toContain("<MenuItem");
+    }
   });
 
   it("prevents the default focus shift that starts the race", () => {

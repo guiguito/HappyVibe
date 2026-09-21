@@ -191,6 +191,34 @@ The general lesson, which cost nothing this time because it was caught in minute
 about where words belong lost to where a person actually looks, and the person looking was the one
 who locked the rule.
 
+### …and amended again the same day: one `+`, not a split
+
+The split was also wrong, for a plainer reason: it is two controls where one was asked for. The `+`
+now OPENS the menu — *New session ⌘N* / *New worktree… ⌘⇧T* — which is the tab strip's pane `+`
+exactly, so the row moved into a shared `MenuItem` and the rule the tab strip had written down now
+holds for both menus by construction: **every row that has a binding shows it**.
+
+`⌘⇧T` sits beside `⌘T` "new terminal". `⌘⇧N` would read better beside `⌘N` and is **unavailable**:
+Electron's app menu owns it for New Window, an accelerator is served before the renderer sees the
+key, and `findConflict` only knows the app's own registry — so the default would simply never fire
+with nothing saying why. `⌘⇧W` is gone the same way. `Mod-Shift` rather than `Mod-Alt` because
+macOS composes Option into a dead key: `e.key` for ⌘⌥N can arrive as `˜` and match nothing.
+
+Two things measured in the app that a source scan could not settle:
+
+- **A real click focuses the `+`; a synthetic one does not.** The menu dismisses on blur with a
+  containment guard, the tab strip's idiom, NOT the `fixed inset-0` click-catcher eleven other
+  menus use — a catcher is judged by BOX, so it reads as covering every embedded browser pane.
+  Verified with a browser pane open: `data-covered` stayed `false` with the menu up. Verified too
+  that the first probe of this, driven with `.click()`, proved nothing — synthetic clicks move no
+  focus, so the menu never dismissed and the result looked like a bug that was not there.
+- **The conflict refusal names the holder.** Rebinding it to ⌘T on the Shortcuts page answers
+  *"⌘T is already used by \"New terminal in the current workspace\"."* and keeps ⌘⇧T.
+
+Also worth knowing for anyone driving this app over CDP: opening a browser pane adds a SECOND page
+target, and the debug tools default to the first one — two `evaluate` calls hung against the blank
+guest before the app target was named explicitly. Nothing was wrong with the app.
+
 ## Fixed in passing, adjacent to the round
 
 The sidebar's branch line called `setDrawerPanel`, which reads `activeWs` from its closure — so

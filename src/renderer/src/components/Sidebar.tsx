@@ -8,6 +8,7 @@ import { flipChildren, snapshotRects } from "../motion";
 import { Unfold } from "./Unfold";
 import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
+import { MenuItem } from "./MenuItem";
 import { HowItWorks } from "./HowItWorks";
 import { bySidebarOrder, lastUsed } from "../sessionOrder";
 import { AUTO, fractionFor, isSized, readSplit, writeSplit } from "../sidebarSplit";
@@ -665,6 +666,8 @@ export function Sidebar({
   onActivateRoot,
   onCleanUp,
   onNewWorktree,
+  newSessionKey,
+  newWorktreeKey,
   onNewSession,
   onSelectSession,
   onRenameSession,
@@ -750,6 +753,11 @@ export function Sidebar({
   onCleanUp?: (parent: string) => void;
   /** §29: open the New worktree dialog for this project (the panel owns it). */
   onNewWorktree?: (ws: string) => void;
+  /** §29: the two shortcuts shown in the project `+` menu, ALREADY formatted —
+   *  `formatBinding` stays in App, because tests/mod-key-copy.test.ts allows a
+   *  literal ⌘ in exactly three files and pins that allowlist at three. */
+  newSessionKey?: string;
+  newWorktreeKey?: string;
   onNewSession: (ws: string) => void;
   onSelectSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
@@ -1200,69 +1208,69 @@ export function Sidebar({
                   </button>
                   {/* Round 11: the "×" is gone. An unconfirmed one-click remove sat
                       next to "New session"; removal now lives in a confirmed danger
-                      zone at the bottom of the workspace settings page (the gear). */}
-                  <button
-                    type="button"
-                    title="New session"
-                    onClick={() => onNewSession(ws)}
-                    className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
-                  >
-                    +
-                  </button>
-                  {/*
-                   * §29 (2026-09-21): the `+` is a SPLIT control on a git
-                   * project — click makes a session, the caret offers the other
-                   * thing you can start here.
-                   *
-                   * It reverses this round's "no git verb in the sidebar" rule,
-                   * and the report that reversed it is the argument: with no
-                   * worktree yet, the sidebar said nothing about them at all,
-                   * so the only route in was two clicks deep in a menu labelled
-                   * with a branch name. People look under `+`. Costing the
-                   * common action nothing is what the split buys.
-                   *
-                   * Absent when the folder is not a repository — the same
-                   * condition that hides the branch line below, reusing what the
-                   * row already knows rather than threading more state in.
-                   */}
-                  {gitInfo?.[ws]?.branch && (
-                    <div className="relative shrink-0">
+                      zone at the bottom of the workspace settings page (the gear).
+
+                      §29 (2026-09-21): on a git project the `+` OPENS A MENU
+                      rather than acting — the same control as the tab strip's
+                      pane `+`, down to the shared row and the shortcut printed
+                      beside each label. A split `+ ▾` was tried first and was
+                      two controls where one was asked for.
+
+                      On a folder that is not a repository it stays a plain
+                      button: a `+` with one action is a button, not a menu. That
+                      is `gitInfo…branch` again, the condition that already hides
+                      the branch line, so the row learns nothing new. */}
+                  {gitInfo?.[ws]?.branch ? (
+                    <div
+                      className="relative shrink-0"
+                      /* Blur with a containment guard, NOT a `fixed inset-0`
+                         click-catcher. The catcher is this app's majority idiom
+                         and it is wrong HERE: browserCoverage judges candidates
+                         by BOX, so a full-viewport catcher reads as covering
+                         every embedded browser pane and blanks them for as long
+                         as the menu is open. The tab strip's `+` avoids a
+                         backdrop for exactly this reason, and it is safe because
+                         the rows act on mousedown. */
+                      onBlur={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setStartMenu(null);
+                      }}
+                    >
                       <button
                         type="button"
-                        title="More ways to start"
+                        title="New session or worktree"
                         aria-haspopup="menu"
                         aria-expanded={startMenu === ws}
                         onClick={() => setStartMenu((m) => (m === ws ? null : ws))}
-                        className="text-tangerine hover:text-tangerine-deep cursor-pointer text-[9px] leading-none px-0.5"
+                        className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
                       >
-                        ▾
+                        +
                       </button>
                       {startMenu === ws && (
-                        <>
-                          {/* Click-catcher dismissal, the idiom every other menu
-                              here uses — NOT onBlur, which unmounts between
-                              mousedown and mouseup and eats the click. */}
-                          <div className="fixed inset-0 z-40" onClick={() => setStartMenu(null)} />
-                          <div className="absolute right-0 top-5 z-50 w-44 rounded-xl border-2 border-line bg-card shadow-sticker-lg p-1 flex flex-col">
-                            <button
-                              type="button"
-                              onMouseDown={(e) => { e.preventDefault(); setStartMenu(null); onNewSession(ws); }}
-                              className="text-left rounded-lg px-2 py-1 text-[11px] font-bold cursor-pointer hover:bg-honey-soft"
-                            >
-                              New session
-                            </button>
-                            <button
-                              type="button"
-                              onMouseDown={(e) => { e.preventDefault(); setStartMenu(null); onNewWorktree?.(ws); }}
-                              title="A second copy of this project on its own branch"
-                              className="text-left rounded-lg px-2 py-1 text-[11px] font-bold cursor-pointer hover:bg-honey-soft"
-                            >
-                              New worktree…
-                            </button>
-                          </div>
-                        </>
+                        <div className="absolute hv-menu-in origin-top-right right-0 top-full z-50 mt-0.5 w-52 rounded-xl border-2 border-line bg-card shadow-sticker-lg p-1 flex flex-col">
+                          <MenuItem
+                            compact
+                            label="New session"
+                            hint={newSessionKey}
+                            onPick={() => { setStartMenu(null); onNewSession(ws); }}
+                          />
+                          <MenuItem
+                            compact
+                            label="New worktree…"
+                            hint={newWorktreeKey}
+                            onPick={() => { setStartMenu(null); onNewWorktree?.(ws); }}
+                          />
+                        </div>
                       )}
                     </div>
+                  ) : (
+                    <button
+                      type="button"
+                      title="New session"
+                      onClick={() => onNewSession(ws)}
+                      className="text-tangerine hover:text-tangerine-deep cursor-pointer font-black text-sm w-3 shrink-0"
+                    >
+                      +
+                    </button>
                   )}
                 </div>
                 {/* §29 1b: the branch, on its own line under the name. Absent —

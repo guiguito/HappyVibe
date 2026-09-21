@@ -2409,6 +2409,12 @@ export default function App(): React.JSX.Element {
    * the workspace) — a nonce would re-open the dialog on every return.
    */
   const [pendingNewWorktree, setPendingNewWorktree] = useState<string | null>(null);
+  /**
+   * §29: the project a root belongs to. The active root may BE a worktree, and
+   * we do not nest them — so ⌘⇧T inside one makes a worktree of its PROJECT.
+   */
+  const projectOfRoot = (root: string): string =>
+    Object.entries(worktrees).find(([, list]) => list.some((w) => w.path === root))?.[0] ?? root;
   const startNewWorktree = (ws: string): void => {
     setActiveWs(ws);
     setView("chat");
@@ -3093,6 +3099,14 @@ export default function App(): React.JSX.Element {
       if (ws) void newBrowser(ws);
       return;
     }
+    if (is("newWorktree")) {
+      e.preventDefault();
+      // Same `wsId ?? workspaces[0]` fallback as newTerminal/newBrowser above,
+      // so the key works before anything has been focused.
+      const root = wsId ?? workspaces[0];
+      if (root) startNewWorktree(projectOfRoot(root));
+      return;
+    }
     if (is("findSession")) {
       e.preventDefault();
       // A shortcut that silently does nothing is a bug: the 48px rail has no
@@ -3219,6 +3233,8 @@ export default function App(): React.JSX.Element {
         onActivateRoot={activateRoot}
         onCleanUp={cleanUpWorktrees}
         onNewWorktree={startNewWorktree}
+        newSessionKey={formatBinding(bindings.newSession)}
+        newWorktreeKey={formatBinding(bindings.newWorktree)}
         onBranchMenu={(ws) => {
           // The branch menu lives in the panel, where switching also gets the
           // three-choice dialog for a dirty tree — one implementation, not two.
