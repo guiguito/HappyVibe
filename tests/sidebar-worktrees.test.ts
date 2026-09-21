@@ -200,6 +200,23 @@ describe("the worktree cluster — finishing one", () => {
   });
 });
 
+describe("the Sync button says it is working", () => {
+  const c = code(panel);
+
+  it("spins its own glyph while the sync runs", () => {
+    expect(c).toMatch(/<SyncGlyph spinning=\{syncing\} \/>/);
+    expect(c).toMatch(/spinning \? " animate-spin" : ""/);
+  });
+
+  it("off a flag of its OWN, not the panel-wide `working`", () => {
+    // `working` is set by every write here — Fetch, stage, undo, stash, a
+    // branch switch — so spinning off it would turn the Sync arrows for an
+    // action Sync did not run.
+    expect(c).not.toMatch(/<SyncGlyph spinning=\{working\}/);
+    expect(c).toMatch(/setSyncing\(true\)[\s\S]{0,700}?\.finally\(\(\) => setSyncing\(false\)\)/);
+  });
+});
+
 describe("a confirm dialog always has a way out", () => {
   const c = code(panel);
 

@@ -92,6 +92,13 @@ export function ChangesPanel({
   const [openingPr, setOpeningPr] = useState(false);
   const [canDraft, setCanDraft] = useState(false);
   const [working, setWorking] = useState(false);
+  /**
+   * Sync specifically, not `working`. Every write in this panel sets `working`
+   * — Fetch, stage, undo, stash, a branch switch — so spinning the Sync arrows
+   * off it would have them turning for an action Sync did not run, on a button
+   * that is merely disabled like everything else.
+   */
+  const [syncing, setSyncing] = useState(false);
   const [initPreview, setInitPreview] = useState<{ refused: string | null; branch: string; gitignore: string } | null>(null);
   const [switchChoice, setSwitchChoice] = useState<{ branch: string; conflict: boolean } | null>(null);
   const toastTimer = useRef<number | null>(null);
@@ -995,21 +1002,24 @@ export function ChangesPanel({
               <button
                 type="button"
                 disabled={working}
-                onClick={() =>
-                  void act("git fetch && git pull --ff-only && git push", () => window.hv.gitSync(workspace), () => flash("Synced with the remote.")).then((r) => {
-                    // §1: ff-only. A non-fast-forward says so and STOPS — this
-                    // panel ships no conflict UI, and a beginner mid-conflict is
-                    // the worst state it could produce.
-                    if (r && !r.ok && r.nonFF) {
-                      flash("The remote has changes that can’t be combined automatically. Nothing was merged.");
-                    }
-                  })
-                }
+                onClick={() => {
+                  setSyncing(true);
+                  void act("git fetch && git pull --ff-only && git push", () => window.hv.gitSync(workspace), () => flash("Synced with the remote."))
+                    .then((r) => {
+                      // §1: ff-only. A non-fast-forward says so and STOPS — this
+                      // panel ships no conflict UI, and a beginner mid-conflict is
+                      // the worst state it could produce.
+                      if (r && !r.ok && r.nonFF) {
+                        flash("The remote has changes that can’t be combined automatically. Nothing was merged.");
+                      }
+                    })
+                    .finally(() => setSyncing(false));
+                }}
                 // ahead/behind is git-speak: it lives here, not in the bar.
                 title={`${branch?.ahead ?? 0} to send, ${branch?.behind ?? 0} to receive`}
                 className="flex items-center justify-center gap-1.5 rounded-xl bg-tangerine text-paper font-bold text-sm px-3 py-2 border-2 border-tangerine shadow-sticker cursor-pointer hover:brightness-105 disabled:opacity-50"
               >
-                <SyncGlyph />
+                <SyncGlyph spinning={syncing} />
                 {primary.label}
               </button>
             )}
@@ -1628,10 +1638,18 @@ function DownloadGlyph(): React.JSX.Element {
   );
 }
 
-/** Sync: two arrows chasing each other round a circle — send AND receive. */
-function SyncGlyph(): React.JSX.Element {
+/**
+ * Sync: two arrows chasing each other round a circle — send AND receive.
+ *
+ * They turn while the sync runs. `animate-spin` is the app's existing idiom for
+ * "this is running" (five other surfaces use it) and it is deliberately NOT
+ * neutralised under `prefers-reduced-motion`: the reduced-motion block kills
+ * DECORATION and restates the settled frame, where a spinner is the only thing
+ * saying work is in flight. Removing it would remove information, not motion.
+ */
+function SyncGlyph({ spinning = false }: { spinning?: boolean }): React.JSX.Element {
   return (
-    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg viewBox="0 0 24 24" className={`size-4${spinning ? " animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.4-3.9" />
       <path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.4 3.9" />
       <path d="M20 3v4h-4" />
