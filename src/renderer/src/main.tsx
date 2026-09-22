@@ -7,6 +7,7 @@ import { installElectronRenderer } from 'inlet-sdk/crash/electron-renderer'
 import { createErrorBoundary } from 'inlet-sdk/crash/react'
 import App from './App'
 import { rendererAppRoot } from './crashRoot'
+import { BrokenOnPurpose, throwFromRendererModule } from './crashProbe'
 
 // §37. The renderer entry, NOT `inlet-sdk/crash/electron`: the main entry
 // statically imports node:fs, node:os, node:crypto and node:path, which Vite
@@ -52,10 +53,22 @@ function Broken(): React.JSX.Element {
   )
 }
 
-createRoot(document.getElementById('root')!).render(
+const root = createRoot(document.getElementById('root')!)
+root.render(
   <StrictMode>
     <CrashBoundary fallback={<Broken />}>
       <App />
     </CrashBoundary>
   </StrictMode>
 )
+
+// §37: the renderer-side crash probes, dev only. Exposed rather than wired to
+// a button — see crashProbe.tsx. `render` remounts the app with a component
+// that throws, which is the only way to exercise the error boundary for real.
+if (import.meta.env.DEV) {
+  ;(window as unknown as Record<string, unknown>).hvCrashProbe = (kind: 'renderer' | 'render'): string => {
+    if (kind === 'renderer') { setTimeout(throwFromRendererModule, 0); return 'renderer throw scheduled' }
+    if (kind === 'render') { root.render(<CrashBoundary fallback={<Broken />}><BrokenOnPurpose /></CrashBoundary>); return 'render error mounted' }
+    return 'unknown probe'
+  }
+}

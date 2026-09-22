@@ -31,6 +31,7 @@
     "live:why": "git diff --name-only main...HEAD | grep -E 'pi-runtime/extensions/|pi-runtime/package(-lock)?\\.json|src/main/pi/'; git diff --name-only main...HEAD | grep '^tests/' | xargs grep -l 'skipIf(!KEY' 2>/dev/null",
     "icons": "electron scripts/icons.mjs",
     "catalog:plugins": "node --experimental-strip-types --import jiti/register tools/plugin-catalog/build.ts",
+    "catalog:crash-messages": "node scripts/catalog-crash-messages.mjs",
     "catalog:providers": "node --experimental-strip-types --import jiti/register tools/provider-catalog/build.ts"
   },
   "dependencies": {

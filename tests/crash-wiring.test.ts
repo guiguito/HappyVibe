@@ -90,11 +90,17 @@ describe("§37 the init options — what is passed, and what must never be", () 
     expect(crash).toMatch(/\{ exitCode: false \}/);
   });
 
-  it("no `redaction` and no `fetch` override — upstream owns both now", () => {
+  it("no `fetch` override, and `redaction` is ours by name", () => {
     const at = crash.indexOf("installElectronMain(");
     const call = crash.slice(at, crash.indexOf("{ exitCode: false }", at));
-    expect(call).not.toMatch(/^\s*redaction:/m);
     expect(call).not.toMatch(/^\s*fetch:/m);
+    // §37 round 2: the default alone left the database a wall of `<redacted>`
+    // (7 of 20 realistic messages survived, and all seven were the engine's).
+    // `redactMessage` EXTENDS it with an exact-match set generated from our own
+    // literal throws — it must be that function, never `keepMessages`, which
+    // would ship everything.
+    expect(call).toMatch(/^\s*redaction: redactMessage,$/m);
+    expect(crash).not.toMatch(/keepMessages/);
   });
 
   it("no `appRoots` override in main — the default is what keeps frames root-relative", () => {

@@ -14,7 +14,7 @@ import type { CrashEnvelope, CrashReportInput, DropReason, SentReport } from "in
 import { setEnabled } from "inlet-sdk/crash";
 import { resolveFeedbackConfig } from "../feedback/config";
 import { getCrashReports, setCrashReports } from "../config";
-import { TAG_ALLOW, scrubEnvelope } from "./policy";
+import { TAG_ALLOW, redactMessage, scrubEnvelope } from "./policy";
 import { readSentinel, removeSentinel, touchSentinel, writeSentinel } from "./sentinel";
 import { captureCrash, recordCrashSent, setCrashCapture, type CrashRow } from "./client";
 
@@ -76,6 +76,12 @@ function registerCrashIpc(): void {
   // it from electron-debug. Four controls that render only in development are
   // UI built for a test, on a page whose whole job is to be believable.
   ipcMain.handle("hv:crash-test", (e, kind: string) => {
+    // `nested` exists to answer "are the FRAMES any good", which a one-line
+    // throw cannot: it fails several NAMED functions deep so the report carries
+    // a real in-app stack to read, the way a genuine bug would.
+    const level3 = (): never => { throw new Error("hv:crash-test nested"); };
+    const level2 = (): never => level3();
+    const level1 = (): never => level2();
     if (app.isPackaged) return false;
     if (kind === "throw") setTimeout(() => { throw new Error("hv:crash-test throw"); }, 0);
     else if (kind === "reject") void Promise.reject(new Error("hv:crash-test reject"));
@@ -85,6 +91,7 @@ function registerCrashIpc(): void {
     // handler still answered `true`. Measured: zero `render-process-gone`
     // events with two listeners registered, i.e. nothing crashed at all.
     else if (kind === "crash") (e.sender as Electron.WebContents).forcefullyCrashRenderer();
+    else if (kind === "nested") setTimeout(() => level1(), 0);
     else if (kind === "message") captureCrash({ kind: "message", exception: { type: "Probe", message: "hv:crash-test", handled: true, frames: [] } });
     else return false;
     return true;
@@ -147,11 +154,16 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
         tags: { runtime: __RUNTIME_PINS__, channel: cfg.channel },
         tagAllowlist: [...TAG_ALLOW],
         beforeSendSync: scrubEnvelope,
+        // EXTENDS upstream's default rather than replacing it: an exact-match
+        // pre-filter for the messages our own code throws as string literals,
+        // then `defaultRedaction` for everything else. Without it the database
+        // is a wall of `<redacted>` — measured 7/20 realistic errors surviving,
+        // and all seven were the engine's, not ours. See policy.ts.
+        redaction: redactMessage,
         onSent,
         onDrop,
         timeoutMs: 20_000,
         ...(is.dev ? { debug: (m: string, d?: unknown) => console.warn("[crash]", m, d ?? "") } : {}),
-        // NO `redaction` (0.1.2's default IS our policy — pinned in tests),
         // NO `fetch`, and NO `appRoots`: the default is `app.getAppPath()`,
         // which is what makes every frame root-relative so the developer's own
         // repo path never travels. Overriding it is how that leaks.

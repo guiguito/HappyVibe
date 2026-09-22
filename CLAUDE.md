@@ -1371,6 +1371,29 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - **Crash reports are OFF in development unless `HV_CRASH_DEV=1`** (the `HV_FEEDBACK_FAST_PULSE`
   idiom), and that gate runs FIRST — before the user's setting — so a dev launch creates no
   client, no handlers and no `inlet-crash` queue directory at all. The GUI pass sets the flag.
+- **A crash message survives only if it is in `SAFE_MESSAGES`, and that file is GENERATED — re-run
+  `npm run catalog:crash-messages` after adding a `throw new Error("…")`.** Upstream's
+  `defaultRedaction` is a SHAPE allowlist for ENGINE messages, which is inverted for an app:
+  measured on 20 realistic errors, **7 survived and all 7 were the engine's** (`x is not a
+  function`), while every sentence our own code authors came back `<redacted>`. `redactMessage`
+  (crash/policy.ts) EXTENDS it — exact-match against the generated set, then `defaultRedaction`
+  for everything else, so upstream keeps every refusal it had. The safety rests on the generator
+  taking **plain string literals only**: a literal cannot interpolate, so an interpolated
+  `new Error(\`… ${x}\`)` is refused and stays redacted. The match is EXACT on the trimmed string,
+  never a prefix — `"<safe message> /Users/x"` still redacts. `tests/crash-safe-messages.test.ts`
+  RE-DERIVES the set from source (the `provider-catalog.test.ts` pattern), so a forgotten
+  regenerate fails the gate rather than silently shipping `<redacted>` forever. Never reach for
+  `keepMessages`: that ships everything.
+- **Never judge frame quality from a CDP-eval'd throw — use `scripts/crash-probe.mjs`.** An
+  `evaluate` has no file, so every frame comes back `{line: 1, inApp: false}` and reads exactly
+  like a broken integration. It is not: a throw from real module code gives
+  `{function, file, line, col, inApp: true}` on BOTH sides (`out/main/index.js:19041 level3`,
+  `src/crashProbe.tsx:2 innerRendererWork`). The script fires all five shapes — `nested`,
+  `renderer`, `render`, `reject`, `crash` — from real modules and prints what the server stored.
+  Two facts it encodes: a `render-error`'s frames come from React's COMPONENT stack so it groups
+  by the component that threw, and a `renderer-gone` has no frames **by nature**. Remember the
+  24 h per-fingerprint dedupe when re-firing — delete `<userData>/inlet-crash/dedupe.json` with
+  the app stopped, or the second run silently sends nothing and reads as a regression.
 - **Reading crashes back: there is no `/reports` collection route.** `GET
   /v1/crash-databases/<id>/reports` 404s with *"No route matches"*, which reads like a
   permissions problem and is not. Group first: `…/groups`, then `…/groups/<groupId>/reports`.
