@@ -1397,8 +1397,11 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - **Reading crashes back: there is no `/reports` collection route.** `GET
   /v1/crash-databases/<id>/reports` 404s with *"No route matches"*, which reads like a
   permissions problem and is not. Group first: `…/groups`, then `…/groups/<groupId>/reports`.
-  Inlet's MCP has **no crash verbs** at all (`list_submissions` and friends are feedback-only).
-  Shapes and the measured envelope: `docs/validation/d1.md` §37.
+  **Inlet's MCP gained crash verbs on 2026-09-22** — `list_crash_databases`, `list_crash_groups`,
+  `list_crash_reports`, `get_crash_report` (the whole envelope), `get_crash_stats`,
+  `update_crash_group_state`. Use those; the curls are the fallback. **`list_crash_groups`
+  defaults to `environment: "production"`, so a dev database reads EMPTY until you pass
+  `environment: "development"`.** Shapes and the measured envelope: `docs/validation/d1.md` §37.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array
