@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { CrashClient, MemoryStore, defaultRedaction } from "inlet-sdk/crash";
+import { CrashClient, MemoryStore, defaultAppRoots, defaultRedaction } from "inlet-sdk/crash";
 import { installElectronMain } from "inlet-sdk/crash/electron";
 import type { CrashEnvelope } from "inlet-sdk/crash";
 import { scrubEnvelope } from "../src/main/crash/policy";
@@ -26,7 +26,7 @@ import { scrubEnvelope } from "../src/main/crash/policy";
  *      otherwise. CLAUDE.md records that pattern removing a workaround once
  *      already (the pi-server import).
  *
- * Verified against inlet-sdk 0.1.3.
+ * Verified against inlet-sdk 0.1.5.
  */
 
 const dist = (f: string): string =>
@@ -234,21 +234,65 @@ describe("§37 unclean-exit has a producer now (0.1.3)", () => {
   });
 });
 
-describe("§37 the gap 0.1.3 did NOT close — INVERTS when it does", () => {
-  it("createErrorBoundary still needs appRoots the SDK will not hand us", () => {
-    // 16.2 is only half closed. `installElectronRenderer` derives its roots per
-    // protocol now, so it is given none — but `createErrorBoundary` takes its
-    // OWN `appRoots`, defaulting to `[]`, and with no roots `markFrames` sends
-    // every frame carrying a file to `<external>`. The derivation is
-    // module-private (`defaultAppRoots`) and `RendererCapture.appRoots` is
-    // private, so there is nothing to reuse.
-    //
-    // WHEN THIS FAILS: upstream exported it or defaulted the boundary. Delete
-    // `src/renderer/src/crashRoot.ts`, its test, and the `appRoots` argument in
-    // `src/renderer/src/main.tsx`.
-    const renderer = dist("electron-renderer.js");
-    expect(renderer, "non-vacuity: the derivation exists").toContain("defaultAppRoots");
-    expect(renderer, "but is not exported").not.toMatch(/export\s*\{[^}]*defaultAppRoots/);
-    expect(dist("react.js"), "and the boundary still defaults to no roots").toContain("appRoots = []");
+describe("§37 the renderer derives its own roots now (0.1.4/0.1.5)", () => {
+  // This replaces the last inverting pin, which fired on the 0.1.5 bump exactly
+  // as designed and took `src/renderer/src/crashRoot.ts` with it.
+  //
+  // 0.1.3 fixed `installElectronRenderer` but not `createErrorBoundary`, whose
+  // `appRoots` still defaulted to `[]` — and with no roots `markFrames` sends
+  // every frame carrying a file to `<external>`, so React render errors were
+  // unreadable AND ungrouped (upstream's own 0.1.4 notes: "one group for an
+  // entire application"). 0.1.4 defaulted the boundary to `defaultAppRoots()`
+  // and exported that function; 0.1.5 stopped it throwing on a torn-down
+  // `location`, which mattered because it runs inside `componentDidCatch`.
+  //
+  // Behavioural rather than a source scan: the `clean-exit` pin this file used
+  // to carry gave a FALSE PASS on the 0.1.3 bump when the literal moved to a
+  // module const, and that is the mistake worth not repeating.
+  it("defaultAppRoots is exported, and answers per protocol", () => {
+    // Under `file:` — every packaged Electron app — the answer must be the
+    // document's directory, never the useless string "file://".
+    expect(typeof defaultAppRoots).toBe("function");
+    const saved = globalThis.location;
+    try {
+      Object.defineProperty(globalThis, "location", {
+        value: { protocol: "file:", origin: "file://", pathname: "/A/app.asar/out/renderer/index.html" },
+        configurable: true,
+        writable: true,
+      });
+      expect(defaultAppRoots()).toContain("/A/app.asar/out/renderer");
+
+      Object.defineProperty(globalThis, "location", {
+        value: { protocol: "http:", origin: "http://localhost:5173", pathname: "/index.html" },
+        configurable: true,
+        writable: true,
+      });
+      expect(defaultAppRoots()).toEqual(["http://localhost:5173"]);
+    } finally {
+      Object.defineProperty(globalThis, "location", { value: saved, configurable: true, writable: true });
+    }
+  });
+
+  it("survives a torn-down location instead of throwing inside componentDidCatch", () => {
+    // 0.1.5. A crash reporter must never make a crash worse, and this runs on
+    // the error-boundary path — throwing there turns a contained React error
+    // into an uncontained one.
+    const saved = globalThis.location;
+    try {
+      Object.defineProperty(globalThis, "location", { value: null, configurable: true, writable: true });
+      expect(() => defaultAppRoots()).not.toThrow();
+      expect(defaultAppRoots()).toEqual([]);
+    } finally {
+      Object.defineProperty(globalThis, "location", { value: saved, configurable: true, writable: true });
+    }
+  });
+
+  it("createErrorBoundary defaults its roots, so nothing has to pass them", () => {
+    // WHEN THIS FAILS: the boundary stopped deriving them. `crashRoot.ts` and
+    // an explicit `appRoots` argument in `src/renderer/src/main.tsx` come back,
+    // or every React render-error frame silently becomes `<external>`.
+    const react = dist("react.js");
+    expect(react).toMatch(/appRoots \?\? defaultAppRoots\(\)/);
+    expect(react, "and no bare [] default remains").not.toContain("appRoots = []");
   });
 });

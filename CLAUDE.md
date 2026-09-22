@@ -1344,12 +1344,18 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   Restating a default you agree with is a second copy that can only drift, so
   `tests/crash-sdk-contract.test.ts` asserts the BEHAVIOUR instead, driving upstream's handlers
   through its own `deps: { electron }` seam.
-- **`src/renderer/src/crashRoot.ts` survives 0.1.3 on purpose — do not delete it.**
-  `installElectronRenderer` derives its own roots now, but `createErrorBoundary` takes a SEPARATE
-  `appRoots` that defaults to `[]`, and `markFrames` with no roots sends every frame carrying a
-  file to `<external>`. The derivation is module-private and `RendererCapture.appRoots` is
-  private, so there is nothing to reuse. Deleting it turns every React render-error frame into
-  `<external>` with nothing outside `crash-sdk-contract` failing.
+- **Neither renderer half is given `appRoots` — both derive their own since inlet-sdk 0.1.4.**
+  `installElectronRenderer` and `createErrorBoundary` alike default to the exported
+  `defaultAppRoots()`, which answers the origin over http and the document's DIRECTORY under
+  `file:` (every packaged app). We carried a `crashRoot.ts` helper for exactly one release when
+  only the first half was fixed; it is deleted. If a bump ever regresses the boundary's default,
+  `crash-sdk-contract.test.ts` says so and the helper comes back — otherwise every React
+  render-error frame becomes `<external>` and nothing else notices.
+- **A 0.1.4 bump RE-GROUPS existing crash reports, once, and that is the fix landing.** The
+  fingerprint is built from in-app frames only, so entries whose roots matched nothing used to
+  merge every report sharing a message into one group. Old groups keep their reports and stop
+  growing while new ones appear beside them. Main-process reports were never affected (their
+  roots were always `app.getAppPath()`); renderer ones were.
 - **A source-scan pin can give a FALSE PASS on a bump.** The `clean-exit` gap pin read the
   handler body for the literal; 0.1.3 moved it to a module const behind
   `ignoredRenderer.includes(...)`, so the scan passed while the behaviour changed and we would
