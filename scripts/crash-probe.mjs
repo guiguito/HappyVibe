@@ -59,7 +59,10 @@ const SHAPES = [
   { name: "crash",    fire: "window.hv.crashTest('crash')" },
 ];
 
-const before = new Set((await api("/groups")).groups?.map((g) => g.id) ?? []);
+// Keyed by group -> its newest report. A repeat crash joins an EXISTING group,
+// so group novelty only fires the first time a shape is ever seen; what marks a
+// report as arriving from THIS run is the group's latest report changing.
+const before = new Map(((await api("/groups")).groups ?? []).map((g) => [g.id, g.latestReportId]));
 const only = process.argv.slice(2);
 
 for (const s of SHAPES) {
@@ -75,15 +78,57 @@ for (const s of SHAPES) {
 
 await sleep(4000);
 console.log("\n──────── what the server stored ────────");
+
+/**
+ * What each shape must show to count as a PASS. A verdict rather than output to
+ * read: the first time these reports were reviewed by eye, a frameless probe
+ * artefact was mistaken for a broken integration, which cost a round.
+ * `renderer-gone` is the deliberate exception — a killed process leaves no JS
+ * stack, so "no frames" is the correct answer there and not a failure.
+ */
+const EXPECT = {
+  nested:   { inApp: 4, message: "hv:crash-test nested" },
+  renderer: { inApp: 3, message: "hv:crash-probe renderer" },
+  render:   { inApp: 1, message: "hv:crash-probe render" },
+  reject:   { inApp: 1, message: "hv:crash-test reject" },
+  crash:    { inApp: 0, message: null },
+};
+const fired = SHAPES.filter((s) => !only.length || only.includes(s.name)).map((s) => s.name);
+const seen = [];
+
 for (const g of (await api("/groups")).groups ?? []) {
-  const fresh = before.has(g.id) ? "" : "  ← NEW";
+  const fresh = before.get(g.id) === g.latestReportId ? "" : "  ← NEW";
   const r = (await api(`/groups/${g.id}/reports`)).reports?.[0];
   const ex = r?.envelope?.exception ?? {};
+  const frames = ex.frames ?? [];
+  if (before.get(g.id) !== g.latestReportId) seen.push({ kind: g.kind, message: ex.message ?? null, inApp: frames.filter((f) => f.inApp).length });
   console.log(`\n${g.kind}  type=${ex.type ?? "—"}  message=${JSON.stringify(ex.message ?? null)}${fresh}`);
   console.log(`  topFrame: ${g.topFrame ?? "—"}`);
-  for (const f of (ex.frames ?? []).slice(0, 6)) {
+  for (const f of frames.slice(0, 6)) {
     const where = f.file ? `${f.file}:${f.line}:${f.col}` : `<no file>:${f.line}:${f.col}`;
     console.log(`    ${f.inApp ? "APP " : "ext "} ${(f.function ?? "(anonymous)").padEnd(28)} ${where}`);
   }
-  if (!(ex.frames ?? []).length) console.log("    (no frames — expected for message and renderer-gone)");
+  if (!frames.length) console.log("    (no frames — expected for message and renderer-gone)");
 }
+
+console.log("\n──────── verdict ────────");
+let failed = 0;
+for (const name of fired) {
+  const want = EXPECT[name];
+  const got = seen.find((s) =>
+    want.message === null ? s.message === null : s.message === want.message,
+  );
+  if (!got) {
+    // The overwhelmingly likely cause, so name it rather than leaving a puzzle.
+    console.log(`  FAIL ${name.padEnd(9)} nothing new arrived — 24h dedupe? stop the app and`);
+    console.log(`                 rm "<userData>/inlet-crash/dedupe.json", then re-run`);
+    failed++;
+  } else if (got.inApp < want.inApp) {
+    console.log(`  FAIL ${name.padEnd(9)} ${got.inApp} in-app frames, expected >= ${want.inApp}`);
+    failed++;
+  } else {
+    console.log(`  pass ${name.padEnd(9)} ${got.inApp} in-app frames, message ${JSON.stringify(got.message)}`);
+  }
+}
+console.log(failed ? `\n${failed} shape(s) FAILED` : "\nall shapes passed");
+process.exit(failed ? 1 : 0);

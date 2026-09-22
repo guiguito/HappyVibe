@@ -1384,6 +1384,16 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   RE-DERIVES the set from source (the `provider-catalog.test.ts` pattern), so a forgotten
   regenerate fails the gate rather than silently shipping `<redacted>` forever. Never reach for
   `keepMessages`: that ships everything.
+- **There is deliberately NO Electron end-to-end test for §37, and MCP read-back does not change
+  that.** Refused on four measured grounds: CI has no key (so it could only run locally, which
+  makes it a script); the SDK dedupes 24 h per fingerprint (a second run the same day sends
+  nothing and fails for the wrong reason); every run writes rows a publishable key cannot delete;
+  and the repo has no Electron-launching harness at all. What carries the value instead is
+  `tests/crash-frames-contract.test.ts` — key-free, network-free, Electron-free, so CI runs it —
+  which captures a real `Error` through the real `CrashClient` and asserts named, **root-relative**
+  in-app frames. Its non-vacuity guard is the nonsense-`appRoots` case, without which the test
+  would pass on an SDK that marked everything in-app. `scripts/crash-probe.mjs` covers the rest
+  manually and **exits non-zero** on failure — never pipe it to `tail`, which returns tail's code.
 - **Never judge frame quality from a CDP-eval'd throw — use `scripts/crash-probe.mjs`.** An
   `evaluate` has no file, so every frame comes back `{line: 1, inApp: false}` and reads exactly
   like a broken integration. It is not: a throw from real module code gives
