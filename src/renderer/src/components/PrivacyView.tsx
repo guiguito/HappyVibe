@@ -57,14 +57,8 @@ export function PrivacyView(): React.JSX.Element {
           <div>
             <div className="font-bold">Send crash reports</div>
             <p className="text-sm text-ink-soft mt-0.5">
-              When HappyVibe itself breaks, send a short technical report so the bug can be fixed. It carries the kind
-              of failure, the error&rsquo;s type, where in HappyVibe&rsquo;s own code it happened, your version and
-              your operating system &mdash; never your prompts, your files, your file names or your keys.
-            </p>
-            <p className="text-sm text-ink-soft mt-1.5">
-              This is the one thing the app sends without asking you first. Every send is recorded in your{" "}
-              <span className="font-bold">Audit log</span>. Turning it off stops reporting immediately and deletes
-              anything still waiting to send.
+              When HappyVibe itself breaks, send a short technical report so it can be fixed. Never your prompts,
+              your files or your keys.
             </p>
           </div>
           <button

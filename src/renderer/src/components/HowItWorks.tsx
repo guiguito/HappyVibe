@@ -42,7 +42,7 @@ export const HOWTO_COPY = {
   crashReports: {
     title: "What a crash report contains",
     body:
-      "When HappyVibe itself breaks \u2014 not your code, the app \u2014 it sends us a short technical report so the bug can be found and fixed. A report says what kind of failure it was, the error's type, where in HappyVibe's own code it happened, which version you are running and which operating system. That is all. It never contains your prompts, your files, your file names, your folder paths, the pages you visited, your keys, or anything the agent read or wrote. Error messages are redacted before they leave, so an address or a path inside one is replaced rather than sent. Native crashes leave a memory snapshot on your computer and it stays there \u2014 nothing uploads it, and Reveal below shows you the folder. Every report that leaves is recorded in your Audit log, which is also where you can see exactly what left and when. Turning this off stops reporting immediately and deletes anything still waiting to send.",
+      "A report says what kind of failure it was, the error\u2019s type, where in HappyVibe\u2019s own code it happened, your version and your operating system.\n\nIt never contains your prompts, your files, your file names, your paths or your keys. Error messages are redacted before they leave.\n\nNative crashes leave a snapshot on your computer. Nothing uploads it \u2014 Reveal shows you the folder.\n\nEvery send is listed in your Audit log. Turning this off stops reporting immediately and drops anything still queued.",
   },
   webTools: {
     title: "How web tools work",
@@ -76,7 +76,15 @@ export function HowItWorks({ copy }: { copy: keyof typeof HOWTO_COPY }): React.J
       <summary className="cursor-pointer select-none text-xs font-bold text-ink-soft hover:text-ink">
         {title}
       </summary>
-      <p className="text-xs leading-relaxed text-ink-soft">{body}</p>
+      {/* A blank line starts a new paragraph. Every entry written before this
+          was one block and still renders as one, but a wall of small grey text
+          reads as a justification rather than an explanation — which is the
+          note §37's copy came back with. */}
+      {body.split("\n\n").map((para) => (
+        <p key={para.slice(0, 24)} className="text-xs leading-relaxed text-ink-soft mb-2 last:mb-0">
+          {para}
+        </p>
+      ))}
     </details>
   );
 }
