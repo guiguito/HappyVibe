@@ -415,6 +415,15 @@ contextBridge.exposeInMainWorld("hv", {
   getLongCache: () => ipcRenderer.invoke("hv:get-long-cache"),
   getOpenFilesContext: () => ipcRenderer.invoke("hv:get-open-files-context"),
   setOpenFilesContext: (on: boolean) => ipcRenderer.invoke("hv:set-open-files-context", on),
+
+  // §37 crash reports.
+  getCrashReports: () => ipcRenderer.invoke("hv:get-crash-reports"),
+  setCrashReports: (on: boolean) => ipcRenderer.invoke("hv:set-crash-reports", on),
+  crashInfo: () => ipcRenderer.invoke("hv:crash-info"),
+  crashReveal: () => ipcRenderer.invoke("hv:crash-reveal"),
+  /** Dev-only; main refuses it in a packaged build. No button calls this — the
+      GUI pass drives it from electron-debug. */
+  crashTest: (kind: "throw" | "reject" | "crash" | "message") => ipcRenderer.invoke("hv:crash-test", kind),
   setLongCache: (on: boolean) => ipcRenderer.invoke("hv:set-long-cache", on),
   getShortcuts: () => ipcRenderer.invoke("hv:get-shortcuts"),
   setShortcuts: (map: Record<string, string>) => ipcRenderer.invoke("hv:set-shortcuts", map),
@@ -715,10 +724,31 @@ contextBridge.exposeInMainWorld("hv", {
   },
   // An extension asked for UI HappyVibe can't render; main auto-denied it so the
   // extension isn't left hanging (uiFallback.ts). Surfaced as a session notice.
+  // §37: a crash report left the machine. Ids and counts only — the payload is
+  // the audit row, which by construction carries no message and no frames.
+  onCrashSent: (cb: (r: { reportId: string; kind: string; isNewGroup: boolean }) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: unknown): void =>
+      cb(p as { reportId: string; kind: string; isNewGroup: boolean });
+    ipcRenderer.on("hv:crash-sent", listener);
+    return () => ipcRenderer.removeListener("hv:crash-sent", listener);
+  },
   onUiUnhandled: (cb: (i: { sessionId: string; method?: string }) => void): (() => void) => {
     const listener = (_e: Electron.IpcRendererEvent, p: unknown): void =>
       cb(p as { sessionId: string; method?: string });
     ipcRenderer.on("hv:ui-unhandled", listener);
     return () => ipcRenderer.removeListener("hv:ui-unhandled", listener);
   },
+});
+
+/**
+ * §37 — the channel `inlet-sdk/crash/electron-renderer` looks for
+ * (`globalThis.inletCrash.send`). Deliberately OUTSIDE the `hv` object and with
+ * the channel as a LITERAL: the renderer hands over an envelope, never a
+ * channel name, so this bridge cannot be turned into a general-purpose send.
+ * Main re-validates anyway — it reads only `kind`, `exception`, `context`,
+ * `tags` and `fingerprint` and fills the release itself — but a forwarded
+ * channel would be a hole worth having regardless.
+ */
+contextBridge.exposeInMainWorld("inletCrash", {
+  send: (_channel: string, envelope: unknown): void => ipcRenderer.send("inlet:crash", envelope),
 });

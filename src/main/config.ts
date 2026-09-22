@@ -42,6 +42,7 @@ interface ConfigFile {
   bypassAll?: boolean;
   /** Round 11: set only when the user turns OFF open-files context (default on). */
   openFilesContextOff?: boolean;
+  crashReportsOff?: boolean;
   workspaceBypass?: Record<string, boolean>;
   /** §14 Skills: external skill dirs linked in place (e.g. ~/.claude/skills).
       Scanned for skills that still go through review-before-active. */
@@ -501,6 +502,26 @@ export function setOpenFilesContext(on: boolean): void {
   const cfg = load();
   if (on) delete cfg.openFilesContextOff;
   else cfg.openFilesContextOff = true;
+  save(cfg);
+}
+
+/**
+ * §37 — crash reports, the same idiom one setting over.
+ *
+ * ON by default and global: whether this person wants their failures reported
+ * is a fact about the person, not about a folder. Stored inverted so the
+ * default needs no migration, and so a config file written before §37 reads as
+ * "on" rather than as "unset" — which is what makes the opt-OUT an opt-out
+ * rather than a silent opt-in at the next launch.
+ */
+export function getCrashReports(): boolean {
+  return !load().crashReportsOff;
+}
+
+export function setCrashReports(on: boolean): void {
+  const cfg = load();
+  if (on) delete cfg.crashReportsOff;
+  else cfg.crashReportsOff = true;
   save(cfg);
 }
 

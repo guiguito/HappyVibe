@@ -39,6 +39,11 @@ export const HOWTO_COPY = {
     body:
       "A worktree is a second copy of this project's files, on its own branch, in its own folder — so an agent can work there without touching what you have open here. Its settings are the project's: the same model, the same permissions, the same memory. Its files are its own. HappyVibe keeps the ones it makes in its own data folder rather than inside your project, so they never show up as changes to save. Make one from the branch menu in Changes, and finish it from the same panel: merge it back, open a pull request, or remove it.",
   },
+  crashReports: {
+    title: "What a crash report contains",
+    body:
+      "A report says what kind of failure it was, the error\u2019s type, where in HappyVibe\u2019s own code it happened, your version and your operating system.\n\nIt never contains your prompts, your files, your paths or your keys. Error messages are redacted before they leave, and native crash snapshots stay on your computer.",
+  },
   webTools: {
     title: "How web tools work",
     body:
@@ -71,7 +76,15 @@ export function HowItWorks({ copy }: { copy: keyof typeof HOWTO_COPY }): React.J
       <summary className="cursor-pointer select-none text-xs font-bold text-ink-soft hover:text-ink">
         {title}
       </summary>
-      <p className="text-xs leading-relaxed text-ink-soft">{body}</p>
+      {/* A blank line starts a new paragraph. Every entry written before this
+          was one block and still renders as one, but a wall of small grey text
+          reads as a justification rather than an explanation — which is the
+          note §37's copy came back with. */}
+      {body.split("\n\n").map((para) => (
+        <p key={para.slice(0, 24)} className="text-xs leading-relaxed text-ink-soft mb-2 last:mb-0">
+          {para}
+        </p>
+      ))}
     </details>
   );
 }

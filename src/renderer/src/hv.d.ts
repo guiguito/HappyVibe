@@ -9,6 +9,31 @@ export interface HvScheduleDrawerRequest {
   sessionId: string;
 }
 
+/**
+ * §37 — the audit row a crash send writes. Ids, a kind and two counts: there is
+ * deliberately no message, no frames and no context field to render, because
+ * the audit log records THAT something left, never a second copy of it.
+ */
+export interface HvCrashRow {
+  reportId: string;
+  groupId: string;
+  isNewGroup: boolean;
+  kind: string;
+  bytes: number;
+  channel: string;
+}
+
+/** What the Privacy page reads. `lastReport` is the raw envelope of the most
+    recent send, shown verbatim so "what was sent" is answerable, not asserted. */
+export interface HvCrashInfo {
+  enabled: boolean;
+  installed: boolean;
+  lastSent: HvCrashRow | null;
+  lastReport: Record<string, unknown> | null;
+  queueDir: string;
+  dumpsDir: string;
+}
+
 declare global {
 /**
  * §34. Mirrors the client shape of Inlet's element union
@@ -1080,6 +1105,18 @@ interface HvApi {
   /** Round 11: is the open-files list sent with prompts? Global, default on. */
   getOpenFilesContext(): Promise<boolean>;
   setOpenFilesContext(on: boolean): Promise<void>;
+
+  /** §37 crash reports. Global, default ON, live in both directions — turning
+      it off stops capture AND drops anything already queued. */
+  getCrashReports(): Promise<boolean>;
+  setCrashReports(on: boolean): Promise<void>;
+  crashInfo(): Promise<HvCrashInfo>;
+  crashReveal(): Promise<void>;
+  /** Dev-only, refused in a packaged build. Nothing in the UI calls it — the
+      GUI pass drives it from electron-debug. */
+  crashTest(kind: "throw" | "reject" | "crash" | "message"): Promise<boolean>;
+  /** A crash report left the machine. Ids and counts only. */
+  onCrashSent(cb: (r: HvCrashRow) => void): () => void;
   setLongCache(on: boolean): Promise<void>;
 
   /** Round 8: keyboard-shortcut overrides (action id → canonical binding). */
@@ -1370,6 +1407,10 @@ interface HvApi {
 
   interface Window {
     hv: HvApi;
+    /** §37: what `inlet-sdk/crash/electron-renderer` sends renderer reports
+        through. The channel is fixed in the preload; this signature only
+        matches the SDK's. */
+    inletCrash: { send(channel: string, envelope: unknown): void };
   }
 }
 

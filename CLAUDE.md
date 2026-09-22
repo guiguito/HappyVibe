@@ -1316,6 +1316,119 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - **A schedule prompting its own run must not `index.touch`.** `lastUsedAt` means "a human touched
   this", and it is exactly what `archivePreviousRun` reads to decide whether the user adopted a run
   and it should stay in the sidebar. `promptSession(..., { source: "schedule" })` is the seam.
+- **§37 crash reports: `src/main/crash/client.ts` is the seam, and `ipc.ts` must never import
+  `./crash`.** `crash/index.ts` imports `electron` and `@electron-toolkit/utils`; under vitest
+  `electron` is a CommonJS stub with no named exports, so reaching it from a vitest-imported
+  module kills that whole FILE with *"Named export 'BrowserWindow' not found"* — naming line 10
+  of the crash module and never the cause. Measured: `captureCrash` living beside the Electron
+  code took **six** files red at once (`documents.ts`, `mcpAdapterStore.ts` and the three tests
+  that import `ipc.ts`). This is the SAME rule CLAUDE.md already states for `ipc.ts` and
+  `@electron-toolkit/utils`, one hop away, and the same class as `schedules.ts` and
+  `terminalSettings.ts`. So `captureCrash`/`attachCrashAudit`/`recordCrashSent` live in the
+  import-free `client.ts`, and the five `hv:crash-*` handlers live **inside** `crash/index.ts`
+  (`registerCrashIpc`, called before every gate so the Privacy page still opens with reporting
+  off). Pinned by `tests/crash-wiring.test.ts`.
+- **The renderer cannot import `inlet-sdk/crash/electron`** — it statically imports `node:fs`,
+  `node:os`, `node:crypto` and `node:path`. It TYPECHECKS and it runs in dev; `npm run build`
+  fails. The renderer entry is `inlet-sdk/crash/electron-renderer` (build-enforced node-free
+  upstream) and it finds main through `globalThis.inletCrash.send`, which is why the preload's
+  `exposeInMainWorld("inletCrash", …)` is a contract rather than a convention. Same
+  works-in-dev-broken-in-release shape as §27's worklet.
+- **Exit-reason filtering is UPSTREAM's since inlet-sdk 0.1.3 — do not re-add ours, and do not
+  pass `ignoreRendererReasons`/`ignoreChildReasons` either.** Its defaults are `['clean-exit']`
+  for a renderer and `['clean-exit', 'killed']` for a child, which is exactly the split this app
+  cost a GUI round to derive: a child is killed because we asked (the voice host's own `kill()`),
+  a renderer is killed by the OS, which is an OOM kill and the crash most worth hearing about.
+  Measured on macOS/Electron 44.2.0, a forcefully crashed renderer reports **`killed`, exitCode
+  2** — so a rule that drops `killed` for renderers swallows every renderer death silently.
+  Restating a default you agree with is a second copy that can only drift, so
+  `tests/crash-sdk-contract.test.ts` asserts the BEHAVIOUR instead, driving upstream's handlers
+  through its own `deps: { electron }` seam.
+- **Neither renderer half is given `appRoots` — both derive their own since inlet-sdk 0.1.4.**
+  `installElectronRenderer` and `createErrorBoundary` alike default to the exported
+  `defaultAppRoots()`, which answers the origin over http and the document's DIRECTORY under
+  `file:` (every packaged app). We carried a `crashRoot.ts` helper for exactly one release when
+  only the first half was fixed; it is deleted. If a bump ever regresses the boundary's default,
+  `crash-sdk-contract.test.ts` says so and the helper comes back — otherwise every React
+  render-error frame becomes `<external>` and nothing else notices.
+- **A 0.1.4 bump RE-GROUPS existing crash reports, once, and that is the fix landing.** The
+  fingerprint is built from in-app frames only, so entries whose roots matched nothing used to
+  merge every report sharing a message into one group. Old groups keep their reports and stop
+  growing while new ones appear beside them. Main-process reports were never affected (their
+  roots were always `app.getAppPath()`); renderer ones were.
+- **A source-scan pin can give a FALSE PASS on a bump.** The `clean-exit` gap pin read the
+  handler body for the literal; 0.1.3 moved it to a module const behind
+  `ignoredRenderer.includes(...)`, so the scan passed while the behaviour changed and we would
+  have carried a dead workaround forever. Prefer behaviour when upstream offers a test seam. And
+  when faking Electron events, the arities differ: `render-process-gone` is
+  `(event, webContents, details)`, `child-process-gone` is `(event, details)`.
+- **`BrowserWindow.getFocusedWindow()` is null whenever the app is not frontmost**, which is
+  always when a GUI pass drives it over CDP. `hv:crash-test` used it with `?.` and so did
+  nothing while still answering `true` — a test control that reports success having tested
+  nothing. It takes `event.sender` now. The same trap is live in `index.ts`'s New Window menu
+  item, which tolerates it; anything that must ACT on a window should not.
+- **A deduped crash report raises no banner, and that is correct.** The SDK dedupes 24 h per
+  fingerprint, persisted in `dedupe.json`, so firing the same `hv:crash-test` twice shows a
+  banner once — the banner tracks SENDS, not captures. Test it with a unique message (an
+  uncaught renderer `throw` carrying a timestamp) or you will chase a bug that is not there.
+- **A Pi child exit is reported only when `piFrames` finds a frame inside our own bundle**, and
+  that condition is the difference between a signal and a stream. Pi dies for user reasons
+  constantly — a bad provider key, `402 Insufficient Balance`, the `EPERM: uv_cwd` path, a
+  terminal the user killed — and with no frames they all collapse onto ONE fingerprint
+  (`reason|signal|name`, code excluded), so one empty account would file the same report daily
+  and bury the Pi crash that IS ours. `piErrorType`'s `PiExit` fallback is the tell. The stderr
+  TAIL never travels: it stays in the local `session.crash` row, and `message` is sent empty.
+- **`{ exitCode: false }` and the absent `appRoots` are both deliberate.** The first is now
+  upstream's default and stays spelled out because main exiting takes every live Pi session with
+  it, including an in-flight delegation. The second is the opposite: `appRoots` defaults to
+  `app.getAppPath()`, which is exactly what makes every frame root-relative, so **overriding it
+  is how the developer's own repo path starts travelling**. Likewise no `redaction` option —
+  0.1.2's `defaultRedaction` IS the policy, pinned in `crash-policy.test.ts` rather than
+  reimplemented, because a wrapper that agrees with the default can only drift from it.
+- **Crash reports are OFF in development unless `HV_CRASH_DEV=1`** (the `HV_FEEDBACK_FAST_PULSE`
+  idiom), and that gate runs FIRST — before the user's setting — so a dev launch creates no
+  client, no handlers and no `inlet-crash` queue directory at all. The GUI pass sets the flag.
+- **A crash message survives only if it is in `SAFE_MESSAGES`, and that file is GENERATED — re-run
+  `npm run catalog:crash-messages` after adding a `throw new Error("…")`.** Upstream's
+  `defaultRedaction` is a SHAPE allowlist for ENGINE messages, which is inverted for an app:
+  measured on 20 realistic errors, **7 survived and all 7 were the engine's** (`x is not a
+  function`), while every sentence our own code authors came back `<redacted>`. `redactMessage`
+  (crash/policy.ts) EXTENDS it — exact-match against the generated set, then `defaultRedaction`
+  for everything else, so upstream keeps every refusal it had. The safety rests on the generator
+  taking **plain string literals only**: a literal cannot interpolate, so an interpolated
+  `new Error(\`… ${x}\`)` is refused and stays redacted. The match is EXACT on the trimmed string,
+  never a prefix — `"<safe message> /Users/x"` still redacts. `tests/crash-safe-messages.test.ts`
+  RE-DERIVES the set from source (the `provider-catalog.test.ts` pattern), so a forgotten
+  regenerate fails the gate rather than silently shipping `<redacted>` forever. Never reach for
+  `keepMessages`: that ships everything.
+- **There is deliberately NO Electron end-to-end test for §37, and MCP read-back does not change
+  that.** Refused on four measured grounds: CI has no key (so it could only run locally, which
+  makes it a script); the SDK dedupes 24 h per fingerprint (a second run the same day sends
+  nothing and fails for the wrong reason); every run writes rows a publishable key cannot delete;
+  and the repo has no Electron-launching harness at all. What carries the value instead is
+  `tests/crash-frames-contract.test.ts` — key-free, network-free, Electron-free, so CI runs it —
+  which captures a real `Error` through the real `CrashClient` and asserts named, **root-relative**
+  in-app frames. Its non-vacuity guard is the nonsense-`appRoots` case, without which the test
+  would pass on an SDK that marked everything in-app. `scripts/crash-probe.mjs` covers the rest
+  manually and **exits non-zero** on failure — never pipe it to `tail`, which returns tail's code.
+- **Never judge frame quality from a CDP-eval'd throw — use `scripts/crash-probe.mjs`.** An
+  `evaluate` has no file, so every frame comes back `{line: 1, inApp: false}` and reads exactly
+  like a broken integration. It is not: a throw from real module code gives
+  `{function, file, line, col, inApp: true}` on BOTH sides (`out/main/index.js:19041 level3`,
+  `src/crashProbe.tsx:2 innerRendererWork`). The script fires all five shapes — `nested`,
+  `renderer`, `render`, `reject`, `crash` — from real modules and prints what the server stored.
+  Two facts it encodes: a `render-error`'s frames come from React's COMPONENT stack so it groups
+  by the component that threw, and a `renderer-gone` has no frames **by nature**. Remember the
+  24 h per-fingerprint dedupe when re-firing — delete `<userData>/inlet-crash/dedupe.json` with
+  the app stopped, or the second run silently sends nothing and reads as a regression.
+- **Reading crashes back: there is no `/reports` collection route.** `GET
+  /v1/crash-databases/<id>/reports` 404s with *"No route matches"*, which reads like a
+  permissions problem and is not. Group first: `…/groups`, then `…/groups/<groupId>/reports`.
+  **Inlet's MCP gained crash verbs on 2026-09-22** — `list_crash_databases`, `list_crash_groups`,
+  `list_crash_reports`, `get_crash_report` (the whole envelope), `get_crash_stats`,
+  `update_crash_group_state`. Use those; the curls are the fallback. **`list_crash_groups`
+  defaults to `environment: "production"`, so a dev database reads EMPTY until you pass
+  `environment: "development"`.** Shapes and the measured envelope: `docs/validation/d1.md` §37.
 - Every fs writer must be path-confined (pattern: agentsMd.ts / files.ts `resolveInWorkspace`).
 - Workspace paths are normalized inside WorkspaceRegistry — never compare raw path strings.
 - Renderer perf invariants: streaming text stays OUT of the transcripts array

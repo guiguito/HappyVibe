@@ -13,6 +13,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { nodeExecPath } from "./pi/spawn";
+import { captureCrash } from "./crash/client";
 import { MAX_FILE_BYTES, MENTION_CONTEXT_CAP } from "./files";
 import {
   DOCUMENT_TOOL, documentErrorSentence, documentErrorUserMessage, documentExtension, isDocumentPath,
@@ -138,6 +139,13 @@ export async function convertDocument(absPath: string, opts: ConvertOpts): Promi
   if (r.timedOut) return { ok: false, path: absPath, name, error: { code: "timeout" } };
   if (!r.reply) {
     const detail = r.stderr.trim().split("\n").slice(-3).join(" | ").slice(0, 300);
+    // §37: the exit code refines the grouping; `detail` and `absPath` never
+    // travel — one is a stderr tail and the other is the user's own file.
+    captureCrash({
+      kind: "child-exit",
+      exit: { code: r.code ?? undefined, name: "anydoc-bridge" },
+      fingerprint: ["{{ default }}", String(r.code)],
+    });
     return {
       ok: false,
       path: absPath,

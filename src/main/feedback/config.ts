@@ -29,6 +29,8 @@ export interface FeedbackConfig {
   baseUrl: string;
   publishableKey: string;
   databases: { general: string; session: string };
+  /** §37: the crash database for this channel. Same `ipk_` key as feedback. */
+  crashDatabase: string;
 }
 
 export const FEEDBACK_CHANNELS = {
@@ -36,15 +38,22 @@ export const FEEDBACK_CHANNELS = {
     baseUrl: "https://feedback.bzapps.eu",
     publishableKey: "ipk_MMpg82eVQNJo9NIiEfyzEODvhPa-Ho9n" as string | null,
     databases: { general: "fdb_h2ntrck1mywr", session: "fdb_384szrcgeb7n" },
+    crashDatabase: "cdb_aamshzzkjx9c",
   },
   prod: {
     baseUrl: "https://feedback.bzapps.eu",
     publishableKey: "ipk_mF6m0qBQWvn0uFOZg7CKv9f_HOagaTIN" as string | null,
     databases: { general: "fdb_yfre0219xr82", session: "fdb_hnbkxr94p5cd" },
+    crashDatabase: "cdb_64m8jfkbxw2y",
   },
 } as const satisfies Record<
   FeedbackChannel,
-  { baseUrl: string; publishableKey: string | null; databases: { general: string; session: string } }
+  {
+    baseUrl: string;
+    publishableKey: string | null;
+    databases: { general: string; session: string };
+    crashDatabase: string;
+  }
 >;
 
 export function resolveFeedbackConfig(
@@ -64,6 +73,7 @@ export function resolveFeedbackConfig(
       general: env.HV_FEEDBACK_DB_GENERAL ?? base.databases.general,
       session: env.HV_FEEDBACK_DB_SESSION ?? base.databases.session,
     },
+    crashDatabase: env.HV_CRASH_DB ?? base.crashDatabase,
   };
 }
 

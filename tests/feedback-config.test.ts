@@ -55,6 +55,7 @@ describe("resolveFeedbackConfig", () => {
       baseUrl: "http://localhost:3000",
       publishableKey: "ipk_x",
       databases: { general: "fdb_a", session: "fdb_b" },
+      crashDatabase: FEEDBACK_CHANNELS.prod.crashDatabase,
     });
   });
 
@@ -69,6 +70,25 @@ describe("resolveFeedbackConfig", () => {
    */
   it("a non-ipk_ key is refused (a server key must never be wired in)", () => {
     expect(resolveFeedbackConfig({ HV_FEEDBACK_PUBLISHABLE_KEY: "isk_nope" }, true)).toBeNull();
+  });
+
+  /**
+   * §37 — the crash database rides the SAME table and the SAME key, so there is
+   * one `is.dev` resolution and one `ipk_` shape refusal for both features. Two
+   * tables would be two places for a channel to be wrong.
+   */
+  it("each channel has its own crash database, and they differ", () => {
+    const dev = resolveFeedbackConfig({}, true)!;
+    const prod = resolveFeedbackConfig({}, false)!;
+    expect(dev.crashDatabase).toMatch(/^cdb_/);
+    expect(prod.crashDatabase).toMatch(/^cdb_/);
+    // If these ever collapse to one id, development crashes land in the
+    // database a real user's crashes land in, with nothing saying so.
+    expect(dev.crashDatabase).not.toBe(prod.crashDatabase);
+  });
+
+  it("HV_CRASH_DB overrides it, like every other id here", () => {
+    expect(resolveFeedbackConfig({ HV_CRASH_DB: "cdb_other" }, true)?.crashDatabase).toBe("cdb_other");
   });
 
   it("fastPulse is exactly the '1' flag", () => {

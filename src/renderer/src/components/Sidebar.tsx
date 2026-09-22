@@ -26,6 +26,9 @@ export type View =
   // §19 (2026-08-30): the model calls the app makes without a session.
   // §30: the changelog is product state, like stats and audit.
   | "models" | "permissions" | "sysprompt" | "onBehalf" | "stats" | "audit" | "changelog" | "shortcuts"
+  // §37: the one page that answers "what does this app send" — a usage
+  // analytics switch lands here next, which is why it is not named "Crash reports".
+  | "privacy"
   | "terminal"
   // §27.
   | "voice"
@@ -33,6 +36,16 @@ export type View =
   | "schedules"
   | "workspace";
 
+
+/** §37: the Privacy glyph — a shield, the one icon nobody has to be taught. */
+function PrivacyIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z" />
+      <path d="M9.5 12.2l1.8 1.8 3.4-3.6" />
+    </svg>
+  );
+}
 
 /** §35: the Schedules glyph, in both sidebar states and on a run's session row. */
 function ClockIcon(): React.JSX.Element {
@@ -329,6 +342,9 @@ export const NAV: Array<{ view: View; label: string; Icon: () => React.JSX.Eleme
   { view: "onBehalf", label: "AI autofill", Icon: AutofillIcon, group: "app" },
   // Closes the group: of the four it is the one you set once and never reopen.
   { view: "shortcuts", label: "Keyboard shortcuts", Icon: KeyboardIcon, group: "app" },
+  // §37: last, past the set-once page — what the app sends is a thing you
+  // decide once and then forget, and the group's order is by frequency.
+  { view: "privacy", label: "Privacy", Icon: PrivacyIcon, group: "app" },
   // Consulted, not changed (§30's own phrase) — the read-only surfaces.
   { view: "stats", label: "Stats", Icon: StatsIcon, group: "record" },
   { view: "audit", label: "Audit log", Icon: AuditIcon, group: "record" },

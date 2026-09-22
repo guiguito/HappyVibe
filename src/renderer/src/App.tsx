@@ -13,6 +13,7 @@ import { OnBehalfView } from "./components/OnBehalfView";
 import { DashboardView } from "./components/DashboardView";
 import { AuditView } from "./components/AuditView";
 import { ChangelogView } from "./components/ChangelogView";
+import { PrivacyView } from "./components/PrivacyView";
 import { type TranscriptItem } from "./components/Transcript";
 import { type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
@@ -3019,6 +3020,19 @@ export default function App(): React.JSX.Element {
   // each takes a strip off the top, so appearing and vanishing shoves the whole
   // conversation. Both hooks live up here for the rule the block above records.
   const errorBanner = usePresence(!!error, DUR.fast);
+  // §37: a crash report left the machine without anyone clicking Send, so the
+  // app says so. Once per window load and NOT persisted — this is a notice
+  // about something that just happened, not a setting (§20 Principle 10).
+  const [crashNotice, setCrashNotice] = useState(false);
+  const crashBanner = usePresence(crashNotice, DUR.fast);
+  // Both halves are load-bearing and they fail in opposite directions. The
+  // live event covers a crash while you are looking at the app; the `lastSent`
+  // read covers the far more likely case — the app crashed, queued the report,
+  // and sent it on the next launch, which is a window you were never shown.
+  useEffect(() => {
+    void window.hv.crashInfo().then((i) => { if (i.lastSent) setCrashNotice(true); });
+    return window.hv.onCrashSent(() => setCrashNotice(true));
+  }, []);
   // `activeView`'s own expression, inlined: that const is computed below the
   // early return and a hook cannot wait for it. Spelling it out rather than
   // approximating with `view` keeps the banner off the forced Models page.
@@ -3309,6 +3323,25 @@ export default function App(): React.JSX.Element {
             <span className="flex-1">{error}</span>
           </Banner>
         )}
+        {crashBanner.mounted && (
+          <Banner tone="info" leaving={crashBanner.leaving} onDismiss={() => setCrashNotice(false)}>
+            <span className="flex-1">A crash report was sent to HappyVibe.</span>
+            <button
+              type="button"
+              className="underline font-bold cursor-pointer"
+              onClick={() => { setCrashNotice(false); navigate({ view: "privacy" }); }}
+            >
+              What was sent
+            </button>
+            <button
+              type="button"
+              className="underline font-bold cursor-pointer"
+              onClick={() => { setCrashNotice(false); void window.hv.setCrashReports(false); }}
+            >
+              Turn off
+            </button>
+          </Banner>
+        )}
         {/* B4: permanent dangerous-mode warning with one-click off. */}
         {dangerBanner.mounted && (
           <Banner tone="danger" leaving={dangerBanner.leaving}>
@@ -3382,6 +3415,7 @@ export default function App(): React.JSX.Element {
           {activeView === "stats" && <DashboardView workspaces={workspaces} />}
           {activeView === "audit" && <AuditView sessions={sessions} workspaces={workspaces} />}
           {activeView === "changelog" && <ChangelogView />}
+          {activeView === "privacy" && <PrivacyView />}
           {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
           {activeView === "schedules" && (
             <SchedulesView

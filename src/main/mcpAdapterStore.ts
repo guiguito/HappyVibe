@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { nodeExecPath } from "./pi/spawn.js";
+import { captureCrash } from "./crash/client";
 
 /** Built by scripts/build-mcp-oauth-bridge.mjs (gitignored, made by postinstall). */
 export const MCP_OAUTH_BRIDGE_RELPATH = "bin/mcp-oauth-bridge.mjs";
@@ -144,6 +145,12 @@ export function createAdapterStore(opts: {
           const line = out.trim().split("\n").pop() ?? "";
           if (!line) {
             const tail = err.trim().split("\n").slice(-3).join(" | ").slice(0, 300);
+            // §37: the code refines the grouping; `tail` never travels.
+            captureCrash({
+              kind: "child-exit",
+              exit: { code: code ?? undefined, name: "mcp-oauth-bridge" },
+              fingerprint: ["{{ default }}", String(code)],
+            });
             return reject(
               new Error(`mcp-oauth-bridge exited ${code} with no output${tail ? `: ${tail}` : ""}`),
             );

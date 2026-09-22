@@ -190,6 +190,10 @@ export function aggregate(
         // to send is for the audit log, not the dashboard. Named so the switch
         // stays an inventory of every type main writes.
         break;
+      case "crash.sent":
+        // §37: likewise — a crash report that left the machine belongs in the
+        // audit log, not in Stats. Named here so the switch stays an inventory.
+        break;
       case "assistant.oneshot": {
         const d = e.data as { estTokens?: number; ok?: boolean } | undefined;
         oneShotCount += 1;

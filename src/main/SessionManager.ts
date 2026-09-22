@@ -28,7 +28,7 @@ export interface ManagedClient {
   start(): Promise<void>;
   stop(): void;
   readonly pid: number | undefined;
-  on(event: "exit", cb: (info: { code: number | null; stderr?: string }) => void): unknown;
+  on(event: "exit", cb: (info: { code: number | null; stderr?: string; stderrLines?: string[] }) => void): unknown;
 }
 
 export interface SessionExit {
@@ -37,6 +37,9 @@ export interface SessionExit {
   intentional: boolean;
   /** Tail of the child's stderr — why it died, when it died unexpectedly. */
   stderr?: string;
+  /** §37: the whole 40-line ring, for frame extraction only. Never displayed,
+      never logged — `piFrames` is the only consumer and it keeps no message. */
+  stderrLines?: string[];
 }
 
 type PidFile = Record<string, string>; // pid -> sessionId
@@ -149,11 +152,11 @@ export class SessionManager extends EventEmitter {
 
         const client = this.opts.spawn(workspace, resumeFile, sessionId);
         rec.client = client;
-        client.on("exit", ({ code, stderr }) => {
+        client.on("exit", ({ code, stderr, stderrLines }) => {
           if (this.records.get(sessionId) !== rec) return; // superseded by a restart
           this.records.delete(sessionId);
           this.untrackPid(client.pid);
-          this.emit("session-exit", { sessionId, code, intentional: rec.stopping, stderr } satisfies SessionExit);
+          this.emit("session-exit", { sessionId, code, intentional: rec.stopping, stderr, stderrLines } satisfies SessionExit);
         });
         await client.start();
         this.trackPid(client.pid, sessionId);

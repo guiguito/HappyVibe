@@ -4,6 +4,10 @@ directories:
   output: release
 files:
   - out/**
+  # §37: the renderer's source maps are emitted (sourcemap: 'hidden') so a crash
+  # report can be symbolicated locally, but they never ship — a map is the
+  # unminified source, and the artifact is public.
+  - "!out/**/*.map"
 extraResources:
   - from: pi-runtime
     to: pi-runtime
