@@ -42,7 +42,7 @@ export const HOWTO_COPY = {
   crashReports: {
     title: "What a crash report contains",
     body:
-      "A report says what kind of failure it was, the error\u2019s type, where in HappyVibe\u2019s own code it happened, your version and your operating system.\n\nIt never contains your prompts, your files, your file names, your paths or your keys. Error messages are redacted before they leave.\n\nNative crashes leave a snapshot on your computer. Nothing uploads it \u2014 Reveal shows you the folder.\n\nEvery send is listed in your Audit log. Turning this off stops reporting immediately and drops anything still queued.",
+      "A report says what kind of failure it was, the error\u2019s type, where in HappyVibe\u2019s own code it happened, your version and your operating system.\n\nIt never contains your prompts, your files, your paths or your keys. Error messages are redacted before they leave, and native crash snapshots stay on your computer.",
   },
   webTools: {
     title: "How web tools work",
