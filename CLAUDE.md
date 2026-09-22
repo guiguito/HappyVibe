@@ -1334,17 +1334,28 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   upstream) and it finds main through `globalThis.inletCrash.send`, which is why the preload's
   `exposeInMainWorld("inletCrash", …)` is a contract rather than a convention. Same
   works-in-dev-broken-in-release shape as §27's worklet.
-- **`killed` is deliberate for a CHILD and a real crash for a RENDERER — one set for both is
-  wrong, and it was silent.** `scrubEnvelope` (crash/policy.ts) drops `clean-exit` for either
-  kind, but drops `killed` only for `child-exit`, where it is the voice host's own `kill()`. A
-  renderer is never killed on purpose by this app, so `killed` there is the OS — an OOM kill is
-  the textbook case. Measured on macOS/Electron 44.2.0: a forcefully crashed renderer reports
-  **`killed`, exitCode 2**, so the broad rule swallowed every renderer death and the server got
-  zero `renderer-gone` reports. Narrowness matters the other way too: a `clean-exit` on a kind
-  that is NOT an exit kind must still report. **And do not repeat the claim that a normal window
-  close emits `clean-exit` here** — measured, `window.close()` emits NO `render-process-gone` at
-  all (listeners on both `app` and the `webContents`, neither fired). The close files no report,
-  but not for the reason the design assumed; the `clean-exit` arm is unobserved defence.
+- **Exit-reason filtering is UPSTREAM's since inlet-sdk 0.1.3 — do not re-add ours, and do not
+  pass `ignoreRendererReasons`/`ignoreChildReasons` either.** Its defaults are `['clean-exit']`
+  for a renderer and `['clean-exit', 'killed']` for a child, which is exactly the split this app
+  cost a GUI round to derive: a child is killed because we asked (the voice host's own `kill()`),
+  a renderer is killed by the OS, which is an OOM kill and the crash most worth hearing about.
+  Measured on macOS/Electron 44.2.0, a forcefully crashed renderer reports **`killed`, exitCode
+  2** — so a rule that drops `killed` for renderers swallows every renderer death silently.
+  Restating a default you agree with is a second copy that can only drift, so
+  `tests/crash-sdk-contract.test.ts` asserts the BEHAVIOUR instead, driving upstream's handlers
+  through its own `deps: { electron }` seam.
+- **`src/renderer/src/crashRoot.ts` survives 0.1.3 on purpose — do not delete it.**
+  `installElectronRenderer` derives its own roots now, but `createErrorBoundary` takes a SEPARATE
+  `appRoots` that defaults to `[]`, and `markFrames` with no roots sends every frame carrying a
+  file to `<external>`. The derivation is module-private and `RendererCapture.appRoots` is
+  private, so there is nothing to reuse. Deleting it turns every React render-error frame into
+  `<external>` with nothing outside `crash-sdk-contract` failing.
+- **A source-scan pin can give a FALSE PASS on a bump.** The `clean-exit` gap pin read the
+  handler body for the literal; 0.1.3 moved it to a module const behind
+  `ignoredRenderer.includes(...)`, so the scan passed while the behaviour changed and we would
+  have carried a dead workaround forever. Prefer behaviour when upstream offers a test seam. And
+  when faking Electron events, the arities differ: `render-process-gone` is
+  `(event, webContents, details)`, `child-process-gone` is `(event, details)`.
 - **`BrowserWindow.getFocusedWindow()` is null whenever the app is not frontmost**, which is
   always when a GUI pass drives it over CDP. `hv:crash-test` used it with `?.` and so did
   nothing while still answering `true` — a test control that reports success having tested

@@ -31,28 +31,16 @@ describe("§37 scrubEnvelope — the one content rule the app holds", () => {
     expect(out!.tags).toEqual({ channel: "dev" });
   });
 
-  it("nulls a normal window close — the SDK reports one for every single close", () => {
-    // Without this, each user files a crash report every time they close a
-    // window. It is the highest-volume noise source in the whole feature.
-    expect(scrubEnvelope(env({ kind: "renderer-gone", exit: { reason: "clean-exit" } }))).toBeNull();
-    expect(scrubEnvelope(env({ kind: "child-exit", exit: { reason: "clean-exit" } }))).toBeNull();
-  });
 
-  it("nulls a killed CHILD but keeps a killed RENDERER — the two rules differ", () => {
-    // Found by the GUI pass: the first version used one set for both kinds and
-    // silently swallowed every renderer death, so the server received nothing.
-    // A child killed is the voice host's own kill(), which we asked for. A
-    // renderer is never killed on purpose by this app, so `killed` there is the
-    // OS doing it — an OOM kill — which is precisely the crash worth hearing.
-    expect(scrubEnvelope(env({ kind: "child-exit", exit: { reason: "killed", name: "voice" } }))).toBeNull();
-    expect(scrubEnvelope(env({ kind: "renderer-gone", exit: { reason: "killed" } }))).not.toBeNull();
-  });
 
-  it("keeps a real one", () => {
-    expect(scrubEnvelope(env({ kind: "renderer-gone", exit: { reason: "crashed" } }))).not.toBeNull();
-    expect(scrubEnvelope(env({ kind: "renderer-gone", exit: { reason: "oom" } }))).not.toBeNull();
-    expect(scrubEnvelope(env({ kind: "child-exit", exit: { reason: "crashed", name: "pi" } }))).not.toBeNull();
-    // `clean-exit` on a kind that is not an exit kind must NOT swallow the report.
-    expect(scrubEnvelope(env({ kind: "exception", exit: { reason: "clean-exit" } }))).not.toBeNull();
+  it("passes every exit through — reason filtering is upstream's since 0.1.3", () => {
+    // This function used to drop `clean-exit` (both kinds) and `killed` (child
+    // only). inlet-sdk 0.1.3 adopted exactly that as its default, so carrying a
+    // second copy could only drift from it. `crash-sdk-contract.test.ts` drives
+    // upstream's real handlers and asserts the behaviour instead.
+    for (const reason of ["clean-exit", "killed", "crashed", "oom"]) {
+      expect(scrubEnvelope(env({ kind: "renderer-gone", exit: { reason } })), reason).not.toBeNull();
+      expect(scrubEnvelope(env({ kind: "child-exit", exit: { reason, name: "pi" } })), reason).not.toBeNull();
+    }
   });
 });

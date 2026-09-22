@@ -18,8 +18,19 @@ import { BrokenOnPurpose, throwFromRendererModule } from './crashProbe'
 // A renderer holds no key, no queue and no transport — it builds an envelope
 // and hands it to main over `inlet:crash`, which fills the release and decides
 // what to do with it.
+// §37 round 3: `installElectronRenderer` derives its own roots per protocol
+// since inlet-sdk 0.1.3, so it is given none — that was `crashRoot.ts`'s first
+// job and it is upstream's now.
+//
+// `createErrorBoundary` is NOT fixed the same way and still needs them: its
+// `appRoots` defaults to `[]`, and with no roots `markFrames` sends every frame
+// carrying a file to `<external>`. The SDK derives the right value internally
+// (`defaultAppRoots`) but neither exports it nor exposes it on the capture, so
+// `rendererAppRoot` survives for this one call. DO NOT delete it thinking 0.1.3
+// covered it — every React render-error frame would silently become
+// `<external>` and no test outside crash-sdk-contract would notice.
+const capture = installElectronRenderer()
 const appRoots = [rendererAppRoot(window.location)]
-const capture = installElectronRenderer({ appRoots })
 
 // Before this there was NO error boundary anywhere in the renderer, so a React
 // render error was a white window with nothing on screen and nothing recorded.

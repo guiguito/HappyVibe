@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { CrashClient, MemoryStore, defaultRedaction } from "inlet-sdk/crash";
+import { installElectronMain } from "inlet-sdk/crash/electron";
 import type { CrashEnvelope } from "inlet-sdk/crash";
 import { scrubEnvelope } from "../src/main/crash/policy";
 
@@ -24,7 +26,7 @@ import { scrubEnvelope } from "../src/main/crash/policy";
  *      otherwise. CLAUDE.md records that pattern removing a workaround once
  *      already (the pi-server import).
  *
- * Verified against inlet-sdk 0.1.2.
+ * Verified against inlet-sdk 0.1.3.
  */
 
 const dist = (f: string): string =>
@@ -125,37 +127,128 @@ describe("§37 upstream behaviour we rely on — frame attribution", () => {
   });
 });
 
-describe("§37 gaps we work around — each INVERTS when upstream closes it", () => {
-  it("still reports EVERY renderer exit, including a normal window close", () => {
-    // `installElectronMain` hooks `render-process-gone` on `app` and captures
-    // unconditionally — no `reason` check anywhere in the handler. That is why
-    // `scrubEnvelope` drops `clean-exit`; without it every user files a crash
-    // report every time they close a window.
-    // WHEN THIS FAILS: upstream filters it. Drop the `clean-exit` arm.
-    const src = dist("electron.js");
-    const at = src.indexOf("const onRendererGone");
-    const handler = src.slice(at, src.indexOf("const onChildGone", at));
-    expect(handler, "non-vacuity: the handler must exist").toContain("renderer-gone");
-    expect(handler).not.toContain("clean-exit");
+describe("§37 exit reasons — upstream's defaults ARE our rule (0.1.3)", () => {
+  // These three cases replace source scans that asserted the gap was still
+  // open. One of them gave a FALSE PASS on the 0.1.3 bump: the fix landed as
+  // `ignoredRenderer.includes(details.reason)` with the literal `"clean-exit"`
+  // moved out to a module const, so `not.toContain("clean-exit")` on the
+  // handler body still passed while the behaviour had changed underneath.
+  // Hence behaviour, not text — upstream accepts a fake `electron` for exactly
+  // this (`deps: { electron }`, which is how its own tests drive it).
+  //
+  // What they protect: we deleted our own filter because 0.1.3's defaults are
+  // `['clean-exit']` for a renderer and `['clean-exit', 'killed']` for a child
+  // — the split §14.1 cost a GUI round to get right. If a bump changes either,
+  // we either file a report on every window close or silently drop every OOM
+  // kill, and nothing else in the suite would notice.
+  let teardown: (() => void) | null = null;
+  afterEach(() => { teardown?.(); teardown = null; });
+
+  async function emitted(event: string, details: Record<string, unknown>): Promise<CrashEnvelope[]> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-sdk-contract-"));
+    const handlers = new Map<string, Array<(...a: never[]) => void>>();
+    const seen: CrashEnvelope[] = [];
+    const electron = {
+      app: {
+        getPath: () => dir,
+        getVersion: () => "0.0.0-test",
+        getAppPath: () => process.cwd(),
+        isPackaged: false, // keeps the sentinel disarmed; we are not testing it here
+        on: (ev: string, fn: (...a: never[]) => void) => {
+          handlers.set(ev, [...(handlers.get(ev) ?? []), fn]);
+        },
+        off: () => {},
+      },
+      ipcMain: { on: () => {}, off: () => {} },
+    } as never;
+
+    const installed = await installElectronMain(
+      {
+        baseUrl: "http://127.0.0.1:1",
+        publishableKey: "ipk_sdk_contract_test",
+        crashDatabaseId: "cdb_sdk_contract_test",
+        store: new MemoryStore(),
+        queueDir: dir,
+        dedupe: false,
+        beforeSendSync: (e) => { seen.push(e); return null; },
+      },
+      { exitCode: false },
+      { electron },
+    );
+    teardown = () => {
+      installed.uninstall();
+      fs.rmSync(dir, { recursive: true, force: true });
+    };
+    // Electron's own arities differ and getting this wrong is silent:
+    // `render-process-gone` is (event, webContents, details) while
+    // `child-process-gone` is (event, details). Passed three args for the
+    // latter, `details` arrives as `{}`, the reason is undefined, nothing
+    // matches the ignore list and the report goes out — which reads exactly
+    // like "upstream stopped filtering".
+    const args = event === "render-process-gone" ? [{}, {}, details] : [{}, details];
+    for (const fn of handlers.get(event) ?? []) (fn as (...a: unknown[]) => void)(...args);
+    // `captureReport` is fired with `void`, so let its microtasks settle.
+    await new Promise((r) => setTimeout(r, 50));
+    return seen;
+  }
+
+  it("a normal window close is NOT reported", async () => {
+    // The single highest-volume noise source there is: without this default,
+    // every user files a crash report every time they close a window.
+    expect(await emitted("render-process-gone", { reason: "clean-exit", exitCode: 0 })).toHaveLength(0);
   });
 
-  it("still defaults the Electron renderer's appRoots to location.origin", () => {
-    // Which under `file://` — every packaged Electron app — is the useless
-    // string "file://", so every packaged renderer frame would be `<external>`.
-    // That is the whole of `src/renderer/src/crashRoot.ts`.
-    // WHEN THIS FAILS: upstream derives it. Delete crashRoot.ts and its test.
-    const src = dist("electron-renderer.js");
-    expect(src).toContain("location.origin");
-    expect(src, "no pathname-derived default yet").not.toContain("location.pathname");
+  it("a KILLED renderer IS reported — that is an OOM kill", async () => {
+    // The §14.1 bug, now upstream's invariant. A renderer is never killed on
+    // purpose by this app, so `killed` there is the OS reclaiming memory.
+    const seen = await emitted("render-process-gone", { reason: "killed", exitCode: 2 });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].kind).toBe("renderer-gone");
+    expect(seen[0].exit?.reason).toBe("killed");
   });
 
-  it("still declares `unclean-exit` as a kind with nothing producing it", () => {
-    // The kind exists in the union and the label map; no adapter emits one, so
-    // every integrator wanting it writes the same sentinel. That is
-    // `src/main/crash/sentinel.ts`.
-    // WHEN THIS FAILS: upstream ships a producer. Delete sentinel.ts.
+  it("a killed CHILD is NOT reported — that one we asked for", async () => {
+    // The voice host calls `kill()` itself; `clean-exit` likewise.
+    expect(await emitted("child-process-gone", { reason: "killed", exitCode: 0 })).toHaveLength(0);
+    expect(await emitted("child-process-gone", { reason: "clean-exit", exitCode: 0 })).toHaveLength(0);
+  });
+
+  it("a crashed child IS reported", async () => {
+    // Non-vacuity: without this the three above would pass on an adapter that
+    // reported nothing at all.
+    const seen = await emitted("child-process-gone", { reason: "crashed", exitCode: 1, name: "utility" });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].kind).toBe("child-exit");
+  });
+});
+
+describe("§37 unclean-exit has a producer now (0.1.3)", () => {
+  it("the kind is reachable from a capture, not just declared", () => {
+    // Inverse of the pin this replaces. Until 0.1.3 `unclean-exit` was in the
+    // kind union and the label map with nothing emitting it, which is why we
+    // carried `sentinel.ts`. That file is deleted; `uncleanExit: true` replaces
+    // it, and upstream arms it only in a packaged build exactly as ours did.
     const src = dist("electron.js");
-    expect(src, "the kind is declared").toContain('"unclean-exit"');
-    expect(src, "but nothing captures one").not.toMatch(/kind:\s*["']unclean-exit["']/);
+    expect(src).toMatch(/kind:\s*["']unclean-exit["']/);
+    expect(src, "and it stays packaged-only").toContain("isPackaged");
+  });
+});
+
+describe("§37 the gap 0.1.3 did NOT close — INVERTS when it does", () => {
+  it("createErrorBoundary still needs appRoots the SDK will not hand us", () => {
+    // 16.2 is only half closed. `installElectronRenderer` derives its roots per
+    // protocol now, so it is given none — but `createErrorBoundary` takes its
+    // OWN `appRoots`, defaulting to `[]`, and with no roots `markFrames` sends
+    // every frame carrying a file to `<external>`. The derivation is
+    // module-private (`defaultAppRoots`) and `RendererCapture.appRoots` is
+    // private, so there is nothing to reuse.
+    //
+    // WHEN THIS FAILS: upstream exported it or defaulted the boundary. Delete
+    // `src/renderer/src/crashRoot.ts`, its test, and the `appRoots` argument in
+    // `src/renderer/src/main.tsx`.
+    const renderer = dist("electron-renderer.js");
+    expect(renderer, "non-vacuity: the derivation exists").toContain("defaultAppRoots");
+    expect(renderer, "but is not exported").not.toMatch(/export\s*\{[^}]*defaultAppRoots/);
+    expect(dist("react.js"), "and the boundary still defaults to no roots").toContain("appRoots = []");
   });
 });

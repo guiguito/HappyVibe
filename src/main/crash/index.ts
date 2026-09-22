@@ -15,13 +15,11 @@ import { setEnabled } from "inlet-sdk/crash";
 import { resolveFeedbackConfig } from "../feedback/config";
 import { getCrashReports, setCrashReports } from "../config";
 import { TAG_ALLOW, redactMessage, scrubEnvelope } from "./policy";
-import { readSentinel, removeSentinel, touchSentinel, writeSentinel } from "./sentinel";
 import { captureCrash, recordCrashSent, setCrashCapture, type CrashRow } from "./client";
 
 /** Injected by electron-vite (`main.define`), the same string the Changelog shows. */
 declare const __RUNTIME_PINS__: string;
 
-const TOUCH_MS = 60_000;
 /** Two uncaught exceptions this close together is a loop, not an accident. */
 const FATAL_REPEAT_MS = 10_000;
 
@@ -154,6 +152,13 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
         tags: { runtime: __RUNTIME_PINS__, channel: cfg.channel },
         tagAllowlist: [...TAG_ALLOW],
         beforeSendSync: scrubEnvelope,
+        // §37 round 3: upstream's own sentinel (0.1.3). Off by default, so it
+        // has to be asked for — and armed only in a packaged build, because a
+        // dev runner restarts main constantly and would report the dev loop.
+        // That was our `sentinel.ts`; it is 63 lines we no longer carry, and
+        // upstream's is a superset (a corrupt file reports as
+        // `unclean-exit-corrupt-sentinel` rather than an unknown uptime).
+        uncleanExit: true,
         // EXTENDS upstream's default rather than replacing it: an exact-match
         // pre-filter for the messages our own code throws as string literals,
         // then `defaultRedaction` for everything else. Without it the database
@@ -190,8 +195,6 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
   // reveals the folder instead.
   crashReporter.start({ uploadToServer: false, submitURL: "" });
 
-  installSentinel();
-
   // The double-fault guard, and ONLY for uncaught exceptions. Registered after
   // the SDK's own handler so its capture runs first. A rejection is deliberately
   // not counted: they are common enough that pairing one with a real exception
@@ -205,24 +208,3 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
   });
 }
 
-/**
- * Packaged builds only: electron-vite restarts main constantly in development,
- * so in dev the sentinel would report the dev loop itself, every few seconds.
- */
-function installSentinel(): void {
-  if (!app.isPackaged) return;
-  const dir = app.getPath("userData");
-
-  const previous = readSentinel(dir);
-  if (previous) captureCrash({ kind: "unclean-exit", exit: previous });
-
-  const arm = (): void => {
-    writeSentinel(dir);
-    const timer = setInterval(() => touchSentinel(dir), TOUCH_MS);
-    timer.unref();
-  };
-  if (app.isReady()) arm();
-  else void app.whenReady().then(arm);
-
-  app.on("will-quit", () => removeSentinel(dir));
-}

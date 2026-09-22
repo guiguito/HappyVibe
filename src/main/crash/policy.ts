@@ -26,27 +26,19 @@ import { SAFE_MESSAGES } from "./safeMessages.generated";
 export const TAG_ALLOW = ["runtime", "channel"] as const;
 
 /**
- * An exit the app ASKED for, and the two rules are NOT the same — which the GUI
- * pass caught after a first version used one set for both kinds.
+ * §37 round 3: the exit filter that used to live here is GONE, because
+ * inlet-sdk 0.1.3 adopted it as its default — `ignoreRendererReasons` defaults
+ * to `['clean-exit']` and `ignoreChildReasons` to `['clean-exit', 'killed']`,
+ * which is exactly the split this app derived the hard way (a killed CHILD is
+ * the voice host's own `kill()`; a killed RENDERER is the OS, i.e. an OOM kill,
+ * i.e. the crash most worth hearing about).
  *
- * `clean-exit` is deliberate for either: the SDK reports `renderer-gone` on
- * every normal window close, and without dropping it each user files a crash
- * report every time they close a window.
- *
- * **`killed` is deliberate only for a CHILD.** That one is the voice host's own
- * `kill()`, which we asked for. A RENDERER is never killed on purpose by this
- * app, so `killed` there is the OS killing it — an OOM kill is the textbook
- * case — which is exactly the crash worth hearing about. Measured: a forcefully
- * crashed renderer reports `killed`, so the broader rule silently swallowed
- * every renderer death and the server received nothing at all.
+ * We deliberately do NOT pass either option: restating a default we agree with
+ * is a second copy that can only drift away from it. `crash-sdk-contract.test.ts`
+ * drives upstream's real handlers with a fake `electron` and asserts the
+ * behaviour instead, so a bump that changed those defaults fails there.
  */
-const DELIBERATE: Record<string, ReadonlySet<string>> = {
-  "child-exit": new Set(["clean-exit", "killed"]),
-  "renderer-gone": new Set(["clean-exit"]),
-};
-
 export function scrubEnvelope(e: CrashEnvelope): CrashEnvelope | null {
-  if (DELIBERATE[e.kind]?.has(String(e.exit?.reason ?? ""))) return null;
 
   // `context` is free-form by type and therefore unbounded by construction:
   // anything a future call site puts in it would travel. Dropped always, and a

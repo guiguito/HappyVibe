@@ -117,6 +117,14 @@ describe("§37 the init options — what is passed, and what must never be", () 
     expect(crash).not.toMatch(/\bbeforeSend:/);
   });
 
+  it("asks for the unclean-exit sentinel — it is OFF by default", () => {
+    // 0.1.3 produces `unclean-exit` itself (that was our `sentinel.ts`), but
+    // only when asked. Dropped silently, a hang, a Force Quit and a power loss
+    // all go back to leaving no trace at all, and nothing else would fail.
+    expect(crash).toMatch(/^\s*uncleanExit: true,$/m);
+    expect(crash, "and we no longer carry our own").not.toMatch(/installSentinel|writeSentinel/);
+  });
+
   it("minidumps are captured locally and never uploaded", () => {
     expect(crash).toMatch(/crashReporter\.start\(\{ uploadToServer: false/);
   });
