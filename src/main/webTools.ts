@@ -21,23 +21,31 @@ export interface WebServiceConfig {
   keyEnc?: string;
 }
 
+export const WEB_CUSTOM_URL_INVALID =
+  "Your custom web service URL isn't valid — fix it in Settings → Built-in tools, or switch back to the default service.";
+
+export type ResolvedWebService =
+  | { baseUrl: string; key?: string; service: "default" | "custom" }
+  | { error: string };
+
 /**
  * Which service this call goes to, with the key decrypted only here.
  *
- * "custom" with no usable URL falls back to the default rather than calling
- * nothing: a half-saved setting must not silently break every web tool, and the
- * settings row's own Test button is where a bad URL gets reported.
+ * "custom" with no usable URL is an ERROR, never the default (§32 amendment,
+ * 2026-09-24). It used to fall back so a half-saved setting could not break
+ * every tool — but that sent a user who had deliberately chosen their own
+ * service to ours without a word, which public source turns into a cost leak
+ * and which quietly breaks "nothing leaves that you did not send".
  */
 export function resolveWebService(
   cfg: WebServiceConfig | undefined,
   decrypt: (b64: string) => string,
-): { baseUrl: string; key?: string; service: "default" | "custom" } {
-  const base = cfg?.baseUrl?.trim().replace(/\/+$/, "");
-  if (cfg?.mode === "custom" && base && /^https?:\/\//.test(base)) {
-    const key = cfg.keyEnc ? decrypt(cfg.keyEnc) : undefined;
-    return key ? { baseUrl: base, key, service: "custom" } : { baseUrl: base, service: "custom" };
-  }
-  return { baseUrl: DEFAULT_WEB_SERVICE_URL, service: "default" };
+): ResolvedWebService {
+  if (cfg?.mode !== "custom") return { baseUrl: DEFAULT_WEB_SERVICE_URL, service: "default" };
+  const base = cfg.baseUrl?.trim().replace(/\/+$/, "");
+  if (!base || !/^https?:\/\/./.test(base)) return { error: WEB_CUSTOM_URL_INVALID };
+  const key = cfg.keyEnc ? decrypt(cfg.keyEnc) : undefined;
+  return key ? { baseUrl: base, key, service: "custom" } : { baseUrl: base, service: "custom" };
 }
 
 /**

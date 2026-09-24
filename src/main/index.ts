@@ -5,6 +5,7 @@ import { existsSync, renameSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpc } from './ipc'
+import { startUpdater } from './update'
 import { loginShellPath, mergePath } from './shellPath'
 import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
 import { seedDefaultGitRules } from './gitRules'
@@ -425,7 +426,8 @@ app.whenReady().then(() => {
     if (seedDefaultGitRules(rulesFile(), false)) setGitRulesSeeded(true)
   }
 
-  registerIpc(windows, persistLayout, () => openWindow({ tabsByWs: {}, ui: {} }))
+  // §38: the updater takes the live facts its restart gate needs from registerIpc.
+  startUpdater(registerIpc(windows, persistLayout, () => openWindow({ tabsByWs: {}, ui: {} })))
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

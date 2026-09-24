@@ -516,6 +516,16 @@ function parsePlanWrite(r: { method?: string; title?: string }): { plan: string 
   }
 }
 
+/** §38: what update/index.ts needs from this closure — see the return below. */
+export interface UpdateDeps {
+  liveSessions: () => Array<{ id: string; title: string }>;
+  isIdle: (id: string) => boolean;
+  pendingSessionIds: () => string[];
+  terminalsOpen: () => number;
+  audit: (data: Record<string, unknown>) => void;
+  send: (channel: string, payload?: unknown) => void;
+}
+
 export function registerIpc(
   windows: WindowRegistry<BrowserWindow>,
   /** index.ts owns the layout file (it owns the registry); passed in rather than
@@ -528,7 +538,7 @@ export function registerIpc(
    * focus — so the click has to be able to make one.
    */
   openWindow: () => BrowserWindow,
-): void {
+): UpdateDeps {
   /**
    * §7 round 23 — ONE push helper, and it fans out to every window.
    *
@@ -2060,7 +2070,20 @@ export function registerIpc(
           const rid = r.id;
           const t0 = Date.now();
           const wsId = meta?.workspaceId;
-          const svc = resolveWebServiceForCall();
+          const resolved = resolveWebServiceForCall();
+          // §32 amendment: a custom service with a bad URL refuses the call —
+          // it is never quietly routed to the default box.
+          if ("error" in resolved) {
+            client.respondUi(rid, { value: JSON.stringify({ ok: false, reason: resolved.error }) });
+            void log.append({
+              type: "web.call",
+              sessionId,
+              workspaceId: wsId,
+              data: { tool: `web_${wr.kind}`, ms: 0, ok: false, service: "custom", code: "CUSTOM_URL_INVALID" },
+            });
+            return;
+          }
+          const svc = resolved;
           const o = { baseUrl: svc.baseUrl, ...(svc.key ? { key: svc.key } : {}) };
           const ac = new AbortController();
           if (wr.toolCallId) webInflight.set(wr.toolCallId, ac);
@@ -4241,6 +4264,7 @@ export function registerIpc(
     const svc = p?.baseUrl
       ? { baseUrl: p.baseUrl.trim().replace(/\/+$/, ""), ...(p.key ? { key: p.key } : {}) }
       : resolveWebServiceForCall();
+    if ("error" in svc) return { ok: false as const, reason: svc.error };
     return webProbe(svc, AbortSignal.timeout(10_000));
   });
   // Extended prompt-cache retention. Deliberately NO live reload: the only gain
@@ -7107,4 +7131,16 @@ export function registerIpc(
     if (!Object.values(providerKeyStatus()).some(Boolean) && authJsonProviders(agentDir()).length === 0) return;
     await ensureDefaultModel();
   })().catch(() => { /* the spawn refusal still explains a missing model */ });
+
+  // §38: the live facts the updater's restart gate needs. Returned rather than
+  // exported because they are closure state — and handed to index.ts, never
+  // imported by update/, so ipc.ts keeps not importing anything Electron-only.
+  return {
+    liveSessions: () => manager.activeIds().map((id) => ({ id, title: index.get(id)?.title ?? "" })),
+    isIdle: (id) => activity.isIdle(id),
+    pendingSessionIds: () => pendingUi.list().map((p) => p.sessionId),
+    terminalsOpen: () => terminals.list().length,
+    audit: (data) => void log.append({ type: "app.update", data }),
+    send,
+  };
 }

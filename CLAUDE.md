@@ -1602,6 +1602,21 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `tests/changelog.test.ts` (key-free, in the non-live suite).
 - Cutting one: **`/release <patch|minor|major>`** (`.claude/commands/release.md`) — gate, read the
   log since the last tag, write the entry, stamp, tag. It stops before pushing.
+- **Shipping one (PRD §38): three human steps after `/release`.** `git push --follow-tags` →
+  `.github/workflows/release.yml` builds Windows + Linux into ONE **draft** (a first job creates
+  it, so the two builds cannot race to make two). Then `GH_TOKEN=$(gh auth token) npm run
+  release:mac` on the Mac holding the **Developer ID Application** cert and the `happyvibe`
+  notarytool profile — no Apple secret is in GitHub, by decision. Then Publish. A draft is
+  invisible to every running app. `electron-builder.yml` keeps `identity: null` so a laptop build
+  stays ad-hoc; `release:mac` overrides it on the CLI and sets `HV_MAC_IDENTITY`, which is what
+  makes afterPack sign the pi-runtime binaries (found by scanning — `--deep` never reaches
+  `Resources/`, and electron-builder signs AFTER our hook).
+- **The updater is `src/main/update/`** — `state.ts` is pure and import-free (the renderer imports
+  its types), `index.ts` is Electron-only and **never imported by `ipc.ts`** (the §37 rule);
+  `registerIpc` RETURNS the live facts its restart gate needs and `index.ts` hands them over. Off in
+  dev; `HV_UPDATE_FAKE=ready:0.3.0` (or `available:` / `downloading:`) shows the row for a GUI pass.
+  The gate counts retained prompts even when every session reads idle — a schedule's prompt with
+  every window closed is exactly the case nobody is watching.
 
 ## Docs workflow
 Locked product decisions go to BOTH the Notion PRD and docs/prd.md in the same session,

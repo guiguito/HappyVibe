@@ -2,7 +2,7 @@
  * Pure helpers for afterPack.mjs, split out so tests can call them with fake contexts
  * for all three platforms (tests/afterpack-layout.test.ts).
  */
-import { readdirSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -72,4 +72,58 @@ export function isExcludedFromRuntime(relPath) {
 /** Does the deepest path still fit once installed? */
 export function fitsWindowsPathLimit(longestLength, prefix = WIN_INSTALL_PREFIX_BUDGET) {
   return prefix + "resources\\".length + longestLength <= WIN_PATH_LIMIT;
+}
+
+/**
+ * PRD §4 (open-source round, 2026-09-24): is this file a Mach-O binary?
+ * `head` is the file's first 8 bytes. Thin magics are stored little-endian on
+ * disk; FAT_MAGIC is big-endian and shared with Java's `.class` — told apart by
+ * the next word, which is an arch count for a fat binary (a handful) and a
+ * class-file version for Java (45+).
+ */
+export function isMachO(head) {
+  if (head.length < 4) return false;
+  const le = (head[0] | (head[1] << 8) | (head[2] << 16) | (head[3] << 24)) >>> 0;
+  if (le === 0xfeedfacf || le === 0xfeedface) return true;
+  const be = ((head[0] << 24) | (head[1] << 16) | (head[2] << 8) | head[3]) >>> 0;
+  if (be !== 0xcafebabe && be !== 0xcafebabf) return false;
+  if (head.length < 8) return false;
+  const n = ((head[4] << 24) | (head[5] << 16) | (head[6] << 8) | head[7]) >>> 0;
+  return n > 0 && n < 20;
+}
+
+/**
+ * Every Mach-O file under `root`, found by scanning — never hand-listed (the set
+ * moved 13 → 15 across two pin bumps). Symlinks are skipped: the target is
+ * signed where it actually lives, and codesign refuses to sign through a link.
+ */
+export function machOFiles(root) {
+  const out = [];
+  const head = Buffer.alloc(8);
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile()) {
+        const fd = openSync(p, "r");
+        try {
+          const n = readSync(fd, head, 0, 8, 0);
+          if (isMachO(head.subarray(0, n))) out.push(p);
+        } finally {
+          closeSync(fd);
+        }
+      }
+    }
+  };
+  walk(root);
+  return out.sort();
+}
+
+/**
+ * The Developer ID to sign pi-runtime with, from `HV_MAC_IDENTITY` (set only by
+ * scripts/release-mac.mjs). Null means the ad-hoc path — a laptop build.
+ */
+export function macSignIdentity(env) {
+  const id = env.HV_MAC_IDENTITY?.trim();
+  return id ? id : null;
 }

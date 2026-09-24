@@ -12,7 +12,7 @@ import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
 import { disabledAgentOverrides } from "./subagentSettings";
 import { EXTERNAL_CLI_AGENTS, UNSUPPORTED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
-import { resolveWebService } from "./webTools";
+import { resolveWebService, type ResolvedWebService } from "./webTools";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -43,6 +43,8 @@ interface ConfigFile {
   /** Round 11: set only when the user turns OFF open-files context (default on). */
   openFilesContextOff?: boolean;
   crashReportsOff?: boolean;
+  /** §38: set only when the user turns OFF automatic update downloads (default on). */
+  autoUpdate?: false;
   workspaceBypass?: Record<string, boolean>;
   /** §14 Skills: external skill dirs linked in place (e.g. ~/.claude/skills).
       Scanned for skills that still go through review-before-active. */
@@ -319,6 +321,18 @@ export function setGitRulesSeeded(seeded: boolean): void {
   save(cfg);
 }
 
+// §38: download updates automatically. Absent = on; only `false` is ever stored.
+export function getAutoUpdate(): boolean {
+  return load().autoUpdate ?? true;
+}
+
+export function setAutoUpdate(on: boolean): void {
+  const cfg = load();
+  if (on) delete cfg.autoUpdate;
+  else cfg.autoUpdate = false;
+  save(cfg);
+}
+
 // Round 3 #14: persistent "bypass all permissions".
 export function getGlobalBypass(): boolean {
   return load().bypassAll ?? false;
@@ -415,7 +429,7 @@ export function setWebService(p: { mode: "default" | "custom"; baseUrl?: string;
 }
 
 /** The one place a web-service key is decrypted. Called per tool call. */
-export function resolveWebServiceForCall(): { baseUrl: string; key?: string; service: "default" | "custom" } {
+export function resolveWebServiceForCall(): ResolvedWebService {
   return resolveWebService(load().webService, (b64) => safeStorage.decryptString(Buffer.from(b64, "base64")));
 }
 

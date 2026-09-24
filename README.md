@@ -38,21 +38,19 @@ is actually about to happen. That split is the one thing here no other tool ship
 
 ## Install
 
-Download the latest release for macOS or Windows. Linux packages (AppImage and `.deb`, x64) are
-built on every commit but are not attached to a release yet.
+**[Download the latest release](https://github.com/guiguito/HappyVibe/releases/latest)** — the app
+updates itself after that.
 
-**macOS:** the app is ad-hoc signed and not yet notarized, so Gatekeeper blocks the first launch.
-Either right-click → **Open** → **Open**, or clear the quarantine flag once:
+- **macOS** (Apple silicon): open the `.dmg` and drag HappyVibe to Applications. The build is
+  signed and notarized, so it opens like any other app.
+- **Windows** (x64): run the `Setup.exe`. It is a per-user install (no admin prompt) and is **not
+  code-signed yet**, so SmartScreen warns on first run — choose **More info → Run anyway**.
+- **Linux** (x64): the `.deb` installs cleanly on Ubuntu and Debian; download each new version from
+  the same page. The `.AppImage` runs anywhere and updates itself, but needs `libfuse2`, which
+  Ubuntu 22.04+ does not ship (`sudo apt install libfuse2`) — without it a double-click does
+  nothing.
 
-```bash
-xattr -dr com.apple.quarantine /Applications/HappyVibe.app
-```
-
-Without it you will see *"HappyVibe is damaged and can't be opened"* — that is Gatekeeper on an
-un-notarized app, not a broken download.
-
-**Windows:** a per-user NSIS installer, also unsigned for now, so SmartScreen shows a warning on
-first run.
+This is an early build, published for feedback. The in-app feedback button goes straight to us.
 
 ## Run from source
 
@@ -137,6 +135,12 @@ must never be able to load.
   only part of a call is reported as a floor, marked `+`.
 - **It is not a sandbox** and does not claim to be. The gate is an in-process extension. It asks
   before it acts; it is not a security boundary.
+
+## Contributing
+
+Issues and pull requests are welcome — [CONTRIBUTING.md](CONTRIBUTING.md) has the setup and the one
+rule (sign your commits with `git commit -s`). Security reports go through
+[SECURITY.md](SECURITY.md), never a public issue.
 
 ## Licence
 

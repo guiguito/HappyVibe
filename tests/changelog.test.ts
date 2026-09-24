@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+// @ts-expect-error — plain ESM, no type declarations
+import { changelogEntry } from "../scripts/changelog-entry.mjs";
 
 /**
  * PRD §30. The convention is only self-enforcing if something asserts it, and
@@ -77,5 +79,24 @@ describe("CHANGELOG.md — PRD §30", () => {
       ` · sub-agents ${d["pi-subagents"]}` +
       ` · MCP adapter ${d["pi-mcp-adapter"]}`;
     expect(MD).toContain(line);
+  });
+
+  // §38: the draft release's notes ARE this entry — one copy of the words on
+  // GitHub, the Changelog page and the update row.
+  it("the release body is exactly the top released entry, heading excluded", () => {
+    const body: string | null = changelogEntry(MD, PKG.version);
+    expect(body).toBeTruthy();
+    expect(body).not.toMatch(/^## \[/m);
+    expect(body).toContain("Runtime:");
+  });
+
+  it("an unknown version yields null", () => {
+    expect(changelogEntry(MD, "9.9.9")).toBeNull();
+  });
+
+  it("stops at the next entry and trims", () => {
+    const md = "# C\n\n## [0.2.0] — 2026-09-24\n\n- a\n\n## [0.1.0] — 2026-08-30\n\n- b\n";
+    expect(changelogEntry(md, "0.2.0")).toBe("- a");
+    expect(changelogEntry(md, "0.1.0")).toBe("- b");
   });
 });
