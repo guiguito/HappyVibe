@@ -140,7 +140,7 @@ describe.skipIf(!HAVE_GIT)("listWorktrees over a real repo", () => {
     };
     const m = path.join(root, "m");
     fs.mkdirSync(m);
-    git(m, "init", "-q");
+    git(m, "init", "-q", "-b", "main"); // pinned: CI runners' git defaults to `master`
     git(m, "config", "user.email", "t@x");
     git(m, "config", "user.name", "T");
     fs.writeFileSync(path.join(m, "a"), "a");
@@ -151,7 +151,8 @@ describe.skipIf(!HAVE_GIT)("listWorktrees over a real repo", () => {
 
     const list = await listWorktrees(m);
     expect(list.map((e) => e.branch)).toEqual(["side"]);
-    expect(fs.realpathSync(list[0].path)).toBe(fs.realpathSync(wt));
+    // `.native`: only the OS realpath expands a Windows 8.3 short name (RUNNER~1).
+    expect(fs.realpathSync.native(list[0].path)).toBe(fs.realpathSync.native(wt));
 
     // Asked from a WORKTREE — which happens when the user registered one as a
     // workspace of its own (the Orca / Claude Code shape) — BOTH the main

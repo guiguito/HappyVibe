@@ -101,7 +101,9 @@ describe("§37 upstream behaviour we rely on — frame attribution", () => {
     expect(app.length).toBeGreaterThanOrEqual(3);
     expect(app.slice(0, 3).map((f) => f.function)).toEqual(["innerWork", "middleWork", "outerWork"]);
     for (const f of app.slice(0, 3)) {
-      expect(f.file).toBe(path.relative(process.cwd(), __filename));
+      // The SDK reports frames POSIX-style on every OS, so a group fingerprints the
+      // same from a Windows crash as from a macOS one.
+      expect(f.file).toBe(path.relative(process.cwd(), __filename).split(path.sep).join("/"));
       expect(f.line).toBeGreaterThan(0);
       expect(typeof f.col).toBe("number");
     }

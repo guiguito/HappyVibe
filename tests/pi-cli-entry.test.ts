@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { PI_CLI_RELPATH } from "../src/main/pi/spawn";
 
 /**
@@ -134,7 +135,9 @@ describe("Pi's entrypoints import only packages Pi declares", () => {
     // disk and dies on import, so a source scan alone would have passed through it.
     const out = execFileSync(
       process.execPath,
-      ["-e", `import(${JSON.stringify(path.join(dist, "index.js"))}).then(()=>console.log("ok"))`],
+      // A file:// URL, never a raw path: on Windows `import("D:\\…")` reads `d:` as a
+      // URL scheme and dies (the CLAUDE.md sidecar trap, one file over).
+      ["-e", `import(${JSON.stringify(pathToFileURL(path.join(dist, "index.js")).href)}).then(()=>console.log("ok"))`],
       { encoding: "utf8", timeout: 60_000 },
     );
     expect(out.trim()).toBe("ok");

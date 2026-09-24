@@ -66,7 +66,10 @@ function makeRepo(root: string): void {
 
 function run(cwd: string, args: string[]): string {
   const r = spawnSync("git", args, { cwd, encoding: "utf8" });
-  if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${r.stderr}`);
+  // stdout too: git reports "nothing to commit" there, and a Windows CI failure
+  // with an empty stderr was undiagnosable without it.
+  if (r.status !== 0)
+    throw new Error(`git ${args.join(" ")} failed (${r.status ?? r.error?.message}): ${r.stderr}${r.stdout}`);
   return r.stdout;
 }
 
