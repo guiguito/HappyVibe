@@ -5,8 +5,9 @@ with what was measured and the date. Plan: `docs/superpowers/plans/2026-09-24-op
 
 ## Already measured (2026-09-24)
 
-- Signing identities on the build Mac: one `Apple Development` cert, team `BZGBG4WG68` (paid
-  program). It cannot notarize; `npm run release:mac` refuses it and names the fix.
+- Signing identities on the build Mac: one `Apple Development` cert. **Team ID is `4K6P6U479K` (organisation "BzApps Ltd")**, read from
+  the cert's `OU` — the `(BZGBG4WG68)` in the cert NAME is the member ID, and notarytool answers
+  `403 Invalid or inaccessible developer team ID` to it (measured 2026-09-24). It cannot notarize; `npm run release:mac` refuses it and names the fix.
 - `machOFiles(pi-runtime/node_modules)` finds **11** Mach-O files at Pi 0.86.1 (the Remote Update
   proposal counted 15 at older pins — which is why the set is scanned, never listed).
 - Git history (1,065 commits) contains no real secret; the only key-shaped strings are AWS's and
@@ -16,11 +17,12 @@ with what was measured and the date. Plan: `docs/superpowers/plans/2026-09-24-op
 
 ## Gates
 
-1. **Developer ID Application cert** — Xcode → Settings → Accounts → `BZGBG4WG68` → Manage
-   Certificates → + → Developer ID Application. `security find-identity -v -p codesigning` lists it.
+1. **Developer ID Application cert** — Xcode → Settings → Accounts → BzApps Ltd → Manage
+   Certificates → + → Developer ID Application. On an organisation team only the **Account Holder**
+   can create it. `security find-identity -v -p codesigning` lists it.
    Result:
 2. **Notary profile** — `xcrun notarytool store-credentials happyvibe --apple-id … --team-id
-   BZGBG4WG68 --password <app-specific>`; `xcrun notarytool history --keychain-profile happyvibe`
+   4K6P6U479K` (omit `--password`; paste the app-specific one at the prompt); `xcrun notarytool history --keychain-profile happyvibe`
    exits 0. Result:
 3. **Web box** — per-IP rate limit and a raised `maxConcurrency` on `firecrawl.bzapps.eu`, BEFORE
    the flip. Result:

@@ -616,8 +616,8 @@ it("the README links the latest release", () => {
 
 ## Manual gates (Guilhem, in order — recorded in `docs/validation/up1.md`)
 
-1. Xcode › Settings › Accounts › team `BZGBG4WG68` › Manage Certificates › **+ Developer ID Application**. Confirm with `security find-identity -v -p codesigning`.
-2. `xcrun notarytool store-credentials happyvibe --apple-id <id> --team-id BZGBG4WG68 --password <app-specific password>`.
+1. Xcode › Settings › Accounts › team BzApps Ltd › Manage Certificates (Account Holder only) › **+ Developer ID Application**. Confirm with `security find-identity -v -p codesigning`.
+2. `xcrun notarytool store-credentials happyvibe --apple-id <id> --team-id 4K6P6U479K` (the cert's OU; `BZGBG4WG68` is the member ID and returns 403`.
 3. Web box: per-IP rate limit plus a raised `maxConcurrency` on `firecrawl.bzapps.eu`.
 4. Flip the repo to public (`gh repo edit guiguito/HappyVibe --visibility public --accept-visibility-change-consequences`) and turn on Settings › Code security › **Private vulnerability reporting**.
 5. `/release minor` → `git push --follow-tags` → wait for `release.yml` → `GH_TOKEN=$(gh auth token) npm run release:mac` → read the draft → **Publish**.
