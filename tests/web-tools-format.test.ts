@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_WEB_SERVICE_URL,
   resolveWebService,
+  WEB_CUSTOM_URL_INVALID,
   clampInt,
   pageWindow,
   formatFetch,
@@ -33,12 +34,21 @@ describe("webTools — service resolution (§32)", () => {
     });
   });
 
-  it("falls back to the default when a custom setting is half-saved", () => {
-    // A broken setting must not silently break every web tool; the row's own
-    // Test button is where a bad URL gets reported.
-    expect(resolveWebService({ mode: "custom" }, () => "x").service).toBe("default");
-    expect(resolveWebService({ mode: "custom", baseUrl: "  " }, () => "x").service).toBe("default");
-    expect(resolveWebService({ mode: "custom", baseUrl: "not-a-url" }, () => "x").service).toBe("default");
+  // §32 amendment (open-source round, 2026-09-24): a user who chose their OWN
+  // service is never sent to ours without a word. The old fallback existed so a
+  // half-saved setting could not break every tool; the cost was a silent send
+  // to the maintainer's box, which public source turns into a cost leak.
+  it.each([undefined, "", "  ", "not-a-url", "ftp://fc.example.com"])(
+    "a custom setting with an unusable URL (%j) is an error, never the default box",
+    (baseUrl) => {
+      const r = resolveWebService({ mode: "custom", ...(baseUrl === undefined ? {} : { baseUrl }) }, () => "x");
+      expect(r).toEqual({ error: WEB_CUSTOM_URL_INVALID });
+      expect(JSON.stringify(r)).not.toContain(DEFAULT_WEB_SERVICE_URL);
+    },
+  );
+
+  it("the error names where to fix it", () => {
+    expect(WEB_CUSTOM_URL_INVALID).toMatch(/Settings → Built-in tools/);
   });
 
   it("the default is https — the box answers nginx 404 over http", () => {

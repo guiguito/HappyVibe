@@ -194,11 +194,11 @@ describe("the Built-in tools page never names the backend (§32)", () => {
 /**
  * §32 — "Your own" with nothing typed.
  *
- * `resolveWebService` falls back to the default in that case ON PURPOSE, so a
- * half-saved setting cannot break every web tool. The consequence is that the
- * row's two buttons would otherwise lie: Save would say "Saved." about a
- * service that is not yours, and Test would say "Connected." about
- * HappyVibe's. Found by tracing, not by the type checker — both paths were
+ * `resolveWebService` used to fall back to the default in that case, so the
+ * row's two buttons would lie: Save would say "Saved." about a service that
+ * is not yours, and Test would say "Connected." about HappyVibe's. Since the
+ * §32 amendment (2026-09-24) the resolver refuses instead, and this guard
+ * still catches it one step earlier, before anything is saved. Found by tracing, not by the type checker — both paths were
  * type-correct.
  */
 describe("the web service row refuses a blank custom URL (§32)", () => {

@@ -12,7 +12,7 @@ import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
 import { disabledAgentOverrides } from "./subagentSettings";
 import { EXTERNAL_CLI_AGENTS, UNSUPPORTED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
-import { resolveWebService } from "./webTools";
+import { resolveWebService, type ResolvedWebService } from "./webTools";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -415,7 +415,7 @@ export function setWebService(p: { mode: "default" | "custom"; baseUrl?: string;
 }
 
 /** The one place a web-service key is decrypted. Called per tool call. */
-export function resolveWebServiceForCall(): { baseUrl: string; key?: string; service: "default" | "custom" } {
+export function resolveWebServiceForCall(): ResolvedWebService {
   return resolveWebService(load().webService, (b64) => safeStorage.decryptString(Buffer.from(b64, "base64")));
 }
 

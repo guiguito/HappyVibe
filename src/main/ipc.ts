@@ -2060,7 +2060,20 @@ export function registerIpc(
           const rid = r.id;
           const t0 = Date.now();
           const wsId = meta?.workspaceId;
-          const svc = resolveWebServiceForCall();
+          const resolved = resolveWebServiceForCall();
+          // §32 amendment: a custom service with a bad URL refuses the call —
+          // it is never quietly routed to the default box.
+          if ("error" in resolved) {
+            client.respondUi(rid, { value: JSON.stringify({ ok: false, reason: resolved.error }) });
+            void log.append({
+              type: "web.call",
+              sessionId,
+              workspaceId: wsId,
+              data: { tool: `web_${wr.kind}`, ms: 0, ok: false, service: "custom", code: "CUSTOM_URL_INVALID" },
+            });
+            return;
+          }
+          const svc = resolved;
           const o = { baseUrl: svc.baseUrl, ...(svc.key ? { key: svc.key } : {}) };
           const ac = new AbortController();
           if (wr.toolCallId) webInflight.set(wr.toolCallId, ac);
@@ -4241,6 +4254,7 @@ export function registerIpc(
     const svc = p?.baseUrl
       ? { baseUrl: p.baseUrl.trim().replace(/\/+$/, ""), ...(p.key ? { key: p.key } : {}) }
       : resolveWebServiceForCall();
+    if ("error" in svc) return { ok: false as const, reason: svc.error };
     return webProbe(svc, AbortSignal.timeout(10_000));
   });
   // Extended prompt-cache retention. Deliberately NO live reload: the only gain
