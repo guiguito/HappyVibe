@@ -29,8 +29,8 @@ with what was measured and the date. Plan: `docs/superpowers/plans/2026-09-24-op
 4. **Repo public** — `gh repo edit guiguito/HappyVibe --visibility public
    --accept-visibility-change-consequences`; Settings → Code security → Private vulnerability
    reporting ON. CI runs again (public = free minutes). Result:
-5. **First release** — `/release minor` (0.2.0) → `git push --follow-tags` (also pushes the retro
-   `v0.1.0`) → `release.yml` green → `GH_TOKEN=$(gh auth token) npm run release:mac` → the draft
+5. **First release** — `/release minor` (0.2.0) → `/ship` (pushes `main`, `v0.2.0` and the retro
+   `v0.1.0` by name — `--follow-tags` skips lightweight tags) → `release.yml` green → `GH_TOKEN=$(gh auth token) npm run release:mac` → the draft
    holds exe, AppImage, deb, dmg, zip, blockmap and `latest.yml` / `latest-linux.yml` /
    `latest-mac.yml` → Publish. Result:
 6. **Second Mac** — the downloaded dmg opens with no Gatekeeper warning; the microphone captures
