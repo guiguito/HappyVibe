@@ -43,6 +43,8 @@ interface ConfigFile {
   /** Round 11: set only when the user turns OFF open-files context (default on). */
   openFilesContextOff?: boolean;
   crashReportsOff?: boolean;
+  /** §38: set only when the user turns OFF automatic update downloads (default on). */
+  autoUpdate?: false;
   workspaceBypass?: Record<string, boolean>;
   /** §14 Skills: external skill dirs linked in place (e.g. ~/.claude/skills).
       Scanned for skills that still go through review-before-active. */
@@ -316,6 +318,18 @@ export function getGitRulesSeeded(): boolean {
 export function setGitRulesSeeded(seeded: boolean): void {
   const cfg = load();
   cfg.gitRulesSeeded = seeded;
+  save(cfg);
+}
+
+// §38: download updates automatically. Absent = on; only `false` is ever stored.
+export function getAutoUpdate(): boolean {
+  return load().autoUpdate ?? true;
+}
+
+export function setAutoUpdate(on: boolean): void {
+  const cfg = load();
+  if (on) delete cfg.autoUpdate;
+  else cfg.autoUpdate = false;
   save(cfg);
 }
 

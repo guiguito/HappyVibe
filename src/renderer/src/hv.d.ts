@@ -1,4 +1,5 @@
 import type { Schedule as HvSchedule } from "../../main/schedules";
+import type { UpdateState as HvUpdateState } from "../../main/update/state";
 
 /** §35: a create/update the agent proposed — the drawer opens prefilled and answers it. */
 export interface HvScheduleDrawerRequest {
@@ -1117,6 +1118,14 @@ interface HvApi {
   crashTest(kind: "throw" | "reject" | "crash" | "message"): Promise<boolean>;
   /** A crash report left the machine. Ids and counts only. */
   onCrashSent(cb: (r: HvCrashRow) => void): () => void;
+
+  /** §38 updates. Main re-checks the restart gate on every install click. */
+  updateGet(): Promise<HvUpdateState>;
+  updateCheck(): Promise<void>;
+  updateInstall(): Promise<void>;
+  updateDownload(): Promise<void>;
+  updateSetAuto(on: boolean): Promise<void>;
+  onUpdateState(cb: (s: HvUpdateState) => void): () => void;
   setLongCache(on: boolean): Promise<void>;
 
   /** Round 8: keyboard-shortcut overrides (action id → canonical binding). */

@@ -424,6 +424,17 @@ contextBridge.exposeInMainWorld("hv", {
   /** Dev-only; main refuses it in a packaged build. No button calls this — the
       GUI pass drives it from electron-debug. */
   crashTest: (kind: "throw" | "reject" | "crash" | "message") => ipcRenderer.invoke("hv:crash-test", kind),
+  // §38 updates. Main owns every decision, including whether a restart is safe.
+  updateGet: () => ipcRenderer.invoke("hv:update-get"),
+  updateCheck: () => ipcRenderer.invoke("hv:update-check"),
+  updateInstall: () => ipcRenderer.invoke("hv:update-install"),
+  updateDownload: () => ipcRenderer.invoke("hv:update-download"),
+  updateSetAuto: (on: boolean) => ipcRenderer.invoke("hv:update-set-auto", on),
+  onUpdateState: (cb: (s: unknown) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: unknown): void => cb(p);
+    ipcRenderer.on("hv:update-state", listener);
+    return () => ipcRenderer.removeListener("hv:update-state", listener);
+  },
   setLongCache: (on: boolean) => ipcRenderer.invoke("hv:set-long-cache", on),
   getShortcuts: () => ipcRenderer.invoke("hv:get-shortcuts"),
   setShortcuts: (map: Record<string, string>) => ipcRenderer.invoke("hv:set-shortcuts", map),
