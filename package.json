@@ -24,6 +24,7 @@
     "build:win": "npm run build && node build/win-build.mjs",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
+    "release:mac": "node scripts/release-mac.mjs",
     "package": "electron-vite build && electron-builder --dir",
     "test": "node scripts/test.mjs",
     "test:live": "grep -rl 'skipIf(!KEY' tests/ | xargs npx vitest run --no-file-parallelism",
