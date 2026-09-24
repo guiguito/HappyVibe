@@ -61,7 +61,7 @@ const mkRepo = (): { root: string; m: string } => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-wt-add-"));
   const m = path.join(root, "m");
   fs.mkdirSync(m);
-  git(m, "init", "-q");
+  git(m, "init", "-q", "-b", "main"); // pinned: CI runners' git defaults to `master`
   git(m, "config", "user.email", "t@x");
   git(m, "config", "user.name", "T");
   fs.writeFileSync(path.join(m, "a"), "a");
