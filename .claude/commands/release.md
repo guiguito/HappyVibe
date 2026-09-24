@@ -79,13 +79,11 @@ disagree** — then follow the user's call.
 a GitHub Release, do not build a `.dmg`. The user reads the notes first — they are the one surface
 of this release that every user will see, and they are the point of the whole exercise.
 
-Then tell the user the three steps that follow (PRD §38), and do none of them yourself:
-
-1. `git push --follow-tags` — CI builds Windows and Linux into a **draft** release, notes = this entry.
-2. `GH_TOKEN=$(gh auth token) npm run release:mac` — on their Mac: signs, notarizes and uploads
-   the macOS build into the same draft (the Developer ID never leaves that keychain, PRD §4).
-3. Read the draft on GitHub and press **Publish** — the only step that makes it live for every
-   running app.
+Then tell the user the next step, and do not take it yourself: **`/ship`** (PRD §38) pushes
+`main` and the tag (by name — this command's tag is lightweight, so `--follow-tags` would not push
+it), waits for CI to build Windows and Linux into a **draft** release, signs and uploads the macOS
+build from their Mac, and stops at the draft. Publishing stays one button the user presses after
+reading the notes.
 
 ---
 

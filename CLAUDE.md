@@ -1602,9 +1602,11 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `tests/changelog.test.ts` (key-free, in the non-live suite).
 - Cutting one: **`/release <patch|minor|major>`** (`.claude/commands/release.md`) — gate, read the
   log since the last tag, write the entry, stamp, tag. It stops before pushing.
-- **Shipping one (PRD §38): three human steps after `/release`.** `git push --follow-tags` →
-  `.github/workflows/release.yml` builds Windows + Linux into ONE **draft** (a first job creates
-  it, so the two builds cannot race to make two). Then `GH_TOKEN=$(gh auth token) npm run
+- **Shipping one (PRD §38): `/ship` after `/release`, then the human presses Publish.** It pushes
+  `main` and the tag BY NAME — `/release` makes a LIGHTWEIGHT tag and `--follow-tags` pushes only
+  annotated ones, so `main` would go up alone and the release workflow would never start. The tag
+  fires `.github/workflows/release.yml`, which builds Windows + Linux into ONE **draft** (a first job creates
+  it, so the two builds cannot race to make two). `/ship` then runs `npm run
   release:mac` on the Mac holding the **Developer ID Application** cert and the `happyvibe`
   notarytool profile — no Apple secret is in GitHub, by decision. Then Publish. A draft is
   invisible to every running app. `electron-builder.yml` keeps `identity: null` so a laptop build
