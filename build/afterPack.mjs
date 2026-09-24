@@ -12,6 +12,8 @@ import {
   fitsWindowsPathLimit,
   isExcludedFromRuntime,
   longestRelativePath,
+  machOFiles,
+  macSignIdentity,
   runtimeDest,
   WIN_PATH_LIMIT,
 } from "./afterPackLayout.mjs";
@@ -63,26 +65,44 @@ export default async function afterPack(context) {
     }
   }
 
-  // Copying into the bundle breaks electron-builder's code signature.
-  // Ad-hoc re-sign the whole bundle LAST so the app isn't reported as "damaged".
-  // ponytail: ad-hoc (--sign -) only; swap for a Developer ID identity when notarizing.
+  // Copying into the bundle breaks electron-builder's code signature. Two paths
+  // (PRD §4, open-source round):
+  //  - Developer ID (release:mac sets HV_MAC_IDENTITY): sign every Mach-O under
+  //    Resources/pi-runtime with it, found by scanning. Nothing else — this hook
+  //    runs BEFORE electron-builder's own signing (platformPackager.js:246→255),
+  //    which then signs the app, but only walks app.asar.unpacked, never
+  //    Resources/pi-runtime. --deep would not reach it either.
+  //  - otherwise (a laptop build, identity: null): ad-hoc re-sign the whole
+  //    bundle LAST so the app isn't reported as "damaged".
   if (electronPlatformName === "darwin") {
     const appPath = path.join(appOutDir, `${packager.appInfo.productName}.app`);
-    console.log("[afterPack] Ad-hoc re-signing bundle…");
-    // §27/§8.4: --entitlements is LOAD-BEARING, not tidiness. This re-sign runs
-    // AFTER electron-builder has applied the entitlements, and codesign writes
-    // only the entitlements it is handed — so without this argument it replaces
-    // every signature it touches, including the Helper that actually captures
-    // audio, with an entitlement-free one. The microphone then yields a live
-    // track of pure zeros and the app-level config looks perfectly correct
-    // while you debug it. Verify with:
+    // §27/§8.4: --entitlements is LOAD-BEARING, not tidiness, on BOTH paths.
+    // codesign writes only the entitlements it is handed — so without this
+    // argument it replaces every signature it touches, including the Helper that
+    // actually captures audio, with an entitlement-free one. The microphone then
+    // yields a live track of pure zeros and the app-level config looks perfectly
+    // correct while you debug it. Verify with:
     //   codesign -d --entitlements - "<app>/Contents/Frameworks/HappyVibe Helper.app"
     const entitlements = path.join(__dirname, "entitlements.mac.plist");
-    execFileSync(
-      "codesign",
-      ["--force", "--deep", "--sign", "-", "--entitlements", entitlements, appPath],
-      { stdio: "inherit" },
-    );
+    const identity = macSignIdentity(process.env);
+    if (identity) {
+      const files = machOFiles(dest);
+      console.log(`[afterPack] Signing ${files.length} pi-runtime binaries with ${identity}…`);
+      for (const f of files) {
+        execFileSync(
+          "codesign",
+          ["--force", "--options", "runtime", "--timestamp", "--entitlements", entitlements, "--sign", identity, f],
+          { stdio: "inherit" },
+        );
+      }
+    } else {
+      console.log("[afterPack] Ad-hoc re-signing bundle…");
+      execFileSync(
+        "codesign",
+        ["--force", "--deep", "--sign", "-", "--entitlements", entitlements, appPath],
+        { stdio: "inherit" },
+      );
+    }
   }
   console.log("[afterPack] Done.");
 }
