@@ -44,6 +44,7 @@ import {
 } from "../mentions";
 import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-document";
 import { Banner } from "./Banner";
+import { UpdateRow } from "./UpdateRow";
 import { SessionPulse } from "./SessionPulse";
 
 /** §20 round 17 — red-zone dismissals persist per session (Principle 5: never nag). */
@@ -1378,6 +1379,10 @@ export function ChatView({
           It still yields to both banners: one attention request at a time, and
           the red-zone one is this component's own state, which is why the check
           lives here rather than only in App. */}
+      {/* §38: an update that is ready, in the same quiet line as the pulse below.
+          It yields to the crash banner for the same reason the pulse does. */}
+      {crashed === null && <UpdateRow />}
+
       {pulse?.show && sessionId && crashed === null && !suggestCompact && (
         <SessionPulse
           sessionId={sessionId}
