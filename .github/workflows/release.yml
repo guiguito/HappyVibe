@@ -1,0 +1,81 @@
+name: Release
+
+# PRD §38. Pushing the v<version> tag that /release creates builds Windows and
+# Linux into ONE draft GitHub Release. macOS is NOT here, on purpose: it is
+# signed and notarized on the maintainer's Mac (`npm run release:mac`, PRD §4),
+# so no Apple secret ever reaches GitHub. A draft is invisible to every running
+# app; a person reads it and presses Publish.
+on:
+  push:
+    tags: [v*]
+
+permissions:
+  contents: write
+
+jobs:
+  # One job creates the draft, so the two build jobs cannot race to create two.
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag must equal package.json's version (§30 — one version)
+        run: |
+          want="v$(node -p "require('./package.json').version")"
+          if [ "$want" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json ($want)"; exit 1
+          fi
+      - name: Create the draft, notes = this version's CHANGELOG entry
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/changelog-entry.mjs "${GITHUB_REF_NAME#v}" > notes.md
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --draft --title "HappyVibe ${GITHUB_REF_NAME#v}" --notes-file notes.md
+
+  windows:
+    needs: draft
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: cd pi-runtime && npm ci
+      - run: npm test
+      - run: npm run build
+      # Unsigned in 0.2.0 (PRD §4): SmartScreen's "More info → Run anyway" is in the README.
+      - run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: The updater's metadata exists
+        shell: bash
+        run: test -f release/latest.yml && ls release/*.exe
+
+  linux:
+    needs: draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: cd pi-runtime && npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx electron-builder --linux --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: The updater's metadata exists (AppImage self-updates; the deb links to the release)
+        run: test -f release/latest-linux.yml && ls release/*.AppImage release/*.deb
