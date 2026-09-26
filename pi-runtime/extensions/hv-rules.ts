@@ -150,6 +150,18 @@ export function delegationAgent(args: unknown): string | undefined {
   return typeof v === "string" && v ? v : undefined;
 }
 
+/**
+ * The detached run a delegation's tool result started, or undefined for a call that
+ * returned its answer inline. nicobailon: `details.asyncId`. tintinweb: `details.agentId`
+ * when `details.status === "background"` — a foreground Agent carries an agentId too,
+ * but it is not a run anything must track (d1.md § tintinweb wire shapes).
+ */
+export function delegationRunId(details: unknown): string | undefined {
+  const d = details as { asyncId?: unknown; agentId?: unknown; status?: unknown } | null | undefined;
+  if (typeof d?.asyncId === "string" && d.asyncId) return d.asyncId;
+  return d?.status === "background" && typeof d.agentId === "string" && d.agentId ? d.agentId : undefined;
+}
+
 /** tintinweb's blocking wait: `get_subagent_result` with `wait: true` (§12 never-block rule). */
 export const isResultWait = (tool: unknown, input: unknown): boolean =>
   tool === "get_subagent_result" && (input as { wait?: unknown } | null)?.wait === true;

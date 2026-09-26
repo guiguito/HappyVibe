@@ -23,6 +23,7 @@ import {
 import { isSlashCommandPath, parseAgentFile, renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
 import { declaresTools, twAgentOf, twBoundary, type TwAgentInfo } from "./hv-tw-gate";
 import { setChildPolicy } from "./hv-child-policy";
+import { registerTwRelay } from "./hv-tw-relay";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
   buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, resolvePlanVerdict, restorePlanState, shouldForcePlanOff,
@@ -1766,8 +1767,35 @@ export default function (pi: ExtensionAPI) {
   const subEnvelope = (o: Record<string, unknown>): string => JSON.stringify({ kind: "hv.subagent", ...o });
   const relay = (o: Record<string, unknown>, type: "info" | "warning" = "info"): void => busUi?.notify(subEnvelope(o), type);
 
+  // §12 (2026-09-26): tintinweb's live runs, for the resync and the busy gate.
+  let twRunning: Set<string> = new Set();
+  /** tintinweb's versioned bus RPC (docs/rpc.md): `<channel>:reply:<requestId>` carries `{success}`. */
+  let twSeq = 0;
+  const twRpc = (channel: string, params: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> =>
+    new Promise((resolve) => {
+      const requestId = `hv-${++twSeq}-${Date.now()}`;
+      const t = setTimeout(() => resolve({ ok: false, error: "timeout" }), 10_000);
+      const off = pi.events.on(`${channel}:reply:${requestId}`, (reply) => {
+        clearTimeout(t);
+        (off as unknown as (() => void) | undefined)?.();
+        const r = reply as { success?: boolean; error?: string };
+        resolve({ ok: r?.success === true, error: r?.error });
+      });
+      pi.events.emit(channel, { requestId, ...params });
+    });
+
   // pi.events is absent in the module-level test mocks (real pi always has it).
-  if (pi.events) {
+  if (pi.events && TW) {
+    twRunning = registerTwRelay({
+      on: (ev, h) => pi.events.on(ev, h),
+      relay: (n) => relay({ ...n }),
+      // The registry is tintinweb's documented second surface (docs/rpc.md § manager registry).
+      sessionFileOf: (runId) =>
+        (globalThis as Record<symbol, { getRecord?(id: string): { session?: { sessionManager?: { getSessionFile?(): string | undefined } } } | undefined } | undefined>)[
+          Symbol.for("pi-subagents:manager")
+        ]?.getRecord?.(runId)?.session?.sessionManager?.getSessionFile?.(),
+    });
+  } else if (pi.events) {
     pi.events.on("subagent:async-started", (raw) => {
       const d = raw as { id?: string; agent?: string; task?: string; asyncDir?: string };
       if (!d.id) return;
@@ -1832,7 +1860,8 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const runId = args.trim();
       if (!runId) return;
-      const { ok } = await rpcRequest("interrupt", { runId });
+      // tintinweb: one run is one child, so the run's STOP is its own `subagents:rpc:stop`.
+      const { ok } = TW ? await twRpc("subagents:rpc:stop", { agentId: runId }) : await rpcRequest("interrupt", { runId });
       ctx.ui.notify(subEnvelope({ stage: ok ? "interrupt-sent" : "interrupt-error", runId }), ok ? "info" : "warning");
     },
   });
@@ -1863,6 +1892,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("hv-subagent-list", {
     description: "HappyVibe: emit the active async subagent runs (hv.subagent active notify)",
     handler: async (_args, ctx) => {
+      // tintinweb: children live in THIS process, so what is running is what the relay tracked —
+      // and after a respawn that is nothing, which is the truth the renderer must be told.
+      if (TW) {
+        ctx.ui.notify(subEnvelope({ stage: "active", runs: [...twRunning].map((runId) => ({ runId })) }), "info");
+        return;
+      }
       const sessionId = ctx.sessionManager.getSessionId() ?? undefined;
       let runs: Array<{ runId: string; agent?: string; task?: string; asyncDir: string }> = [];
       try {

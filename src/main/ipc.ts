@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { EMPTY_RULES, delegationAgent, evaluate, isDelegationTool, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
+import { EMPTY_RULES, delegationAgent, delegationRunId, evaluate, isDelegationTool, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
 import { WEB_CAPS } from "../../pi-runtime/extensions/hv-web";
 import { hostOf } from "../../pi-runtime/extensions/hv-browser";
 import { clampInt, formatCrawl, formatFetch, formatMap, formatSearch, SERVICE_UNAVAILABLE_TEXT } from "./webTools";
@@ -1647,7 +1647,7 @@ export function registerIpc(
       // all three symmetrically.
       if (e.type === "tool_execution_end" && isDelegationTool((e as { toolName?: string }).toolName)) {
         const d = (e as { result?: { details?: { asyncId?: unknown; asyncDir?: unknown } } }).result?.details;
-        const runId = typeof d?.asyncId === "string" ? d.asyncId : undefined;
+        const runId = delegationRunId(d);
         const asyncDir = typeof d?.asyncDir === "string" ? d.asyncDir : undefined;
         // Guard the (theoretical) race where a very fast child completes before its
         // own dispatch event is processed: `complete` has then already run, and
@@ -1777,7 +1777,10 @@ export function registerIpc(
           const already = subagentPollers.has(sub.runId);
           activity.asyncStarted(sessionId, sub.runId);
           startSubagentPoll(sessionId, sub.runId, sub.asyncDir);
-          if (!already) void log.append({ type: "subagent.async_started", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, agent: sub.agent } });
+          // tintinweb's `started` arrives BEFORE the tool result (the bus fires during spawn), and
+          // the tool-result branch above logs the same run WITH its toolCallId — the id a reopened
+          // session joins spend on. So on that path this one row is left to it.
+          if (!already && !TW_MAIN) void log.append({ type: "subagent.async_started", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, agent: sub.agent } });
         } else if (sub.stage === "complete" && sub.runId) {
           finishedAsyncRuns.add(sub.runId);
           activity.asyncEnded(sessionId, sub.runId);
@@ -2665,6 +2668,8 @@ export function registerIpc(
    * a reopened session cannot count on).
    */
   const childSessionsByRun = new Map<string, Array<{ sessionFile: string; agent?: string }>>();
+  /** §12 (2026-09-26): this app process boots every session on tintinweb (the dev toggle). */
+  const TW_MAIN = subagentsLibFromEnv(process.env) === "tintinweb";
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
     // §19: a delegation is exactly when a cached model exclusion starts mattering
     // — it is the call that gets silently rerouted. Checked here rather than on a

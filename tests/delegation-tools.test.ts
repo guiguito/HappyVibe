@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import { delegationAgent, isDelegationTool, isResultWait } from "../pi-runtime/extensions/hv-rules";
+import { delegationAgent, delegationRunId, isDelegationTool, isResultWait } from "../pi-runtime/extensions/hv-rules";
 
 describe("isDelegationTool — both vendored stacks, one predicate", () => {
   it("names the nicobailon and tintinweb delegation tools, nothing else", () => {
@@ -47,5 +47,14 @@ describe("delegationAgent — the agent a call names, on either stack", () => {
     expect(delegationAgent({ prompt: "p" })).toBeUndefined();
     expect(delegationAgent({ agent: "" })).toBeUndefined();
     expect(delegationAgent(undefined)).toBeUndefined();
+  });
+});
+
+describe("delegationRunId — the detached run a delegation started", () => {
+  it("nicobailon asyncId, or tintinweb's agentId only for a BACKGROUND run", () => {
+    expect(delegationRunId({ asyncId: "r1", asyncDir: "/tmp/x" })).toBe("r1");
+    expect(delegationRunId({ agentId: "4def0fc5-0e58-4e3", status: "background" })).toBe("4def0fc5-0e58-4e3");
+    expect(delegationRunId({ agentId: "67a074f2-672b-480", status: "completed" })).toBeUndefined(); // foreground
+    expect(delegationRunId(undefined)).toBeUndefined();
   });
 });
