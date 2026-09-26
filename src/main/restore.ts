@@ -82,6 +82,8 @@ export interface RawMessage {
    */
   details?: {
     asyncId?: unknown;
+    /** tintinweb's child id (§12, 2026-09-26). */
+    agentId?: unknown;
     /** §33: the memory card's fields. Same reasoning as asyncId directly above — read from the
      *  structured sibling, never parsed back out of the text. */
     scope?: unknown;
@@ -297,6 +299,9 @@ export function restoreItems(raw: RawMessage[]): RestoreItem[] {
         // (see RawMessage.details). Without it a reopened delegation card has no
         // id to inspect its child with, and expands to an empty panel.
         if (typeof m.details?.asyncId === "string" && m.details.asyncId) tool.asyncId = m.details.asyncId;
+        // tintinweb (§12, 2026-09-26): every Agent result names its child as `agentId` — foreground
+        // too, since a reopened card inspects the child's own session file either way.
+        else if (typeof m.details?.agentId === "string" && m.details.agentId) tool.asyncId = m.details.agentId;
         // §33: the same lift for a memory card. Gated on the TOOL NAME rather than on the
         // fields, because `name` and `type` are common words that other tools' details could
         // carry — this must never turn some future tool's result into a memory card.

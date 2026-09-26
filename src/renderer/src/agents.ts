@@ -4,7 +4,7 @@
  * in tests/agents-renderer.test.ts). Same "try JSON, guard on kind, null on
  * fail" discipline as context.ts / permission.ts.
  */
-import { displayableTask, isDelegationTool } from "../../../pi-runtime/extensions/hv-rules";
+import { delegationRunId, displayableTask, isDelegationTool } from "../../../pi-runtime/extensions/hv-rules";
 import { subagentRosterLine } from "../../../pi-runtime/extensions/hv-agents";
 import { fmtNum } from "./analytics-format";
 
@@ -173,9 +173,31 @@ function toMessages(r: RawResult): SubagentMessage[] {
     .filter((m) => m.text !== "");
 }
 
+/**
+ * tintinweb (§12, 2026-09-26): a FOREGROUND `Agent` result has no `results[]` — its answer
+ * is the text after the "Agent completed in …" header line, and its details carry the
+ * agent, turns and cost. A BACKGROUND receipt is not a trace (the answer comes later).
+ */
+function twForegroundResult(raw: unknown): SubagentResult[] {
+  const r = raw as { content?: Array<{ type?: string; text?: string }>; details?: { agentId?: unknown; status?: unknown; subagentType?: unknown; turnCount?: unknown; cost?: unknown; modelName?: unknown } } | undefined;
+  const d = r?.details;
+  if (typeof d?.agentId !== "string" || d.status === "background") return [];
+  const text = (r?.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+  const answer = text.includes("\n\n") ? text.slice(text.indexOf("\n\n") + 2) : text;
+  return [{
+    agent: typeof d.subagentType === "string" ? d.subagentType : "agent",
+    messages: [],
+    ...(typeof d.turnCount === "number" || typeof d.cost === "number"
+      ? { usage: { ...(typeof d.turnCount === "number" ? { turns: d.turnCount } : {}), ...(typeof d.cost === "number" ? { cost: d.cost } : {}) } }
+      : {}),
+    ...(typeof d.modelName === "string" ? { model: d.modelName } : {}),
+    finalOutput: answer,
+  }];
+}
+
 function toResults(raw: unknown): SubagentResult[] {
   const results = (raw as { details?: { results?: RawResult[] } })?.details?.results;
-  if (!Array.isArray(results)) return [];
+  if (!Array.isArray(results)) return twForegroundResult(raw);
   return results.map((r) => {
     const attempt = r.modelAttempts?.[r.modelAttempts.length - 1];
     return {
@@ -488,8 +510,9 @@ export function parseSubagentEvent(r: { method?: string; message?: string }): Su
  * async card (keyed by runId, raised by the `started` notify) owns the life.
  */
 export function asyncResultInfo(result: unknown): { asyncId: string } | null {
-  const id = (result as { details?: { asyncId?: unknown } } | undefined)?.details?.asyncId;
-  return typeof id === "string" && id ? { asyncId: id } : null;
+  // One rule for both stacks (hv-rules.ts): nicobailon's asyncId, or a BACKGROUND Agent's agentId.
+  const id = delegationRunId((result as { details?: unknown } | undefined)?.details);
+  return id ? { asyncId: id } : null;
 }
 
 
@@ -506,8 +529,9 @@ const LABEL_MAX = 90;
  * a card captioned "[prompt redacted]".
  */
 export function delegationLabel(args: unknown): string {
-  const a = args as { intent?: unknown; task?: unknown } | undefined;
-  const s = displayableTask(a?.intent) ?? displayableTask(a?.task) ?? "";
+  // `description`/`prompt` are tintinweb's `Agent` args; the model writes `description` AS a headline.
+  const a = args as { intent?: unknown; task?: unknown; description?: unknown; prompt?: unknown } | undefined;
+  const s = displayableTask(a?.intent) ?? displayableTask(a?.description) ?? displayableTask(a?.task) ?? displayableTask(a?.prompt) ?? "";
   const t = s.trim().replace(/\s+/g, " ");
   return t.length > LABEL_MAX ? t.slice(0, LABEL_MAX - 1) + "…" : t;
 }

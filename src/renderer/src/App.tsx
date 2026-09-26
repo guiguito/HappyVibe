@@ -83,7 +83,7 @@ import { AgentsMdPanel } from "./components/AgentsMdPanel";
 import type { SessionStats } from "./context";
 import { basename as tabBasename } from "./tabs";
 // Shared tool-name knowledge with the bridge (precedent: toolLabel.ts ← hv-mcp).
-import { isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
+import { delegationAgent, isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
 import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
@@ -1489,7 +1489,9 @@ export default function App(): React.JSX.Element {
             id: t.toolCallId,
             kind: "fg",
             toolCallId: t.toolCallId,
-            agent: (t.args as { agent?: string } | undefined)?.agent ?? "subagent",
+            // Either stack (`agent` / tintinweb `subagent_type`): applySubagentStarted matches the
+            // `started` notify to THIS run by agent name, so a wrong name would draw two circles.
+            agent: delegationAgent(t.args) ?? "subagent",
             label: delegationLabel(t.args),
             startedAt: Date.now(),
             status: "running",

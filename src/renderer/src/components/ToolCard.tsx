@@ -7,6 +7,7 @@ import { toolLabel, type IconKind } from "../toolLabel";
 import { asyncResultInfo, delegationLabel, inspectToResults, isSubagentTool, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
 import { basename, resolveCardPath } from "../tabs";
 import { isDocumentPath } from "../../../../pi-runtime/extensions/hv-document";
+import { delegationAgent } from "../../../../pi-runtime/extensions/hv-rules";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { ZoomableImage } from "./ZoomableImage";
 
@@ -599,7 +600,9 @@ export function delegationSummary(card: ToolCardData): string {
 function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: string | null }): React.JSX.Element {
   const running = card.status === "running";
   const [open, setOpen] = useState(false);
-  const req = card.args as { agent?: string; task?: string } | undefined;
+  const req = card.args as { agent?: string; task?: string; prompt?: string } | undefined;
+  // Either stack's args: nicobailon `agent`/`task`, tintinweb `subagent_type`/`prompt`.
+  const reqAgent = delegationAgent(card.args);
   const results = card.trace?.results ?? [];
   const denied = card.status === "denied";
   const label = delegationLabel(card.args);
@@ -651,7 +654,7 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
     void window.hv.subagentInspect(sessionId, asyncId).then((r) => {
       if (!alive) return;
       if (r.ok) {
-        setInspected(inspectToResults(r.reply, req?.agent ?? "subagent"));
+        setInspected(inspectToResults(r.reply, delegationAgent(card.args) ?? "subagent"));
         setInspectError(null);
       } else {
         // Named, never a spinner: inspection is scoped to the current session's
@@ -668,7 +671,7 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
     return () => {
       alive = false;
     };
-  }, [open, asyncId, sessionId, results.length, req?.agent]);
+  }, [open, asyncId, sessionId, results.length, reqAgent]);
   return (
     // A1 (2026-09-10): where the card→circle flight takes off from. The id is a
     // DOM attribute rather than something parsed out of the card's text — the
@@ -704,8 +707,8 @@ function SubagentCard({ card, sessionId }: { card: ToolCardData; sessionId?: str
             role="img"
           />
           <ToolIcon kind={"robot" as IconKind} className="mt-0.5 size-4 shrink-0 text-sky" />
-          <span className="text-sm min-w-0 break-words flex-1" title={req?.task}>
-            <span className="text-ink-soft">→ asked</span> <span className="font-bold">{req?.agent ?? results[0]?.agent ?? "a subagent"}</span>
+          <span className="text-sm min-w-0 break-words flex-1" title={req?.task ?? req?.prompt}>
+            <span className="text-ink-soft">→ asked</span> <span className="font-bold">{reqAgent ?? results[0]?.agent ?? "a subagent"}</span>
             {label && <span className="text-ink-soft">: {label}</span>}
           </span>
           {/* No status glyph here either, for the reason given above the badge
