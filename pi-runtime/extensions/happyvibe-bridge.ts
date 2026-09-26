@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, UNSUPPORTED_BUILTIN_AGENTS, displayableTask, evaluate, isExternalCliAgent, isShellTool, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, UNSUPPORTED_BUILTIN_AGENTS, displayableTask, evaluate, isExternalCliAgent, isResultWait, isShellTool, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
   SUBAGENT_TASKS_TYPE, bindRun, claimTask, dropPendingTask, emptyTaskMap, releaseTask, restoreTaskMap,
   serializeTaskMap, stashPendingTask, taskFor, type TaskMapState,
@@ -20,7 +20,8 @@ import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
   type MarkKey, type SessionEntry, type ToolSpecLike,
 } from "./hv-context";
-import { isSlashCommandPath, renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
+import { isSlashCommandPath, parseAgentFile, renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
+import { declaresTools, twAgentOf, twBoundary, type TwAgentInfo } from "./hv-tw-gate";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
   buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, resolvePlanVerdict, restorePlanState, shouldForcePlanOff,
@@ -401,6 +402,50 @@ let dangerous = process.env.HV_BYPASS === "1";
  * for a schedule whose mode is "readonly".
  */
 const readonly = readonlyFromEnv(process.env);
+
+// ── §12 tintinweb (2026-09-26) ─────────────────────────────────────────────────
+/** Which sub-agent stack THIS Pi process loaded (spawn.ts). One per process, never both. */
+const TW = process.env.HV_SUBAGENTS_LIB === "tintinweb";
+/**
+ * tintinweb: the tools the user approved per agent type, i.e. what the in-process
+ * guard holds a child of that type to (hv-child-policy `boundaryFor`). Keyed by TYPE
+ * because every child of one type is built from the same agent file, so the approved
+ * set is the same. Never reset per turn: a background child outlives the turn that
+ * approved it. A type nobody approved gets the read-only floor.
+ */
+const approvedBoundaries = new Map<string, string[]>();
+
+/** What tintinweb would give one agent, plus whether its FILE declared `tools:` (see hv-tw-gate.ts). */
+async function twAgentInfo(name: string): Promise<TwAgentInfo | undefined> {
+  // Relative path, never a bare specifier: the package has no exports map and the
+  // bridge must read the SAME discovery tintinweb uses (pinned by the contract test).
+  const { loadCustomAgents } = await import("../node_modules/@tintinweb/pi-subagents/src/custom-agents.ts");
+  const cfg = loadCustomAgents(process.cwd()).get(name);
+  if (!cfg) return undefined;
+  let declared = false;
+  try {
+    declared = !!cfg.sourcePath && declaresTools(parseAgentFile(fs.readFileSync(cfg.sourcePath, "utf8")).frontmatter);
+  } catch {
+    /* unreadable ⇒ undeclared ⇒ the read-only floor: the safe direction */
+  }
+  return { builtinToolNames: cfg.builtinToolNames ?? [], declared, allowedSubagents: cfg.allowedSubagents };
+}
+
+/**
+ * Agents the user switched off on the Agents page. Read LIVE from the file main
+ * already writes for that switch (`<agentDir>/settings.json`, disabledAgentOverrides),
+ * so a toggle applies to the next call without a respawn — the same file, one reader more.
+ */
+function twDisabledAgents(): Set<string> {
+  try {
+    const dir = process.env.PI_CODING_AGENT_DIR;
+    if (!dir) return new Set();
+    const s = JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8")) as { subagents?: { agentOverrides?: Record<string, { disabled?: unknown }> } };
+    return new Set(Object.entries(s.subagents?.agentOverrides ?? {}).filter(([, o]) => o?.disabled === true).map(([n]) => n));
+  } catch {
+    return new Set();
+  }
+}
 
 // ── §23 Plan Mode ───────────────────────────────────────────────────────────
 // Per-session read-only mode. State is {enabled, planPath?}; plan TEXT + STATUS
@@ -1075,7 +1120,7 @@ export default function (pi: ExtensionAPI) {
     // the whole "keep chatting while subagents run" promise. So we intercept
     // `wait` and hand back guidance instead of letting it block. (No audit — this
     // is a behavioral guard, not a permission decision.)
-    if (isWaitTool(tool)) {
+    if (isWaitTool(tool) || (TW && isResultWait(tool, input))) {
       return {
         block: true,
         // X3: the reason IS the instruction here — a shouted "Do NOT" made
@@ -1113,7 +1158,9 @@ export default function (pi: ExtensionAPI) {
     // §12: a delegation gates per AGENT, not per tool — the same reasoning as the
     // two lines above. `subagent` as a rule name made "Allow for session" on a
     // read-only explorer cover a bash-wielding agent for the rest of the session.
-    const subagentName = tool === "subagent" && typeof input.agent === "string" ? input.agent : null;
+    const subagentName = TW
+      ? twAgentOf(tool, input)
+      : tool === "subagent" && typeof input.agent === "string" ? input.agent : null;
     // §32: the three URL web tools gate under the SAME virtual rule as the
     // browser. One fact — "the agent may reach docs.foo.com" — one allow-list,
     // so "Allow for session", a pattern rule and the Permissions page all cover
@@ -1139,7 +1186,7 @@ export default function (pi: ExtensionAPI) {
     // the audit log, so none of §12's three layers reach inside it. Refused BEFORE
     // resolveBoundary below, which is also what WIDENS the session ceiling — a
     // grant for an agent nothing can hold to it is worse than no grant at all.
-    if (isExternalCliAgent(subagentName)) {
+    if (!TW && isExternalCliAgent(subagentName)) {
       audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
       return {
         block: true,
@@ -1153,8 +1200,22 @@ export default function (pi: ExtensionAPI) {
 
     // §12 FR1: resolve the child's reach BEFORE the prompt, so the human approves
     // a boundary rather than a verb. Side-effect-free.
-    const boundary = subagentName ? await resolveBoundary(subagentName) : undefined;
-    if (subagentName) {
+    // tintinweb: the boundary comes from ITS discovery + the agent file (hv-tw-gate.ts);
+    // nicobailon's ceiling/preflight machinery does not exist on that path.
+    const boundary = subagentName
+      ? TW ? twBoundary(subagentName, await twAgentInfo(subagentName), input) : await resolveBoundary(subagentName)
+      : undefined;
+    if (TW && subagentName) {
+      if (twDisabledAgents().has(subagentName)) {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+        return { block: true, reason: `'${subagentName}' is switched off on the Agents page. Delegate to another agent, or do the work in this session.` };
+      }
+      if (!boundary) {
+        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
+        return { block: true, reason: `HappyVibe could not find an agent named '${subagentName}', so it will not launch it. Use one of the agents listed in <happyvibe_subagents>.` };
+      }
+    }
+    if (subagentName && !TW) {
       if (ceilingError) {
         audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
         return { block: true, reason: `HappyVibe could not establish a sub-agent boundary (${ceilingError}), so it will not launch one. Do the work in this session instead.` };
@@ -1190,6 +1251,11 @@ export default function (pi: ExtensionAPI) {
      * — never the reverse.
      */
     const grantBoundary = (): void => {
+      // tintinweb: nothing to widen — record what the in-process guard holds this agent to.
+      if (TW) {
+        if (boundary) approvedBoundaries.set(boundary.agent, [...boundary.tools]);
+        return;
+      }
       if (boundary && needsWiderCeiling(boundary)) {
         ceilingTools = widenBoundary(boundary.tools);
         applyCeiling(sessionIdOf(ctx));

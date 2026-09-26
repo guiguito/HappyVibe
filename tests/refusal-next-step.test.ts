@@ -38,7 +38,9 @@ describe("X7 — every refusal ends with a next step", () => {
 });
 
 describe("X3 — the wait intercept is calm and still derives the tool name", () => {
-  const raw = bridge.slice(bridge.indexOf("if (isWaitTool(tool))"), bridge.indexOf("if (isWaitTool(tool))") + 900);
+  // Prefix, not the whole condition: §12 (2026-09-26) extended it with tintinweb's `wait: true`.
+  const at = bridge.indexOf("if (isWaitTool(tool)");
+  const raw = bridge.slice(at, at + 900);
   // What must be calm is what the MODEL reads. The comment above the refusal
   // quotes the old shout to explain why it went, so comments are stripped.
   const block = raw

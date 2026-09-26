@@ -92,6 +92,14 @@ describe("gatePlanCall", () => {
     // a tool that fell out of the blocked list.
     expect(gatePlanCall("subagent", { agent: "code-explorer" }).kind).toBe("needs-boundary");
   });
+  test("tintinweb (§12, 2026-09-26): Agent needs a boundary, a workflow is blocked, steer/result pass", () => {
+    expect(gatePlanCall("Agent", { subagent_type: "code-explorer" })).toEqual({ kind: "needs-boundary" });
+    const wf = gatePlanCall("SubagentWorkflow", { script: "x" });
+    expect(wf.kind).toBe("block");
+    expect(BLOCKED_PLAN_TOOLS.has("SubagentWorkflow")).toBe(true);
+    expect(gatePlanCall("steer_subagent", { agent_id: "a", message: "m" })).toEqual({ kind: "pass" });
+    expect(gatePlanCall("get_subagent_result", { agent_id: "a" })).toEqual({ kind: "pass" });
+  });
   test("passes read-only builtins + plan tools", () => {
     for (const t of ["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update"]) {
       expect(gatePlanCall(t, {}).kind).toBe("pass");

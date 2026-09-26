@@ -102,7 +102,12 @@ export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_us
   // (even under a bypass). A permission modal in front of a confirmation dialog
   // asks the same question twice and teaches people to click through both.
   // schedule_delete is deliberately NOT here: it deletes with no second dialog.
-  "schedule_list", "schedule_create", "schedule_update"]);
+  "schedule_list", "schedule_create", "schedule_update",
+  // §12 (2026-09-26, tintinweb): a steer is a message to a run ALREADY inside the boundary the
+  // user approved, so it cannot widen what the child may do; a result read is a read. Both are
+  // audited like any other call. `get_subagent_result` with `wait: true` is refused earlier, by
+  // the never-block rule (isResultWait), before this set is ever consulted.
+  "steer_subagent", "get_subagent_result"]);
 
 /**
  * pi-subagents' parent-blocking wait tool, under EVERY name it has shipped under.

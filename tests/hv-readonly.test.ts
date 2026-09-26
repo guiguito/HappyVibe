@@ -27,6 +27,9 @@ describe("gateReadonlyCall", () => {
   it("floor-asks the unknown (MCP) and needs-boundary for subagent — the plan gate's verdicts, unchanged", () => {
     expect(gateReadonlyCall("mcp", {}).kind).toBe("floor-ask");
     expect(gateReadonlyCall("subagent", {}).kind).toBe("needs-boundary");
+    // §12 (2026-09-26): a read-only scheduled run delegates like a planning session, and never runs a workflow.
+    expect(gateReadonlyCall("Agent", { subagent_type: "code-explorer" }).kind).toBe("needs-boundary");
+    expect(gateReadonlyCall("SubagentWorkflow", { script: "x" }).kind).toBe("block");
   });
 
   it("every block reason names the RUN, never a mode the user did not pick", () => {
