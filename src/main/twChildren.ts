@@ -111,7 +111,12 @@ export function twChildStatus(sessionDirPath: string, file: string, agent?: stri
   }
   const last = calls.at(-1);
   const inFlight = last && last.id && !answered.has(last.id) ? last.tool : undefined;
+  // §12 decision 8: the last thing written is a tool RESULT or a user message ⇒ the next
+  // move is the model's. A tool call still in flight is the tool's move (stuckRun.ts).
+  const lastRole = msgs.at(-1)?.role;
+  const awaitingModel = (lastRole === "toolResult" || lastRole === "user") && !inFlight;
   return {
+    awaitingModel,
     children: [{ sessionFile: file, ...(agent ? { agent } : {}) }],
     steps: [{ ...(agent ? { agent } : {}), transcriptPath: file }],
     turnCount,

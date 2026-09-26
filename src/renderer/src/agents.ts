@@ -394,6 +394,8 @@ export interface DelegationRun {
   live?: {
     currentTool?: string;
     activityState?: string;
+    /** §12 decision 8: why the APP raised attention — "no-activity" is a stuck run. */
+    attentionReason?: string;
     turnCount?: number;
     recentTools?: Array<{ tool: string; args?: string }>;
     /**

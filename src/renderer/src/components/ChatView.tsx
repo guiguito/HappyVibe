@@ -2401,6 +2401,9 @@ export const GAUGE_TONE: Record<GaugeZone, string> = {
  * brief done/failed state, then a height-collapse slide-away; the in-flow call
  * line + result remain in the transcript as the record.
  */
+/** §12 decision 8 (2026-09-26): a stuck run is SHOWN, never killed — the card asks, STOP answers. */
+export const NO_ACTIVITY_COPY = "No activity for 10 min — Stop?";
+
 function DelegationRunCard({ run, trace, onClose, onStopRun, onStopChild, onSteer }: { run: DelegationRun; trace?: SubagentTrace; onClose?: () => void; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void; onSteer?: (runId: string, agent: string, message: string) => void }): React.JSX.Element {
   const running = run.status === "running";
   // §12 (2026-09-26): the first verb besides STOP. A workflow is not steerable (upstream:
@@ -2506,7 +2509,7 @@ function DelegationRunCard({ run, trace, onClose, onStopRun, onStopChild, onStee
               )}
               {running ? (
                 <span className="font-mono text-xs text-ink-soft tabular-nums shrink-0" title="Elapsed time">
-                  {attention ? "needs attention" : currentTool ? currentTool : "working"} · {formatElapsed(now - run.startedAt)}
+                  {attention ? (run.live?.attentionReason === "no-activity" ? NO_ACTIVITY_COPY : "needs attention") : currentTool ? currentTool : "working"} · {formatElapsed(now - run.startedAt)}
                   {/* §12 (2026-08-22): the spend sits on the STOP control's own
                       line, so "this is getting expensive" and the means to end
                       it are one glance apart rather than a navigation. Absent

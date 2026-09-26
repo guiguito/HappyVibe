@@ -78,6 +78,7 @@ import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.gener
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
 import { agentByFileFrom, callsFromChildSessions, childSessionsByRunFrom, runTotalsByCall, sessionCalls } from "./sessionLedger";
 import { foldWorkflowProgress, twChildStatus, twInspect } from "./twChildren";
+import { isStuck } from "./stuckRun";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } from "./modelExclusions";
 import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, normPath, readSessionFile, sessionFilePath, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
@@ -2707,7 +2708,15 @@ export function registerIpc(
     let last: SubagentStatus | null = null;
     const tick = (): void => {
       const status = twChildStatus(sessionDir(), file, agent);
-      if (!status || statusUnchanged(last, status)) return;
+      if (!status) return;
+      // §12 decision 8: shown, never killed — the card asks, the user decides.
+      let idleMs = 0;
+      try { idleMs = Date.now() - fs.statSync(file).mtimeMs; } catch { /* not flushed yet */ }
+      if (isStuck(status.awaitingModel === true, idleMs)) {
+        status.activityState = "needs_attention";
+        status.attentionReason = "no-activity";
+      }
+      if (statusUnchanged(last, status)) return;
       last = status;
       send("hv:subagent-status", { sessionId, runId, status, cost: runCostNow(sessionId, status) });
     };

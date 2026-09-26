@@ -1374,6 +1374,7 @@ export default function App(): React.JSX.Element {
         const live = {
           currentTool: status.currentTool as string | undefined,
           activityState: status.activityState as string | undefined,
+          attentionReason: status.attentionReason as string | undefined,
           turnCount: status.turnCount as number | undefined,
           recentTools: status.recentTools as Array<{ tool: string; args?: string }> | undefined,
           // Keep the last figure when a tick arrives without one: a stopped or

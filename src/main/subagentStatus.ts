@@ -13,6 +13,10 @@ import * as os from "node:os";
 
 /** The subset of pi-subagents' AsyncStatus we forward to the renderer. */
 export interface SubagentStatus {
+  /** tintinweb (§12 decision 8): the child's next move is the model's (see stuckRun.ts). */
+  awaitingModel?: boolean;
+  /** Why a run needs attention, when the app raised it: "no-activity" (stuck, decision 8). */
+  attentionReason?: string;
   state?: string;
   activityState?: string;
   currentTool?: string;
