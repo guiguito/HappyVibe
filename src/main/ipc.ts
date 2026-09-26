@@ -10,7 +10,7 @@ import { clampInt, formatCrawl, formatFetch, formatMap, formatSearch, SERVICE_UN
 import { crawl as webCrawl, mapSite as webMapSite, probe as webProbe, scrape as webScrape, search as webSearch, WebServiceError } from "./webService";
 import { PiClient } from "./pi/PiClient";
 import { spawn } from "node:child_process";
-import { resolvePiSpawn } from "./pi/spawn";
+import { resolvePiSpawn, subagentsLibFromEnv } from "./pi/spawn";
 import { THINKING_LEVELS, resolveThinking } from "./thinking";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import { buildDocumentBlocks, convertDocument, probeDocuments } from "./documents";
@@ -18,7 +18,7 @@ import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, d
 import {
   agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings,
+  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings, writeTintinwebSettings,
   childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   getStarNudgeUntil, snoozeStarNudge,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
@@ -811,6 +811,14 @@ export function registerIpc(
     console.warn("[hv] subagent config write failed:", e);
   }
 
+  // §12 (2026-09-26): tintinweb's global settings. Written whichever stack is on — the
+  // file is inert unless HV_SUBAGENTS=tintinweb loads the package that reads it.
+  try {
+    writeTintinwebSettings();
+  } catch (e) {
+    console.warn("[hv] tintinweb settings write failed:", e);
+  }
+
   // §12 (2026-08-28): keep upstream's six external-CLI builtin agents out of the
   // roster the model is shown. Hygiene, not enforcement — the bridge refuses one
   // outright, because a project-scope .pi/settings.json beats this file.
@@ -1018,6 +1026,8 @@ export function registerIpc(
       // §19: a path we own, so main can read the cached model exclusions rather
       // than re-deriving upstream's tmp layout (modelExclusions.ts).
       modelExclusionsFile: modelExclusionsPath(),
+      // §12 (2026-09-26): which sub-agent stack this process loads — the dev toggle until the switch.
+      subagentsLib: subagentsLibFromEnv(process.env),
       // §16 round 21: the identity paragraph is unconditional (spawn.ts), and
       // passing it REPLACES Pi's discovery of APPEND_SYSTEM.md — so the user's
       // own additions must be handed over explicitly or they stop applying.

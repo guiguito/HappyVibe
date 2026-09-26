@@ -97,3 +97,41 @@ export function disabledAgentOverrides(
   out.subagents = subagents;
   return out;
 }
+
+/**
+ * PRD §12 (2026-09-26): what HappyVibe writes to tintinweb's GLOBAL settings file,
+ * `<agentDir>/subagents.json`. Every value is stated, none inherited — a future
+ * upstream default flip must not change behaviour silently. The owned patch (P4)
+ * stops a project's own `.pi/subagents.json` from overriding any of it.
+ *
+ *  - widgetMode/fleetView/agentMentions off: their TUI surfaces and `@handle` input
+ *    hook; the renderer owns every surface and the composer owns `@`.
+ *  - outputTranscript off: the `.output` copies land in os.tmpdir(), which "delete
+ *    session" (§17) can never reach.
+ *  - schedulingEnabled/worktreeIsolation off: ours are §35 and §29.
+ *  - disableDefaultAgents + fallbackSubagent "none": our roster only, and an unknown
+ *    name FAILS rather than silently becoming general-purpose (§16).
+ *  - reportUsage off: §19 already counts each child's own session file.
+ *  - rememberAgents on: the child's session file is what transcripts, cost and
+ *    thinking read.
+ *  - maxConcurrent 4: children share the session's process (R1); measured to hold.
+ */
+export const TINTINWEB_SETTINGS = {
+  widgetMode: "off",
+  fleetView: false,
+  agentMentions: "off",
+  outputTranscript: false,
+  schedulingEnabled: false,
+  worktreeIsolation: false,
+  disableDefaultAgents: true,
+  fallbackSubagent: "none",
+  reportUsage: false,
+  rememberAgents: true,
+  maxConcurrent: 4,
+  workflowsEnabled: true,
+} as const;
+
+/** Merge the locked set over whatever is there (the file's schema is upstream's). */
+export function tintinwebSettings(existing: Record<string, unknown>): Record<string, unknown> {
+  return { ...existing, ...TINTINWEB_SETTINGS };
+}

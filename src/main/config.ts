@@ -10,7 +10,7 @@ import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
-import { disabledAgentOverrides } from "./subagentSettings";
+import { disabledAgentOverrides, tintinwebSettings } from "./subagentSettings";
 import { EXTERNAL_CLI_AGENTS, UNSUPPORTED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
 import { resolveWebService, type ResolvedWebService } from "./webTools";
 
@@ -907,6 +907,21 @@ export function writeSubagentSettings(): void {
     /* absent or corrupt — start fresh */
   }
   fs.writeFileSync(file, `${JSON.stringify(disabledAgentOverrides(settings, load().agentsEnabled ?? {}), null, 2)}\n`);
+}
+
+/**
+ * PRD §12 (2026-09-26): tintinweb's global settings (the locked set lives in
+ * subagentSettings.ts, pure). Merge-written for the same reason as the two above.
+ */
+export function writeTintinwebSettings(): void {
+  const file = path.join(agentDir(), "subagents.json");
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    /* absent or corrupt — start fresh */
+  }
+  fs.writeFileSync(file, `${JSON.stringify(tintinwebSettings(settings), null, 2)}\n`);
 }
 
 /**

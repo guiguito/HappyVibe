@@ -41,6 +41,19 @@ export const PI_SUBAGENTS_RELPATH = "node_modules/pi-subagents/src/extension/ind
     because Node refuses to spawn a `.cmd` without `shell: true`. Both files inject
     the same §12 child guard; tests/pi-cli-entry.test.ts pins them to one CLI path. */
 export const PI_SUBAGENT_BIN_RELPATH = "bin/pi-node.sh";
+/** @tintinweb/pi-subagents extension entry (its package.json `pi.extensions`) — PRD §12 2026-09-26.
+    Loaded instead of hv-owner-seed + pi-subagents when HV_SUBAGENTS=tintinweb; patched at
+    install (scripts/patch-tintinweb.mjs). Its children run IN this process, so none of the
+    child-launcher plumbing below applies to it. */
+export const TW_RELPATH = "node_modules/@tintinweb/pi-subagents/src/index.ts";
+
+export type SubagentsLib = "nicobailon" | "tintinweb";
+
+/** The dev toggle: exactly `HV_SUBAGENTS=tintinweb` selects the new stack; anything else is today's. */
+export function subagentsLibFromEnv(env: Record<string, string | undefined>): SubagentsLib {
+  return env.HV_SUBAGENTS === "tintinweb" ? "tintinweb" : "nicobailon";
+}
+
 /** pi-mcp-adapter extension entry (its package.json `pi.extensions`) — MCP support. */
 export const PI_MCP_ADAPTER_RELPATH = "node_modules/pi-mcp-adapter/index.ts";
 
@@ -150,6 +163,9 @@ export interface PiSpawnOptions {
    * it now has no effect, so a cloned repo cannot rewrite the system prompt.
    */
   appendFile?: string;
+  /** PRD §12 2026-09-26: which sub-agent stack this Pi process loads. ONE per process —
+      never both. Absent ⇒ nicobailon, today's shipping stack. */
+  subagentsLib?: SubagentsLib;
 }
 
 /**
@@ -179,6 +195,7 @@ export function resolvePiSpawn(
   // runs. It exists for the utility client, which drives /hv-login before any
   // provider is configured and never runs a model turn at all.
   const model = opts.model ?? null;
+  const tw = opts.subagentsLib === "tintinweb";
   return {
     execPath: plat.nodeExecPath(),
     args: [
@@ -196,8 +213,9 @@ export function resolvePiSpawn(
       // loads -e extensions strictly sequentially in argv order. It registers no
       // tools and no tool_call handler, so it does not touch the gate-is-last
       // invariant documented below. Pinned by tests/mcp-spawn.test.ts.
-      "-e", path.join(runtimeDir, "extensions/hv-owner-seed.ts"),
-      "-e", path.join(runtimeDir, PI_SUBAGENTS_RELPATH),
+      ...(tw
+        ? ["-e", path.join(runtimeDir, TW_RELPATH)]
+        : ["-e", path.join(runtimeDir, "extensions/hv-owner-seed.ts"), "-e", path.join(runtimeDir, PI_SUBAGENTS_RELPATH)]),
       // MCP: pi-mcp-adapter registers the `mcp` proxy tool via registerTool,
       // so the bridge's permission gate applies (docs/validation/m1.md).
       // Config: PI_CODING_AGENT_DIR/mcp.json (global) + <cwd>/.mcp.json (workspace).
@@ -293,7 +311,7 @@ export function resolvePiSpawn(
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
       ...(opts.readonly ? { HV_READONLY: "1" } : {}),
-      ...(opts.childAuditDir ? { HV_CHILD_AUDIT_DIR: opts.childAuditDir } : {}),
+      ...(opts.childAuditDir && !tw ? { HV_CHILD_AUDIT_DIR: opts.childAuditDir } : {}),
       // pi-subagents tells every child to write its output to
       // `<sessionDir>/subagent-artifacts/outputs/<runId>/context.md` and calls
       // that path "authoritative for this run. Ignore any other output path".
@@ -303,7 +321,7 @@ export function resolvePiSpawn(
       // this location, already sweeps it on session delete, and a guard that
       // guessed it would be guessing about a permission boundary. Absent ⇒ no
       // exemption, which is the confined behaviour, so it fails SAFE.
-      HV_ARTIFACTS_DIR: path.join(sessionDir, "subagent-artifacts"),
+      ...(tw ? {} : { HV_ARTIFACTS_DIR: path.join(sessionDir, "subagent-artifacts") }),
       ...(opts.builtinTools
         ? { HV_BUILTINS: JSON.stringify({
             plan: opts.builtinTools.plan,
@@ -325,17 +343,25 @@ export function resolvePiSpawn(
       ...(opts.memoryWorkspaceDir ? { HV_MEMORY_WORKSPACE_DIR: opts.memoryWorkspaceDir } : {}),
       ...(opts.longCache ? { PI_CACHE_RETENTION: "long" } : {}),
       // 0.51 / #1225: a respawned session must still own its detached runs.
-      ...(opts.sessionId ? { HV_SUBAGENT_OWNER: `hv-${opts.sessionId}` } : {}),
+      ...(opts.sessionId && !tw ? { HV_SUBAGENT_OWNER: `hv-${opts.sessionId}` } : {}),
       // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
       // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).
-      PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, plat.childLauncher()),
+      ...(tw ? {} : { PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, plat.childLauncher()) }),
+      // tintinweb (PRD §12 2026-09-26). HV_HOST is what the owned patch keys on: a child built
+      // with no host policy registered FAILS, and a project's own subagents.json / saved
+      // workflows / gate commands are never used. Child sessions go to a SUBDIRECTORY of the
+      // sessions root — under it, so readChildTrace's confinement holds; beside the parent
+      // files, never among them, so the sidebar never lists a child as a session.
+      ...(tw
+        ? { HV_HOST: "1", HV_SUBAGENTS_LIB: "tintinweb", PI_CODING_AGENT_SESSION_DIR: path.join(sessionDir, "subagents") }
+        : {}),
       // §19 (2026-08-29): pi-subagents 0.57 caches "this model failed" verdicts and
       // silently skips the model afterwards. Main surfaces them as audit rows, so it
       // needs to READ that store — and its default location is an internal
       // `os.tmpdir()/pi-subagents-<scopeId>` derivation. Re-deriving an upstream
       // storage path is what the MCP keychain drift punished, so we hand upstream a
       // path we chose instead (its own documented env hook).
-      ...(opts.modelExclusionsFile ? { PI_MODEL_EXCLUSIONS_PATH: opts.modelExclusionsFile } : {}),
+      ...(opts.modelExclusionsFile && !tw ? { PI_MODEL_EXCLUSIONS_PATH: opts.modelExclusionsFile } : {}),
     } as Record<string, string>,
     cwd: workspace,
   };
