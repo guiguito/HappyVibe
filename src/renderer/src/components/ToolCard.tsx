@@ -4,7 +4,7 @@ import { Unfold } from "./Unfold";
 import { MEMORY_TYPE_LABEL } from "../memoryFact";
 import { toolDiff, type DiffLine } from "../diffs";
 import { toolLabel, type IconKind } from "../toolLabel";
-import { asyncResultInfo, delegationLabel, inspectToResults, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
+import { asyncResultInfo, delegationLabel, inspectToResults, isSubagentTool, subagentUsageLine, type SubagentResult, type SubagentTrace } from "../agents";
 import { basename, resolveCardPath } from "../tabs";
 import { isDocumentPath } from "../../../../pi-runtime/extensions/hv-document";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
@@ -838,7 +838,7 @@ export function ToolCard({
   sessionId?: string | null;
   onOpenFile?: (relPath: string) => void;
 }): React.JSX.Element {
-  if (card.toolName === "subagent") return <SubagentCard card={card} sessionId={sessionId} />;
+  if (isSubagentTool(card.toolName)) return <SubagentCard card={card} sessionId={sessionId} />;
   // W1.1: headline = icon + human label; the technical block (raw name/args/
   // result) lives behind the collapsed "details" toggle. Diffs are NOT
   // technical — they ARE the human content for edit/write — so they render

@@ -4,7 +4,7 @@
  * in tests/agents-renderer.test.ts). Same "try JSON, guard on kind, null on
  * fail" discipline as context.ts / permission.ts.
  */
-import { displayableTask } from "../../../pi-runtime/extensions/hv-rules";
+import { displayableTask, isDelegationTool } from "../../../pi-runtime/extensions/hv-rules";
 import { subagentRosterLine } from "../../../pi-runtime/extensions/hv-agents";
 import { fmtNum } from "./analytics-format";
 
@@ -252,7 +252,7 @@ export function mergeTrace(live: SubagentTrace | undefined, final: SubagentTrace
 
 /** True when a tool event is a subagent delegation (nested-trace rendering). */
 export function isSubagentTool(toolName: unknown): boolean {
-  return toolName === "subagent";
+  return isDelegationTool(toolName);
 }
 
 /**

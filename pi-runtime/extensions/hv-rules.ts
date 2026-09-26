@@ -128,6 +128,28 @@ export function isWaitTool(tool: unknown): boolean {
 }
 
 /**
+ * Every tool name that STARTS a delegation, across both vendored stacks:
+ * nicobailon's `subagent` and tintinweb's `Agent` (PRD §12, 2026-09-26). One set,
+ * because the renderer card, the label, the activity gate and ipc's correlation
+ * each carried their own literal and a rename would have missed one.
+ */
+export const DELEGATION_TOOLS: ReadonlySet<string> = new Set(["subagent", "Agent"]);
+
+export const isDelegationTool = (tool: unknown): boolean =>
+  typeof tool === "string" && DELEGATION_TOOLS.has(tool);
+
+/** The agent a delegation names: `agent` on nicobailon's `subagent`, `subagent_type` on tintinweb's `Agent`. */
+export function delegationAgent(args: unknown): string | undefined {
+  const a = args as { agent?: unknown; subagent_type?: unknown } | null | undefined;
+  const v = a?.agent ?? a?.subagent_type;
+  return typeof v === "string" && v ? v : undefined;
+}
+
+/** tintinweb's blocking wait: `get_subagent_result` with `wait: true` (§12 never-block rule). */
+export const isResultWait = (tool: unknown, input: unknown): boolean =>
+  tool === "get_subagent_result" && (input as { wait?: unknown } | null)?.wait === true;
+
+/**
  * pi-subagents >=0.50's prompt redaction, as a literal we must recognise.
  *
  * 0.50 replaces the delegation `task`/`goal` with this string on EVERY observer

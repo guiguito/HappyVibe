@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { EMPTY_RULES, evaluate, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
+import { EMPTY_RULES, delegationAgent, evaluate, isDelegationTool, parseRulesFile, type RulesFile } from "../../pi-runtime/extensions/hv-rules";
 import { WEB_CAPS } from "../../pi-runtime/extensions/hv-web";
 import { hostOf } from "../../pi-runtime/extensions/hv-browser";
 import { clampInt, formatCrawl, formatFetch, formatMap, formatSearch, SERVICE_UNAVAILABLE_TEXT } from "./webTools";
@@ -1612,10 +1612,10 @@ export function registerIpc(
       // The ONLY event carrying a delegation's `agent`: args ride
       // tool_execution_start and nothing later repeats them. Captured outside the
       // snapshot try/catch above so a snapshot failure cannot lose the name.
-      if (e.type === "tool_execution_start" && (e as { toolName?: string }).toolName === "subagent") {
+      if (e.type === "tool_execution_start" && isDelegationTool((e as { toolName?: string }).toolName)) {
         const id = typeof e.toolCallId === "string" ? e.toolCallId : undefined;
-        const agent = (e as { args?: { agent?: unknown } }).args?.agent;
-        if (id && typeof agent === "string") delegatedAgentByCall.set(id, agent);
+        const agent = delegationAgent((e as { args?: unknown }).args);
+        if (id && agent) delegatedAgentByCall.set(id, agent);
       }
       send("hv:pi-event", { ...e, sessionId });
       // ── An async delegation announces itself HERE, not on a lifecycle notify ──
@@ -1635,7 +1635,7 @@ export function registerIpc(
       // completion notify uses, and `asyncDir` to tail), so it is the reliable
       // trigger — and it needs no cooperation from upstream. `complete` still ends
       // all three symmetrically.
-      if (e.type === "tool_execution_end" && (e as { toolName?: string }).toolName === "subagent") {
+      if (e.type === "tool_execution_end" && isDelegationTool((e as { toolName?: string }).toolName)) {
         const d = (e as { result?: { details?: { asyncId?: unknown; asyncDir?: unknown } } }).result?.details;
         const runId = typeof d?.asyncId === "string" ? d.asyncId : undefined;
         const asyncDir = typeof d?.asyncDir === "string" ? d.asyncDir : undefined;

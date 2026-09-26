@@ -70,6 +70,13 @@ test("subagent: intent takes precedence, else Delegating to <agent>", () => {
   expect(toolLabel("subagent", {}).label).toBe("Delegating to a subagent");
 });
 
+test("Agent (tintinweb): intent, else the model's description, else Delegating to <type>", () => {
+  expect(toolLabel("Agent", { subagent_type: "worker", description: "Fix the parser", prompt: "p", intent: "Fixing the parser" }).label).toBe("Fixing the parser");
+  expect(toolLabel("Agent", { subagent_type: "worker", description: "Fix the parser", prompt: "p" })).toEqual({ icon: "robot", label: "Fix the parser" });
+  expect(toolLabel("Agent", { subagent_type: "worker", prompt: "p" }).label).toBe("Delegating to worker");
+  expect(toolLabel("Agent", {}).label).toBe("Delegating to a subagent");
+});
+
 test("unknown tool: intent when present, else prettified name", () => {
   expect(toolLabel("fetch_url-fast", {})).toEqual({ icon: "wrench", label: "Fetch url fast" });
   expect(toolLabel("my_tool", { intent: "Checking the weather" })).toEqual({

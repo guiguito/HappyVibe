@@ -9,6 +9,8 @@
  * Electron-free and pure so vitest drives it directly.
  */
 
+import { isDelegationTool } from "../../pi-runtime/extensions/hv-rules";
+
 interface Activity {
   busy: boolean;
   pendingPrompts: number;
@@ -49,9 +51,9 @@ export class SessionActivity {
     if (e.type === "agent_end") {
       a.busy = false;
       a.subagents = 0; // agent_end closes the turn — no dangling subagent counts
-    } else if (e.type === "tool_execution_start" && e.toolName === "subagent") {
+    } else if (e.type === "tool_execution_start" && isDelegationTool(e.toolName)) {
       a.subagents += 1;
-    } else if (e.type === "tool_execution_end" && e.toolName === "subagent") {
+    } else if (e.type === "tool_execution_end" && isDelegationTool(e.toolName)) {
       a.subagents = Math.max(0, a.subagents - 1);
     }
   }
