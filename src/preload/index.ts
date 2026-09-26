@@ -371,6 +371,9 @@ contextBridge.exposeInMainWorld("hv", {
   // Async subagents: stop button + live status. Lifecycle (started/complete/
   // control/active) arrives as hv.subagent notifies through onUiRequest.
   subagentInterrupt: (sessionId: string, runId: string) => ipcRenderer.invoke("hv:subagent-interrupt", sessionId, runId),
+  // §12 (2026-09-26): message a running tintinweb run; and which stack this app runs.
+  subagentSteer: (sessionId: string, runId: string, message: string) => ipcRenderer.invoke("hv:subagent-steer", sessionId, runId, message),
+  subagentsLib: () => ipcRenderer.invoke("hv:subagents-lib"),
   subagentStopChild: (sessionId: string, runId: string, childId: string) => ipcRenderer.invoke("hv:subagent-stop-child", sessionId, runId, childId),
   subagentThinking: (transcriptPath: string) => ipcRenderer.invoke("hv:subagent-thinking", transcriptPath),
   // §12: pull a child's transcript on demand (no model turn).

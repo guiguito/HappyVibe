@@ -427,7 +427,9 @@ export function isStoppableChild(status: string | undefined): boolean {
 // ── async subagent lifecycle (hv.subagent notify) ────────────────────────────
 
 export interface SubagentEvent {
-  stage: "started" | "control" | "complete" | "active" | "interrupt-sent" | "interrupt-error";
+  stage: "started" | "control" | "complete" | "active" | "interrupt-sent" | "interrupt-error" | "steer-sent" | "steer-error" | "session" | "workflow-progress";
+  /** §12 (2026-09-26): why a steer did not land (stage "steer-error"). */
+  error?: string;
   runId?: string;
   agent?: string;
   task?: string;

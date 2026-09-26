@@ -1958,6 +1958,25 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  /**
+   * §12 (2026-09-26): message a running tintinweb run mid-run — the run card's box and the
+   * composer's picked run both land here. The message is base64 so a sentence with spaces,
+   * quotes or newlines survives the one-line slash command intact. Drives the patched
+   * `subagents:rpc:steer` verb (P6), which refuses anything but a running top-level agent.
+   */
+  pi.registerCommand("hv-subagent-steer", {
+    description: "HappyVibe: send a message to a running sub-agent. Usage: /hv-subagent-steer <runId> <base64 message>",
+    handler: async (args, ctx) => {
+      const [runId, b64] = args.trim().split(/\s+/);
+      if (!runId || !b64 || !TW) return;
+      let message = "";
+      try { message = Buffer.from(b64, "base64").toString("utf8"); } catch { /* malformed */ }
+      if (!message.trim()) return;
+      const { ok, error } = await twRpc("subagents:rpc:steer", { agentId: runId, message });
+      ctx.ui.notify(subEnvelope({ stage: ok ? "steer-sent" : "steer-error", runId, ...(error ? { error } : {}) }), ok ? "info" : "warning");
+    },
+  });
+
   pi.registerCommand("hv-subagent-list", {
     description: "HappyVibe: emit the active async subagent runs (hv.subagent active notify)",
     handler: async (_args, ctx) => {

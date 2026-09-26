@@ -40,7 +40,7 @@ import {
 } from "../composer";
 import {
   activeCommandQuery, activeMentionQuery, commandSubtitle, completeCommand, completeMention, composerCommands, extractMentions, filterCommands,
-  agentMentionItems, filterEntries, mentionLabel, parseDocumentChips, stripInjectedBlocks, type MentionEntry, type SlashCommand,
+  agentMentionItems, filterEntries, runMentionItems, steerTarget, mentionLabel, parseDocumentChips, stripInjectedBlocks, type MentionEntry, type SlashCommand,
 } from "../mentions";
 import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-document";
 import { Banner } from "./Banner";
@@ -429,6 +429,43 @@ export function ChatView({
 
   // §12 (2026-08-29): the agent rows shown above the file rows in the `@` menu.
   const mentionAgents = mention ? agentMentionItems(agents ?? [], mention.query) : [];
+
+  // §7/§12 (2026-09-26): steering exists on the tintinweb stack only — asked once.
+  const [steerable, setSteerable] = useState(false);
+  useEffect(() => {
+    void window.hv.subagentsLib().then((l) => setSteerable(l === "tintinweb")).catch(() => setSteerable(false));
+  }, []);
+  // The run the user PICKED from the `@` menu. A prompt reaches it only while it still
+  // starts with that run's `@agent ` token (steerTarget) — typed text is never an address.
+  const [pickedRun, setPickedRun] = useState<{ runId: string; agent: string } | null>(null);
+  useEffect(() => {
+    if (pickedRun && !input.startsWith(`@${pickedRun.agent} `)) setPickedRun(null);
+  }, [input, pickedRun]);
+  const mentionRuns = mention && steerable ? runMentionItems(delegations, mention.query) : [];
+  const [steerNotice, setSteerNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!steerNotice) return;
+    const t = setTimeout(() => setSteerNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [steerNotice]);
+  /** One path for the card's box and the composer's pick. */
+  const steer = (runId: string, agent: string, message: string): void => {
+    if (!sessionId) return;
+    void window.hv.subagentSteer(sessionId, runId, message).then((r) =>
+      setSteerNotice(r.ok ? `Sent to ${agent}` : `Could not send to ${agent}: ${r.error}`),
+    ).catch(() => setSteerNotice(`Could not send to ${agent}`));
+  };
+  const pickRunMention = (r: { runId: string; agent: string }): void => {
+    const el = taRef.current;
+    if (!el || !mention) return;
+    const caret = el.selectionStart ?? input.length;
+    const next = `${input.slice(0, mention.start)}@${r.agent} ${input.slice(caret)}`;
+    const pos = mention.start + r.agent.length + 2;
+    setInput(next);
+    setPickedRun({ runId: r.runId, agent: r.agent });
+    setMention(null);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos); autoGrow(); });
+  };
 
   // §14 round 6: `/skill:<name>` autocomplete. Pi already registers a command per
   // loaded skill; get_commands is a pure query so this costs no model turn. The
@@ -820,6 +857,16 @@ export function ChatView({
     // §31: a document with no typed text is a real message — the user picked a
     // file precisely so the agent would read it.
     if (!input.trim() && !(pageRefs?.length ?? 0) && !documents.length) return;
+    // §7/§12 (2026-09-26): a prompt that starts with a PICKED running run goes to that run,
+    // not to the main model — and nothing is added to the parent transcript.
+    const steered = steerTarget(input, pickedRun);
+    if (steered && pickedRun) {
+      steer(steered.runId, pickedRun.agent, steered.message);
+      setInput("");
+      setPickedRun(null);
+      setMention(null);
+      return;
+    }
     const mentions = extractMentions(input, mentionMap.current);
     // §28: picked elements ride along as fenced blocks — the user's comment
     // first (it is what they mean), the markup after (it is how the agent finds
@@ -1353,6 +1400,7 @@ export function ChatView({
                   items={items}
                   onStopRun={onStopRun}
                   onStopChild={onStopChild}
+                  onSteerRun={steerable && sessionId ? steer : undefined}
                   onStopTerminal={onStopTerminal}
                   onOpenTerminalAsTab={onOpenTerminalAsTab}
                 />
@@ -1694,12 +1742,27 @@ export function ChatView({
             {/* F3: @file autocomplete — opens above the composer, styled like the
                 attach menu. §12 (2026-08-29): an AGENT match opens it too, so
                 `@wor` finds `worker` even where no file matches. */}
-            {mention && (mention.items.length > 0 || mentionAgents.length > 0) && (
+            {mention && (mention.items.length > 0 || mentionAgents.length > 0 || mentionRuns.length > 0) && (
               <div className="absolute hv-menu-in origin-bottom-left bottom-full left-0 mb-2 z-30 w-full max-w-md max-h-64 overflow-y-auto rounded-xl border-2 border-line-strong bg-card shadow-sticker-lg py-1 text-sm">
                 {/* §12: agents first — they are the rarer, more valuable pick,
                     and the file list is long. Mouse-picked only: the arrow/Tab
                     index below still addresses mention.items (files), which
                     keeps the existing keyboard contract byte-identical. */}
+                {/* §7/§12 (2026-09-26): RUNNING runs first — a pick sends the prompt to that
+                    run mid-run. Distinct from the roster rows below, whose pick is plain text
+                    the main model reads as "delegate to it". */}
+                {mentionRuns.map((r) => (
+                  <button
+                    key={`run:${r.runId}`}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickRunMention(r)}
+                    className="w-full text-left px-3 py-1.5 cursor-pointer hover:bg-sky-soft"
+                  >
+                    <span className="font-semibold text-sky">💬 {r.label}</span>
+                    <span className="block truncate text-[11px] font-medium text-ink-soft">sends your message to this running sub-agent, not to the main agent</span>
+                  </button>
+                ))}
                 {mentionAgents.map((a) => (
                   <button
                     key={`agent:${a.name}`}
@@ -1747,6 +1810,18 @@ export function ChatView({
                 ))}
                 <p className="px-3 pt-1 text-[10px] text-ink-soft">Tab to complete · Enter to send</p>
               </div>
+            )}
+            {/* §7/§12 (2026-09-26): the picked run, visibly NOT a file chip and NOT a roster
+                mention — this prompt goes to that running sub-agent, and the parent
+                transcript and the main model never see it. */}
+            {pickedRun && (
+              <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border-2 border-sky/50 bg-sky-soft px-2 py-0.5 text-[11px] font-bold text-sky">
+                <span>💬 to {pickedRun.agent} (running) — not the main agent</span>
+                <button type="button" aria-label="Send to the main agent instead" className="cursor-pointer" onClick={() => setPickedRun(null)}>✕</button>
+              </div>
+            )}
+            {steerNotice && (
+              <div role="status" className="mb-1 text-[12px] font-semibold text-ink-soft">{steerNotice}</div>
             )}
             <textarea
               ref={taRef}
@@ -1942,6 +2017,7 @@ function RunRail({
   items,
   onStopRun,
   onStopChild,
+  onSteerRun,
   onStopTerminal,
   onOpenTerminalAsTab,
 }: {
@@ -1951,6 +2027,8 @@ function RunRail({
   items: TranscriptItem[];
   onStopRun?: (runId: string) => void;
   onStopChild?: (runId: string, childId: string) => void;
+  /** §12 (2026-09-26): message a running run (tintinweb only; absent ⇒ no box). */
+  onSteerRun?: (runId: string, agent: string, message: string) => void;
   onStopTerminal?: (terminalId: string) => void;
   onOpenTerminalAsTab?: (terminalId: string) => void;
 }): React.JSX.Element | null {
@@ -2108,6 +2186,7 @@ function RunRail({
           trace={run.kind === "fg" && run.toolCallId ? traceFor(items, run.toolCallId) : undefined}
           onStopRun={onStopRun}
           onStopChild={onStopChild}
+          onSteer={onSteerRun}
         />
       );
     }
@@ -2322,8 +2401,13 @@ export const GAUGE_TONE: Record<GaugeZone, string> = {
  * brief done/failed state, then a height-collapse slide-away; the in-flow call
  * line + result remain in the transcript as the record.
  */
-function DelegationRunCard({ run, trace, onClose, onStopRun, onStopChild }: { run: DelegationRun; trace?: SubagentTrace; onClose?: () => void; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void }): React.JSX.Element {
+function DelegationRunCard({ run, trace, onClose, onStopRun, onStopChild, onSteer }: { run: DelegationRun; trace?: SubagentTrace; onClose?: () => void; onStopRun?: (runId: string) => void; onStopChild?: (runId: string, childId: string) => void; onSteer?: (runId: string, agent: string, message: string) => void }): React.JSX.Element {
   const running = run.status === "running";
+  // §12 (2026-09-26): the first verb besides STOP. A workflow is not steerable (upstream:
+  // only top-level agents), so it gets no box.
+  const steerId = run.runId ?? (run.kind === "async" ? run.id : undefined);
+  const canSteer = running && !!steerId && run.agent !== "workflow" && !!onSteer;
+  const [steerText, setSteerText] = useState("");
   const attention = running && run.live?.activityState === "needs_attention";
   /**
    * §12 (2026-08-31): the card IS the expanded state, so there is no collapsed
@@ -2473,6 +2557,31 @@ function DelegationRunCard({ run, trace, onClose, onStopRun, onStopChild }: { ru
               <p className="w-full text-left px-4 pb-2.5 -mt-1 text-sm font-medium text-ink-soft break-words">
                 {run.label}
               </p>
+            )}
+            {/* §12 (2026-09-26): "Message this agent" — lands as a user message in the CHILD's
+                own session, after its current tool call. The run keeps going; STOP is separate. */}
+            {canSteer && (
+              <form
+                className="flex items-center gap-2 px-3.5 pb-2.5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const text = steerText.trim();
+                  if (!text) return;
+                  onSteer!(steerId!, run.agent, text);
+                  setSteerText("");
+                }}
+              >
+                <input
+                  value={steerText}
+                  onChange={(e) => setSteerText(e.target.value)}
+                  placeholder={`Message ${run.agent} while it works…`}
+                  aria-label={`Message ${run.agent} while it works`}
+                  className="flex-1 min-w-0 rounded-lg border-2 border-line bg-card px-2 py-1 text-xs focus:outline-none focus:border-sky"
+                />
+                <button type="submit" disabled={!steerText.trim()} className="shrink-0 rounded-md border-2 border-sky/60 text-sky px-2 py-0.5 text-[11px] font-bold disabled:opacity-40 cursor-pointer">
+                  Send
+                </button>
+              </form>
             )}
             {open && (
               <div className="border-t-2 border-line bg-paper-deep/40 px-3.5 py-2.5 max-h-72 overflow-y-auto flex flex-col gap-3">

@@ -5008,6 +5008,16 @@ export function registerIpc(
     return { ok: true as const, reply };
   });
 
+  // §12 (2026-09-26): steering and the stack the renderer is talking to.
+  ipcMain.handle("hv:subagents-lib", () => subagentsLibFromEnv(process.env));
+  ipcMain.handle("hv:subagent-steer", async (_e, sessionId: string, runId: string, message: string) => {
+    const client = manager.get(sessionId) as PiClient | null;
+    if (!client || !TW_MAIN) return { ok: false as const, error: "this session is not running on the tintinweb stack" };
+    if (typeof message !== "string" || !message.trim() || !/^[\w.-]{1,128}$/.test(runId)) return { ok: false as const, error: "nothing to send" };
+    void client.send({ type: "prompt", message: `/hv-subagent-steer ${runId} ${Buffer.from(message, "utf8").toString("base64")}` }).catch(() => {});
+    return { ok: true as const };
+  });
+
   ipcMain.handle("hv:subagent-interrupt", (_e, sessionId: string, runId: string) => {
     void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-interrupt ${runId}` }).catch(() => {});
   });

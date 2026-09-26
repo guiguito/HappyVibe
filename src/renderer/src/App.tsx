@@ -1054,6 +1054,11 @@ export default function App(): React.JSX.Element {
           }
           return { ...p, [sid]: { ...fg, ...async } };
         });
+      } else if (sub.stage === "steer-error" && sub.runId) {
+        // §12 (2026-09-26): the composer already said "Sent" when main accepted it; if the
+        // run could not take it (it had just finished), say so where the user is reading.
+        const run = findByRunId(delegationsRef.current[sid] ?? {}, sub.runId);
+        appendItem(sid, { kind: "notice", text: `${run?.agent ?? "The sub-agent"} could not take your message${sub.error ? ` (${sub.error})` : ""}.`, pending: false });
       } else if (sub.stage === "interrupt-sent" && sub.runId) {
         setDelegations((p) => {
           const run = findByRunId(p[sid] ?? {}, sub.runId!);

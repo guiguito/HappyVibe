@@ -1051,6 +1051,10 @@ interface HvApi {
   listTools(sessionId?: string): Promise<void>;
   /** Async subagents: interrupt a running detached run (stop button). */
   subagentInterrupt(sessionId: string, runId: string): Promise<void>;
+  /** §12 (2026-09-26): send a message to a running sub-agent (tintinweb only). */
+  subagentSteer(sessionId: string, runId: string, message: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** §12 (2026-09-26): which sub-agent stack this app runs — steering exists on tintinweb only. */
+  subagentsLib(): Promise<"tintinweb" | "nicobailon">;
   /** §12: stop one child of a fan-out, leaving its siblings running. */
   subagentStopChild(sessionId: string, runId: string, childId: string): Promise<void>;
   /** §12: a child's interleaved thinking + tool calls, from its transcript. */
