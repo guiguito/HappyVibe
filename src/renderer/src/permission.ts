@@ -47,6 +47,7 @@ export type PermissionChoice =
   | "Allow for session"
   | "Allow for workspace"
   | "Always allow"
+  | "Allow for this run"
   | "Deny";
 
 /**

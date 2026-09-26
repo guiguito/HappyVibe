@@ -17,7 +17,7 @@ import {
   type MarkKey, type SessionEntry, type ToolSpecLike,
 } from "./hv-context";
 import { isSlashCommandPath, parseAgentFile, renderSubagentSection, type AgentDef } from "./hv-agents";
-import { WORKFLOW_CHOICES, WORKFLOW_TOOL, declaresTools, twAgentOf, twBoundary, workflowAgents, workflowName, workflowSource, type TwAgentInfo } from "./hv-tw-gate";
+import { CHILD_CHOICES, WORKFLOW_CHOICES, WORKFLOW_TOOL, declaresTools, twAgentOf, twBoundary, workflowAgents, workflowName, workflowSource, type TwAgentInfo } from "./hv-tw-gate";
 import { setChildPolicy } from "./hv-child-policy";
 import { registerTwRelay } from "./hv-tw-relay";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
@@ -645,7 +645,10 @@ export default function (pi: ExtensionAPI) {
   // Async subagent bus events fire outside any handler, so we relay them
   // through the latest session's ui (captured here). One session per pi process
   // in RPC, refreshed on resume.
-  let busUi: { notify(message: string, type?: "info" | "warning" | "error"): void } | null = null;
+  let busUi: {
+    notify(message: string, type?: "info" | "warning" | "error"): void;
+    select(title: string, options: string[]): Promise<string | undefined>;
+  } | null = null;
 
   // §12 (2026-09-26): tintinweb builds children IN this process, and the owned patch
   // asks this policy what every child may load and do (hv-child-policy.ts). Published
@@ -669,6 +672,31 @@ export default function (pi: ExtensionAPI) {
           tool: row.tool, decision: row.decision, summary: row.summary, source: "subagent",
           wouldHave: row.wouldHave, ...(row.type ? { agent: row.type } : {}), ...(row.agentId ? { runId: row.agentId } : {}),
         });
+      },
+      // §10 (2026-09-26, Phase 4, decision 10): a child inherits the parent's session grants…
+      hasSessionGrant: (permTool: string) => sessionGrants.has(permTool),
+      // …and its own ask is put to the human on the PARENT's channel, so main stamps it with
+      // this session (pendingPrompts retains it, dialogHost scopes it). Never times out. While
+      // it is open the run reads as needing attention, so its circle is amber and promoted.
+      ask: async (req) => {
+        const ui = busUi;
+        if (!ui) return "deny";
+        const control = (activityState?: string) =>
+          req.agentId && ui.notify(JSON.stringify({ kind: "hv.subagent", stage: "control", runId: req.agentId, ...(activityState ? { activityState } : {}) }), "info");
+        const record = req.agentId
+          ? (globalThis as Record<symbol, { getRecord?(id: string): { description?: string } | undefined } | undefined>)[Symbol.for("pi-subagents:manager")]?.getRecord?.(req.agentId)
+          : undefined;
+        const title = JSON.stringify({
+          kind: "hv.permission", tool: req.permTool, summary: summarize(req.tool, req.input),
+          child: { agent: req.type ?? "sub-agent", runLabel: record?.description ?? "", runId: req.agentId ?? "" },
+        });
+        control("needs_attention");
+        try {
+          const choice = await ui.select(title, [...CHILD_CHOICES]);
+          return choice === "Allow" ? "allow" : choice === "Allow for this run" ? "allow-run" : "deny";
+        } finally {
+          control();
+        }
       },
     });
   }

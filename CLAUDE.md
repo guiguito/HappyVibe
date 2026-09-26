@@ -320,6 +320,15 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   child policy missing"*, and the guard with no policy refuses every call. **The guard reads WHO
   the child is (`Symbol.for("pi-subagents:child-spawn")`) and its boundary at FACTORY time**, so an
   approval later in the session can never widen a child that is already running.
+  **A child's `ask` prompts the human on the PARENT's channel** (§10 Phase 4): inside the
+  approved boundary, a rules `ask` becomes `policy.ask`, raised through the parent's `ctx.ui`
+  (so main stamps the parent's session and `pendingPrompts`/`dialogHost` treat it like any
+  prompt) with exactly `CHILD_CHOICES` = Allow · Allow for this run · Deny. "Allow for this run"
+  lives in the guard's per-child `runGrants` and dies with the run; a parent session grant is
+  inherited only for `default`/`outside-workspace` asks, never over an ask RULE; nothing a child
+  answer does ever writes a rule (App `respondPermission`, pinned by `tests/child-prompt.test.ts`).
+  Under `HV_READONLY` there is nobody to ask, so it stays a deny. While the prompt is open the
+  bridge sends `{stage:"control", activityState:"needs_attention"}` so the run's circle is amber.
 - **The gate vocabulary did not change: an `Agent` call gates as `subagent:<type>`.** "Declared"
   comes from the agent FILE's frontmatter (`hv-tw-gate.ts`), because tintinweb hands an agent that
   declares no `tools:` EVERY builtin — so an undeclared agent is shown, approved and held as the

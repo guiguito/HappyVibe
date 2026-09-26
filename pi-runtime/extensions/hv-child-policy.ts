@@ -39,6 +39,8 @@ export interface ChildAsk {
   tool: string;
   permTool: string;
   summary: string;
+  /** The call's input, so the parent's prompt describes it exactly as it describes its own. */
+  input: Record<string, unknown>;
 }
 
 export interface ChildPolicy {

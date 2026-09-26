@@ -6,7 +6,9 @@
  * policy names — this file, and nothing else the child's agent file asks for. So it
  * reaches EVERY child with no per-agent stamping.
  *
- * It never prompts (yet) — see hv-child-rules.ts. `ask` means deny here.
+ * An `ask` inside the approved boundary is put to the human on the PARENT's channel
+ * (policy.ask, §10 Phase 4); with no one to ask (a read-only scheduled run, an older
+ * policy) it stays a deny, as hv-child-rules.ts describes.
  */
 import * as fs from "node:fs";
 import { containsPath } from "./hv-paths";
@@ -138,7 +140,7 @@ export function guardDecision(args: {
   bypass: boolean;
   workspace: string;
   writeRoots?: readonly string[];
-}): { action: "allow" | "deny"; reason?: string; wouldHave: RuleAction } {
+}): { action: "allow" | "deny"; reason?: string; wouldHave: RuleAction; askable?: { grantable: boolean } } {
   const { tool, input, workspace } = args;
   const d = childDecision(
     args.rules,
@@ -155,7 +157,14 @@ export function guardDecision(args: {
         "could not do, so the main session can run it where each call is checked individually.",
     };
   }
-  if (d.action === "deny") return { action: "deny", reason: d.reason, wouldHave: d.wouldHave };
+  if (d.action === "deny") {
+    // Only a genuine rules `ask` (not an unreadable-rules fail-close, not a deny) may be put
+    // to the human — and a parent session grant may cover it only when no ask RULE decided.
+    const askable = d.wouldHave === "ask" && args.rulesReadable && d.source !== undefined
+      ? { grantable: d.source === "default" || d.source === "outside-workspace" }
+      : undefined;
+    return { action: "deny", reason: d.reason, wouldHave: d.wouldHave, ...(askable ? { askable } : {}) };
+  }
   const escaped = args.bypass ? undefined : escapesWorkspace(tool, input, workspace, args.writeRoots ?? []);
   if (escaped) {
     return {
@@ -194,15 +203,36 @@ function inProcessGuard(
   const boundary = [...policy.boundaryFor(who?.type)];
   const { rules, rulesReadable } = readRules();
   const bypass = process.env.HV_BYPASS === "1";
-  pi.on("tool_call", (event) => {
-    const tool = typeof event.toolName === "string" ? event.toolName : "tool";
-    const input = (event.input ?? {}) as Record<string, unknown>;
-    const d = guardDecision({ tool, input, boundary, rules, rulesReadable, bypass, workspace: process.cwd() });
+  // §35: a read-only scheduled run has nobody to answer, so an ask stays a deny.
+  const canAsk = process.env.HV_READONLY !== "1" && typeof policy.ask === "function";
+  // "Allow for this run": per CHILD (this factory runs once per child), so it dies with the run.
+  const runGrants = new Set<string>();
+  const report = (tool: string, input: Record<string, unknown>, decision: "allow" | "deny", wouldHave: RuleAction, reason?: string): void => {
     try {
-      policy.audit({ tool, decision: d.action, wouldHave: d.wouldHave, summary: summarise(input), agentId: who?.agentId, type: who?.type, reason: d.reason });
+      policy.audit({ tool, decision, wouldHave, summary: summarise(input), agentId: who?.agentId, type: who?.type, reason });
     } catch {
       // An audit failure must NEVER change a permission outcome.
     }
+  };
+  pi.on("tool_call", async (event) => {
+    const tool = typeof event.toolName === "string" ? event.toolName : "tool";
+    const input = (event.input ?? {}) as Record<string, unknown>;
+    const d = guardDecision({ tool, input, boundary, rules, rulesReadable, bypass, workspace: process.cwd() });
+    if (d.action === "deny" && d.askable && canAsk) {
+      const covered = runGrants.has(tool) || (d.askable.grantable && policy.hasSessionGrant?.(tool) === true);
+      const answer = covered
+        ? "allow"
+        : await policy.ask!({ agentId: who?.agentId, type: who?.type, tool, permTool: tool, summary: summarise(input), input }).catch(() => "deny" as const);
+      if (answer === "allow-run") runGrants.add(tool);
+      if (answer !== "deny") {
+        report(tool, input, "allow", d.wouldHave);
+        return undefined;
+      }
+      const reason = `The user denied '${tool}' for this sub-agent. Do not retry it; finish what you can and report what you could not do.`;
+      report(tool, input, "deny", d.wouldHave, reason);
+      return { block: true, reason };
+    }
+    report(tool, input, d.action, d.wouldHave, d.reason);
     return d.action === "deny" ? { block: true, reason: d.reason } : undefined;
   });
 }

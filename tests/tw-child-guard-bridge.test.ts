@@ -2,7 +2,7 @@
  * PRD §12 (2026-09-26), live, end to end on the tintinweb path: the child guard runs
  * INSIDE the app's Pi process, forced into every child by the owned patch + the
  * bridge's child policy, and holds a child to the three §12 layers — the approved
- * boundary, ask→deny, and approved writes that really happen.
+ * boundary, ask→the user (denied here), and approved writes that really happen.
  *
  * Asserted on the bridge's native `hv.audit` rows (source "subagent") and on the
  * filesystem — never on `tool_execution_start`, which fires before any handler.
@@ -51,7 +51,9 @@ async function boot(globalRules: unknown[]) {
 const delegate = (agent: string, task: string) =>
   `Use the Agent tool right now with subagent_type '${agent}', run_in_background false, description 'Test task', and this exact prompt: '${task}'. Do nothing else yourself.`;
 
-test.skipIf(!KEY)("inside its boundary, a write the rules would ASK about is denied in the child", async () => {
+// Since Phase 4 (2026-09-26) that ask is PUT TO THE USER on the parent's channel; this harness
+// answers every select "Deny", so the child is still refused — by the user now, not by a clamp.
+test.skipIf(!KEY)("inside its boundary, a write the rules would ASK about is asked, and a Deny holds", async () => {
   const { c, ws, childRows } = await boot([{ layer: "tool", pattern: "subagent*", action: "allow" }]);
   const denied = () => childRows().some((r) => r.tool === "write" && r.decision === "deny");
   const ok = await askUntil(() => c.send({ type: "prompt", message: delegate("writer", "create a file called note.txt containing the word HI") }), denied, { waitMs: 90_000 });

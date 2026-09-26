@@ -2758,16 +2758,19 @@ export default function App(): React.JSX.Element {
     // Round 3 #13: persistent grants aren't understood by the bridge — respond
     // with a plain "Allow" for this call and write a tool-layer allow rule at the
     // chosen scope (workspace path, or global). The rules reload covers future calls.
-    let bridgeChoice: "Allow" | "Allow for session" | "Deny" = "Deny";
-    if (choice === "Allow for workspace" || choice === "Always allow") {
+    let bridgeChoice: "Allow" | "Allow for session" | "Allow for this run" | "Deny" = "Deny";
+    // §10 (Phase 4): a sub-agent's answer never becomes a rule — it covers that run at most.
+    if (!uiReq.info.child && (choice === "Allow for workspace" || choice === "Always allow")) {
       const ws = choice === "Allow for workspace" ? (sessions.find((s) => s.id === sid)?.workspaceId ?? null) : null;
       void window.hv.addPermissionRule(ws, tool);
       bridgeChoice = "Allow";
-    } else {
+    } else if (choice !== "Allow for workspace" && choice !== "Always allow") {
       bridgeChoice = choice;
     }
     window.hv.respondPermission(uiReq.req.id, bridgeChoice);
-    if (sid) {
+    // A child's call is not a card in the parent's transcript, so it gets no denied card and
+    // no pending approval there — its own run card and the audit log carry the outcome.
+    if (sid && !uiReq.info.child) {
       if (bridgeChoice === "Deny") {
         // A denied call never reaches tool_execution_start — show the outcome as its own card.
         appendItem(sid, {

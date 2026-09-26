@@ -61,6 +61,8 @@ export function declaresTools(frontmatter: Record<string, unknown>): boolean {
 
 /** A workflow prompt offers exactly these — never a session grant. */
 export const WORKFLOW_CHOICES = ["Allow", "Deny"] as const;
+/** §10 (2026-09-26, Phase 4): a sub-agent's own ask. "Allow for this run" dies with the run; nothing persists. */
+export const CHILD_CHOICES = ["Allow", "Allow for this run", "Deny"] as const;
 
 /**
  * The script a `SubagentWorkflow` call would run, whatever its source, so the human
