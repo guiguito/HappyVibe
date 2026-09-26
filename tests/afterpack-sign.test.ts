@@ -42,7 +42,8 @@ describe("afterPack signing", () => {
     "finds the real pi-runtime binaries, anydoc included",
     () => {
       const files: string[] = machOFiles(path.join(__dirname, "..", "pi-runtime", "node_modules"));
-      expect(files.length).toBeGreaterThanOrEqual(10);
+      // 9 since pi-subagents left (it brought esbuild's darwin binary with it).
+      expect(files.length).toBeGreaterThanOrEqual(9);
       expect(files.some((f) => f.endsWith("anydoc.darwin-arm64.node"))).toBe(true);
     },
   );

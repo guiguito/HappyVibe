@@ -3,7 +3,6 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { CONFINED_WRITE_TOOLS, escapesWorkspace } from "../pi-runtime/extensions/hv-child-guard";
-import { resolvePiSpawn } from "../src/main/pi/spawn";
 
 /**
  * CONTRACT TEST — PRD §12, key-free.
@@ -106,7 +105,7 @@ describe("a child write is confined to the workspace", () => {
     }
   });
 
-  it("ALLOWS pi-subagents' own per-run artifacts dir when spawn.ts hands it over", () => {
+  it("honours an extra allowed root, and only that subtree", () => {
     // Upstream calls this path "authoritative for this run. Ignore any other
     // output path", and it is outside the workspace by design. Measured in the
     // running app: without the exemption the child's write was DENIED and it
@@ -181,21 +180,5 @@ describe("the confined set is derived from Pi's own tool schemas", () => {
       .filter((f) => /path:\s*Type\.String\(/.test(src(f)))
       .map((f) => f.replace(/\.js$/, ""));
     expect(writers.sort()).toEqual([...CONFINED_WRITE_TOOLS].sort());
-  });
-});
-
-describe("spawn.ts hands the artifacts root to the guard", () => {
-  it("sets HV_ARTIFACTS_DIR under the session dir, where upstream actually writes", () => {
-    // Observed on a real delegation:
-    //   <sessionDir>/subagent-artifacts/outputs/<runId>/context.md
-    // so the root has to be <sessionDir>/subagent-artifacts and nothing shorter —
-    // handing over the sessionDir itself would exempt every session file too.
-    const spec = resolvePiSpawn("/ws", "/sessions", path.join(__dirname, "..", "pi-runtime"), {});
-    expect(spec.env?.HV_ARTIFACTS_DIR).toBe(path.join("/sessions", "subagent-artifacts"));
-  });
-
-  it("is always set, so the exemption never depends on an optional flag", () => {
-    const spec = resolvePiSpawn("/ws", "/sessions", path.join(__dirname, "..", "pi-runtime"), { bypass: true });
-    expect(spec.env?.HV_ARTIFACTS_DIR).toBeTruthy();
   });
 });

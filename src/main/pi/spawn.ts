@@ -29,30 +29,10 @@ export function nodeExecPath(): string {
     takes every Pi-spawning test red at once. Track upstream's `bin.pi`;
     tests/pi-cli-entry.test.ts derives it from the installed package. */
 export const PI_CLI_RELPATH = "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js";
-/** pi-subagents extension entry (its package.json `pi.extensions`) — B6. */
-export const PI_SUBAGENTS_RELPATH = "node_modules/pi-subagents/src/extension/index.ts";
-/** Embedded pi CLI the pi-subagents child spawn must use (no global `pi`; s0.3).
-    A shell wrapper, not .bin/pi: the packaged app has no `node` for the shebang,
-    so the wrapper routes through the bundled Electron helper (ELECTRON_RUN_AS_NODE)
-    and falls back to `node` in dev.
-
-    POSIX only. On win32 `platform.childLauncher()` answers `bin/pi-child.mjs`
-    instead — a shell script cannot run there and a `.cmd` shim is not a drop-in,
-    because Node refuses to spawn a `.cmd` without `shell: true`. Both files inject
-    the same §12 child guard; tests/pi-cli-entry.test.ts pins them to one CLI path. */
-export const PI_SUBAGENT_BIN_RELPATH = "bin/pi-node.sh";
 /** @tintinweb/pi-subagents extension entry (its package.json `pi.extensions`) — PRD §12 2026-09-26.
-    Loaded instead of hv-owner-seed + pi-subagents when HV_SUBAGENTS=tintinweb; patched at
-    install (scripts/patch-tintinweb.mjs). Its children run IN this process, so none of the
-    child-launcher plumbing below applies to it. */
+    Patched at install (scripts/patch-tintinweb.mjs). Its children run IN this Pi process,
+    so there is no child binary, launcher or owner id to hand it. */
 export const TW_RELPATH = "node_modules/@tintinweb/pi-subagents/src/index.ts";
-
-export type SubagentsLib = "nicobailon" | "tintinweb";
-
-/** The dev toggle: exactly `HV_SUBAGENTS=tintinweb` selects the new stack; anything else is today's. */
-export function subagentsLibFromEnv(env: Record<string, string | undefined>): SubagentsLib {
-  return env.HV_SUBAGENTS === "tintinweb" ? "tintinweb" : "nicobailon";
-}
 
 /** pi-mcp-adapter extension entry (its package.json `pi.extensions`) — MCP support. */
 export const PI_MCP_ADAPTER_RELPATH = "node_modules/pi-mcp-adapter/index.ts";
@@ -95,11 +75,6 @@ export interface PiSpawnOptions {
    * respawn the way a session-file flag could be.
    */
   readonly?: boolean;
-  /** §12 FR7: where the child guard appends its per-run decision JSONL →
-      HV_CHILD_AUDIT_DIR. Inherited by every child (all three of pi-subagents'
-      spawn sites pass `{...process.env}`), so the guard needs nothing else.
-      Main owns the directory and reads it path-confined. */
-  childAuditDir?: string;
   /** §13 round 6: global on/off for built-in custom tools (plan mode, ask_user,
       and §26's grouped Terminal entry), resolved at spawn → HV_BUILTINS (same
       pattern as HV_BYPASS). The keys are listed EXPLICITLY below, so a new
@@ -131,22 +106,12 @@ export interface PiSpawnOptions {
   /** §14: per-session skills manifest JSON → HV_SKILLS_FILE (the bridge serves
       use_skill and detects raw SKILL.md reads from it). */
   skillsFile?: string;
-  /** §19: where pi-subagents keeps its cached model exclusions, so main can read
-   *  them and surface a silent model substitution (modelExclusions.ts). */
-  modelExclusionsFile?: string;
   /** Extended prompt-cache retention → PI_CACHE_RETENTION=long, pi-ai's only
       knob for it (pi docs/usage.md; anthropic.js resolveCacheRetention). Buys a
       1h cache TTL on Anthropic/Bedrock and `prompt_cache_retention:"24h"` on
       OpenAI, instead of the 5min/in-memory default. Global setting, resolved at
       spawn — same pattern as HV_BYPASS. */
   longCache?: boolean;
-  /** HappyVibe's own session id, which becomes HV_SUBAGENT_OWNER for
-      extensions/hv-owner-seed.ts to claim pi-subagents' completion-owner id
-      (0.51 / upstream #1225). Without it a RESPAWNED parent — hibernation wake,
-      MCP live-reload, app relaunch — is refused its own detached delegation's
-      result, silently. Stable across respawn by construction, which is the whole
-      requirement. Absent for the utility client, which never delegates. */
-  sessionId?: string;
   /**
    * §16 round 21: the global APPEND_SYSTEM.md, passed EXPLICITLY.
    *
@@ -163,9 +128,6 @@ export interface PiSpawnOptions {
    * it now has no effect, so a cloned repo cannot rewrite the system prompt.
    */
   appendFile?: string;
-  /** PRD §12 2026-09-26: which sub-agent stack this Pi process loads. ONE per process —
-      never both. Absent ⇒ nicobailon, today's shipping stack. */
-  subagentsLib?: SubagentsLib;
 }
 
 /**
@@ -195,7 +157,6 @@ export function resolvePiSpawn(
   // runs. It exists for the utility client, which drives /hv-login before any
   // provider is configured and never runs a model turn at all.
   const model = opts.model ?? null;
-  const tw = opts.subagentsLib === "tintinweb";
   return {
     execPath: plat.nodeExecPath(),
     args: [
@@ -204,18 +165,9 @@ export function resolvePiSpawn(
       // Resume = Pi's own `--session <path>`: main.js resolves a path arg via
       // resolveSessionPath → openSessionOrExit, reopening the JSONL in place.
       ...(opts.resumeFile ? ["--session", opts.resumeFile] : []),
-      // B6: pi-subagents (RPC-validated, s0.3). Loaded as an -e extension per
-      // its package.json `pi.extensions` entry; the subagent tool it registers
-      // is a normal tool_call, so the bridge's permission gate applies.
-      // Claims pi-subagents' completion-owner id before it can mint a random
-      // one — see extensions/hv-owner-seed.ts for why that matters. MUST precede
-      // pi-subagents, which mints the id inside its own registration, and Pi
-      // loads -e extensions strictly sequentially in argv order. It registers no
-      // tools and no tool_call handler, so it does not touch the gate-is-last
-      // invariant documented below. Pinned by tests/mcp-spawn.test.ts.
-      ...(tw
-        ? ["-e", path.join(runtimeDir, TW_RELPATH)]
-        : ["-e", path.join(runtimeDir, "extensions/hv-owner-seed.ts"), "-e", path.join(runtimeDir, PI_SUBAGENTS_RELPATH)]),
+      // §12: tintinweb's pi-subagents. The `Agent` tool it registers is a normal
+      // tool_call, so the bridge's permission gate applies.
+      "-e", path.join(runtimeDir, TW_RELPATH),
       // MCP: pi-mcp-adapter registers the `mcp` proxy tool via registerTool,
       // so the bridge's permission gate applies (docs/validation/m1.md).
       // Config: PI_CODING_AGENT_DIR/mcp.json (global) + <cwd>/.mcp.json (workspace).
@@ -246,8 +198,8 @@ export function resolvePiSpawn(
       //  - getAllRegisteredTools is first-registration-per-name-wins
       //    (runner.js), so a tool-name collision would now resolve to the other
       //    extension. None exists today: the bridge registers ask_user,
-      //    use_skill and plan_*; the others subagent, wait, intercom,
-      //    subagent_supervisor and mcp.
+      //    use_skill and plan_*; the others Agent, get_subagent_result,
+      //    steer_subagent, SubagentWorkflow and mcp.
       "-e", path.join(runtimeDir, "extensions/happyvibe-bridge.ts"),
       // §14 Skills: disable Pi's own discovery (so no unapproved skill ever
       // loads) and add back exactly the approved+active ones. --skill is
@@ -293,35 +245,20 @@ export function resolvePiSpawn(
       ...(opts.thinking ? ["--thinking", opts.thinking] : []),
     ],
     env: {
-      // Env is passed through wholesale and inherited by pi-subagents child
-      // spawns. The child runs bin/pi-node.sh: packaged → bundled Electron
-      // helper as node (ELECTRON_RUN_AS_NODE); dev → `node` off PATH.
-      // See docs/validation/s0.3.md "Subagent spawn cost".
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
       // The bridge names the shell in its prompts and refusals; never a literal "bash".
       HV_AGENT_SHELL: opts.agentShell ?? "bash",
       // Same reason as the PTY's (terminalSettings.resolveSpawn): a dev server
       // the agent starts with `bash` must not throw the page at the system
-      // browser. Inherited by pi-subagents children, so a delegated `npm run
-      // dev` behaves too. The agent has browser_open for the pane it wants.
+      // browser. Sub-agents run in this process, so a delegated `npm run dev`
+      // behaves too. The agent has browser_open for the pane it wants.
       BROWSER: "none",
       ...(opts.providerEnv ?? {}),
       ...(opts.agentDir ? { PI_CODING_AGENT_DIR: opts.agentDir } : {}),
       ...(opts.rulesFile ? { HV_RULES_FILE: opts.rulesFile } : {}),
       ...(opts.bypass ? { HV_BYPASS: "1" } : {}),
       ...(opts.readonly ? { HV_READONLY: "1" } : {}),
-      ...(opts.childAuditDir && !tw ? { HV_CHILD_AUDIT_DIR: opts.childAuditDir } : {}),
-      // pi-subagents tells every child to write its output to
-      // `<sessionDir>/subagent-artifacts/outputs/<runId>/context.md` and calls
-      // that path "authoritative for this run. Ignore any other output path".
-      // It is outside the workspace, so hv-child-guard's confinement refused it
-      // and the child burned a turn recovering (measured in the running app).
-      // Handed over explicitly rather than derived inside the guard: main owns
-      // this location, already sweeps it on session delete, and a guard that
-      // guessed it would be guessing about a permission boundary. Absent ⇒ no
-      // exemption, which is the confined behaviour, so it fails SAFE.
-      ...(tw ? {} : { HV_ARTIFACTS_DIR: path.join(sessionDir, "subagent-artifacts") }),
       ...(opts.builtinTools
         ? { HV_BUILTINS: JSON.stringify({
             plan: opts.builtinTools.plan,
@@ -342,32 +279,15 @@ export function resolvePiSpawn(
       ...(opts.memoryGlobalDir ? { HV_MEMORY_GLOBAL_DIR: opts.memoryGlobalDir } : {}),
       ...(opts.memoryWorkspaceDir ? { HV_MEMORY_WORKSPACE_DIR: opts.memoryWorkspaceDir } : {}),
       ...(opts.longCache ? { PI_CACHE_RETENTION: "long" } : {}),
-      // 0.51 / #1225: a respawned session must still own its detached runs.
-      ...(opts.sessionId && !tw ? { HV_SUBAGENT_OWNER: `hv-${opts.sessionId}` } : {}),
-      // B6: pi-subagents defaults to `pi` on PATH for child spawns and fails
-      // ENOENT in the packaged app; point it at the embedded bin (s0.3 HARD REQ).
-      ...(tw ? {} : { PI_SUBAGENT_PI_BINARY: path.join(runtimeDir, plat.childLauncher()) }),
       // tintinweb (PRD §12 2026-09-26). HV_HOST is what the owned patch keys on: a child built
       // with no host policy registered FAILS, and a project's own subagents.json / saved
       // workflows / gate commands are never used. Child sessions go to a SUBDIRECTORY of the
       // sessions root — under it, so readChildTrace's confinement holds; beside the parent
       // files, never among them, so the sidebar never lists a child as a session.
-      ...(tw
-        ? {
-            HV_HOST: "1",
-            HV_SUBAGENTS_LIB: "tintinweb",
-            PI_CODING_AGENT_SESSION_DIR: path.join(sessionDir, "subagents"),
-            // The one extension every child loads (the bridge's child policy hands it to the patch).
-            HV_CHILD_GUARD: path.join(runtimeDir, "extensions/hv-child-guard.ts"),
-          }
-        : {}),
-      // §19 (2026-08-29): pi-subagents 0.57 caches "this model failed" verdicts and
-      // silently skips the model afterwards. Main surfaces them as audit rows, so it
-      // needs to READ that store — and its default location is an internal
-      // `os.tmpdir()/pi-subagents-<scopeId>` derivation. Re-deriving an upstream
-      // storage path is what the MCP keychain drift punished, so we hand upstream a
-      // path we chose instead (its own documented env hook).
-      ...(opts.modelExclusionsFile && !tw ? { PI_MODEL_EXCLUSIONS_PATH: opts.modelExclusionsFile } : {}),
+      HV_HOST: "1",
+      PI_CODING_AGENT_SESSION_DIR: path.join(sessionDir, "subagents"),
+      // The one extension every child loads (the bridge's child policy hands it to the patch).
+      HV_CHILD_GUARD: path.join(runtimeDir, "extensions/hv-child-guard.ts"),
     } as Record<string, string>,
     cwd: workspace,
   };

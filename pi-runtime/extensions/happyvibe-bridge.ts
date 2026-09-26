@@ -3,13 +3,9 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { answersMarkdown, DISMISSED_RESULT, normalizeQuestions, parseAnswers, HEADER_MAX, MAX_OPTIONS, MAX_QUESTIONS } from "./hv-ask-user";
-import { EMPTY_RULES, UNSUPPORTED_BUILTIN_AGENTS, displayableTask, evaluate, isExternalCliAgent, isResultWait, isShellTool, isWaitTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
+import { EMPTY_RULES, evaluate, isResultWait, isShellTool, parseRulesFile, type RuleAction, type RulesFile, type Verdict } from "./hv-rules";
 import {
-  SUBAGENT_TASKS_TYPE, bindRun, claimTask, dropPendingTask, emptyTaskMap, releaseTask, restoreTaskMap,
-  serializeTaskMap, stashPendingTask, taskFor, type TaskMapState,
-} from "./hv-subagent-tasks";
-import {
-  createChildOutputStore, rememberChildOutputs, rememberTwResult, substituteDeliveries,
+  createChildOutputStore, rememberTwResult, substituteDeliveries,
 } from "./hv-subagent-delivery";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, wrapUntrusted } from "./hv-browser";
@@ -20,7 +16,7 @@ import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
   type MarkKey, type SessionEntry, type ToolSpecLike,
 } from "./hv-context";
-import { isSlashCommandPath, parseAgentFile, renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
+import { isSlashCommandPath, parseAgentFile, renderSubagentSection, type AgentDef } from "./hv-agents";
 import { WORKFLOW_CHOICES, WORKFLOW_TOOL, declaresTools, twAgentOf, twBoundary, workflowAgents, workflowName, workflowSource, type TwAgentInfo } from "./hv-tw-gate";
 import { setChildPolicy } from "./hv-child-policy";
 import { registerTwRelay } from "./hv-tw-relay";
@@ -32,42 +28,11 @@ import {
 import { buildReadonlyPrompt, gateReadonlyCall, readonlyFromEnv } from "./hv-readonly";
 import { parseBuiltins } from "./hv-builtins";
 import { memoryTokenLines, readIndex, renderMemorySection } from "./hv-memory";
-// PRD §12 (2026-08-21): the sub-agent boundary. `capability-ceiling` IS in
-// pi-subagents' exports map, so it takes the BARE specifier — unlike
-// listAsyncRuns/ASYNC_DIR above, which are absent from the map and therefore
-// must stay relative. Do not "tidy" these two into the same shape.
-import { registerSubagentCapabilityCeiling } from "pi-subagents/capability-ceiling";
-import { resolveSubagentLaunchContract } from "pi-subagents/preflight";
-import {
-  boundaryRuleName, isWiderThanReadOnly, needsWiderCeiling,
-  READ_ONLY_CHILD_TOOLS, summarizeBoundary, widenBoundary,
-  type BoundarySummary,
-} from "./hv-subagent-boundary";
+import { boundaryRuleName, READ_ONLY_CHILD_TOOLS } from "./hv-subagent-boundary";
 import {
   findByName, loadManifest, matchReadPath, replaceSkillsSentence, skillTokenLines, type SkillManifest,
 } from "./hv-skills";
 import { commandName, pairExpanded, rememberTyped, type TemplatePairState } from "./hv-prompt-templates";
-// Async subagents (PRD §12): pi-subagents is co-resident on the SAME pi.events
-// bus, so the bridge subscribes to its in-process lifecycle events and relays
-// them as hv.subagent notifies (they never reach RPC stdout on their own). The
-// active-run list + run dir root come straight from pi-subagents so a respawn
-// can resync cards — no public surface returns the {runId, agent, asyncDir} triple
-// that needs (snapshotBackgroundWork() is the inverse API and comes back empty;
-// the status RPC's structured `fleet` deliberately withholds run identifiers,
-// rpc.ts:76). Imported by RELATIVE PATH, not the bare `pi-subagents/...`
-// specifier: from 0.35.0 the package ships an `exports` map listing five entries,
-// neither of these among them, and an exports map only gates BARE specifiers.
-// Both forms are equally pin-coupled and both fail loudly at extension load;
-// tests/subagent-runs-contract.test.ts is the pin-bump gate.
-import { listAsyncRuns } from "../node_modules/pi-subagents/src/runs/background/async-status.ts";
-import { ASYNC_DIR } from "../node_modules/pi-subagents/src/shared/types.ts";
-// §12 (2026-08-29): the THIRD relative reach, for the same reason as the two
-// above — the exports map lists `./agents`, but that subpath is the runtime
-// AGENT-REGISTRATION api and exposes no discovery. `discoverAgentsAll` is the
-// function pi-subagents itself uses to decide which agents exist, and calling
-// it is what stops the Agents page and the model's roster disagreeing with the
-// runtime (and with each other).
-import { discoverAgentsAll } from "../node_modules/pi-subagents/src/agents/agents.ts";
 
 /**
  * PRD §4 (Windows round): the filesystem is case-insensitive on win32, so every path
@@ -267,12 +232,6 @@ function documentReply(raw: unknown): {
 // above. `subagent`'s demotion to optional (below) is deliberately NOT copied — a
 // terminal that starts is a card in someone's transcript and must say why.
 const INTENT_TOOLS = ["ask_user", "mcp", "use_skill", "terminal_run", "terminal_kill", "schedule_create", "schedule_update", "schedule_delete"]; // ask_user declares intent in its own schema — requireIntent's guard makes this a no-op for it
-// `subagent` advertises intent but does NOT require it: the delegation `task` is
-// already a fine customer-facing headline (the UI uses intent ?? task), and a
-// hard requirement made looser models (e.g. Kimi) fail their first delegation
-// with "intent: must have required properties intent" and retry. Optional keeps
-// the nice model-authored headline when provided, without the failure.
-const OPTIONAL_INTENT_TOOLS = ["subagent"];
 // Direct-mode MCP tools (adapter's "expose tools directly") get the same
 // required `intent`, BUT the direct executor forwards params VERBATIM to the
 // MCP server (pi-mcp-adapter direct-tools.ts `arguments: params`) — a strict
@@ -302,12 +261,6 @@ const strippedIntentTools = new Set<string>();
 export const INTENT_DESCRIPTION =
   "One customer-facing sentence, goal first — shown to the user as this call's headline.";
 const INTENT_PARAM = { type: "string", description: INTENT_DESCRIPTION };
-const OPTIONAL_INTENT_PARAM = {
-  type: "string",
-  // `subagent` advertises intent without requiring it (see OPTIONAL_INTENT_TOOLS),
-  // so this one line says what happens when the model omits it.
-  description: `Optional. ${INTENT_DESCRIPTION} Falls back to the task text.`,
-};
 /** The same description as a typebox schema, for the tools this file registers itself. */
 const intentParam = (): ReturnType<typeof Type.String> => Type.String({ description: INTENT_DESCRIPTION });
 type MutableParams = { properties?: Record<string, unknown>; required?: string[] };
@@ -359,12 +312,6 @@ export function requireIntent(pi: ExtensionAPI, enabled = true): void {
     params.properties.intent = INTENT_PARAM;
     params.required = [...(params.required ?? []), "intent"];
   }
-  // Optional-intent tools: advertise the param but never add it to `required`.
-  for (const name of OPTIONAL_INTENT_TOOLS) {
-    const params = pi.getAllTools().find((t) => t.name === name)?.parameters as MutableParams | undefined;
-    if (!params?.properties || params.properties.intent) continue;
-    params.properties.intent = OPTIONAL_INTENT_PARAM;
-  }
   // Direct MCP tools = everything else pi-mcp-adapter registered.
   for (const t of pi.getAllTools()) {
     if (INTENT_TOOLS.includes(t.name) || !t.sourceInfo?.path?.includes("pi-mcp-adapter")) continue;
@@ -406,8 +353,6 @@ let dangerous = process.env.HV_BYPASS === "1";
 const readonly = readonlyFromEnv(process.env);
 
 // ── §12 tintinweb (2026-09-26) ─────────────────────────────────────────────────
-/** Which sub-agent stack THIS Pi process loaded (spawn.ts). One per process, never both. */
-const TW = process.env.HV_SUBAGENTS_LIB === "tintinweb";
 /**
  * tintinweb: the tools the user approved per agent type, i.e. what the in-process
  * guard holds a child of that type to (hv-child-policy `boundaryFor`). Keyed by TYPE
@@ -541,179 +486,12 @@ function persistPlan(pi: ExtensionAPI): void {
   pi.appendEntry(PLAN_STATE_TYPE, { ...plan });
 }
 
-/**
- * §12 (2026-08-21) — the capability ceiling that holds every child of this
- * session inside the boundary a human approved.
- *
- * Two things this buys that the parent gate cannot. It bounds the tool set of a
- * child and of every DESCENDANT (the resolved ceiling travels in the child's
- * environment, so a grandchild can only narrow); and `denyExtensions` closes a
- * hole the parent never had — a child whose agent declares no `extensions` key
- * was ambient-loading anything sitting in `<agentDir>/extensions`, and from
- * pi-subagents 0.52 also anything shipped BESIDE the agent file.
- *
- * It also supplies FR3 for free rather than as its own mechanism: upstream treats
- * a present ceiling as the declared tool set for an agent that declares none
- * (`pi-args.ts:396-399`), so registering this replaces "no `tools:` means Pi's
- * full builtin set" with "no `tools:` means read-only".
- *
- * WIDENING IS MONOTONIC WITHIN A TURN, and that is forced, not preferred — see
- * widenBoundary's comment and docs/validation/d1.md §Subagent delegation
- * concurrency. `ceilingTools` is reset at turn_start, which is safe for the one
- * reason that matters: the ceiling is read at SPAWN, a turn cannot end before its
- * tool batch resolves, so by the next turn every spawn it authorised has already
- * happened. No in-flight accounting needed.
- */
-let ceiling: { update(c: unknown): void; dispose(): void } | undefined;
-let ceilingTools: string[] = [...READ_ONLY_CHILD_TOOLS].sort();
-
-/** Register (or re-point) the session ceiling at the current `ceilingTools`. */
-function applyCeiling(sessionId: string | undefined): void {
-  const value = { allowedTools: ceilingTools, denyExtensions: true };
-  if (ceiling) {
-    ceiling.update(value);
-    return;
-  }
-  try {
-    ceiling = registerSubagentCapabilityCeiling({
-      // A ceiling is keyed by session id; without one there is nothing to key it
-      // to, so a session with no id gets a stable literal rather than silently
-      // registering nothing.
-      sessionId: sessionId || "hv-session",
-      source: "happyvibe",
-      ceiling: value,
-    });
-  } catch (e) {
-    // Registration is the boundary. If it throws we must NOT continue as if a
-    // ceiling existed — surface it, because the alternative is children running
-    // unbounded while the UI implies otherwise.
-    ceilingError = e instanceof Error ? e.message : String(e);
-  }
-}
-
-/** Set when the ceiling could not be registered — a delegation then refuses. */
-let ceilingError: string | undefined;
-
-/**
- * FR8 — the resolved facts worth showing at approval, because each changes what
- * a child can reach.
- *
- * Derived from the RESOLVED contract, never from the agent file's frontmatter.
- * That is deliberate: `contract.agent` is the agent's identity (name, path,
- * digest, shadowed candidates), not its declarations, and 0.53 lets an extension
- * register an agent at runtime with no file to read at all. Reading the resolved
- * contract works for both.
- *
- * `outputMode` is NOT here despite being named in FR8: the launch contract does
- * not expose it (measured — its keys are version, runId, agent, context,
- * modelCandidates, systemPromptMode, inheritProjectContext, inheritSkills,
- * skills, tools, roots, protocol, diagnostics, launchContractDigest, digest). It
- * is better to omit it than to render a field that is always absent.
- */
-type PreflightContract = {
-  context?: string;
-  inheritSkills?: boolean;
-  inheritProjectContext?: boolean;
-  skills?: { requested?: string[]; resolved?: Array<{ name: string }> };
-  agent?: { shadowedCandidates?: unknown[] };
-  tools?: {
-    explicitAllowlist?: boolean;
-    effectiveAllowlist?: string[];
-    configuredExtensions?: string[];
-    toolExtensionPaths?: string[];
-  };
-};
-
-function declarationsOf(k: PreflightContract): string[] {
-  const out: string[] = [];
-  if (k.inheritSkills === true) out.push("inheritSkills");
-  if ((k.skills?.requested?.length ?? 0) > 0) out.push("skills");
-  if ((k.tools?.configuredExtensions?.length ?? 0) > 0 || (k.tools?.toolExtensionPaths?.length ?? 0) > 0) {
-    out.push("extensions");
-  }
-  if (k.inheritProjectContext === true) out.push("projectContext");
-  // A same-named agent was overridden to resolve this one — the workspace/plugin
-  // shadowing case FR10 cares about, and invisible without saying so.
-  if ((k.agent?.shadowedCandidates?.length ?? 0) > 0) out.push("shadowsAnotherAgent");
-  return out;
-}
-
-/**
- * §12 FR1/FR8 — resolve what a delegation's child would actually be able to do.
- *
- * `resolveSubagentLaunchContract` has no side effects: it resolves the agent, its
- * effective tool allowlist, skills and context mode, and returns. Called with NO
- * capability ceiling on purpose — see summarizeBoundary's comment; passing ours
- * would resolve a bash-declaring agent down to read-only and the prompt would
- * understate the very thing it exists to disclose.
- *
- * Returns undefined when the contract cannot be resolved (unknown agent, an
- * upstream diagnostic, a throw). That is NOT treated as "no boundary, carry on":
- * the caller refuses the delegation, because a reach we cannot describe is a
- * reach we cannot ask a human to approve.
- */
-async function resolveBoundary(agent: string): Promise<BoundarySummary | undefined> {
-  try {
-    // The result is `{ok, contract}` — everything is nested under `contract`, and
-    // reading it off the top level yields undefined for every field, which then
-    // reads as "unresolvable" and refuses every delegation. Measured, after doing
-    // exactly that.
-    const res = (await resolveSubagentLaunchContract({ agent, cwd: process.cwd() })) as {
-      ok?: boolean;
-      contract?: PreflightContract;
-    };
-    const k = res?.contract;
-    if (!res?.ok || !k?.tools) return undefined;
-    return summarizeBoundary({
-      agent,
-      explicitAllowlist: k.tools.explicitAllowlist === true,
-      effectiveAllowlist: k.tools.effectiveAllowlist ?? [],
-      skills: (k.skills?.resolved ?? []).map((s) => s.name),
-      ...(k.context ? { context: k.context } : {}),
-      declarations: declarationsOf(k),
-    });
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The session id, or undefined.
- *
- * Optional-chained on purpose: `applyCeiling` runs from `turn_start`, so throwing
- * here would throw on EVERY turn, and a ceiling keyed to the fallback literal
- * still bounds the children of this process (one Pi process serves one session,
- * so the fallback cannot collide with another session's registration). Losing the
- * id degrades the key; throwing would lose the boundary.
- */
-function sessionIdOf(ctx: unknown): string | undefined {
-  const sm = (ctx as { sessionManager?: { getSessionId?: () => string | null } } | undefined)?.sessionManager;
-  return sm?.getSessionId?.() ?? undefined;
-}
-
-// Run-card captions (pi-subagents >=0.50 redacts the task everywhere we could read
-// it back — see hv-subagent-tasks.ts). Persisted the same way as plan state and
-// context marks: full snapshot, newest entry wins on restore.
-let subagentTasks: TaskMapState = emptyTaskMap();
-
 // What each completed child actually said, so the delivery can carry it instead of
-// upstream's 1,000-char truncation (hv-subagent-delivery.ts). Deliberately NOT
+// upstream's truncated notification (hv-subagent-delivery.ts). Deliberately NOT
 // persisted: a completion and its delivery turn happen together, and writing multi-KB
 // outputs through appendEntry would bloat every session file to save a round-trip
 // that only a respawn-in-between could ever need.
 const childOutputs = createChildOutputStore();
-function persistSubagentTasks(pi: ExtensionAPI): void {
-  pi.appendEntry(SUBAGENT_TASKS_TYPE, serializeTaskMap(subagentTasks));
-}
-function restoreSubagentTasks(entries: SessionEntry[]): TaskMapState {
-  let out = emptyTaskMap();
-  for (const e of entries) {
-    if ((e.type === "custom" || e.type === "custom_message") && e.customType === SUBAGENT_TASKS_TYPE) {
-      out = restoreTaskMap(e.data); // last one seen = newest
-    }
-  }
-  return out;
-}
 // `restored` marks the one emit that replays persisted state on session_start
 // (respawn/hibernation) — main uses it to reconcile a stale enabled:true against
 // the plan file, without reverting a live re-entry into plan mode.
@@ -872,7 +650,7 @@ export default function (pi: ExtensionAPI) {
   // §12 (2026-09-26): tintinweb builds children IN this process, and the owned patch
   // asks this policy what every child may load and do (hv-child-policy.ts). Published
   // at load, before any child can exist; under HV_HOST=1 a child built without it fails.
-  if (TW) {
+  {
     setChildPolicy({
       // Fails CLOSED: an empty list here would build a child with no guard at all.
       extensionPaths: () => {
@@ -909,32 +687,14 @@ export default function (pi: ExtensionAPI) {
   // every tool that server publishes, which is where the cost actually scales.
   pi.on("turn_start", (_e, ctx) => {
     requireIntent(pi, builtins.intent); stripIntent(pi, builtins.intent);
-    // §12: drop any widening the previous turn's approvals opened. Safe here and
-    // nowhere earlier — see the ceiling's own comment: it is read at spawn, and a
-    // turn cannot end before its tool batch resolves.
-    if (isWiderThanReadOnly(ceilingTools)) {
-      ceilingTools = [...READ_ONLY_CHILD_TOOLS].sort();
-      applyCeiling(sessionIdOf(ctx));
-    }
   });
 
   pi.on("session_start", async (_event, ctx) => {
     requireIntent(pi, builtins.intent); // all extensions have registered by now (idempotent across reloads)
     stripIntent(pi, builtins.intent); // …and take it off the bridge's own tools, which declare it themselves
     skillManifest = loadManifest(); // §14: reflect this session's loaded skills
-    // §12: the resting boundary for every child of this session. Registered here
-    // rather than at module scope because it needs the session id, and re-applied
-    // on a respawn so a resumed session is bounded exactly like a fresh one
-    // (unlike dangerous mode, this is not something a respawn should relax).
-    ceilingTools = [...READ_ONLY_CHILD_TOOLS].sort();
-    applyCeiling(sessionIdOf(ctx));
     const entries = ctx.sessionManager.getEntries() as unknown as SessionEntry[];
     restoreMarks(entries);
-    // Run-card captions survive a respawn AND an app restart: nothing on disk can
-    // rebuild them (0.50 redacts status.json too), so /hv-subagent-list's resync
-    // has no other source. Restored silently — the cards are re-emitted by the
-    // resync itself, not from here.
-    subagentTasks = restoreSubagentTasks(entries);
     // §23: plan state SURVIVES respawn (unlike dangerous mode). Restore + re-emit
     // so the renderer resyncs its banner/toggle after a hibernation/MCP respawn.
     plan = restorePlanState(entries as unknown as PlanSessionEntry[]);
@@ -1012,7 +772,7 @@ export default function (pi: ExtensionAPI) {
     // replacement mechanism as the nested section). enumerateAgents is a hoisted
     // function declaration below in this closure.
     const agents = await enumerateAgents();
-    const agentsSection = renderSubagentSection(agents, { tool: TW ? "Agent" : "subagent" });
+    const agentsSection = renderSubagentSection(agents, { tool: "Agent" });
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
     // A3: the prompt names the blocked tools this session actually HAS.
@@ -1153,54 +913,29 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  /**
-   * Bind a delegation to the run it produced — the EXACT caption pairing.
-   *
-   * `tool_result` is the only event carrying BOTH the tool call id and
-   * `details.asyncId` (the run id), which is what makes this immune to the
-   * same-agent fan-out that broke the old per-agent slot. The `async-started`
-   * notify cannot do it: it carries no tool call id, so with two dispatches
-   * outstanding it now declines to caption rather than guessing wrong.
-   *
-   * Fails open in every direction: a foreground delegation has no `asyncId` and
-   * simply drops its pending entry, and an unknown shape leaves the store alone.
-   */
   pi.on("tool_result", async (event) => {
     // §12 (2026-09-26): a workflow runs in the background; its id first appears here. Announced
     // as a `started` run so the busy gate, the run rail and STOP cover it like any delegation;
     // P6-settled ends it (hv-tw-relay.ts).
-    if (TW && event.toolName === WORKFLOW_TOOL) {
+    if (event.toolName === WORKFLOW_TOOL) {
       const taskId = (event as { details?: { taskId?: unknown } }).details?.taskId;
       if (typeof taskId === "string" && taskId) {
         const input = ((event as { input?: Record<string, unknown> }).input ?? {});
         twRunning.add(taskId);
         relay({ stage: "started", runId: taskId, agent: "workflow", task: workflowName(typeof input.script === "string" ? input.script : "") });
       }
-      return;
     }
-    if (event.toolName !== "subagent") return;
-    const details = (event as { details?: { asyncId?: unknown; runId?: unknown } }).details;
-    const runId = typeof details?.asyncId === "string" ? details.asyncId : undefined;
-    if (!runId) {
-      // Foreground, refused, or errored: no run to caption, so release the slot
-      // instead of leaving it to make the next claim ambiguous.
-      dropPendingTask(subagentTasks, event.toolCallId);
-      return;
-    }
-    if (bindRun(subagentTasks, event.toolCallId, runId)) persistSubagentTasks(pi);
   });
 
   pi.on("tool_call", async (event, ctx) => {
     const tool = event.toolName as string;
     const input = (event.input ?? {}) as Record<string, unknown>;
     // Async subagents (PRD §12): HappyVibe is always interactive and delivers a
-    // subagent's result to the main agent AUTOMATICALLY as a new turn. The
-    // pi-subagents async-started tool result nonetheless tells the model to call
-    // `wait()` when it has nothing else to do — which blocks the turn and defeats
-    // the whole "keep chatting while subagents run" promise. So we intercept
-    // `wait` and hand back guidance instead of letting it block. (No audit — this
-    // is a behavioral guard, not a permission decision.)
-    if (isWaitTool(tool) || (TW && isResultWait(tool, input))) {
+    // subagent's result to the main agent AUTOMATICALLY as a new turn. A blocking
+    // `get_subagent_result({wait: true})` would stall the turn and defeat the whole
+    // "keep chatting while subagents run" promise, so it gets guidance instead.
+    // (No audit — this is a behavioral guard, not a permission decision.)
+    if (isResultWait(tool, input)) {
       return {
         block: true,
         // X3: the reason IS the instruction here — a shouted "Do NOT" made
@@ -1208,17 +943,10 @@ export default function (pi: ExtensionAPI) {
         reason:
           "This is an interactive HappyVibe session: the sub-agent's result is delivered to you " +
           "as a new turn when it finishes, so there is nothing to wait for — do not call " +
-          `${tool}() or poll with subagent status. End your turn with one line saying the work ` +
+          `${tool}() or poll for its status. End your turn with one line saying the work ` +
           "is running in the background.",
       };
     }
-    // The run card's caption, captured at the ONE point it is still readable:
-    // pi-subagents >=0.50 redacts `task` on every surface we could read it back
-    // from (events, status.json, metadata), so remember it now, before dispatch.
-    // Keyed by THIS call's id: a model can emit two `subagent` toolCall blocks in
-    // one assistant message, and the previous per-agent slot silently overwrote
-    // the first — captioning one run with the other's task (2026-08-29).
-    if (tool === "subagent") stashPendingTask(subagentTasks, event.toolCallId, input.task, input.agent);
     // Direct MCP tools: drop the injected intent BEFORE anything reads input
     // (permission summaries stay factual, per the PRD) — the adapter would
     // forward it verbatim to the MCP server otherwise. The UI already has it:
@@ -1238,9 +966,7 @@ export default function (pi: ExtensionAPI) {
     // §12: a delegation gates per AGENT, not per tool — the same reasoning as the
     // two lines above. `subagent` as a rule name made "Allow for session" on a
     // read-only explorer cover a bash-wielding agent for the rest of the session.
-    const subagentName = TW
-      ? twAgentOf(tool, input)
-      : tool === "subagent" && typeof input.agent === "string" ? input.agent : null;
+    const subagentName = twAgentOf(tool, input);
     // §32: the three URL web tools gate under the SAME virtual rule as the
     // browser. One fact — "the agent may reach docs.foo.com" — one allow-list,
     // so "Allow for session", a pattern rule and the Permissions page all cover
@@ -1260,32 +986,13 @@ export default function (pi: ExtensionAPI) {
     // modules), and no test invokes the handler on those three paths.
     const summary = mcp?.display ?? summarize(tool, input);
 
-    // §12 (2026-08-28): pi-subagents 0.58 ships six external-CLI builtin agents,
-    // which launch a third-party CLI in its own process. The ceiling cannot bound
-    // one, the child guard cannot run inside one, and its tool calls never reach
-    // the audit log, so none of §12's three layers reach inside it. Refused BEFORE
-    // resolveBoundary below, which is also what WIDENS the session ceiling — a
-    // grant for an agent nothing can hold to it is worse than no grant at all.
-    if (!TW && isExternalCliAgent(subagentName)) {
-      audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
-      return {
-        block: true,
-        reason:
-          `HappyVibe does not run '${subagentName}': it launches a separate ${subagentName} CLI process, ` +
-          "so this app's permission boundary, its capability ceiling and its audit log cannot see or " +
-          "govern anything it does. Delegate to one of this session's own sub-agents instead, or do the " +
-          "work in this session where every tool call goes through the gate.",
-      };
-    }
-
     // §12 FR1: resolve the child's reach BEFORE the prompt, so the human approves
     // a boundary rather than a verb. Side-effect-free.
-    // tintinweb: the boundary comes from ITS discovery + the agent file (hv-tw-gate.ts);
-    // nicobailon's ceiling/preflight machinery does not exist on that path.
+    // The boundary comes from tintinweb's discovery + the agent file (hv-tw-gate.ts).
     const boundary = subagentName
-      ? TW ? twBoundary(subagentName, await twAgentInfo(subagentName), input) : await resolveBoundary(subagentName)
+      ? twBoundary(subagentName, await twAgentInfo(subagentName), input)
       : undefined;
-    if (TW && subagentName) {
+    if (subagentName) {
       if (twDisabledAgents().has(subagentName)) {
         audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
         return { block: true, reason: `'${subagentName}' is switched off on the Agents page. Delegate to another agent, or do the work in this session.` };
@@ -1295,51 +1002,15 @@ export default function (pi: ExtensionAPI) {
         return { block: true, reason: `HappyVibe could not find an agent named '${subagentName}', so it will not launch it. Use one of the agents listed in <happyvibe_subagents>.` };
       }
     }
-    if (subagentName && !TW) {
-      if (ceilingError) {
-        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
-        return { block: true, reason: `HappyVibe could not establish a sub-agent boundary (${ceilingError}), so it will not launch one. Do the work in this session instead.` };
-      }
-      if (!boundary) {
-        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
-        return { block: true, reason: `HappyVibe could not resolve what '${subagentName}' would be able to do, so it will not launch it. Check the agent exists and its definition is valid.` };
-      }
-      // FR3, enforced rather than inherited: an agent declaring no `tools:` takes
-      // the ceiling as its tool set (pi-args.ts:396-399). If another agent's
-      // approval has already widened the ceiling this turn, that would silently
-      // hand this one the wider set. Refused BEFORE the bypass check for the same
-      // reason plan mode is: "don't ask me again" is not "give undeclared agents
-      // bash". The ceiling resets at turn_start, so the next turn is clean.
-      if (!boundary.declared && isWiderThanReadOnly(ceilingTools)) {
-        audit(ctx.ui, { tool: permTool, summary, decision: "deny", source: "rule" });
-        return {
-          block: true,
-          reason:
-            `'${subagentName}' declares no tools, so it would inherit this turn's widened sub-agent boundary ` +
-            `(${ceilingTools.join(", ")}) instead of the read-only default. Refused. Either give the agent an ` +
-            `explicit 'tools:' list, or delegate to it on a turn where no wider boundary was approved.`,
-        };
-      }
-    }
 
     /**
-     * Grant the approved boundary by widening the session ceiling.
-     *
-     * Called at every point that PERMITS a delegation. Idempotent, and the failure
-     * direction is deliberate: a missed call site means the child launches with the
-     * read-only ceiling and loses tools it was approved for — visible and harmless
-     * — never the reverse.
+     * Record what the in-process guard holds this agent type to (hv-child-policy
+     * `boundaryFor`). Called at every point that PERMITS a delegation. The failure
+     * direction is deliberate: a missed call site leaves the child on the read-only
+     * floor — visible and harmless — never the reverse.
      */
     const grantBoundary = (): void => {
-      // tintinweb: nothing to widen — record what the in-process guard holds this agent to.
-      if (TW) {
-        if (boundary) approvedBoundaries.set(boundary.agent, [...boundary.tools]);
-        return;
-      }
-      if (boundary && needsWiderCeiling(boundary)) {
-        ceilingTools = widenBoundary(boundary.tools);
-        applyCeiling(sessionIdOf(ctx));
-      }
+      if (boundary) approvedBoundaries.set(boundary.agent, [...boundary.tools]);
     };
 
     // W2.3: nested AGENTS.md discovery — every file-tool call reveals which
@@ -1464,7 +1135,7 @@ export default function (pi: ExtensionAPI) {
     // A deny RULE still refuses and bypass still runs it. Plan mode and read-only runs never
     // reach this point (BLOCKED_PLAN_TOOLS, above). On Allow, the agent types the script
     // names get their approved boundaries; any other child is held to the read-only floor.
-    if (TW && tool === WORKFLOW_TOOL) {
+    if (tool === WORKFLOW_TOOL) {
       const src = workflowSource(input, {
         cwd: process.cwd(),
         agentDir: process.env.PI_CODING_AGENT_DIR ?? "",
@@ -1751,105 +1422,8 @@ export default function (pi: ExtensionAPI) {
   // Both ride the fire-and-forget notify channel (JSON in `message`), like
   // hv.context. The renderer parses them and NEVER opens the modal.
 
-  /**
-   * The agent inventory, from pi-subagents' OWN discovery (§12, 2026-08-29).
-   *
-   * This used to read two directories: `<agentDir>/agents` and `<cwd>/.pi/agents`.
-   * Upstream reads SIX — its packaged builtins, `PI_SUBAGENT_EXTRA_AGENT_DIRS`,
-   * `<agentDir>/agents`, `~/.agents`, `<projectRoot>/.agents` and
-   * `<projectRoot>/.pi/agents` — plus agents contributed by installed packages,
-   * and it finds the project root by walking UP from cwd rather than trusting
-   * it. Re-deriving that list here produced an Agents page missing upstream's
-   * seven native builtins, every `~/.agents` agent and every package agent.
-   *
-   * The same list feeds `renderSubagentSection`, which is injected into the
-   * system prompt every turn — so the drift was never merely cosmetic: the
-   * model was handed a roster that omitted most of what it could delegate to.
-   *
-   * `disabled` MUST be filtered. `discoverAgentsAll` applies our settings
-   * overrides but, unlike the singular `discoverAgents`, does NOT drop what
-   * they disable — so without this the six external-CLI agents the bridge
-   * refuses would be advertised to the model and listed on the page as
-   * available, which is worse than not listing them at all.
-   */
-  async function enumerateAgents(): Promise<AgentDef[]> {
-    if (TW) return twEnumerateAgents();
-    let all: ReturnType<typeof discoverAgentsAll>;
-    try {
-      all = discoverAgentsAll(process.cwd());
-    } catch {
-      return []; // discovery must never take the session down
-    }
-    const ourDir = process.env.PI_CODING_AGENT_DIR
-      ? path.join(process.env.PI_CODING_AGENT_DIR, "agents")
-      : null;
-    const byName = new Map<string, AgentDef>();
-    const push = (list: ReadonlyArray<Record<string, unknown>>, source: AgentSource): void => {
-      for (const a of list ?? []) {
-        // Disabled agents are KEPT (marked below) so the Agents page can offer
-        // the switch that turns them back on. They are filtered out of the
-        // injected roster by renderSubagentSection, not here.
-        // The page must advertise exactly what the bridge will ACCEPT. Two
-        // filters, because `disabled` alone is not enough:
-        //  - `discoverAgentsAll` applies our settings overrides but, unlike the
-        //    singular `discoverAgents`, does not DROP what they disable;
-        //  - and a project-scope `.pi/settings.json` beats the user scope
-        //    outright (agents.ts), so a cloned repo can re-enable one.
-        // Either way the bridge still refuses the call (`isExternalCliAgent`,
-        // ahead of the rule engine), so listing them would advertise agents the
-        // app declines — worse than not listing them at all. Same predicate as
-        // the refusal, never a second copy of the set.
-        const name0 = typeof a.name === "string" ? a.name : "";
-        if (isExternalCliAgent(name0)) continue;
-        // Not listed at all (2026-08-30): an agent HappyVibe disabled because it
-        // cannot work here is not a preference to express. Only a USER-disabled
-        // agent stays listed — dimmed, so it can be switched back on.
-        if (UNSUPPORTED_BUILTIN_AGENTS.has(name0)) continue;
-        // And a SEVENTH adapter upstream adds later is refused here before the
-        // contract test has been updated to name it: the ceiling cannot bound
-        // any external-cli process, so the page never offers one.
-        if ((a.runner as { type?: unknown } | undefined)?.type === "external-cli") continue;
-        // ~/.agents is SHARED with Claude Code and tools built on it, and
-        // upstream scans it recursively — excluding `skills/` but not
-        // `commands/`. So every installed slash command arrived here as a
-        // delegatable sub-agent (measured: Superset's 10x/doctor/feedback/setup)
-        // and went into the model's roster every turn. They are not agents.
-        if (isSlashCommandPath(typeof a.filePath === "string" ? a.filePath : "")) continue;
-        const name = typeof a.name === "string" ? a.name : "";
-        const description = typeof a.description === "string" ? a.description : "";
-        if (!name || !description) continue; // pi-subagents skips these too
-        const filePath = typeof a.filePath === "string" ? a.filePath : "";
-        // Our own bundled agents arrive as upstream "user" — they live in the
-        // app-owned agent dir. They are the ones the Agents page can EDIT.
-        const resolved: AgentSource =
-          source === "user" && ourDir && filePath.startsWith(ourDir) ? "bundled" : source;
-        byName.set(name, {
-          name,
-          description,
-          enabled: a.disabled !== true,
-          ...(Array.isArray(a.tools) ? { tools: a.tools as string[] } : {}),
-          ...(typeof a.model === "string" && a.model ? { model: a.model } : {}),
-          // The agent's own prompt, straight off upstream's discovery — no file
-          // read, so the Agents page can SHOW a builtin's prompt without main
-          // widening its path confinement to dirs it does not own (a package
-          // agent can live under the global npm root). ~20 KB for the whole
-          // builtin roster, on a notify the user triggers by opening the page.
-          ...(typeof a.systemPrompt === "string" && a.systemPrompt ? { systemPrompt: a.systemPrompt } : {}),
-          source: resolved,
-          path: filePath,
-        });
-      }
-    };
-    // Insertion order IS the precedence, and it mirrors upstream's own merge
-    // (agent-selection.ts): builtin < package < user < project. That ordering
-    // is what lets our bundled `worker` shadow upstream's builtin of the same
-    // name — pinned in tests/pi-subagents-contract.test.ts.
-    push(all.builtin as never, "builtin");
-    push(all.package as never, "package");
-    push(all.user as never, "user");
-    push(all.project as never, "project");
-    return [...byName.values()];
-  }
+  /** The agent inventory — tintinweb's own discovery (twEnumerateAgents, above). */
+  const enumerateAgents = (): Promise<AgentDef[]> => twEnumerateAgents();
 
   pi.registerCommand("hv-agents", {
     description: "HappyVibe: emit the agent inventory (hv.agents notify)",
@@ -1859,10 +1433,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ── Async subagents (docs/validation/d1.md §hv.subagent) ────────────────────
-  // pi-subagents emits lifecycle events on the shared pi.events bus (never on
-  // RPC stdout). We relay each as a fire-and-forget hv.subagent notify. The run
-  // dir is named by its id, so control events (which carry only asyncDir) map
-  // back to a runId via basename.
+  // tintinweb emits lifecycle events on the shared pi.events bus (never on RPC
+  // stdout). We relay each as a fire-and-forget hv.subagent notify (hv-tw-relay.ts).
   const subEnvelope = (o: Record<string, unknown>): string => JSON.stringify({ kind: "hv.subagent", ...o });
   const relay = (o: Record<string, unknown>, type: "info" | "warning" = "info"): void => busUi?.notify(subEnvelope(o), type);
 
@@ -1884,7 +1456,7 @@ export default function (pi: ExtensionAPI) {
     });
 
   // pi.events is absent in the module-level test mocks (real pi always has it).
-  if (pi.events && TW) {
+  if (pi.events) {
     twRunning = registerTwRelay({
       on: (ev, h) => pi.events.on(ev, h),
       relay: (n) => relay({ ...n }),
@@ -1896,102 +1468,19 @@ export default function (pi: ExtensionAPI) {
           Symbol.for("pi-subagents:manager")
         ]?.getRecord?.(runId)?.session?.sessionManager?.getSessionFile?.(),
     });
-  } else if (pi.events) {
-    pi.events.on("subagent:async-started", (raw) => {
-      const d = raw as { id?: string; agent?: string; task?: string; asyncDir?: string };
-      if (!d.id) return;
-      // `d.task` is "[prompt redacted]" from 0.50 on, so the caption comes from what
-      // the tool_call stashed; displayableTask keeps the pre-0.50 value working if a
-      // future pin un-redacts it. Persisted so the resync below can rebuild cards
-      // after a respawn or an app restart, where no args event exists to re-derive.
-      const task = claimTask(subagentTasks, d.id, d.agent) ?? displayableTask(d.task);
-      persistSubagentTasks(pi);
-      relay({ stage: "started", runId: d.id, agent: d.agent, task, asyncDir: d.asyncDir });
-    });
-    pi.events.on("subagent:async-complete", (raw) => {
-      const d = raw as { runId?: string; id?: string; agent?: string; success?: boolean; summary?: string; state?: string; results?: unknown };
-      // Keep each child's FULL answer before anything downstream sees the truncated
-      // rendering of it. Done first, and outside the runId guard, because this is
-      // keyed by the CHILD's run id — a different id from the workflow's, and the
-      // one the delivery message actually names.
-      rememberChildOutputs(childOutputs, d.results);
-      const runId = d.runId ?? d.id;
-      if (!runId) return;
-      const status = d.success === true ? "success" : d.state === "paused" ? "interrupted" : "error";
-      // 0.50 reports `agent:"workflow"` here for every top-level delegation, because
-      // its legacy single/chain entry points were removed and everything runs as a
-      // workflow. That is upstream's plumbing, not a name the user chose — relaying
-      // it made the hand-off notice read "workflow finished". Dropped, so the
-      // renderer falls back to a neutral word; the CARD keeps the real agent, which
-      // it took from the tool call's own args.
-      const agent = d.agent === "workflow" ? undefined : d.agent;
-      relay({ stage: "complete", runId, agent, status, summary: d.summary?.slice(0, 500) });
-      // The card is gone; its caption would otherwise accumulate in the session file
-      // for the life of the session.
-      releaseTask(subagentTasks, runId);
-      persistSubagentTasks(pi);
-    });
-    pi.events.on("subagent:control-event", (raw) => {
-      const d = raw as { event?: { type?: string }; asyncDir?: string };
-      if (!d.asyncDir || !d.event?.type) return;
-      const activityState = d.event.type === "needs_attention" ? "needs_attention" : "long-running";
-      relay({ stage: "control", runId: path.basename(d.asyncDir), activityState });
-    });
   }
 
   // main→bridge is RPC-prompt only, so run control rides slash commands.
-  // /hv-subagent-interrupt drives pi-subagents' versioned event-bus RPC
-  // (subagents:rpc:v1); /hv-subagent-list resyncs active runs after a respawn.
-  let rpcSeq = 0;
-  const rpcRequest = (method: string, params: Record<string, unknown>): Promise<{ ok: boolean }> =>
-    new Promise((resolve) => {
-      const requestId = `hv-${method}-${++rpcSeq}-${Date.now()}`;
-      const replyChannel = `subagents:rpc:v1:reply:${requestId}`;
-      const t = setTimeout(() => { off(); resolve({ ok: false }); }, 10_000);
-      const off = pi.events.on(replyChannel, (reply) => {
-        clearTimeout(t);
-        off();
-        resolve({ ok: (reply as { success?: boolean })?.success === true });
-      });
-      pi.events.emit("subagents:rpc:v1:request", { version: 1, requestId, method, params });
-    });
-
   pi.registerCommand("hv-subagent-interrupt", {
     description: "HappyVibe: interrupt a running async subagent. Usage: /hv-subagent-interrupt <runId>",
     handler: async (args, ctx) => {
       const runId = args.trim();
       if (!runId) return;
-      // tintinweb: one run is one child, so the run's STOP is its own `subagents:rpc:stop`.
       // tintinweb: one run is one child, so the run's STOP is its own `subagents:rpc:stop` — and a
       // workflow run (`wf_…`) stops WHOLE through the patched `workflow-stop` verb (P6).
-      const { ok } = !TW
-        ? await rpcRequest("interrupt", { runId })
-        : runId.startsWith("wf_")
+      const { ok } = runId.startsWith("wf_")
           ? await twRpc("subagents:rpc:workflow-stop", { runId })
           : await twRpc("subagents:rpc:stop", { agentId: runId });
-      ctx.ui.notify(subEnvelope({ stage: ok ? "interrupt-sent" : "interrupt-error", runId }), ok ? "info" : "warning");
-    },
-  });
-
-  /**
-   * §12 (2026-08-29): stop ONE child of a fan-out without killing the run
-   * (upstream 0.55 / #1367).
-   *
-   * `stop` is a DIFFERENT RPC method from `interrupt` — it takes a childId, and
-   * upstream REJECTS a malformed one rather than widening to a run-level stop.
-   * That failure direction is the one we want: a bad id must never kill the
-   * siblings the user was deliberately keeping.
-   *
-   * The reply reuses the existing `interrupt-sent`/`interrupt-error` stages, so
-   * the renderer's event parser needs no change — from the card's point of view
-   * this is the same control, aimed more precisely.
-   */
-  pi.registerCommand("hv-subagent-stop-child", {
-    description: "HappyVibe: stop one child of a running fan-out. Usage: /hv-subagent-stop-child <runId> <childId>",
-    handler: async (args, ctx) => {
-      const [runId, childId] = args.trim().split(/\s+/);
-      if (!runId || !childId) return;
-      const { ok } = await rpcRequest("stop", { runId, childId });
       ctx.ui.notify(subEnvelope({ stage: ok ? "interrupt-sent" : "interrupt-error", runId }), ok ? "info" : "warning");
     },
   });
@@ -2006,7 +1495,7 @@ export default function (pi: ExtensionAPI) {
     description: "HappyVibe: send a message to a running sub-agent. Usage: /hv-subagent-steer <runId> <base64 message>",
     handler: async (args, ctx) => {
       const [runId, b64] = args.trim().split(/\s+/);
-      if (!runId || !b64 || !TW) return;
+      if (!runId || !b64) return;
       let message = "";
       try { message = Buffer.from(b64, "base64").toString("utf8"); } catch { /* malformed */ }
       if (!message.trim()) return;
@@ -2020,26 +1509,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       // tintinweb: children live in THIS process, so what is running is what the relay tracked —
       // and after a respawn that is nothing, which is the truth the renderer must be told.
-      if (TW) {
-        ctx.ui.notify(subEnvelope({ stage: "active", runs: [...twRunning].map((runId) => ({ runId })) }), "info");
-        return;
-      }
-      const sessionId = ctx.sessionManager.getSessionId() ?? undefined;
-      let runs: Array<{ runId: string; agent?: string; task?: string; asyncDir: string }> = [];
-      try {
-        runs = listAsyncRuns(ASYNC_DIR, { states: ["queued", "running"], sessionId }).map((r) => ({
-          runId: r.id,
-          agent: r.steps?.[0]?.agent,
-          // The caption cannot come off disk: 0.50 redacts steps[].description too
-          // (statusStepDescription ignores its own argument). This is the whole
-          // reason the map is persisted rather than kept in renderer state.
-          task: taskFor(subagentTasks, r.id) ?? displayableTask(r.steps?.[0]?.description),
-          asyncDir: r.asyncDir,
-        }));
-      } catch {
-        /* runs dir absent — no active runs */
-      }
-      ctx.ui.notify(subEnvelope({ stage: "active", runs }), "info");
+      ctx.ui.notify(subEnvelope({ stage: "active", runs: [...twRunning].map((runId) => ({ runId })) }), "info");
     },
   });
 

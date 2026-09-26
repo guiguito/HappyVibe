@@ -430,18 +430,13 @@ export function ChatView({
   // §12 (2026-08-29): the agent rows shown above the file rows in the `@` menu.
   const mentionAgents = mention ? agentMentionItems(agents ?? [], mention.query) : [];
 
-  // §7/§12 (2026-09-26): steering exists on the tintinweb stack only — asked once.
-  const [steerable, setSteerable] = useState(false);
-  useEffect(() => {
-    void window.hv.subagentsLib().then((l) => setSteerable(l === "tintinweb")).catch(() => setSteerable(false));
-  }, []);
   // The run the user PICKED from the `@` menu. A prompt reaches it only while it still
   // starts with that run's `@agent ` token (steerTarget) — typed text is never an address.
   const [pickedRun, setPickedRun] = useState<{ runId: string; agent: string } | null>(null);
   useEffect(() => {
     if (pickedRun && !input.startsWith(`@${pickedRun.agent} `)) setPickedRun(null);
   }, [input, pickedRun]);
-  const mentionRuns = mention && steerable ? runMentionItems(delegations, mention.query) : [];
+  const mentionRuns = mention ? runMentionItems(delegations, mention.query) : [];
   const [steerNotice, setSteerNotice] = useState<string | null>(null);
   useEffect(() => {
     if (!steerNotice) return;
@@ -1400,7 +1395,7 @@ export function ChatView({
                   items={items}
                   onStopRun={onStopRun}
                   onStopChild={onStopChild}
-                  onSteerRun={steerable && sessionId ? steer : undefined}
+                  onSteerRun={sessionId ? steer : undefined}
                   onStopTerminal={onStopTerminal}
                   onOpenTerminalAsTab={onOpenTerminalAsTab}
                 />

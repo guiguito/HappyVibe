@@ -38,8 +38,8 @@ describe("X7 — every refusal ends with a next step", () => {
 });
 
 describe("X3 — the wait intercept is calm and still derives the tool name", () => {
-  // Prefix, not the whole condition: §12 (2026-09-26) extended it with tintinweb's `wait: true`.
-  const at = bridge.indexOf("if (isWaitTool(tool)");
+  // tintinweb's blocking wait is `get_subagent_result` with `wait: true` (isResultWait).
+  const at = bridge.indexOf("if (isResultWait(tool, input))");
   const raw = bridge.slice(at, at + 900);
   // What must be calm is what the MODEL reads. The comment above the refusal
   // quotes the old shout to explain why it went, so comments are stripped.

@@ -76,7 +76,7 @@ describe("CHANGELOG.md — PRD §30", () => {
       .dependencies as Record<string, string>;
     const line =
       `Runtime: Pi ${d["@earendil-works/pi-coding-agent"]}` +
-      ` · sub-agents ${d["pi-subagents"]}` +
+      ` · sub-agents ${d["@tintinweb/pi-subagents"]}` +
       ` · MCP adapter ${d["pi-mcp-adapter"]}`;
     expect(MD).toContain(line);
   });

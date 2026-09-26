@@ -38,7 +38,7 @@ test.skipIf(!KEY)("a steer lands in the run it names, never in its sibling", asy
   fs.writeFileSync(path.join(agentDir, "subagents.json"), JSON.stringify(TINTINWEB_SETTINGS));
   const rulesFile = path.join(agentDir, "rules.json");
   fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent*", action: "allow" }, { layer: "tool", pattern: "bash", action: "allow" }], workspaces: {} }));
-  const spec = resolvePiSpawn(ws, sessionDir, runtime, { subagentsLib: "tintinweb", agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL });
+  const spec = resolvePiSpawn(ws, sessionDir, runtime, { agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL });
   const subs: Sub[] = [];
   const c = new PiClient(spec);
   client = c;
@@ -78,7 +78,7 @@ test.skipIf(!KEY)("a steer to a run that is not running is refused, and says so"
   fs.writeFileSync(path.join(agentDir, "subagents.json"), JSON.stringify(TINTINWEB_SETTINGS));
   const rulesFile = path.join(agentDir, "rules.json");
   fs.writeFileSync(rulesFile, JSON.stringify({ global: [], workspaces: {} }));
-  const spec = resolvePiSpawn(ws, sessionDir, runtime, { subagentsLib: "tintinweb", agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL });
+  const spec = resolvePiSpawn(ws, sessionDir, runtime, { agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL });
   const subs: Sub[] = [];
   const c = new PiClient(spec);
   client = c;

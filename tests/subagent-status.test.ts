@@ -1,45 +1,11 @@
-import { describe, expect, it, test } from "vitest";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { readSubagentStatus, statusUnchanged } from "../src/main/subagentStatus";
+/**
+ * The run card's change gate (src/main/subagentStatus.ts). A push is skipped when
+ * nothing the card shows has moved — so every field the card reads has to count.
+ */
+import { expect, test } from "vitest";
+import { statusUnchanged } from "../src/main/subagentStatus";
 
-/** A run dir with a status.json, under os.tmpdir() (confinement requirement). */
-function runDir(status?: unknown): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-substatus-"));
-  if (status !== undefined) fs.writeFileSync(path.join(dir, "status.json"), typeof status === "string" ? status : JSON.stringify(status));
-  return dir;
-}
-
-test("reads and normalizes top-level status fields", () => {
-  const dir = runDir({ runId: "r1", state: "running", activityState: "active_long_running", currentTool: "read", turnCount: 2, toolCount: 5 });
-  const s = readSubagentStatus(dir);
-  expect(s).toMatchObject({ state: "running", activityState: "active_long_running", currentTool: "read", turnCount: 2, toolCount: 5 });
-});
-
-test("falls back to steps[0] for per-step live fields", () => {
-  const dir = runDir({ runId: "r1", state: "running", steps: [{ currentTool: "grep", turnCount: 3, recentTools: [{ tool: "read", args: "a.ts" }] }] });
-  const s = readSubagentStatus(dir);
-  expect(s?.currentTool).toBe("grep");
-  expect(s?.turnCount).toBe(3);
-  expect(s?.recentTools).toEqual([{ tool: "read", args: "a.ts" }]);
-});
-
-test("missing file returns null (poll again next tick)", () => {
-  const dir = runDir(); // no status.json
-  expect(readSubagentStatus(dir)).toBeNull();
-});
-
-test("torn/corrupt JSON returns null instead of throwing", () => {
-  const dir = runDir('{ "state": "running"'); // truncated write
-  expect(readSubagentStatus(dir)).toBeNull();
-});
-
-test("refuses a path outside os.tmpdir() (fs confinement)", () => {
-  expect(readSubagentStatus("/etc")).toBeNull();
-});
-
-test("statusUnchanged compares only live-progress fields", () => {
+test("compares only live-progress fields", () => {
   const base = { state: "running", activityState: undefined, currentTool: "read", turnCount: 1, toolCount: 2 };
   expect(statusUnchanged(base, { ...base })).toBe(true);
   expect(statusUnchanged(base, { ...base, currentTool: "grep" })).toBe(false);
@@ -48,253 +14,21 @@ test("statusUnchanged compares only live-progress fields", () => {
   expect(statusUnchanged(null, null)).toBe(true);
 });
 
-// ── The 0.50 wiring: an async run announces itself from its DISPATCH RESULT ──
-//
-// pi-subagents 0.50 emits no `subagent:async-started` for a top-level delegation
-// (the workflow path; at 0.58 the direct single-child path does — d1.md §0.58)
-// (docs/validation/d1.md §pi-subagents 0.50), and THREE things in ipc.ts hung off
-// that notify: the hibernation guard (`activity.asyncStarted` — without it a
-// session with a running delegation reads as idle and can be stopped mid-run), the
-// status poller, and the audit record. They are now driven by
-// `tool_execution_end.result.details`, which carries both ids.
-//
-// The renderer suite has no DOM and ipc.ts is not unit-importable, so this pins the
-// two halves that CAN be checked cheaply: that the ids we depend on are read from
-// the right place, and that ipc.ts actually wires them (source scan — the
-// tests/modal-layer.test.ts pattern, and an absence a render test cannot fail on).
-
-test("the dispatch result carries the runId AND the dir the poller tails", () => {
-  // Shape measured 2026-08-17 on a real async delegation. asyncId is the same id
-  // the completion notify uses, which is what lets start and stop pair up.
-  const details = {
-    mode: "workflow",
-    runId: "fa7d236f-1704-43c2-93af-b3baa974c090",
-    asyncId: "fa7d236f-1704-43c2-93af-b3baa974c090",
-    asyncDir: `${os.tmpdir()}/pi-subagents-uid-501/async-subagent-runs/fa7d236f`,
-  };
-  expect(details.asyncId).toBe(details.runId);
-  expect(details.asyncDir.startsWith(os.tmpdir())).toBe(true);
+test("a child's session file arriving is news — it unlocks the cost readout", () => {
+  const before = { state: "running", turnCount: 1 };
+  const after = { state: "running", turnCount: 1, children: [{ sessionFile: "/s/subagents/c.jsonl" }] };
+  expect(statusUnchanged(before, after)).toBe(false);
+  expect(statusUnchanged(after, after)).toBe(true);
 });
 
-test("ipc.ts starts the poll and the idle guard from tool_execution_end, not the notify", () => {
-  const ipc = fs.readFileSync(path.join(__dirname, "..", "src", "main", "ipc.ts"), "utf8");
-  const branch = ipc.slice(ipc.indexOf('e.type === "tool_execution_end"'));
-  expect(branch.slice(0, 1200)).toMatch(/activity\.asyncStarted\(/);
-  expect(branch.slice(0, 1200)).toMatch(/startSubagentPoll\(/);
-  // The race guard: a child that finished before its dispatch event was processed
-  // must not start a poller nothing will ever stop.
-  expect(branch.slice(0, 1200)).toMatch(/finishedAsyncRuns\.has\(/);
-  // And completion still marks it, or the guard above can never be true.
-  expect(ipc).toMatch(/finishedAsyncRuns\.add\(/);
+test("a stuck run turning amber is news (decision 8 rides activityState)", () => {
+  const a = { turnCount: 3 };
+  expect(statusUnchanged(a, { ...a, activityState: "needs_attention" })).toBe(false);
 });
 
-/**
- * pi-subagents 0.52 persists a run's status BEFORE publishing its result file,
- * closing a race where an observer could read a completed result while the run's
- * own status still said `running`.
- *
- * We carry no defensive code for that race and never did — `readSubagentStatus`
- * returning null on a torn read is atomic-write handling, a different thing, and
- * it stays. So this pin exists purely so the ordering cannot regress silently
- * underneath a poller that now depends on it.
- *
- * Asserted as a source-order comparison rather than behaviourally, because
- * reproducing it needs a real child mid-completion: the point is only that the
- * final status write still precedes the result publish inside the same function.
- */
-test("upstream persists status before publishing the result (0.52 ordering)", () => {
-  const src = fs.readFileSync(
-    path.join(__dirname, "..", "pi-runtime", "node_modules", "pi-subagents",
-              "src", "runs", "background", "subagent-runner.ts"), "utf8");
-
-  const publish = src.indexOf("writeAsyncResultFile(filePath, payload as Record<string, unknown>)");
-  expect(publish, "the async result publish site is still findable").toBeGreaterThan(-1);
-
-  // The last status flush before the publish — writeStatusPayload() is upstream's
-  // own coalescing writer for <asyncDir>/status.json.
-  const statusFlush = src.lastIndexOf("writeStatusPayload();", publish);
-  expect(statusFlush, "a status flush precedes the publish").toBeGreaterThan(-1);
-  expect(statusFlush).toBeLessThan(publish);
-});
-
-test("our status reader carries no retry/compensation for that race", () => {
-  // If someone adds one later, this test is the place to explain why it became
-  // necessary — upstream's ordering is supposed to make it unnecessary.
-  const ours = fs.readFileSync(path.join(__dirname, "..", "src", "main", "subagentStatus.ts"), "utf8");
-  expect(ours).not.toMatch(/setTimeout|retry|attempts/i);
-});
-
-/**
- * The child session file the cost readout depends on. Captured from a real 0.53
- * run (2026-08-22): the RUN level has no `sessionFile` at all — it is per STEP,
- * and it is the only link between a run and its own spend, because the
- * directory it names carries the run's INNER id while every id the app holds is
- * the workflow async id.
- */
-describe("children (the cost readout's source)", () => {
-  const write = (dir: string, status: unknown): void =>
-    fs.writeFileSync(path.join(dir, "status.json"), JSON.stringify(status));
-
-  it("reads sessionFile and agent from every step, not just the first", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-status-"));
-    write(dir, {
-      state: "running",
-      steps: [
-        { agent: "code-explorer", sessionFile: "/s/a/run-0/session.jsonl" },
-        { agent: "agents-md-maker", sessionFile: "/s/b/run-1/session.jsonl" },
-      ],
-    });
-    expect(readSubagentStatus(dir)?.children).toEqual([
-      { sessionFile: "/s/a/run-0/session.jsonl", agent: "code-explorer" },
-      { sessionFile: "/s/b/run-1/session.jsonl", agent: "agents-md-maker" },
-    ]);
-  });
-
-  it("absent before the child has a session — never an empty entry", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-status-"));
-    write(dir, { state: "running", steps: [{ agent: "code-explorer" }] });
-    expect(readSubagentStatus(dir)?.children).toBeUndefined();
-  });
-
-  // It can land on a tick where nothing else moved, and it is what unlocks the
-  // readout — so its arrival has to count as a change, or the card stays blank.
-  it("its arrival is a change worth pushing", () => {
-    const before = { state: "running", turnCount: 1 };
-    const after = { state: "running", turnCount: 1, children: [{ sessionFile: "/s/a/run-0/session.jsonl" }] };
-    expect(statusUnchanged(before, after)).toBe(false);
-    expect(statusUnchanged(after, after)).toBe(true);
-  });
-});
-
-// ── The live child context gauge (PRD §12, 2026-08-29 — the fleet round) ─────
-//
-// pi-subagents 0.57 (#1444) added context-window occupancy to status.json,
-// deliberately separate from cumulative spend: `steps[].tokens.window` is the
-// child's LATEST turn (input + cache-read, i.e. what is sitting in its window)
-// and `steps[].contextLimit` is that model's window, resolved from Pi's own
-// registry. Both are rewritten on every child `message_end`, so the poll we
-// already run ticks at exactly the right cadence.
-describe("live child context occupancy", () => {
-  test("reads window + limit off steps[0]", () => {
-    const dir = runDir({
-      state: "running",
-      steps: [{ agent: "worker", status: "running", contextLimit: 200_000, tokens: { input: 9_000, output: 400, total: 9_400, window: 12_800, windowPeak: 12_800 } }],
-    });
-    expect(readSubagentStatus(dir)?.context).toEqual({ window: 12_800, limit: 200_000 });
-  });
-
-  test("omits context entirely when the model has no known window", () => {
-    // contextLimit comes from Pi's model registry; an unregistered model has
-    // none. A window with nothing to divide by is not a percentage, and half a
-    // measurement must never render as 0% (PRD §19 ruling 3).
-    const dir = runDir({
-      state: "running",
-      steps: [{ agent: "worker", status: "running", tokens: { input: 9_000, output: 400, total: 9_400, window: 12_800 } }],
-    });
-    expect(readSubagentStatus(dir)?.context).toBeUndefined();
-  });
-
-  test("omits context when no turn has been billed yet", () => {
-    const dir = runDir({ state: "running", steps: [{ agent: "worker", status: "running", contextLimit: 200_000 }] });
-    expect(readSubagentStatus(dir)?.context).toBeUndefined();
-  });
-
-  test("a zero or negative limit is not a divisor", () => {
-    const dir = runDir({ state: "running", steps: [{ contextLimit: 0, tokens: { window: 10 } }] });
-    expect(readSubagentStatus(dir)?.context).toBeUndefined();
-  });
-
-  test("a moved window is news worth pushing", () => {
-    // statusUnchanged decides whether a tick reaches the renderer at all: a
-    // field it does not compare is a field that freezes after the first tick.
-    const a = { state: "running", context: { window: 10, limit: 100 } };
-    const b = { state: "running", context: { window: 20, limit: 100 } };
-    expect(statusUnchanged(a, b)).toBe(false);
-    expect(statusUnchanged(a, { ...a })).toBe(true);
-    expect(statusUnchanged({ state: "running" }, a)).toBe(false);
-  });
-});
-
-// ── Per-child rows for a fan-out (PRD §12, 2026-08-29 — the fleet round) ─────
-//
-// Deliberately a SEPARATE field from `children`. That one is the cost readout's
-// source and requires a `sessionFile` (a child with no session file yet is not
-// billable, and an entry without one broke the readout once). These rows are
-// the UI's, and a child is stoppable from the moment it is pending — long
-// before it has written a session file. One derivation, two shapes, because the
-// two consumers genuinely want different things.
-describe("steps (the fan-out's per-child rows)", () => {
-  const write = (status: unknown): string => runDir(status);
-
-  // MEASURED 2026-08-29 on a live two-child workflowScript run, and it corrected
-  // the first implementation: `steps[].childId` is declared in upstream's type
-  // but is NULL on the wire. The identity upstream's own `stop` RPC resolves is
-  // `workflowKey ?? runId ?? "step:<index>"` (runs/shared/child-identity.ts,
-  // asyncStatusChildIdentity), so that is what we derive. Keying on childId
-  // alone meant the per-child STOP never rendered at all.
-  it("derives the child identity upstream's stop RPC actually accepts", () => {
-    const dir = write({
-      state: "running",
-      mode: "workflow",
-      steps: [
-        { agent: "code-explorer", status: "running", workflowKey: "a" },
-        { agent: "reviewer", status: "running", workflowKey: "b" },
-      ],
-    });
-    expect(readSubagentStatus(dir)?.steps?.map((c) => c.childId)).toEqual(["a", "b"]);
-  });
-
-  it("falls back through runId to step:<index>, the way upstream does", () => {
-    const dir = write({
-      state: "running",
-      steps: [
-        { agent: "x", status: "running", runId: "r-1" },
-        { agent: "y", status: "running" },
-      ],
-    });
-    expect(readSubagentStatus(dir)?.steps?.map((c) => c.childId)).toEqual(["r-1", "step:1"]);
-  });
-
-  it("an explicit childId still wins when upstream supplies one", () => {
-    const dir = write({ state: "running", steps: [{ agent: "x", status: "running", childId: "c0", workflowKey: "a" }] });
-    expect(readSubagentStatus(dir)?.steps?.[0].childId).toBe("c0");
-  });
-
-  it("carries each child's stoppable identity, status and own context", () => {
-    const dir = write({
-      state: "running",
-      steps: [
-        { childId: "c0", agent: "worker", status: "running", contextLimit: 200_000, tokens: { window: 20_000 } },
-        { childId: "c1", agent: "reviewer", status: "complete", contextLimit: 200_000, tokens: { window: 5_000 } },
-      ],
-    });
-    expect(readSubagentStatus(dir)?.steps).toEqual([
-      { childId: "c0", agent: "worker", status: "running", context: { window: 20_000, limit: 200_000 } },
-      { childId: "c1", agent: "reviewer", status: "complete", context: { window: 5_000, limit: 200_000 } },
-    ]);
-  });
-
-  it("includes a child that has no session file yet — it is still stoppable", () => {
-    const dir = write({ state: "running", steps: [{ childId: "c0", agent: "worker", status: "pending" }] });
-    expect(readSubagentStatus(dir)?.steps).toEqual([{ childId: "c0", agent: "worker", status: "pending" }]);
-    // ...while the cost readout's own field stays empty, as it always did.
-    expect(readSubagentStatus(dir)?.children).toBeUndefined();
-  });
-
-  it("carries the child's transcript path when upstream has written one", () => {
-    const dir = write({ state: "running", steps: [{ childId: "c0", transcriptPath: "/s/subagent-artifacts/r_w_0_transcript.jsonl" }] });
-    expect(readSubagentStatus(dir)?.steps?.[0].transcriptPath).toBe("/s/subagent-artifacts/r_w_0_transcript.jsonl");
-  });
-
-  it("a child changing status is news worth pushing", () => {
-    // Without this the STOP button on a finished child never goes away.
-    const a = { state: "running", steps: [{ childId: "c0", status: "running" }] };
-    const b = { state: "running", steps: [{ childId: "c0", status: "stopped" }] };
-    expect(statusUnchanged(a, b)).toBe(false);
-    expect(statusUnchanged(a, { ...a })).toBe(true);
-  });
-
-  it("absent rather than an empty array when a run has no steps", () => {
-    expect(readSubagentStatus(runDir({ state: "running" }))?.steps).toBeUndefined();
-  });
+test("a workflow child changing status is news", () => {
+  const a = { steps: [{ agent: "worker", status: "working" }] };
+  const b = { steps: [{ agent: "worker", status: "done" }] };
+  expect(statusUnchanged(a, b)).toBe(false);
+  expect(statusUnchanged(a, { ...a })).toBe(true);
 });

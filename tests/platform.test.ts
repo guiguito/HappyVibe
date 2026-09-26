@@ -40,16 +40,6 @@ describe("nodeExecPath", () => {
   });
 });
 
-describe("childLauncher", () => {
-  it("is the .mjs on win32 and the .sh elsewhere", () => {
-    // win32 rides pi-subagents' own isNodeScriptPath branch in getPiSpawnCommand;
-    // pinned against upstream's source in pi-subagents-contract.test.ts.
-    expect(makePlatform(deps({ platform: "win32" })).childLauncher()).toBe("bin/pi-child.mjs");
-    expect(makePlatform(deps({ platform: "darwin" })).childLauncher()).toBe("bin/pi-node.sh");
-    expect(makePlatform(deps({ platform: "linux" })).childLauncher()).toBe("bin/pi-node.sh");
-  });
-});
-
 describe("killTree", () => {
   it("uses taskkill /T /F on win32, so descendants go down with the session", () => {
     const calls: Array<[string, string[]]> = [];

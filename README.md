@@ -99,7 +99,7 @@ The five runtime pins move deliberately, together with their contract tests:
 | | |
 |---|---|
 | `@earendil-works/pi-coding-agent` | `0.85.0` |
-| `pi-subagents` | `0.64.0` |
+| `@tintinweb/pi-subagents` | `0.19.0` (patched at install) |
 | `pi-mcp-adapter` | `2.32.1` |
 | `@firecrawl/anydoc` | `0.2.4` |
 | `@earendil-works/pi-server` | `0.85.0` |

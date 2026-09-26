@@ -10,7 +10,7 @@ import { clampInt, formatCrawl, formatFetch, formatMap, formatSearch, SERVICE_UN
 import { crawl as webCrawl, mapSite as webMapSite, probe as webProbe, scrape as webScrape, search as webSearch, WebServiceError } from "./webService";
 import { PiClient } from "./pi/PiClient";
 import { spawn } from "node:child_process";
-import { resolvePiSpawn, subagentsLibFromEnv } from "./pi/spawn";
+import { resolvePiSpawn } from "./pi/spawn";
 import { THINKING_LEVELS, resolveThinking } from "./thinking";
 import { piRuntimeDir } from "./pi/runtimeDir";
 import { buildDocumentBlocks, convertDocument, probeDocuments } from "./documents";
@@ -18,8 +18,8 @@ import { DOCUMENT_EXTENSIONS, documentErrorSentence, documentErrorUserMessage, d
 import {
   agentDir, builtinAgentsDir, getBuiltinTools, getDefaultModel, getDefaultThinking, setDefaultThinking, getGlobalBypass, getLinkedPromptTemplateDirs, getLinkedSkillDirs, getLongCache, getOnboardingSeen, getOpenFilesContext, setOpenFilesContext,
   customKeyStatus, getWorkspaceBypass, installBuiltinAgents, listCustomEndpoints, providerEnv, providerKeyStatus, removeCustomEndpoint, removeProviderKey,
-  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentConfig, writeSubagentSettings, writeTintinwebSettings,
-  childAuditRoot, resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
+  saveCustomEndpoint, setAgentEnabled, setLinkedPromptTemplateDirs, setLinkedSkillDirs, writeSubagentSettings, writeTintinwebSettings,
+  resolveBypass, rulesFile, sessionDir, snapshotDir, setBuiltinTools, setDefaultModel, setGlobalBypass, setLongCache, setOnboardingSeen,
   getStarNudgeUntil, snoozeStarNudge,
   setProviderKey, setWorkspaceBypass, setMcpSecret, removeMcpSecrets, getShortcuts, setShortcuts,
   listMarketplaces, addMarketplace, removeMarketplace, OFFICIAL_MARKETPLACE,
@@ -80,16 +80,13 @@ import { agentByFileFrom, callsFromChildSessions, childSessionsByRunFrom, runTot
 import { foldWorkflowProgress, twChildStatus, twInspect } from "./twChildren";
 import { isStuck } from "./stuckRun";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
-import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } from "./modelExclusions";
 import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, normPath, readSessionFile, sessionFilePath, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
 import { exportSessionHtml } from "./sessionExport";
 import { SessionManager, sweepOrphans, type SessionExit } from "./SessionManager";
 import { platform } from "./platform";
 import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
-import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
-import { inspectCommand, inspectRequestId, parseInspectFrame, type InspectReply } from "./subagentInspect";
-import { pollSubagentStatus, statusUnchanged, type SubagentStatus } from "./subagentStatus";
+import { statusUnchanged, type SubagentStatus } from "./subagentStatus";
 import { readChildTrace } from "./subagentThinking";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
@@ -799,63 +796,27 @@ export function registerIpc(
   if (swept.length) console.warn("[hv] swept orphan pi processes:", swept);
 
   // B6: install/refresh the bundled built-in agents into the app-owned agent
-  // dir (idempotent, never clobbers user edits). pi-subagents discovers them.
+  // dir (idempotent, never clobbers user edits). tintinweb discovers them.
   try {
     installBuiltinAgents(path.join(piRuntimeDir(), "agents"));
   } catch (e) {
     console.warn("[hv] built-in agent install failed:", e);
   }
 
-  // Async-by-default subagents (PRD §12) — pi-subagents reads this at spawn.
-  try {
-    writeSubagentConfig();
-  } catch (e) {
-    console.warn("[hv] subagent config write failed:", e);
-  }
-
-  // §12 (2026-09-26): tintinweb's global settings. Written whichever stack is on — the
-  // file is inert unless HV_SUBAGENTS=tintinweb loads the package that reads it.
+  // §12 (2026-09-26): tintinweb's global settings (subagentSettings.ts).
   try {
     writeTintinwebSettings();
   } catch (e) {
     console.warn("[hv] tintinweb settings write failed:", e);
   }
 
-  // §12 (2026-08-28): keep upstream's six external-CLI builtin agents out of the
-  // roster the model is shown. Hygiene, not enforcement — the bridge refuses one
-  // outright, because a project-scope .pi/settings.json beats this file.
+  // The Agents page's per-agent switch lives in this file's `agentOverrides`; the
+  // bridge reads it live (twDisabledAgents), so it is written even with no overrides.
   try {
     writeSubagentSettings();
   } catch (e) {
     console.warn("[hv] subagent settings write failed:", e);
   }
-
-  /** Where pi-subagents keeps its cached model exclusions — ours, not derived. */
-  const modelExclusionsPath = (): string => path.join(agentDir(), "model-exclusions.json");
-
-  /**
-   * §19: report a silently substituted model, once per exclusion.
-   *
-   * pi-subagents skips an excluded model on every delegation and says so only on
-   * stderr, so without this the chat shows a model the children are not using.
-   * Keyed by model+expiry, so a re-exclusion after one lapses is reported again
-   * while a live one is not repeated on every poll.
-   */
-  const reportedExclusions = new Set<string>();
-  const reportModelExclusions = (sessionId?: string, workspaceId?: string): void => {
-    for (const x of readExclusions(modelExclusionsPath(), Date.now())) {
-      const key = exclusionKey(x);
-      const notice = formatExclusionNotice(x, Date.now());
-      if (!key || !notice || reportedExclusions.has(key)) continue;
-      reportedExclusions.add(key);
-      void log.append({
-        type: "model.excluded",
-        ...(sessionId ? { sessionId } : {}),
-        ...(workspaceId ? { workspaceId } : {}),
-        data: { model: exclusionModel(x), notice, expiresAt: x.expiresAt },
-      });
-    }
-  };
 
   // §5 (2026-08-29): reclaim sub-agent data whose session is already gone. Before
   // deleteSessionChildren existed, every deleted session left its child Pi session
@@ -997,7 +958,6 @@ export function registerIpc(
       providerEnv: providerEnv(),
       resumeFile,
       rulesFile: rulesFile(),
-      childAuditDir: childAuditRoot(),
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
       bypass: resolveBypass(project ?? null),
@@ -1016,20 +976,11 @@ export function registerIpc(
       memoryWorkspaceDir,
       // Prompt-cache retention: global, spawn-time (PI_CACHE_RETENTION).
       longCache: getLongCache(),
-      // 0.51 / #1225: pi-subagents scopes completion delivery to the launching
-      // PROCESS, so a respawn must carry the session's own identity or it is
-      // refused its detached delegations' results (hv-owner-seed.ts).
-      sessionId,
       skills: entries.map((e) => e.skill.id),
       skillsFile: sessionId ? writeSkillsManifest(sessionId, entries) : undefined,
       // §24: one --prompt-template per approved ∩ enabled ∩ active command. No
       // manifest counterpart — the bridge reads nothing about commands.
       promptTemplates: workspace && sessionId ? activePromptTemplateEntries(workspace, project) : [],
-      // §19: a path we own, so main can read the cached model exclusions rather
-      // than re-deriving upstream's tmp layout (modelExclusions.ts).
-      modelExclusionsFile: modelExclusionsPath(),
-      // §12 (2026-09-26): which sub-agent stack this process loads — the dev toggle until the switch.
-      subagentsLib: subagentsLibFromEnv(process.env),
       // §16 round 21: the identity paragraph is unconditional (spawn.ts), and
       // passing it REPLACES Pi's discovery of APPEND_SYSTEM.md — so the user's
       // own additions must be handed over explicitly or they stop applying.
@@ -1648,9 +1599,8 @@ export function registerIpc(
       // trigger — and it needs no cooperation from upstream. `complete` still ends
       // all three symmetrically.
       if (e.type === "tool_execution_end" && isDelegationTool((e as { toolName?: string }).toolName)) {
-        const d = (e as { result?: { details?: { asyncId?: unknown; asyncDir?: unknown } } }).result?.details;
+        const d = (e as { result?: { details?: Record<string, unknown> } }).result?.details;
         const runId = delegationRunId(d);
-        const asyncDir = typeof d?.asyncDir === "string" ? d.asyncDir : undefined;
         // Guard the (theoretical) race where a very fast child completes before its
         // own dispatch event is processed: `complete` has then already run, and
         // starting a poller here would leak a 500 ms timer nothing stops.
@@ -1661,7 +1611,6 @@ export function registerIpc(
         if (callId) delegatedAgentByCall.delete(callId);
         if (runId && !finishedAsyncRuns.has(runId)) {
           activity.asyncStarted(sessionId, runId);
-          startSubagentPoll(sessionId, runId, asyncDir);
           void log.append({
             type: "subagent.async_started",
             sessionId,
@@ -1712,16 +1661,6 @@ export function registerIpc(
       }
     });
     client.on("ui-request", (r: { id: string; method?: string; title?: string; message?: string }) => {
-      // §12: an inspect reply arrives as a setWidget frame on the SAME channel as
-      // permission prompts. Checked FIRST and returned early so it never reaches
-      // the permission dispatch — and never responded to, because upstream awaits
-      // nothing here (setWidget is fire-and-forget from the extension's side).
-      const inspect = parseInspectFrame(r);
-      if (inspect) {
-        pendingInspects.get(inspect.requestId)?.(inspect);
-        pendingInspects.delete(inspect.requestId);
-        return;
-      }
       // B4 audit channel: hv.audit notifies are fire-and-forget (never respond)
       // and land in the EventLog, not the renderer.
       const audit = parseAuditNotify(r);
@@ -1776,14 +1715,11 @@ export function registerIpc(
           // top-level delegation at 0.50; `subagentPollers` dedupes the poller and
           // `asyncStarted` is set-based, so the only thing worth guarding is the
           // audit line, which must not be written twice for one run.
-          const already = subagentPollers.has(sub.runId);
           if (sub.agent && !delegatedAgentByRun.has(sub.runId)) delegatedAgentByRun.set(sub.runId, sub.agent);
           activity.asyncStarted(sessionId, sub.runId);
-          startSubagentPoll(sessionId, sub.runId, sub.asyncDir);
-          // tintinweb's `started` arrives BEFORE the tool result (the bus fires during spawn), and
-          // the tool-result branch above logs the same run WITH its toolCallId — the id a reopened
-          // session joins spend on. So on that path this one row is left to it.
-          if (!already && !TW_MAIN) void log.append({ type: "subagent.async_started", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, agent: sub.agent } });
+          // No audit row here: tintinweb's `started` arrives BEFORE the tool result (the bus fires
+          // during spawn), and the tool-result branch above logs the same run WITH its toolCallId —
+          // the id a reopened session joins spend on.
         } else if (sub.stage === "session" && sub.runId && typeof sub.sessionFile === "string") {
           startTwPoll(sessionId, sub.runId, sub.sessionFile);
         } else if (sub.stage === "workflow-progress" && sub.runId && Array.isArray(sub.entries)) {
@@ -1844,20 +1780,14 @@ export function registerIpc(
             }
           }
           childSessionsByRun.delete(sub.runId);
-          // §12 FR7: fold the child guard's own decisions into the audit log.
-          // Drained at completion rather than streamed: the guard appends from a
-          // separate process, so this is the first moment the file is complete.
-          // `agent` comes from the completion event we already hold — the guard
-          // deliberately does not learn agent names, so main joins them here.
-          // `sub.agent` is undefined for every top-level delegation (upstream
-          // reports "workflow"; the bridge drops it), so the name comes from the
-          // START→END correlation above.
-          drainChildAudit(sessionId, meta?.workspaceId, sub.runId, sub.agent ?? delegatedAgentByRun.get(sub.runId));
           delegatedAgentByRun.delete(sub.runId);
         } else if (sub.stage === "active") {
           const runs = sub.runs ?? [];
           activity.asyncSet(sessionId, runs.map((x) => x.runId));
-          reconcileSubagentPolls(sessionId, runs);
+          // After a respawn nothing runs (children die with their Pi process): stop this
+          // session's pollers for runs that are gone, leave other sessions' be.
+          const live = new Set(runs.map((x) => x.runId));
+          for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId && !live.has(runId)) stopSubagentPoll(runId);
         } else if (sub.stage === "interrupt-sent" && sub.runId) {
           void log.append({ type: "subagent.interrupt", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId } });
         }
@@ -2561,104 +2491,6 @@ export function registerIpc(
   const delegatedAgentByCall = new Map<string, string>();
   const delegatedAgentByRun = new Map<string, string>();
   /**
-   * §12: in-flight `/subagents-inspect-rpc` calls, by requestId.
-   *
-   * Correlated by requestId rather than by run, because a user can expand two
-   * cards at once and upstream answers on a shared channel. Each entry is settled
-   * exactly once and always settled — an unanswered inspect would leave a card
-   * spinning forever, which is why there is a timeout as well as a resolver.
-   */
-  const pendingInspects = new Map<string, (r: InspectReply | null) => void>();
-  let inspectSeq = 0;
-
-  /**
-   * §12 FR7 — turn a finished run's guard rows into EventLog entries.
-   *
-   * One row per DECISION plus one rollup, never one row per child tool call:
-   * a forty-tool child would otherwise bury the permission story these rows exist
-   * to tell (the full-transcript ingestion is the recorded follow-up). The rollup
-   * is what keeps silence unambiguous — an uneventful child still leaves a trace,
-   * so an empty audit view cannot mean both "well-behaved" and "ingestion broke".
-   */
-  const drainChildAudit = (
-    sessionId: string,
-    workspaceId: string | undefined,
-    /** The WORKFLOW run id — used only for the no-activity rollup below, since
-        the guard's own files are keyed by the CHILD run id (see the scan). */
-    completedRunId: string,
-    agent?: string,
-  ): void => {
-    const root = childAuditRoot();
-    // Drained by SCANNING, not by the completing run's id — and that is not a
-    // shortcut, it is the only thing that works. The guard names its file after
-    // PI_SUBAGENT_RUN_ID, which is the CHILD's own run id; the completion event
-    // carries the workflow async id. They are different values (measured in the
-    // running app: guard file 0d2c82ad…, completion runId dd0e257a…), and the
-    // child cannot know the workflow id — PI_SUBAGENT_PARENT_RUN_ID is only set
-    // when fan-out is authorized, which our children never have.
-    //
-    // Scanning is lossless even for a sibling still running: the guard appends by
-    // PATH, so deleting a file it is still writing to simply makes the next
-    // append recreate it, and those rows arrive in a later drain.
-    const rows = guardAuditRows(root, root);
-    if (rows.length === 0) {
-      // A child that made NO tool calls leaves no guard rows, so without this the
-      // delegation would leave no audit trace at all — and FR7's whole point is
-      // that silence should not be ambiguous. Seen in the app: a child returned
-      // empty, and the log said nothing whatsoever about it.
-      //
-      // Honest limit, stated rather than glossed: this row cannot distinguish "the
-      // child did nothing" from "the guard failed to load". Nothing available to
-      // main can. What covers the second case is the contract test asserting the
-      // wrapper injects the guard and the guard file exists.
-      void log.append({
-        type: "subagent.audit_rollup",
-        sessionId,
-        workspaceId,
-        data: { runId: completedRunId, ...(agent ? { agent } : {}), attempted: 0, denied: 0 },
-      });
-      return;
-    }
-    for (const r of rows) {
-      void log.append({
-        type: "permission.decision",
-        sessionId,
-        workspaceId,
-        // The parent's own envelope, so AuditView interleaves these by timestamp.
-        // `source` is what distinguishes them.
-        data: {
-          ts: r.ts,
-          tool: r.tool,
-          summary: r.summary,
-          decision: r.decision,
-          // ALWAYS "subagent", never folded into "bypass". A child decision has to
-          // stay identifiable as a child's (FR7) — with the fold, a run under
-          // bypass rendered exactly like a parent bypass row and the audit log
-          // could not answer "what did the sub-agent do", which is the question
-          // these rows exist for. Seen in the running app before it was fixed.
-          source: "subagent",
-          // …and the bypass fact is kept beside it rather than instead of it.
-          ...(r.source === "bypass" ? { bypass: true } : {}),
-          wouldHave: r.wouldHave,
-          runId: r.runId,
-          ...(agent ? { agent } : {}),
-        },
-      });
-    }
-    // One rollup per CHILD run, so an uneventful child still leaves a trace and a
-    // run with several children is not collapsed into one number.
-    for (const runId of new Set(rows.map((r) => r.runId))) {
-      const own = rows.filter((r) => r.runId === runId);
-      void log.append({
-        type: "subagent.audit_rollup",
-        sessionId,
-        workspaceId,
-        data: { runId, ...(agent ? { agent } : {}), ...rollupGuardAudit(own) },
-      });
-      clearGuardAudit(root, root, runId);
-    }
-  };
-  /**
    * A running delegation's spend so far, from the child's own session file.
    *
    * Recomputed on each status push rather than on a timer of its own: a child
@@ -2674,28 +2506,12 @@ export function registerIpc(
     return calls.length ? ledgerTotal(calls) : undefined;
   };
   /**
-   * The child session files each run is writing, remembered from its own status
-   * pushes so completion can persist them (status.json lives in a tmpdir, which
-   * a reopened session cannot count on).
+   * The child session file each run is writing, remembered from its `session` notify so
+   * completion can persist it for a reopened session.
    */
   const childSessionsByRun = new Map<string, Array<{ sessionFile: string; agent?: string }>>();
   /** §12 (2026-09-26): a running workflow's latest progress per child, for its card. */
   const workflowProgress = new Map<string, Map<number, { agent?: string; label?: string; state?: string; toolCalls?: number }>>();
-  /** §12 (2026-09-26): this app process boots every session on tintinweb (the dev toggle). */
-  const TW_MAIN = subagentsLibFromEnv(process.env) === "tintinweb";
-  const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {
-    // §19: a delegation is exactly when a cached model exclusion starts mattering
-    // — it is the call that gets silently rerouted. Checked here rather than on a
-    // timer so the row lands next to the run it affected, and deduped by
-    // model+expiry so a live exclusion is reported once, not once per poll.
-    reportModelExclusions(sessionId, index.get(sessionId)?.workspaceId);
-    if (!asyncDir || subagentPollers.has(runId)) return;
-    const stop = pollSubagentStatus(asyncDir, (status) => {
-      if (status.children?.length) childSessionsByRun.set(runId, status.children);
-      send("hv:subagent-status", { sessionId, runId, status, cost: runCostNow(sessionId, status) });
-    });
-    subagentPollers.set(runId, { sessionId, stop });
-  };
   /**
    * §12 (2026-09-26): a tintinweb child has no status.json — its own session file IS its
    * status. Same push, same shape (twChildStatus), same poller map, so `complete` stops it
@@ -2728,19 +2544,10 @@ export function registerIpc(
     subagentPollers.get(runId)?.stop();
     subagentPollers.delete(runId);
   };
-  // Resync after a respawn: start pollers for this session's runs we aren't
-  // watching, stop this session's runs that are gone (leave other sessions' be).
-  const reconcileSubagentPolls = (sessionId: string, runs: Array<{ runId: string; asyncDir: string }>): void => {
-    const live = new Set(runs.map((r) => r.runId));
-    for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId && !live.has(runId)) stopSubagentPoll(runId);
-    for (const r of runs) startSubagentPoll(sessionId, r.runId, r.asyncDir);
-  };
-
   manager.on("session-exit", ({ sessionId, code, intentional, stderr, stderrLines }: SessionExit) => {
     activity.remove(sessionId);
     pendingMcpReload.delete(sessionId); // don't reload a session that's gone
-    // Stop this session's status pollers. The detached runners survive (they're
-    // unref'd); a resume re-adopts + re-polls via /hv-subagent-list.
+    // Stop this session's status pollers — its children died with its Pi process.
     for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId) stopSubagentPoll(runId);
     const meta = index.get(sessionId);
     if (!intentional) {
@@ -4981,47 +4788,25 @@ export function registerIpc(
   /**
    * §12: fetch a child's task, a bounded transcript window and its final output.
    *
-   * Costs NO model turn — upstream answers from its own artifacts — so the card
-   * can call this on every expand. Always settles: on the reply, or on a timeout,
-   * or on a send failure, because a card that never hears back spins forever.
+   * Costs NO model turn — it reads the child's own session file off disk — so the card
+   * can call this on every expand, running session or not.
    */
   ipcMain.handle("hv:subagent-inspect", async (_e, sessionId: string, asyncId: string) => {
     // §12 (2026-09-26): a tintinweb child's transcript is its own session file, readable
     // from disk whether or not the session is running — live from the poller's map, or,
     // for a reopened session, from the `subagent.async_complete` row that recorded it.
-    if (TW_MAIN) {
-      const file = childSessionsByRun.get(asyncId)?.[0]?.sessionFile
-        ?? childSessionsByRunFrom(await log.read({ sessionId })).get(asyncId)?.[0]?.sessionFile;
-      if (!file) return { ok: false as const, error: "no transcript was recorded for this run", code: "unknown_run" };
-      const r = twInspect(sessionDir(), file);
-      if (r.error) return { ok: false as const, error: r.error.message, code: r.error.code };
-      return { ok: true as const, reply: { ...r, asyncId } };
-    }
-    const client = manager.get(sessionId) as PiClient | null;
-    if (!client) return { ok: false as const, error: "session is not running" };
-    const requestId = inspectRequestId(++inspectSeq);
-    const reply = await new Promise<InspectReply | null>((resolve) => {
-      const timer = setTimeout(() => {
-        pendingInspects.delete(requestId);
-        resolve(null);
-      }, 10_000);
-      pendingInspects.set(requestId, (r) => { clearTimeout(timer); resolve(r); });
-      void client.send({ type: "prompt", message: inspectCommand(requestId, asyncId) }).catch(() => {
-        clearTimeout(timer);
-        pendingInspects.delete(requestId);
-        resolve(null);
-      });
-    });
-    if (!reply) return { ok: false as const, error: "no reply" };
-    if (reply.error) return { ok: false as const, error: reply.error.message, code: reply.error.code };
-    return { ok: true as const, reply };
+    const file = childSessionsByRun.get(asyncId)?.[0]?.sessionFile
+      ?? childSessionsByRunFrom(await log.read({ sessionId })).get(asyncId)?.[0]?.sessionFile;
+    if (!file) return { ok: false as const, error: "no transcript was recorded for this run", code: "unknown_run" };
+    const r = twInspect(sessionDir(), file);
+    if (r.error) return { ok: false as const, error: r.error.message, code: r.error.code };
+    return { ok: true as const, reply: { ...r, asyncId } };
   });
 
-  // §12 (2026-09-26): steering and the stack the renderer is talking to.
-  ipcMain.handle("hv:subagents-lib", () => subagentsLibFromEnv(process.env));
+  // §12 (2026-09-26): steering.
   ipcMain.handle("hv:subagent-steer", async (_e, sessionId: string, runId: string, message: string) => {
     const client = manager.get(sessionId) as PiClient | null;
-    if (!client || !TW_MAIN) return { ok: false as const, error: "this session is not running on the tintinweb stack" };
+    if (!client) return { ok: false as const, error: "session is not running" };
     if (typeof message !== "string" || !message.trim() || !/^[\w.-]{1,128}$/.test(runId)) return { ok: false as const, error: "nothing to send" };
     void client.send({ type: "prompt", message: `/hv-subagent-steer ${runId} ${Buffer.from(message, "utf8").toString("base64")}` }).catch(() => {});
     return { ok: true as const };
@@ -5031,21 +4816,14 @@ export function registerIpc(
     void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-interrupt ${runId}` }).catch(() => {});
   });
 
-  // §12 (2026-08-29): stop ONE child of a fan-out. Upstream's `stop` RPC takes a
-  // childId and rejects a malformed one rather than widening to a run stop, so
-  // this can never become "kill everything" by accident.
   /**
    * §12 (2026-08-29): the child's own reasoning, on demand.
    *
-   * Confined to `sessionDir()` — pi-subagents writes `subagent-artifacts/` flat
-   * into it, so that (NOT os.tmpdir(), which guards status.json) is the root.
+   * Confined to `sessionDir()` — tintinweb's child sessions live under it
+   * (`<sessionsDir>/subagents/`), and so did the pre-switch artifacts.
    * Reads only when the card's toggle is opened; nothing happens otherwise.
    */
   ipcMain.handle("hv:subagent-thinking", (_e, transcriptPath: string) => readChildTrace(sessionDir(), transcriptPath));
-
-  ipcMain.handle("hv:subagent-stop-child", (_e, sessionId: string, runId: string, childId: string) => {
-    void (manager.get(sessionId) as PiClient | null)?.send({ type: "prompt", message: `/hv-subagent-stop-child ${runId} ${childId}` }).catch(() => {});
-  });
 
   // Agent file edit/duplicate — path-confined to allowed agent dirs (agents.ts).
   /**

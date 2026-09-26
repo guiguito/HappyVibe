@@ -61,7 +61,7 @@ async function boot(opts: { policy: boolean }): Promise<Run> {
   const rulesFile = path.join(dir, "rules.json");
   fs.writeFileSync(rulesFile, JSON.stringify({ global: [], workspaces: {} }));
 
-  const spec = resolvePiSpawn(ws, sessionDir, runtime, { subagentsLib: "tintinweb", agentDir, providerEnv: BOGUS, rulesFile, model: MODEL });
+  const spec = resolvePiSpawn(ws, sessionDir, runtime, { agentDir, providerEnv: BOGUS, rulesFile, model: MODEL });
   // The patch's contract, not the bridge's: swap the bridge for the probe.
   const i = spec.args.indexOf(path.join(runtime, "extensions/happyvibe-bridge.ts"));
   spec.args.splice(i, 1, PROBE);

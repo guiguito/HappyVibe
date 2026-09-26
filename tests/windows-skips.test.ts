@@ -35,8 +35,7 @@ import path from "node:path";
  * be added here, with a reason, or this goes red.
  */
 const DIR = __dirname;
-// Matches a skipIf gate OR an inline capability guard — model-exclusions branches
-// with `if (CAN_DENY_READ)` around one arm rather than skipping the whole case.
+// Matches a skipIf gate OR an inline capability guard (`if (CAN_DENY_READ)` around one arm).
 const SKIP_RE = /\.skipIf\(\s*(?:!?CAN_SYMLINK|process\.platform === "win32")|CAN_DENY_READ|!CAN_SYMLINK/;
 
 /** file → why it cannot run on Windows (capability or platform). */
@@ -45,7 +44,6 @@ const EXPECTED: Record<string, string> = {
   "skills-delete.test.ts": "planting a symlink needs elevation",
   "prompt-templates-delete.test.ts": "planting a symlink needs elevation",
   "snapshots.test.ts": "planting a symlink needs elevation",
-  "model-exclusions.test.ts": "chmod cannot deny an owner a read on NTFS",
   "terminals.test.ts": "the POSIX exec bit; conpty ships no spawn-helper",
   "shell-path.test.ts": "the login-shell PATH trick is `$SHELL -ilc`",
   "mcp-adapter-interpolation.test.ts": "the '!' secret form runs a POSIX shell command",
@@ -64,8 +62,6 @@ function filesWithSkips(): string[] {
 
 describe("the Windows skip list is pinned", () => {
   it("every file that skips for the platform is listed, with a reason", () => {
-    // Note model-exclusions guards with `if (CAN_DENY_READ)` inline rather than
-    // skipIf, so it is matched by the same constant appearing in the file.
     const found = filesWithSkips();
     const listed = Object.keys(EXPECTED).sort();
     expect(found.filter((f) => !listed.includes(f)), "new skip — add it to EXPECTED with a reason").toEqual([]);

@@ -12,7 +12,7 @@
 - **MCP servers reconnect more reliably after a sign-in expires**, and a server that asks a long
   question can now finish the work instead of timing out.
 
-Runtime: Pi 0.86.1 · sub-agents 0.64.0 · MCP adapter 2.35.0
+Runtime: Pi 0.86.1 · sub-agents 0.19.0 · MCP adapter 2.35.0
 
 ## [0.1.0] — 2026-08-30
 

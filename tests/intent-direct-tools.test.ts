@@ -27,7 +27,7 @@ const tools: FakeTool[] = [
   { name: "mcp", parameters: { type: "object", properties: { tool: {}, args: {} }, required: [] }, sourceInfo: adapterSource },
   { name: "github_create_issue", parameters: { type: "object", properties: { title: {} }, required: ["title"] }, sourceInfo: adapterSource },
   { name: "srv_own_intent", parameters: { type: "object", properties: { intent: { type: "string" } }, required: ["intent"] }, sourceInfo: adapterSource },
-  { name: "subagent", parameters: { type: "object", properties: { agent: {} }, required: [] }, sourceInfo: { ...adapterSource, path: "/x/pi-subagents/index.ts", source: "pi-subagents" } },
+  { name: "Agent", parameters: { type: "object", properties: { description: {} }, required: [] }, sourceInfo: { ...adapterSource, path: "/x/@tintinweb/pi-subagents/src/index.ts", source: "pi-subagents" } },
 ];
 
 const handlers = new Map<string, Handler>();
@@ -60,10 +60,8 @@ test("requireIntent injects a required intent into direct MCP tools only", () =>
   expect(byName("github_create_issue").parameters.properties.intent).toBeTruthy();
   expect(byName("github_create_issue").parameters.required).toEqual(["title", "intent"]);
   expect(byName("mcp").parameters.properties.intent).toBeTruthy(); // proxy, via INTENT_TOOLS
-  // subagent advertises intent but does NOT require it (task is the headline
-  // fallback) — a required intent made looser models fail their first delegation.
-  expect(byName("subagent").parameters.properties.intent).toBeTruthy();
-  expect(byName("subagent").parameters.required ?? []).not.toContain("intent");
+  // The delegation tool is left alone: its own `description` is the card's headline.
+  expect(byName("Agent").parameters.properties.intent).toBeUndefined();
   // Server tool with its own intent param: untouched (no duplicate required).
   expect(byName("srv_own_intent").parameters.required).toEqual(["intent"]);
 });

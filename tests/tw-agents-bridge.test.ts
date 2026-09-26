@@ -32,7 +32,7 @@ test("the Agents page lists our agents and the project's — never upstream's de
   fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({ subagents: { agentOverrides: { worker: { disabled: true } } } }));
   const rulesFile = path.join(agentDir, "rules.json");
   fs.writeFileSync(rulesFile, JSON.stringify({ global: [], workspaces: {} }));
-  const spec = resolvePiSpawn(ws, sessionDir, runtime, { subagentsLib: "tintinweb", agentDir, providerEnv: { ...PROVIDER_ENV }, rulesFile, model: MODEL });
+  const spec = resolvePiSpawn(ws, sessionDir, runtime, { agentDir, providerEnv: { ...PROVIDER_ENV }, rulesFile, model: MODEL });
   const agentsNotes: Array<{ agents: Array<{ name: string; source: string; enabled?: boolean; tools?: string[] }> }> = [];
   const c = new PiClient(spec);
   client = c;

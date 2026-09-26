@@ -84,23 +84,6 @@ describe("the embedded Pi CLI entry tracks upstream's own bin", () => {
     }
     expect(offenders, "build the path from PI_CLI_RELPATH instead").toEqual([]);
   });
-
-  it("pi-child.mjs runs the SAME entry as the parent", () => {
-    // The Windows launcher is a THIRD copy of this path (spawn.ts, pi-node.sh, here).
-    // Same drift hazard, same pin.
-    const mjs = read(path.join(RUNTIME, "bin", "pi-child.mjs"));
-    expect(mjs).toContain(PI_CLI_RELPATH);
-    expect(mjs, "no second, stale CLI path").not.toMatch(/pi-coding-agent\/dist\/cli\.js/);
-  });
-
-  it("pi-node.sh runs the SAME entry as the parent", () => {
-    // pi-node.sh is PI_SUBAGENT_PI_BINARY — the children-only route that injects
-    // hv-child-guard.ts. It held its own hardcoded copy of the path, so the two
-    // drifted independently and a child could die while the parent was fine.
-    const sh = read(path.join(RUNTIME, "bin", "pi-node.sh"));
-    expect(sh).toContain(PI_CLI_RELPATH);
-    expect(sh, "no second, stale CLI path").not.toMatch(/pi-coding-agent\/dist\/cli\.js/);
-  });
 });
 
 // RESOLVED UPSTREAM at Pi 0.85.1 ("Fixed SDK import failures caused by unintentionally

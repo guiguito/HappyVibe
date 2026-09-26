@@ -34,7 +34,7 @@ function setup(rules: unknown[], extra: (agentDir: string) => void = () => {}) {
   extra(agentDir);
   const rulesFile = path.join(agentDir, "rules.json");
   fs.writeFileSync(rulesFile, JSON.stringify({ global: rules, workspaces: {} }));
-  const spec = resolvePiSpawn(ws, sessionDir, runtime, { subagentsLib: "tintinweb", agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL });
+  const spec = resolvePiSpawn(ws, sessionDir, runtime, { agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL });
   const uis: Ui[] = [];
   const c = new PiClient(spec);
   client = c;

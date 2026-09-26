@@ -1,17 +1,9 @@
 /**
- * Live status poller for detached (async) subagent runs (docs/validation/d1.md
- * §hv:subagent-status). A detached run outlives the parent turn, so its progress
- * can't ride the parent's tool_execution_update stream; instead pi-subagents
- * atomically rewrites `<asyncDir>/status.json` on every change and we tail it.
- *
- * ponytail: 500 ms polling of one small JSON per active run. fs.watch on the OS
- * tmpdir is flaky cross-platform; a poll is the boring, correct option. Upgrade
- * to fs.watch only if active-run counts ever make this measurably costly.
+ * The live status a run card shows (docs/validation/d1.md §hv:subagent-status). On the
+ * tintinweb stack main derives it from the child's own session file (twChildren.ts
+ * `twChildStatus`) or a workflow's progress events (`foldWorkflowProgress`).
  */
-import * as fs from "node:fs";
-import * as os from "node:os";
-
-/** The subset of pi-subagents' AsyncStatus we forward to the renderer. */
+/** What main pushes to the renderer on `hv:subagent-status`. */
 export interface SubagentStatus {
   /** tintinweb (§12 decision 8): the child's next move is the model's (see stuckRun.ts). */
   awaitingModel?: boolean;
@@ -79,94 +71,6 @@ export interface SubagentStatus {
   }>;
 }
 
-/**
- * The identity upstream's `stop` RPC will actually resolve for a child.
- *
- * MEASURED 2026-08-29 on a live two-child `workflowScript` run: `steps[].childId`
- * is declared in upstream's type but is NULL on the wire — what a real fan-out
- * carries is `workflowKey` (the key the model passed to `runs.all`). Upstream's
- * own `asyncStatusChildIdentity` (runs/shared/child-identity.ts) is
- * `workflowKey ?? runId ?? "step:<index>"`, and `resolveAsyncStatusChild`
- * accepts any of the three — so we mirror that chain exactly rather than
- * trusting the declared field. Keying on `childId` alone meant the per-child
- * STOP never rendered on the only run shape that has more than one child.
- *
- * `childId` still wins when present: if upstream starts populating it, it is by
- * definition the caller-facing one.
- */
-function childIdentity(st: Record<string, unknown>, index: number): string | undefined {
-  for (const v of [st.childId, st.workflowKey, st.runId]) {
-    if (typeof v === "string" && v.length > 0) return v;
-  }
-  return `step:${index}`;
-}
-
-/** `{window, limit}` for one status step, or undefined unless both are real. */
-function stepContext(st: Record<string, unknown> | undefined): { window: number; limit: number } | undefined {
-  const limit = st?.contextLimit;
-  const window = (st?.tokens as { window?: unknown } | undefined)?.window;
-  if (typeof limit !== "number" || !Number.isFinite(limit) || limit <= 0) return undefined;
-  if (typeof window !== "number" || !Number.isFinite(window)) return undefined;
-  return { window, limit };
-}
-
-/**
- * Read + normalize `<asyncDir>/status.json`. Returns null on a missing/torn read
- * (atomic writes mean a torn read just means "poll again next tick"). asyncDir
- * MUST be under os.tmpdir() (it comes from our own extension, but we confine fs
- * reads on principle — CLAUDE.md).
- */
-export function readSubagentStatus(asyncDir: string): SubagentStatus | null {
-  if (!asyncDir.startsWith(os.tmpdir())) return null;
-  let raw: string;
-  try {
-    raw = fs.readFileSync(`${asyncDir}/status.json`, "utf8");
-  } catch {
-    return null;
-  }
-  let s: Record<string, unknown>;
-  try {
-    s = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-  const steps = Array.isArray(s.steps) ? (s.steps as Array<Record<string, unknown>>) : [];
-  const step = steps[0];
-  // Every step, not just the first: a fan-out writes one child session per step,
-  // and the run's spend is all of them.
-  const children = steps
-    .filter((st) => typeof st?.sessionFile === "string")
-    .map((st) => ({
-      sessionFile: st.sessionFile as string,
-      ...(typeof st.agent === "string" ? { agent: st.agent } : {}),
-    }));
-  const context = stepContext(step);
-  // Every step, including ones with no session file yet — a pending child is
-  // stoppable, so it has to be listed before it is billable.
-  const childRows = steps.map((st, i) => {
-    const ctx = stepContext(st);
-    return {
-      ...(childIdentity(st, i) ? { childId: childIdentity(st, i) } : {}),
-      ...(typeof st.agent === "string" ? { agent: st.agent } : {}),
-      ...(typeof st.status === "string" ? { status: st.status } : {}),
-      ...(ctx ? { context: ctx } : {}),
-      ...(typeof st.transcriptPath === "string" ? { transcriptPath: st.transcriptPath } : {}),
-    };
-  });
-  return {
-    ...(children.length ? { children } : {}),
-    ...(childRows.length ? { steps: childRows } : {}),
-    ...(context ? { context } : {}),
-    state: s.state as string | undefined,
-    activityState: s.activityState as string | undefined,
-    currentTool: (s.currentTool ?? step?.currentTool) as string | undefined,
-    currentPath: (s.currentPath ?? step?.currentPath) as string | undefined,
-    turnCount: (s.turnCount ?? step?.turnCount) as number | undefined,
-    toolCount: (s.toolCount ?? step?.toolCount) as number | undefined,
-    recentTools: (step?.recentTools ?? []) as Array<{ tool: string; args?: string }>,
-  };
-}
-
 /** True when two consecutive reads carry the same live-progress fields (skip the push). */
 export function statusUnchanged(a: SubagentStatus | null, b: SubagentStatus | null): boolean {
   if (a === null || b === null) return a === b;
@@ -199,24 +103,3 @@ function stepKey(s: SubagentStatus): string {
     .join("|");
 }
 
-/**
- * Poll one run's status.json, invoking onChange only when the live fields move.
- * Returns a stop function. Pure timing wrapper (no Electron) so it's testable.
- */
-export function pollSubagentStatus(
-  asyncDir: string,
-  onChange: (status: SubagentStatus) => void,
-  intervalMs = 500,
-): () => void {
-  let last: SubagentStatus | null = null;
-  const tick = (): void => {
-    const s = readSubagentStatus(asyncDir);
-    if (s && !statusUnchanged(last, s)) {
-      last = s;
-      onChange(s);
-    }
-  };
-  tick();
-  const timer = setInterval(tick, intervalMs);
-  return () => clearInterval(timer);
-}

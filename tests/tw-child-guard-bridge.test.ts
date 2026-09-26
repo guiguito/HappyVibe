@@ -36,7 +36,7 @@ async function boot(globalRules: unknown[]) {
   fs.writeFileSync(path.join(agentDir, "subagents.json"), JSON.stringify(TINTINWEB_SETTINGS));
   const rulesFile = path.join(agentDir, "rules.json");
   fs.writeFileSync(rulesFile, JSON.stringify({ global: globalRules, workspaces: {} }));
-  const spec = resolvePiSpawn(ws, sessionDir, runtime, { subagentsLib: "tintinweb", agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL });
+  const spec = resolvePiSpawn(ws, sessionDir, runtime, { agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL });
   const uis: Ui[] = [];
   const c = new PiClient(spec);
   client = c;
