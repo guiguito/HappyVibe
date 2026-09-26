@@ -41,6 +41,7 @@ describe("one sub-agent stack per Pi process", () => {
     expect(env.HV_HOST).toBe("1");
     expect(env.HV_SUBAGENTS_LIB).toBe("tintinweb");
     expect(env.PI_CODING_AGENT_SESSION_DIR).toBe(path.join("/sessions", "subagents"));
+    expect(env.HV_CHILD_GUARD).toBe(path.join(rt, "extensions/hv-child-guard.ts"));
     for (const k of ["PI_SUBAGENT_PI_BINARY", "HV_SUBAGENT_OWNER", "PI_MODEL_EXCLUSIONS_PATH", "HV_CHILD_AUDIT_DIR", "HV_ARTIFACTS_DIR"]) {
       expect(env[k], k).toBeUndefined();
     }

@@ -22,6 +22,7 @@ import {
 } from "./hv-context";
 import { isSlashCommandPath, parseAgentFile, renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
 import { declaresTools, twAgentOf, twBoundary, type TwAgentInfo } from "./hv-tw-gate";
+import { setChildPolicy } from "./hv-child-policy";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
 import {
   buildPlanPrompt, forcedPlanOffState, gatePlanCall, PLAN_STATE_TYPE, resolvePlanVerdict, restorePlanState, shouldForcePlanOff,
@@ -722,7 +723,7 @@ type AuditDecision = "allow" | "allow-session" | "deny";
 // logged the old value, in red, so the column stopped distinguishing anything —
 // it named the mode, once per row, forever. Old logs keep the old string and
 // the renderer maps both; red is now reserved for what a command DOES.
-type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "readonly" | "terminal" | "web" | "document";
+type AuditSource = "rule" | "user" | "bypass" | "safe-default" | "plan" | "readonly" | "terminal" | "web" | "document" | "subagent";
 
 /** Every permission decision emits one hv.audit notify — main's audit channel. */
 function audit(
@@ -742,6 +743,9 @@ function audit(
      * identical "bypass" rows tells them nothing.
      */
     wouldHave?: RuleAction;
+    /** §12 (2026-09-26): a tintinweb child's call — which agent, which run (AuditView names both). */
+    agent?: string;
+    runId?: string;
   },
 ): void {
   // §33: the audit row's summary is CAPPED here, at the one choke point every caller routes
@@ -826,6 +830,32 @@ export default function (pi: ExtensionAPI) {
   // through the latest session's ui (captured here). One session per pi process
   // in RPC, refreshed on resume.
   let busUi: { notify(message: string, type?: "info" | "warning" | "error"): void } | null = null;
+
+  // §12 (2026-09-26): tintinweb builds children IN this process, and the owned patch
+  // asks this policy what every child may load and do (hv-child-policy.ts). Published
+  // at load, before any child can exist; under HV_HOST=1 a child built without it fails.
+  if (TW) {
+    setChildPolicy({
+      // Fails CLOSED: an empty list here would build a child with no guard at all.
+      extensionPaths: () => {
+        const guard = process.env.HV_CHILD_GUARD;
+        if (!guard) throw new Error("HappyVibe: HV_CHILD_GUARD is not set — refusing to build a sub-agent without its guard");
+        return [guard];
+      },
+      // §14's trust gate reaches children too: exactly the skills main approved for this session.
+      skillPaths: () => loadManifest().skills.map((s) => s.dir),
+      refuseSpawn: (type: string) =>
+        twDisabledAgents().has(type) ? `'${type}' is switched off on the Agents page.` : undefined,
+      boundaryFor: (type: string | undefined) => (type && approvedBoundaries.get(type)) || [...READ_ONLY_CHILD_TOOLS].sort(),
+      audit: (row) => {
+        if (!busUi) return;
+        audit(busUi, {
+          tool: row.tool, decision: row.decision, summary: row.summary, source: "subagent",
+          wouldHave: row.wouldHave, ...(row.type ? { agent: row.type } : {}), ...(row.agentId ? { runId: row.agentId } : {}),
+        });
+      },
+    });
+  }
 
   // session_start is NOT enough on its own: pi-mcp-adapter >=2.17.0 re-registers
   // its "mcp" proxy tool whenever the proxy DESCRIPTION changes (syncProxyTool →

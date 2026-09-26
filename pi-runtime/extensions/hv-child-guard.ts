@@ -21,8 +21,9 @@
 import * as fs from "node:fs";
 import { containsPath, isAbsolutePath } from "./hv-paths";
 import * as path from "node:path";
-import { EMPTY_RULES, parseRulesFile, type RulesFile } from "./hv-rules";
+import { EMPTY_RULES, parseRulesFile, SAFE_TOOLS, type RuleAction, type RulesFile } from "./hv-rules";
 import { childDecision } from "./hv-child-rules";
+import { childPolicy, currentChildSpawn, type ChildPolicy } from "./hv-child-policy";
 
 /**
  * PRD §4 (Windows round): the filesystem is case-insensitive on win32, so every path
@@ -185,9 +186,107 @@ export function summarise(input: Record<string, unknown>, cap = 300): string {
   return (tail === "{}" ? head : `${head.slice(0, -1)},${tail.slice(1)}`).slice(0, cap);
 }
 
+/**
+ * The three §12 layers for one child tool call, composed in ONE place (PRD §12,
+ * 2026-09-26 — tintinweb's in-process children):
+ *
+ *  1. the BOUNDARY the user approved for this agent — a tool outside it is refused
+ *     whatever the rules say, and under bypass too: bypass skips prompts, it does
+ *     not widen what a delegation was approved to reach (the nicobailon ceiling held
+ *     under bypass the same way);
+ *  2. the rule engine with ask→deny (`childDecision`) — Phase 4 turns the ask into a
+ *     prompt on the parent's channel;
+ *  3. write confinement (`escapesWorkspace`), after the rules so `wouldHave` still
+ *     reports what the RULES said.
+ */
+export function guardDecision(args: {
+  tool: string;
+  input: Record<string, unknown>;
+  boundary: readonly string[];
+  rules: RulesFile;
+  rulesReadable: boolean;
+  bypass: boolean;
+  workspace: string;
+  writeRoots?: readonly string[];
+}): { action: "allow" | "deny"; reason?: string; wouldHave: RuleAction } {
+  const { tool, input, workspace } = args;
+  const d = childDecision(
+    args.rules,
+    { tool, input, workspace, caseInsensitivePaths: CI_PATHS },
+    { bypass: args.bypass, rulesReadable: args.rulesReadable },
+  );
+  if (!SAFE_TOOLS.has(tool) && !args.boundary.includes(tool)) {
+    return {
+      action: "deny",
+      wouldHave: d.wouldHave,
+      reason:
+        `Blocked: '${tool}' is outside the boundary approved for this sub-agent (it may use: ${args.boundary.join(", ") || "nothing"}). ` +
+        "Do not retry it and do not work around it. Finish what you can with the tools you have and report what you " +
+        "could not do, so the main session can run it where each call is checked individually.",
+    };
+  }
+  if (d.action === "deny") return { action: "deny", reason: d.reason, wouldHave: d.wouldHave };
+  const escaped = args.bypass ? undefined : escapesWorkspace(tool, input, workspace, args.writeRoots ?? []);
+  if (escaped) {
+    return {
+      action: "deny",
+      wouldHave: d.wouldHave,
+      reason:
+        `${tool} outside the workspace is not allowed: ${escaped}. ` +
+        `Write inside the workspace instead — it is ${workspace}, and a relative path lands there.`,
+    };
+  }
+  return { action: "allow", wouldHave: d.wouldHave };
+}
+
+/** Rules as the child sees them: read once, when the child is built. Unreadable ⇒ fail closed. */
+function readRules(): { rules: RulesFile; rulesReadable: boolean } {
+  const file = process.env.HV_RULES_FILE;
+  if (!file) return { rules: EMPTY_RULES, rulesReadable: false };
+  try {
+    return { rules: parseRulesFile(fs.readFileSync(file, "utf8")), rulesReadable: true };
+  } catch {
+    return { rules: EMPTY_RULES, rulesReadable: false };
+  }
+}
+
+/**
+ * The guard inside a tintinweb child (same process as the bridge). WHO the child is
+ * and WHAT it was approved for are read at FACTORY time: the patch's child-spawn store
+ * is only set while the child's loader runs, and pinning the boundary then means a
+ * later approval can never widen a child that is already running.
+ */
+function inProcessGuard(
+  pi: { on: (event: string, handler: (event: { toolName?: string; input?: unknown }) => unknown) => void },
+  policy: ChildPolicy,
+): void {
+  const who = currentChildSpawn();
+  const boundary = [...policy.boundaryFor(who?.type)];
+  const { rules, rulesReadable } = readRules();
+  const bypass = process.env.HV_BYPASS === "1";
+  pi.on("tool_call", (event) => {
+    const tool = typeof event.toolName === "string" ? event.toolName : "tool";
+    const input = (event.input ?? {}) as Record<string, unknown>;
+    const d = guardDecision({ tool, input, boundary, rules, rulesReadable, bypass, workspace: process.cwd() });
+    try {
+      policy.audit({ tool, decision: d.action, wouldHave: d.wouldHave, summary: summarise(input), agentId: who?.agentId, type: who?.type, reason: d.reason });
+    } catch {
+      // An audit failure must NEVER change a permission outcome.
+    }
+    return d.action === "deny" ? { block: true, reason: d.reason } : undefined;
+  });
+}
+
 export default function hvChildGuard(pi: {
   on: (event: string, handler: (event: { toolName?: string; input?: unknown }) => unknown) => void;
 }): void {
+  // tintinweb (PRD §12, 2026-09-26): an in-process child finds the bridge's policy on
+  // globalThis. A separate nicobailon child process never does, and keeps the env path below.
+  const policy = childPolicy();
+  if (policy) {
+    inProcessGuard(pi, policy);
+    return;
+  }
   let rules: RulesFile = EMPTY_RULES;
   let rulesReadable = false;
   const file = process.env.HV_RULES_FILE;

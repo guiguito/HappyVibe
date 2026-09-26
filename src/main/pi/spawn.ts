@@ -353,7 +353,13 @@ export function resolvePiSpawn(
       // sessions root — under it, so readChildTrace's confinement holds; beside the parent
       // files, never among them, so the sidebar never lists a child as a session.
       ...(tw
-        ? { HV_HOST: "1", HV_SUBAGENTS_LIB: "tintinweb", PI_CODING_AGENT_SESSION_DIR: path.join(sessionDir, "subagents") }
+        ? {
+            HV_HOST: "1",
+            HV_SUBAGENTS_LIB: "tintinweb",
+            PI_CODING_AGENT_SESSION_DIR: path.join(sessionDir, "subagents"),
+            // The one extension every child loads (the bridge's child policy hands it to the patch).
+            HV_CHILD_GUARD: path.join(runtimeDir, "extensions/hv-child-guard.ts"),
+          }
         : {}),
       // §19 (2026-08-29): pi-subagents 0.57 caches "this model failed" verdicts and
       // silently skips the model afterwards. Main surfaces them as audit rows, so it
