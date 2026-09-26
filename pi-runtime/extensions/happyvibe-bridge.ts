@@ -9,7 +9,7 @@ import {
   serializeTaskMap, stashPendingTask, taskFor, type TaskMapState,
 } from "./hv-subagent-tasks";
 import {
-  createChildOutputStore, rememberChildOutputs, substituteDeliveries,
+  createChildOutputStore, rememberChildOutputs, rememberTwResult, substituteDeliveries,
 } from "./hv-subagent-delivery";
 import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOOL_DESCRIPTIONS } from "./hv-terminal";
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, wrapUntrusted } from "./hv-browser";
@@ -1789,6 +1789,8 @@ export default function (pi: ExtensionAPI) {
     twRunning = registerTwRelay({
       on: (ev, h) => pi.events.on(ev, h),
       relay: (n) => relay({ ...n }),
+      // Decision 4: the FULL answer, for the context hook's substitution (hv-subagent-delivery.ts).
+      onResult: (runId, agent, result) => rememberTwResult(childOutputs, runId, agent, result),
       // The registry is tintinweb's documented second surface (docs/rpc.md § manager registry).
       sessionFileOf: (runId) =>
         (globalThis as Record<symbol, { getRecord?(id: string): { session?: { sessionManager?: { getSessionFile?(): string | undefined } } } | undefined } | undefined>)[

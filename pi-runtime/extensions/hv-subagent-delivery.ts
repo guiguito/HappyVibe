@@ -124,6 +124,41 @@ export function substituteDelivery(content: string, store: ChildOutputStore): st
  * Apply the repair across a context message list. Returns a NEW array when
  * anything changed, else null so the caller can leave the context untouched.
  */
+// ── tintinweb (PRD §12 decision 4, 2026-09-26) ─────────────────────────────────
+// tintinweb's completion notification is a `<task-notification>` XML string (customType
+// "subagent-notification") whose `<result>` is cut at `resultMaxLen` with this pointer
+// appended (formatTaskNotification, index.ts). The full text arrives on the
+// `subagents:completed` bus payload, keyed by the same id as `<task-id>`.
+const TW_TRUNCATED = "...(truncated, use get_subagent_result for full output)";
+const TW_TASK_ID = /<task-id>([^<]+)<\/task-id>/g;
+const TW_RESULT = /<result>[\s\S]*<\/result>/;
+
+/** Upstream's own escape (xml.ts), so a repaired `<result>` is exactly what it would have sent. */
+const escapeXml = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** Remember one completed tintinweb run's full answer (from `subagents:completed.result`). */
+export function rememberTwResult(store: ChildOutputStore, id: string, agent: string | undefined, result: string): void {
+  if (!id || !displayableTask(result)) return;
+  store.set(id, { ...(agent ? { agent } : {}), output: result });
+  if (store.size > MAX_REMEMBERED) store.delete(store.keys().next().value as string);
+}
+
+/**
+ * Repair one tintinweb notification, or null to leave it untouched: exactly one
+ * `<task-id>` (a batch naming several is ambiguous), a result upstream actually
+ * TRUNCATED (otherwise nothing is gained), and a remembered answer that fits.
+ */
+export function substituteTwNotification(content: string, store: ChildOutputStore): string | null {
+  if (typeof content !== "string" || !content.includes("<task-notification>") || !content.includes(TW_TRUNCATED)) return null;
+  const ids = [...content.matchAll(TW_TASK_ID)].map((m) => m[1]);
+  if (ids.length !== 1) return null;
+  const held = store.get(ids[0]);
+  const clean = held ? displayableTask(held.output) : undefined;
+  if (!clean || clean.length > MAX_INLINE_DELIVERY) return null;
+  if (!TW_RESULT.test(content)) return null;
+  return content.replace(TW_RESULT, () => `<result>${escapeXml(clean)}</result>`);
+}
+
 export function substituteDeliveries<M extends DeliveryMessage>(
   messages: M[] | undefined,
   store: ChildOutputStore,
@@ -132,8 +167,11 @@ export function substituteDeliveries<M extends DeliveryMessage>(
   if (!Array.isArray(messages) || store.size === 0) return null;
   let changed = false;
   const out = messages.map((m) => {
-    if (m?.customType !== "subagent-notify" || typeof m.content !== "string") return m;
-    const next = substituteDelivery(m.content, store);
+    if (typeof m?.content !== "string") return m;
+    const next =
+      m.customType === "subagent-notify" ? substituteDelivery(m.content, store)
+      : m.customType === "subagent-notification" ? substituteTwNotification(m.content, store)
+      : null;
     if (next === null) return m;
     changed = true;
     // Same message, its (measured-string) content swapped for the repaired string.

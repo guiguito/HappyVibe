@@ -98,3 +98,26 @@ test.skipIf(!KEY)("STOP ends a run as interrupted, never as an error", async () 
   expect(subs.find((s) => s.stage === "complete" && s.runId === runId)!.status).toBe("interrupted");
   expect(subs.some((s) => s.stage === "interrupt-sent" && s.runId === runId)).toBe(true);
 }, 300_000);
+
+test.skipIf(!KEY)("the parent receives the child's FULL answer — no get_subagent_result round-trip (decision 4)", async () => {
+  const { c, subs } = await boot();
+  const tools: string[] = [];
+  const texts: string[] = [];
+  c.on("event", (e) => {
+    const ev = e as { type?: string; toolName?: string; message?: { role?: string; content?: Array<{ type?: string; text?: string }> } };
+    if (ev.type === "tool_execution_start" && ev.toolName) tools.push(ev.toolName);
+    if (ev.type === "message_end" && ev.message?.role === "assistant") texts.push((ev.message.content ?? []).filter((b) => b.type === "text").map((b) => b.text).join(""));
+  });
+  const ok = await askUntil(() => c.send({
+    type: "prompt",
+    message:
+      "Use the Agent tool now with subagent_type 'code-explorer' (background), description 'Long report', and prompt: " +
+      "'Without using any tool, reply with the whole numbers from 1 to 400 separated by single spaces, and then the single word ZEBRAEND as the very last word.' " +
+      "End your turn with one line. When the result arrives, reply with ONLY the very last word of the agent's answer.",
+  }), () => subs.some((s) => s.stage === "complete"), { waitMs: 120_000 });
+  expect(ok).toBe(true);
+  const quoted = await waitFor(() => texts.some((t) => t.includes("ZEBRAEND")), 90_000);
+  const done = subs.find((s) => s.stage === "complete");
+  expect(quoted, `assistant texts: ${JSON.stringify(texts.map((t) => t.slice(-80)))} | child said (500): ${done?.summary?.slice(-200)}`).toBe(true);
+  expect(tools.filter((t) => t === "get_subagent_result"), "the full answer was already in context").toEqual([]);
+}, 300_000);
