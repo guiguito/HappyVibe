@@ -19,6 +19,8 @@ export const FEEDBACK_COPY = {
   send: "Send",
   sending: "Sending…",
   thanks: "Thanks — that's genuinely useful.",
+  /** The SDK queued it on disk: it sends by itself once the server is reachable. */
+  queued: "Saved — it'll send when you're back online.",
   discard: "Discard what you typed?",
   keep: "Keep writing",
   discardYes: "Discard",

@@ -1,6 +1,9 @@
 import { afterAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
-import { createInletClient, sendSubmission } from "../src/main/feedback/inlet";
+import os from "node:os";
+import path from "node:path";
+import { FeedbackClient, FileStore } from "inlet-sdk/feedback/node";
+import { sendFeedback } from "../src/main/feedback/client";
 import { FEEDBACK_CHANNELS } from "../src/main/feedback/config";
 
 /**
@@ -24,7 +27,7 @@ for (const line of fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
 }
 
-const SMOKE_DB = "fdb_dcjfkk5yfhgt";
+const SMOKE_DB = "fdb_d27rwrartady";
 const PUB = FEEDBACK_CHANNELS.dev.publishableKey as string;
 const BASE = FEEDBACK_CHANNELS.dev.baseUrl;
 /** The isk_ SERVER key, for cleanup ONLY. Never imported by anything under src/. */
@@ -58,28 +61,35 @@ async function reachable(): Promise<boolean> {
 const LIVE = await reachable();
 
 describe.skipIf(!LIVE)("§34 live: the Inlet contract, on the Smoke tests database", () => {
-  it("read form → intent → upload a 1×1 PNG → submit → accepted", async () => {
-    const client = createInletClient({ baseUrl: BASE, publishableKey: PUB });
-    const form = await client.readForm(SMOKE_DB);
+  it("read form → session → upload a 1×1 PNG → submit → accepted, through the SDK client", async () => {
+    const client = new FeedbackClient({
+      baseUrl: BASE,
+      publishableKey: PUB,
+      feedbackDatabaseId: SMOKE_DB,
+      store: new FileStore(fs.mkdtempSync(path.join(os.tmpdir(), "hv-inlet-smoke-"))),
+    });
+    const form = await client.refreshForm();
+    if (!form.ok) throw new Error(form.error.message);
     // Read the ids off the definition rather than hard-coding them: the app does
     // the same, and a test that hard-codes them would not notice if it stopped.
-    const els = form.pages.flatMap((p) => p.elements);
+    const els = form.value.pages.flatMap((p) => p.elements);
     const text = els.find((e) => e.type === "text")!;
     const shot = els.find((e) => e.type === "screenshot")!;
     expect(text && shot).toBeTruthy();
 
-    const r = await sendSubmission(client, SMOKE_DB, {
-      formVersion: form.formVersion,
+    const r = await sendFeedback(client, {
+      formVersion: form.value.formVersion,
       answers: { [text.id]: { value: `smoke ${new Date().toISOString()}` } },
       uploads: [{ questionId: shot.id, name: "px.png", type: "image/png", bytes: new Uint8Array(PNG_1x1) }],
       clientContext: { appVersion: "test", channel: "dev" },
     });
-    created.push(r.submissionId);
+    if (!r.ok) throw new Error(`${r.kind}: ${r.message}`);
+    if (r.submissionId) created.push(r.submissionId);
 
     expect(r.status).toBe("accepted");
     expect(r.attachments).toBe(1);
     expect(r.submissionId).toMatch(/^sub_/);
-    expect(r.formVersion).toBe(form.formVersion);
+    expect(r.formVersion).toBe(form.value.formVersion);
   }, 60_000);
 
   it("a publishable key cannot read a single response — the whole reason it may be committed", async () => {

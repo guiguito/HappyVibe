@@ -42,7 +42,7 @@ export const HOWTO_COPY = {
   crashReports: {
     title: "What a crash report contains",
     body:
-      "A report says what kind of failure it was, the error\u2019s type, where in HappyVibe\u2019s own code it happened, your version and your operating system.\n\nIt never contains your prompts, your files, your paths or your keys. Error messages are redacted before they leave, and native crash snapshots stay on your computer.",
+      "A report says what kind of failure it was, the error\u2019s type, where in HappyVibe\u2019s own code it happened, your version and your operating system. It also carries a random ID that changes after 30 idle minutes and at least once a day, kept only in memory \u2014 it lets a crash be matched with feedback you sent in the same sitting, and identifies nothing else.\n\nIt never contains your prompts, your files, your paths or your keys. Error messages are redacted before they leave, and native crash snapshots stay on your computer.",
   },
   webTools: {
     title: "How web tools work",

@@ -19,7 +19,7 @@ type Phase =
   | { k: "closed" }
   | { k: "unreachable" }
   | { k: "ready"; form: HvFormDefinition; source: "live" | "cache" }
-  | { k: "sent" };
+  | { k: "sent"; queued: boolean };
 
 /**
  * Long enough for the send-off to PLAY: the logo hop is 1250ms and the line
@@ -132,7 +132,7 @@ export function FeedbackDialog({
     });
     setSending(false);
     if (r.ok) {
-      setPhase({ k: "sent" });
+      setPhase({ k: "sent", queued: r.status === "pending" });
       closeTimer.current = setTimeout(close, CLOSE_AFTER_MS);
       return;
     }
@@ -178,7 +178,7 @@ export function FeedbackDialog({
           <div className="hv-logo-hop">
             <BrandLogo size="lg" className="scale-[1.6]" />
           </div>
-          <p className="hv-done-title font-black text-xl tracking-tight">{C.thanks}</p>
+          <p className="hv-done-title font-black text-xl tracking-tight">{phase.queued ? C.queued : C.thanks}</p>
         </div>
       );
 

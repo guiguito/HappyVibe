@@ -22,7 +22,7 @@
 import { readFileSync, existsSync } from "node:fs";
 
 const PORT = process.env.HV_DEBUG_PORT ?? "9223";
-const DB = process.env.HV_CRASH_DB ?? "cdb_aamshzzkjx9c";
+const DB = process.env.HV_CRASH_DB ?? "cdb_38g7t8v30pxe";
 const BASE = "https://feedback.bzapps.eu";
 
 for (const line of existsSync(".env") ? readFileSync(".env", "utf8").split("\n") : []) {
