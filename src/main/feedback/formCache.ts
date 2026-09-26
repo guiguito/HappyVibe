@@ -1,5 +1,5 @@
 import { getFeedbackFormCache, setFeedbackFormCache } from "../config";
-import type { FormDefinition } from "./inlet";
+import type { FormDefinition } from "./client";
 
 /**
  * §34 — the last definition Inlet served, per database.

@@ -34,7 +34,7 @@ import { fastPulse, resolveFeedbackConfig } from "./feedback/config";
 // §37 IPC handlers live in that module and register themselves.
 import { attachCrashAudit, captureCrash } from "./crash/client";
 import { piErrorType, piFrames } from "./crash/stderrFrames";
-import { createInletClient, InletError, sendSubmission, type Answers, type FormDefinition, type Upload } from "./feedback/inlet";
+import { createFeedbackClients, sendFeedback, type Answers, type FormDefinition, type Upload } from "./feedback/client";
 import { clampView, generalContext, pulseContext, type HostFacts, type ModelRef, type SessionFacts } from "./feedback/context";
 import { captureWindow, type Capture } from "./feedback/capture";
 import { readCachedForm, writeCachedForm } from "./feedback/formCache";
@@ -4610,7 +4610,9 @@ export function registerIpc(
   // imports ipc.ts under vitest (three of them, measured).
   const feedbackCfg = resolveFeedbackConfig(process.env, !app.isPackaged);
   const feedbackFast = fastPulse(process.env);
-  const inlet = feedbackCfg ? createInletClient(feedbackCfg) : null;
+  // One SDK client per database, each queueing undelivered submissions on disk
+  // (replayed on the next start) under <userData>/inlet-feedback/<database>.
+  const inlet = feedbackCfg ? createFeedbackClients(feedbackCfg, path.join(app.getPath("userData"), "inlet-feedback")) : null;
   /**
    * The window capture, per window, in MEMORY only — never a file, dropped when
    * the dialog closes or the submission lands. Keyed by window id because the
@@ -4647,25 +4649,27 @@ export function registerIpc(
     | { ok: true; form: FormDefinition; source: "live" | "cache" }
     | { ok: false; reason: "not_published" | "unreachable" | "unavailable" };
 
-  const readFormWithCache = async (db: string): Promise<FormReply> => {
-    if (!inlet) return { ok: false, reason: "unavailable" };
-    try {
-      const form = await inlet.readForm(db);
-      writeCachedForm(db, form);
-      return { ok: true, form, source: "live" };
-    } catch (e) {
-      // A closed form is a STATE, not a failure: say so rather than falling back
-      // to a cached copy of a form nobody can answer any more.
-      if (e instanceof InletError && e.kind === "not_published") return { ok: false, reason: "not_published" };
-      const cached = readCachedForm(db);
-      return cached ? { ok: true, form: cached, source: "cache" } : { ok: false, reason: "unreachable" };
+  const readFormWithCache = async (database: "general" | "session"): Promise<FormReply> => {
+    if (!inlet || !feedbackCfg) return { ok: false, reason: "unavailable" };
+    const db = feedbackCfg.databases[database];
+    // refreshForm, not getForm: the SDK caches for the client's lifetime, and a
+    // question published while the app runs must reach the next open.
+    const r = await inlet[database].refreshForm();
+    if (r.ok) {
+      writeCachedForm(db, r.value);
+      return { ok: true, form: r.value, source: "live" };
     }
+    // A closed form is a STATE, not a failure: say so rather than falling back
+    // to a cached copy of a form nobody can answer any more.
+    if (r.error.code === "form_not_published") return { ok: false, reason: "not_published" };
+    const cached = readCachedForm(db);
+    return cached ? { ok: true, form: cached, source: "cache" } : { ok: false, reason: "unreachable" };
   };
 
   /** Counts, ids and sizes. Never an answer, never the clientContext. */
   const auditFeedbackSent = (
     database: "general" | "session",
-    r: { formVersion: number; submissionId: string; status: string; attachments: number; bytes: number },
+    r: { formVersion: number; submissionId: string | null; status: string; attachments: number; bytes: number },
     sessionId?: string,
   ): void => {
     const meta = sessionId ? index.get(sessionId) : undefined;
@@ -4676,11 +4680,6 @@ export function registerIpc(
       data: { database, ...r, channel: feedbackCfg?.channel },
     });
   };
-
-  const feedbackFailure = (e: unknown) =>
-    e instanceof InletError
-      ? { ok: false as const, kind: e.kind, message: e.message, details: e.details }
-      : { ok: false as const, kind: "network" as const, message: e instanceof Error ? e.message : String(e) };
 
   ipcMain.handle("hv:feedback-info", () => ({ available: !!feedbackCfg, fastPulse: feedbackFast }));
 
@@ -4699,7 +4698,7 @@ export function registerIpc(
         /* a minimized or occluded window rejects; the dialog simply offers no capture */
       }
     }
-    const form = await readFormWithCache(feedbackCfg.databases.general);
+    const form = await readFormWithCache("general");
     return form.ok ? { ...form, thumbnail } : form;
   });
 
@@ -4734,42 +4733,38 @@ export function registerIpc(
       if (args.includeCapture && cap && args.captureQuestionId) {
         uploads.push({ questionId: args.captureQuestionId, name: "window.png", type: "image/png", bytes: new Uint8Array(cap.png) });
       }
-      try {
-        const r = await sendSubmission(inlet, feedbackCfg.databases.general, {
-          formVersion: args.formVersion,
-          answers: args.answers,
-          uploads,
-          clientContext: generalContext(hostFacts(), { view: clampView(args.view), model: modelFor(args.sessionId) }),
-        });
-        auditFeedbackSent("general", r, args.sessionId ?? undefined);
-        if (win) captures.delete(win.id);
-        return { ok: true, submissionId: r.submissionId, status: r.status };
-      } catch (err) {
-        return feedbackFailure(err);
-      }
+      const r = await sendFeedback(inlet.general, {
+        formVersion: args.formVersion,
+        answers: args.answers,
+        uploads,
+        clientContext: generalContext(hostFacts(), { view: clampView(args.view), model: modelFor(args.sessionId) }),
+      });
+      if (!r.ok) return r;
+      // A `pending` row is written now: the submission sits in the disk queue and
+      // the SDK delivers it later, with no second event for us to hang a row on.
+      auditFeedbackSent("general", r, args.sessionId ?? undefined);
+      if (win) captures.delete(win.id);
+      return { ok: true, submissionId: r.submissionId, status: r.status };
     },
   );
 
   ipcMain.handle("hv:feedback-pulse-form", () =>
-    feedbackCfg ? readFormWithCache(feedbackCfg.databases.session) : { ok: false, reason: "unavailable" },
+    readFormWithCache("session"),
   );
 
   ipcMain.handle(
     "hv:feedback-pulse-send",
     async (_e, args: { sessionId: string; formVersion: number; questionId: string; optionId: string; session: SessionFacts }) => {
       if (!feedbackCfg || !inlet) return { ok: false, kind: "unauthorized", message: "Feedback is not available in this build." };
-      try {
-        const r = await sendSubmission(inlet, feedbackCfg.databases.session, {
-          formVersion: args.formVersion,
-          answers: { [args.questionId]: { optionId: args.optionId } },
-          uploads: [],
-          clientContext: pulseContext(hostFacts(), args.session, modelFor(args.sessionId)),
-        });
-        auditFeedbackSent("session", r, args.sessionId);
-        return { ok: true, submissionId: r.submissionId };
-      } catch (err) {
-        return feedbackFailure(err);
-      }
+      const r = await sendFeedback(inlet.session, {
+        formVersion: args.formVersion,
+        answers: { [args.questionId]: { optionId: args.optionId } },
+        uploads: [],
+        clientContext: pulseContext(hostFacts(), args.session, modelFor(args.sessionId)),
+      });
+      if (!r.ok) return r;
+      auditFeedbackSent("session", r, args.sessionId);
+      return { ok: true, submissionId: r.submissionId };
     },
   );
 

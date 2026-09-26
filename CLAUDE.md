@@ -1260,6 +1260,14 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   measured: off 5,873 tok/turn, on-and-empty 6,908, at the 100-memory cap 9,425 — and the three
   tool SCHEMAS are 743 of that against the policy's 242, which is why the settings panel shows
   both. Full wire shapes + the GUI findings: docs/validation/d1.md §33.
+- **§34 feedback goes through `inlet-sdk/feedback`, driven from MAIN — `src/main/feedback/client.ts` is the one
+  seam (2026-09-26; the hand-written `inlet.ts` is gone).** One `FeedbackClient` per database, each with a
+  `FileStore` disk queue under `<userData>/inlet-feedback/<general|session>`; the constructor starts the
+  replay, so there is no flush-on-quit. **Never use the SDK's Electron adapter**: it serves ONE database on a
+  fixed IPC channel and its entry pulls `node:fs` into the renderer (§37's trap). A `pending` outcome is a
+  SUCCESS — the dialog shows the queued copy, and the audit row is written then with `status:"pending"`
+  and no submission id. Submissions and crash reports carry the SDK's rotating session ID by decision
+  (PRD §34/§37 2026-09-26); `setUser` is never called.
 - **§34 feedback: the only Inlet keys in `src/` are PUBLISHABLE `ipk_` keys, one per channel.**
   Both landed 2026-09-10; a publishable key can only be minted by a signed-in admin in Inlet's
   web UI, because `/v1/projects/{id}/credentials` answers `insufficient_scope` to an API key.
@@ -1278,7 +1286,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   in the Dev database. **Do not import `@electron-toolkit/utils` into `ipc.ts`**: it pulls
   `electron` in as CommonJS and takes three unrelated tests down with a *"Named export
   'BrowserWindow' not found"* that names line 2 rather than the cause; `!app.isPackaged` IS
-  `is.dev`. The live test writes to its own **Smoke tests** database (`fdb_dcjfkk5yfhgt`) and
+  `is.dev`. The live test writes to its own **Smoke tests** database (`fdb_d27rwrartady`) and
   deletes the row, and skips on no `.env` OR an unreachable server.
 - **A scheduled READ-ONLY run is `HV_READONLY=1`, not plan mode, and the reasons are both
   mechanical.** `/hv-plan` is registered only inside `if (builtins.plan)`, so with the Built-in

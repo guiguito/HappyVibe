@@ -1398,7 +1398,7 @@ interface HvApi {
     sessionId: string | null;
     view: string;
   }): Promise<
-    | { ok: true; submissionId: string; status: "accepted" | "duplicate" }
+    | { ok: true; submissionId: string | null; status: "accepted" | "duplicate" | "pending" }
     | { ok: false; kind: HvInletErrorKind; message: string; details?: Array<{ questionId?: string; message: string }> }
   >;
   feedbackPulseForm(): Promise<HvFeedbackFormReply>;
@@ -1408,7 +1408,7 @@ interface HvApi {
     questionId: string;
     optionId: string;
     session: HvSessionFacts;
-  }): Promise<{ ok: true; submissionId: string } | { ok: false; kind: HvInletErrorKind; message: string }>;
+  }): Promise<{ ok: true; submissionId: string | null } | { ok: false; kind: HvInletErrorKind; message: string }>;
   /** Asked-at-show: written the moment the pulse row first renders. */
   sessionPulseAsked(sessionId: string): Promise<void>;
   /** §30: the app version whose changelog was last read. `null` = never recorded. */
