@@ -135,7 +135,7 @@ export function subagentRosterLine(a: Pick<AgentDef, "name" | "description">): s
   return `- **${a.name}** — ${a.description.slice(0, 200)}`;
 }
 
-export function renderSubagentSection(all: AgentDef[]): string {
+export function renderSubagentSection(all: AgentDef[], opts: { tool?: "subagent" | "Agent" } = {}): string {
   // Disabled agents are listed on the page but never injected — that is the
   // context lever. All-off is a legitimate state: the section vanishes entirely
   // rather than emitting a heading with nothing under it.
@@ -165,8 +165,13 @@ export function renderSubagentSection(all: AgentDef[]): string {
     "Sub-agents you can delegate to. Each runs in its own context and reports back a concise result:\n" +
     lines.join("\n") +
     "\n\nDelegate when the work spans many files or would take more than a few reads. " +
-    "Call `subagent` with `{ agent, task }` directly, by name — there is no need to call " +
-    "`{ action: \"list\" }` first. Delegations run in the background: after delegating, end your " +
+    // §12 (2026-09-26): tintinweb's `Agent` takes the type by name and has no list step to
+    // countermand; nicobailon's `subagent` still steers the model to list first.
+    (opts.tool === "Agent"
+      ? "Call `Agent` with `{ subagent_type, description, prompt }` directly, by name. "
+      : "Call `subagent` with `{ agent, task }` directly, by name — there is no need to call " +
+        "`{ action: \"list\" }` first. ") +
+    "Delegations run in the background: after delegating, end your " +
     "turn with one line saying so — the result arrives as a new turn, and the user can keep " +
     "chatting meanwhile.\n" +
     "</happyvibe_subagents>"

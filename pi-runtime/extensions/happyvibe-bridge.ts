@@ -434,6 +434,43 @@ async function twAgentInfo(name: string): Promise<TwAgentInfo | undefined> {
 }
 
 /**
+ * The agent inventory on the tintinweb path — tintinweb's OWN discovery (`.pi/agents/`,
+ * `.agents/agents/`, `<agentDir>/agents/`), so the Agents page and the injected roster
+ * list exactly what `Agent` will accept. Upstream's defaults are off (disableDefaultAgents),
+ * so none appear. A user-switched-off agent stays LISTED, dimmed, so it can come back on.
+ */
+async function twEnumerateAgents(): Promise<AgentDef[]> {
+  let all: Map<string, { description?: string; enabled?: boolean; model?: string; systemPrompt?: string; sourcePath?: string; source?: string; builtinToolNames?: string[] }>;
+  try {
+    const { loadCustomAgents } = await import("../node_modules/@tintinweb/pi-subagents/src/custom-agents.ts");
+    all = loadCustomAgents(process.cwd());
+  } catch {
+    return []; // discovery must never take the session down
+  }
+  const ourDir = process.env.PI_CODING_AGENT_DIR ? path.join(process.env.PI_CODING_AGENT_DIR, "agents") : null;
+  const off = twDisabledAgents();
+  const out: AgentDef[] = [];
+  for (const [name, cfg] of all) {
+    const filePath = cfg.sourcePath ?? "";
+    if (!cfg.description || isSlashCommandPath(filePath)) continue;
+    let declared = false;
+    try { declared = declaresTools(parseAgentFile(fs.readFileSync(filePath, "utf8")).frontmatter); } catch { /* undeclared */ }
+    out.push({
+      name,
+      description: cfg.description,
+      enabled: cfg.enabled !== false && !off.has(name),
+      // What the boundary will actually allow: an undeclared agent is read-only (hv-tw-gate.ts).
+      tools: declared ? [...(cfg.builtinToolNames ?? [])] : [...READ_ONLY_CHILD_TOOLS].sort(),
+      ...(cfg.model ? { model: cfg.model } : {}),
+      ...(cfg.systemPrompt ? { systemPrompt: cfg.systemPrompt } : {}),
+      source: ourDir && filePath.startsWith(ourDir) ? "bundled" : cfg.source === "project" ? "project" : "user",
+      path: filePath,
+    });
+  }
+  return out;
+}
+
+/**
  * Agents the user switched off on the Agents page. Read LIVE from the file main
  * already writes for that switch (`<agentDir>/settings.json`, disabledAgentOverrides),
  * so a toggle applies to the next call without a respawn — the same file, one reader more.
@@ -974,8 +1011,8 @@ export default function (pi: ExtensionAPI) {
     // Discoverability: inject the delegable-subagent roster (same per-turn
     // replacement mechanism as the nested section). enumerateAgents is a hoisted
     // function declaration below in this closure.
-    const agents = enumerateAgents();
-    const agentsSection = renderSubagentSection(agents);
+    const agents = await enumerateAgents();
+    const agentsSection = renderSubagentSection(agents, { tool: TW ? "Agent" : "subagent" });
     // §23: while planning, prepend the read-only planning directive (single-turn
     // replacement, same mechanism as the nested/agents sections).
     // A3: the prompt names the blocked tools this session actually HAS.
@@ -1735,7 +1772,8 @@ export default function (pi: ExtensionAPI) {
    * refuses would be advertised to the model and listed on the page as
    * available, which is worse than not listing them at all.
    */
-  function enumerateAgents(): AgentDef[] {
+  async function enumerateAgents(): Promise<AgentDef[]> {
+    if (TW) return twEnumerateAgents();
     let all: ReturnType<typeof discoverAgentsAll>;
     try {
       all = discoverAgentsAll(process.cwd());
@@ -1816,7 +1854,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("hv-agents", {
     description: "HappyVibe: emit the agent inventory (hv.agents notify)",
     handler: async (_args, ctx) => {
-      ctx.ui.notify(JSON.stringify({ kind: "hv.agents", agents: enumerateAgents() }), "info");
+      ctx.ui.notify(JSON.stringify({ kind: "hv.agents", agents: await enumerateAgents() }), "info");
     },
   });
 
