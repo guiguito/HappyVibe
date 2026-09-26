@@ -105,6 +105,10 @@ describe("placement — the parts that sit behind a worker or the bus", () => {
     expect(idx).toMatch(/rpcHandle\?\.unsubWorkflowStop\(\);/);
   });
 
+  it("P6-settled: a workflow tool run announces its end on the bus, before the model's notification", () => {
+    expect(src("index.ts")).toMatch(/runWorkflowTask\(ctx, task\)\.then\(\(\) => \{ pi\.events\.emit\("subagents:workflow-settled", \{ runId: task\.id, status: task\.status \}\); notifyWorkflowFinished\(task\); \}\)/);
+  });
+
   it("P6-progress: the workflow runtime's progress is forwarded on the bus", () => {
     expect(src("index.ts")).toMatch(/onProgress: entries => \{ updateWorkflowProgressBatch\(task, entries\); pi\.events\.emit\("subagents:workflow-progress", \{ runId: task\.id, entries \}\); \}/);
   });

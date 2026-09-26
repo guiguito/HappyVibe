@@ -77,7 +77,7 @@ import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJ
 import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
 import { agentByFileFrom, callsFromChildSessions, childSessionsByRunFrom, runTotalsByCall, sessionCalls } from "./sessionLedger";
-import { twChildStatus, twInspect } from "./twChildren";
+import { foldWorkflowProgress, twChildStatus, twInspect } from "./twChildren";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } from "./modelExclusions";
 import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, normPath, readSessionFile, sessionFilePath, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
@@ -1785,7 +1785,13 @@ export function registerIpc(
           if (!already && !TW_MAIN) void log.append({ type: "subagent.async_started", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, agent: sub.agent } });
         } else if (sub.stage === "session" && sub.runId && typeof sub.sessionFile === "string") {
           startTwPoll(sessionId, sub.runId, sub.sessionFile);
+        } else if (sub.stage === "workflow-progress" && sub.runId && Array.isArray(sub.entries)) {
+          // §12 (2026-09-26): a workflow's children, folded onto the run card's child list.
+          let acc = workflowProgress.get(sub.runId);
+          if (!acc) workflowProgress.set(sub.runId, (acc = new Map()));
+          send("hv:subagent-status", { sessionId, runId: sub.runId, status: foldWorkflowProgress(acc, sub.entries) });
         } else if (sub.stage === "complete" && sub.runId) {
+          workflowProgress.delete(sub.runId);
           finishedAsyncRuns.add(sub.runId);
           activity.asyncEnded(sessionId, sub.runId);
           stopSubagentPoll(sub.runId);
@@ -2672,6 +2678,8 @@ export function registerIpc(
    * a reopened session cannot count on).
    */
   const childSessionsByRun = new Map<string, Array<{ sessionFile: string; agent?: string }>>();
+  /** §12 (2026-09-26): a running workflow's latest progress per child, for its card. */
+  const workflowProgress = new Map<string, Map<number, { agent?: string; label?: string; state?: string; toolCalls?: number }>>();
   /** §12 (2026-09-26): this app process boots every session on tintinweb (the dev toggle). */
   const TW_MAIN = subagentsLibFromEnv(process.env) === "tintinweb";
   const startSubagentPoll = (sessionId: string, runId: string, asyncDir?: string): void => {

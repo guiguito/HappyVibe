@@ -30,6 +30,11 @@ describe("twNotify", () => {
   it("workflow progress carries its entries", () => {
     expect(twNotify("subagents:workflow-progress", { runId: "wf_1", entries: [{ index: 0 }] })).toEqual({ stage: "workflow-progress", runId: "wf_1", entries: [{ index: 0 }] });
   });
+  it("a workflow settling is a `complete`, and killed reads as interrupted", () => {
+    expect(twNotify("subagents:workflow-settled", { runId: "wf_1", status: "completed" })).toEqual({ stage: "complete", runId: "wf_1", agent: "workflow", status: "success" });
+    expect(twNotify("subagents:workflow-settled", { runId: "wf_1", status: "killed" })!.status).toBe("interrupted");
+    expect(twNotify("subagents:workflow-settled", { runId: "wf_1", status: "failed" })!.status).toBe("error");
+  });
   it("ignores what main does not need, and anything without an id", () => {
     expect(twNotify("subagents:created", STARTED)).toBeNull();
     expect(twNotify("subagents:started", {})).toBeNull();

@@ -21,7 +21,7 @@ import {
   type MarkKey, type SessionEntry, type ToolSpecLike,
 } from "./hv-context";
 import { isSlashCommandPath, parseAgentFile, renderSubagentSection, type AgentDef, type AgentSource } from "./hv-agents";
-import { declaresTools, twAgentOf, twBoundary, type TwAgentInfo } from "./hv-tw-gate";
+import { WORKFLOW_CHOICES, WORKFLOW_TOOL, declaresTools, twAgentOf, twBoundary, workflowAgents, workflowName, workflowSource, type TwAgentInfo } from "./hv-tw-gate";
 import { setChildPolicy } from "./hv-child-policy";
 import { registerTwRelay } from "./hv-tw-relay";
 import { FILE_TOOLS, nearestAgentsMd, nestedFileList, renderNestedSection, toolFilePath } from "./hv-agents-md";
@@ -1129,6 +1129,18 @@ export default function (pi: ExtensionAPI) {
    * simply drops its pending entry, and an unknown shape leaves the store alone.
    */
   pi.on("tool_result", async (event) => {
+    // §12 (2026-09-26): a workflow runs in the background; its id first appears here. Announced
+    // as a `started` run so the busy gate, the run rail and STOP cover it like any delegation;
+    // P6-settled ends it (hv-tw-relay.ts).
+    if (TW && event.toolName === WORKFLOW_TOOL) {
+      const taskId = (event as { details?: { taskId?: unknown } }).details?.taskId;
+      if (typeof taskId === "string" && taskId) {
+        const input = ((event as { input?: Record<string, unknown> }).input ?? {});
+        twRunning.add(taskId);
+        relay({ stage: "started", runId: taskId, agent: "workflow", task: workflowName(typeof input.script === "string" ? input.script : "") });
+      }
+      return;
+    }
     if (event.toolName !== "subagent") return;
     const details = (event as { details?: { asyncId?: unknown; runId?: unknown } }).details;
     const runId = typeof details?.asyncId === "string" ? details.asyncId : undefined;
@@ -1407,6 +1419,55 @@ export default function (pi: ExtensionAPI) {
         return { block: true, reason: g.reason };
       }
       if (g.kind === "floor-ask") planFloorAsk = true; // clamp allow→ask below; deny still denies
+    }
+
+    // §12 (2026-09-26, decision 7): a workflow is a SCRIPT that runs inside this Pi process,
+    // so approving one is approving code. Every call prompts — no allow rule and no session
+    // grant skips it — showing the full script whatever its source, with Allow · Deny only.
+    // A deny RULE still refuses and bypass still runs it. Plan mode and read-only runs never
+    // reach this point (BLOCKED_PLAN_TOOLS, above). On Allow, the agent types the script
+    // names get their approved boundaries; any other child is held to the read-only floor.
+    if (TW && tool === WORKFLOW_TOOL) {
+      const src = workflowSource(input, {
+        cwd: process.cwd(),
+        agentDir: process.env.PI_CODING_AGENT_DIR ?? "",
+        read: (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } },
+        join: path.join,
+        resolve: path.resolve,
+      });
+      if ("error" in src) {
+        audit(ctx.ui, { tool: "workflow", summary, decision: "deny", source: "rule" });
+        return { block: true, reason: `${src.error} ${NEXT_STEP}` };
+      }
+      const parsed = workflowAgents(src.script);
+      const agents = await Promise.all(parsed.types.map(async (type) => {
+        const b = twBoundary(type, await twAgentInfo(type), {});
+        return { type, known: !!b, tools: b?.tools ?? [], writeCapable: b?.writeCapable ?? [] };
+      }));
+      const approve = (): void => { for (const a of agents) if (a.known) approvedBoundaries.set(a.type, [...a.tools]); };
+      const name = workflowName(src.script);
+      const wv = evaluate(rules, { tool: "workflow", input, workspace: process.cwd(), caseInsensitivePaths: CI_PATHS });
+      if (wv.action === "deny" && wv.source === "rule") {
+        audit(ctx.ui, { tool: "workflow", summary: name, decision: "deny", source: "rule", rule: wv.rule });
+        return { block: true, reason: `Blocked by HappyVibe permission rule (workflow). ${NEXT_STEP}` };
+      }
+      if (dangerous) {
+        approve();
+        audit(ctx.ui, { tool: "workflow", summary: name, decision: "allow", source: "bypass", wouldHave: wv.action });
+        return;
+      }
+      const title = JSON.stringify({
+        kind: "hv.permission", tool: "workflow", summary: name,
+        workflow: { script: src.script, origin: src.origin, agents, unparsed: parsed.unparsed },
+      });
+      const choice = await ctx.ui.select(title, [...WORKFLOW_CHOICES]);
+      if (choice === "Allow") {
+        approve();
+        audit(ctx.ui, { tool: "workflow", summary: name, decision: "allow", source: "user" });
+        return;
+      }
+      audit(ctx.ui, { tool: "workflow", summary: name, decision: "deny", source: "user" });
+      return { block: true, reason: `User denied running this workflow in HappyVibe. ${NEXT_STEP}` };
     }
 
     // Dangerous mode: everything runs without prompting, but NEVER silently —
@@ -1863,7 +1924,13 @@ export default function (pi: ExtensionAPI) {
       const runId = args.trim();
       if (!runId) return;
       // tintinweb: one run is one child, so the run's STOP is its own `subagents:rpc:stop`.
-      const { ok } = TW ? await twRpc("subagents:rpc:stop", { agentId: runId }) : await rpcRequest("interrupt", { runId });
+      // tintinweb: one run is one child, so the run's STOP is its own `subagents:rpc:stop` — and a
+      // workflow run (`wf_…`) stops WHOLE through the patched `workflow-stop` verb (P6).
+      const { ok } = !TW
+        ? await rpcRequest("interrupt", { runId })
+        : runId.startsWith("wf_")
+          ? await twRpc("subagents:rpc:workflow-stop", { runId })
+          : await twRpc("subagents:rpc:stop", { agentId: runId });
       ctx.ui.notify(subEnvelope({ stage: ok ? "interrupt-sent" : "interrupt-error", runId }), ok ? "info" : "warning");
     },
   });

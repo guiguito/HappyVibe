@@ -17,6 +17,8 @@ export interface SubagentNotify {
   runs?: Array<{ runId: string; agent?: string; asyncDir: string }>;
   /** tintinweb: the child's own session file, once it exists (stage "session"). */
   sessionFile?: string;
+  /** tintinweb: a workflow's progress batch (stage "workflow-progress", P6-progress). */
+  entries?: unknown[];
 }
 
 /** The hv.subagent payload when this ui-request is that notify, else null. */

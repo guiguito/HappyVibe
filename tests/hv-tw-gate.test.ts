@@ -4,7 +4,7 @@
  * hand it every builtin.
  */
 import { describe, expect, it } from "vitest";
-import { declaresTools, twAgentOf, twBoundary } from "../pi-runtime/extensions/hv-tw-gate";
+import { WORKFLOW_CHOICES, declaresTools, twAgentOf, twBoundary, workflowAgents, workflowName, workflowSource } from "../pi-runtime/extensions/hv-tw-gate";
 import { boundaryRuleName } from "../pi-runtime/extensions/hv-subagent-boundary";
 import { parseAgentFile } from "../pi-runtime/extensions/hv-agents";
 
@@ -60,5 +60,39 @@ describe("declaresTools — read from the FILE", () => {
     expect(declaresTools(parseAgentFile("---\nname: a\ndescription: d\ntools: read, grep\n---\nbody").frontmatter)).toBe(true);
     expect(declaresTools(parseAgentFile("---\nname: a\ndescription: d\ntools: all\n---\nbody").frontmatter)).toBe(true);
     expect(declaresTools(parseAgentFile("---\nname: a\ndescription: d\n---\nbody").frontmatter)).toBe(false);
+  });
+});
+
+describe("workflows — approved as code (decision 7)", () => {
+  const fsLike = (files: Record<string, string>) => ({
+    cwd: "/ws", agentDir: "/agent",
+    read: (p: string) => files[p] ?? null,
+    join: (...p: string[]) => p.join("/"),
+    resolve: (...p: string[]) => (p[1]?.startsWith("/") ? p[1] : p.join("/")),
+  });
+
+  it("scriptPath beats script beats a saved name (upstream's precedence)", () => {
+    const d = fsLike({ "/ws/a.js": "FROM-PATH", "/agent/workflows/n.js": "SAVED" });
+    expect(workflowSource({ scriptPath: "a.js", script: "INLINE", name: "n" }, d)).toEqual({ script: "FROM-PATH", origin: "path" });
+    expect(workflowSource({ script: "INLINE", name: "n" }, d)).toEqual({ script: "INLINE", origin: "inline" });
+    expect(workflowSource({ name: "n" }, d)).toEqual({ script: "SAVED", origin: "saved" });
+  });
+
+  it("a saved workflow comes from the app's agent dir only — never the project's", () => {
+    const d = fsLike({ "/ws/.pi/workflows/evil.js": "EVIL" });
+    expect(workflowSource({ name: "evil" }, d)).toHaveProperty("error");
+    expect(workflowSource({ name: "../../etc/passwd" }, d)).toHaveProperty("error");
+  });
+
+  it("lists the agents it can name, and says when a call escapes the scan", () => {
+    expect(workflowAgents(`const a = await agent('x', { agentType: 'code-explorer' })\nawait agent({ agentType: "worker", prompt: "y" })`)).toEqual({ types: ["code-explorer", "worker"], unparsed: false });
+    expect(workflowAgents(`const t = pick(); await agent('x', { agentType: t })`).unparsed).toBe(true);
+    expect(workflowAgents(`await agent('x')`).unparsed).toBe(true);
+  });
+
+  it("offers Allow and Deny only, and names the workflow from its meta block", () => {
+    expect([...WORKFLOW_CHOICES]).toEqual(["Allow", "Deny"]);
+    expect(workflowName("export const meta = { name: 'probe-wf', description: 'two explorers' }")).toBe("probe-wf");
+    expect(workflowName("no meta")).toBe("workflow");
   });
 });

@@ -130,3 +130,21 @@ describe("delete means delete (§17), and the sweep only touches what is provabl
     expect(fs.existsSync(b1)).toBe(false);
   });
 });
+
+describe("foldWorkflowProgress — a workflow's children on the run card", () => {
+  it("keeps the latest state per agent, and never offers a per-child STOP", async () => {
+    const { foldWorkflowProgress } = await import("../src/main/twChildren");
+    const acc = new Map();
+    foldWorkflowProgress(acc, [
+      { type: "workflow_phase", index: 0, title: "Explore" },
+      { type: "workflow_agent", index: 0, label: "alpha", agentType: "code-explorer", state: "start" },
+      { type: "workflow_agent", index: 1, label: "beta", agentType: "code-explorer", state: "start" },
+    ]);
+    const s = foldWorkflowProgress(acc, [{ type: "workflow_agent", index: 0, label: "alpha", agentType: "code-explorer", state: "done", toolCalls: 2 }]);
+    expect(s.steps).toEqual([{ agent: "code-explorer", status: "done" }, { agent: "code-explorer", status: "working" }]);
+    expect(s.toolCount).toBe(2);
+    expect(s.currentTool).toBe("beta");
+    // isStoppableChild (renderer) is true for pending/running only.
+    expect(s.steps!.some((x) => x.status === "running" || x.status === "pending")).toBe(false);
+  });
+});

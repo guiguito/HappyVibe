@@ -217,6 +217,14 @@ const hvChildPolicy = (): undefined | { extensionPaths(): string[]; skillPaths()
     replace: `        onProgress: entries => { updateWorkflowProgressBatch(task, entries); pi.events.emit("subagents:workflow-progress", { runId: task.id, entries }); }, // hv-patch:P6-progress`,
   },
   {
+    // The workflow TOOL path's completion is otherwise visible only as a model-facing
+    // notification; the host needs it on the bus to end the run's busy state and card.
+    id: "P6-settled",
+    file: "src/index.ts",
+    find: `      void runWorkflowTask(ctx, task).then(() => notifyWorkflowFinished(task));`,
+    replace: `      void runWorkflowTask(ctx, task).then(() => { pi.events.emit("subagents:workflow-settled", { runId: task.id, status: task.status }); notifyWorkflowFinished(task); }); // hv-patch:P6-settled`,
+  },
+  {
     id: "P6-teardown",
     file: "src/index.ts",
     find: `    rpcHandle?.unsubConsume();

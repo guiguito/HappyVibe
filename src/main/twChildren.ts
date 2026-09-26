@@ -185,3 +185,30 @@ export function twSweepOrphans(sessionDirPath: string): number {
   }
   return n;
 }
+
+/**
+ * A workflow's live progress (P6-progress entries) folded into the SAME `steps` the run
+ * card lists for a fan-out. Entries arrive in batches and repeat an agent's index as it
+ * moves on, so the fold keeps the latest per index. Statuses are "working"/"done"/"failed"
+ * — deliberately NOT "running", because the card offers a per-child STOP for a running
+ * child and upstream refuses to stop a workflow's children one at a time.
+ */
+export function foldWorkflowProgress(
+  acc: Map<number, { agent?: string; label?: string; state?: string; toolCalls?: number }>,
+  entries: unknown[],
+): SubagentStatus {
+  for (const raw of entries) {
+    const e = raw as { type?: string; index?: number; agentType?: string; label?: string; state?: string; toolCalls?: number };
+    if (e?.type !== "workflow_agent" || typeof e.index !== "number") continue;
+    acc.set(e.index, { ...acc.get(e.index), agent: e.agentType ?? acc.get(e.index)?.agent, label: e.label, state: e.state, toolCalls: e.toolCalls });
+  }
+  const rows = [...acc.entries()].sort(([a], [b]) => a - b).map(([, v]) => v);
+  const status = (s?: string) => (s === "done" ? "done" : s === "error" ? "failed" : "working");
+  return {
+    steps: rows.map((r) => ({ ...(r.agent ? { agent: r.agent } : {}), status: status(r.state) })),
+    toolCount: rows.reduce((n, r) => n + (r.toolCalls ?? 0), 0),
+    ...(rows.some((r) => r.state === "start" || r.state === "progress")
+      ? { currentTool: rows.find((r) => r.state === "start" || r.state === "progress")?.label }
+      : {}),
+  };
+}

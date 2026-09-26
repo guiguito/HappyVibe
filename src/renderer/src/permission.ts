@@ -24,6 +24,18 @@ export interface PermissionInfo {
   reason?: "outside-workspace";
   /** v5: the offending path, for the outside-workspace badge. */
   path?: string;
+  /**
+   * §12 (2026-09-26, decision 7): a tintinweb workflow — approved as CODE, so the prompt
+   * shows the whole script and the agents it names, and offers Allow · Deny only.
+   */
+  workflow?: {
+    script: string;
+    origin: "inline" | "path" | "saved";
+    agents: Array<{ type: string; known: boolean; tools: string[]; writeCapable: string[] }>;
+    unparsed: boolean;
+  };
+  /** §10 (2026-09-26, Phase 4): a sub-agent's own `ask`, raised on the parent's pane. */
+  child?: { agent: string; runLabel: string; runId: string };
 }
 
 // Round 3 #13: "Allow for workspace" / "Always allow" persist a rule (workspace /
@@ -65,6 +77,23 @@ export function parsePermission(r: UiRequest): PermissionInfo | null {
           context: typeof bnd.context === "string" ? bnd.context : "fresh",
           declarations: Array.isArray(bnd.declarations) ? (bnd.declarations as unknown[]).filter((t): t is string => typeof t === "string") : [],
         };
+      }
+      const wf = p.workflow as Record<string, unknown> | undefined;
+      if (wf && typeof wf === "object" && typeof wf.script === "string") {
+        const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((t): t is string => typeof t === "string") : []);
+        info.workflow = {
+          script: wf.script,
+          origin: wf.origin === "path" || wf.origin === "saved" ? wf.origin : "inline",
+          agents: (Array.isArray(wf.agents) ? wf.agents : []).flatMap((a) => {
+            const x = a as Record<string, unknown>;
+            return typeof x?.type === "string" ? [{ type: x.type, known: x.known === true, tools: strs(x.tools), writeCapable: strs(x.writeCapable) }] : [];
+          }),
+          unparsed: wf.unparsed === true,
+        };
+      }
+      const ch = p.child as Record<string, unknown> | undefined;
+      if (ch && typeof ch === "object" && typeof ch.agent === "string" && typeof ch.runId === "string") {
+        info.child = { agent: ch.agent, runId: ch.runId, runLabel: typeof ch.runLabel === "string" ? ch.runLabel : "" };
       }
       if (p.reason === "outside-workspace") {
         info.reason = "outside-workspace";

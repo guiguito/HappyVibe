@@ -27,6 +27,14 @@ const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v 
 /** One bus event → the notify main already understands, or null for events it does not need. */
 export function twNotify(event: string, payload: unknown): TwNotify | null {
   const p = (payload ?? {}) as Record<string, unknown>;
+  if (event === "subagents:workflow-settled") {
+    // P6-settled: a workflow run ended. Same `complete` stage as an agent, so the busy gate,
+    // the card and the hand-off notice treat it the same way; "killed" is a user STOP.
+    const runId = str(p.runId);
+    if (!runId) return null;
+    const status = p.status === "completed" ? "success" : p.status === "killed" ? "interrupted" : "error";
+    return { stage: "complete", runId, agent: "workflow", status };
+  }
   if (event === "subagents:workflow-progress") {
     const runId = str(p.runId);
     return runId ? { stage: "workflow-progress", runId, entries: Array.isArray(p.entries) ? p.entries : [] } : null;
@@ -59,7 +67,7 @@ export interface TwRelayDeps {
 /** Subscribe the relay; returns the live set of running run ids. */
 export function registerTwRelay(deps: TwRelayDeps, pollMs = 200, giveUpMs = 15_000): Set<string> {
   const running = new Set<string>();
-  for (const ev of ["subagents:started", "subagents:completed", "subagents:failed", "subagents:workflow-progress"]) {
+  for (const ev of ["subagents:started", "subagents:completed", "subagents:failed", "subagents:workflow-progress", "subagents:workflow-settled"]) {
     deps.on(ev, (payload) => {
       const n = twNotify(ev, payload);
       if (!n) return;
