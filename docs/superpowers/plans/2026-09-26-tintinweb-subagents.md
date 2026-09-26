@@ -231,6 +231,8 @@ Replace the literals: `agents.ts` `isSubagentTool` body → `return isDelegation
 
 ### Task 6: Vendor tintinweb and the patch applier
 
+> **Phase 0 already wrote `scripts/patch-tintinweb.mjs` and `scripts/tintinweb-hunks.mjs` (18 hunks, uncommitted).** The applier is TWO-PASS — every anchor is checked before any file is written — because the first draft left a half-patched package when a later anchor failed (tw1.md, Gate 7). Treat the code block below as superseded by the file on disk; this task adds the tests, the dependency and the postinstall wiring, and commits both scripts. Add a test: `a failing anchor writes nothing` (fixture with two hunks, the second missing → the first file is byte-identical afterwards).
+
 **Files:**
 - Create: `scripts/patch-tintinweb.mjs`, `scripts/tintinweb-hunks.mjs` (with `export const HUNKS = []` for now)
 - Modify: `pi-runtime/package.json` (dependency + postinstall), `pi-runtime/package-lock.json`
@@ -592,6 +594,8 @@ Note the ordering hazard: `hvSettings` is declared in `P1-loader` (line ~747) an
 - [ ] **Step 5: Commit** — `git commit -s -m "fix(§3): tintinweb children inherit trust and load only what the host forces (P1–P3)"`
 
 ### Task 9: Patch P3(d), P4, P5, P6 (refusals, settings lock, workflow hardening, host control verbs)
+
+> **Phase 0 corrections:** the hunks are already in `scripts/tintinweb-hunks.mjs`. `P3-refuse` is anchored on `spawn()`'s preceding comment line, because `assertValidSpawnCwd(options.cwd);` occurs twice in `agent-manager.ts` (`:499` spawn, `:674` queued re-check). A new hunk **`P6-progress`** (`src/index.ts:2358`) forwards the workflow runtime's `onProgress(entries)` as `pi.events.emit("subagents:workflow-progress", { runId, entries })` — measured: a `SubagentWorkflow` tool call writes NO session entry while it runs and its children emit no bus events, so this is the only live progress source. Add its source-scan pin beside P6's.
 
 **Files:**
 - Modify: `scripts/tintinweb-hunks.mjs`
@@ -1014,6 +1018,7 @@ it("refuses what it does not recognise", () => {
   - `twChildSessionFiles(sessionDirPath: string, parentSessionFile: string): string[]` — scans `<sessionDir>/subagents/*.jsonl`, keeps those whose FIRST line's header has `parentSession === parentSessionFile`. `// ponytail: O(n) header scan per call; index by parent in a sidecar file if sessions ever number in the thousands.`
   - `twChildStatus(file: string): SubagentStatus` — the same shape `readSubagentStatus` returns (`turnCount`, `toolCount`, `currentTool`, `recentTools`, `context: {window, limit?}` from the last assistant `usage`), so `hv:subagent-status` and the card are unchanged.
   - `twInspect(sessionDirPath: string, file: string): InspectReply` — `messages` + `finalOutput` from the file, the `InspectReply` shape `subagentInspect.ts:40` already defines; path must resolve under `<sessionDir>/subagents` or it answers `{error:{code:"outside"}}`.
+- **Temp workflow files (measured, tw1.md finding 2):** workflows write their script and journal to `<os.tmpdir()>/pi-subagents-<uid>/<cwd-slug>/<parent Pi session id>/tasks/`. `deleteSessionChildren` also removes `<os.tmpdir()>/pi-subagents-<process.getuid()>/*/<parent session id>/` (the id is the parent file's header `id`; match the directory NAME exactly, never a prefix), and the sweep removes such a directory whose session id no longer exists. Test with a fixture tree under a fake tmpdir root passed as a parameter.
 - ipc: map `runId → childSessionFile` filled from the notify's `sessionFile` (Task 12 adds `sessionFile` to `started`, or to a follow-up `{stage:"control", runId, sessionFile}` if Task 3 showed the path is only known later); the TW poller = `setInterval(500)` over `twChildStatus`, emitting through the existing `send("hv:subagent-status", …)` with `runCostNow`.
 
 - [ ] **Step 1: Failing test** — writes two fixture child files under a temp `sessions/subagents/` (headers with `parentSession` = parent A and parent B; one assistant message with `usage` each), then:
@@ -1080,7 +1085,7 @@ it("labels", () => {
 - Envelope `{kind:"hv.permission", tool:"workflow", summary:<meta name>, workflow:{script, origin, agents:[{type, tools, writeCapable}], unparsed}}`, choices `["Allow","Deny"]`.
 - Rules: a `deny` rule on `workflow` denies; nothing else skips the prompt (no allow rule, no session grant); bypass allows.
 - `PermissionInfo.workflow?` AND `PermissionInfo.child?` (the latter unused until Task 23, declared now so the modal's one condition is written once) in `permission.ts`; `PermissionModal` renders the script in a scrolling `<pre>` and writes `const shown = info.workflow || info.child ? wire : (wire.includes("Allow") && wire.includes("Deny") ? EXPANDED_CHOICES : wire);`.
-- `workflowProgress(parentSessionFile): Array<{runId: string; ...entry}>` from `subagents:workflow` entries (shape from Task 3); IPC `hv:workflow-stop(sessionId, runId)` → prompt `/hv-workflow-stop <runId>` → relay → `subagents:rpc:workflow-stop`.
+- Progress (corrected by Phase 0): the relay listens on `subagents:workflow-progress` (P6-progress) and sends `hv.subagent` `{stage:"workflow-progress", runId, entries}`; the renderer card folds entries by `index`. The run id is `details.taskId` on the tool result (`wf_…`, d1.md § tintinweb wire shapes). There is no session-file source — `subagents:workflow` entries are written only by the `--subagents-workflow-file` start-up path. IPC `hv:workflow-stop(sessionId, runId)` → prompt `/hv-workflow-stop <runId>` → relay → `subagents:rpc:workflow-stop`.
 
 - [ ] **Step 1: Failing tests**
 
@@ -1114,7 +1119,7 @@ it("the modal never expands a workflow or child prompt to the five-choice set", 
   expect(src).toMatch(/info\.workflow\s*\|\|\s*info\.child\s*\?\s*wire/);
 });
 ```
-LIVE `tests/tw-workflow-bridge.test.ts`: (a) a workflow call raises a `select` with `options` exactly `["Allow","Deny"]` and the script in the title; (b) `Deny` ⇒ audit deny, no child session files created; (c) plan mode on ⇒ blocked with no prompt; (d) a script with `gate: "touch <tmp>/gate-ran"` ⇒ approved ⇒ `<tmp>/gate-ran` never exists and the tool result contains "does not run workflow gate commands"; (e) `/hv-workflow-stop <runId>` mid-run ⇒ the workflow ends and no further `subagents:workflow` progress entries are appended; (f) `an unknown agentType fails loud` — a script calling `agent({ agentType: "nope" })` ⇒ the workflow's result names the failed spawn and lists the available types (`fallbackSubagent:"none"`), and no child session file is created for it.
+LIVE `tests/tw-workflow-bridge.test.ts`: (a) a workflow call raises a `select` with `options` exactly `["Allow","Deny"]` and the script in the title; (b) `Deny` ⇒ audit deny, no child session files created; (c) plan mode on ⇒ blocked with no prompt; (d) a script with `gate: "touch <tmp>/gate-ran"` ⇒ approved ⇒ `<tmp>/gate-ran` never exists and the tool result contains "does not run workflow gate commands"; (e) `/hv-workflow-stop <runId>` mid-run ⇒ the workflow ends, its completion notification reads stopped/aborted, and no further `subagents:workflow-progress` events arrive; (f) `an unknown agentType fails loud` — a script calling `agent({ agentType: "nope" })` ⇒ the workflow's result names the failed spawn and lists the available types (`fallbackSubagent:"none"`), and no child session file is created for it.
 - [ ] **Step 2: Run** → FAIL.
 - [ ] **Step 3: Implement** (bridge branch runs before the rule-engine allow path so no allow can skip it; on Allow, `approvedBoundaries.set(type, tools)` for each parsed type).
 - [ ] **Step 4: Run** → PASS; `npm run gate` → 0.
