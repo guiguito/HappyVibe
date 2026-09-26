@@ -44,6 +44,11 @@ test.skipIf(!KEY)("mcp proxy call surfaces an unwrapped hv.permission prompt; Al
 
   const prompts: Array<Record<string, unknown>> = [];
   let resolveInvokePrompt: (r: Record<string, unknown>) => void;
+  // A model that calls the tool TWICE raised a second invoke prompt nobody answered, and the
+  // turn hung to the 180 s timeout — measured on main as well as on a branch (2026-09-26), i.e.
+  // a flake of this harness, not of the gate. The FIRST invoke is the one asserted on; any later
+  // one is let through so the turn can end.
+  let invokeSeen = false;
   const invokePrompt = new Promise<Record<string, unknown>>((r) => (resolveInvokePrompt = r));
   client.on("ui-request", (m) => {
     const req = m as Record<string, unknown>;
@@ -53,7 +58,10 @@ test.skipIf(!KEY)("mcp proxy call surfaces an unwrapped hv.permission prompt; Al
       if (t.kind !== "hv.permission") return;
       console.log("[mcp-bridge.test] hv.permission:", t);
       prompts.push(t);
-      if (typeof t.tool === "string" && t.tool.startsWith("mcp:")) resolveInvokePrompt(req);
+      if (typeof t.tool === "string" && t.tool.startsWith("mcp:")) {
+        if (invokeSeen) client.respondUi(req.id as string, { value: "Allow" });
+        else { invokeSeen = true; resolveInvokePrompt(req); }
+      }
       else client.respondUi(req.id as string, { value: "Allow" }); // discovery etc. — let it through
     } catch { /* not ours */ }
   });
