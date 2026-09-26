@@ -36,15 +36,15 @@ export interface FeedbackConfig {
 export const FEEDBACK_CHANNELS = {
   dev: {
     baseUrl: "https://feedback.bzapps.eu",
-    publishableKey: "ipk_MMpg82eVQNJo9NIiEfyzEODvhPa-Ho9n" as string | null,
-    databases: { general: "fdb_h2ntrck1mywr", session: "fdb_384szrcgeb7n" },
-    crashDatabase: "cdb_aamshzzkjx9c",
+    publishableKey: "ipk_VV0zTdc7-c01Yc_EHEoMNJDvtaLlPPeP" as string | null,
+    databases: { general: "fdb_k1wv6q4f5y3d", session: "fdb_8acy05bfbdd8" },
+    crashDatabase: "cdb_38g7t8v30pxe",
   },
   prod: {
     baseUrl: "https://feedback.bzapps.eu",
-    publishableKey: "ipk_mF6m0qBQWvn0uFOZg7CKv9f_HOagaTIN" as string | null,
-    databases: { general: "fdb_yfre0219xr82", session: "fdb_hnbkxr94p5cd" },
-    crashDatabase: "cdb_64m8jfkbxw2y",
+    publishableKey: "ipk__H5yhFPYwIx5kHuXI7F33b8XEkohrtXr" as string | null,
+    databases: { general: "fdb_kvsfs4azz0xc", session: "fdb_fg71xjz0y9t6" },
+    crashDatabase: "cdb_2nt89ap6w63j",
   },
 } as const satisfies Record<
   FeedbackChannel,

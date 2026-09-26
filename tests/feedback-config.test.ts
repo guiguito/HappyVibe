@@ -6,7 +6,7 @@ describe("resolveFeedbackConfig", () => {
     const c = resolveFeedbackConfig({}, true);
     expect(c?.channel).toBe("dev");
     expect(c?.publishableKey).toMatch(/^ipk_/);
-    expect(c?.databases).toEqual({ general: "fdb_h2ntrck1mywr", session: "fdb_384szrcgeb7n" });
+    expect(c?.databases).toEqual({ general: "fdb_k1wv6q4f5y3d", session: "fdb_8acy05bfbdd8" });
     expect(c?.baseUrl).toBe("https://feedback.bzapps.eu");
   });
 
@@ -19,7 +19,7 @@ describe("resolveFeedbackConfig", () => {
     const c = resolveFeedbackConfig({}, false);
     expect(c?.channel).toBe("prod");
     expect(c?.publishableKey).toMatch(/^ipk_/);
-    expect(c?.databases).toEqual({ general: "fdb_yfre0219xr82", session: "fdb_hnbkxr94p5cd" });
+    expect(c?.databases).toEqual({ general: "fdb_kvsfs4azz0xc", session: "fdb_fg71xjz0y9t6" });
   });
 
   /** The two channels must never share a key or a database — that is what keeps dev noise out. */
@@ -37,7 +37,7 @@ describe("resolveFeedbackConfig", () => {
   });
 
   it("prod databases are the prod project's, never the dev ones", () => {
-    expect(FEEDBACK_CHANNELS.prod.databases).toEqual({ general: "fdb_yfre0219xr82", session: "fdb_hnbkxr94p5cd" });
+    expect(FEEDBACK_CHANNELS.prod.databases).toEqual({ general: "fdb_kvsfs4azz0xc", session: "fdb_fg71xjz0y9t6" });
   });
 
   it("HV_FEEDBACK_* env overrides win, and a key override makes prod available", () => {
