@@ -76,7 +76,8 @@ import {
 import { providerKeyFor, validateEndpoint, type CustomEndpoint } from "./modelsJson";
 import { FEATURED_PROVIDER_IDS, PROVIDER_CATALOG } from "./providerCatalog.generated";
 import { ledgerTotal, planProvidersFor, type ApiCall, type LedgerTotal } from "./calls";
-import { agentByFileFrom, callsFromChildSessions, runTotalsByCall, sessionCalls } from "./sessionLedger";
+import { agentByFileFrom, callsFromChildSessions, childSessionsByRunFrom, runTotalsByCall, sessionCalls } from "./sessionLedger";
+import { twChildStatus, twInspect } from "./twChildren";
 import { logOneShot, type OneShotKind } from "./oneShotLog";
 import { exclusionKey, exclusionModel, formatExclusionNotice, readExclusions } from "./modelExclusions";
 import { deleteSessionChildren, deleteSessionFile, sweepOrphanedSubagentData, isSessionEmpty, normPath, readSessionFile, sessionFilePath, SessionIndex, WorkspaceRegistry, sessionsOfWorkspace, type SessionMeta } from "./store";
@@ -87,7 +88,7 @@ import { SessionActivity } from "./activity";
 import { parseSubagentNotify } from "./subagentEvents";
 import { clearGuardAudit, guardAuditRows, rollupGuardAudit } from "./subagentAudit";
 import { inspectCommand, inspectRequestId, parseInspectFrame, type InspectReply } from "./subagentInspect";
-import { pollSubagentStatus, type SubagentStatus } from "./subagentStatus";
+import { pollSubagentStatus, statusUnchanged, type SubagentStatus } from "./subagentStatus";
 import { readChildTrace } from "./subagentThinking";
 import { EventLog } from "./log";
 import { aggregate, type AnalyticsFilter } from "./analytics";
@@ -1775,12 +1776,15 @@ export function registerIpc(
           // `asyncStarted` is set-based, so the only thing worth guarding is the
           // audit line, which must not be written twice for one run.
           const already = subagentPollers.has(sub.runId);
+          if (sub.agent && !delegatedAgentByRun.has(sub.runId)) delegatedAgentByRun.set(sub.runId, sub.agent);
           activity.asyncStarted(sessionId, sub.runId);
           startSubagentPoll(sessionId, sub.runId, sub.asyncDir);
           // tintinweb's `started` arrives BEFORE the tool result (the bus fires during spawn), and
           // the tool-result branch above logs the same run WITH its toolCallId — the id a reopened
           // session joins spend on. So on that path this one row is left to it.
           if (!already && !TW_MAIN) void log.append({ type: "subagent.async_started", sessionId, workspaceId: meta?.workspaceId, data: { runId: sub.runId, agent: sub.agent } });
+        } else if (sub.stage === "session" && sub.runId && typeof sub.sessionFile === "string") {
+          startTwPoll(sessionId, sub.runId, sub.sessionFile);
         } else if (sub.stage === "complete" && sub.runId) {
           finishedAsyncRuns.add(sub.runId);
           activity.asyncEnded(sessionId, sub.runId);
@@ -2682,6 +2686,26 @@ export function registerIpc(
       send("hv:subagent-status", { sessionId, runId, status, cost: runCostNow(sessionId, status) });
     });
     subagentPollers.set(runId, { sessionId, stop });
+  };
+  /**
+   * §12 (2026-09-26): a tintinweb child has no status.json — its own session file IS its
+   * status. Same push, same shape (twChildStatus), same poller map, so `complete` stops it
+   * exactly as before and the card needs nothing new.
+   */
+  const startTwPoll = (sessionId: string, runId: string, file: string): void => {
+    if (subagentPollers.has(runId)) return;
+    const agent = delegatedAgentByRun.get(runId);
+    childSessionsByRun.set(runId, [{ sessionFile: file, ...(agent ? { agent } : {}) }]);
+    let last: SubagentStatus | null = null;
+    const tick = (): void => {
+      const status = twChildStatus(sessionDir(), file, agent);
+      if (!status || statusUnchanged(last, status)) return;
+      last = status;
+      send("hv:subagent-status", { sessionId, runId, status, cost: runCostNow(sessionId, status) });
+    };
+    tick();
+    const iv = setInterval(tick, 500);
+    subagentPollers.set(runId, { sessionId, stop: () => clearInterval(iv) });
   };
   const stopSubagentPoll = (runId: string): void => {
     subagentPollers.get(runId)?.stop();
@@ -4945,6 +4969,17 @@ export function registerIpc(
    * or on a send failure, because a card that never hears back spins forever.
    */
   ipcMain.handle("hv:subagent-inspect", async (_e, sessionId: string, asyncId: string) => {
+    // §12 (2026-09-26): a tintinweb child's transcript is its own session file, readable
+    // from disk whether or not the session is running — live from the poller's map, or,
+    // for a reopened session, from the `subagent.async_complete` row that recorded it.
+    if (TW_MAIN) {
+      const file = childSessionsByRun.get(asyncId)?.[0]?.sessionFile
+        ?? childSessionsByRunFrom(await log.read({ sessionId })).get(asyncId)?.[0]?.sessionFile;
+      if (!file) return { ok: false as const, error: "no transcript was recorded for this run", code: "unknown_run" };
+      const r = twInspect(sessionDir(), file);
+      if (r.error) return { ok: false as const, error: r.error.message, code: r.error.code };
+      return { ok: true as const, reply: { ...r, asyncId } };
+    }
     const client = manager.get(sessionId) as PiClient | null;
     if (!client) return { ok: false as const, error: "session is not running" };
     const requestId = inspectRequestId(++inspectSeq);
