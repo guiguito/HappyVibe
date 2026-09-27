@@ -92,3 +92,13 @@ it("§39 screens: one effect on activeView, never inside navigate()", () => {
   expect(at).toBeGreaterThan(-1);
   expect(app.slice(at, at + 1500)).not.toContain("screenView");
 });
+
+it("§39 every catalog event has at least one call site with a literal name", async () => {
+  const { USAGE_EVENTS } = await import("../src/main/usage/events");
+  const all = walk("src").filter((f) => /\.tsx?$/.test(f) && !f.endsWith("/usage/events.ts")).map(strip).join("\n");
+  for (const name of Object.keys(USAGE_EVENTS)) {
+    const direct = new RegExp(`(track|trackUi)\\("${name}"`).test(all);
+    const picked = all.includes(`name: "${name}"`);
+    expect(direct || picked, name).toBe(true);
+  }
+});

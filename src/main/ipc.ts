@@ -3,6 +3,7 @@ import { forgetSessionFeatures, track, trackFeature } from "./usage/client";
 import { TurnTracker, type TurnEnd } from "./usage/turns";
 import { featureOfTool } from "./usage/features";
 import { eventFromLog, storePluginId, type TapContext } from "./usage/fromLog";
+import { mcpParams, modelParams, scheduleParams } from "./usage/mappers";
 import { describeProviderError } from "./providerError";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -875,8 +876,17 @@ export function registerIpc(
     lastStop.delete(sessionId);
     if (p) track("agent_turn_completed", { ...p, ...turnModel(sessionId, m) });
   };
-  // Filled in by the model/billing mappers (§39 Task 11).
-  const turnModel = (_sessionId: string, _m?: { provider?: string; model?: string }): Record<string, string> => ({});
+  // §39: the model the turn actually ran on (the final assistant message's),
+  // falling back to the resolved chain; billing by the ledger's own rule.
+  const turnModel = (sessionId: string, m?: { provider?: string; model?: string }): Record<string, string> => {
+    const meta = index.get(sessionId);
+    const r = m?.provider && m.model ? { provider: m.provider, modelId: m.model } : meta ? resolveSpawnModel(meta.workspaceId, sessionId) : null;
+    if (!r) return {};
+    // ponytail: plan vs metered from the provider alone; `unknown` needs the ledger's per-call price, which the pill owns.
+    return { ...modelParams(r.provider, r.modelId), billing: planProvidersFor(providerKeyStatus()).has(r.provider) ? "plan" : "metered" };
+  };
+  const providerCount = (): number =>
+    Object.values(providerKeyStatus()).filter(Boolean).length + listCustomEndpoints().length + authJsonProviders(agentDir()).length;
   const readonlyForSession = (sessionId?: string): boolean => {
     if (!sessionId) return false;
     const scheduleId = index.get(sessionId)?.scheduleId;
@@ -1065,6 +1075,7 @@ export function registerIpc(
       // exists. The renderer blocks send on the same condition (ChatView
       // noModel), so this is the backstop, not the message the user reads.
       if (!resolveSpawnModel(workspace, sessionId)) {
+        track("session_start_failed", { reason: "no_model" });
         throw new Error("No model configured — add a provider in Settings → Models.");
       }
       return new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile, sessionId)));
@@ -1253,6 +1264,9 @@ export function registerIpc(
           authState = p.providers;
           send("hv:auth-state-changed", authState);
           return;
+        }
+        if (p.stage === "success" && typeof (p as { provider?: unknown }).provider === "string") {
+          track("provider_connected", { provider: modelParams((p as { provider: string }).provider, "").provider, method: "oauth", providerCount: providerCount() });
         }
         if (p.stage === "success" || p.stage === "logged_out") {
           // Tell the renderer straight away — but do NOT try to fill the default
@@ -2385,6 +2399,7 @@ export function registerIpc(
               : { mode: "full", catchUp: "ask", reuseSession: false, notifyOnDone: true, enabled: true, ...sched.draft, workspaceId: ws };
             const res = await requestScheduleDrawer({ workspaceId: ws, draft, existingId: existing?.id, sessionId });
             if ("cancelled" in res) return answer("declined");
+            if (!existing) track("schedule_created", scheduleParams(res.saved, "agent"));
             void log.append({
               type: existing ? "schedule.update" : "schedule.create",
               sessionId,
@@ -2666,6 +2681,7 @@ export function registerIpc(
       if (!fs.statSync(meta.workspaceId).isDirectory()) throw new Error("not a directory");
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
+      track("session_start_failed", { reason: "folder_unavailable" });
       throw new Error(
         code === "EPERM" || code === "EACCES"
           ? `macOS denied access to ${meta.workspaceId} — grant HappyVibe/Electron access to this folder in System Settings → Privacy & Security → Files & Folders`
@@ -2673,11 +2689,14 @@ export function registerIpc(
       );
     }
     await syncModelsJson(agentDir(), listCustomEndpoints()).catch(() => {});
-    const client = (await manager.start(
-      meta.id,
-      meta.workspaceId,
-      resume ? meta.piSessionFile : undefined
-    )) as PiClient;
+    const client = (await manager
+      .start(meta.id, meta.workspaceId, resume ? meta.piSessionFile : undefined)
+      .catch((err: unknown) => {
+        // §39: the no-model refusal is counted where it is thrown; the cap is SessionManager's.
+        const msg = err instanceof Error ? err.message : "";
+        if (msg.includes("running sessions are actively working")) track("session_start_failed", { reason: "session_cap" });
+        throw err;
+      })) as PiClient;
     attach(meta.id, client);
     // W1.3: waking a hibernated session — restore is otherwise the plain resume path.
     if (index.get(meta.id)?.hibernated) {
@@ -2820,12 +2839,17 @@ export function registerIpc(
   ipcMain.handle("hv:create-workspace-folder", (_e, name: string) => {
     const dir = createWorkspaceFolder(String(name));
     workspaces.add(dir);
+    track("workspace_added", { isGitRepo: false, workspaceCount: workspaces.list().length });
     return dir;
   });
   ipcMain.handle("hv:add-workspace", async (e) => {
     const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"] });
     if (r.canceled || !r.filePaths[0]) return null;
     workspaces.add(r.filePaths[0]);
+    const count = workspaces.list().length;
+    void probeWorkspace(r.filePaths[0])
+      .then((st) => track("workspace_added", { isGitRepo: st.kind === "repo", workspaceCount: count }))
+      .catch(() => {});
     return r.filePaths[0];
   });
   /**
@@ -3364,6 +3388,10 @@ export function registerIpc(
     const v = validateScheduleInput(input, workspaces.list());
     const s = input.id ? scheduleStore.update(input.id, editPatch(v), new Date()) : scheduleStore.create(v as NewSchedule, new Date());
     if (!s) throw new Error("That schedule no longer exists.");
+    // §39: the agent's drawer saves through here too; while one is open the
+    // agent path below counts it, as `agent`.
+    // ponytail: a page create made while an agent drawer is open is not counted; key the save by requestId if that ever matters.
+    if (!input.id && scheduleDrawerWaits.size === 0) track("schedule_created", scheduleParams(s, "page"));
     void log.append({
       type: input.id ? "schedule.update" : "schedule.create",
       workspaceId: s.workspaceId,
@@ -3661,7 +3689,12 @@ export function registerIpc(
       mentions?: string[],
       openFiles?: string[],
       documents?: string[],
-    ) => promptSession(sessionId, msg, behavior, images, mentions, openFiles, documents),
+    ) => {
+      // §39: the session-scoped bypass switch is a slash command.
+      const dangerous = /^\/hv-dangerous (on|off)$/.exec(String(msg).trim());
+      if (dangerous) track("bypass_changed", { on: dangerous[1] === "on", scope: "session" });
+      return promptSession(sessionId, msg, behavior, images, mentions, openFiles, documents);
+    },
   );
 
   ipcMain.handle("hv:abort-session", async (_e, sessionId: string) => {
@@ -3947,6 +3980,7 @@ export function registerIpc(
   ipcMain.handle("hv:set-provider-key", async (_e, provider: string, key: string) => {
     if (!isByokProvider(provider)) throw new Error(`Unknown provider: ${provider}`);
     setProviderKey(provider, key);
+    if (key.trim()) track("provider_connected", { provider: modelParams(provider, "").provider, method: "api_key", providerCount: providerCount() });
     // The probe INFORMS, it never blocks: the key is already saved above. A
     // provider that answers 401 to a model listing but works for completions
     // would otherwise lock the user out of a key that is fine.
@@ -4024,6 +4058,7 @@ export function registerIpc(
       const problem = validateEndpoint(endpoint, listCustomEndpoints().map((x) => x.id));
       if (problem) throw new Error(problem);
       saveCustomEndpoint(endpoint, key);
+      track("provider_connected", { provider: "custom", method: "custom_endpoint", providerCount: providerCount() });
       // NOT swallowed, and rolled back: config.json is already written, so a
       // models.json failure (EACCES/ENOSPC) would otherwise leave Settings
       // showing an endpoint — with its key injected on every spawn — that Pi
@@ -4177,6 +4212,7 @@ export function registerIpc(
   ipcMain.handle("hv:get-global-bypass", () => getGlobalBypass());
   ipcMain.handle("hv:set-global-bypass", (_e, on: boolean) => {
     setGlobalBypass(on);
+    track("bypass_changed", { on: !!on, scope: "global" });
     // Only sessions that inherit the global default (no explicit workspace override).
     for (const id of manager.activeIds()) {
       const ws = index.get(id)?.workspaceId ?? null;
@@ -4186,6 +4222,7 @@ export function registerIpc(
   ipcMain.handle("hv:get-workspace-bypass", (_e, workspace: string) => getWorkspaceBypass(workspace));
   ipcMain.handle("hv:set-workspace-bypass", (_e, workspace: string, on: boolean | null) => {
     setWorkspaceBypass(workspace, on);
+    if (on !== null) track("bypass_changed", { on: !!on, scope: "workspace" });
     for (const id of manager.activeIds()) {
       if ((index.get(id)?.workspaceId ?? null) === workspace) applyBypassLive(id);
     }
@@ -4196,6 +4233,10 @@ export function registerIpc(
   // resume-preserving reload path (same mechanism as MCP/skills config changes).
   ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
   ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean }) => {
+    const prev = getBuiltinTools() as Record<string, unknown>;
+    for (const [k, v] of Object.entries(t)) {
+      if (typeof v === "boolean" && prev[k] !== v) track("builtin_toggled", { item: k, kind: "builtin_tool", on: v });
+    }
     setBuiltinTools(t);
     scheduleRuntimeReload("skills", "global", null);
   });
@@ -4469,6 +4510,7 @@ export function registerIpc(
   ipcMain.handle("hv:assistant-tasks-get", () => getAssistantTasks());
   ipcMain.handle("hv:assistant-task-set", (_e, id: AssistantTaskId, patch: Partial<AssistantTask>) => {
     setAssistantTask(id, patch);
+    if (patch.model) track("model_changed", { ...modelParams(patch.model.provider, patch.model.modelId), scope: "autofill" });
     return getAssistantTasks();
   });
 
@@ -4803,7 +4845,15 @@ export function registerIpc(
     });
   });
   ipcMain.handle("hv:set-default-model", async (_e, provider: string, modelId: string) => {
+    const before = getDefaultModel();
     setDefaultModel({ provider, modelId });
+    track("model_changed", { ...modelParams(provider, modelId), scope: "global" });
+    // §39: picking a local runner saves nothing by itself — the default model
+    // moving onto one is the moment it becomes "connected".
+    const runner = (id: string | undefined): boolean => !!id && (id === "ollama" || LOCAL_RUNNERS.some((r) => r.id === id));
+    if (runner(provider) && before?.provider !== provider) {
+      track("provider_connected", { provider: "custom", method: "local_runner", providerCount: providerCount() });
+    }
     // Apply live to the utility client; chat sessions pick the new default up
     // at their next spawn (changing a running conversation's model mid-turn
     // would be surprising).
@@ -4924,11 +4974,19 @@ export function registerIpc(
    */
   ipcMain.handle("hv:set-agent-enabled", (_e, name: string, enabled: boolean) => {
     setAgentEnabled(name, enabled);
+    // §39: only an agent HappyVibe ships is named; one the user made is never sent.
+    if (fs.existsSync(path.join(piRuntimeDir(), "agents", `${name}.md`))) {
+      track("builtin_toggled", { item: name, kind: "bundled_agent", on: !!enabled });
+    }
   });
 
   ipcMain.handle("hv:read-agent", (_e, filePath: string) => readAgentBody(agentDirs(), filePath));
   ipcMain.handle("hv:write-agent", (_e, filePath: string, edit: { body?: string; model?: string | null }) => {
     writeAgentEdit(agentDirs(), filePath, edit);
+    if (typeof edit.model === "string" && edit.model.includes("/")) {
+      const [prov, ...rest] = edit.model.split("/");
+      track("model_changed", { ...modelParams(prov, rest.join("/")), scope: "agent" });
+    }
     // Agents are read at delegation time by the pi-subagents child spawn, so
     // edits apply to the next delegation — no live broadcast needed.
   });
@@ -4962,6 +5020,7 @@ export function registerIpc(
         ? { provider: m.provider, modelId: m.modelId }
         : undefined;
       index.update(sessionId, { model }); // undefined clears (dropped by JSON.stringify)
+      if (model) track("model_changed", { ...modelParams(model.provider, model.modelId), scope: "session" });
       sessionsChanged();
       const client = manager.get(sessionId) as PiClient | null;
       if (!client || !model) return { live: false };
@@ -5655,6 +5714,7 @@ export function registerIpc(
     workspaces.setModel(workspaceId, m && typeof m.provider === "string" && typeof m.modelId === "string"
       ? { provider: m.provider, modelId: m.modelId }
       : null);
+    if (m && typeof m.provider === "string" && typeof m.modelId === "string") track("model_changed", { ...modelParams(m.provider, m.modelId), scope: "workspace" });
     providersChanged(); // open chat bars refetch → the chip's tier updates live
   });
 
@@ -5683,7 +5743,9 @@ export function registerIpc(
     // the OS keychain through the sidecar, which is a round-trip.
     async (_e, scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: McpServerConfig | null) => {
       const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
+      const isNew = cfg !== null && !readMcpFile(file).mcpServers[name];
       writeMcpServer(file, name, cfg);
+      if (isNew && cfg) track("mcp_server_added", mcpParams("manual", cfg));
       void log.append({ type: "mcp.config", workspaceId: workspaceId ?? undefined,
         data: { scope, name, removed: cfg === null } });
       if (cfg === null) {
@@ -5730,10 +5792,12 @@ export function registerIpc(
     ) => {
       const entry = catalogEntry(catalogKey);
       if (!entry) return { ok: false as const, error: "Unknown catalog entry" };
+      let installedCfg: McpServerConfig | null = null;
 
       const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
       try {
         const { cfg, secrets } = buildCatalogInstall(entry, values);
+        installedCfg = cfg;
         // Encrypt first: if the write then fails on a name collision we drop
         // them again, rather than leaving secrets for a server we never wrote.
         for (const s of secrets) setMcpSecret(entry.key, s.inputId, s.value);
@@ -5752,6 +5816,7 @@ export function registerIpc(
         workspaceId: workspaceId ?? undefined,
         data: { scope, name: entry.key, removed: false, source: "catalog" },
       });
+      if (installedCfg) track("mcp_server_added", mcpParams("catalog", installedCfg, { id: entry.key, auth: entry.auth }));
       scheduleMcpReload(scope, workspaceId); // apply to running sessions
       return { ok: true as const };
     },
@@ -6139,6 +6204,11 @@ export function registerIpc(
   ipcMain.handle("hv:skills-set-enabled", (_e, id: string, enabled: boolean) => {
     if (!isKnownSkillDir(id)) throw new Error("Unknown skill location");
     skillRegistry.setEnabled(id, !!enabled, new Date().toISOString());
+    // §39: the bundled skill's NAME — its id is an absolute folder path.
+    try {
+      const sk = readKnownSkill(id);
+      if (sk.source === "bundled") track("builtin_toggled", { item: sk.name, kind: "bundled_skill", on: !!enabled });
+    } catch { /* unreadable skill: nothing to report */ }
     void log.append({ type: enabled ? "skill.enabled" : "skill.disabled", data: { id } });
     skillsChanged();
     scheduleSkillReload("global", null);
@@ -6523,6 +6593,10 @@ export function registerIpc(
   ipcMain.handle("hv:prompt-templates-set-enabled", (_e, id: string, enabled: boolean) => {
     if (!promptTemplateRoot(id)) throw new Error("Unknown prompt location");
     promptTemplateRegistry.setEnabled(id, !!enabled, new Date().toISOString());
+    try {
+      const pt = readKnownPromptTemplate(id);
+      if (pt.source === "bundled") track("builtin_toggled", { item: path.basename(id, ".md"), kind: "bundled_prompt", on: !!enabled });
+    } catch { /* unreadable template: nothing to report */ }
     void log.append({ type: enabled ? "prompt-template.enabled" : "prompt-template.disabled", data: { id } });
     promptTemplatesChanged();
     schedulePromptTemplateReload("global", null);
@@ -6868,6 +6942,7 @@ export function registerIpc(
             { ...normalizePluginMcpServer(cfg), origin: pluginOrigin(scan.name, marketplaceId) },
             { failIfExists: true },
           );
+          track("mcp_server_added", mcpParams("plugin", normalizePluginMcpServer(cfg)));
           servers.push(key);
         }
 
