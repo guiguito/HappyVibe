@@ -21,6 +21,7 @@ export interface SkillView {
   source: DiscoveredSkill["source"];
   status: SkillStatus;
   scriptCount: number;
+  hasCommandInjection: boolean;
   disableModelInvocation: boolean;
   estTokens: { card: number; body: number };
   /** true when it was approved before but the content changed — the re-review case (diff available). */
@@ -62,6 +63,7 @@ export function toSkillView(
     source: skill.source,
     status,
     scriptCount: skill.scriptCount,
+    hasCommandInjection: skill.hasCommandInjection,
     disableModelInvocation: skill.disableModelInvocation,
     estTokens: skill.estTokens,
     // changed = there's an approval record but the hash no longer matches.

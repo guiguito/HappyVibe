@@ -536,6 +536,7 @@ interface HvSkillView {
   source: "managed" | "workspace" | "linked" | "bundled";
   status: "active" | "disabled" | "needs-review" | "error";
   scriptCount: number;
+  hasCommandInjection: boolean;
   disableModelInvocation: boolean;
   estTokens: { card: number; body: number };
   changed: boolean;
@@ -574,6 +575,7 @@ interface HvSkillDetail {
   linkedSiblings?: number;
   files: string[];
   scriptCount: number;
+  hasCommandInjection: boolean;
   estTokens: { card: number; body: number };
   status: "active" | "disabled" | "needs-review" | "error";
   provenance: { source: string; sourceUrl?: string; ref?: string; commitSha?: string; importedAt?: string } | null;

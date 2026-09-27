@@ -67,7 +67,7 @@ import { scanPluginDir, type PluginScan } from "./plugins/scan";
 import { fetchMarketplace, fetchPluginDir } from "./plugins/fetch";
 import { normalizePluginMcpServer } from "./plugins/mcpImport";
 import {
-  findPluginServers, installPluginCommands, installPluginSkills, pluginOrigin,
+  findPluginServers, installPluginCommands, installPluginSkills, pluginOrigin, rewriteSkillRoots,
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
@@ -6024,6 +6024,7 @@ export function registerIpc(
       linkedSiblings,
       files: skill.files,
       scriptCount: skill.scriptCount,
+      hasCommandInjection: skill.hasCommandInjection,
       estTokens: skill.estTokens,
       status: toSkillView(skill, skillRegistry).status,
       provenance: rec?.provenance ?? null,
@@ -6143,6 +6144,7 @@ export function registerIpc(
         if (path.resolve(dest) !== destParent && !path.resolve(dest).startsWith(path.resolve(destParent) + path.sep)) continue; // confinement
         fs.rmSync(dest, { recursive: true, force: true });
         fs.cpSync(srcDir, dest, { recursive: true });
+        rewriteSkillRoots(dest); // Claude Code path variables Pi never sets — before the hash, so approval covers it
         const skill = readSkillDir(dest, scope === "workspace" ? "workspace" : "managed");
         skillRegistry.approve(skill, now, { enabled: true, provenance: session.provenance });
         importedNames.push(skill.name);

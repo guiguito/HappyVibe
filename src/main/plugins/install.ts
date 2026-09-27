@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readSkillDir, type DiscoveredSkill } from "../skills/discovery";
-import { substitutePluginRoot } from "./screen";
+import { countPluginRootRefs, substitutePluginRoot } from "./screen";
 import { readMcpFile } from "../mcp";
 import type { PluginScan } from "./scan";
 
@@ -41,10 +41,13 @@ function confine(parent: string, child: string): string {
 }
 
 /**
- * Rewrite ${CLAUDE_PLUGIN_ROOT} throughout an installed skill dir, in place.
+ * Rewrite ${CLAUDE_PLUGIN_ROOT} and ${CLAUDE_SKILL_DIR} throughout an installed
+ * skill dir, in place. Every route that COPIES a skill calls this before it
+ * hashes (plugin install here, folder/Git import in ipc.ts); a linked dir is read
+ * in place and cannot be rewritten.
  * @returns how many refs were replaced, for the disclosure.
  */
-function rewritePluginRoot(dir: string): number {
+export function rewriteSkillRoots(dir: string): number {
   let count = 0;
   const walk = (abs: string): void => {
     let entries: fs.Dirent[];
@@ -69,7 +72,7 @@ function rewritePluginRoot(dir: string): number {
       const next = substitutePluginRoot(text, dir);
       if (next !== text) {
         // Count refs by the delta in occurrences, not by re-scanning `next`.
-        count += (text.match(/\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT\b/g) ?? []).length;
+        count += countPluginRootRefs(text);
         fs.writeFileSync(child, next);
       }
     }
@@ -112,7 +115,7 @@ export function installPluginSkills(scan: PluginScan, opts: InstallSkillsOpts): 
     const dest = confine(opts.destParent, path.basename(wanted));
     fs.rmSync(dest, { recursive: true, force: true });
     fs.cpSync(wanted, dest, { recursive: true });
-    const substituted = rewritePluginRoot(dest);
+    const substituted = rewriteSkillRoots(dest);
     out.push({ dir: dest, skill: readSkillDir(dest, opts.source ?? "managed"), substituted });
   }
   return out;

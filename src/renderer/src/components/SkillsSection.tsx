@@ -32,6 +32,10 @@ export const SOURCE_TONE: Record<HvSkillView["source"], string> = {
 };
 
 /** Curated shortlist — one-click prefill of the git importer (not a marketplace). */
+/** Same honey notice as the Prompts page's !`bash` pill: nothing runs, it is text. */
+export const COMMAND_INJECTION =
+  "This skill uses an inline !`command` pre-run, which Pi does not support: the model sees the literal command text instead of its output.";
+
 const CURATED = [
   { label: "anthropics/skills", url: "https://github.com/anthropics/skills" },
   { label: "badlogic/pi-skills", url: "https://github.com/badlogic/pi-skills" },
@@ -318,6 +322,11 @@ export function SkillsSection({
                     includes {s.scriptCount} script{s.scriptCount > 1 ? "s" : ""}
                   </span>
                 )}
+                {s.hasCommandInjection && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-honey/60 bg-honey-soft text-tangerine-deep px-2 py-0.5" title={COMMAND_INJECTION}>
+                    !`cmd` not run
+                  </span>
+                )}
                 <span className="ml-auto shrink-0 text-ink-soft">›</span>
               </div>
               <p className="text-sm text-ink-soft mt-1 line-clamp-2">{s.description || "(no description)"}</p>
@@ -419,6 +428,12 @@ export function SkillInspector({
               <div className="mb-3 rounded-xl border-2 border-berry/40 bg-berry-soft/50 px-3 py-2 text-sm text-berry font-semibold">
                 This skill bundles {detail.scriptCount} executable script{detail.scriptCount > 1 ? "s" : ""}. The model may
                 run {detail.scriptCount > 1 ? "them" : "it"} — review before approving.
+              </div>
+            )}
+
+            {detail.hasCommandInjection && (
+              <div className="mb-3 rounded-xl border-2 border-honey/60 bg-honey-soft px-3 py-2 text-sm text-tangerine-deep font-semibold">
+                {COMMAND_INJECTION}
               </div>
             )}
 

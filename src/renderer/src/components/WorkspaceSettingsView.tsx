@@ -4,7 +4,7 @@ import { THIS_COMPUTER } from "../platformCopy";
 import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
-import { ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
+import { COMMAND_INJECTION, ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
 import { PromptTemplateImportControls, PromptTemplateInspector, PromptTemplateRowPills, PromptTemplateStatusPill } from "./PromptTemplatesSection";
 import { McpServersSection } from "./McpServersSection";
 import { McpCatalogSection } from "./McpCatalogSection";
@@ -391,6 +391,7 @@ function WorkspaceSkillsBlock({
                 </span>
                 <span className="font-bold text-sm">{s.name}</span>
                 {s.scriptCount > 0 && <span className="text-[10px] text-berry font-bold">· {s.scriptCount} script{s.scriptCount > 1 ? "s" : ""}</span>}
+                {s.hasCommandInjection && <span className="text-[10px] text-tangerine-deep font-bold" title={COMMAND_INJECTION}>· !`cmd` not run</span>}
                 <span className="ml-auto text-ink-soft">›</span>
               </button>
             ))}

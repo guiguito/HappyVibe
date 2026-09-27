@@ -92,3 +92,22 @@ describe("canStartSkillCreator", () => {
     expect(canStartSkillCreator(null, undefined)).toBe(false);
   });
 });
+
+test("the view carries hasCommandInjection, and the Skills page shows it on the row AND in the inspector", () => {
+  const abs = path.join(root, "inj");
+  fs.mkdirSync(abs, { recursive: true });
+  fs.writeFileSync(path.join(abs, "SKILL.md"), "---\nname: inj\ndescription: d\n---\nNow: !`date`\n");
+  const reg = new SkillRegistry(path.join(root, "r.jsonl"));
+  expect(toSkillView(readSkillDir(abs, "managed"), reg).hasCommandInjection).toBe(true);
+  // No DOM in this suite (CLAUDE.md): pin the render sites by source. The rule is
+  // DERIVED, not listed — every component that shows a skill's scripts badge must
+  // also show this notice, because the GUI pass found a second skill row (workspace
+  // settings) that a hand-listed file would have missed.
+  const dir = path.join(__dirname, "..", "src", "renderer", "src", "components");
+  const sites = fs.readdirSync(dir).filter((f) => f.endsWith(".tsx") && f !== "PluginsSection.tsx")
+    .map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")] as const)
+    .filter(([, src]) => /\bs\.scriptCount > 0 &&/.test(src));
+  expect(sites.map(([f]) => f).sort()).toEqual(["SkillsSection.tsx", "WorkspaceSettingsView.tsx"]); // guard: not vacuous
+  for (const [f, src] of sites) expect(src, f).toMatch(/\bs\.hasCommandInjection &&/);
+  expect(fs.readFileSync(path.join(dir, "SkillsSection.tsx"), "utf8")).toMatch(/detail\.hasCommandInjection &&/); // inspector
+});
