@@ -71,3 +71,19 @@ describe("countPluginRootRefs", () => {
     expect(countPluginRootRefs("none here")).toBe(0);
   });
 });
+
+describe("${CLAUDE_SKILL_DIR} (Claude Code's skill-path variable, which Pi never sets)", () => {
+  it("is substituted like the plugin root — both mean 'this skill's installed dir' here", () => {
+    expect(substitutePluginRoot("cat ${CLAUDE_SKILL_DIR}/refs.md && sh $CLAUDE_SKILL_DIR/x.sh", "/tmp/s")).toBe(
+      "cat /tmp/s/refs.md && sh /tmp/s/x.sh",
+    );
+  });
+
+  it("is counted for the disclosure", () => {
+    expect(countPluginRootRefs("${CLAUDE_SKILL_DIR}/a ${CLAUDE_PLUGIN_ROOT}/b")).toBe(2);
+  });
+
+  it("does not trip the bare-$SKILL_DIR warning, since it is repaired rather than degraded", () => {
+    expect(screenSkillText("cat ${CLAUDE_SKILL_DIR}/refs.md").verdict).toBe("ok");
+  });
+});

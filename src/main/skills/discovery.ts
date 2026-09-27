@@ -37,6 +37,8 @@ export interface DiscoveredSkill {
   hash: string;
   /** Executable/script files in the skill dir — the "includes N scripts" risk flag. */
   scriptCount: number;
+  /** Claude Code's `` !`cmd` `` / ```` ```! ```` pre-run: Pi never executes it, so it shows up as raw text. */
+  hasCommandInjection: boolean;
   /** Workspace-relative-to-skill-dir file list (SKILL.md first), for the inspector. */
   files: string[];
   /** hidden from the system prompt (frontmatter disable-model-invocation) — /skill: only. */
@@ -167,6 +169,7 @@ export function readSkillDir(dir: string, source: SkillSource): DiscoveredSkill 
     skillMdPath,
     hash: hashSkillDir(dir, files),
     scriptCount,
+    hasCommandInjection: /!`|^```!/m.test(raw),
     files,
     disableModelInvocation: fm.disableModelInvocation,
     estTokens: { card: Math.ceil(cardChars / 4), body: Math.ceil(raw.length / 4) },

@@ -28,8 +28,12 @@ const CLAUDE_SKILLS = /\.claude\/skills\//;
  */
 const SKILL_DIR = /\$\{SKILL_DIR\}|\$SKILL_DIR\b/;
 
-/** Both spellings of the plugin-root variable Claude Code sets and Pi does not. */
-const PLUGIN_ROOT = /\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT\b/g;
+/**
+ * Both spellings of the two path variables Claude Code sets and Pi does not:
+ * the plugin root and the skill's own dir. HappyVibe copies a skill dir on its own,
+ * so both mean "this installed skill dir" here (PRD §14, 2026-09-27).
+ */
+const PLUGIN_ROOT = /\$\{CLAUDE_(?:PLUGIN_ROOT|SKILL_DIR)\}|\$CLAUDE_(?:PLUGIN_ROOT|SKILL_DIR)\b/g;
 
 /** Screen one skill file's text. Hard reject wins over warn. */
 export function screenSkillText(text: string): ScreenResult {

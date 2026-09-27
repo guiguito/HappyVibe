@@ -16,7 +16,7 @@ import { CostPanel } from "./CostPanel";
 import { emptyQueue, type QueueState } from "../queue";
 import { computeGauge, type ContextSnapshot, type GaugeZone, type SessionStats } from "../context";
 import { childGauge } from "../subagentGauge";
-import { agentBlurb, delegationHint, formatElapsed, isStoppableChild, sortAgents, traceFor, type AgentInfo, type DelegationRun, type SubagentTrace } from "../agents";
+import { agentBlurb, delegatableAgents, delegationHint, formatElapsed, isStoppableChild, sortAgents, traceFor, type AgentInfo, type DelegationRun, type SubagentTrace } from "../agents";
 import { promotedKeys, toRunAvatars, RUN_STATE_RING, type RunAvatar } from "../runRail";
 import { costEstimateLabel, fmtNum } from "../analytics-format";
 import { SubagentTraceView, ToolIcon } from "./ToolCard";
@@ -428,7 +428,8 @@ export function ChatView({
   };
 
   // §12 (2026-08-29): the agent rows shown above the file rows in the `@` menu.
-  const mentionAgents = mention ? agentMentionItems(agents ?? [], mention.query) : [];
+  const delegatable = delegatableAgents(agents ?? []);
+  const mentionAgents = mention ? agentMentionItems(delegatable, mention.query) : [];
 
   // The run the user PICKED from the `@` menu. A prompt reaches it only while it still
   // starts with that run's `@agent ` token (steerTarget) — typed text is never an address.
@@ -979,7 +980,7 @@ export function ChatView({
             />
           )}
         {sessionSkills && sessionSkills.length > 0 && <SkillsChip skills={sessionSkills} />}
-        {agents && agents.length > 0 && <AgentsChip agents={agents} onPick={(name) => insertText(`Ask ${name} to `)} />}
+        {delegatable.length > 0 && <AgentsChip agents={delegatable} onPick={(name) => insertText(`Ask ${name} to `)} />}
         {mcpRows && mcpRows.length > 0 && <McpChip rows={mcpRows} onManage={onOpenMcp} />}
         {/* §23 round 9: the active-plan pill. A plan card lives at its
             plan_complete position in history, so a compaction that ate that

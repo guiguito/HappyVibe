@@ -4,7 +4,7 @@ import { THIS_COMPUTER } from "../platformCopy";
 import { PermissionRulesSection } from "./PermissionRulesSection";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
-import { ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
+import { COMMAND_INJECTION, ImportControls, SkillInspector, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
 import { PromptTemplateImportControls, PromptTemplateInspector, PromptTemplateRowPills, PromptTemplateStatusPill } from "./PromptTemplatesSection";
 import { McpServersSection } from "./McpServersSection";
 import { McpCatalogSection } from "./McpCatalogSection";
@@ -298,7 +298,7 @@ function RemoveWorkspaceBlock({ workspace, onRemoved }: { workspace: string; onR
  * §14: the ONLY surface for workspace-scoped skills — review of project
  * `.agents/skills`, plus the per-workspace activation checklist over EVERY
  * approved skill (global + workspace). A session in this workspace spawns with
- * the skills toggled on here (bundled off by default, others on).
+ * the skills toggled on here (every approved+enabled skill is on unless unticked).
  */
 /**
  * Workspace-tier MCP. Writes .mcp.json at the repo root — the standard format
@@ -391,6 +391,7 @@ function WorkspaceSkillsBlock({
                 </span>
                 <span className="font-bold text-sm">{s.name}</span>
                 {s.scriptCount > 0 && <span className="text-[10px] text-berry font-bold">· {s.scriptCount} script{s.scriptCount > 1 ? "s" : ""}</span>}
+                {s.hasCommandInjection && <span className="text-[10px] text-tangerine-deep font-bold" title={COMMAND_INJECTION}>· !`cmd` not run</span>}
                 <span className="ml-auto text-ink-soft">›</span>
               </button>
             ))}

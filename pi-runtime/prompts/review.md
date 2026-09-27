@@ -4,7 +4,9 @@ argument-hint: "[base-ref or path]"
 ---
 Review the changes in this repository. Scope: `${ARGUMENTS:-everything uncommitted}`.
 
-**1. See exactly what changed.** Run `git status --short`, then `git diff` (and `git diff --staged`). If the scope above names a ref, use `git diff <ref>...HEAD` instead; if it names a path, limit the diff to it. Never review from memory of what you were asked to write — review what is on disk.
+**1. See exactly what changed.** Run `git status --short`, then `git diff` (and `git diff --staged`). If the scope above names a ref, use `git diff <ref>...HEAD` instead; if it names a path, limit the diff to it. `git diff` never shows untracked files, so read every `??` file from the status in full — a new file is where a whole feature hides. Never review from memory of what you were asked to write — review what is on disk.
+
+**Read the project's rules.** If there is an `AGENTS.md` (or a nested one on the changed paths), read it: a change that breaks a stated project rule is a finding.
 
 **2. Read around each hunk.** A diff hides the bug that matters. For anything whose signature, return shape, error behaviour or invariant moved, find its callers and check they still hold. For a new branch, ask what happens on the other side of it.
 
@@ -15,6 +17,8 @@ Review the changes in this repository. Scope: `${ARGUMENTS:-everything uncommitt
 - **Nits** — naming, dead code, stale comments. Keep this section to a few lines.
 
 For each finding propose the smallest fix that addresses the *cause*. If the same fix belongs in a shared function rather than at three call sites, say so.
+
+**Only report what you would bet on.** Leave out: problems that were already there before this change, anything a linter, formatter or typechecker would catch, lines the change did not touch, and changes that are clearly deliberate. A short list of real findings beats a long list of maybes.
 
 **4. Verdict.** One line: ship / ship with fixes / needs rework, and the single most important reason.
 

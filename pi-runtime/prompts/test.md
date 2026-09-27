@@ -16,6 +16,6 @@ Write tests for `${ARGUMENTS:-the file I am currently working in}`.
 
 Prefer real inputs to mocks. Mock only what is genuinely out of process — network, clock, filesystem when the project already does so. A test that only proves a mock was called proves nothing.
 
-**4. Prove they work.** Run the suite. Then break the implementation on purpose (invert a condition, drop a guard), confirm the relevant test fails, and restore it. Report the command you ran and its real output — a test you have not seen fail is not yet a test.
+**4. Prove they work.** Run the test file you wrote, on its own, with the project's single-file command — not the whole suite. Then break the implementation on purpose (invert a condition, drop a guard), confirm the relevant test fails, and restore it. Report the command you ran and its real output — a test you have not seen fail is not yet a test.
 
 Keep it proportional: a handful of tests that fail for the right reasons beats exhaustive coverage of trivia. Do not change the implementation to make testing easier without telling me why.

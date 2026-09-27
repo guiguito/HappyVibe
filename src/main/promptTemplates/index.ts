@@ -70,30 +70,38 @@ export function discoverWorkspacePromptTemplates(workspacePath: string): Discove
 
 /**
  * Pre-approve the bundled starter commands at startup (PRD §24, port of
- * installBundledSkills): trusted (we vetted them) but enabled=false (OFF by
- * default — one "Enable" turns one on). Idempotent and non-clobbering:
- *  - first sight of a bundled command → approve enabled=false
+ * installBundledSkills): trusted (we vetted them) and enabled=true (ON by
+ * default since 2026-09-27 — one "Disable" turns one off). Idempotent and non-clobbering:
+ *  - first sight of a bundled command → approve enabled=true
  *  - a bundle bump changed its hash → re-approve (still vetted), KEEPING the
  *    user's current on/off so an upgrade never silently re-enables/-disables
+ *    (which is also why only items NEW to the bundle arrive ON: an old-default
+ *    OFF record cannot be told apart from a user's choice)
  *  - unchanged → skip
  * Provenance (source repo + pinned commit) comes from bundled.json alongside the
  * commands. Never touches user-imported/managed commands. Unlike skills there is
  * no `loadable` filter to apply: Pi loads every readable .md.
  */
 export function installBundledPromptTemplates(bundledDir: string, registry: PromptTemplateRegistry, now: string): void {
-  let meta: { source?: string; ref?: string; commit?: string } = {};
+  // Top-level fields are defaults; `items[]` overrides them per item, because the
+  // bundle spans several upstream repos (PRD §14, 2026-09-27).
+  type Origin = { source?: string; ref?: string; commit?: string };
+  let meta: Origin & { items?: Array<Origin & { name: string }> } = {};
   try {
     meta = JSON.parse(fs.readFileSync(path.join(bundledDir, "bundled.json"), "utf8"));
   } catch {
     /* no manifest — provenance stays minimal */
   }
-  const provenance: PromptTemplateProvenance = { source: "bundled", sourceUrl: meta.source, ref: meta.ref, commitSha: meta.commit };
+  const provenanceOf = (name: string): PromptTemplateProvenance => {
+    const item = meta.items?.find((i) => i.name === name);
+    return { source: "bundled", sourceUrl: item?.source ?? meta.source, ref: item?.ref ?? meta.ref, commitSha: item?.commit ?? meta.commit };
+  };
   for (const cmd of scanPromptTemplatesDir(bundledDir, "bundled")) {
     const rec = registry.record(cmd.id);
     if (!rec) {
-      registry.approve(cmd, now, { enabled: false, provenance }); // first install: off by default
+      registry.approve(cmd, now, { enabled: true, provenance: provenanceOf(cmd.name) }); // first install: ON (PRD §14, 2026-09-27)
     } else if (rec.hash !== cmd.hash) {
-      registry.approve(cmd, now, { enabled: rec.enabled, provenance }); // bundle bumped: keep on/off
+      registry.approve(cmd, now, { enabled: rec.enabled, provenance: provenanceOf(cmd.name) }); // bundle bumped: keep on/off
     }
   }
 }

@@ -138,3 +138,15 @@ test("hash is location-independent (promote copies content → same hash, trust 
   fs.cpSync(src, dst, { recursive: true });
   expect(readSkillDir(dst, "managed").hash).toBe(readSkillDir(src, "workspace").hash);
 });
+
+test("readSkillDir flags Claude Code's !`command` pre-run, which Pi never executes", () => {
+  const mk = (name: string, body: string): string => {
+    const abs = path.join(root, name);
+    fs.mkdirSync(abs, { recursive: true });
+    fs.writeFileSync(path.join(abs, "SKILL.md"), `---\nname: ${name}\ndescription: d\n---\n${body}\n`);
+    return abs;
+  };
+  expect(readSkillDir(mk("inline", "Status: !`git status --short`"), "managed").hasCommandInjection).toBe(true);
+  expect(readSkillDir(mk("fence", "```!\nnode --version\n```"), "managed").hasCommandInjection).toBe(true);
+  expect(readSkillDir(mk("plain", "Run `git status` yourself."), "managed").hasCommandInjection).toBe(false);
+});

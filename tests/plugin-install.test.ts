@@ -47,6 +47,29 @@ describe("installPluginSkills", () => {
     expect(out[0].substituted).toBe(2);
   });
 
+  it("rewrites ${CLAUDE_SKILL_DIR} too", () => {
+    w(src, "skills/two/SKILL.md", "---\nname: two\ndescription: uses its skill dir\n---\ncat ${CLAUDE_SKILL_DIR}/refs.md\n");
+    const scan = scanPluginDir(src);
+    const two = scan.skills.find((s) => s.name === "two")!;
+    const out = installPluginSkills(scan, { destParent: dest, skillDirs: [two.dir] });
+    expect(fs.readFileSync(path.join(out[0].dir, "SKILL.md"), "utf8")).toContain(`cat ${out[0].dir}/refs.md`);
+    expect(out[0].substituted).toBe(1);
+  });
+
+  it("the folder/Git import route rewrites through the same function, before it hashes", () => {
+    // ipc.ts `hv:skills-import-select` copies with cpSync; without the rewrite a
+    // ${CLAUDE_SKILL_DIR} skill imported that way pointed at nothing, silently.
+    const ipc = fs.readFileSync(path.join(__dirname, "..", "src", "main", "ipc.ts"), "utf8");
+    const i = ipc.indexOf('"hv:skills-import-select"');
+    const body = ipc.slice(i, ipc.indexOf("\n  );", i));
+    const copy = body.indexOf("fs.cpSync(srcDir, dest");
+    const rewrite = body.indexOf("rewriteSkillRoots(dest)");
+    const read = body.indexOf("readSkillDir(dest");
+    expect(copy).toBeGreaterThan(0);
+    expect(rewrite).toBeGreaterThan(copy);
+    expect(read).toBeGreaterThan(rewrite);
+  });
+
   it("hashes AFTER substitution, so approval covers what actually runs", () => {
     const scan = scanPluginDir(src);
     const one = scan.skills.find((s) => s.name === "one")!;

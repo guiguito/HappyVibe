@@ -17,7 +17,7 @@ import type { DiscoveredPromptTemplate } from "./discovery";
  *    means "the user reviewed THIS text". An edit breaks the match → the
  *    command stops loading until re-approved.
  *  - Enablement (`enabled`): the global on/off on the Commands screen. Bundled
- *    commands are approved at install but enabled=false (off by default).
+ *    commands are approved at install and enabled=true (ON since 2026-09-27).
  *  - Activation (WorkspaceRegistry.promptTemplatesActive): the per-workspace checklist.
  * A session spawns with commands that are trusted AND enabled AND active for
  * its workspace (resolveActivePromptTemplates, below).

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   bundledPromptTemplatesDir,
   PromptTemplateRegistry,
@@ -67,7 +68,7 @@ test("global scope is bundled + managed + linked, in that order", () => {
   ]);
 });
 
-test("installBundledPromptTemplates pre-approves bundled commands, off by default, with provenance", () => {
+test("installBundledPromptTemplates pre-approves bundled commands, ON by default (PRD §24, 2026-09-27), with provenance", () => {
   const bundledDir = bundledPromptTemplatesDir(path.join(tmp, "runtime"));
   write(bundledDir, "review.md", "---\ndescription: Review the diff\n---\nReview $1.\n");
   write(bundledDir, "explain.md", "Explain $1.\n");
@@ -84,10 +85,25 @@ test("installBundledPromptTemplates pre-approves bundled commands, off by defaul
   for (const c of found) {
     expect(reg.approvalStatus(c), c.name).toBe("approved"); // trusted (no needs-review)
     const rec = reg.record(c.id)!;
-    expect(rec.enabled, c.name).toBe(false); // OFF by default
+    expect(rec.enabled, c.name).toBe(true); // ON by default since 2026-09-27
     expect(rec.provenance?.source).toBe("bundled");
     expect(rec.provenance?.commitSha).toBe("deadbeef");
   }
+});
+
+test("prompt provenance: top-level defaults, per-item overrides", () => {
+  const bundledDir = bundledPromptTemplatesDir(path.join(tmp, "runtime"));
+  write(bundledDir, "review.md", "Review $1.\n");
+  write(bundledDir, "translate.md", "Translate $1.\n");
+  fs.writeFileSync(
+    path.join(bundledDir, "bundled.json"),
+    JSON.stringify({ source: "github.com/us/app", ref: "main", items: [{ name: "translate", source: "github.com/them/fabric", commit: "f00d", license: "MIT" }] }),
+  );
+  const reg = new PromptTemplateRegistry(store);
+  installBundledPromptTemplates(bundledDir, reg, NOW);
+  const byName = Object.fromEntries(scanPromptTemplatesDir(bundledDir, "bundled").map((c) => [c.name, reg.record(c.id)!]));
+  expect(byName.review.provenance).toMatchObject({ sourceUrl: "github.com/us/app", ref: "main" });
+  expect(byName.translate.provenance).toMatchObject({ sourceUrl: "github.com/them/fabric", ref: "main", commitSha: "f00d" });
 });
 
 test("idempotent: an unchanged bundle writes nothing on the second pass", () => {
@@ -104,16 +120,25 @@ test("idempotent: an unchanged bundle writes nothing on the second pass", () => 
 // installer: a missing `description`/`argument-hint`, an accidental !`bash`
 // (which Pi drops silently) or a name a /hv-* command already owns would all
 // reach users as a broken starter command.
-test("the shipped starter bundle installs approved and OFF, with hints and no risk pills", () => {
+test("the shipped starter bundle installs approved and ON, with hints, no risk pills, no name clash", async () => {
   const bundledDir = bundledPromptTemplatesDir(path.join(__dirname, "..", "pi-runtime"));
   const found = scanPromptTemplatesDir(bundledDir, "bundled");
-  expect(found.map((c) => c.name).sort()).toEqual(["explain", "review", "test"]);
+  expect(found.map((c) => c.name).sort()).toEqual(
+    ["explain", "meeting-notes", "proofread", "reply", "research", "review", "summarize", "test", "translate"],
+  );
+  // Pi matches its own built-in commands before any template, like the /hv-* ones —
+  // derived from Pi's dist, never hand-listed.
+  const piDist = path.join(__dirname, "..", "pi-runtime", "node_modules", "@earendil-works", "pi-coding-agent", "dist");
+  const { BUILTIN_SLASH_COMMANDS } = await import(pathToFileURL(path.join(piDist, "core", "slash-commands.js")).href);
+  const piBuiltins = new Set((BUILTIN_SLASH_COMMANDS as Array<{ name: string }>).map((c) => c.name));
+  expect(piBuiltins.size).toBeGreaterThan(10); // guard against a vacuous pass
 
   const reg = new PromptTemplateRegistry(store);
   installBundledPromptTemplates(bundledDir, reg, NOW);
   for (const c of found) {
     expect(reg.approvalStatus(c), c.name).toBe("approved");
-    expect(reg.record(c.id)?.enabled, c.name).toBe(false);
+    expect(reg.record(c.id)?.enabled, c.name).toBe(true);
+    expect(piBuiltins.has(c.name), c.name).toBe(false);
     expect(c.description.length, c.name).toBeGreaterThan(10);
     expect(c.argumentHint, c.name).toBeTruthy();
     expect(c.hasBashInjection, c.name).toBe(false);

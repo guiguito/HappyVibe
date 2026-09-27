@@ -353,7 +353,7 @@ export function PluginsSection(): React.JSX.Element {
             </p>
           )}
           {done.substituted > 0 && (
-            <p className="mt-1">{plural(done.substituted, "plugin-root path")} rewritten to the install location.</p>
+            <p className="mt-1">{plural(done.substituted, "skill path")} rewritten to the install location.</p>
           )}
         </div>
       )}
@@ -432,7 +432,7 @@ export function PluginsSection(): React.JSX.Element {
                   s.screen === "reject" || s.screen === "warn"
                     ? s.screenReason
                     : s.pluginRootRefs > 0
-                      ? `${plural(s.pluginRootRefs, "plugin-root path")} will be rewritten to the install location`
+                      ? `${plural(s.pluginRootRefs, "skill path")} will be rewritten to the install location`
                       : undefined,
                 badge: s.scriptCount > 0 ? `${s.scriptCount} scripts` : undefined,
               }))}
