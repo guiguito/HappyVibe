@@ -40,3 +40,25 @@ describe("§39 remote config", () => {
     expect(strip("src/main/config.ts")).toMatch(/webDefaultServiceAllowed\(\)/);
   });
 });
+
+describe("§39 the renderer half", () => {
+  const preload = strip("src/preload/index.ts");
+  it("the preload exposes inletConfig with literal channels only", () => {
+    expect(preload).toMatch(/exposeInMainWorld\("inletConfig"/);
+    expect(preload).toContain('ipcRenderer.send("inlet:config"');
+    expect(preload).toContain('"inlet:config:state"');
+  });
+  it("the renderer imports only the electron-renderer entry", () => {
+    const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]);
+    for (const f of walk("src/renderer/src").filter((x) => /\.tsx?$/.test(x))) {
+      expect(strip(f), f).not.toMatch(/inlet-sdk\/config\/(electron|node|browser)["']/);
+    }
+    expect(strip("src/renderer/src/remoteConfig.ts")).toContain('"inlet-sdk/config/electron-renderer"');
+  });
+  it("WebRow carries the approved copy", () => {
+    const row = fs.readFileSync("src/renderer/src/components/BuiltinToolsBlock.tsx", "utf8");
+    expect(row).toContain("HappyVibe&apos;s service (free for now)");
+    expect(row).toContain("HappyVibe&apos;s service — paused");
+    expect(row).toContain("The free service is paused. Choose Your own to keep using web tools.");
+  });
+});

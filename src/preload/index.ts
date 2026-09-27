@@ -764,3 +764,15 @@ contextBridge.exposeInMainWorld("hv", {
 contextBridge.exposeInMainWorld("inletCrash", {
   send: (_channel: string, envelope: unknown): void => ipcRenderer.send("inlet:crash", envelope),
 });
+
+/**
+ * §39 — what `inlet-sdk/config/electron-renderer` talks through
+ * (`window.inletConfig.send` / `.on`). Literal channels, as for `inletCrash`:
+ * a window reads config state and asks for a refresh, nothing else.
+ */
+contextBridge.exposeInMainWorld("inletConfig", {
+  send: (_channel: string, message: unknown): void => ipcRenderer.send("inlet:config", message),
+  on: (_channel: string, listener: (payload: unknown) => void): void => {
+    ipcRenderer.on("inlet:config:state", (_e, payload) => listener(payload));
+  },
+});

@@ -193,3 +193,9 @@ describe("HOWTO_COPY.webTools (§32)", () => {
     expect(b.toLowerCase()).not.toContain("crawl");
   });
 });
+
+it("§39 web tools say the default service is free for now", () => {
+  expect(HOWTO_COPY.webTools.body).toContain(
+    "HappyVibe's service is free for now. If that changes, this page will say so, and a service of your own keeps working either way.",
+  );
+});
