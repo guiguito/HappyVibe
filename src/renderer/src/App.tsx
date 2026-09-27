@@ -88,6 +88,7 @@ import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
 import { ipcMessage } from "./ipcError";
+import { screenView } from "./usage";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -3068,6 +3069,9 @@ export default function App(): React.JSX.Element {
   // already there. Dismissing re-arms it, which is what keeps `I'll set up
   // myself` with no model landing on Models.
   const activeView: View = needsSetup && !onboarding ? "models" : view;
+  // §39: every visit, whatever path set the view — the sidebar, ⌘, / ⌘/, a
+  // GoTo link or navigate(). navigate() alone misses most of them.
+  useEffect(() => { screenView(activeView); }, [activeView]);
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──

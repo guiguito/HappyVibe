@@ -83,3 +83,12 @@ describe("§39 renderer half", () => {
     expect(strip("src/main/ipc.ts")).toMatch(/"hv:usage-feature"[\s\S]{0,200}trackFeature\(/);
   });
 });
+
+it("§39 screens: one effect on activeView, never inside navigate()", () => {
+  const app = strip("src/renderer/src/App.tsx");
+  expect(app.match(/screenView\(/g)?.length).toBe(1);
+  expect(app).toMatch(/useEffect\(\(\) => \{\s*screenView\(activeView\);?\s*\}, \[activeView\]\)/);
+  const at = app.indexOf("const navigate = useCallback");
+  expect(at).toBeGreaterThan(-1);
+  expect(app.slice(at, at + 1500)).not.toContain("screenView");
+});
