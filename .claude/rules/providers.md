@@ -1,0 +1,37 @@
+---
+paths:
+  - "src/main/{providers,providerCatalog.generated,calls,modelsJson,thinking}.ts"
+  - "tools/provider-catalog/**"
+  - "src/renderer/src/{modelPrice,providerError}.ts"
+  - "src/renderer/src/components/{ModelsView,ModelSelect,AuthFlowModal}.tsx"
+  - "tests/{provider,providers,live-model}*.test.ts"
+  - "tests/liveModel.ts"
+---
+# Providers and the BYOK catalog
+
+- The provider list is GENERATED from Pi's registry (`builtinProviders()`) by
+  `npm run catalog:providers`; `BYOK_PROVIDERS`/`BYOK_PROVIDER_IDS`/`OAUTH_PROVIDERS` are views over
+  it. `tests/provider-catalog.test.ts` RE-DERIVES it from the vendored tree, so a bump that adds a
+  provider fails there instead of drifting.
+- pi-ai is a NESTED scoped dep:
+  `pi-runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/`.
+- The env-var map is a local const in a non-exported function — never re-parse it. A RECORDING ctx
+  passed to `auth.apiKey.resolve()` reads the candidate list off the real implementation.
+- Providers sharing an env var (`moonshotai`/`moonshotai-cn`, `opencode`/`opencode-go`,
+  `qwen-token-plan`/`-individual`) collapse to ONE row — the row is what `buildProviderEnv` writes and
+  `keySource` reads.
+- Every exclusion is DERIVED (no `auth.apiKey`, zero models, >1 env var, no usable base URL). The only
+  hand-listed id is `github-copilot` (OAuth-only here); the only pinned env var is `anthropic`'s. A
+  derived exclusion can expire on a bump — offering the newly eligible provider is then a product
+  decision, not a pin side effect.
+- `OAUTH_NOT_ENABLED` is empty by design: adding an id withholds a flow WITH its reason; the test fails
+  on any flow neither offered nor listed.
+- A provider that is BOTH `isSubscription` and `auth.apiKey` must be in `KEY_RESOLVED_PLAN_PROVIDERS`
+  (calls.ts), or §19 reports a covered subscription's tokens as dollars owed. The test derives that
+  set from upstream's flags.
+- `buildProviderEnv` and `keySource` treat any `sk-REPLACE*` env value as absent, for EVERY catalog
+  row — `tests/providers.test.ts` asserts it per row, so the non-live suite's placeholder can never
+  reach a spawned Pi as a real key.
+- Live-test model resolution lives only in `tests/liveModel.ts` (resolver pinned by
+  `tests/live-model.test.ts`). A bogus OpenRouter key returns `401 User not found`, which proves the
+  route independently of any balance.
