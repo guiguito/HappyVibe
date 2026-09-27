@@ -86,7 +86,7 @@ Expected: `.gitignore:… .env`. Then `curl -s -o /dev/null -w '%{http_code}' ht
 - [ ] **Step 2: Scratch copy of the runtime with tintinweb installed**
 
 ```bash
-S=/private/tmp/claude-501/<session-scratchpad>
+S=<session-scratchpad>
 rsync -a --exclude node_modules pi-runtime/ $S/tw-runtime/
 (cd $S/tw-runtime && npm ci && npm i --no-save @tintinweb/pi-subagents@0.19.0)
 ls $S/tw-runtime/node_modules/@tintinweb/pi-subagents/src/index.ts
