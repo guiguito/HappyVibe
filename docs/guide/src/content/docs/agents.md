@@ -15,7 +15,7 @@ Your agent doesn't have to do everything itself. It can hand part of a job to a 
 
 Under the **Agents** heading, one line tells you what your roster costs, for example "4 on · about 180 tokens of context every turn. Switch off the ones you do not use."
 
-Here's why. So the agent knows who it can delegate to, a short line about each subagent that's on goes into its instructions on every turn. That takes up a few tokens of its [context](/docs/first-session/#context-what-the-agent-can-see), the text the model can see. A subagent you turn off costs nothing.
+Here's why. So the agent knows who it can delegate to, a short line about each subagent that's on goes into its instructions on every turn. That takes up a few tokens (the unit models read and bill text in, roughly four characters) of its [context](/docs/first-session/#context-what-the-agent-can-see), the text the model can see. A subagent you turn off costs nothing.
 
 ### The list
 

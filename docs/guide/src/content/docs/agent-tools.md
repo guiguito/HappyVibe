@@ -25,7 +25,9 @@ The pill says what happens when the agent calls that tool:
 
 The pills come from your [permission rules](/docs/permissions/), the same ones that decide real calls, for the workspace of the session you have selected. A pill answers for the tool as a whole, so it reflects **tool** rules and the defaults. A **path** or **command** rule only kicks in on a real call. So a tool marked **allow** here can still ask, or be blocked, for one particular file or command.
 
-The pill also doesn't know about the session's state. With **Bypass ALL permissions** on, everything runs. In plan mode, anything that changes things is blocked, whatever the pill says. And a file tool reaching outside your workspace asks, even when its pill says **allow**.
+The pill doesn't know about the session's state either. With **Bypass ALL permissions** on, calls run without asking, whatever the pill says. In plan mode, editing files and shell commands that change things are blocked, and anything else that isn't read-only asks first.
+
+A few tools are checked under another name on a real call: `mcp` per MCP tool, `Agent` per subagent, `SubagentWorkflow` as `workflow`, and the browser and web tools that open an address per site. Their pills here don't show those rules. [Permissions](/docs/permissions/) lists the names to use.
 
 ### Where the list comes from
 
@@ -44,6 +46,8 @@ The list is read from the agent itself, so it shows what the agent really has. W
 2. Open [Permissions](/docs/permissions/) and click **+ Add rule**.
 3. Leave the type on **tool**, type the tool's name as the pattern, and set the action to **deny**.
 4. Click **Save rules**. Back here, the tool's pill reads **deny**.
+
+For MCP tools, subagents, workflows and sites, use the names listed on [Permissions](/docs/permissions/) instead, such as `mcp:*` or `browser:*`.
 
 ## During a session
 

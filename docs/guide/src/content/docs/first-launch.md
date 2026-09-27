@@ -3,7 +3,7 @@ title: First launch
 description: What HappyVibe shows the first time you open it, and the two setup steps that get you to your first session.
 ---
 
-Step 2 of 5. The first time you open HappyVibe, it greets you with one small window in three beats: a hello, two setup steps, and a handover to your first session. You can leave it whenever you like.
+The first time you open HappyVibe, it greets you with one small window in three beats: a hello, two setup steps, and a handover to your first session. This is step 2 of 5, and you can leave it whenever you like.
 
 ## When you see it
 

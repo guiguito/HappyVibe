@@ -3,7 +3,7 @@ title: Terminal
 description: Open a real shell in a tab, make it look and behave the way you like, and follow the terminals the agent starts.
 ---
 
-Want to type a command yourself? You get a real shell, in a tab, already in your project folder. This screen decides how it looks and behaves: "A real shell, in a tab, at your project folder. These settings are global." Global means they apply in every workspace.
+Want to type a command yourself? You get a real shell, in a tab, already in your project folder. This screen decides how it looks and behaves. "These settings are global": they apply in every workspace.
 
 ## Where to find it
 
@@ -53,7 +53,7 @@ Every row has its own **Reset** button, which appears once you've changed that r
 
 The terminal opens in a tab, at your project folder. To search its output, press ⌘F on macOS or Ctrl+F on Windows and Linux while it has focus.
 
-When the shell in a terminal exits (after you type `exit`, for example), the tab stays open so you can still read the output. A bar along the bottom says so, for example "process exited (code 0)", and names the shortcut that closes the tab.
+When the shell in a terminal exits (after you type `exit`, for example), the tab stays open so you can still read the output. A bar along the bottom says so, for example "process exited (code 0)", and names the default shortcut that closes the tab.
 
 ## Close a terminal
 

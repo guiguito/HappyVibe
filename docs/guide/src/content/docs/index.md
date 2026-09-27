@@ -9,7 +9,7 @@ New here? Start at the top. The first few pages take you from download to the mo
 
 ## Find your way
 
-After **Get started**, the pages follow the app's sidebar, group by group, so the guide and the app always match.
+After **Get started**, the reference pages follow the screens in the sidebar's groups, in the order the app shows them.
 
 - [Get started](/docs/install/): install the app, connect a model, run your first session and answer your first approval.
 - [Models](/docs/models/): pick who the agent talks to, and which model it uses by default.

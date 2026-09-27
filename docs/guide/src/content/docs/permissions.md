@@ -3,7 +3,9 @@ title: Permissions
 description: Decide what the agent may do on its own, what it must ask about, and what it may never do.
 ---
 
-You decide what the agent may do on its own. Everything else waits for your click. When a call needs your answer, the app writes the approval dialog, never the model. For a shell command, what you read there is exactly what will run. This screen holds the rules behind those decisions: "Global rules for every workspace. Per-workspace overrides live in each workspace's own settings." Those are the [workspace settings](/docs/first-session/#workspace-settings).
+This is where your yeses and nos become rules. Anything you haven't decided waits for you, in an approval dialog the app writes itself, never the model. For a shell command, the dialog shows the command itself, never the model's description of it.
+
+The screen says what it holds: "Global rules for every workspace. Per-workspace overrides live in each workspace's own settings." Those are the [workspace settings](/docs/first-session/#workspace-settings).
 
 ## Where to find it
 
@@ -24,8 +26,10 @@ Each rule is one row with three parts: its type, a pattern, and an action. The *
 The type says what the pattern is matched against:
 
 - **tool**: the name of the tool the agent wants to call, such as `bash`.
-- **path**: the file or folder a file tool is given, such as `src/**`. Inside your workspace, the path is read from the workspace folder, so `src/**` means the `src` folder of your project. A path rule doesn't look inside shell commands: a **deny** on `secrets/**` doesn't stop `cat secrets/key`. Use a **command** rule for those.
+- **path**: the file or folder a file tool is given, such as `src/**`. Inside your workspace, the path is read from the workspace folder, so `src/**` means the `src` folder of your project.
 - **command**: the shell command the agent wants to run, such as `git push*`.
+
+A path rule doesn't look inside shell commands: a **deny** on `secrets/**` doesn't stop `cat secrets/key`. Use a **command** rule for those.
 
 The action says what happens when the rule matches:
 
@@ -39,7 +43,12 @@ In a pattern, `*` stands for any run of characters. In a path, `*` stays within 
 - `*.env` matches files ending in `.env` at the top of your project folder, but not in its subfolders.
 - `git push*` matches `git push origin main`.
 
-One exception to "No match falls back to asking you": with no rule matching, tools that only read or look things up, like reading and searching files or searching the web, run without asking. A file tool that reaches outside your workspace always asks, unless a rule says otherwise.
+A few tools are checked under their own names, so a **tool** rule for them uses that name:
+
+- MCP tools: `mcp:` and the tool's name, or `mcp:*` for all of them.
+- The browser and the web tools that open an address: `browser:` and the site, such as `browser:docs.example.com`, or `browser:*`.
+- Subagents: `subagent:` and the agent's name, or `subagent:*`.
+- Workflows: `workflow`.
 
 ### Test a call
 
@@ -53,15 +62,15 @@ The answer is **allow**, **ask** or **deny**, followed by why: the rule that dec
 
 ### Bypass ALL permissions
 
-Even with bypass on, you can still see everything: every call lands in the [Audit log](/docs/audit-log/), and a session in plan mode stays read-only.
+"Auto-approve every action — file writes, shell commands, MCP calls — in every workspace, with no prompts."
 
-"Auto-approve every action — file writes, shell commands, MCP calls — in every workspace, with no prompts." It's off unless you turn it on, and "Individual workspaces can override this" in their [workspace settings](/docs/first-session/#workspace-settings).
+It's off, and most people never need it. "Individual workspaces can override this" in their [workspace settings](/docs/first-session/#workspace-settings).
 
-While it's on, even your **deny** rules don't stop a call. The audit log records what they would have decided.
+Before you turn it on, know two things. Your **deny** rules no longer stop a call, with one exception: a **deny** rule on `workflow` still blocks workflows. And every call still lands in the [Audit log](/docs/audit-log/), with what your rules would have decided. A session in plan mode stays read-only either way.
 
 The switch reads **Off** while it's off. Clicking it asks you first: "⚠ Auto-approve every action?" with "This turns off ALL permission prompts globally — the agent may write files and run shell commands without asking. Only enable this if you fully trust what you're running." Click **Enable bypass** to turn it on, or **Cancel** to leave everything as it was. To turn it off again, click the switch. It reads **On**.
 
-Sessions that are already open when you switch bypass on show a red banner: "Dangerous mode is ON for this session — every tool call runs without asking." Its **Turn off** button makes that one session ask again. Sessions started or restarted while bypass is on don't show the banner, but bypass still applies to them. The switch on this screen is the place to check.
+Sessions already open when you switch it on show a red banner, "Dangerous mode is ON for this session — every tool call runs without asking.", whose **Turn off** button makes that session ask again until it restarts. Sessions started or restarted while bypass is on don't show the banner, but bypass applies to them too. To stop bypass for good, turn this switch off.
 
 ## Add a rule
 
@@ -77,22 +86,50 @@ Sessions that are already open when you switch bypass on show a red banner: "Dan
 
 <!-- TODO(media): approve-a-tool-call/permission-modal.png — "The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny -->
 
-Two buttons in the [approval dialog](/docs/approve-a-tool-call/) write a rule for you:
+Two buttons in the [approval dialog](/docs/approve-a-tool-call/#the-five-buttons) write a rule for you:
 
 - **Always allow** adds an allow rule for that tool to the list on this screen, for every workspace.
 - **Allow for workspace** adds the same rule to that workspace's [workspace settings](/docs/first-session/#workspace-settings), so it applies to that workspace only.
 
-Either way, the call you were asked about runs, and from then on that tool runs without asking, unless a stricter rule also matches it. For `bash`, that means every shell command from now on, not just this one. For a narrower grant, add a **command** rule here instead.
+Either way, the call you were asked about runs, and from then on that tool runs without asking, unless a stricter rule also matches it. For `bash`, that means every shell command, not just this one. For a narrower grant, add a **command** rule here instead.
 
 To take the permission back, delete the rule's row here and click **Save rules**.
-
-**Allow for session** writes no rule. It covers calls that would have asked by default, not calls an **ask** rule sends to you, and it ends when the session restarts, which a change to MCP settings also does.
 
 ## During a session
 
 When a call needs your answer, the approval dialog opens over the session. It never times out and never allows anything by itself: the call waits until you click. [Approve a tool call](/docs/approve-a-tool-call/) walks through it.
 
-Subagents and workflows get a narrower dialog: it offers only the choices that cover that one run, never a rule.
+### Calls that don't ask
+
+With no rule matching, these run without the approval dialog:
+
+- Tools that only read or look things up: reading, searching and listing files inside your workspace, reading the page open in the app's browser, searching the web, and recalling a memory.
+- Opening a page on your own computer (localhost) in the app's browser, the usual way to preview what you're building.
+- Creating or changing a schedule. That opens the schedule form for you to fill in and confirm instead, so you're never asked the same thing twice. Deleting a schedule asks.
+
+A rule of yours still wins over all of these: an **ask** or **deny** rule on `browser:localhost` applies, for example.
+
+### Calls that ask even when they'd usually run
+
+A file tool that reaches outside your workspace asks, even to read. The dialog says so: "This is outside your workspace:" and the path. A rule that matches the call decides instead.
+
+Opening a site other than localhost in the app's browser, or fetching a page from the web, asks too, one site at a time.
+
+### What a remembering button covers
+
+**Allow for session**, **Allow for workspace** and **Always allow** remember the tool, under the name it's checked by. For web and browser calls that's one site. For an MCP tool, that one tool. For a subagent, that one agent.
+
+- **Allow for session** writes no rule. It covers calls that would have asked by default, including the outside-your-workspace question, but not calls an **ask** rule sends to you. Subagents the session starts get the same yes.
+- **Allow for workspace** and **Always allow** write an allow rule, and a rule decides before the outside-your-workspace question. For `bash` that means every command, and for file edits it means edits anywhere on your computer, without asking again.
+
+### Subagents and workflows
+
+A subagent is a helper agent the main agent hands a task to, and a workflow is a small script that runs several subagents. When one of them asks, the dialog offers fewer buttons:
+
+- A subagent: **Allow**, **Allow for this run** and **Deny**. **Allow for this run** covers that tool until the subagent's run ends.
+- A workflow: **Allow** and **Deny**.
+
+None of their answers ever becomes a rule.
 
 ## Related
 

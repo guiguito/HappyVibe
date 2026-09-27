@@ -26,9 +26,9 @@ Talk instead of type. Hold a key, say what you want, and the words land in the m
 
 ### Speech model
 
-"A one-time download. Everything else about this feature works offline." The row changes with the model's state:
+The row changes with the model's state:
 
-- **Not set up yet**: "Voice input needs a 671 MB speech model. It runs entirely on your machine." Click **Download**.
+- **Not set up yet**: "Voice input needs a 671 MB speech model." Click **Download**.
 - **Downloading**: a progress bar and a percentage, and you can keep working while it downloads. **Cancel** stops the download.
 - **Ready**: how much disk space the model uses. **Remove** deletes it: "You can download it again at any time."
 - **Download failed**: the reason, and a **Retry** button.

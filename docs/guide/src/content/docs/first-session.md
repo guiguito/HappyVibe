@@ -3,7 +3,7 @@ title: Your first session
 description: Add a project, start a session, ask for a change, and follow what the agent does, card by card.
 ---
 
-Step 4 of 5, and the fun one. A session is one conversation with the agent, inside one workspace. You ask, it works, and every step it takes shows up as a card you can open. An empty session puts it simply: "Ready when you are." and "Ask for a change and the agent gets to work. Anything risky knocks first."
+A session is one conversation with the agent, inside one workspace. This is step 4 of 5, and the fun one: you ask, it works, and every step it takes shows up as a card you can open. An empty session puts it simply: "Ready when you are." and "Ask for a change and the agent gets to work. Anything risky knocks first."
 
 If you just finished the [first launch](/docs/first-launch/) setup, your first session is already open. Skip to [Ask for something](#ask-for-something).
 
@@ -28,13 +28,13 @@ Or press ⌘N on macOS, Ctrl+N on Windows and Linux, for a new session in the cu
 
 If the agent wants to change a file or run a command, it stops and asks you first. Nothing happens until you say yes. [Approve a tool call](/docs/approve-a-tool-call/) shows you how.
 
-In the session the setup window opens for you, a few suggested prompts sit above the message box. They're matched to your folder. A folder that already holds files gets ideas like "Give me a tour of this codebase". An empty one gets ideas like "Make a snake game I can open in my browser".
+In your very first session, a few suggested prompts sit above the message box. They're matched to your folder. A folder that already holds files gets ideas like "Give me a tour of this codebase". An empty one gets ideas like "Make a snake game I can open in my browser".
 
 Clicking one fills the message box and never sends it. Change it as much as you like, then press **Enter** yourself. The suggestions leave for good once you send your first message.
 
 ## Watch it work
 
-A tool is one action the agent can take: read a file, edit one, run a command. Every tool it uses shows up as a card, with a plain description of what it's doing: "Editing" or "Creating" and the file's name, or a command described in words. Expand a card to see exactly what it did. In the session the setup window opens for you, the app says so too: "Each card is a tool the agent ran — expand one to see exactly what it did."
+A tool is one action the agent can take: read a file, edit one, run a command. Every tool it uses shows up as a card, with a plain description of what it's doing: "Editing" or "Creating" and the file's name, or a command described in words. Expand a card to see exactly what it did. In your very first session, the app says so too: "Each card is a tool the agent ran — expand one to see exactly what it did."
 
 <!-- TODO(media): first-session/session-running.png — A turn in progress: tool cards editing a file and running a command, the composer reading "Steer the agent — lands between tool calls…", the Stop button -->
 
@@ -44,7 +44,8 @@ The dot at the start of each card shows its state. Hover over it to read the wor
 - **done:** green. It finished.
 - **denied:** red, with a red border. You said no to it.
 
-You'll pick up the others as you go:
+:::note[The other states and marks]
+You'll pick these up as you go:
 
 - **error:** red, with the error shown under the card.
 - **skipped:** amber. It didn't run, for example because the session is in [plan mode](/docs/built-in-tools/#start-plan-mode), where the agent can look around and draft a plan but can't change anything.
@@ -55,6 +56,7 @@ Some cards carry one more mark. Hover over it to read what it means:
 - a clock: "Allowed for this session";
 - a skip mark: "Skipped — not allowed in plan mode";
 - a red warning triangle: "Destructive command".
+:::
 
 ## Steer, or stop
 
@@ -67,28 +69,33 @@ To stop the agent, click the stop button beside the message box. Its tooltip rea
 
 ## Context: what the agent can see
 
-When the first turn ends in the session the setup window opens for you, one more note appears: "Everything the model knows is in the context gauge at the top — open it to see, and prune, what it holds." Here's what that means.
+When your very first turn ends, a note points at a small pill at the top of the session: "Everything the model knows is in the context gauge at the top — open it to see, and prune, what it holds." It answers a good question: what does the model actually know right now?
 
 - **Context** is everything the model can see right now: the instructions HappyVibe gives it, your messages, its replies, and what its tools returned. It knows nothing else about your session.
 - The **context window** is how much fits. Each model has its own size.
 - A **token** is the unit both are measured in, roughly four characters of text.
 
-The **context gauge** is the percentage pill at the top of the session. It's green while there's plenty of room, amber from 35% and red past 80%. Hover over it to see the tokens used out of the window, and whether the figure is "measured" (what the model reported for the last turn) or "estimated". Right after compaction it reads "…%" until the next reply measures it again.
+The **context gauge** is that percentage pill. It's green while there's plenty of room, and turns amber, then red, as the window fills. Click it to open the **context panel**, titled "Context window", and see what's inside, piece by piece: the system prompt, the conversation, tool calls and more.
 
-Click the gauge to open the **context panel**, titled "Context window". It breaks the context down by kind, such as the system prompt, the conversation and tool calls, with an estimated size for each. The breakdown sizes are estimates ("Breakdown sizes are **estimated** (≈ chars/4)."); only the gauge is measured.
+Running short on room? There are two ways to make some:
 
-Two ways to make room:
-
-1. **Remove old parts.** Open a kind, tick the items you don't need, and click **Remove from context**. Only finished turns can be removed, never the one the agent is working on, and removing a tool call also removes its result. A removed item stays in the list, struck through, with **Restore to context** to bring it back.
+1. **Remove old parts.** Open a kind, tick the items you don't need, and click **Remove from context**. Only finished turns can be removed, never the one the agent is working on, and removing a tool call also removes its result. A removed item stays in the list, struck through, with a **restore** button to bring it back (its tooltip reads "Restore to context").
 2. **Compact.** Click **Compact now…**. The app explains: "Compaction replaces older turns with a summary so the agent has room to keep going. It keeps recent messages and important decisions, and your full session history stays on disk — nothing is lost." Click **Compact now** to go ahead.
 
-When the context is nearly full, the panel says "Context is filling up."
+Beside the gauge, a second pill shows what this session has cost so far. Click it for the call-by-call breakdown.
 
-Beside the gauge, a second pill shows what this session has cost so far. It's an estimate: "plan" means your subscription covered it, and "$?" means the app has no price for the model. Click it for the call-by-call breakdown.
+:::note[The fine print]
+- The gauge turns amber at 35% and red at 80%. In the red, the panel says "Context is filling up."
+- Hover over the gauge to see the tokens used out of the window, and whether the figure is "measured" (what the model reported for the last turn) or "estimated".
+- Right after compaction the gauge reads "…%" until the next reply measures it again.
+- The sizes in the panel are always estimates ("Breakdown sizes are **estimated** (≈ chars/4)."). Only the gauge can be measured.
+- Messages from before a compaction can't be rewound to.
+- On the cost pill, "—" means no call has been billed yet, a dollar figure is an estimate, "plan" means your subscription covered it, and "$?" means the app has no price for the model.
+:::
 
 ## Changed your mind? Rewind
 
-You can take the conversation back to any of your own messages, and often your files too.
+Don't like where that went? Take the session back to one of your own messages, and often your files too.
 
 1. Wait until the agent has finished its turn. Rewind isn't offered while it's working.
 2. Hover over your message and click the rewind icon beside the copy icon. Its tooltip starts "Rewind to this message".

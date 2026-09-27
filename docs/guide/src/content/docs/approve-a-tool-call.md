@@ -3,7 +3,7 @@ title: Approve a tool call
 description: What the approval dialog shows, what each of its five buttons remembers, and which calls ask you first.
 ---
 
-Step 5 of 5, and the moment HappyVibe is built around. By default, before the agent changes a file or runs a command, it stops and asks you in an approval dialog. Nothing runs until you say yes, and the agent waits for as long as you need.
+This is the moment HappyVibe is built around. It's step 5 of 5: by default, before the agent changes a file or runs a command, it stops and asks you in an approval dialog. Nothing runs until you say yes, and the agent waits for as long as you need.
 
 ## Which calls ask
 
@@ -15,14 +15,7 @@ A few calls only look, and never ask:
 - reading the page already open in the app's browser, and searching the web;
 - recalling a memory you've already saved.
 
-Two more never show the approval dialog, for different reasons:
-
-- Opening a page on your own computer (localhost) in the app's browser, the usual way to preview what you're building.
-- Creating or changing a schedule. That opens the schedule form for you to fill in and confirm instead, so you're never asked the same thing twice.
-
-Opening a new site in the app's browser, or fetching a page from the web, asks first. So does reading a file outside your workspace, even though reading inside it doesn't. The dialog then says so: "This is outside your workspace:" and the path.
-
-You can change what asks and what doesn't with your own rules on the [Permissions](/docs/permissions/) page. The switch that turns every question off is **⚠ Bypass ALL permissions**: one on that page for every workspace, and one in each workspace's [workspace settings](/docs/first-session/#workspace-settings).
+You can change what asks on [Permissions](/docs/permissions/), which also lists the few exceptions to these lists.
 
 ## Approve your first call
 
@@ -42,33 +35,25 @@ The app writes the approval dialog, never the model. The line you approve agains
 
 <!-- TODO(media): approve-a-tool-call/permission-modal.png — "The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny -->
 
-Each button answers this call. Three of them also remember something, and what they remember is the whole tool, never just this one command or file:
+Each button answers this call. Three buttons also remember your answer. What they remember is the whole tool, never just this one command or file, so pick them when you trust the tool, not just the call. For web and browser calls, "the tool" is one site; for a tool from an MCP server, that one tool; for a subagent (a helper agent the main agent hands a task to), that one agent.
 
 - **Allow:** yes to this one call, and nothing more. The next one asks again.
-- **Allow for session:** yes to this tool for the rest of this session. For running commands, that means every command the agent runs in this session, so use it when you trust where the session is going. It lasts until the session restarts. The card gets a clock whose tooltip reads "Allowed for this session".
+- **Allow for session:** yes to this tool for the rest of this session. For running commands, that means every command the agent runs in this session, so use it when you trust where the session is going. It lasts until the session restarts, which happens after you change its tools, prompts or servers. The card gets a clock whose tooltip reads "Allowed for this session".
 - **Allow for workspace:** yes, and it adds a rule allowing this tool in this workspace, for every future session there.
 - **Always allow:** yes, and it adds a rule allowing this tool in every workspace.
 - **Deny:** no. The call doesn't run, its card shows as denied, and the agent is told you said no, so it can try another way or explain what it needed.
 
-Worth knowing before you click one that remembers:
+The rules **Allow for workspace** and **Always allow** add appear on the [Permissions](/docs/permissions/) page, where you can delete them any time.
 
-- **Allow for session** also stops the outside-your-workspace question for that tool. For web and browser calls it covers one site; for a tool from an MCP server, that one tool; for a subagent, that one agent. Subagents the session starts get the same yes. A tool you've set a rule to always ask about still asks.
-- **Allow for workspace** and **Always allow** skip the outside-your-workspace question too. For running commands, that means every command, and for file edits, edits anywhere on your computer, without asking again.
-
-The rules those two buttons add appear on the [Permissions](/docs/permissions/) page, where you can delete them any time.
-
-A subagent is a helper agent the main agent hands a task to, and a workflow is a small script that runs several subagents. When one of them asks, the dialog offers fewer buttons:
-
-- a subagent: **Allow**, **Allow for this run** and **Deny**. **Allow for this run** covers that tool until the subagent's run ends;
-- a workflow: **Allow** and **Deny**.
-
-None of their answers ever becomes a rule.
+:::note[The fine print]
+A yes that remembers also covers the same tool reaching outside your workspace. So **Always allow** on running commands means every command, and on file edits, edits anywhere on your computer. When a subagent or a workflow asks, the dialog offers fewer buttons, and none of them becomes a rule. [Permissions](/docs/permissions/) has the details.
+:::
 
 ## It waits for you
 
 The approval dialog has no timer, and it never says yes on your behalf. **Esc** and clicking outside it do nothing: the only way out is one of its buttons. Take as long as you need.
 
-If you're on another screen when the question comes, the dialog appears there, over the whole window, so it's never hidden.
+If you're on another screen when the question comes, the dialog appears there, over the whole window, so it's never hidden. A question from a session you're not looking at waits in that session, with a badge in the sidebar.
 
 Every answer you give is recorded in the [Audit log](/docs/audit-log/). And if you said yes and wish you hadn't, you can [rewind](/docs/first-session/#changed-your-mind-rewind) the conversation, and often your files, to before that message.
 

@@ -85,12 +85,12 @@ For a server that isn't in the catalog:
 3. Pick a **Type**:
    - **Command (stdio)**: a program on your computer. Enter the **Command**, for example `npx -y @modelcontextprotocol/server-github` (copy it from the server's own instructions), and any **Environment (KEY=value per line)**.
    - **Remote URL (HTTP)**: an online server. Enter its **URL**.
-4. Tick **Expose tools directly** only if you want each of this server's tools to be its own tool for the agent. It "costs context tokens per tool": every tool's description takes up room in the agent's [context](/docs/first-session/#context-what-the-agent-can-see) on every turn.
+4. Tick **Expose tools directly** only if you want each of this server's tools to be its own tool for the agent. It "costs context tokens per tool": every tool's description takes up tokens (the unit models read and bill text in, roughly four characters) of the agent's [context](/docs/first-session/#context-what-the-agent-can-see) on every turn.
 5. Click **Save**. An online server connects, and asks you to sign in if it needs to, right away.
 
 ## During a session
 
-Open sessions don't pick up a server change in the middle of a reply. Each one restarts once it's idle and comes back with your servers. The conversation carries on, but anything you allowed only for that session asks again.
+A server change never lands in the middle of a reply. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
 
 In a session's top bar, a 🔌 chip shows how many of your servers answered HappyVibe's check, for example **2/3 MCP**. It lists your global servers plus the ones added for this workspace. Click it to see each server with its state, and **Manage…** to come back to this screen.
 

@@ -32,15 +32,11 @@ Each row shows the prompt's `/name`, what to type after it (if the prompt says),
 - **Status**: **active**, **disabled**, **needs review**, or **shadowed**.
 - **Where it came from**: **managed** (kept in HappyVibe's own prompts folder, where imports land), **bundled** (ships with HappyVibe), or **linked** (read from a linked directory).
 - **reserved name**: a built-in command already uses this name, so this prompt can never run. Rename its file to use it.
-- "!`bash` not run": the prompt tries to run a command as it expands. HappyVibe doesn't allow that, so the command shows up in your message as plain text, and nothing runs.
+- **!`bash` not run**: the prompt tries to run a command as it expands. That isn't supported, so the command shows up in your message as plain text, and nothing runs.
 
 With no prompts yet, the list says: "No prompts yet. Drop a .md file into the managed prompts directory, or link an existing commands directory to review it here."
 
-The managed prompts directory is the `prompts` folder inside HappyVibe's own data folder:
-
-- macOS: `~/Library/Application Support/HappyVibe/pi-agent/prompts`
-- Windows: `%APPDATA%\HappyVibe\pi-agent\prompts`
-- Linux: `~/.config/HappyVibe/pi-agent/prompts`
+The managed prompts directory is the `pi-agent/prompts` folder inside HappyVibe's app-data folder. On macOS that's `~/Library/Application Support/HappyVibe/pi-agent/prompts`. On Windows and Linux, look in the `HappyVibe` folder where your system keeps app data.
 
 ### A prompt's details
 
@@ -74,13 +70,13 @@ If an approved prompt's file changes later, it goes back to **needs review** and
 
 For a linked prompt the button reads **Unlink**. It stops HappyVibe reading the whole directory, so every prompt from it disappears together. "No files are deleted — the directory belongs to another tool."
 
-Open sessions pick up an approval, an import, or a prompt turned on or off once they're idle, so a change never lands in the middle of a reply. To do that, the session restarts. Your conversation carries on, but anything you allowed only for that session asks again.
+An approval, an import, or a prompt turned on or off never lands in the middle of a reply. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
 
 ## During a session
 
 Type `/` at the start of the message box. A menu lists your active prompts, each with its hint and description, next to your skills. Pick one, or keep typing its name.
 
-If the prompt asks for input (its hint shows under the name in the menu), type it after the name. A prompt that doesn't ask for any ignores what you add. An `@` file mention in that input becomes the file's path in your project, so the prompt can point the agent straight at it.
+If the prompt takes input (most show a hint under the name in the menu), type it after the name. A prompt with no place for input ignores what you add. An `@` file mention in that input becomes the file's path in your project, so the prompt can point the agent straight at it.
 
 The prompt's text is part of your message, so the agent reads it like anything else you write. Every tool call it makes after that still goes through your [permission rules](/docs/permissions/).
 

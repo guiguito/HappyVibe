@@ -54,14 +54,14 @@ In this list, the composer is the message box.
 ## Change a shortcut
 
 1. Click the keys next to the action. The button pulses and says "press…".
-2. Press the new combination. Use at least one of ⌘/Ctrl, Shift or Alt (⌥ on macOS), plus a key. A single key on its own isn't allowed. On macOS, Ctrl counts as ⌘.
+2. Press the new combination. Include ⌘ on macOS or Ctrl on Windows and Linux, plus a key. Shift or Alt alone would take over normal typing. (On macOS, Ctrl counts as ⌘. On Windows and Linux, the Windows key counts as Ctrl.)
 3. The new shortcut saves straight away and keeps working after a restart.
 
 Changed your mind halfway? Press Esc, and the old shortcut stays.
 
 ### When a shortcut is already taken
 
-Two actions can't share keys. If you press a combination another action uses, nothing changes and the screen tells you which action has it, for example: ⌘K is already used by "Find a session in the sidebar". Give the other action new keys first, or pick a different combination.
+Two actions can't share keys. If you press a combination another action uses, nothing changes and the screen tells you which action has it, for example: ⌘K (Ctrl+K on Windows and Linux) is already used by "Find a session in the sidebar". Give the other action new keys first, or pick a different combination.
 
 The same check applies to **Reset**: if another action now holds the default keys, the screen says so and leaves both as they are.
 

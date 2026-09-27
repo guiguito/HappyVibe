@@ -3,7 +3,7 @@ title: Install
 description: Download HappyVibe for macOS, Windows or Linux, and get past the Windows warning on first launch.
 ---
 
-Welcome. Getting started takes five short steps, and this first one is mostly waiting for a download. Once it's installed, HappyVibe keeps itself up to date, except with the Linux `.deb`.
+Getting started takes five short steps, and this first one is mostly waiting for a download. Once it's installed, HappyVibe keeps itself up to date.
 
 ## Download the app
 
@@ -46,7 +46,7 @@ Two packages, one choice:
   Without `libfuse2`, a double-click on the AppImage does nothing at all, with no error. The `.deb` doesn't have this problem. That's why there are two.
 
 :::caution
-The Linux build is new. It's checked automatically on every change, but nobody has opened it on a real Linux computer yet.
+The Linux build is new. It's checked automatically on every change, but nobody has opened it on a real Linux computer yet. If something looks off, tell us in a [GitHub issue](https://github.com/guiguito/HappyVibe/issues).
 :::
 
 ## Next

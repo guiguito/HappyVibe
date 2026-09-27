@@ -3,7 +3,7 @@ title: Connect a model
 description: Give the agent a model to think with, by signing in with a plan, running one on your computer, or pasting an API key.
 ---
 
-Step 3 of 5. Every agent needs a brain, and this is where it gets one. The model does the thinking; HappyVibe gives it hands, and you decide what it may touch. Connect it in the setup window on [first launch](/docs/first-launch/), or any time on the [Models](/docs/models/) page.
+Every agent needs a brain, and this is where it gets one. It's step 3 of 5: the model does the thinking; HappyVibe gives it hands, and you decide what it may touch. Connect it in the setup window on [first launch](/docs/first-launch/), or any time on the [Models](/docs/models/) page.
 
 Already connected one in the setup window? You're set. Skip to [Your first session](/docs/first-session/).
 
@@ -50,10 +50,18 @@ On the Models page, an app it finds shows as "running". If Ollama isn't found, t
 
 An API key is a private code from a provider's website. It lets HappyVibe use your account there, and the provider bills that account for what the agent uses. Treat it like a password.
 
-1. In the setup window, click **Paste an API key**. The provider button next to the key box starts on a popular provider: click it to pick another, from a list you can search.
-2. On the Models page, find the provider's card under **Cloud API keys**, or search for it in the box under those cards.
+In the setup window:
+
+1. Click **Paste an API key**.
+2. The provider button next to the key box starts on a popular provider. Click it to pick another, from a list you can search.
 3. Paste your key into the field.
-4. Click **Save key** in the setup window, or **Save** on the Models page.
+4. Click **Save key**.
+
+On the Models page:
+
+1. Find the provider's card under **Cloud API keys**, or search for it in the box under those cards.
+2. Paste your key into the field.
+3. Click **Save**.
 
 Your key is stored encrypted, using your computer's own keychain. Under each key box on the Models page, the app says so: "Keys are encrypted with your OS keychain."
 

@@ -3,9 +3,9 @@ title: Built-in tools
 description: See the abilities HappyVibe gives the agent and switch off any you don't want.
 ---
 
-These are the abilities HappyVibe gives the agent out of the box. Every one starts on, and you can take any of them away.
+Out of the box, the agent can plan, ask you questions, run terminals, drive a browser, read the web, remember, suggest schedules and read documents. Each one starts on, and each one has a switch. Turn one off and back on, and its tools come back.
 
-Switch a row back on and its tools come back. The one thing here you can't take back is **Clear browsing data**, which signs the agent's browser out of everything.
+The one thing here you can't take back is **Clear browsing data**, which signs the agent's browser out of everything.
 
 ## Where to find it
 
@@ -19,9 +19,9 @@ Below it is one list, under the heading **Built-in Custom Tools**. Each row has 
 
 <!-- TODO(media): built-in-tools/builtin-tools.png — The Built-in tools list with its toggles, and Plan mode expanded to show its read-only prompt -->
 
-Change a row, and any open session restarts once it's idle to pick it up. Your conversation stays. Anything you allowed just for that session will ask again, the safe way round. A session you switched to bypass for itself goes back to asking; the **Bypass ALL permissions** setting stays on. See [Permissions](/docs/permissions/) for both. The rows say the same thing in the app's words: "Live sessions respawn to apply this — permission grants and dangerous mode reset to safe defaults for those sessions."
+Change a row, and your conversation stays. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
 
-Some rows mention the context cost of tool schemas. Every tool the agent can call comes with a short description (a schema) that sits in its context, what it can see on every turn. A tool you switch off takes its schema out. More on context and tokens in [Your first session](/docs/first-session/#context-what-the-agent-can-see).
+Some rows mention the context cost of tool schemas. Every tool the agent can call comes with a short description (a schema) that sits in its context, what it can see on every turn. A tool you switch off takes its schema out ([more on context](/docs/first-session/#context-what-the-agent-can-see)).
 
 ### Plan mode
 
@@ -76,15 +76,15 @@ Lets the agent read Word, PowerPoint, Excel, PDF, OpenDocument, RTF and EPUB fil
 
 ### Tool intent
 
-"The one-line “why” the model writes for each tool card." Turning it off saves the tokens that sentence costs. Cards then show a label built from the call itself. Approval dialogs don't change either way: "they always show the factual action, never this sentence."
+"The one-line “why” the model writes for each tool card." Turning it off saves the tokens (the unit models read and bill text in, roughly four characters) that sentence costs. Cards then show a label built from the call itself. Approval dialogs don't change either way: "they always show the factual action, never this sentence."
 
 ## Turn a tool off
 
-1. Find its row. Its switch reads **On**.
-2. Click it. It turns to **Off**.
+1. Find its row. The switch reads **On** while it's on.
+2. Click it to turn it off.
 3. For Plan mode only, a dialog asks first: "Turn off Plan mode?" It explains that this "removes the plan controls from chat (the top-bar indicator and composer chip) and unregisters the plan_start / plan_complete / plan_status_update tools." In plain words: the agent can no longer make plans. Click **Turn off** to go ahead, or **Cancel** to keep it.
 
-Open sessions restart to apply it once they're idle. To turn it back on, click **Off**.
+Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)). To turn it back on, click the switch again.
 
 ## Start plan mode
 
@@ -93,10 +93,10 @@ Plan mode is a switch for one session. The agent explores and writes a plan, and
 1. In the session, click **🧭 Plan** in the message box. It lights up, and the session's top bar shows **🧭 Plan mode**.
 2. Ask for what you want planned, as usual. The agent reads, asks you questions if it needs to, and drafts the plan.
 3. When it's ready, a plan card appears in the session. Read it, then pick one:
-   - **Implement this plan**: the session leaves plan mode and the agent starts the work. **Implement with** lets you pick a different model for it first.
-   - **Keep planning**: carry on refining it together.
-   - **Discard**: drop the plan.
-4. Want it to finish sooner? Click **Wrap up** beside **🧭 Plan mode** in the top bar, and the agent finalises the plan now.
+   - **Implement this plan**: the session leaves plan mode and the agent starts the work. **Implement with** lets you pick a different model first. The session keeps that model afterwards.
+   - **Keep planning**: hides these buttons so you can keep talking. A revised plan won't show them again, so to build it, leave plan mode and ask the agent to go ahead.
+   - **Discard**: leave plan mode without building it. The session can change files again, and the plan file stays in `.agents/plans/`.
+4. Want it to finish sooner? Click **Wrap up** beside **🧭 Plan mode** in the top bar, to ask the agent to finish the plan now. It may ask you one last question first.
 
 To leave plan mode without implementing, click **🧭 Plan** again, or the **✕** beside **🧭 Plan mode** in the top bar.
 
@@ -111,7 +111,7 @@ Turning plan mode on or off stops a turn that's in progress. Wait for the agent 
 3. Type your preferences in the box underneath.
 4. Click **Save**. The row says "Saved."
 
-Your lines go after the built-in prompt, never instead of it. Open sessions restart to pick them up once they're idle, like the rows' note says.
+Your lines go after the built-in prompt, never instead of it. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)).
 
 ## Choose the web service
 

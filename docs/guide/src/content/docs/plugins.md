@@ -3,9 +3,7 @@ title: Plugins
 description: Browse plugins, see exactly what each one brings, and install only the parts you want.
 ---
 
-A plugin is a bundle someone else made: skills, prompts and tools for the agent, in a few clicks. HappyVibe only lists plugins whose every part goes through your permissions, just like the agent's own tools. In the screen's words: "HappyVibe supports plugins composed exclusively of skills, prompts and MCP servers — everything that goes through the same permission gate as the agent's own tools."
-
-Nothing installs itself, and nothing you install is switched on until you say so.
+A plugin is someone else's good idea, packaged: skills, prompts and tools for the agent, in a few clicks. HappyVibe only lists plugins whose every part goes through your permissions, and nothing you install does anything until you turn it on.
 
 ## Where to find it
 
@@ -67,7 +65,7 @@ You can skip either step and come back later. Once the dialog is closed, the sam
 1. Find it under **Installed**.
 2. Click **Remove**.
 
-HappyVibe removes every skill, prompt and MCP server that plugin brought, and nothing else. It happens right away, with no second check. Open sessions restart once they're idle to drop what it brought, and you can install it again any time.
+HappyVibe removes every skill, prompt and MCP server that plugin brought, and nothing else. It happens right away, with no second check. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)). You can install it again any time.
 
 ## During a session
 

@@ -21,7 +21,7 @@ The agent keeps each set of notes as ordinary text files on this computer. Nothi
 
 The first line reads, for example, "Costs ≈ 120 tokens every turn. Memories open on demand. 12 of 100 used."
 
-Tokens are the small pieces of text the agent reads, roughly four characters each (more in [Your first session](/docs/first-session/#context-what-the-agent-can-see)). On every turn the agent is shown a one-line summary of each note, and that's all memory costs until it opens a note, which it does only when the summary looks relevant. The number is the same estimate the session's context panel shows.
+The cost is in tokens (the unit models read and bill text in, roughly four characters; [more on context](/docs/first-session/#context-what-the-agent-can-see)). On every turn the agent is shown a one-line summary of each note, and that's all memory costs until it opens a note, which it does only when the summary looks relevant. The number is the same estimate the session's context panel shows.
 
 Each set holds up to 100 notes. When one is full, the agent has to merge or drop a note before it can add one.
 
@@ -46,7 +46,7 @@ Notes can be left behind when you remove a workspace from the sidebar, or when i
 
 ### How memory works
 
-The disclosure at the bottom explains the rules in full. Two worth knowing. Notes are hints, not facts: the agent is told to check anything that might have changed before it acts. And it won't save anything that looks like a password or a key; that's refused with a reason.
+The disclosure at the bottom explains the rules in full. Two worth knowing. Notes are hints, not facts: the agent is told to check anything that might have changed before it acts. And it won't save anything that looks like an API key, an access token or a private key; that's refused with a reason.
 
 ## How a memory gets saved
 

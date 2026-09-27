@@ -80,7 +80,7 @@ Linked skills aren't copied. HappyVibe reads them where they are, and each one s
 Click any skill to open it. You see:
 
 - Its name, description, status and source.
-- What it costs in tokens (small pieces of text), like "~40 tok always · ~900 tok when loaded". See [What a skill costs](#what-a-skill-costs).
+- What it costs in tokens (the unit models read and bill text in, roughly four characters), like "~40 tok always · ~900 tok when loaded". See [What a skill costs](#what-a-skill-costs).
 - A warning if it bundles scripts: "The model may run it — review before approving." Running one still goes through your [Permissions](/docs/permissions/).
 - Where it came from, when HappyVibe knows.
 - The `SKILL.md` itself, rendered, and the list of files that come with it.
@@ -102,7 +102,7 @@ The same window lets you:
 
 ## What a skill costs
 
-Everything the agent is shown sits in its context, what it can see on every turn, measured in tokens (more in [Your first session](/docs/first-session/#context-what-the-agent-can-see)). A skill costs in two steps, and the skill window shows both:
+Everything the agent is shown sits in its context, what it can see on every turn, measured in tokens ([more on context](/docs/first-session/#context-what-the-agent-can-see)). A skill costs in two steps, and the skill window shows both:
 
 - **always**: its name and description, paid on every turn, so the agent knows the skill exists.
 - **when loaded**: the rest of `SKILL.md`, paid only once the agent actually loads the skill.

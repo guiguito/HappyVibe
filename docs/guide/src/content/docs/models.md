@@ -7,7 +7,7 @@ Every model the agent can use starts here: the plans you've signed in with, the 
 
 ## Where to find it
 
-**Models**, pinned at the top of the sidebar, above the groups. The **Open Settings** shortcut lands here too: **⌘,** on macOS, **Ctrl+,** on Windows and Linux by default. You can change it in [Keyboard shortcuts](/docs/keyboard-shortcuts/).
+**Models**, pinned at the top of the sidebar, above the groups. The **Open Settings** shortcut (**⌘,** on macOS, **Ctrl+,** on Windows and Linux, by default) opens this page too, since Models is where the settings screens begin. You can change it in [Keyboard shortcuts](/docs/keyboard-shortcuts/).
 
 ## What's on the screen
 
@@ -15,7 +15,7 @@ Every model the agent can use starts here: the plans you've signed in with, the 
 
 Until a provider is connected, the agent has no one to talk to, so this screen greets you instead: "Welcome to HappyVibe", with "Hook up a model provider to wake the agent up. Everything stays on this machine."
 
-On this version of the page the list of providers is already open, and the **Default model** section is hidden until you've connected something. The app takes you on to your sessions as soon as you save a key, click **Use Ollama**, or finish a sign-in and click **Done**. The [First launch](/docs/first-launch/) and [Connect a model](/docs/connect-a-model/) pages walk through it step by step.
+While nothing is connected yet, the list of providers is already open, and the **Default model** section is hidden until you've connected something. The app takes you on to your sessions as soon as you save a key, click **Use Ollama**, or finish a sign-in and click **Done**. The [First launch](/docs/first-launch/) and [Connect a model](/docs/connect-a-model/) pages walk through it step by step.
 
 <!-- TODO(media): models/models-populated.png — Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills -->
 
@@ -64,7 +64,7 @@ For a server that speaks the OpenAI API, such as one you run yourself. Click **+
 
 "Used for new sessions unless a workspace or session overrides it." Pick one from the menu. "Only models from configured providers show up."
 
-**Thinking effort** sets how much the agent reasons before it answers: **off**, **minimal**, **low**, **medium**, **high**, **xhigh** or **max**. "More thinking costs more tokens and takes longer. A session can override this from its top bar." A token is the unit a model reads and bills text in, a few characters at a time ([more on tokens and context](/docs/first-session/#context-what-the-agent-can-see)).
+**Thinking effort** sets how much the agent reasons before it answers: **off**, **minimal**, **low**, **medium**, **high**, **xhigh** or **max**. "More thinking costs more tokens and takes longer. A session can override this from its top bar." Tokens are the unit models read and bill text in, roughly four characters ([more on tokens and context](/docs/first-session/#context-what-the-agent-can-see)).
 
 **Extended prompt cache** is off, and most people can leave it that way. It helps when you often leave a session and come back to it later. Normally the provider keeps the start of your conversation cached for five minutes and charges less to read it again. With this on, it keeps it for an hour on Anthropic (24 hours on OpenAI). The catch, in the screen's words: "Anthropic bills a long-lived cache write at 2× the input rate, so this wins when your turns are minutes apart and loses when you type continuously." It applies to new sessions. The switch reads **Off** while it's off. Click it to turn it on.
 
@@ -80,7 +80,7 @@ After saving, the app asks the provider whether the key works. The key is saved 
 - "Saved, but … rejected this key", with the provider's reason, means the provider refused it. Paste a fresh key to replace it.
 - "Saved. We couldn't verify this key here." means the app couldn't check. The key may be fine.
 
-On the first-run page, saving a key takes you straight on, so you won't see that note. If the agent then can't answer, come back to **Models** and save the key again to see what the provider says.
+While nothing is connected yet, saving a key takes you straight on, so you won't see that note. If the agent then can't answer, come back to **Models** and save the key again to see what the provider says.
 
 To replace a key, paste the new one into the same box. To delete it, click **Remove** on its row in the list at the top.
 

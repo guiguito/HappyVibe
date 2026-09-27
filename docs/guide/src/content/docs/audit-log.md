@@ -15,7 +15,7 @@ The audit log is the app's record of the agent: every time it asked, who answere
 
 Four menus sit at the top. They all start on showing everything, and the newest rows come first.
 
-- **All workspaces**: narrow the log to one workspace. A session in a worktree (a second working copy of a git project, made with **New worktree…**) counts under its project.
+- **All workspaces**: narrow the log to one workspace. A session in a worktree (a second working copy of a git project, made with **New worktree…**) counts under its workspace.
 - **All sessions**: narrow it to one session. Once you've picked a workspace, this menu lists only that workspace's sessions.
 - **Any decision**: show only **Allowed**, **Allowed for session** or **Denied** rows. Rows that aren't decisions (the other kinds below) step aside while this filter is on.
 - **Any source**: show only the rows that came from one place, like **Rule**, **You**, **Bypass** or **Plan mode**. The last few choices pick out the other kinds of row: **The app itself**, **Model availability**, **Memory**, **Feedback** and **Crash reports**.
@@ -38,7 +38,7 @@ Most rows are decisions: a tool call the agent wanted to make, and what happened
 
 With a bypass on, calls are allowed without asking (plan mode and read-only runs still hold), so the log also keeps a note of what you'd have been asked. The screen explains it: "When a call was let through by a bypass rather than by your rules, the row also says what your rules would have answered on their own — allow, ask or deny."
 
-That note reads "rules would have asked", "rules would have allowed" or "rules would have DENIED". The last one, in capitals, is the one to look for. To find those quickly, set **Any source** to **Bypass**, then read down the notes. [Permissions](/docs/permissions/) explains the bypass and how to turn it off.
+That note reads "rules would have asked", "rules would have allowed" or "rules would have DENIED". The one to look for is the note that ends in "denied". [Permissions](/docs/permissions/) explains the bypass and how to turn it off.
 
 ### Calls the app made on its own
 
@@ -60,9 +60,10 @@ Some model calls happen outside any session: naming a session, writing a commit 
 ## Check what a bypass let through
 
 1. Set **Any source** to **Bypass**.
-   Calls made by subagents are listed under "sub-agent", not **Bypass**, and this filter hides them. To see them too, leave **Any source** on **Any source**.
-2. Read the note on each row. "rules would have DENIED" marks a call your rules would have stopped.
+2. Read the note on each row. The one that ends in "denied" marks a call your rules would have stopped.
 3. If you'd rather be asked next time, turn the bypass off in [Permissions](/docs/permissions/).
+
+Calls made by subagents are listed under "sub-agent", not **Bypass**, so this filter hides them. To see them too, leave **Any source** on **Any source**.
 
 ## During a session
 

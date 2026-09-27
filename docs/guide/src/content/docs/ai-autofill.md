@@ -13,7 +13,7 @@ A few chores HappyVibe hands to a model so you don't have to: naming a session, 
 
 "Each runs on its own, outside every session — nothing enters a transcript or a context window." So they never take up room in a session's [context](/docs/first-session/#context-what-the-agent-can-see), what the agent can see.
 
-Because they run outside a session, there's no usage report from the provider to count their [tokens](/docs/first-session/#context-what-the-agent-can-see) (the chunks of text a model reads and writes, which is what providers charge for). So what they cost appears "as an **estimate** in the Audit log and in Stats, never inside a session's own cost." The estimate is a token count, never a dollar figure.
+Because they run outside a session, there's no usage report from the provider to count their [tokens](/docs/first-session/#context-what-the-agent-can-see) (the unit models read and bill text in, roughly four characters). So what they cost appears "as an **estimate** in the Audit log and in Stats, never inside a session's own cost." The estimate is a token count, never a dollar figure.
 
 If no model is set up at all, none of them run: "a session keeps its fallback name and the draft buttons stay away."
 
@@ -39,7 +39,7 @@ Each row has:
 2. Type in **your additions**. "Your additions are appended after it. Add preferences (e.g. 'always list affected files'), not contradictions."
 3. Click **Save**.
 
-As on [Built-in tools](/docs/built-in-tools/), the prompt itself is read-only: "The built-in prompt above can't be edited — it's shown so you can see exactly what the agent is told." Here, "the agent" means the model that runs the job.
+The built-in prompt is read-only, so you always see exactly what the job sends.
 
 ## Pick the model for a job
 
@@ -50,7 +50,7 @@ As on [Built-in tools](/docs/built-in-tools/), the prompt itself is read-only: "
 
 1. Open the Changes panel. The shortcut is ⌘⇧G on macOS and Ctrl+Shift+G on Windows and Linux.
 2. Click the wand beside the commit message box, labelled "Write it for me".
-3. The draft appears in the message box. Read it, edit it if you like, then save as usual.
+3. The draft appears in the commit message box. Read it, edit it if you like, then save as usual.
 
 The wand only shows when **Commit message** is on and a model is set up. If a draft doesn't come back, the panel says "Couldn’t draft a message this time." If drafting isn't possible right now, the wand goes away instead. Either way, you can write the message yourself.
 

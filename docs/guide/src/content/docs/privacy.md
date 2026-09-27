@@ -7,7 +7,7 @@ Short version: this screen controls one thing, crash reports. They're short tech
 
 In the app's own words: "What leaves this machine, and how to stop it. Everything else — your sessions, your files, your keys, your audit log and your stats — stays here."
 
-Two things this screen doesn't cover. Your conversations go to the model you picked on [Models](/docs/models/), because that's where the agent's thinking happens. And HappyVibe checks for updates on its own; the [Changelog](/docs/changelog/) explains how.
+A few things this screen doesn't cover. Your conversations go to the model you picked on [Models](/docs/models/), because that's where the agent's thinking happens. HappyVibe checks for updates on its own; the [Changelog](/docs/changelog/) explains how. And the agent's web tools fetch pages through a web service, by default one HappyVibe runs, which sees the addresses and searches; [Built-in tools](/docs/built-in-tools/#choose-the-web-service) explains how to use your own.
 
 ## Where to find it
 
@@ -35,12 +35,12 @@ Open **What a crash report contains** for the full answer. A report holds:
 ### Show the last report and the folder
 
 - **Show the last report** displays the most recent report sent since HappyVibe started, in full. Click **Hide the last report** to fold it away. If none has been sent since the app started, the button is greyed out and the screen says "Nothing has been sent from this computer yet."
-- **Reveal crash reports** shows the folder where crash snapshots are kept on your computer, selected in Finder on macOS, File Explorer on Windows, or your file manager on Linux.
+- **Reveal crash reports** shows the folder where crash snapshots are kept on your computer, selected in Finder on macOS or File Explorer on Windows. On Linux it opens in your file manager.
 
 ## Turn crash reports off
 
 1. Open **Privacy**.
-2. Next to **Send crash reports**, click the switch. It reads **On**, and turns to **Off**.
+2. Next to **Send crash reports**, the switch reads **On** while reports are on. Click it to turn them off.
 
 From that moment, nothing is sent. Click it again whenever you want to turn reports back on.
 
