@@ -18,6 +18,7 @@ permission UX and context-window visibility as the differentiators.
   live batch isn't required — don't silently omit it.
 - `npm run lint` / `npm run format`: don't run. Lint refuses TypeScript 7 outright (by decision);
   format rewrites ~85% of the repo. Neither is in the gate or CI.
+- User guide: `docs/guide/`, its own npm project — see `.claude/rules/docs.md`.
 - Commits need `git commit -s` (DCO check in `.github/workflows/dco.yml`). CI runs on `main` pushes
   and pull requests only — a branch push runs nothing, so platform work needs a (draft) PR.
 - Generated files — re-run the generator in the same change that invalidates it; each has a test
@@ -174,6 +175,7 @@ permission UX and context-window visibility as the differentiators.
 ## Docs workflow
 - Locked product decisions go to BOTH the Notion PRD and `docs/prd.md` in the same session, folded in
   place with the "Decision (…)" convention. Never rewrite user-authored documents wholesale.
+- A change to a screen's behaviour or copy updates its user-guide page (`docs/guide/src/content/docs/<slug>.md`) in the same commit.
 - **Keep this file and `.claude/rules/` current-state.** When something changes, REPLACE the entry —
   don't append a dated paragraph. No counts that drift, no "used to", no incident stories: a rule
   plus a one-line why. Evidence goes to `docs/validation/`.
@@ -183,4 +185,4 @@ permission UX and context-window visibility as the differentiators.
 workflows) · `permissions-plan` (rules, plan mode, audit) · `mcp` · `plugins` · `skills-prompts` ·
 `memory` · `schedules` · `terminals` · `browser` · `renderer-layers` (overlays, z-index, menus) ·
 `transcript-cards` · `tabs-layout` · `guidance` · `git-worktrees` · `crash-feedback` · `release`
-(signing, updater) · `voice-documents` · `providers` · `typescript` · `windows` · `linux`
+(signing, updater) · `voice-documents` · `providers` · `typescript` · `windows` · `linux` · `docs` (user guide)
