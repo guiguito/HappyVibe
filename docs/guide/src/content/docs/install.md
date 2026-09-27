@@ -3,7 +3,7 @@ title: Install
 description: Download HappyVibe for macOS, Windows or Linux, and get past the Windows warning on first launch.
 ---
 
-Getting started takes five short steps, and this first one is mostly waiting for a download. Once it's installed, HappyVibe keeps itself up to date.
+Getting started takes five short steps, and this first one is mostly waiting for a download. Once it's installed, HappyVibe keeps itself up to date (one Linux package is the exception, see below).
 
 ## Download the app
 

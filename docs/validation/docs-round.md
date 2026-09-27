@@ -71,3 +71,9 @@ working. None of them is fixed in this round. Line numbers are as of commit `cea
     search placeholder names a provider count and Pi (`ModelsView.tsx:468`).
 24. **Remove** on an installed plugin acts at once with no confirmation (`PluginsSection.tsx:254`), where
     skill **Delete** asks first.
+25. **Suspected, not run live: a plugin's MCP servers may be usable before you click Connect.** The install
+    writes them straight into the global `mcp.json` with no off flag (`ipc.ts:6772-6777`) and schedules a
+    restart (`:6791`). The adapter starts servers lazily on first use (`pi-mcp-adapter/README.md:319`). The
+    install dialog promises "MCP servers arrive unconnected — so nothing the agent can do changes yet"
+    (`PluginsSection.tsx:464-465`), and the guide quotes it. Each call still asks for permission. Check it
+    live before relying on the promise.

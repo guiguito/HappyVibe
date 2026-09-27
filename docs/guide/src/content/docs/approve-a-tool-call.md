@@ -38,7 +38,7 @@ The app writes the approval dialog, never the model. The line you approve agains
 Each button answers this call. Three buttons also remember your answer. What they remember is the whole tool, never just this one command or file, so pick them when you trust the tool, not just the call. For web and browser calls, "the tool" is one site; for a tool from an MCP server, that one tool; for a subagent (a helper agent the main agent hands a task to), that one agent.
 
 - **Allow:** yes to this one call, and nothing more. The next one asks again.
-- **Allow for session:** yes to this tool for the rest of this session. For running commands, that means every command the agent runs in this session, so use it when you trust where the session is going. It lasts until the session restarts, which happens after you change its tools, prompts or servers. The card gets a clock whose tooltip reads "Allowed for this session".
+- **Allow for session:** yes to this tool for the rest of this session. For running commands, that means every command the agent runs in this session, so use it when you trust where the session is going. It lasts until the session restarts, which happens, for example, after you change its tools, prompts or servers. The card gets a clock whose tooltip reads "Allowed for this session".
 - **Allow for workspace:** yes, and it adds a rule allowing this tool in this workspace, for every future session there.
 - **Always allow:** yes, and it adds a rule allowing this tool in every workspace.
 - **Deny:** no. The call doesn't run, its card shows as denied, and the agent is told you said no, so it can try another way or explain what it needed.

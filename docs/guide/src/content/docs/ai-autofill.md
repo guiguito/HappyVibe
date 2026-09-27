@@ -39,7 +39,7 @@ Each row has:
 2. Type in **your additions**. "Your additions are appended after it. Add preferences (e.g. 'always list affected files'), not contradictions."
 3. Click **Save**.
 
-The built-in prompt is read-only, so you always see exactly what the job sends.
+The built-in prompt is read-only, so you always see exactly what the job is told.
 
 ## Pick the model for a job
 

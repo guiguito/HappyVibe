@@ -3,7 +3,7 @@ title: Plugins
 description: Browse plugins, see exactly what each one brings, and install only the parts you want.
 ---
 
-A plugin is someone else's good idea, packaged: skills, prompts and tools for the agent, in a few clicks. HappyVibe only lists plugins whose every part goes through your permissions, and nothing you install does anything until you turn it on.
+A plugin is someone else's good idea, packaged: skills, prompts and tools for the agent, in a few clicks. HappyVibe only lists plugins whose every part goes through your permissions, and the skills and prompts you install stay off until you turn them on.
 
 ## Where to find it
 

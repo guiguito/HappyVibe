@@ -28,13 +28,13 @@ Or press ⌘N on macOS, Ctrl+N on Windows and Linux, for a new session in the cu
 
 If the agent wants to change a file or run a command, it stops and asks you first. Nothing happens until you say yes. [Approve a tool call](/docs/approve-a-tool-call/) shows you how.
 
-In your very first session, a few suggested prompts sit above the message box. They're matched to your folder. A folder that already holds files gets ideas like "Give me a tour of this codebase". An empty one gets ideas like "Make a snake game I can open in my browser".
+If you came through the setup window, the session it opens for you shows a few suggested prompts sit above the message box. They're matched to your folder. A folder that already holds files gets ideas like "Give me a tour of this codebase". An empty one gets ideas like "Make a snake game I can open in my browser".
 
 Clicking one fills the message box and never sends it. Change it as much as you like, then press **Enter** yourself. The suggestions leave for good once you send your first message.
 
 ## Watch it work
 
-A tool is one action the agent can take: read a file, edit one, run a command. Every tool it uses shows up as a card, with a plain description of what it's doing: "Editing" or "Creating" and the file's name, or a command described in words. Expand a card to see exactly what it did. In your very first session, the app says so too: "Each card is a tool the agent ran — expand one to see exactly what it did."
+A tool is one action the agent can take: read a file, edit one, run a command. Every tool it uses shows up as a card, with a plain description of what it's doing: "Editing" or "Creating" and the file's name, or a command described in words. Expand a card to see exactly what it did. In the session the setup window opens for you, the app says so too: "Each card is a tool the agent ran — expand one to see exactly what it did."
 
 <!-- TODO(media): first-session/session-running.png — A turn in progress: tool cards editing a file and running a command, the composer reading "Steer the agent — lands between tool calls…", the Stop button -->
 
@@ -69,7 +69,7 @@ To stop the agent, click the stop button beside the message box. Its tooltip rea
 
 ## Context: what the agent can see
 
-When your very first turn ends, a note points at a small pill at the top of the session: "Everything the model knows is in the context gauge at the top — open it to see, and prune, what it holds." It answers a good question: what does the model actually know right now?
+In that same session, when the first turn ends, a note points at a small pill at the top of the session: "Everything the model knows is in the context gauge at the top — open it to see, and prune, what it holds." It answers a good question: what does the model actually know right now?
 
 - **Context** is everything the model can see right now: the instructions HappyVibe gives it, your messages, its replies, and what its tools returned. It knows nothing else about your session.
 - The **context window** is how much fits. Each model has its own size.

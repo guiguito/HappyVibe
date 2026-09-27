@@ -3,7 +3,7 @@ title: Permissions
 description: Decide what the agent may do on its own, what it must ask about, and what it may never do.
 ---
 
-This is where your yeses and nos become rules. Anything you haven't decided waits for you, in an approval dialog the app writes itself, never the model. For a shell command, the dialog shows the command itself, never the model's description of it.
+This is where your yeses and nos become rules. Anything you haven't decided waits for you, in an approval dialog the app writes itself, never the model. For a shell command, the dialog describes the command itself (open **details** for the exact text), never the model's description of it.
 
 The screen says what it holds: "Global rules for every workspace. Per-workspace overrides live in each workspace's own settings." Those are the [workspace settings](/docs/first-session/#workspace-settings).
 
@@ -45,10 +45,10 @@ In a pattern, `*` stands for any run of characters. In a path, `*` stays within 
 
 A few tools are checked under their own names, so a **tool** rule for them uses that name:
 
-- MCP tools: `mcp:` and the tool's name, or `mcp:*` for all of them.
+- MCP tools: `mcp:` and the tool's name, or `mcp:*` for all of them. For a server with **Expose tools directly** ticked, use each tool's own name, as it's listed on [Agent tools](/docs/agent-tools/).
 - The browser and the web tools that open an address: `browser:` and the site, such as `browser:docs.example.com`, or `browser:*`.
 - Subagents: `subagent:` and the agent's name, or `subagent:*`.
-- Workflows: `workflow`.
+- Workflows: `workflow`. Only **deny** has an effect: every workflow asks you.
 
 ### Test a call
 
