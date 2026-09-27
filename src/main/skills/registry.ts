@@ -14,7 +14,7 @@ import type { DiscoveredSkill } from "./discovery";
  *    until re-approved. This is the scope-wide approval.
  *  - Enablement (this file, `enabled`): the global on/off shown on the Skills
  *    screen — approve sets it on; "disable" sets it off without losing trust.
- *    Bundled skills are approved at install but enabled=false (off by default).
+ *    Bundled skills are approved at install and enabled=true (ON since 2026-09-27).
  *  - Activation (WorkspaceRegistry.skillsActive): the per-workspace checklist.
  * A session spawns with skills that are trusted AND enabled AND active-for-its-
  * workspace (resolveActiveSkills, below).
@@ -130,9 +130,9 @@ export class SkillRegistry {
  * Which skill dir paths a session in `workspace` should spawn with (`--skill`
  * args). A skill loads iff: trusted (approved at current hash), globally enabled,
  * loadable (Pi will load it), and active for this workspace. Per-workspace
- * activation is opt-OUT (active unless explicitly toggled off). "Bundled off by
- * default" is NOT modeled here — it's the bundled skills' initial enabled=false
- * record (installBundledSkills), so a single "Enable" turns one on. PURE, the
+ * activation is opt-OUT (active unless explicitly toggled off). The bundled
+ * default is NOT modeled here — it's the bundled skills' initial enabled=true
+ * record (installBundledSkills), so one "Disable" turns one off. PURE, the
  * single source of truth for what spawns.
  */
 export function resolveActiveSkills(

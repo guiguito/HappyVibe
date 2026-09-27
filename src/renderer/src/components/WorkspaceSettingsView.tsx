@@ -298,7 +298,7 @@ function RemoveWorkspaceBlock({ workspace, onRemoved }: { workspace: string; onR
  * §14: the ONLY surface for workspace-scoped skills — review of project
  * `.agents/skills`, plus the per-workspace activation checklist over EVERY
  * approved skill (global + workspace). A session in this workspace spawns with
- * the skills toggled on here (bundled off by default, others on).
+ * the skills toggled on here (every approved+enabled skill is on unless unticked).
  */
 /**
  * Workspace-tier MCP. Writes .mcp.json at the repo root — the standard format

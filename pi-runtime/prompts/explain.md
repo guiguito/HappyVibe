@@ -1,12 +1,12 @@
 ---
 description: Explain a file, symbol or subsystem, and how it fits the codebase
-argument-hint: "<file, symbol or question>"
+argument-hint: "<file, symbol, question, or this repository> [for an audience]"
 ---
 Explain `${ARGUMENTS:-the file I am currently working in}`.
 
 **1. Find it.** If it is a path, read the whole file. If it is a symbol, locate its definition, then every place it is used — the call sites are what reveal its real contract, which is often narrower than its signature.
 
-**2. Explain it in this order**, adjusting depth to how big the thing is:
+**2. Explain it in this order**, adjusting depth to how big the thing is. If my request names an audience ("for a PM", "for a new hire"), pitch the vocabulary and depth to them; otherwise assume an engineer. For "this repository", give the tour: what it is, how it is laid out, the main flow, and the 3–5 files to read first.
 
 - **What it is for** — the problem it solves, in one or two sentences, in the vocabulary of the product rather than the code.
 - **How it works** — the actual flow: inputs, the steps that matter, outputs, and where the state lives. Walk one realistic path end to end instead of listing every function.

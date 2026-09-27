@@ -1,4 +1,5 @@
 ---
+# From anthropics/skills skills/skill-creator @3337550 (Apache-2.0). Modified by HappyVibe 2026-09-27: one note on which parts run here.
 name: skill-creator
 description: Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
 ---
@@ -6,6 +7,8 @@ description: Create new skills, modify and improve existing skills, and measure 
 # Skill Creator
 
 A skill for creating new skills and iteratively improving them.
+
+> **In HappyVibe:** the interview, drafting, test prompts and hand review below all work. The automated benchmark and description-optimization loops (`scripts/run_eval.py`, `scripts/run_loop.py`, `improve_description.py`) call the `claude -p` CLI and need Python with PyYAML, which HappyVibe does not provide — skip those steps and tune the description by hand with the user instead. Write new skills into the workspace's `.agents/skills/<name>/` unless the user asks for somewhere else.
 
 At a high level, the process of creating a skill goes like this:
 

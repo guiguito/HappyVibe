@@ -680,7 +680,7 @@ export function registerIpc(
 
   // ── §14 Skills ─────────────────────────────────────────────────────────────
   const skillRegistry = new SkillRegistry(path.join(userData, "skills-approvals.jsonl"));
-  // Pre-approve bundled starter skills (off by default) — idempotent.
+  // Pre-approve bundled starter skills (ON by default for new items, PRD §14 2026-09-27) — idempotent.
   try {
     installBundledSkills(bundledSkillsDir(piRuntimeDir()), skillRegistry, new Date().toISOString());
   } catch (e) {
