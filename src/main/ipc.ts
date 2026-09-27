@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell,
 import { forgetSessionFeatures, track, trackFeature } from "./usage/client";
 import { TurnTracker, type TurnEnd } from "./usage/turns";
 import { featureOfTool } from "./usage/features";
+import { eventFromLog, storePluginId, type TapContext } from "./usage/fromLog";
 import { describeProviderError } from "./providerError";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -602,7 +603,25 @@ export function registerIpc(
   // §35: declared up here because spawnOpts reads it — a read-only schedule's
   // run is clamped by the ENVIRONMENT, re-derived at every spawn.
   const scheduleStore = new ScheduleStore(path.join(userData, "schedules.json"));
-  const log = new EventLog(path.join(userData, "events.jsonl"));
+  // §39: the EventLog tap. Its state is declared before `log` so an early
+  // append can never reach an uninitialised binding.
+  const promptShownAt = new Map<string, number>(); // ui-request id → ms
+  const answeredWaits = new Map<string, number[]>(); // sessionId → FIFO of wait ms
+  const lastCommitDraft = new Map<string, string>(); // workspaceId → last generated message
+  const tap: TapContext = {
+    waitSec: (sid) => {
+      const ms = answeredWaits.get(sid)?.shift();
+      return ms === undefined ? undefined : Math.round(ms / 1000);
+    },
+    aiMessage: (ws, m) => typeof m === "string" && !!ws && lastCommitDraft.get(ws)?.trim() === m.trim(),
+    isStorePlugin: storePluginId,
+    isScheduleSession: (sid) => !!(sid && index.get(sid)?.scheduleId),
+    inWorktree: (ws) => !!ws && worktrees.projectOf(ws) !== ws,
+  };
+  const log = new EventLog(path.join(userData, "events.jsonl"), (e) => {
+    const r = eventFromLog(e, tap);
+    if (r) track(r.name, r.params);
+  });
   // §37: crash rows written before this point (a boot crash, which is the one
   // we most want) were buffered — hand them the log now.
   attachCrashAudit(log);
@@ -1140,6 +1159,7 @@ export function registerIpc(
   const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
   const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
     if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
+    promptShownAt.set(r.id, Date.now()); // §39: permission_answered.waitSec
   };
   const clearPending = (id: string): void => {
     if (pendingUi.clear(id)) pendingChanged();
@@ -3876,6 +3896,15 @@ export function registerIpc(
     // counting it. Tell them all it is answered, then re-publish the counts.
     send("hv:ui-resolved", { id });
     clearPending(id);
+    // §39: the audit row the bridge writes next has no wait time; answers
+    // arrive in order per session, so a FIFO pairs each with its row.
+    const shown = promptShownAt.get(id);
+    promptShownAt.delete(id);
+    if (shown !== undefined && owner && owner !== UTILITY) {
+      const q = answeredWaits.get(owner) ?? [];
+      q.push(Date.now() - shown);
+      answeredWaits.set(owner, q);
+    }
     if (owner && owner !== UTILITY) {
       activity.promptClosed(owner);
       drainPendingReload(owner); // prompt closed → session may be idle now
@@ -5504,6 +5533,8 @@ export function registerIpc(
       .map((f) => `${f.fileHeader}\n${f.hunks.map((h) => h.raw).join("")}`)
       .join("\n");
     if (!diffText.trim()) return null;
+    // §39: remembered so `git_action.aiMessage` can tell a commit made from
+    // this draft; only equality is ever sent, never the text.
     return draftCommitMessage(
       piRuntimeDir(),
       workspaceId,
@@ -5517,7 +5548,10 @@ export function registerIpc(
       undefined,
       oneShot("commit-message", workspaceId),
       task.append,
-    );
+    ).then((m) => {
+      if (m) lastCommitDraft.set(workspaceId, m);
+      return m;
+    });
   });
 
   /**

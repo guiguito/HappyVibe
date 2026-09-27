@@ -28,11 +28,20 @@ export class EventLog {
   // Serializes appends so concurrent writers can't interleave partial lines.
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly file: string) {
+  /** §39: `onAppend` is the usage-statistics tap — a picker, never the row itself. */
+  constructor(
+    private readonly file: string,
+    private readonly onAppend?: (event: Omit<LogEvent, "ts">) => void,
+  ) {
     mkdirSync(dirname(file), { recursive: true });
   }
 
   append(event: Omit<LogEvent, "ts">): Promise<void> {
+    try {
+      this.onAppend?.(event);
+    } catch {
+      /* analytics never breaks the audit log */
+    }
     const line = JSON.stringify({ ts: new Date().toISOString(), ...event }) + "\n";
     const next = this.queue.then(() => appendFile(this.file, line, "utf8"));
     this.queue = next.catch(() => {}); // one failed write must not wedge the queue
