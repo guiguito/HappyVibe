@@ -56,6 +56,9 @@ describe("resolveFeedbackConfig", () => {
       publishableKey: "ipk_x",
       databases: { general: "fdb_a", session: "fdb_b" },
       crashDatabase: FEEDBACK_CHANNELS.prod.crashDatabase,
+      analyticsDatabase: FEEDBACK_CHANNELS.prod.analyticsDatabase,
+      configDatabase: FEEDBACK_CHANNELS.prod.configDatabase,
+      environment: "production",
     });
   });
 
@@ -95,5 +98,27 @@ describe("resolveFeedbackConfig", () => {
     expect(fastPulse({})).toBe(false);
     expect(fastPulse({ HV_FEEDBACK_FAST_PULSE: "1" })).toBe(true);
     expect(fastPulse({ HV_FEEDBACK_FAST_PULSE: "true" })).toBe(false);
+  });
+});
+
+describe("§39 analytics + config databases", () => {
+  it("dev resolves the dev project's databases in development", () => {
+    const c = resolveFeedbackConfig({}, true)!;
+    expect(c.analyticsDatabase).toBe("adb_49c94fgpyah0");
+    expect(c.configDatabase).toBe("cfg_fnc0pxzkmjc0");
+    expect(c.environment).toBe("development");
+  });
+  it("prod resolves the prod project's databases in production", () => {
+    const c = resolveFeedbackConfig({}, false)!;
+    expect(c.analyticsDatabase).toBe("adb_k820zq5xsfh1");
+    expect(c.configDatabase).toBe("cfg_8hsh4dzaerwj");
+    expect(c.environment).toBe("production");
+  });
+  it("env overrides win", () => {
+    const c = resolveFeedbackConfig({ HV_ANALYTICS_DB: "adb_x", HV_CONFIG_DB: "cfg_y" }, true)!;
+    expect([c.analyticsDatabase, c.configDatabase]).toEqual(["adb_x", "cfg_y"]);
+  });
+  it("a forced channel keeps its own environment", () => {
+    expect(resolveFeedbackConfig({ HV_FEEDBACK_CHANNEL: "prod" }, true)!.environment).toBe("production");
   });
 });

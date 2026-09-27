@@ -31,6 +31,10 @@ export interface FeedbackConfig {
   databases: { general: string; session: string };
   /** §37: the crash database for this channel. Same `ipk_` key as feedback. */
   crashDatabase: string;
+  /** §39: usage statistics and remote config, same `ipk_` key. */
+  analyticsDatabase: string;
+  configDatabase: string;
+  environment: "development" | "production";
 }
 
 export const FEEDBACK_CHANNELS = {
@@ -39,12 +43,16 @@ export const FEEDBACK_CHANNELS = {
     publishableKey: "ipk_VV0zTdc7-c01Yc_EHEoMNJDvtaLlPPeP" as string | null,
     databases: { general: "fdb_k1wv6q4f5y3d", session: "fdb_8acy05bfbdd8" },
     crashDatabase: "cdb_38g7t8v30pxe",
+    analyticsDatabase: "adb_49c94fgpyah0",
+    configDatabase: "cfg_fnc0pxzkmjc0",
   },
   prod: {
     baseUrl: "https://feedback.bzapps.eu",
     publishableKey: "ipk__H5yhFPYwIx5kHuXI7F33b8XEkohrtXr" as string | null,
     databases: { general: "fdb_kvsfs4azz0xc", session: "fdb_fg71xjz0y9t6" },
     crashDatabase: "cdb_2nt89ap6w63j",
+    analyticsDatabase: "adb_k820zq5xsfh1",
+    configDatabase: "cfg_8hsh4dzaerwj",
   },
 } as const satisfies Record<
   FeedbackChannel,
@@ -53,6 +61,8 @@ export const FEEDBACK_CHANNELS = {
     publishableKey: string | null;
     databases: { general: string; session: string };
     crashDatabase: string;
+    analyticsDatabase: string;
+    configDatabase: string;
   }
 >;
 
@@ -74,6 +84,11 @@ export function resolveFeedbackConfig(
       session: env.HV_FEEDBACK_DB_SESSION ?? base.databases.session,
     },
     crashDatabase: env.HV_CRASH_DB ?? base.crashDatabase,
+    analyticsDatabase: env.HV_ANALYTICS_DB ?? base.analyticsDatabase,
+    configDatabase: env.HV_CONFIG_DB ?? base.configDatabase,
+    // D8: the environment follows the CHANNEL, not is.dev — a dev build forced
+    // onto prod must not write development rows into the prod database.
+    environment: channel === "dev" ? "development" : "production",
   };
 }
 
