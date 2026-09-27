@@ -86,6 +86,7 @@ import { basename as tabBasename } from "./tabs";
 import { delegationAgent, isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
 import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
+import { DocsLink } from "./components/DocsLink";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
 import { ipcMessage } from "./ipcError";
 
@@ -2119,7 +2120,7 @@ export default function App(): React.JSX.Element {
    * and the human types where they want to go — a human-opened browser has no
    * destination to guess, unlike the agent's, which always opens ON something.
    */
-  const newBrowser = async (ws: string): Promise<void> => {
+  const newBrowser = async (ws: string, url?: string): Promise<void> => {
     try {
       const info = await window.hv.browserCreate(ws);
       setBrowsers((p) => ({ ...p, [info.id]: info }));
@@ -2127,11 +2128,24 @@ export default function App(): React.JSX.Element {
       // which the caller (⌘B or a specific pane's `+`) has just set. The AGENT's
       // call passes the chat tab instead, and only that path does placement.
       setTabsByWs((p) => ({ ...p, [ws]: openBrowserTab(p[ws] ?? emptyTabs, info.id) }));
+      // Docs round: a help link opens ON its page, where a pane a human opens starts blank.
+      if (url) await window.hv.browserNavigate(info.id, url);
       setActiveWs(ws);
       setView("chat");
     } catch (err) {
       surface(err);
     }
+  };
+
+  /**
+   * Docs round (2026-09-28): a screen's help link. Browser panes live in a
+   * workspace's tabs, so with no workspace yet (first run) the system browser
+   * opens it instead.
+   */
+  const openDocs = (url: string): void => {
+    const ws = activeWs ?? workspaces[0];
+    if (ws) void newBrowser(ws, url);
+    else void window.hv.openExternal(url);
   };
 
   /**
@@ -3470,6 +3484,7 @@ export default function App(): React.JSX.Element {
             <AllToolsView tools={tools} sessionId={selectedId} workspaceId={selected?.workspaceId ?? null} />
           )}
           {activeView === "builtinTools" && <BuiltinToolsView onPlanBuiltinChange={setPlanBuiltinOn} />}
+          <DocsLink view={activeView} onOpen={openDocs} />
           </div>
         )}
         {/* W2.2: the chat area stays MOUNTED (hidden) on other views so open
