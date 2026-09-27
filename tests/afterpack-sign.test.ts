@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 // @ts-expect-error — plain ESM, no type declarations
 import { isMachO, machOFiles, macSignIdentity } from "../build/afterPackLayout.mjs";
+import { CAN_SYMLINK } from "./canSymlink"; // symlink fixture needs elevation on Windows
 
 /**
  * PRD §4 (open-source round, 2026-09-24): with a Developer ID, afterPack signs
@@ -27,7 +28,7 @@ describe("afterPack signing", () => {
     expect(isMachO(Uint8Array.from([0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 52]))).toBe(false);
   });
 
-  it("walks a tree, skips symlinks and non-binaries", () => {
+  it.skipIf(!CAN_SYMLINK)("walks a tree, skips symlinks and non-binaries", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "hv-macho-"));
     fs.mkdirSync(path.join(root, "a", "b"), { recursive: true });
     fs.writeFileSync(path.join(root, "a", "b", "x.node"), Buffer.from([0xcf, 0xfa, 0xed, 0xfe, 1, 2]));

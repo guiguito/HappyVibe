@@ -40,6 +40,7 @@ const SKIP_RE = /\.skipIf\(\s*(?:!?CAN_SYMLINK|process\.platform === "win32")|CA
 
 /** file → why it cannot run on Windows (capability or platform). */
 const EXPECTED: Record<string, string> = {
+  "afterpack-sign.test.ts": "planting a symlink needs elevation",
   "child-write-confine.test.ts": "planting a symlink needs elevation",
   "skills-delete.test.ts": "planting a symlink needs elevation",
   "prompt-templates-delete.test.ts": "planting a symlink needs elevation",
