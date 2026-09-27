@@ -6,6 +6,7 @@ import {
 } from "../context";
 import { EmptyState } from "./EmptyState";
 import { HowItWorks } from "./HowItWorks";
+import { trackUi } from "../usage";
 
 const estTok = (n: number): string => `≈${n.toLocaleString()} tok`;
 
@@ -73,6 +74,7 @@ export function ContextPanel({
   const removeSelected = (): void => {
     if (selected.size === 0) return;
     void window.hv.contextRemove(sessionId, [...selected]);
+    trackUi("context_changed", { action: "turn_removed" });
     setSelected(new Set());
   };
   const restore = (key: string): void => void window.hv.contextRestore(sessionId, [key]);
@@ -389,6 +391,8 @@ export function ContextPanel({
           onCancel={() => setConfirmCompact(false)}
           onConfirm={() => {
             setConfirmCompact(false);
+            // §39: a clicked compaction; `suggested` when the gauge was red.
+            trackUi("context_changed", { action: "compacted", trigger: redZone ? "suggested" : "manual" });
             onCompact();
           }}
         />

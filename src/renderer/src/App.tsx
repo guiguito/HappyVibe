@@ -88,7 +88,7 @@ import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
 import { ipcMessage } from "./ipcError";
-import { screenView } from "./usage";
+import { screenView, trackUi } from "./usage";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -336,7 +336,15 @@ export default function App(): React.JSX.Element {
     });
   };
   /** The rail's contract: press a panel to show it, press the lit one to close. */
-  const toggleDrawer = (panel: DrawerPanel): void => setDrawerPanel(drawerPanel === panel ? null : panel);
+  const toggleDrawer = (panel: DrawerPanel): void => {
+    // §39: opening the changes or files panel. Features are keyed by
+    // workspace here — the drawer belongs to the workspace, not a session.
+    if (drawerPanel !== panel && (panel === "changes" || panel === "files")) {
+      trackUi("panel_opened", { panel: panel === "changes" ? "git" : "files" });
+      if (panel === "changes" && activeWs) window.hv.usageFeature(activeWs, "git_panel");
+    }
+    setDrawerPanel(drawerPanel === panel ? null : panel);
+  };
   /**
    * Width is per PANEL, not per workspace and not shared: a tree of filenames
    * is comfortable at 256 while the Changes panel has a branch bar, a message
@@ -2101,6 +2109,7 @@ export default function App(): React.JSX.Element {
 
   /** §26: open a terminal in the focused pane of `ws`. ⌘T and the `+` menu. */
   const newTerminal = async (ws: string): Promise<void> => {
+    window.hv.usageFeature(ws, "terminal"); // §39
     try {
       const info = await window.hv.termCreate(ws);
       setTerminals((p) => ({ ...p, [info.id]: info }));
@@ -2483,11 +2492,17 @@ export default function App(): React.JSX.Element {
     // ask again rather than going quiet for a month over a failed launch.
     void window.hv
       .openExternal(STAR_URL)
-      .then(() => window.hv.snoozeStarNudge(STAR_SNOOZE_DAYS.starred))
+      .then(() => {
+        trackUi("star_nudge_answered", { action: "starred" }); // §39: only once the browser opened
+        return window.hv.snoozeStarNudge(STAR_SNOOZE_DAYS.starred);
+      })
       .catch(() => {});
   };
 
-  const starLater = (): void => setStarNudge(false); // the 3-day stamp landed at show
+  const starLater = (): void => {
+    trackUi("star_nudge_answered", { action: "later" }); // §39: the button and the ✕ alike (§36)
+    setStarNudge(false); // the 3-day stamp landed at show
+  };
 
   /**
    * The wizard's handover (§22 round 19). It closes by DOING the next thing:
@@ -2824,6 +2839,7 @@ export default function App(): React.JSX.Element {
     const msgCount = tail.filter((x) => x.kind === "user" || x.kind === "assistant").length;
     const toolIds = new Set(tailToolCallIds(items, idx));
     const { truncateChat, restoreFiles } = rewindActions(scope);
+    trackUi("context_changed", { action: "rewound", rewindMode: scope }); // §39
 
     // Files first: the restore reads the CURRENT transcript's tool ids, and it
     // must not depend on whether the chat half ran.

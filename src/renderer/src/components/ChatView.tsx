@@ -46,6 +46,8 @@ import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-docum
 import { Banner } from "./Banner";
 import { UpdateRow } from "./UpdateRow";
 import { SessionPulse } from "./SessionPulse";
+import { trackUi } from "../usage";
+import { promptFlags } from "../usageUi";
 
 /** §20 round 17 — red-zone dismissals persist per session (Principle 5: never nag). */
 const REDZONE_KEY = "hv:redzone-dismissed:";
@@ -344,9 +346,19 @@ export function ChatView({
     el?.focus();
   }, []);
 
+  // §39: a send that carried dictated text says so (a flag, never the text).
+  const dictatedRef = useRef(false);
+  const insertDictated = useCallback(
+    (text: string) => {
+      dictatedRef.current = true;
+      if (sessionId) window.hv.usageFeature(sessionId, "voice");
+      insertText(text);
+    },
+    [insertText, sessionId],
+  );
   const dictation = useDictation({
     settings: voiceSettings ?? null,
-    onText: insertText,
+    onText: insertDictated,
     onError: setVoiceNotice,
     onNeedsActivation: () => setVoiceActivateOpen(true),
   });
@@ -716,6 +728,7 @@ export function ChatView({
   useEffect(refreshDocumentAvailability, []);
 
   const attachDocument = async (): Promise<void> => {
+    if (sessionId) window.hv.usageFeature(sessionId, "document");
     setAttachMenuOpen(false);
     const paths = await window.hv.pickDocument();
     if (paths?.length) void attachDocumentPaths(paths);
@@ -809,6 +822,16 @@ export function ChatView({
     () => new Set(Object.keys(localStorage).flatMap((k) => (k.startsWith(REDZONE_KEY) ? [k.slice(REDZONE_KEY.length)] : []))),
   );
   const gauge = computeGauge(stats, fallbackWindow);
+  // §39: each time a panel OPENS, from the pill or the red-zone banner alike.
+  // The gauge's value rides along, omitted while it is still measuring.
+  const gaugePct = gauge?.percent;
+  useEffect(() => {
+    if (contextOpen) trackUi("panel_opened", { panel: "context", ...(gaugePct != null ? { contextPct: Math.round(gaugePct) } : {}) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on open only, not on every gauge tick
+  }, [contextOpen]);
+  useEffect(() => {
+    if (costOpen) trackUi("panel_opened", { panel: "cost" });
+  }, [costOpen]);
   const suggestCompact = gauge?.zone === "red" && sessionId != null && !suggestDismissed.has(sessionId) && !contextOpen;
 
   // #8: filter the transcript by search text (message kinds that carry text).
@@ -888,6 +911,23 @@ export function ChatView({
       .flatMap((r) => (r.thumbnail ? [{ name: r.label.slice(0, 40) || "element", mimeType: "image/png", data: r.thumbnail.split(",")[1] ?? "" }] : []))
       .filter((a) => a.data);
     const outgoing = [...attachments, ...refImages];
+    // §39: counts and flags only. Templates are the prompt-sourced slash commands.
+    const templateNames = new Set((commandCache.current ?? []).filter((c) => c.source === "prompt").map((c) => c.name));
+    const flags = promptFlags({
+      text: input,
+      planMode: planEnabled,
+      images: outgoing.length,
+      documents: documents.length,
+      mentions: mentions.length,
+      queued: busy,
+      viaVoice: dictatedRef.current,
+      templateNames,
+    });
+    dictatedRef.current = false;
+    if (flags) {
+      trackUi("prompt_sent", flags);
+      if (flags.usedTemplate && sessionId) window.hv.usageFeature(sessionId, "prompt_template");
+    }
     onSend(
       withRefs,
       behavior,
@@ -2241,7 +2281,10 @@ function RunRail({
                 // killed the open-as-tab flight the moment the tool-call join
                 // shipped — the derivation now lives only in runRail.ts.
                 data-hv-run-key={a.key}
-                onClick={() => setOpen((o) => (o === a.key ? null : a.key))}
+                onClick={() => setOpen((o) => {
+                  if (o !== a.key) trackUi("panel_opened", { panel: "run_card" });
+                  return o === a.key ? null : a.key;
+                })}
                 aria-expanded={open === a.key}
                 aria-label={`${a.name}${a.caption ? ` — ${a.caption}` : ""} (${a.state})`}
                 // The hue is INLINE, not a class: Tailwind's scanner never sees
