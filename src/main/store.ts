@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { twDeleteChildren, twSweepOrphans } from "./twChildren";
 import { platform } from "./platform";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -430,6 +431,13 @@ function deleteArtifactsFor(sessionDirPath: string, ids: ReadonlySet<string>): n
 export function deleteSessionChildren(sessionDirPath: string, piSessionFile: string | undefined): void {
   const parent = sessionFilePath(sessionDirPath, piSessionFile);
   if (!parent) return;
+  // §12 (2026-09-26): tintinweb's children live flat in <sessions>/subagents/ and name
+  // their parent in their header. Before the old layout, and while the parent still exists.
+  try {
+    twDeleteChildren(sessionDirPath, piSessionFile);
+  } catch {
+    /* best effort, like the rest */
+  }
   try {
     const ids = sessionRunIds(sessionDirPath, piSessionFile);
     // The child-session root is the parent path minus its extension, so it needs
@@ -463,6 +471,12 @@ export function deleteSessionChildren(sessionDirPath: string, piSessionFile: str
 export function sweepOrphanedSubagentData(sessionDirPath: string): { dirs: number; artifacts: number } {
   const root = path.resolve(sessionDirPath);
   const out = { dirs: 0, artifacts: 0 };
+  // §12 (2026-09-26): tintinweb children whose parent session is gone.
+  try {
+    out.dirs += twSweepOrphans(sessionDirPath);
+  } catch {
+    /* next start */
+  }
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });

@@ -32,8 +32,6 @@ export interface Platform {
   readonly isWindows: boolean;
   /** Node-capable exec path for Electron-as-node children. */
   nodeExecPath(): string;
-  /** PI_SUBAGENT_PI_BINARY, relative to `pi-runtime/`. */
-  childLauncher(): string;
   /** Take a process AND its descendants down. */
   killTree(pid: number): void;
   /** A pid's full command line, or null when it is gone. */
@@ -106,14 +104,6 @@ export function makePlatform(deps: PlatformDeps): Platform {
       if (!m) return deps.execPath;
       const helper = `${m[1]}/Contents/Frameworks/${m[2]} Helper (Plugin).app/Contents/MacOS/${m[2]} Helper (Plugin)`;
       return deps.existsSync(helper) ? helper : deps.execPath;
-    },
-
-    childLauncher() {
-      // pi-subagents getPiSpawnCommand (src/runs/shared/pi-spawn.ts): on win32 a
-      // PI_SUBAGENT_PI_BINARY matching isNodeScriptPath (/\.(mjs|cjs|js)$/i) is run as
-      // `process.execPath <script> …args` — no shell, which is the whole reason a .cmd
-      // shim is not needed (Node refuses to spawn a .cmd without shell:true).
-      return win ? "bin/pi-child.mjs" : "bin/pi-node.sh";
     },
 
     killTree(pid) {

@@ -252,3 +252,42 @@ export function parseDocumentChips(text: string): Array<{ path: string; format: 
   while ((m = re.exec(text)) !== null) out.push({ path: m[1], format: m[2] });
   return out;
 }
+
+/**
+ * §7/§12 (2026-09-26): the `@` menu's second kind of agent row — a RUNNING run, which a
+ * prompt can be sent to mid-run. Distinct from `agentMentionItems` (the roster, whose
+ * pick is plain text the main model reads as "delegate to it"). Numbered per agent so
+ * two concurrent `worker` runs read "run 1" / "run 2"; a finished run is never offered.
+ */
+export function runMentionItems(
+  runs: Array<{ id: string; runId?: string; kind?: string; agent: string; status: string }>,
+  query: string,
+  limit = 3,
+): Array<{ runId: string; agent: string; label: string }> {
+  const q = query.toLowerCase();
+  const seen = new Map<string, number>();
+  const out: Array<{ runId: string; agent: string; label: string }> = [];
+  for (const r of runs) {
+    const runId = r.runId ?? (r.kind === "async" ? r.id : undefined);
+    if (r.status !== "running" || !runId || r.agent === "workflow") continue;
+    const n = (seen.get(r.agent) ?? 0) + 1;
+    seen.set(r.agent, n);
+    if (!r.agent.toLowerCase().includes(q)) continue;
+    out.push({ runId, agent: r.agent, label: `Message ${r.agent} · run ${n}` });
+  }
+  return out.slice(0, limit);
+}
+
+/**
+ * A prompt that goes to a running run instead of the main model — ONLY when the user
+ * PICKED that run from the menu and the prompt still starts with its `@agent ` token.
+ * Typed text is never parsed as a run address: `@worker` by hand is a roster mention or
+ * a file, and guessing would hijack one or leak a child's message to the main model.
+ */
+export function steerTarget(text: string, picked: { runId: string; agent: string } | null): { runId: string; message: string } | null {
+  if (!picked) return null;
+  const head = `@${picked.agent} `;
+  if (!text.startsWith(head)) return null;
+  const message = text.slice(head.length).trim();
+  return message ? { runId: picked.runId, message } : null;
+}

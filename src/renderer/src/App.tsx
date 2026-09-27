@@ -83,7 +83,7 @@ import { AgentsMdPanel } from "./components/AgentsMdPanel";
 import type { SessionStats } from "./context";
 import { basename as tabBasename } from "./tabs";
 // Shared tool-name knowledge with the bridge (precedent: toolLabel.ts ← hv-mcp).
-import { isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
+import { delegationAgent, isWaitTool } from "../../../pi-runtime/extensions/hv-rules";
 import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
@@ -1054,6 +1054,11 @@ export default function App(): React.JSX.Element {
           }
           return { ...p, [sid]: { ...fg, ...async } };
         });
+      } else if (sub.stage === "steer-error" && sub.runId) {
+        // §12 (2026-09-26): the composer already said "Sent" when main accepted it; if the
+        // run could not take it (it had just finished), say so where the user is reading.
+        const run = findByRunId(delegationsRef.current[sid] ?? {}, sub.runId);
+        appendItem(sid, { kind: "notice", text: `${run?.agent ?? "The sub-agent"} could not take your message${sub.error ? ` (${sub.error})` : ""}.`, pending: false });
       } else if (sub.stage === "interrupt-sent" && sub.runId) {
         setDelegations((p) => {
           const run = findByRunId(p[sid] ?? {}, sub.runId!);
@@ -1369,6 +1374,7 @@ export default function App(): React.JSX.Element {
         const live = {
           currentTool: status.currentTool as string | undefined,
           activityState: status.activityState as string | undefined,
+          attentionReason: status.attentionReason as string | undefined,
           turnCount: status.turnCount as number | undefined,
           recentTools: status.recentTools as Array<{ tool: string; args?: string }> | undefined,
           // Keep the last figure when a tick arrives without one: a stopped or
@@ -1463,8 +1469,11 @@ export default function App(): React.JSX.Element {
       // draw a delegation card with no agent and no task — literally "→ asked ?".
       // Hidden for the same reason as the wait tool above; the delegation, its
       // result and any artifact read all still show.
+      // Only the pre-switch `subagent` tool had machinery-only calls. tintinweb's `Agent`
+      // always carries work (`subagent_type` + `prompt`, none of the old field names), and
+      // running it through this guard hid EVERY delegation card (GUI pass, 2026-09-27).
       if (
-        isSubagentTool((e as { toolName?: string }).toolName)
+        (e as { toolName?: string }).toolName === "subagent"
         && isSubagentQuery((e as { args?: unknown }).args)
       ) return;
       // §7 round 16: a tool call IS the next action — settle the reasoning that
@@ -1489,7 +1498,9 @@ export default function App(): React.JSX.Element {
             id: t.toolCallId,
             kind: "fg",
             toolCallId: t.toolCallId,
-            agent: (t.args as { agent?: string } | undefined)?.agent ?? "subagent",
+            // Either stack (`agent` / tintinweb `subagent_type`): applySubagentStarted matches the
+            // `started` notify to THIS run by agent name, so a wrong name would draw two circles.
+            agent: delegationAgent(t.args) ?? "subagent",
             label: delegationLabel(t.args),
             startedAt: Date.now(),
             status: "running",
@@ -2750,16 +2761,19 @@ export default function App(): React.JSX.Element {
     // Round 3 #13: persistent grants aren't understood by the bridge — respond
     // with a plain "Allow" for this call and write a tool-layer allow rule at the
     // chosen scope (workspace path, or global). The rules reload covers future calls.
-    let bridgeChoice: "Allow" | "Allow for session" | "Deny" = "Deny";
-    if (choice === "Allow for workspace" || choice === "Always allow") {
+    let bridgeChoice: "Allow" | "Allow for session" | "Allow for this run" | "Deny" = "Deny";
+    // §10 (Phase 4): a sub-agent's answer never becomes a rule — it covers that run at most.
+    if (!uiReq.info.child && (choice === "Allow for workspace" || choice === "Always allow")) {
       const ws = choice === "Allow for workspace" ? (sessions.find((s) => s.id === sid)?.workspaceId ?? null) : null;
       void window.hv.addPermissionRule(ws, tool);
       bridgeChoice = "Allow";
-    } else {
+    } else if (choice !== "Allow for workspace" && choice !== "Always allow") {
       bridgeChoice = choice;
     }
     window.hv.respondPermission(uiReq.req.id, bridgeChoice);
-    if (sid) {
+    // A child's call is not a card in the parent's transcript, so it gets no denied card and
+    // no pending approval there — its own run card and the audit log carry the outcome.
+    if (sid && !uiReq.info.child) {
       if (bridgeChoice === "Deny") {
         // A denied call never reaches tool_execution_start — show the outcome as its own card.
         appendItem(sid, {
@@ -3797,7 +3811,6 @@ export default function App(): React.JSX.Element {
             queue={queues[sid] ?? emptyQueue}
             delegations={Object.values(delegations[sid] ?? {})}
             onStopRun={(runId) => void window.hv.subagentInterrupt(sid, runId)}
-            onStopChild={(runId, childId) => void window.hv.subagentStopChild(sid, runId, childId)}
             agents={agents}
             // §26 part 2: title and running-state come from the shared
             // `terminals` map, which the push channel keeps live — so an exited

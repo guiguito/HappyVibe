@@ -1,81 +1,28 @@
 /**
- * The shape of `<agentDir>/settings.json` that keeps the builtins HappyVibe does
- * not offer out of upstream's own roster — PURE, so vitest can exercise it.
+ * The Agents page's per-agent switch, as `<agentDir>/settings.json` records it —
+ * PURE, so vitest can exercise it. The bridge reads the result LIVE
+ * (`twDisabledAgents`), so a toggle applies on the next call without a respawn.
  *
- * PRD §12 (2026-08-28): pi-subagents 0.58 ships 13 builtin agents, six of them
- * `runner: external-cli`. `EXTERNAL_CLI_AGENTS` in hv-rules.ts, checked by the
- * bridge, is the ENFORCEMENT — it has to be, because a PROJECT-scope
- * `.pi/settings.json` override beats this user-scope file outright (pi-subagents'
- * agents.ts returns on the project override before it ever reads the user one),
- * so a cloned repo could re-enable one. This module is HYGIENE: with the six
- * disabled here the model is never told they exist, so it cannot spend a turn
- * proposing one and being refused.
+ * MERGES at three levels, because `<agentDir>/settings.json` is PI's file (models,
+ * theme, providers) and HappyVibe is merely one writer of it: the top level, the
+ * `subagents` object, and each agent entry. Idempotent.
  *
- * Split out of config.ts rather than written inline there because config.ts
- * imports electron's `app` for `agentDir()`, so vitest cannot import it — the
- * same division of labour as spawn.ts and the pure hv-*.ts modules.
+ * Also the locked tintinweb settings (TINTINWEB_SETTINGS, below).
+ *
+ * Split out of config.ts because config.ts imports electron's `app` for
+ * `agentDir()`, so vitest cannot import it.
  */
-import { EXTERNAL_CLI_AGENTS, UNSUPPORTED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
 
-/** The settings.json key pi-subagents reads builtin overrides from. */
+/** The key the bridge reads user-disabled agents from (kept from the pre-tintinweb file). */
 const OVERRIDES_KEY = "agentOverrides";
 
 /**
- * Return `settings` with every builtin in DISABLED_BUILTIN_AGENTS marked disabled.
- *
- * That is a UNION of two sets with different reasons (hv-rules.ts): the six
- * external-CLI runners, which the bridge also refuses because nothing can bound
- * them; and the unsupported ones (`researcher`, `oracle`), which are ordinary Pi
- * children that simply cannot do their job here. Disabling removes them from
- * upstream's resolved set, so a delegation cannot find them — which is what makes
- * "hidden" mean uninvokable rather than merely unlisted, and is also why the
- * Agents page and the injected roster need no filter of their own
- * (`enumerateAgents` already skips `disabled`).
- *
- * MERGES at three levels and every one of them matters:
- *  - top level, because `<agentDir>/settings.json` is PI's file (models, theme,
- *    providers). HappyVibe is merely the first thing in the app to write it, and
- *    replacing it would silently discard whatever Pi or the user put there;
- *  - the `subagents` object, so a user's `defaultThinking`/`modelScope` survives;
- *  - each agent entry, so `{model: …}` a user set on one of the six is kept
- *    beside `disabled: true` rather than replaced by it.
- *
- * Idempotent: running it over its own output changes nothing.
- *
- * The key is `agentOverrides`, NOT `overrides`. pi-subagents parses
- * `settings.subagents.agentOverrides` INTO an internal field it calls
- * `overrides`, so writing `overrides` here parses to nothing and does nothing —
- * a silent no-op with no symptom anywhere.
- *
- * Deliberately not `disableBuiltins: true`, which is all-or-nothing and would
- * also remove `worker` and `reviewer` — the two native builtins the next round
- * wants to adopt.
- */
-/**
- * Which agents end up disabled, given the user's explicit choices.
- *
- * `agentsEnabled` is SPARSE — it holds only names the user actually toggled, so
- * resolution is `userChoice ?? default`, the same shape skills use
- * (`activation?.[skill.id] ?? true`, skills/registry.ts). Seeding it with today's
- * defaults would freeze this round's judgement about `researcher` forever;
- * leaving it sparse means a later change to UNSUPPORTED_BUILTIN_AGENTS still
- * reaches everyone who never expressed an opinion.
- *
- * EXTERNAL_CLI_AGENTS is applied LAST and unconditionally. It is a boundary
- * guarantee, not a preference — a hand-edited config must not re-open it, which
- * is why main resolves this rather than trusting whatever the renderer sends.
+ * Which agents end up disabled, given the user's explicit choices. `agentsEnabled`
+ * is SPARSE — only names the user actually toggled — so an agent is on unless the
+ * user said otherwise.
  */
 export function resolveDisabledAgents(agentsEnabled: Record<string, boolean> = {}): Set<string> {
-  const out = new Set<string>();
-  for (const [name, enabled] of Object.entries(agentsEnabled)) {
-    if (!enabled) out.add(name);
-  }
-  // Both forced sets are applied LAST and unconditionally, so a hand-edited
-  // config cannot re-open either. They are also never LISTED (the bridge drops
-  // them), which is what keeps the page's switches to agents that actually work.
-  for (const name of UNSUPPORTED_BUILTIN_AGENTS) out.add(name);
-  for (const name of EXTERNAL_CLI_AGENTS) out.add(name);
-  return out;
+  return new Set(Object.entries(agentsEnabled).filter(([, on]) => !on).map(([name]) => name));
 }
 
 export function disabledAgentOverrides(
@@ -96,4 +43,42 @@ export function disabledAgentOverrides(
   subagents[OVERRIDES_KEY] = overrides;
   out.subagents = subagents;
   return out;
+}
+
+/**
+ * PRD §12 (2026-09-26): what HappyVibe writes to tintinweb's GLOBAL settings file,
+ * `<agentDir>/subagents.json`. Every value is stated, none inherited — a future
+ * upstream default flip must not change behaviour silently. The owned patch (P4)
+ * stops a project's own `.pi/subagents.json` from overriding any of it.
+ *
+ *  - widgetMode/fleetView/agentMentions off: their TUI surfaces and `@handle` input
+ *    hook; the renderer owns every surface and the composer owns `@`.
+ *  - outputTranscript off: the `.output` copies land in os.tmpdir(), which "delete
+ *    session" (§17) can never reach.
+ *  - schedulingEnabled/worktreeIsolation off: ours are §35 and §29.
+ *  - disableDefaultAgents + fallbackSubagent "none": our roster only, and an unknown
+ *    name FAILS rather than silently becoming general-purpose (§16).
+ *  - reportUsage off: §19 already counts each child's own session file.
+ *  - rememberAgents on: the child's session file is what transcripts, cost and
+ *    thinking read.
+ *  - maxConcurrent 4: children share the session's process (R1); measured to hold.
+ */
+export const TINTINWEB_SETTINGS = {
+  widgetMode: "off",
+  fleetView: false,
+  agentMentions: "off",
+  outputTranscript: false,
+  schedulingEnabled: false,
+  worktreeIsolation: false,
+  disableDefaultAgents: true,
+  fallbackSubagent: "none",
+  reportUsage: false,
+  rememberAgents: true,
+  maxConcurrent: 4,
+  workflowsEnabled: true,
+} as const;
+
+/** Merge the locked set over whatever is there (the file's schema is upstream's). */
+export function tintinwebSettings(existing: Record<string, unknown>): Record<string, unknown> {
+  return { ...existing, ...TINTINWEB_SETTINGS };
 }

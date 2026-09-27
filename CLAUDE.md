@@ -55,10 +55,9 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   *"spawnSync is not exported by __vite-browser-external"*. Same trap as `schedules.ts`.
   Also: tests are NOT in `tsconfig.node.json`'s include, so a missing required argument
   there surfaces at RUNTIME, not at typecheck.
-- **The child guard reaches Windows through `pi-runtime/bin/pi-child.mjs`**, selected by
-  pi-subagents' own win32 rule (a `.mjs` PI_SUBAGENT_PI_BINARY is run as
-  `process.execPath <script> …`). Pinned in `tests/pi-subagents-contract.test.ts`, including
-  that win32 with no env var THROWS rather than falling back to `pi` on PATH.
+- **Sub-agents need no launcher on Windows** — tintinweb builds children IN the session's own
+  Pi process, so the child guard arrives through the host policy, not a child binary (the old
+  `pi-child.mjs` route went with nicobailon, 2026-09-26).
   **`await import(<absolute path>)` is fatal there** — *"absolute paths must be valid
   file:// URLs. Received protocol 'c:'"* — so every sidecar uses `pathToFileURL().href`.
   That one bug also disguised itself as "anydoc has no build for this platform".
@@ -83,7 +82,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   the `platformCopy.ts` helpers carry the rest, and two source scans in
   `tests/mod-key-copy.test.ts` keep them out — an absence cannot be screenshotted.
 - **`npm test` is `node scripts/test.mjs`** (the inline `VAR=… vitest` is POSIX-only), and
-  `tests/windows-skips.test.ts` pins the 11 platform/capability gates with a reason each.
+  `tests/windows-skips.test.ts` pins the platform/capability gates with a reason each (8 files at 2026-09-26 — re-count, never trust this number).
   Prefer a CAPABILITY probe (`CAN_SYMLINK`, `CAN_DENY_READ`) over a platform skip: a box with
   Developer Mode on still runs the symlink tests.
 - **Installer:** NSIS x64 only (no win-arm64 build exists for sherpa or anydoc), per-user, user
@@ -182,8 +181,8 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   own `401 User not found`, so the route is proven independently of any balance. Pricing is
   ~$0.08/M in, $0.17/M out — a full serial batch costs pennies. Resolver pinned by
   `tests/live-model.test.ts`.
-- Live-Pi tests (real model via the resolver above, skipIf-gated) — **23 files** as of
-  2026-09-14 (was 17 at 2026-08-16, 14 before that).
+- Live-Pi tests (real model via the resolver above, skipIf-gated) — **24 files** as of
+  2026-09-26 (23 at 2026-09-14, 17 at 2026-08-16, 14 before that).
   Source of truth = `grep -rl "skipIf(!KEY" tests/` — RE-DERIVE IT, never trust a list in prose.
   The count in this file has drifted three times; the grep has not. Do not repair it by hand
   either — run the grep, write what it says, and note the date.
@@ -272,7 +271,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   boot, measured 671 ms warm vs 15_667 ms cold. If the thing you await demonstrably ARRIVES, only
   late, waiting longer is the real fix (see `ui-fallback-bridge.test.ts` `waitFor`, which flaked
   2 runs in 3 on an 8 s bound). If it never arrives, it's the prose-turn class above — re-ask.
-- Contract tests are the Pi upgrade gate: any pi/pi-subagents pin bump must pass them.
+- Contract tests are the Pi upgrade gate: any Pi or tintinweb pin bump must pass them.
   Wire shapes are documented in docs/validation/d1.md — new bridge shapes go there too.
 - **You cannot force a tool call by passing `toolChoice` — it is silently DISCARDED. HALF of this
   is stale from Pi 0.85.0; re-measure before acting on tc1.md.** The original finding was that
@@ -291,210 +290,101 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   extension hook, whose return value replaces the raw request body. Full citations + the three
   constraints (hook fails OPEN, arm-per-turn or `agent_end` hangs, keep `askUntil`) in
   docs/validation/tc1.md. Read it before re-investigating.
-- **The bridge reaches two `pi-subagents` internals by RELATIVE path — never "tidy" them into
-  bare specifiers.** `listAsyncRuns` (`src/runs/background/async-status.ts`) + `ASYNC_DIR`
-  (`src/shared/types.ts`) feed `/hv-subagent-list`'s card resync, and from 0.35.0 the package
-  ships an `exports` map (`.`, `./background-work`, `./delegation`, `./capability-ceiling`,
-  `./preflight`) that lists neither file. An exports map only gates BARE specifiers, so
-  `../node_modules/pi-subagents/src/...` resolves where `pi-subagents/src/...` throws
-  `Missing "./src/..." specifier` — at extension LOAD, taking ~18 tests red at once (that is the
-  symptom, not a mystery). No public surface can replace this: `snapshotBackgroundWork()` is the
-  inverse API (other extensions declare work TO pi-subagents; it never self-registers, so the
-  snapshot is empty) and the `status` RPC's structured `fleet` field withholds run identifiers by
-  design (`rpc.ts:76` "never a run or async identifier") while `/hv-subagent-list` needs
-  `{runId, agent, asyncDir}`. Gate: `tests/pi-subagents-contract.test.ts` (key-free) pins the
-  relative form, the exports map, and the three fields. Bumped 0.34.0 → 0.40.0 on 2026-08-02,
-  0.40.0 → 0.50.0 on 2026-08-17, 0.53.0 → 0.58.0 on 2026-08-28, 0.58.0 → 0.64.0 on 2026-09-04
-  (0.65.0 deliberately skipped — see the native-AgentSession entry below), and **HELD at 0.64.0
-  through the Pi 0.86.1 bump on 2026-09-21 for the same reason, now stated in upstream's own
-  words**: 0.65.0's changelog says `PI_SUBAGENT_PI_BINARY` "now applies only to Herdr project
-  panes and the profile model probe", and 0.68.0's says such a child "never loads the parent's
-  ambient extensions". That env var is the ONLY route `hv-child-guard.ts` reaches a sub-agent
-  (`pi-node.sh` + `pi-child.mjs`, nothing else), so taking 0.65+ deletes §12's third enforcement
-  layer with NO test failing. 0.68.0 also removed persistent model exclusions outright, which
-  makes `src/main/modelExclusions.ts` and the `model.excluded` audit row dead the same day.
-  Mixing pins is fine and was measured: 0.64.0 runs against Pi 0.86.1 (see the typecheck entry
-  for the one price it charges). At 0.58 the map lists **13** subpaths
-  (11 at 0.50) and `./shared-types`
-  looks like ASYNC_DIR's home but re-exports TYPES ONLY — re-derive, never hand-list.
-- **Two PRD §12 invariants are enforced by matching an upstream NAME or SHAPE, and 0.40.0 broke
-  both silently — no test failed.** (1) The "never block on a delegation" guard matched the literal
-  `"wait"`; 0.35.0 renamed the tool `subagent_wait` with no alias, and **0.61.0 renamed it again to
-  `bg_wait`** ("Remove the deprecated compatibility wait alias", #1729) — also with no alias, so
-  assume a THIRD rename rather than that this has settled. All three names live in
-  `WAIT_TOOLS`/`isWaitTool` (hv-rules.ts), imported by the bridge (blocks the call) AND the renderer
-  (hides the card) — never re-inline a literal. The contract test derives the name upstream actually
-  registers from its own `src/runs/background/wait-tool.ts` and asserts it is in the set; that
-  tripwire is the ONLY thing that caught 0.61, so never weaken it to a hand-listed name. (2) The subagent card read the child transcript from
-  `tool_execution_update…results[].messages`; 0.40.0 sets it `undefined` and substitutes compact
-  `toolCalls` (same commit as the deep-fan-out protocol-limit fix). Renderer maps `toolCalls` → the
-  same rows and renders `finalOutput`. Both pinned in `tests/pi-subagents-contract.test.ts` +
-  `agents-renderer.test.ts`; wire shapes in docs/validation/d1.md.
-  (3) 0.50 **redacts the delegation `task`/`goal` to `"[prompt redacted]"` on every surface an
-  observer reads** — the lifecycle events, `status.json`'s `steps[].description`, metadata, the
-  child's input artifact — unconditionally (`statusStepDescription` ignores its own argument; no
-  config, no env). The child still gets the real task, so only DISPLAY breaks. Nothing can hand a
-  caption back, so `hv-subagent-tasks.ts` remembers it from the bridge's own `tool_call` and
-  PERSISTS it (a respawn has no args event and no on-disk task). One slot per agent,
-  last-write-wins — **not** a queue: a DENIED delegation also passes through `tool_call`, and a
-  queue would caption the next same-agent run with the refused task. `REDACTED_PROMPT` lives in
-  hv-rules.ts beside WAIT_TOOLS (the renderer cannot import a vendored package) and the contract
-  test asserts our copy still equals upstream's constant.
-- **A delegation was a WORKFLOW at 0.50-0.53 and is `mode:"single"` again from 0.55 — the card
-  survived both because it is keyed off `asyncId`, not off the mode.** At 0.50 `details.mode` was
-  `"workflow"` with a `missionId` even for one child, and that silently removed the run card:
-  the workflow path emits `subagent:async-complete` but **NEVER `subagent:async-started`**
-  (measured twice with a `console.error` inside the bridge's own handler), and the sticky card was
-  raised by that notify — so an async delegation showed the user NOTHING for its whole life and
-  then dropped a result in, the inverse of PRD §12 and with no test covering it. The card is
-  RE-KEYED from the foreground one at `tool_execution_end` (`details.asyncId`, measured
-  `=== details.runId === the complete notify's runId`), which needs no notify.
-  **0.55 then unwrapped single-child launches again** ("run public single-child launches directly…
-  so async external-job agents do not show a completed workflow"), so at 0.58 an async
-  `{agent, task}` delegation returns `details: {mode:"single", runId, asyncId, asyncDir, …}`
-  (`async-execution.ts:1967`) and only a real multi-child `workflowScript` is `mode:"workflow"`.
-  **The re-key stays load-bearing, but not for the reason first recorded.** `subagent:async-started`
-  IS emitted at 0.58 (`async-execution.ts:1413`, `:1940`) — an earlier note here claimed nothing
-  emits it, from a grep for the literal string that only matched the constant's definition while
-  every emitter references `SUBAGENT_ASYNC_STARTED_EVENT`. What was measured behaviourally at 0.50
-  was narrower and still true: the WORKFLOW path never emitted it. 0.55's single-child unwrap put
-  delegations back on the direct async path, which does. The re-key still matters because the
-  notify cannot caption a card correctly — it carries no `toolCallId`, so two same-agent
-  delegations in one turn are indistinguishable there (see the caption entry below).
-  `agent` on the completion event was the literal `"workflow"` at 0.50 (the bridge drops it, or the
-  hand-off notice names a pipeline the user never chose); the drop is harmless now that the real
-  name comes through. **Async is upstream's own default** — a run with no `asyncByDefault` config
-  still detaches.
-- **Upstream ships 13 builtin agents from 0.58 (was 7), and SIX of them are opaque — we refuse
-  them.** `claude-code`, `claude-code-writer`, `codex-exec`, `codex-exec-writer`, `cursor-agent`,
-  `cursor-agent-writer` are all `runner: {type: external-cli}`: a third-party CLI in its own
-  process, so the capability ceiling cannot bound it, the child guard cannot run inside it, and its
-  tool calls never reach the audit log (upstream refuses ask/deny for external runners by design).
-  They arrive DELEGATABLE with the pin, `-writer` variants included, so §12's three layers would
-  have quietly stopped being true for six agents the model can pick itself.
-  **Enforcement is `EXTERNAL_CLI_AGENTS`/`isExternalCliAgent` (hv-rules.ts), checked by the bridge
-  BEFORE `resolveBoundary`** — that call also WIDENS the session ceiling, and a grant for an agent
-  nothing can hold to it is worse than no grant. It cannot live in upstream's settings file
-  instead: a PROJECT-scope `.pi/settings.json` override beats the user scope OUTRIGHT
-  (`agents.ts:1340` returns on the project override before it ever reads the user one), so a cloned
-  repo could re-enable one. `writeSubagentSettings()` (config.ts + the pure `subagentSettings.ts`)
-  is HYGIENE only, keeping them out of the injected roster — and its key is **`agentOverrides`,
-  NOT `overrides`**: pi-subagents parses the former INTO a field it calls the latter, so the obvious
-  spelling is a silent no-op. Never `disableBuiltins: true` — all-or-nothing, and it would also
-  remove `worker`/`reviewer`. The refusal set is DERIVED from upstream's own frontmatter in
-  `tests/pi-subagents-contract.test.ts`, so a seventh adapter fails there rather than arriving
-  ungoverned. Turning any of them on is a product decision (an explicitly marked boundary
-  exception in the delegation modal), never a side effect of a pin.
+- **Sub-agents are `@tintinweb/pi-subagents` 0.19.0, running IN the session's own Pi process,
+  with an OWNED PATCH — the one named exception to "never patch vendored code" (PRD §12,
+  2026-09-26; nicobailon `pi-subagents` 0.64.0 is gone).** `scripts/patch-tintinweb.mjs` applies
+  the hunks in `scripts/tintinweb-hunks.mjs` at `pi-runtime` postinstall: two-pass (every anchor
+  checked before anything is written), anchor-EXACT, each replacement carrying an
+  `hv-patch:<id>` marker so a re-run is a no-op. A missing or ambiguous anchor FAILS `npm ci` and
+  writes nothing — there is no half-patched package. Parts: **P1** a child inherits the parent's
+  project trust (without it, in-process children bypass Pi's project trust — measured);
+  **P2** no discovery for a path-only extension list; **P3** the host child policy (below), the
+  memory/session-dir clamps, exact-model-only resolution (§16: refuse, never substitute) and the
+  refusal inside `spawn()` itself; **P4** a project's `.pi/subagents.json` is ignored; **P5**
+  a workflow's `gate:` shell command never runs and saved workflows come only from the agent dir;
+  **P6** the `steer` / `workflow-stop` bus verbs plus workflow progress/settled events.
+  Gates: `tests/tintinweb-patch-apply.test.ts` (the applier + every marker present),
+  `tintinweb-patch-contract` and `tintinweb-trust` (what each part DOES — `tintinweb-trust` boots
+  real Pi, key-free, and is all red against the unpatched package), and
+  **`tests/tintinweb-contract.test.ts`, the pin-bump gate** (tool names, lifecycle events, the
+  notification shape, the manager registry, no `exports` map, Pi's `additionalExtensionPaths`
+  under `--no-extensions`, and the typebox/pi-tui pins). A bump re-anchors the hunks; never
+  loosen an anchor to make one match.
+- **The child policy is the seam, and `HV_HOST=1` makes its absence FATAL.** The bridge publishes
+  it at load on `globalThis[Symbol.for("hv:child-policy")]` (`hv-child-policy.ts`, import-free);
+  the patch asks it for everything a child may load and do: `extensionPaths` (exactly
+  `HV_CHILD_GUARD` — throws if unset), `skillPaths` (this session's approved manifest),
+  `refuseSpawn` (the Agents page switch), `boundaryFor` (what the user approved for that agent
+  TYPE, else the read-only floor) and `audit` (→ an `hv.audit` row, `source:"subagent"`, with
+  agent and run id). A child built under `HV_HOST` with no policy registered throws *"HappyVibe:
+  child policy missing"*, and the guard with no policy refuses every call. **The guard reads WHO
+  the child is (`Symbol.for("pi-subagents:child-spawn")`) and its boundary at FACTORY time**, so an
+  approval later in the session can never widen a child that is already running.
+  **A child's `ask` prompts the human on the PARENT's channel** (§10 Phase 4): inside the
+  approved boundary, a rules `ask` becomes `policy.ask`, raised through the parent's `ctx.ui`
+  (so main stamps the parent's session and `pendingPrompts`/`dialogHost` treat it like any
+  prompt) with exactly `CHILD_CHOICES` = Allow · Allow for this run · Deny. "Allow for this run"
+  lives in the guard's per-child `runGrants` and dies with the run; a parent session grant is
+  inherited only for `default`/`outside-workspace` asks, never over an ask RULE; nothing a child
+  answer does ever writes a rule (App `respondPermission`, pinned by `tests/child-prompt.test.ts`).
+  Under `HV_READONLY` there is nobody to ask, so it stays a deny. While the prompt is open the
+  bridge sends `{stage:"control", activityState:"needs_attention"}` so the run's circle is amber.
+- **The gate vocabulary did not change: an `Agent` call gates as `subagent:<type>`.** "Declared"
+  comes from the agent FILE's frontmatter (`hv-tw-gate.ts`), because tintinweb hands an agent that
+  declares no `tools:` EVERY builtin — so an undeclared agent is shown, approved and held as the
+  read-only floor. The Agents page and the injected roster come from tintinweb's own
+  `loadCustomAgents`, reached by RELATIVE import of `src/custom-agents.ts` (the package has no
+  `exports` map; the contract test fails if one appears). Discovery is `<agentDir>/agents`,
+  `.pi/agents` and `.agents/agents` — **`~/.agents` and package-contributed agents are no longer
+  found**, and upstream's own defaults are off (`disableDefaultAgents`, `fallbackSubagent:
+  "none"`, so an unknown type FAILS rather than becoming general-purpose). The locked settings are
+  `TINTINWEB_SETTINGS` (`subagentSettings.ts` → `<agentDir>/subagents.json`); the per-agent switch
+  still lives in `<agentDir>/settings.json` `agentOverrides`, read LIVE by the bridge.
+- **A workflow is approved as CODE.** `SubagentWorkflow` always prompts — full script, Allow ·
+  Deny, no session grant, no allow rule skips it (a deny rule still refuses; bypass still runs
+  it) — and is blocked outright in plan mode and read-only runs. Its run id is `wf_…`, announced
+  from `tool_result` `details.taskId`, ended by the patched settled event; STOP drives
+  `workflow-stop` and ends it WHOLE. Progress arrives as a bus event folded by
+  `foldWorkflowProgress` into statuses `working`/`done`/`failed` — deliberately never `running`,
+  because the card offers a per-child STOP for a running child and upstream refuses to stop a
+  workflow's children one at a time.
+- **Children persist FLAT under `<sessionsDir>/subagents/`, and the header's `parentSession` is
+  the ONE link to their parent** (`twChildren.ts`): the live status poll, the expanded card, the
+  cost ledger, delete and the orphan sweep all join on it. **Debug a child by reading its session
+  file** — it is the whole transcript. Workflow scripts and journals land in
+  `os.tmpdir()/pi-subagents-<uid>/<cwd-slug>/<parent session id>/`; delete removes that dir by the
+  EXACT session id and the sweep never touches the shared root (other tools' live sessions use
+  it). A child **dies with its parent Pi process** — nothing is detached — so
+  `activity.asyncRuns` in `isIdle` is what stops a hibernation or MCP reload killing a run, and
+  after a respawn `/hv-subagent-list` truthfully answers "nothing running". Pre-switch sessions
+  are READ-ONLY history: their `subagent` cards restore and their old child layout is still
+  counted, deleted and swept (the entry below), but nothing writes that layout any more.
+- **The parent gets its child's whole answer because we put it back** (`hv-subagent-delivery.ts`,
+  decision 4). The model reads a `subagent-notification` whose `<result>` upstream truncates with
+  *"...(truncated, use get_subagent_result for full output)"*; the full text rides the
+  `subagents:completed` bus payload, and the context hook swaps it in, XML-escaped, keyed by
+  `<task-id>`. Not persisted — the session file keeps what upstream sent. A blocking
+  `get_subagent_result({wait:true})` is intercepted (`isResultWait`): the result arrives as its own
+  turn. `reportUsage` is off because §19 already counts each child's own session file.
+- **Steering, and the stuck-run rule.** `/hv-subagent-steer <runId> <base64>` drives the patched
+  `subagents:rpc:steer` (base64 so any sentence survives a one-line slash command), from the run
+  card's box or from a run PICKED in the `@` menu — typed text never addresses a run
+  (`steerTarget`), and a workflow is not steerable. A run whose last entry is a tool result or a
+  user message (the model's move) and whose file has been quiet for 10 min turns amber
+  (`needs_attention` / `no-activity`, `stuckRun.ts`) — flagged, never killed.
 - **ALL of `pi-runtime/extensions/` is typechecked by `tsconfig.extensions.json` at every gate
   (since 2026-08-30, housekeeping item 1).** It existed unchecked for the app's whole life — which
   is how `const summary` came to sit AFTER three §12 refusal paths that audit with it, a
   temporal-dead-zone `ReferenceError` TS would normally reject outright. It failed CLOSED (Pi's
   `beforeToolCall` re-throws as *"Extension failed, blocking execution"*), so the boundary held;
   but a refusal surfaced as an extension crash with NO `hv.audit` row instead of a clean denial
-  naming its reason. Fixed 2026-08-28 by hoisting one line; the source-order pin in
-  `tests/subagent-external-agents.test.ts` is retained but no longer load-bearing alone — TS
-  rejects use-before-declaration at the gate now. The config is standalone `--noEmit` (not
+  naming its reason. Fixed 2026-08-28 by hoisting one line; TS rejects use-before-declaration at the gate now. The config is standalone `--noEmit` (not
   composite, not referenced from the root tsconfig); its knobs are load-bearing:
   `allowImportingTsExtensions` for the bridge's explicit `.ts` imports, `noUnusedLocals/Parameters`
-  off because pi-subagents ships raw `.ts` sources our lint flags would fail, and `paths` mapping
+  off because the vendored packages ship raw `.ts` sources our lint flags would fail, and `paths` mapping
   the NESTED `pi-ai`/`pi-agent-core` (under `pi-coding-agent/node_modules/`) that walk-up
   resolution cannot see. Coverage is pinned by `tests/extensions-typecheck.test.ts` (whole-directory
   include + chain wiring).
-- **A respawned session is a STRANGER to its own detached runs from 0.51 — unless we claim the
-  owner id first.** #1225 scopes async completion delivery to the launching Pi PROCESS:
-  `notify.ts:279` refuses any `source !== "foreground"` completion whose `completionOwnerId`
-  differs from the current process's, with **no config off-switch** and — unlike
-  `result-watcher.ts`'s `shouldProcessResult`, which falls back to a mission-binding file when
-  deciding whether to READ a result — **no fallback on the delivery path at all**. The id is a
-  `randomUUID()` cached on `globalThis` under `Symbol.for("pi-subagents.completion-owner-id")`
-  and minted inside pi-subagents' own registration (`index.ts:422`). At 0.50 the guard was
-  session-id only, so a respawn resuming the same session file still delivered.
-  `pi-runtime/extensions/hv-owner-seed.ts` claims that symbol from `HV_SUBAGENT_OWNER`
-  (= `hv-<HappyVibe session id>`), and `??=` is what makes it work — upstream never overwrites a
-  value already in the registry. **It must be the FIRST `-e`, which is why it is its OWN
-  extension**: Pi loads extensions strictly sequentially in argv order, import + factory one at a
-  time (`core/extensions/loader.js:440`), and the bridge is pinned LAST for the gate. It registers
-  no tools and no `tool_call` handler, so being first cannot change what the gate sees; it is
-  import-free, and `loadExtension` catches a throw rather than crashing the session. Fails OPEN
-  (no env var ⇒ upstream's own id), which is right for the utility client. Measured: the refusal
-  is real and the claim propagates (`status.json` reads `ownerId=hv-<id>` instead of a uuid).
-  **The refusal IS reachable, and a first pass at scoping it got this wrong — the path is a FILE
-  on disk, not a live process.** An async run does die with its parent Pi (see the async entry
-  below), so no *process* survives a respawn to be refused. But a child that finished and wrote
-  its result before the parent went away leaves that result behind, and the next session start
-  scans it: `index.ts` calls `primeExistingResults()`, which routes through the same
-  `scheduleResult → handleResult → notifier.deliver` path as a live completion, and therefore
-  through the same owner check. Without a claimed id the resumed process never matches, and
-  because a refused delivery is **retried rather than discarded** (`if (!accepted)
-  scheduleResult(…, RETRY_DELAY_MS)`, with the file left un-marked) no future process delivers it
-  either — every one of them mints a different random uuid. That is permanent, silent loss of a
-  completed sub-agent's answer, plus a result file that never clears. So the seed is load-bearing
-  for the quit-or-reload-in-the-delivery-window case, not speculative insurance. Pinned as a ROUTE
-  assertion in the contract test, because the behavioural test alone would keep passing if
-  upstream stopped priming on-disk results at session start. Pinned by `tests/pi-subagents-contract.test.ts` (a
-  behavioural harness over upstream's real `notify.ts`, not a source scan) and
-  `tests/mcp-spawn.test.ts` (load order + both env cases).
-- **0.51 fixed NONE of the four things that hurt, and made one of them permanent.** The
-  1,000-char completion truncation survives (`subagent-executor.ts:4194`), so the delivery repair
-  stays load-bearing — re-measured working at 0.51 by instrumenting the bridge's own handlers
-  (`substitution fired=true`, store keyed by the child `runId`, `results[].output` 4,098 chars).
-  `PROMPT_REDACTED` is unchanged, nothing restores `subagent:async-started` for the workflow path,
-  and "async workflows do not have inline `live-card` projection" was **documented as intended**
-  (#1229/#1230) rather than a bug awaiting a fix — which read at the time as "the missing live
-  child transcript is permanent". **That conclusion was wrong, and 0.58 disproved it**: streaming
-  is back for the blocking path (see the `tool_execution_update` entry below). Read #1229/#1230 as
-  scoped to ASYNC workflows, not to delegations in general. Every workaround stays. Also measured
-  at 0.51: `tool_execution_update` still zero, `details.asyncId` still on the async dispatch result and
-  still absent on the foreground one, `tool_execution_start` still the only event carrying `args`.
-  **A blocking delegation now costs ~14.8 KB** (was 4,947–5,532 at 0.50), of which the child's own
-  answer was 4,569 — the envelope alone roughly doubled; `subagent-context.test.ts` watches the
-  envelope separately for exactly this reason. `defaultSubagentContext` is new and still defaults
-  to `"fresh"`, and `writeSubagentConfig` now states it explicitly. `repairScan: true` is new and
-  deliberately NOT adopted — the `.active-runs` upgrade hole and the stale markers remain the
-  accepted decision, and #1162 exists to stop scanning. 30-day retention runs in a
-  `worker_threads` worker (unref'd, 60 s after activation), so it is NOT a child process and
-  carries no Dock-icon hazard.
-- **`tool_execution_update` came BACK at 0.58, and the wait-for-a-pin bet paid off.** It was not
-  emitted at all for a subagent at 0.50-0.53 (zero on a blocking run, zero on an async one), so
-  there was no live child transcript, expanding a card showed nothing until the run ended, and
-  `traceFromUpdate` was dead weight. `tests/agents-bridge.test.ts` asserted the ABSENCE so the
-  restoration would be loud — and it was the single red test of the 0.58 live batch (38 updates
-  where 0 were expected; 53 on the probe). **`traceFromUpdate` is live code again, unchanged:**
-  the payload is still `partialResult.details.results[]`, `messages` is still absent and
-  `toolCalls` is still the transcript source, so only the DELIVERY was restored, not the shape —
-  the renderer needed no edit. Never assert an exact update COUNT; it tracks how chatty the child
-  is. 0.58 also adds `results[].progress`, `progressSummary` (`{toolCount, tokens, durationMs}`)
-  and **`transcriptPath`** — the child's own JSONL, which is where its THINKING blocks live
-  (measured: real `type:"thinking"` blocks carrying the child's reasoning, so P4 item 6 is
-  feasible and needs no upstream ask). Fixture in `tests/agents-renderer.test.ts`. Related trap in
-  the same family: **`tool_execution_end` carries no `args`** — they are on `tool_execution_start` only, so a
-  delegation must be found by correlating START→END on `toolCallId`. That one had been hiding a
-  VACUOUS assertion (`undefined?.result?.details?.asyncId` is falsy, so "foreground has no asyncId"
-  passed for a delegation the test never found).
-- **The parent gets its child's whole answer because WE put it back — `hv-subagent-delivery.ts`.**
-  Upstream truncates the completion payload at a hardcoded 1,000 chars
-  (`subagent-executor.ts`, `formatWorkflowValue(v).slice(0, 1_000)`; unchanged at 0.58, no config),
-  so a 4,107-char report arrived as 1,108 chars of JSON cut mid-string and the model spent FOUR
-  tool calls recovering it (`subagent`, `subagent_wait`, `status`, `read`). The bridge remembers
-  `results[].output` from `subagent:async-complete` and substitutes it into the injected message
-  from the `context` hook — measured after: ONE tool call. Three things make it work and would
-  each break it silently: the notify IS rewritable in the context hook
-  (`{role:"custom", customType:"subagent-notify", content:<string>}` — probe before trusting);
-  the id in that message is the **child's** run id, NOT the workflow async UUID we key everything
-  else by (`results[].runId` is the join); and the message's own `details` is EMPTY, so the output
-  must be captured at completion. It is NOT persisted and does NOT rewrite the session file — the
-  record keeps what upstream sent, we repair what the model sees. Never "simplify" the refusals:
-  an unknown header, a message naming several children, or >32 KB must all fall through untouched.
-  Wire shapes + the measurements: docs/validation/d1.md §The delivery repair.
-- **A blocking delegation now costs ~5 KB of context; the async one costs 1.2 KB.** Measured
-  `toolResult.content`: 4,947–5,532 chars for `async:false` (the whole workflow return JSON inlined
-  — launch-contract digest, extension hashes, artifact paths, usage, acceptance scaffolding,
-  `childReport`) versus 1,255 for async (a `Run fan-out: n/64 used` receipt; the answer arrives on
-  the triggered turn). The child TRANSCRIPT still stays out, so isolation holds — but PRD §12's
-  "only the call and the final result enter the main context" is now ~5 KB a delegation on the
-  blocking path. `subagent-context.test.ts` branches on the path, because **the model picks `async`
-  itself and picked differently on consecutive identical runs** — never assert a bound that depends
-  on which it chose.
 - **Before believing ANY live-test failure at a new pin, check the account has balance.** 0.50's
   bump produced four red live tests that matched the expected inventory precisely — transcript
   gone, `asyncId` missing, no `tool_execution_update` — and all four were `402 Insufficient
@@ -504,53 +394,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   source scans for exactly this reason. `curl -s -o /dev/null -w '%{http_code}'
   https://api.deepseek.com/chat/completions -H "Authorization: Bearer $KEY" -d '{...}'` costs one
   second and settles it. Full retraction: docs/validation/d1.md §pi-subagents 0.50.
-- **A subagent's `tools:` list is a STRICT allowlist from pi-subagents >=0.40 — an unknown name fails
-  the whole run**, with `"Agent 'x' requested unavailable child tools: …"` (its new
-  `src/runs/shared/tool-availability.ts`; no such check in 0.34, which ignored unknown names).
-  Pi 0.83's builtins are exactly **bash, edit, find, grep, ls, read, write** — there is NO `glob`
-  and NO `list`. Both bundled agents shipped asking for `glob, list` and were silently running
-  without them; from 0.40 that is fatal. Extension tools need more than a name (`subagentOnlyExtensions`
-  / a path-like entry), so never just add one to `tools:`. Pinned by
-  `tests/pi-subagents-contract.test.ts`, which derives the legal set from Pi's own registrations.
 - **`ctx.hasUI` is TRUE in `--mode rpc` — "RPC" is not "headless".** Measured, not inferred:
   rpc-mode.js binds a real `uiContext` (`createExtensionUIContext()` — the channel the bridge's own
   permission prompts ride) and `hasUI()` is just `uiContext !== noOpUIContext`. Pi's headless mode is
   PRINT mode. This matters because upstream code and docs say "headless sessions do X" and gate X on
   `ctx.hasUI`: read that as print-mode-only, and DON'T assume a `ctx.hasUI` gate excludes us.
-  The load-bearing case: pi-subagents >=0.40 ends every turn with
-  `if (ctx.hasUI) return; await drainOutstandingWork(...)` (`index.ts:462`), which would block each
-  turn on its own async delegation (the inverse of PRD §12) — it is dormant ONLY because hasUI is
-  true, there is no opt-out, and Pi awaits handlers serially (runner.js:585). The three links are
-  pinned in `tests/pi-subagents-contract.test.ts`; if that group fails, re-measure `hasUI` with a
-  probe extension before believing anything else.
   Sharpened 2026-08-19, measured in Pi's own dist: the RPC uiContext is real PER METHOD, not
   wholesale. `input`/`select`/`setTitle`/`setEditorText` emit `extension_ui_request` (the bridge's
   channel), but `rpc-mode.js:152` is `async custom() { return undefined; }` (the file moved to
   `dist/modes/rpc/rpc-mode.js` at Pi 0.85.0 and is still line 152) — so an awaited
   `ctx.ui.custom()` panel never settles. pi-mcp-adapter 2.26.1 (#365) fixed exactly that class of
   hang by adding its own discriminator, `ctx.hasUI && ctx.mode === "tui"` (`isTuiMode` in init.ts,
-  `canRenderPanel` in commands.ts) — i.e. upstream now agrees with this entry. That makes the
-  pi-subagents hazard sharper, not softer: its drain still gates on BARE `ctx.hasUI`
-  (`index.ts:689`), which is the only thing keeping it dormant for us, so if it ever adopts
-  `ctx.mode` the drain arms and blocks every turn on its own async delegation.
-- **pi-subagents CACHES model failures and then silently skips that model — for 24h, machine-wide,
-  with only a `console.warn` to show for it.** 0.57's `modelExclusions`: one child that returns
-  nothing ("Subagent produced no output (possible model cold-start or empty response)") excludes
-  that model from every later delegation, in every session and workspace (the store is keyed
-  per-UID), for `DEFAULT_MODEL_EXCLUSION_TTL_MS` = 24 hours. The only signal is
-  `model-fallback.ts`'s warn, which surfaces as `[pi:stderr]` in a dev terminal and nowhere in the
-  app — so the chat shows the model the user picked while children run on a fallback. **0.58 made
-  it sharper, not softer:** #1556 fails an EXPLICITLY requested model closed instead of falling
-  back, so a per-agent model override plus one empty response = that agent's delegations fail for
-  a day. Two mitigations, both in place: `writeSubagentConfig` sets
-  `modelExclusions.defaultTtlMs = 5 min` (and because the key is set explicitly, upstream also
-  SHORTENS records already on disk, so stale 24h entries self-heal), and every live exclusion
-  becomes a `model.excluded` audit row. **Read the store through OUR path, never upstream's:**
-  spawn.ts sets `PI_MODEL_EXCLUSIONS_PATH` to `<agentDir>/model-exclusions.json` because the
-  default is an internal `os.tmpdir()/pi-subagents-<scopeId>` derivation, and mirroring an
-  upstream storage location is what the MCP keychain drift punished. `src/main/modelExclusions.ts`
-  + `tests/model-exclusions.test.ts`. Debug a "my sub-agent used the wrong model" report by
-  reading that file first — the reason and expiry are in it.
+  `canRenderPanel` in commands.ts) — i.e. upstream now agrees with this entry. tintinweb gates its
+  widgets on `hasUI` too; they are dormant for us only because `widgetMode`/`fleetView` are off.
 - **A session delete must take the sub-agent data with it, and `deleteSessionFile` alone does
   not.** It is `rmSync` on a FILE path with no `recursive`, so `<sessionsDir>/<stem>/` (the child
   Pi session files) survived; and `<sessionsDir>/subagent-artifacts/` — which pi-subagents writes
@@ -565,13 +421,14 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   traps: a **closed** session is not an orphan (§19's cost readout re-parses those child files on
   reopen), and a filename with **no underscore** is not an artifact — pi-subagents keeps
   `.last-cleanup` in that directory and `slice(0, indexOf("_"))` turns it into a plausible id.
-
+  tintinweb's children are the other half (`twDeleteChildren` / `twSweepOrphans`, the entry above);
+  this layout is what pre-switch sessions left behind and is still cleaned, never written.
 - **`typebox` is pinned in `pi-runtime` to exactly what `pi-coding-agent` declares — move them
   together.** The bridge does `import { Type } from "typebox"` (bare), so it resolves to whatever
   `pi-runtime/node_modules` hoists. It used not to be a direct dep at all, and the pi-subagents 0.40
   bump silently moved it 1.1.24 → 1.1.38 — every registered tool's schema built by a library nobody
   chose. The bridge BUILDS those schemas and Pi CONSUMES them, so the pin tracks Pi (1.3.27 at Pi 0.86.1 — re-read Pi's own `dependencies`, never this number), not
-  "latest" and not pi-subagents' nested 1.1.38. `tests/pi-subagents-contract.test.ts` asserts the
+  "latest" and not pi-subagents' nested 1.1.38. `tests/tintinweb-contract.test.ts` asserts the
   RELATIONSHIP, so a Pi pin bump fails until typebox follows. (For the record: the emitted JSON
   Schema was byte-identical across 1.1.38/1.3.7 for all seven constructors we use, and typebox
   attaches no Symbol-keyed metadata, so there is no dual-package hazard — the alignment is for
@@ -586,15 +443,14 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   `pi-tui`. **The blast radius is bigger than the CLI**, which is what makes this hard to read from
   the symptom: `dist/index.js` — the `.` export, i.e. Pi's public library — re-exports `main.js`,
   which imports the same file, so ANY vendored extension importing Pi's library at runtime dies too.
-  pi-subagents does (`src/extension/index.ts:20` imports `keyText`, a real value), so the break
-  arrives as **18 test files red at once** with the real cause buried one level down in
+  (pi-subagents did, so the break
+  arrived as **18 test files red at once** with the real cause buried one level down in
   `[pi:stderr]` — the same "extension LOAD failure looks like a mystery" shape as the exports-map
-  entry above. **Two hardcoded copies of the path existed**: `PI_CLI_RELPATH` (spawn.ts, serving the
-  session spawn plus all three one-shot callers) and `pi-runtime/bin/pi-node.sh` (the children-only
-  §12 child-guard route), so the parent and its sub-agents could break independently.
+  entry above. `PI_CLI_RELPATH` (spawn.ts) is the one copy of the path — it serves the session spawn and all
+  three one-shot callers (the children-only `pi-node.sh` copy went with nicobailon).
   `tests/pi-cli-entry.test.ts` derives the entry from the installed package's own `bin.pi`, BOOTS it
   rather than stat-ing it (the whole failure was a file that resolves on disk and dies on import),
-  pins the two paths together, and INVERTED when upstream fixed it. Free side
+  and INVERTED when upstream fixed it. Free side
   benefit, measured on our own suite: the bundled entry boots faster, 152 s → 42 s for the same
   264 files.
   **The pi-server half is now HISTORY — do not re-add it.** Pi 0.85.1 shipped "Fixed SDK import
@@ -607,53 +463,19 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   unrelated-looking red files. This is what an inverting assertion is FOR; it removed a workaround
   that would otherwise have been carried forever.
 
-- **A sub-agent's task arrives as a FILE on macOS from pi-subagents 0.63, and that one clause set
-  off a two-bug chain.** `shouldDeliverTaskViaFile` gained `platform === "darwin"` (#1793), so what
-  used to fire only for tasks over 8,000 chars now fires for EVERY delegation on our only platform:
-  the child gets a trailing `@<tmpdir>/pi-subagent-<rand>/task.md` positional. There is no opt-out —
-  `SubagentTaskDelivery` is `"auto" | "file"`, there is no `"argv"` value, and the internal override
-  only ever moves TOWARDS file. **Bug 1:** that file is outside the workspace, so the parent's rules
-  resolve a read of it to `ask`, and `ask` means DENY in the child guard — the child was refused its
-  own instructions and did nothing, while the audit row read like an agent snooping a temp file. It
-  surfaced only when the model read the literal instead of Pi expanding the `@`, so it failed **2
-  runs in 3** — intermittent, which is worse than always, and invisible to every non-live test.
-  `taskFileFromArgv`/`isOwnTaskRead` (hv-child-guard.ts) exempt exactly the path in the child's OWN
-  argv: not a shape match, because the same tempdir also holds `writer.md` (passed as
-  `--system-prompt`, so a directory pattern would exempt the system prompt too) and because a
-  `pi-subagent-*/task.md` pattern would let a child read a CONCURRENT run's prompt. Reading argv
-  fails safe — if upstream drops the positional the exemption never arms. **Bug 2, which the fix
-  CAUSED:** once the child could read that path, the model started writing its OUTPUT next to the
-  task. Measured by audit-row mtime against the fix commit — 13 runs before, every write relative or
-  in-workspace; 6 runs after, two into the tempdir, `decision:"allow"` and the user's file simply
-  absent. The hole underneath was structural and older than any pin: **`childDecision` matches on
-  the TOOL NAME only**, so an allowed `write` reached the whole filesystem. `escapesWorkspace` now
-  confines `write`/`edit` (a DERIVED set — both declare `path: Type.String()` in Pi's schemas; the
-  test re-scans every builtin so a future path-taking writer fails there), resolving symlinks
-  through the nearest EXISTING ancestor because the target file is usually absent and a string check
-  passes a planted link. Containment is `=== root || startsWith(root + sep)`, never a bare
-  startsWith, or `/tmp/ws-evil` reads as inside `/tmp/ws`. Applied AFTER `childDecision` so
-  `wouldHave` still reports the RULES and `decision` reports confinement; yields to bypass. **The
-  lesson worth more than either fix: a permission exemption changes what the model can SEE, and
-  therefore what it tries next.** Widening a read moved the failure to a write nobody was watching.
-  `tests/child-task-file.test.ts` + `tests/child-write-confine.test.ts` (both key-free).
-  Residual, not fixed: a refused child does not always retry, so a delegation can still end with no
-  file — loud now instead of silent. Product question, not a pin one.
-
 - **A pin bump can fail TYPECHECK with errors pointing under `node_modules`, and since 2026-09-21
   those do NOT fail the gate — `npm run typecheck:ext` is `node scripts/typecheck-ext.mjs`, not
-  raw tsc.** `tsconfig.extensions.json` necessarily pulls pi-subagents' raw `.ts` into the program
-  (the bridge imports three of its modules by relative path), so tsc reports diagnostics from code
-  we have a standing rule never to patch. The wrapper PRINTS every vendored diagnostic with a
+  raw tsc.** `tsconfig.extensions.json` necessarily pulls tintinweb's raw `.ts` into the program
+  (the bridge imports `custom-agents.ts` by relative path), so tsc reports diagnostics from code
+  we do not own. The wrapper PRINTS every vendored diagnostic with a
   count and exits non-zero only for `pi-runtime/extensions/` — the directory the check exists for.
   A suppression nobody can see is the bug this repo keeps paying for, which is why it prints.
-  Pi 0.86.1 + pi-subagents 0.64.0 is the live case: 0.86 made `ToolResultMessage` a conditional
-  type, collapsing a narrowing in upstream's `setupAbortResumeParams` to `never` — six errors,
-  defensive at runtime, in a scripted-workflow path a single-child delegation never takes.
+  Pi 0.86.1 + tintinweb 0.19.0 reports none; the case that motivated it was Pi 0.86.1 +
+  nicobailon pi-subagents 0.64.0 (six errors in a workflow path, defensive at runtime).
   **Two traps already paid for.** The `paths` shim escape hatch (Notion "Deferred housekeeping"
   item 1 — tsc trusts declarations and never opens the implementation) **cannot reach this**:
-  `paths` only rewrites BARE specifiers, and the failing file arrives through
-  `../node_modules/pi-subagents/src/...`, which is itself load-bearing (the exports map lists
-  neither file). And the wrapper's first version read a prefix-less `error TS5058:` from a broken
+  `paths` only rewrites BARE specifiers, and a vendored file arrives through a RELATIVE import,
+  which is itself load-bearing. And the wrapper's first version read a prefix-less `error TS5058:` from a broken
   config as vendored and passed SILENTLY — a compiler-level error names no path, so it can never
   be vendored. Both directions plus that crash case are driven through the real script against
   fixture projects in `tests/extensions-typecheck.test.ts`. If a bump breaks the check for a
@@ -664,7 +486,7 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
 - src/main/pi/{spawn,codec,PiClient}.ts — spawns the pinned Pi CLI per session, `--mode rpc`,
   NDJSON over stdio. spawn.ts is electron-free (vitest-importable). We deliberately do NOT
   use Pi's in-process SDK: process isolation is load-bearing (crash isolation, hibernation).
-- pi-runtime/ — vendored @earendil-works/pi-coding-agent + pi-subagents + pi-mcp-adapter (pinned exact)
+- pi-runtime/ — vendored @earendil-works/pi-coding-agent + @tintinweb/pi-subagents (patched at install) + pi-mcp-adapter (pinned exact)
   + extensions/ (happyvibe-bridge.ts + pure hv-*.ts modules shared with main and tests).
 - The bridge owns ALL permission UI/enforcement (Pi's permission pkg is TUI-only in RPC —
   docs/validation/v6.md). Permission prompts never time out. They never auto-allow EXCEPT when
@@ -736,24 +558,12 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   re-execution loop); toolCall/toolResult always removed atomically.
 - `contextUsage.tokens` is null right after compaction; `stats.tokens` is cumulative-since-
   session-start — never present it as live context (gauge shows "measuring…").
-- pi-subagents children need `PI_SUBAGENT_PI_BINARY` (set in spawn.ts) — it points at
-  `pi-runtime/bin/pi-node.sh`, which routes through the bundled Electron helper
-  (ELECTRON_RUN_AS_NODE) when packaged and falls back to `node` in dev. No system Node required.
-- Async subagents (PRD §12): delegations are async-by-default (`writeSubagentConfig` in
-  config.ts writes `asyncByDefault` at startup). **An async run does NOT survive its parent —
-  measured in the running app at 0.51, and the opposite of what this entry used to claim.** A
-  delegation's `status.json` records `pid` = **the session's own Pi process** (verified: the pid in a
-  live run's status file was a direct child of the Electron main, in the app's own process group),
-  and the child agent runs as an ordinary non-detached child of it. There was no detached process
-  group anywhere on the machine while a real delegation ran. `async-execution.ts:521` does spawn
-  with `detached: true`, so the code path exists — it is simply not the one a top-level
-  workflow-mode delegation takes. Consequence: **`activity.asyncRuns` (gated in `isIdle`) is
-  LOAD-BEARING, not belt-and-braces** — it is the only thing standing between an in-flight
-  delegation and a hibernation/MCP-reload `manager.stop()` that would destroy it outright. Still
-  resume via the session file (`startClient(meta,true)`): that is what keeps the Pi session id
-  stable, which the completion path also keys on. Lifecycle is relayed off pi-subagents'
-  in-process `pi.events` bus by the bridge as `hv.subagent` notifies (never on RPC stdout);
-  `/hv-subagent-list` resyncs cards after a respawn (restoreActiveJobs does NOT re-emit started).
+- Async subagents (PRD §12): a background `Agent` run is a child IN the session's Pi process and
+  dies with it — see the tintinweb entries under §Tests for the lifecycle, the relay
+  (`hv-tw-relay.ts`, bus events → `hv.subagent` notifies, never RPC stdout) and why
+  `activity.asyncRuns` is load-bearing. Resume still goes through the session file
+  (`startClient(meta,true)`), which keeps the Pi session id — and so the children's
+  `parentSession` link — stable.
 - `installBuiltinAgents` (config.ts) decides "did the user edit this bundled agent?" by CONTENT
   HASH, never mtime. mtime failed silently both ways: a restamp-without-change (a second install
   pass racing the post-copy stat, a copy, a sync tool) read as an edit and froze that agent
@@ -983,8 +793,8 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   leave every real card stuck on "running" forever. And the work list is DERIVED from upstream's own
   `classifyRun` (`subagent-executor.ts`: workflowScript → chain → tasks → agent), because a
   `chain`/`tasks` fan-out carries **no top-level `agent`** — requiring one would hide a genuine
-  multi-child run. Pinned in `tests/pi-subagents-contract.test.ts` (group 8, against upstream's
-  source) + `tests/agents-renderer.test.ts`. The card's own fallback now reads "a subagent" rather
+  multi-child run. Pinned in `tests/agents-renderer.test.ts`; since 2026-09-26 this governs
+  PRE-SWITCH sessions' `subagent` cards only (tintinweb's `Agent` always carries its work). The card's own fallback now reads "a subagent" rather
   than `?`, so a shape that ever slips the guard degrades to a sentence.
 - **Portalling a dialog to the end of `<body>` does NOT put it on top.** Among POSITIONED elements
   an explicit z-index beats document order, so every `z-20`…`z-50` in the app painted above a Radix
@@ -1580,8 +1390,8 @@ PRD: docs/prd.md (mirror of the Notion PRD — fold decisions in place, NEVER re
   opened. Main now writes in the `stage === "complete"` branch (ipc.ts), which is the one moment
   it holds both halves — `delegatedAgentByRun` (runId→agent) and `childSessionsByRun` (the
   child's session file) — and it reads the answer from **that session file**, the only
-  untruncated source: upstream caps the completion payload at 1,000 chars, the bridge caps the
-  notify `summary` at 500, and pi-subagents' inspect RPC caps `finalOutput` at 8,000. It must run
+  untruncated source: upstream truncates the completion notification and the bridge caps the
+  notify `summary` at 500. It must run
   BEFORE `childSessionsByRun.delete`. `parseAgentsMdOutput` moved to `src/main/agentsMd.ts` with
   it; the maker stays read-only. Pinned by `tests/agents-md-capture.test.ts`.
 

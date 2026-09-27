@@ -5,7 +5,8 @@
  * cares about the lifecycle fields that drive activity gating + status polling.
  */
 
-export type SubagentStage = "started" | "control" | "complete" | "active" | "interrupt-sent" | "interrupt-error";
+// "session" and "workflow-progress" are tintinweb's (§12, 2026-09-26, hv-tw-relay.ts).
+export type SubagentStage = "started" | "control" | "complete" | "active" | "interrupt-sent" | "interrupt-error" | "session" | "workflow-progress";
 
 export interface SubagentNotify {
   stage: SubagentStage;
@@ -14,6 +15,10 @@ export interface SubagentNotify {
   asyncDir?: string;
   status?: "success" | "error" | "interrupted";
   runs?: Array<{ runId: string; agent?: string; asyncDir: string }>;
+  /** tintinweb: the child's own session file, once it exists (stage "session"). */
+  sessionFile?: string;
+  /** tintinweb: a workflow's progress batch (stage "workflow-progress", P6-progress). */
+  entries?: unknown[];
 }
 
 /** The hv.subagent payload when this ui-request is that notify, else null. */

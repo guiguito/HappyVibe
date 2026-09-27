@@ -52,12 +52,10 @@ describe("requireIntent ON", () => {
     expect(mcp.parameters.required).toContain("intent");
   });
 
-  test("subagent advertises intent but never requires it", () => {
-    // A hard requirement made looser models fail their first delegation.
-    const sub = tool("subagent");
+  test("the delegation tool gets none — its own `description` is the headline", () => {
+    const sub = tool("Agent");
     requireIntent(fakePi([sub]) as never, true);
-    expect(sub.parameters.properties.intent).toBeDefined();
-    expect(sub.parameters.required ?? []).not.toContain("intent");
+    expect(sub.parameters.properties.intent).toBeUndefined();
   });
 
   test("adapter-registered DIRECT tools get it too — that is where it scales", () => {
@@ -78,7 +76,7 @@ describe("requireIntent ON", () => {
 describe("requireIntent OFF", () => {
   test("injects nothing anywhere", () => {
     const mcp = tool("mcp");
-    const sub = tool("subagent");
+    const sub = tool("Agent");
     const direct = tool("github_create_issue", "/x/node_modules/pi-mcp-adapter/index.ts");
     requireIntent(fakePi([mcp, sub, direct]) as never, false);
     for (const t of [mcp, sub, direct]) {

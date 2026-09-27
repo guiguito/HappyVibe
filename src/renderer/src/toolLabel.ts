@@ -393,6 +393,9 @@ export function toolLabel(toolName: string, args: unknown): ToolLabel {
     }
     case "subagent":
       return { icon: "robot", label: intent ?? `Delegating to ${str("agent") ?? "a subagent"}` };
+    // tintinweb (PRD §12, 2026-09-26): the model's own short `description` is the headline it wrote for the card.
+    case "Agent":
+      return { icon: "robot", label: intent ?? str("description") ?? `Delegating to ${str("subagent_type") ?? "a subagent"}` };
     // §33: the model's own sentence leads, as for every registered tool; the memory's NAME is
     // the honest fallback, because "Remembering something" tells the user nothing they can act
     // on. All three read the same `name`, which after a save is the SLUG main derived.

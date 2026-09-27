@@ -133,7 +133,10 @@ export function PermissionModal({
   // Standard allow/deny prompt → offer the expanded persistent-grant choices (#13);
   // any non-standard option set from the bridge is shown verbatim.
   const wire = req.options ?? ["Allow", "Allow for session", "Deny"];
-  const shown = wire.includes("Allow") && wire.includes("Deny") ? EXPANDED_CHOICES : (wire as PermissionChoice[]);
+  // §12/§10 (2026-09-26): a workflow (code) and a sub-agent's own ask are offered EXACTLY
+  // the bridge's choices — never the persistent grants, which would outlive what was approved.
+  const shown = info.workflow || info.child ? (wire as PermissionChoice[])
+    : wire.includes("Allow") && wire.includes("Deny") ? EXPANDED_CHOICES : (wire as PermissionChoice[]);
   return (
     <Dialog.Root open>
       <Dialog.Portal container={container ?? undefined}>
@@ -154,7 +157,10 @@ export function PermissionModal({
             </div>
             <div className="min-w-0">
               <Dialog.Title className="font-bold text-lg leading-tight">
-                {fact ? memoryPromptTitle(info.tool, previous !== null) : "The agent wants to run something"}
+                {fact ? memoryPromptTitle(info.tool, previous !== null)
+                  : info.workflow ? "The agent wants to run a workflow"
+                  : info.child ? `Sub-agent ${info.child.agent}${info.child.runLabel ? ` · ${info.child.runLabel}` : ""} wants to run something`
+                  : "The agent wants to run something"}
               </Dialog.Title>
               {/* W1.1: human summary line (same toolLabel as the tool cards). */}
               <Dialog.Description className="text-sm text-ink flex items-center gap-1.5">
@@ -186,6 +192,27 @@ export function PermissionModal({
                   <SkillDiff before={previous} after={fact.content} />
                 </div>
               )}
+            </div>
+          )}
+          {/* §12 (2026-09-26, decision 7): a workflow is CODE that runs inside HappyVibe, so the
+              script itself is the question — shown in full, above the buttons, never behind
+              `details`. The agents it names are listed with what each may use. */}
+          {info.workflow && (
+            <div className="mb-4 rounded-xl border-2 border-berry/50 bg-berry-soft px-3 py-2 text-xs font-semibold text-berry">
+              <div className="mb-1">
+                This runs a script inside HappyVibe{info.workflow.origin === "path" ? " (from a file)" : info.workflow.origin === "saved" ? " (a saved workflow)" : ""}.
+                It can start several sub-agents.
+              </div>
+              {info.workflow.agents.map((a) => (
+                <div key={a.type} className="break-words">
+                  {a.type}: {a.known ? (a.tools.join(", ") || "no tools") : "unknown agent — it will be refused"}
+                  {a.writeCapable.length > 0 ? ` (can change things with: ${a.writeCapable.join(", ")})` : ""}
+                </div>
+              ))}
+              {info.workflow.unparsed && <div className="break-words">Some agents are chosen while it runs; they get read-only tools.</div>}
+              <pre className="mt-2 rounded-lg border-2 border-line bg-card text-ink px-3 py-2 font-mono whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+                {info.workflow.script}
+              </pre>
             </div>
           )}
           {/* v5: the call reaches outside the workspace — surface the factual path. */}

@@ -15,6 +15,7 @@
  */
 import { ledgerTotal, parseCalls, type ApiCall, type LedgerTotal } from "./calls";
 import { childSessionFiles, readSessionFile } from "./store";
+import { twChildSessionFiles } from "./twChildren";
 
 /**
  * Shown when no delegation event named the run. The agent name is not in the
@@ -41,7 +42,9 @@ export function sessionCalls(
   // must also cover delegations from before those paths were recorded — every
   // child a session ever wrote is still on disk beside its parent. The recorded
   // paths are only what supplies the agent NAME, which no path contains.
-  const children = childSessionFiles(sessionDirPath, piSessionFile).flatMap(({ file }) =>
+  // §12 (2026-09-26): the old layout (nicobailon, read-only for old sessions) ∪ tintinweb's.
+  const files = [...childSessionFiles(sessionDirPath, piSessionFile).map(({ file }) => file), ...twChildSessionFiles(sessionDirPath, piSessionFile)];
+  const children = files.flatMap((file) =>
     parseCalls(readSessionFile(sessionDirPath, file), plans, agentByFile?.get(file) ?? UNNAMED_AGENT),
   );
   // The panel is a chronological ledger, so the two streams interleave by time

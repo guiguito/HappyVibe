@@ -171,13 +171,19 @@ export function planSlug(body: string): string {
 // outright. `browser_open`/`browser_navigate` are deliberately NOT here — they
 // fall through to floor-ask, because opening documentation to read it is
 // legitimate planning, and a GET the user approves per-call is not a mutation.
-export const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "terminal_run", "browser_click", "browser_type", "browser_evaluate"]);
+// §12 (2026-09-26): a tintinweb workflow is a SCRIPT that runs inside the app's own Pi process
+// — approving one is approving code — so planning blocks it outright; a single read-only
+// `Agent` delegation stays available below, which is what exploration needs.
+export const BLOCKED_PLAN_TOOLS = new Set(["edit", "write", "multi_edit", "terminal_run", "browser_click", "browser_type", "browser_evaluate", "SubagentWorkflow"]);
 /** Read-only tools that pass straight through the plan gate. */
 const PLAN_PASS_TOOLS = new Set([
   // use_skill only returns an ALREADY-APPROVED SKILL.md's text (spawn-time trust
   // gate, §14) — strictly a read. Without it, planning raised a permission modal
   // on every skill load.
   "read", "grep", "glob", "list", "ls", "find", "ask_user", "use_skill", "plan_complete", "plan_start", "plan_status_update",
+  // §12 (2026-09-26): steering a run already inside an approved boundary, and reading a
+  // result, change nothing a plan could mutate.
+  "steer_subagent", "get_subagent_result",
   // §26: reading a log is a read. Killing REMOVES power rather than exercising
   // it, and a planning agent that started something before entering plan mode
   // must be able to stop it — neither is worth a modal. floor-ask would clamp
@@ -214,7 +220,7 @@ const PLAN_PASS_TOOLS = new Set([
 ]);
 
 import { isReadOnlyBoundary, writeCapableIn } from "./hv-subagent-boundary";
-import { isShellTool } from "./hv-rules";
+import { isDelegationTool, isShellTool } from "./hv-rules";
 
 export type PlanGate =
   | { kind: "block"; reason: string }
@@ -301,7 +307,7 @@ export function gatePlanCall(toolName: string, input: unknown): PlanGate {
   // exploration, and delegating a long codebase search to a read-only explorer is
   // the most useful thing a planning session can do — which the old clamp
   // forbade for a reason (§12, 2026-07-19) that the capability ceiling removed.
-  if (toolName === "subagent") return { kind: "needs-boundary" };
+  if (isDelegationTool(toolName)) return { kind: "needs-boundary" };
   if (BLOCKED_PLAN_TOOLS.has(toolName)) {
     return { kind: "block", reason: `Plan mode is read-only — '${toolName}' is blocked. Explore and draft a plan; the user implements it later.` };
   }

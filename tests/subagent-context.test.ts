@@ -6,23 +6,17 @@ import { PiClient } from "../src/main/pi/PiClient";
 import { resolvePiSpawn } from "../src/main/pi/spawn";
 
 /**
- * W1.2 PART A contract test — subagent CONTEXT ISOLATION measurement.
+ * W1.2 PART A contract test — sub-agent CONTEXT ISOLATION, on tintinweb (PRD §12).
  *
- * The suspicion: the subagent's full child transcript pollutes the MAIN
- * agent's context. What actually enters context is the toolResult message's
- * `content` blocks — `details` (which carries the child transcript in
- * tool_execution_update and the outcome record in _end) is display-only and
- * is never serialized to the provider (pi-ai openai-completions.js only maps
- * content text blocks into the `tool` role message).
+ * What enters the parent's context is the toolResult message's `content`. A child
+ * runs in-process with its OWN session (`<sessions>/subagents/`), so its transcript
+ * never reaches the parent's message list — this pins that on a real delegation, and
+ * bounds the envelope around the answer.
  *
- * This test pins that empirically: run a real delegation, then get_entries
- * and inspect the persisted toolResult for the subagent call. The context-
- * entering content must be the FINAL OUTPUT only — small, no child-transcript
- * scaffolding — while the full detail record may be much larger.
- *
- * DEEPSEEK-gated (real child Pi spawn), same harness as agents-bridge.test.ts.
+ * Live-gated (real model).
  */
 
+import { TINTINWEB_SETTINGS } from "../src/main/subagentSettings";
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
 
 const runtime = path.join(process.cwd(), "pi-runtime");
@@ -35,6 +29,7 @@ const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-subctx-cwd-"));
 const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-subctx-sess-"));
 const rulesFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hv-subctx-rules-")), "permission-rules.json");
 fs.writeFileSync(rulesFile, JSON.stringify({ global: [{ layer: "tool", pattern: "subagent*", action: "allow" }], workspaces: {} }));
+fs.writeFileSync(path.join(agentDir, "subagents.json"), JSON.stringify(TINTINWEB_SETTINGS));
 
 interface Entry {
   type: string;
@@ -48,14 +43,9 @@ interface Entry {
 }
 
 test.skipIf(!KEY)(
-  "only the subagent's final output enters the main context (toolResult.content); the child transcript stays in details",
+  "only the sub-agent's final answer enters the main context; its transcript stays in its own session file",
   async () => {
-    const spec = resolvePiSpawn(workDir, sessionDir, runtime, {
-      agentDir,
-      providerEnv: PROVIDER_ENV,
-      rulesFile,
-      model: MODEL,
-    });
+    const spec = resolvePiSpawn(workDir, sessionDir, runtime, { agentDir, providerEnv: PROVIDER_ENV, rulesFile, model: MODEL });
     const client = new PiClient(spec);
     const events: Array<{ type?: string; [k: string]: unknown }> = [];
     client.on("event", (e) => events.push(e as { type?: string }));
@@ -70,108 +60,40 @@ test.skipIf(!KEY)(
       await client.send({
         type: "prompt",
         message:
-          "Use the subagent tool right now (mode: single) to delegate to the agent named 'code-explorer' " +
-          "with the task 'reply with exactly the word HELLO and nothing else'. Do not do anything else.",
+          "Use the Agent tool right now in the FOREGROUND (run_in_background false) with subagent_type 'code-explorer', " +
+          "description 'Say hello', and prompt 'reply with exactly the word HELLO and nothing else'. Do not do anything else.",
       });
       await done;
 
-      // The DELEGATION call (not the model's optional `subagent list` warm-up)
-      // is the start whose args carry an agent + task.
-      const delegationStart = events.find(
-        (e) =>
-          e.type === "tool_execution_start" &&
-          (e as { toolName?: string }).toolName === "subagent" &&
-          typeof ((e as { args?: { agent?: string } }).args?.agent) === "string",
-      ) as { toolCallId?: string } | undefined;
-      expect(delegationStart?.toolCallId, "a real delegation ran").toBeTruthy();
-      const callId = delegationStart!.toolCallId!;
+      const start = events.find((e) => e.type === "tool_execution_start" && (e as { toolName?: string }).toolName === "Agent") as
+        | { toolCallId?: string } | undefined;
+      expect(start?.toolCallId, "a real delegation ran").toBeTruthy();
 
-      // The stream used to carry a live child transcript here. At 0.50 it carries
-      // nothing: `tool_execution_update` is not emitted for a subagent call at all
-      // (measured on both paths — see tests/agents-bridge.test.ts, which asserts the
-      // absence). Kept as a measurement rather than deleted, because the number in
-      // the log line below is how we would notice streaming coming back.
-      const updates = events.filter(
-        (e) => e.type === "tool_execution_update" && (e as { toolCallId?: string }).toolCallId === callId,
-      );
-      const liveTranscriptChars = JSON.stringify(
-        (updates[updates.length - 1] as { partialResult?: { details?: unknown } } | undefined)?.partialResult?.details ?? {},
-      ).length;
-
-      // What the SESSION holds — and what the provider will be re-sent — is
-      // the toolResult message. Its `content` is the context-entering part.
+      // What the provider is re-sent is the toolResult message's `content`.
       const resp = await client.send({ type: "get_entries" });
       const entries = ((resp.data ?? resp) as { entries?: Entry[] }).entries ?? [];
-      const toolResult = entries.find((e) => e.type === "message" && e.message?.role === "toolResult" && e.message.toolCallId === callId);
-      expect(toolResult, "subagent toolResult entry present in session").toBeTruthy();
-
-      const contentText = (toolResult!.message!.content ?? [])
-        .filter((b) => b.type === "text")
-        .map((b) => b.text ?? "")
-        .join("\n");
-      const contentChars = contentText.length;
-      const detailsChars = JSON.stringify(toolResult!.message!.details ?? null).length;
-
-      // How much of the content is the child's OWN answer rather than upstream's
-      // scaffolding around it. Reported because the bound below is really about the
-      // envelope: a chattier child legitimately costs more, a fatter wrapper does not.
-      const finalOutputChars = String(
-        (toolResult!.message!.details as { results?: Array<{ finalOutput?: unknown }> } | undefined)
-          ?.results?.[0]?.finalOutput ?? "",
-      ).length;
+      const toolResult = entries.find((e) => e.type === "message" && e.message?.role === "toolResult" && e.message.toolCallId === start!.toolCallId);
+      expect(toolResult, "Agent toolResult entry present in session").toBeTruthy();
+      const contentText = (toolResult!.message!.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n");
+      const isBackground = (toolResult!.message!.details as { status?: unknown } | undefined)?.status === "background";
 
       // eslint-disable-next-line no-console
-      console.log(
-        `[subagent-context] context-entering content: ${contentChars} chars ` +
-          `(child answer ${finalOutputChars}, envelope ~${contentChars - finalOutputChars}) | ` +
-          `toolResult.details (display/session only): ${detailsChars} chars | ` +
-          `live transcript over updates: ${liveTranscriptChars} chars`,
-      );
+      console.log(`[subagent-context] context-entering content: ${contentText.length} chars (background: ${isBackground})`);
 
-      // 1. THE ISOLATION CONTRACT STILL HOLDS: the child's TRANSCRIPT never enters
-      //    context. That is the invariant this test exists for and it is intact.
+      // THE ISOLATION CONTRACT: the child's transcript never enters the parent's context.
       expect(contentText).not.toContain('"role"');
-      expect(contentText).not.toContain("acceptance-report");
-
-      // 2. Every delegation now announces itself with a fan-out receipt, on both
-      //    paths — new at 0.50 (run-fanout-budget.ts), and the first thing the main
-      //    agent reads about its own delegation.
-      expect(contentText).toMatch(/Run fan-out:/);
-
-      // 3. Content is BOUNDED — the assertion that protects the context window.
-      //
-      //    Which bound applies depends on a choice THE MODEL makes: given one prompt
-      //    that does not mention `async`, it detached on one run and blocked on the
-      //    next (observed twice). So the path is measured, not assumed — an assertion
-      //    whose truth depends on the model's mood is the flake CLAUDE.md warns about.
-      const isAsync = typeof (toolResult!.message!.details as { asyncId?: unknown } | undefined)?.asyncId === "string";
-      if (isAsync) {
-        // Async — what HappyVibe ships. A receipt only; the answer arrives on the
-        // triggered completion turn (asserted in subagent-async-bridge.test.ts).
-        // Measured 2026-08-17: 1,255 chars, no "HELLO".
+      expect(contentText).not.toContain("toolCall");
+      if (isBackground) {
+        // The model may still detach; then this is a receipt and the answer arrives later.
         expect(contentText).not.toContain("HELLO");
-        expect(contentChars).toBeLessThan(2_000);
       } else {
-        // ⚠ REGRESSION WATCH — the number is written down because it is a real cost.
-        // A BLOCKING delegation inlines the entire workflow return JSON: launch
-        // contract digest, resolved-extension hashes, artifact paths, usage,
-        // acceptance scaffolding, childReport, toolCalls. Measured 4,947–5,532 chars
-        // at 0.50 to carry a one-word answer, against the 2,000 this test first
-        // enforced. Re-measured at 0.51: 14,785 chars, of which the child's own
-        // answer was 4,569 — so the ENVELOPE alone is ~10.2 KB, roughly double
-        // 0.50's whole result. Nothing we control moved; it is upstream's shape.
-        //
-        // Raised deliberately, not silently: see docs/validation/d1.md §0.51. The
-        // bound stays a real watch rather than a rubber stamp — it is the envelope
-        // that must not grow again, which is why the log line above prints it
-        // separately from the child's answer on every run.
         expect(contentText).toContain("HELLO");
-        expect(contentChars, "blocking delegation context cost").toBeLessThan(20_000);
-        expect(contentChars - finalOutputChars, "blocking delegation ENVELOPE (upstream scaffolding)").toBeLessThan(13_000);
       }
-
-      // 4. The heavyweight record exists but lives OUTSIDE content.
-      expect(detailsChars).toBeGreaterThan(contentChars);
+      // Bounded: tintinweb's envelope is one line ("Agent completed in …") around the answer.
+      expect(contentText.length, "delegation context cost").toBeLessThan(2_000);
+      // The transcript exists — in the child's own session file, never in the parent's.
+      const kids = path.join(sessionDir, "subagents");
+      expect(fs.existsSync(kids) ? fs.readdirSync(kids).filter((f) => f.endsWith(".jsonl")) : []).not.toEqual([]);
     } finally {
       client.stop();
     }

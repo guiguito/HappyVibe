@@ -95,14 +95,22 @@ export interface Verdict {
 export const SHELL_TOOLS: ReadonlySet<string> = new Set(["bash", "powershell"]);
 export const isShellTool = (tool: string): boolean => SHELL_TOOLS.has(tool);
 
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall",
+// `find` is Pi's own read-only search (its builtins are bash/edit/find/grep/ls/read/write);
+// `glob`/`list` are kept for older Pi names. Added 2026-09-27: without it every sub-agent
+// `find` prompted — and before child prompts existed, was silently refused.
+export const SAFE_TOOLS = new Set(["read", "grep", "find", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall",
   // §35: schedule_list is a read. schedule_create and schedule_update are here
   // for the ask_user reason rather than that one — their ONLY effect is to open
   // the drawer for the human to fill in, and main refuses to write without it
   // (even under a bypass). A permission modal in front of a confirmation dialog
   // asks the same question twice and teaches people to click through both.
   // schedule_delete is deliberately NOT here: it deletes with no second dialog.
-  "schedule_list", "schedule_create", "schedule_update"]);
+  "schedule_list", "schedule_create", "schedule_update",
+  // §12 (2026-09-26, tintinweb): a steer is a message to a run ALREADY inside the boundary the
+  // user approved, so it cannot widen what the child may do; a result read is a read. Both are
+  // audited like any other call. `get_subagent_result` with `wait: true` is refused earlier, by
+  // the never-block rule (isResultWait), before this set is ever consulted.
+  "steer_subagent", "get_subagent_result"]);
 
 /**
  * pi-subagents' parent-blocking wait tool, under EVERY name it has shipped under.
@@ -126,6 +134,40 @@ export const WAIT_TOOLS = new Set(["wait", "subagent_wait", "bg_wait"]);
 export function isWaitTool(tool: unknown): boolean {
   return typeof tool === "string" && WAIT_TOOLS.has(tool);
 }
+
+/**
+ * Every tool name that STARTS a delegation, across both vendored stacks:
+ * nicobailon's `subagent` and tintinweb's `Agent` (PRD §12, 2026-09-26). One set,
+ * because the renderer card, the label, the activity gate and ipc's correlation
+ * each carried their own literal and a rename would have missed one.
+ */
+export const DELEGATION_TOOLS: ReadonlySet<string> = new Set(["subagent", "Agent"]);
+
+export const isDelegationTool = (tool: unknown): boolean =>
+  typeof tool === "string" && DELEGATION_TOOLS.has(tool);
+
+/** The agent a delegation names: `agent` on nicobailon's `subagent`, `subagent_type` on tintinweb's `Agent`. */
+export function delegationAgent(args: unknown): string | undefined {
+  const a = args as { agent?: unknown; subagent_type?: unknown } | null | undefined;
+  const v = a?.agent ?? a?.subagent_type;
+  return typeof v === "string" && v ? v : undefined;
+}
+
+/**
+ * The detached run a delegation's tool result started, or undefined for a call that
+ * returned its answer inline. nicobailon: `details.asyncId`. tintinweb: `details.agentId`
+ * when `details.status === "background"` — a foreground Agent carries an agentId too,
+ * but it is not a run anything must track (d1.md § tintinweb wire shapes).
+ */
+export function delegationRunId(details: unknown): string | undefined {
+  const d = details as { asyncId?: unknown; agentId?: unknown; status?: unknown } | null | undefined;
+  if (typeof d?.asyncId === "string" && d.asyncId) return d.asyncId;
+  return d?.status === "background" && typeof d.agentId === "string" && d.agentId ? d.agentId : undefined;
+}
+
+/** tintinweb's blocking wait: `get_subagent_result` with `wait: true` (§12 never-block rule). */
+export const isResultWait = (tool: unknown, input: unknown): boolean =>
+  tool === "get_subagent_result" && (input as { wait?: unknown } | null)?.wait === true;
 
 /**
  * pi-subagents >=0.50's prompt redaction, as a literal we must recognise.
@@ -159,107 +201,11 @@ export function displayableTask(text: unknown): string | undefined {
   return t && !isRedactedPrompt(t) ? t : undefined;
 }
 
-/**
- * pi-subagents >=0.58's external-CLI builtin agents, which HappyVibe refuses.
- *
- * 0.58 grew upstream's builtin roster from 7 agents to 13, and these six run a
- * third-party CLI in its own process (`runner: {type: "external-cli"}`). The
- * capability ceiling cannot bound one, the child guard cannot run inside one,
- * and its tool calls never reach the audit log — upstream refuses ask/deny
- * rules for external runners by design and withholds extension authority from
- * them. So PRD §12's three layers simply do not reach inside them, and they
- * arrive DELEGATABLE the moment the pin lands, `-writer` variants included.
- *
- * Refusing here rather than only through upstream's settings file is
- * deliberate, and measured: a PROJECT-scope `.pi/settings.json` override beats
- * the user scope outright (pi-subagents' agents.ts returns on the project
- * override before it ever reads the user one), so a cloned repo could re-enable
- * one with `{"subagents":{"agentOverrides":{"claude-code":{"disabled":false}}}}`.
- * Main owns the rules; upstream's roster is hygiene, not enforcement.
- *
- * Exact names only. A user's own agent called `claude-code-review-helper` is
- * theirs, and shadowing a builtin name is their business — their file is a
- * native Pi child the ceiling governs like any other.
- *
- * Running an external agent is a PRODUCT decision (an explicitly marked
- * boundary exception in the delegation modal), never a side effect of a pin
- * bump. tests/pi-subagents-contract.test.ts asserts this set still equals
- * exactly the external-runner builtins upstream ships, so a seventh adapter
- * fails there loudly instead of arriving ungoverned.
- *
- * It lives beside WAIT_TOOLS and REDACTED_PROMPT for the same reason: an
- * upstream name set the bridge and the renderer must agree on, and neither can
- * import it from the vendored package.
- */
-export const EXTERNAL_CLI_AGENTS: ReadonlySet<string> = new Set([
-  "claude-code",
-  "claude-code-writer",
-  "codex-exec",
-  "codex-exec-writer",
-  "cursor-agent",
-  "cursor-agent-writer",
-]);
-
-/** True for an upstream external-CLI builtin agent — one we will not launch. */
-export function isExternalCliAgent(agent: unknown): boolean {
-  return typeof agent === "string" && EXTERNAL_CLI_AGENTS.has(agent);
-}
-
-/**
- * Builtins HappyVibe starts DISABLED because they cannot do their job here — a
- * SEPARATE concern from EXTERNAL_CLI_AGENTS above, deliberately kept as its own
- * set because the two mean different things and only the first is a refusal.
- *
- * These are NOT user-toggleable and are not listed anywhere in the app — the
- * same treatment as the external set above, for a different reason. The Agents
- * page's switches govern agents that WORK; an agent that cannot do its job is
- * not a preference to express, and showing one switched-off invites turning it
- * on to discover it does nothing.
- *
- * The distinction the page rests on: HappyVibe-disabled agents are invisible,
- * USER-disabled ones stay listed and dimmed so they can be switched back on.
- *
- * These are ordinary Pi children the ceiling governs perfectly well. The problem
- * is that each is inoperable or meaningless under our own constraints, and
- * offering an agent that cannot deliver what its description promises is worse
- * than not offering it (§20 product taste).
- *
- * `researcher` declares `web_search`, `fetch_content` and `get_search_content`.
- * Pi registers NONE of them — its builtins are exactly bash/edit/find/grep/ls/
- * read/write. Measured 2026-08-29 through `resolveSubagentLaunchContract`: under
- * our capability ceiling it resolves to `["read"]`, because upstream intersects
- * `declaredBuiltinTools` with the ceiling's `allowedTools` (pi-args.ts) — so it
- * does not fail loudly, it runs as a local-file reader while its prompt tells it
- * to search the web. Revisit when web search exists (an MCP server would do it).
- *
- * `oracle` exists to reason over inherited state ("protects inherited state and
- * prevents drift") and declares `defaultContext: fork`, but our
- * `defaultSubagentContext: "fresh"` wins — measured, every agent resolves
- * `ctx = fresh`. An oracle with nothing inherited has no premise.
- *
- * Enforcement is upstream's settings file ONLY (subagentSettings.ts), not a
- * bridge refusal. A project-scope `.pi/settings.json` can re-enable one, and
- * that is accepted: the consequence is a confused agent, not a boundary hole.
- * That is exactly why this is not merged into EXTERNAL_CLI_AGENTS, whose members
- * must keep failing at the bridge no matter what any settings file says.
- */
-export const UNSUPPORTED_BUILTIN_AGENTS: ReadonlySet<string> = new Set([
-  "researcher",
-  "oracle",
-]);
-
-
-/** Every upstream builtin we write `disabled: true` for, for either reason. */
-export const DISABLED_BUILTIN_AGENTS: ReadonlySet<string> = new Set([
-  ...EXTERNAL_CLI_AGENTS,
-  ...UNSUPPORTED_BUILTIN_AGENTS,
-]);
-
 /** v5: Pi's built-in FILE tools — the ones whose path args we confine to the
  * workspace by default. bash is deliberately NOT here (it stays under
  * command-pattern rules; path-inspecting arbitrary shell is out of scope). */
 export const FILE_TOOLS = new Set([
-  "read", "write", "edit", "multi_edit", "multiedit", "grep", "glob", "ls", "list",
+  "read", "write", "edit", "multi_edit", "multiedit", "grep", "find", "glob", "ls", "list",
 ]);
 
 /**

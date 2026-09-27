@@ -1,9 +1,9 @@
 /**
  * The sub-agent boundary module — the shared definition of "what a child may
- * reach", used by the approval prompt, the ceiling and the plan clamp.
+ * reach", used by the approval prompt, the in-process child guard and the plan clamp.
  *
- * Pure and key-free, so it runs in CI. The half that measures upstream's
- * behaviour under a ceiling lives in tests/subagent-adversarial.test.ts.
+ * Pure and key-free, so it runs in CI. What the guard does with it is pinned in
+ * tests/child-guard-inproc.test.ts.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -12,11 +12,8 @@ import { evaluate } from "../pi-runtime/extensions/hv-rules";
 import {
   boundaryRuleName,
   isReadOnlyBoundary,
-  isWiderThanReadOnly,
-  needsWiderCeiling,
   READ_ONLY_CHILD_TOOLS,
   summarizeBoundary,
-  widenBoundary,
   writeCapableIn,
   WRITE_CAPABLE_TOOLS,
 } from "../pi-runtime/extensions/hv-subagent-boundary";
@@ -96,26 +93,6 @@ describe("writeCapableIn", () => {
   });
 });
 
-describe("widenBoundary / isWiderThanReadOnly", () => {
-  it("widening always keeps the read-only floor", () => {
-    expect(widenBoundary(["bash"])).toEqual(["bash", "find", "grep", "ls", "read"]);
-  });
-
-  it("widening is idempotent and order-independent", () => {
-    expect(widenBoundary(["bash", "write"])).toEqual(widenBoundary(["write", "bash", "bash"]));
-  });
-
-  it("a read-only approval does not widen anything", () => {
-    expect(widenBoundary(["read"])).toEqual([...READ_ONLY_CHILD_TOOLS].sort());
-    expect(isWiderThanReadOnly(widenBoundary(["read"]))).toBe(false);
-  });
-
-  it("detects a widened ceiling, which is what gates an undeclared agent", () => {
-    expect(isWiderThanReadOnly([...READ_ONLY_CHILD_TOOLS])).toBe(false);
-    expect(isWiderThanReadOnly(widenBoundary(["bash"]))).toBe(true);
-  });
-});
-
 /**
  * Source scans, the tests/modal-layer.test.ts pattern: the renderer and bridge
  * have no DOM here, and an ABSENCE is exactly what a behavioural test does not
@@ -124,19 +101,6 @@ describe("widenBoundary / isWiderThanReadOnly", () => {
 describe("the bridge uses the module rather than re-deriving it", () => {
   it("gates a delegation under the virtual name", () => {
     expect(bridgeSrc()).toContain("boundaryRuleName(");
-  });
-
-  it("registers the ceiling with denyExtensions, which closes the ambient-load hole", () => {
-    const src = bridgeSrc();
-    expect(src).toContain("registerSubagentCapabilityCeiling");
-    expect(src).toContain("denyExtensions");
-  });
-
-  it("imports the ceiling by its PUBLIC subpath, not a deep relative path", () => {
-    // capability-ceiling IS in pi-subagents' exports map, unlike listAsyncRuns and
-    // ASYNC_DIR — so the bare specifier is correct here and a relative reach would
-    // be gratuitous fragility.
-    expect(bridgeSrc()).toMatch(/from "pi-subagents\/capability-ceiling"/);
   });
 
   it("never hardcodes a read-only tool list of its own", () => {
@@ -181,7 +145,7 @@ describe("summarizeBoundary", () => {
     expect(b.declarations).toEqual(["inheritSkills", "outputMode"]);
   });
 
-  it("defaults context to fresh, matching writeSubagentConfig", () => {
+  it("defaults context to fresh", () => {
     expect(summarizeBoundary(base).context).toBe("fresh");
     expect(summarizeBoundary({ ...base, context: "fork" }).context).toBe("fork");
   });
@@ -189,19 +153,6 @@ describe("summarizeBoundary", () => {
   it("is stable under duplicate tool names", () => {
     expect(summarizeBoundary({ ...base, effectiveAllowlist: ["read", "read", "grep"] }).tools)
       .toEqual(["grep", "read"]);
-  });
-});
-
-describe("needsWiderCeiling", () => {
-  it("true only when a DECLARED boundary exceeds the read-only floor", () => {
-    expect(needsWiderCeiling(summarizeBoundary({ agent: "a", explicitAllowlist: true, effectiveAllowlist: ["read", "bash"] }))).toBe(true);
-    expect(needsWiderCeiling(summarizeBoundary({ agent: "a", explicitAllowlist: true, effectiveAllowlist: ["read"] }))).toBe(false);
-  });
-
-  it("false for an undeclared agent — it must never widen anything", () => {
-    // An undeclared agent inherits the ceiling. If it could widen it, FR3 would
-    // be self-defeating: the very agents we refuse to widen for would do it.
-    expect(needsWiderCeiling(summarizeBoundary({ agent: "a", explicitAllowlist: false, effectiveAllowlist: [] }))).toBe(false);
   });
 });
 

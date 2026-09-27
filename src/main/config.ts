@@ -10,8 +10,7 @@ import { resolveBypass as resolveBypassPure } from "./bypass";
 import { OFFICIAL_MARKETPLACE } from "./plugins/officialMarketplace";
 import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings";
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
-import { disabledAgentOverrides } from "./subagentSettings";
-import { EXTERNAL_CLI_AGENTS, UNSUPPORTED_BUILTIN_AGENTS } from "../../pi-runtime/extensions/hv-rules";
+import { disabledAgentOverrides, tintinwebSettings } from "./subagentSettings";
 import { resolveWebService, type ResolvedWebService } from "./webTools";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
@@ -659,17 +658,6 @@ export function rulesFile(): string {
   return path.join(app.getPath("userData"), "permission-rules.json");
 }
 
-/**
- * §12 FR7: where the child guard appends its per-run decision JSONL
- * (HV_CHILD_AUDIT_DIR). Under userData because MAIN owns it — the guard writes,
- * main drains and deletes, and `subagentAudit.ts` confines every read to this
- * root rather than trusting the env var it travelled through.
- */
-export function childAuditRoot(): string {
-  const d = path.join(app.getPath("userData"), "subagent-audit");
-  fs.mkdirSync(d, { recursive: true });
-  return d;
-}
 
 /**
  * Built-in agent dir (B6). pi-subagents discovers agents from
@@ -788,86 +776,6 @@ export function installBuiltinAgents(bundleDir: string): void {
   if (changed) fs.writeFileSync(stampFile, JSON.stringify(stamps));
 }
 
-/**
- * Enable async-by-default subagent delegations (PRD §12, 2026-07-17). pi-subagents
- * reads `<PI_CODING_AGENT_DIR>/extensions/subagent/config.json` at spawn; with
- * `asyncByDefault` a delegation returns immediately (detached runner) so the
- * user keeps chatting. `completionBatch.enabled:false` → one completion notify
- * per run, which the renderer maps 1:1 to a run card. `waitTool.enabled:false`
- * (>=0.50) stops upstream steering the model into a turn-blocking wait. The dir
- * is app-owned but the file's schema is upstream's, so we merge-write (preserve
- * any keys a future version adds). Idempotent. Pinned by tests/subagent-config.test.ts.
- */
-export function writeSubagentConfig(): void {
-  const file = path.join(agentDir(), "extensions", "subagent", "config.json");
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  let config: Record<string, unknown> = {};
-  try {
-    config = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
-  } catch {
-    /* absent or corrupt — start fresh */
-  }
-  config.asyncByDefault = true;
-  config.completionBatch = { ...(config.completionBatch as object | undefined), enabled: false };
-  // pi-subagents' agent-to-agent "intercom" result relay defaults to "always",
-  // but HappyVibe delivers results via the independent async-complete →
-  // subagent-notify path and never acks intercom — leaving it on just logs
-  // "intercom delivery was not acknowledged" on every run. Off = quiet, no loss.
-  config.intercomBridge = { ...(config.intercomBridge as object | undefined), mode: "off" };
-  // PRD §12 (2026-08-17): pi-subagents >=0.50 can disable its own wait tool, and a
-  // blocking wait is never right here — results always arrive as their own turn.
-  // The WAIT_TOOLS name guard (hv-rules.ts) stays on top of this: a config key a
-  // future version renames fails SILENT, a renamed tool name fails the contract
-  // test loudly. Per-task blocking discretion lives at dispatch (`async:false`).
-  config.waitTool = { ...(config.waitTool as object | undefined), enabled: false };
-  // PRD §12 (2026-08-19): pi-subagents 0.51 added this, and it decides whether a
-  // child starts fresh or FORKS the parent's session. Upstream's default is
-  // already "fresh" (fork-context.ts), which is what §12's isolation contract has
-  // always assumed — so this states a value rather than changing one. Stated
-  // because a future flip to "fork" would hand every sub-agent the parent's
-  // entire transcript, with no user-visible symptom and no failing test to
-  // announce it. tests/subagent-config.test.ts pins both halves: our key, and
-  // that upstream still agrees.
-  config.defaultSubagentContext = "fresh";
-  // PRD §12/§19 (2026-08-29): pi-subagents 0.57 caches "this model failed" verdicts
-  // and silently skips the model on every later delegation. The default TTL is 24
-  // HOURS and the cache is per-UID in a temp dir, so one flaky child ("Subagent
-  // produced no output") stops that model being used across every session and
-  // workspace for a day — with the only signal a console.warn the app never shows.
-  // Observed on a real install: qwen3.8-flash excluded for 24h while the chat kept
-  // showing it as the session model.
-  //
-  // Five minutes absorbs a genuine cold start, which is what the mechanism is FOR,
-  // without letting one blip cost a day. Setting the key explicitly also shortens
-  // entries already on disk (upstream passes `shortenExisting` when the value is
-  // configured), so a stale 24h exclusion self-heals at the next start rather than
-  // needing the file deleted. The bridge reports any live exclusion as an audit
-  // row — shortening the window is not the same as telling the user.
-  config.modelExclusions = { ...(config.modelExclusions as object | undefined), defaultTtlMs: 5 * 60_000 };
-  // PRD §12 (2026-08-21) — FR12 was IMPLEMENTED, MEASURED AND DROPPED. We
-  // deliberately write NO `permissions` key. Do not add one back.
-  //
-  // The idea was a redundant native floor beneath the ceiling and the child
-  // guard. It cannot work, because this file is written ONCE at startup while a
-  // boundary is approved per delegation, so any rule here is unconditional —
-  // and `permissionDecision` has no boundary awareness to give it.
-  //
-  // That makes it either redundant or harmful, never useful:
-  //  - when a tool is OUTSIDE the approved boundary, the capability ceiling has
-  //    already removed it from the child's --tools, so there is nothing to deny;
-  //  - when a tool is INSIDE it, this silently overrides the approval.
-  //
-  // Measured, not reasoned: with `permissions: {rules:{write:"deny"}}` armed, a
-  // child whose boundary included `write` and whose rules explicitly ALLOWED it
-  // had its guard row say "allow" and the file was still never created. The modal
-  // would promise "It can change things with: write", the user would grant it,
-  // and the write would fail silently — a worse lie than no boundary at all,
-  // because the user believes they granted something.
-  //
-  // Pinned by an absence test in tests/subagent-config.test.ts and, end to end,
-  // by "an APPROVED write actually succeeds" in tests/child-guard-bridge.test.ts.
-  fs.writeFileSync(file, `${JSON.stringify(config, null, "\t")}\n`);
-}
 
 /**
  * §25: the plugin marketplaces the user has listed.
@@ -884,19 +792,8 @@ export function writeSubagentConfig(): void {
 // import the URL without pulling in the app; re-exported so callers here and in
 // ipc.ts are unchanged.
 /**
- * Keep upstream's external-CLI builtin agents out of the injected roster.
- *
- * PRD §12 (2026-08-28): pi-subagents 0.58 ships 13 builtin agents, six of them
- * `runner: external-cli`. This is HYGIENE only — the ENFORCEMENT is
- * `isExternalCliAgent` in hv-rules.ts, checked by the bridge, because a
- * PROJECT-scope `.pi/settings.json` override beats this user-scope file
- * outright. With the six disabled here the model is never told they exist, so it
- * cannot spend a turn proposing one and being refused.
- *
- * The merge logic is pure and lives in subagentSettings.ts so vitest can reach
- * it; this function is only the file I/O. Note the target is PI's own settings
- * file, which is why the read-merge-write shape is load-bearing rather than
- * tidy: HappyVibe is merely the first thing in the app to write it.
+ * Write the Agents page's per-agent switches into `<agentDir>/settings.json`
+ * (read-merge-write: it is Pi's file). The merge is pure, in subagentSettings.ts.
  */
 export function writeSubagentSettings(): void {
   const file = path.join(agentDir(), "settings.json");
@@ -910,15 +807,22 @@ export function writeSubagentSettings(): void {
 }
 
 /**
- * Record the user's choice for one agent and re-derive upstream's settings file.
- *
- * An EXTERNAL_CLI agent is refused here rather than in the renderer — main owns
- * the rules, and `resolveDisabledAgents` forces them anyway, so this is the
- * honest error rather than a silent no-op.
+ * PRD §12 (2026-09-26): tintinweb's global settings (the locked set lives in
+ * subagentSettings.ts, pure). Merge-written for the same reason as the one above.
  */
+export function writeTintinwebSettings(): void {
+  const file = path.join(agentDir(), "subagents.json");
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    /* absent or corrupt — start fresh */
+  }
+  fs.writeFileSync(file, `${JSON.stringify(tintinwebSettings(settings), null, 2)}\n`);
+}
+
+/** Record the user's choice for one agent and re-derive the settings file the bridge reads. */
 export function setAgentEnabled(name: string, enabled: boolean): void {
-  if (EXTERNAL_CLI_AGENTS.has(name)) throw new Error(`'${name}' cannot be enabled: HappyVibe's boundary cannot govern an external CLI agent.`);
-  if (UNSUPPORTED_BUILTIN_AGENTS.has(name)) throw new Error(`'${name}' cannot be enabled: it cannot do its job in this runtime.`);
   const cfg = load();
   cfg.agentsEnabled = { ...(cfg.agentsEnabled ?? {}), [name]: enabled };
   save(cfg);

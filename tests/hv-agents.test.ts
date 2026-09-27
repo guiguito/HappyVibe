@@ -267,3 +267,17 @@ describe("renderSubagentSection excludes switched-off agents", () => {
     expect(renderSubagentSection([a])).toContain(subagentRosterLine(a));
   });
 });
+
+describe("the roster on the tintinweb path (§12, 2026-09-26)", () => {
+  const agents = [{ name: "worker", description: "does things", source: "bundled" as const, path: "/a/worker.md" }];
+  test("names the Agent tool and its args, and has no list step to countermand", () => {
+    const s = renderSubagentSection(agents, { tool: "Agent" });
+    expect(s).toContain("`Agent`");
+    expect(s).toContain("subagent_type");
+    expect(s).not.toContain('action: "list"');
+    expect(s).toContain("Delegate when the work spans many files");
+  });
+  test("the default is today's nicobailon text, unchanged", () => {
+    expect(renderSubagentSection(agents)).toContain('`{ action: "list" }`');
+  });
+});

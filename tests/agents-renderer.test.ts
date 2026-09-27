@@ -864,17 +864,16 @@ describe("the app's shared Toggle (round 16: no longer used by Agents)", () => {
 
 // ── Who disabled it decides whether you can see it (2026-08-30) ────────────
 describe("HappyVibe-disabled agents are invisible; user-disabled ones are not", () => {
-  test("the bridge drops both forced sets before the page ever sees them", () => {
-    const bridge = readFileSync(path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts"), "utf8");
-    expect(bridge).toContain("if (isExternalCliAgent(name0)) continue;");
-    expect(bridge).toContain("if (UNSUPPORTED_BUILTIN_AGENTS.has(name0)) continue;");
+  test("upstream's own default agents never reach the page — tintinweb is told not to load them", async () => {
+    const { TINTINWEB_SETTINGS } = await import("../src/main/subagentSettings");
+    expect(TINTINWEB_SETTINGS.disableDefaultAgents).toBe(true);
   });
 
   test("a USER-disabled agent still reaches the page, marked", () => {
     // The distinction the whole design rests on: `enabled` is set rather than
     // the row being dropped, so the switch that turns it back on can exist.
     const bridge = readFileSync(path.join(__dirname, "..", "pi-runtime", "extensions", "happyvibe-bridge.ts"), "utf8");
-    expect(bridge).toContain("enabled: a.disabled !== true");
+    expect(bridge).toContain("enabled: cfg.enabled !== false && !off.has(name)");
   });
 
   test("the page no longer explains an off-by-default agent — there are none", () => {

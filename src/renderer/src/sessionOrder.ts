@@ -59,3 +59,22 @@ export function bySidebarOrder(live: ReadonlySet<string>): (a: SessionLike, b: S
     return lastUsed(b).localeCompare(lastUsed(a));
   };
 }
+
+/**
+ * The order the pointer is standing on, kept while it stands there.
+ *
+ * Selecting a session IS use, so it re-sorts at once — and that moved the row UNDER
+ * the pointer: click the session below a running one, it jumps above, the running
+ * one slides into the spot, and the next click on "the same" trash icon deleted the
+ * wrong session (a user lost a session mid-build this way, 2026-09-27). So while the
+ * pointer is over the sidebar, rows keep the ranks captured when it arrived; the live
+ * order applies the moment it leaves. A session that appeared meanwhile goes first
+ * (where a new one belongs); one that vanished simply drops out.
+ */
+export function holdOrder<T extends { id: string }>(sorted: readonly T[], frozen: readonly string[] | null): T[] {
+  if (!frozen) return [...sorted];
+  const rank = new Map(frozen.map((id, i) => [id, i]));
+  const fresh = sorted.filter((s) => !rank.has(s.id));
+  const held = sorted.filter((s) => rank.has(s.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  return [...fresh, ...held];
+}

@@ -3,8 +3,9 @@
  *
  * PURE and import-free, exactly like hv-rules.ts, because three places have to
  * agree on it and must never drift: the bridge (which builds the approval prompt
- * and registers the ceiling), src/main (which renders and audits), and vitest.
- * If the prompt's idea of "read-only" ever diverged from the ceiling's, the user
+ * and hands the approved set to the child guard), src/main (which renders and
+ * audits), and vitest. If the prompt's idea of "read-only" ever diverged from the
+ * guard's, the user
  * would be approving one thing while we enforced another — which is worse than
  * having no boundary at all, because it reads as safety.
  *
@@ -67,52 +68,12 @@ export function writeCapableIn(tools: readonly string[]): string[] {
   return [...new Set(tools.filter((t) => WRITE_CAPABLE_TOOLS.has(t)))].sort();
 }
 
-/**
- * The ceiling to register once a human has approved `approved`.
- *
- * Always a UNION with the read-only floor, never a replacement: a child that can
- * run bash but cannot read is useless, and an agent declaring only `bash` should
- * not lose the ability to look at what it is doing.
- *
- * Widening is MONOTONIC within a turn, and that is forced rather than chosen.
- * Pi's agent loop awaits every `tool_call` gate in sequence and then runs the
- * executions under one `Promise.all` (`agent-loop.js:331-365`, with
- * `toolExecution` defaulting to "parallel" and `subagent` not declaring
- * `executionMode: "sequential"`), so gates serialize but child SPAWNS overlap. A
- * ceiling opened for one delegation and closed at its `tool_execution_end` would
- * therefore still be open while a sibling spawned. The registry is keyed by
- * session id with no per-call key, so nothing public can scope it tighter.
- * Measurements: docs/validation/d1.md §Subagent delegation concurrency.
- *
- * What keeps that sound is not the ceiling but the PROMPT: it shows the
- * preflight-resolved toolset, computed against the live ceiling, so it can never
- * understate what a child will get. Plus `isWiderThanReadOnly` below, which is
- * how FR3 survives someone else's approval.
- */
-export function widenBoundary(approved: readonly string[]): string[] {
-  return [...new Set([...READ_ONLY_CHILD_TOOLS, ...approved])].sort();
-}
-
-/**
- * True when the ceiling currently grants more than the read-only floor.
- *
- * The gate uses this to REFUSE a delegation to an agent that declares no `tools:`
- * while a widened ceiling is open. Upstream treats a present ceiling as the
- * declared tool set for such an agent (`pi-args.ts:396-399`), so without this
- * check an undeclared agent's reach would depend on what some *other* agent was
- * approved for earlier in the same turn — FR3 holding or not by accident of
- * ordering.
- */
-export function isWiderThanReadOnly(tools: readonly string[]): boolean {
-  return tools.some((t) => !READ_ONLY_CHILD_TOOLS.has(t));
-}
-
-/** What the approval prompt shows, and what the ceiling is widened to. */
+/** What the approval prompt shows, and what the in-process guard holds the child to. */
 export interface BoundarySummary {
   agent: string;
   /** The child's tools: the agent's own declaration, or our read-only default. */
   tools: string[];
-  /** False when the agent declares no `tools:` and therefore inherits the ceiling. */
+  /** False when the agent declares no `tools:` and is therefore held to the read-only floor. */
   declared: boolean;
   writeCapable: string[];
   /** `subagent` in the toolset — reported on its own line, never as a write. */
@@ -124,23 +85,12 @@ export interface BoundarySummary {
 }
 
 /**
- * Turn a preflight-resolved launch contract into the boundary a human approves.
+ * Turn an agent's resolved tool set into the boundary a human approves.
  *
- * Call preflight WITHOUT a capability ceiling to build this. That sounds wrong and
- * is the only honest option: `effectiveCapabilityCeiling` in preflight comes from
- * its inputs and never from the registry (`preflight.ts:263`), so passing our
- * read-only ceiling would resolve a bash-declaring agent down to read-only, the
- * prompt would say "read-only", and then approving it would widen the ceiling and
- * hand the child bash. The prompt must show what the agent ASKS FOR — that is the
- * thing being approved.
- *
- * The trap this function exists for: an agent declaring no `tools:` resolves to
- * `effectiveAllowlist === []` with `explicitAllowlist === false`, and that empty
- * array does **not** mean "no tools". It means no `--tools` flag is emitted, i.e.
- * Pi's ENTIRE builtin set (`pi-args.ts:424-427`). Rendering it verbatim would
- * describe the most dangerous case as the safest one. So an undeclared agent is
- * summarised as the read-only default, which is what our ceiling will actually
- * give it.
+ * The trap this exists for: an agent declaring no `tools:` gets EVERY builtin from
+ * the library, so rendering its resolved set verbatim would describe the most
+ * dangerous case as a normal one. An undeclared agent is summarised as the
+ * read-only default instead — which is exactly what the child guard holds it to.
  */
 export function summarizeBoundary(input: {
   agent: string;
@@ -160,20 +110,8 @@ export function summarizeBoundary(input: {
     writeCapable: writeCapableIn(tools),
     fanout: tools.includes("subagent"),
     skills: [...(input.skills ?? [])],
-    // `fresh` mirrors writeSubagentConfig's explicit default; a child that forks
-    // the parent session is an isolation change and must never be implied.
+    // A child that forks the parent session is an isolation change and must never be implied.
     context: input.context ?? "fresh",
     declarations: [...(input.declarations ?? [])],
   };
-}
-
-/**
- * Does approving this boundary require widening the session ceiling?
- *
- * False for an undeclared agent even if the ceiling is read-only — an agent that
- * inherits the ceiling must never be the reason it grows, or FR3 would defeat
- * itself: the exact agents we refuse to widen for would be the ones widening it.
- */
-export function needsWiderCeiling(b: BoundarySummary): boolean {
-  return b.declared && isWiderThanReadOnly(b.tools);
 }

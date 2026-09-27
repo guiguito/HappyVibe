@@ -10,7 +10,7 @@ import type { SessionStatus } from "../App";
 import { workspaceEmoji } from "../workspaceEmoji";
 import { MenuItem } from "./MenuItem";
 import { HowItWorks } from "./HowItWorks";
-import { bySidebarOrder, lastUsed } from "../sessionOrder";
+import { bySidebarOrder, holdOrder, lastUsed } from "../sessionOrder";
 import { AUTO, fractionFor, isSized, readSplit, writeSplit } from "../sidebarSplit";
 import { BrandLogo } from "./BrandLogo";
 
@@ -661,6 +661,9 @@ function SessionRow({
   );
 }
 
+/** Shown in the delete confirmation when the session is mid-turn (2026-09-27). */
+export const RUNNING_DELETE_WARNING = "This session is running — deleting it stops the agent mid-task.";
+
 export function Sidebar({
   workspaces,
   sessions,
@@ -810,6 +813,8 @@ export function Sidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchNonce]);
   const [confirmDelete, setConfirmDelete] = useState<SessionMeta | null>(null);
+  /** The session order held while the pointer is over the sidebar (sessionOrder.ts `holdOrder`). */
+  const [heldOrder, setHeldOrder] = useState<string[] | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   // Round 8: which workspaces are collapsed, remembered across restarts —
   // several workspaces of many sessions each is exactly when it matters.
@@ -973,6 +978,10 @@ export function Sidebar({
     <aside
       ref={asideRef}
       className={`${railCollapsed ? "w-12" : "w-64"} shrink-0 bg-paper-deep pegboard border-r-2 border-line grid overflow-hidden motion-safe:transition-[width] motion-safe:duration-270 motion-safe:ease-hv-out`}
+      // A row must not move under the pointer: selecting re-sorts, and the next click
+      // landed on the row that slid into its place (holdOrder). Released on leave.
+      onMouseEnter={() => setHeldOrder([...sessions].sort(bySidebarOrder(live)).map((x) => x.id))}
+      onMouseLeave={() => setHeldOrder(null)}
     >
       {/* The collapsed rail. */}
       <div
@@ -1175,9 +1184,9 @@ export function Sidebar({
             <div className="text-xs text-ink-soft px-1.5 py-1">Add a project folder to start.</div>
           )}
           {workspaces.map((ws) => {
-            const wsSessions = sessions
+            const wsSessions = holdOrder(sessions
               .filter((s) => s.workspaceId === ws && visible(s))
-              .sort(bySidebarOrder(live));
+              .sort(bySidebarOrder(live)), heldOrder);
             const isCollapsed = collapsed.has(ws) && !q; // filtering expands everything
             return (
               <div key={ws} className="mb-1.5">
@@ -1331,9 +1340,9 @@ export function Sidebar({
                       Worktrees
                     </div>
                     {worktrees![ws].map((w) => {
-                      const wtSessions = sessions
+                      const wtSessions = holdOrder(sessions
                         .filter((s) => s.workspaceId === w.path && visible(s))
-                        .sort(bySidebarOrder(live));
+                        .sort(bySidebarOrder(live)), heldOrder);
                       const wtCollapsed = collapsed.has(w.path) && !q;
                       return (
                         <div key={w.path} className={w.prunable ? "opacity-60" : undefined}>
@@ -1559,10 +1568,18 @@ export function Sidebar({
               className="hv-dialog-flow w-full max-w-md rounded-2xl bg-paper border-2 border-line-strong shadow-pop p-6"
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <h2 className="font-black text-xl">
-                {confirmDelete.archived ? "Restore or delete?" : "Archive or delete?"}
-              </h2>
-              <p className="text-sm text-ink-soft mt-2">&ldquo;{confirmDelete.title}&rdquo;</p>
+              {/* 2026-09-27: the SESSION is the headline, not the question — a user deleted the
+                  running session believing it was the one below, and a small quoted title under
+                  "Archive or delete?" was the only thing that could have told them. */}
+              <h2 className="font-black text-xl break-words">&ldquo;{confirmDelete.title}&rdquo;</h2>
+              <p className="text-sm text-ink-soft mt-1">
+                {confirmDelete.archived ? "Restore or delete this session?" : "Archive or delete this session?"}
+              </p>
+              {busy[confirmDelete.id] && (
+                <p className="mt-3 rounded-xl border-2 border-berry/60 bg-berry/10 text-berry font-bold text-sm px-3 py-2">
+                  {RUNNING_DELETE_WARNING}
+                </p>
+              )}
               <ul className="mt-3 text-sm text-ink-soft space-y-1.5">
                 <li>
                   <b className="text-ink">{confirmDelete.archived ? "Unarchive" : "Archive"}</b> —{" "}
