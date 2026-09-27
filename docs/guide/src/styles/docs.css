@@ -24,6 +24,9 @@
   /* Link text. tangerine-deep is 4.3:1 on paper, under AA's 4.5:1, so links are ink with a
      tangerine underline instead. */
   --sl-color-accent-high: var(--color-ink);
+  /* Starlight's light theme draws link and site-title TEXT in the accent itself (props.css), and
+     tangerine is 3.1:1 on paper. Text stays ink; tangerine stays for underlines and fills. */
+  --sl-color-text-accent: var(--color-ink);
 }
 
 .sl-markdown-content a {
