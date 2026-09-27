@@ -29,6 +29,15 @@ export interface AgentInfo {
   enabled?: boolean;
 }
 
+/**
+ * The agents the chat may offer for a delegation. The shared list keeps switched-off
+ * agents so the Agents page can switch them back on; the chat's chip and @ list must
+ * not offer them, because the child runtime does not load a disabled agent.
+ */
+export function delegatableAgents<T extends { enabled?: boolean }>(agents: T[]): T[] {
+  return agents.filter((a) => a.enabled !== false);
+}
+
 export interface ToolInfo {
   name: string;
   description: string;
