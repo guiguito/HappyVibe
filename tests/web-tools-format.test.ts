@@ -3,6 +3,7 @@ import {
   DEFAULT_WEB_SERVICE_URL,
   resolveWebService,
   WEB_CUSTOM_URL_INVALID,
+  WEB_DEFAULT_PAUSED,
   clampInt,
   pageWindow,
   formatFetch,
@@ -42,7 +43,7 @@ describe("webTools — service resolution (§32)", () => {
     "a custom setting with an unusable URL (%j) is an error, never the default box",
     (baseUrl) => {
       const r = resolveWebService({ mode: "custom", ...(baseUrl === undefined ? {} : { baseUrl }) }, () => "x");
-      expect(r).toEqual({ error: WEB_CUSTOM_URL_INVALID });
+      expect(r).toEqual({ error: WEB_CUSTOM_URL_INVALID, code: "CUSTOM_URL_INVALID", service: "custom" });
       expect(JSON.stringify(r)).not.toContain(DEFAULT_WEB_SERVICE_URL);
     },
   );
@@ -178,5 +179,24 @@ describe("webTools — result text (§32)", () => {
     expect(SERVICE_UNAVAILABLE_TEXT).toContain("Settings");
     expect(SERVICE_UNAVAILABLE_TEXT).toContain("your own");
     expect(SERVICE_UNAVAILABLE_TEXT.toLowerCase()).not.toContain("firecrawl");
+  });
+});
+
+describe("§39 the default service can be paused remotely", () => {
+  const dec = (s: string): string => s;
+  it("flag off + default mode → DEFAULT_PAUSED with the exact sentence, no URL", () => {
+    const r = resolveWebService({ mode: "default" }, dec, false);
+    expect(r).toEqual({ error: WEB_DEFAULT_PAUSED, code: "DEFAULT_PAUSED", service: "default" });
+    expect(JSON.stringify(r)).not.toContain(DEFAULT_WEB_SERVICE_URL);
+    expect(WEB_DEFAULT_PAUSED).toBe(
+      "HappyVibe's free web service is paused right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.",
+    );
+  });
+  it("flag off + custom mode → the custom service, untouched", () => {
+    expect(resolveWebService({ mode: "custom", baseUrl: "https://x.test" }, dec, false)).toEqual({ baseUrl: "https://x.test", service: "custom" });
+  });
+  it("flag on (and the default argument) → today's behaviour", () => {
+    expect(resolveWebService(undefined, dec)).toEqual({ baseUrl: DEFAULT_WEB_SERVICE_URL, service: "default" });
+    expect(resolveWebService(undefined, dec, true)).toEqual({ baseUrl: DEFAULT_WEB_SERVICE_URL, service: "default" });
   });
 });

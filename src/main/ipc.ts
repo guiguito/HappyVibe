@@ -2029,14 +2029,15 @@ export function registerIpc(
           const wsId = meta?.workspaceId;
           const resolved = resolveWebServiceForCall();
           // §32 amendment: a custom service with a bad URL refuses the call —
-          // it is never quietly routed to the default box.
+          // it is never quietly routed to the default box. §39: so does the
+          // default box while remote config has it paused.
           if ("error" in resolved) {
             client.respondUi(rid, { value: JSON.stringify({ ok: false, reason: resolved.error }) });
             void log.append({
               type: "web.call",
               sessionId,
               workspaceId: wsId,
-              data: { tool: `web_${wr.kind}`, ms: 0, ok: false, service: "custom", code: "CUSTOM_URL_INVALID" },
+              data: { tool: `web_${wr.kind}`, ms: 0, ok: false, service: resolved.service, code: resolved.code },
             });
             return;
           }

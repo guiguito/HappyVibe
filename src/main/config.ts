@@ -12,6 +12,7 @@ import { mergeTerminalSettings, type TerminalSettings } from "./terminalSettings
 import { mergeVoiceSettings, type VoiceSettings } from "./voice/settings";
 import { disabledAgentOverrides, tintinwebSettings } from "./subagentSettings";
 import { resolveWebService, type ResolvedWebService } from "./webTools";
+import { webDefaultServiceAllowed } from "./remoteConfig/client";
 
 const file = () => path.join(app.getPath("userData"), "config.json");
 
@@ -429,7 +430,12 @@ export function setWebService(p: { mode: "default" | "custom"; baseUrl?: string;
 
 /** The one place a web-service key is decrypted. Called per tool call. */
 export function resolveWebServiceForCall(): ResolvedWebService {
-  return resolveWebService(load().webService, (b64) => safeStorage.decryptString(Buffer.from(b64, "base64")));
+  // §39: remote config's live switch, read per call like the service itself.
+  return resolveWebService(
+    load().webService,
+    (b64) => safeStorage.decryptString(Buffer.from(b64, "base64")),
+    webDefaultServiceAllowed(),
+  );
 }
 
 /**
