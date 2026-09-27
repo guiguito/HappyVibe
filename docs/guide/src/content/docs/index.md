@@ -5,11 +5,11 @@ description: Install HappyVibe, connect a model, and find your way around every 
 
 Welcome in. HappyVibe puts a coding agent on your computer and keeps you in charge of it: you see what it does, and you decide what it may do. The app says it in four words: "Good vibes, real code."
 
-New here? Start at the top. The first few pages take you from download to your first finished task, one step at a time.
+New here? Start at the top. The first few pages take you from download to the moment you say yes to the agent's first action, one step at a time.
 
 ## Find your way
 
-Every page after **Get started** matches a screen in the app's sidebar, in the same order.
+After **Get started**, the pages follow the app's sidebar, group by group, so the guide and the app always match.
 
 - [Get started](/docs/install/): install the app, connect a model, run your first session and answer your first approval.
 - [Models](/docs/models/): pick who the agent talks to, and which model it uses by default.

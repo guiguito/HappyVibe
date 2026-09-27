@@ -3,9 +3,9 @@ title: Keyboard shortcuts
 description: See every keyboard shortcut in HappyVibe, change the ones you can, and put them back to the defaults.
 ---
 
-HappyVibe's shortcuts, all on one page, and most of them are yours to change. "Click a shortcut to record a new one. Esc cancels."
+All of HappyVibe's shortcuts, on one page. Most are yours to change: "Click a shortcut to record a new one. Esc cancels."
 
-Shortcuts use ⌘ on macOS and Ctrl on Windows and Linux. The screen always shows the keys for the computer you're on.
+Shortcuts use ⌘ on macOS and Ctrl on Windows and Linux. The screen shows the keys for the computer you're on (except the **Built-in** list, which always shows ⇧ for Shift).
 
 ## Where to find it
 
@@ -35,6 +35,8 @@ These are the defaults:
 | Open Settings | ⌘, | Ctrl+, |
 | Open keyboard shortcuts | ⌘/ | Ctrl+/ |
 
+A worktree is a second copy of your project's files, on its own branch, in its own folder, so an agent can work there without touching what you have open.
+
 ### Built-in
 
 "Typing and dialog behaviour — not rebindable." These are marked **built-in**. They're listed so the page is a complete map, but changing them would break typing.
@@ -47,10 +49,12 @@ These are the defaults:
 | Close a dialog or search | Esc |
 | Dictate into the composer (tap to keep recording) | Hold right ⌘ on macOS, right Ctrl on Windows and Linux |
 
+In this list, the composer is the message box.
+
 ## Change a shortcut
 
 1. Click the keys next to the action. The button pulses and says "press…".
-2. Press the new combination. It needs at least one of ⌘ or Ctrl (on macOS, Ctrl also works), Shift or Alt (⌥ on macOS), plus a key. A key on its own is never a shortcut.
+2. Press the new combination. Use at least one of ⌘/Ctrl, Shift or Alt (⌥ on macOS), plus a key. A single key on its own isn't allowed. On macOS, Ctrl counts as ⌘.
 3. The new shortcut saves straight away and keeps working after a restart.
 
 Changed your mind halfway? Press Esc, and the old shortcut stays.

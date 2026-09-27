@@ -3,7 +3,7 @@ title: Terminal
 description: Open a real shell in a tab, make it look and behave the way you like, and follow the terminals the agent starts.
 ---
 
-Sometimes you just want to type a command yourself. The Terminal screen sets up the shell you get for that: "A real shell, in a tab, at your project folder. These settings are global." They apply in every workspace.
+Want to type a command yourself? You get a real shell, in a tab, already in your project folder. This screen decides how it looks and behaves: "A real shell, in a tab, at your project folder. These settings are global." Global means they apply in every workspace.
 
 ## Where to find it
 
@@ -11,7 +11,7 @@ Sometimes you just want to type a command yourself. The Terminal screen sets up 
 
 ## What's on the screen
 
-Every row has its own **Reset** button, which appears once you've changed that row. **Reset all**, at the top right, puts every setting back to its default in one click. Changes apply to terminals you already have open, so you can watch them take effect.
+Every row has its own **Reset** button, which appears once you've changed that row. **Reset all**, at the top right, puts every setting back to its default in one click. Style, appearance and behaviour changes reach terminals you already have open, so you can watch them take effect. Shell changes apply to the next terminal you open.
 
 ### Style
 
@@ -30,9 +30,9 @@ Every row has its own **Reset** button, which appears once you've changed that r
 
 ### Shell
 
-"What gets started, and in what environment. Leave the path blank to use your login shell."
+"What gets started, and in what environment. Leave the path blank to use your login shell." Your login shell is the shell your computer starts for you, with your usual settings loaded.
 
-- **Shell path**: leave it blank and HappyVibe picks for you. On macOS and Linux that's your login shell (`$SHELL`), or `/bin/zsh` on macOS and `/bin/bash` on Linux if none is set. On Windows it's PowerShell 7 (`pwsh.exe`), then Windows PowerShell, then the Command Prompt. Type a path to use a different shell.
+- **Shell path**: leave it blank, and HappyVibe picks the right shell for you. Type a path only if you want a different one. (The details: on macOS and Linux it's your login shell, `$SHELL`, falling back to `/bin/zsh` on macOS and `/bin/bash` on Linux. On Windows it's PowerShell 7, then Windows PowerShell, then the Command Prompt.)
 - **Shell arguments**: "Space-separated. `-l` starts a login shell, so your real PATH and version managers work." On Windows, the default shell starts without `-l`, because PowerShell rejects it.
 - **Extra environment**: "One KEY=value per line. Merged over the inherited environment."
 
@@ -41,7 +41,7 @@ Every row has its own **Reset** button, which appears once you've changed that r
 - **Scrollback**: how many lines each terminal keeps.
 - **Copy on select**: copies text as soon as you select it.
 - **Right-click pastes**: "Off by default — a right-click opens the context menu instead."
-- **Warn on multi-line paste** (on by default): "A safety setting, not a preference: a pasted block ending in a newline runs the moment it lands." With it on, pasting several lines asks before anything runs, for example "Paste and run 3 lines? A pasted newline executes immediately."
+- **Warn on multi-line paste** (on by default): "A safety setting, not a preference: a pasted block ending in a newline runs the moment it lands." With it on, pasting text that contains or ends with a line break asks first, for example "Paste and run 3 lines? A pasted newline executes immediately." A right-click paste (with **Right-click pastes** on) doesn't ask, so paste several lines with the keyboard instead.
 - **Confirm close while running** (on by default): "Closing a terminal tab kills its process." With it on, closing a tab while a command is still running asks first.
 - **Bell**: off, visual (a quick flash) or sound.
 - **Word separators**: "Characters that end a word for double-click selection."
@@ -57,11 +57,11 @@ When the shell in a terminal exits (after you type `exit`, for example), the tab
 
 ## Close a terminal
 
-Closing a terminal tab stops whatever is running in it. If something is still running and **Confirm close while running** is on, HappyVibe asks first, naming the program, for example "npm is still running. Close anyway?" Say no, and the terminal keeps running.
+Closing a terminal tab stops whatever is running in it. If something is still running and **Confirm close while running** is on, HappyVibe asks first, naming the program, for example "npm is still running. Close anyway?" Click **Cancel**, and the terminal keeps running.
 
 ## During a session
 
-The agent can open terminals of its own, for things that keep running, like a dev server or a watcher. Each command it runs there asks for your permission separately, like any other command.
+The agent can open terminals of its own, for things that keep running, like a dev server or a watcher. Each command it runs there goes through the same permission check as any other command: it asks, unless one of your rules already allows it.
 
 An agent terminal doesn't open a tab. It shows up as a circle in the row at the top of the conversation. Hover the circle to see its last few lines. Click it to open its card, which shows the command, what the agent says it's for, how long it has been running, and a live terminal you can type into. The card has three buttons:
 

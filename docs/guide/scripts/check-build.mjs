@@ -48,4 +48,14 @@ assert.ok(read("index.md").startsWith("# HappyVibe docs\n"), "a Markdown copy op
 for (const p of pages) assert.ok(read(p).includes('sessionStorage.setItem("hv-embed"'), `${p}: no embed script`);
 assert.match(css, /\[data-embed\][^{]*\.site-title/, "embed mode must hide the site title");
 
+// Internal links (fix round): every /docs/<slug>/ link is a built page, and every #anchor exists there.
+const ids = (p) => new Set([...read(p).matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+for (const p of pages) {
+  for (const [, slug, anchor] of read(p).matchAll(/href="\/docs\/([a-z0-9-]*)\/?(?:#([^"]+))?"/g)) {
+    const target = slug ? `${slug}/index.html` : "index.html";
+    assert.ok(pages.includes(target), `${p}: links to /docs/${slug}/, which doesn't exist`);
+    if (anchor) assert.ok(ids(target).has(anchor), `${p}: /docs/${slug}/#${anchor} has no such heading`);
+  }
+}
+
 console.log(`docs check: ${pages.length} pages OK`);

@@ -3,7 +3,7 @@ title: Stats
 description: See how much you use the agent, where, with which models, and what it cost, all worked out on your own computer.
 ---
 
-Stats is your usage at a glance. As the screen puts it: "Your usage, computed entirely on this machine — nothing is ever sent anywhere."
+How much have you and the agent done together, and what did it cost? Stats adds it up, right here on your computer: "Your usage, computed entirely on this machine — nothing is ever sent anywhere."
 
 ## Where to find it
 
@@ -13,14 +13,14 @@ Stats is your usage at a glance. As the screen puts it: "Your usage, computed en
 
 ### The workspace filter
 
-A menu at the top reads **All workspaces**. Pick one workspace to see only its numbers. A session in one of a project's worktrees counts under that project.
+A menu at the top reads **All workspaces**. Pick one workspace to see only its numbers. A session in a worktree (a second working copy of a git project, made with **New worktree…**) counts under its project.
 
 Before your first session, the screen says "Nothing to show yet." and "Start a session and chat with the agent — your stats will build up here." That's all it needs.
 
 ### The four tiles
 
-- **Sessions**: how many sessions you've run. If some are still open, it says how many, like "2 still open".
-- **Tokens**: tokens in and out, added up. A token is a small piece of text: models read and write in tokens, and providers charge by them. The line under the total splits it, like "1.2k in · 800 out".
+- **Sessions**: how many sessions you've run. If some are still open, it says how many, like "2 still open". A session that crashed without ending counts here too.
+- **Tokens**: tokens in and out, added up. Tokens are how models measure text, and what providers charge by ([more on tokens](/docs/first-session/#context-what-the-agent-can-see)). The line under the total splits it, like "1.2k in · 800 out".
 - **Cost (est.)**: an estimate, worked out locally. Its note reads "local estimate, plan spend excluded": what you use through a plan you already pay for isn't counted here. When some prices aren't known, the total ends in "+?" and the note reads "estimate — some prices unknown", so a partial total never passes for a complete one.
 - **Avg session**: how long a session lasts on average, with the median underneath.
 

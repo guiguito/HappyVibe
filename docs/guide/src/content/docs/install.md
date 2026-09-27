@@ -1,57 +1,54 @@
 ---
 title: Install
-description: Download HappyVibe for macOS, Windows or Linux, and get past the one extra click on first launch.
+description: Download HappyVibe for macOS, Windows or Linux, and get past the Windows warning on first launch.
 ---
 
-Welcome. This is the first of five short steps, and it takes about as long as a download. After this one, HappyVibe keeps itself up to date.
+Welcome. Getting started takes five short steps, and this first one is mostly waiting for a download. Once it's installed, HappyVibe keeps itself up to date, except with the Linux `.deb`.
 
-## 1. Download the app
+## Download the app
 
 Open the [latest release](https://github.com/guiguito/HappyVibe/releases/latest) and pick the file for your computer:
 
 - **macOS** (Apple silicon): the `.dmg`.
-- **Windows** (x64): the `Setup.exe`. On an Arm Windows machine, the x64 installer runs under emulation.
-- **Linux** (x64): the `.deb` or the `.AppImage`. Step 2 helps you choose.
+- **Windows** (x64): the `Setup.exe`.
+- **Linux** (x64): the `.deb` or the `.AppImage`. The Linux section below helps you choose.
 
-## 2. Install it
+On an Arm Windows PC, the same `Setup.exe` works: Windows runs it under emulation.
 
-### macOS
+## Install on macOS
 
 1. Open the `.dmg`.
 2. Drag **HappyVibe** to **Applications**.
 3. Open it from **Applications**. It opens like any other app.
 
-### Windows
+## Install on Windows
 
-1. Run the `Setup.exe`. It installs for your user only, so there is no admin prompt.
+1. Run the `Setup.exe`.
 2. Windows shows a SmartScreen warning the first time. Click **More info**.
 3. Click **Run anyway**.
+4. Follow the installer's screens. It installs for your user only, so there's no admin prompt, and you can change the folder it installs to.
 
 <!-- TODO(media): install/install-smartscreen.png — Windows SmartScreen after clicking More info, with Run anyway visible -->
 
-That's expected for this early build, and it costs two extra clicks on the first run only.
+The SmartScreen warning is expected for this early build. It costs two extra clicks, on the first run only.
 
-### Linux
+## Install on Linux
 
 Two packages, one choice:
 
 - **`.deb`** installs cleanly on Ubuntu and Debian. It doesn't update itself: download each new version from the same release page.
-- **`.AppImage`** runs anywhere and updates itself, but it needs `libfuse2`. Ubuntu 22.04 and later don't ship it, so install it first:
+- **`.AppImage`** runs anywhere and updates itself, but it needs `libfuse2`. Ubuntu 22.04 and later don't include it, so install it first:
 
   ```bash
   sudo apt install libfuse2
   ```
 
-  Without `libfuse2`, a double-click on the AppImage does nothing at all, with no error. The `.deb` doesn't have this problem, which is why both are built.
+  Without `libfuse2`, a double-click on the AppImage does nothing at all, with no error. The `.deb` doesn't have this problem. That's why there are two.
 
 :::caution
-Nobody has launched the Linux build on real hardware yet. It builds, packages and passes its test suite on every change, but a green test suite isn't the same as a window that opens.
+The Linux build is new. It's checked automatically on every change, but nobody has opened it on a real Linux computer yet.
 :::
-
-## 3. Let it update itself
-
-On macOS, on Windows and with the Linux `.AppImage`, HappyVibe updates itself from now on. You won't need this page again.
 
 ## Next
 
-The download was the boring part. [First launch](/docs/first-launch/) is where HappyVibe says hello.
+The download was the boring part. On to [First launch](/docs/first-launch/), where HappyVibe says hello.

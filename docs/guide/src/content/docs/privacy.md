@@ -1,11 +1,13 @@
 ---
 title: Privacy
-description: See what HappyVibe sends in the background, what a crash report contains, and how to switch crash reports off.
+description: See what a crash report contains, read the last one sent, and turn crash reports off in one click.
 ---
 
-"What leaves this machine, and how to stop it. Everything else — your sessions, your files, your keys, your audit log and your stats — stays here."
+Short version: this screen controls one thing, crash reports. They're short technical notes about the app, never about your work. You can read the last one sent, see every send in the Audit log, and one click stops them.
 
-This screen covers what HappyVibe sends on its own: crash reports. Your conversations do go to the model you picked on [Models](/docs/models/), because that's where the agent's thinking happens. Nothing on this page changes that.
+In the app's own words: "What leaves this machine, and how to stop it. Everything else — your sessions, your files, your keys, your audit log and your stats — stays here."
+
+Two things this screen doesn't cover. Your conversations go to the model you picked on [Models](/docs/models/), because that's where the agent's thinking happens. And HappyVibe checks for updates on its own; the [Changelog](/docs/changelog/) explains how.
 
 ## Where to find it
 
@@ -17,7 +19,7 @@ This screen covers what HappyVibe sends on its own: crash reports. Your conversa
 
 "Automatic, and content-free by design."
 
-**Send crash reports** is **On** by default: "When HappyVibe itself breaks, send a short technical report so it can be fixed. Never your prompts, your files or your keys." Click the button to switch it **Off**. It takes effect straight away, with no restart.
+**Send crash reports** is on by default: "When HappyVibe itself breaks, send a short technical report so it can be fixed. Never your prompts, your files or your keys." The switch reads **On** while it's on. Click it to turn it off. It takes effect straight away, with no restart.
 
 ### What a crash report contains
 
@@ -26,21 +28,21 @@ Open **What a crash report contains** for the full answer. A report holds:
 - what kind of failure it was, and the error's type
 - where in HappyVibe's own code it happened
 - your HappyVibe version and your operating system
-- a random ID that changes after 30 idle minutes and at least once a day, kept only in memory. It "lets a crash be matched with feedback you sent in the same sitting, and identifies nothing else."
+- a random ID, kept only in memory and replaced after 30 idle minutes and at least once a day. It lets a crash be matched with feedback you sent in the same sitting, and "identifies nothing else."
 
 "It never contains your prompts, your files, your paths or your keys. Error messages are redacted before they leave, and native crash snapshots stay on your computer."
 
 ### Show the last report and the folder
 
 - **Show the last report** displays the most recent report sent since HappyVibe started, in full. Click **Hide the last report** to fold it away. If none has been sent since the app started, the button is greyed out and the screen says "Nothing has been sent from this computer yet."
-- **Reveal crash reports** opens the folder where crash snapshots are kept on your computer, in Finder on macOS, File Explorer on Windows, or your file manager on Linux.
+- **Reveal crash reports** shows the folder where crash snapshots are kept on your computer, selected in Finder on macOS, File Explorer on Windows, or your file manager on Linux.
 
-## Switch crash reports off
+## Turn crash reports off
 
 1. Open **Privacy**.
-2. Click **On** next to **Send crash reports**. It turns to **Off**.
+2. Next to **Send crash reports**, click the switch. It reads **On**, and turns to **Off**.
 
-From that moment, nothing is sent. Switch it back **On** whenever you like.
+From that moment, nothing is sent. Click it again whenever you want to turn reports back on.
 
 ## Check what was sent
 
@@ -50,7 +52,7 @@ From that moment, nothing is sent. Switch it back **On** whenever you like.
 
 ## During a session
 
-Nothing on this screen shows up in your sessions. If HappyVibe breaks mid-session, the report describes where in the app's own code it failed, never what you and the agent were saying. Each report that's sent is recorded in the [Audit log](/docs/audit-log/).
+If HappyVibe breaks mid-session, the report describes where in the app's own code it failed, never what you and the agent were saying. Each report that's sent is recorded in the [Audit log](/docs/audit-log/).
 
 ## Related
 

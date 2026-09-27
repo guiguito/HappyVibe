@@ -11,9 +11,9 @@ A few chores HappyVibe hands to a model so you don't have to: naming a session, 
 
 ## How these jobs run
 
-"Each runs on its own, outside every session — nothing enters a transcript or a context window." So they never take up room in the agent's memory of your conversation.
+"Each runs on its own, outside every session — nothing enters a transcript or a context window." So they never take up room in a session's [context](/docs/first-session/#context-what-the-agent-can-see), what the agent can see.
 
-Because they run outside a session, there's no usage report from the provider to count their tokens. Their cost appears "as an **estimate** in the Audit log and in Stats, never inside a session's own cost."
+Because they run outside a session, there's no usage report from the provider to count their [tokens](/docs/first-session/#context-what-the-agent-can-see) (the chunks of text a model reads and writes, which is what providers charge for). So what they cost appears "as an **estimate** in the Audit log and in Stats, never inside a session's own cost." The estimate is a token count, never a dollar figure.
 
 If no model is set up at all, none of them run: "a session keeps its fallback name and the draft buttons stay away."
 
@@ -21,11 +21,11 @@ If no model is set up at all, none of them run: "a session keeps its fallback na
 
 ### What runs, and when
 
-"Each row shows the exact prompt the model is sent. You can add to it, choose which model runs it, or switch it off."
+"Each row shows the exact prompt the model is sent. You can add to it, choose which model runs it, or switch it off." Two of them start from the Changes panel, where you see what changed in your project's files and save a version of them.
 
 - **Session title**: "Runs once per session, moments after your first message. It is the only one of the three you never ask for." Off: "a session keeps the opening of your first message as its name, and no call is made."
 - **Commit message**: "Runs when you press the wand beside the message box in the Changes panel." Off: "the wand button is gone from the Changes panel. You write the message yourself."
-- **Pull request description**: "Runs when you press “Open a pull request” in the Changes panel." Off: "the button still works and still opens your forge — the description falls back to your list of commits, exactly as it does when no model is configured."
+- **Pull request description**: "Runs when you press “Open a pull request” in the Changes panel." Off: "the button still works and still opens your forge — the description falls back to your list of commits, exactly as it does when no model is configured." Your forge is the site that hosts your code, such as GitHub.
 
 Each row has:
 
@@ -39,7 +39,7 @@ Each row has:
 2. Type in **your additions**. "Your additions are appended after it. Add preferences (e.g. 'always list affected files'), not contradictions."
 3. Click **Save**.
 
-The built-in prompt can't be edited, "it's shown so you can see exactly what the agent is told."
+As on [Built-in tools](/docs/built-in-tools/), the prompt itself is read-only: "The built-in prompt above can't be edited — it's shown so you can see exactly what the agent is told." Here, "the agent" means the model that runs the job.
 
 ## Pick the model for a job
 
@@ -49,10 +49,10 @@ The built-in prompt can't be edited, "it's shown so you can see exactly what the
 ## Draft a commit message
 
 1. Open the Changes panel. The shortcut is ⌘⇧G on macOS and Ctrl+Shift+G on Windows and Linux.
-2. Click the wand beside the message box, labelled "Write it for me".
+2. Click the wand beside the commit message box, labelled "Write it for me".
 3. The draft appears in the message box. Read it, edit it if you like, then save as usual.
 
-The wand only shows when **Commit message** is on and a model is set up. If a draft doesn't come back, the panel says "Couldn’t draft a message this time." and you can write the message yourself.
+The wand only shows when **Commit message** is on and a model is set up. If a draft doesn't come back, the panel says "Couldn’t draft a message this time." If drafting isn't possible right now, the wand goes away instead. Either way, you can write the message yourself.
 
 ## During a session
 
@@ -61,5 +61,5 @@ A new session gets its name from **Session title** moments after your first mess
 ## Related
 
 - [Models](/docs/models/): set your default model, which these jobs use unless you pick another.
-- [Stats](/docs/stats/): the estimated cost of these jobs, beside your sessions.
+- [Stats](/docs/stats/): an estimated token count for these jobs, beside your sessions.
 - [Audit log](/docs/audit-log/): every call these jobs make.

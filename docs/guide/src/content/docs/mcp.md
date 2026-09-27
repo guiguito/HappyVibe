@@ -3,9 +3,9 @@ title: MCP
 description: Connect MCP servers so the agent can use their tools, like a real browser or your issue tracker, in every workspace.
 ---
 
-Give the agent new tools by plugging in a server. An MCP server is a small program on your computer, or a service online, that offers the agent extra tools through a shared standard called the Model Context Protocol: a browser it can drive, your Notion pages, your database.
+Give the agent new tools by plugging in a server. An MCP server is a small program, on your computer or online, that hands the agent extra tools: a browser it can drive, your Notion pages, your database. MCP (Model Context Protocol) is simply the shared standard they speak.
 
-This screen holds the servers every workspace can use: "External MCP servers, available in every workspace. To add one for a single project instead, open that workspace's own settings."
+This screen holds the global (in every workspace) servers: "External MCP servers, available in every workspace. To add one for a single project instead, open that workspace's own settings." See [workspace settings](/docs/first-session/#workspace-settings) for how to open them.
 
 ## Where to find it
 
@@ -15,12 +15,12 @@ This screen holds the servers every workspace can use: "External MCP servers, av
 
 ### Add a server
 
-"Recognised Model Context Protocol servers, ready to install." The list is part of the app, so browsing it doesn't go online. And "Every one still goes through your permission rules."
+"Recognised Model Context Protocol servers, ready to install." The list is part of the app, so browsing it doesn't go online. Every server in it still asks first where your rules say so: "Every one still goes through your permission rules."
 
 The category chips along the top (**All**, then **Code**, **Productivity**, **Data**, **Automation**, **Browser** and **Design**) narrow the grid. Each card shows the server's name, one line about what it does, and its category. Two badges can appear on a card:
 
 - **installed**: you already have this server. The card can't be clicked until you remove it from your servers below.
-- **needs Node**: this server runs on your computer through Node, and HappyVibe couldn't find Node. Install Node first, or the server will fail to start.
+- **needs Node**: this server runs on your computer through Node, a free program that runs JavaScript apps. HappyVibe couldn't find it on your computer. Install Node first (from nodejs.org), or the server will fail to start.
 
 ### Your servers
 
@@ -47,6 +47,8 @@ The buttons on each row:
 With no servers yet, the list says "No MCP servers yet" and "Install one from the catalog above, or add your own."
 
 :::note[What the badge means]
+In short: the badge is the app's own check, not your session's.
+
 "This badge is HappyVibe's own probe: the app connects to the server itself, checks that it answers, and lists its tools. Your agent's connection is a different one, made when a session starts. So a red badge does not mean the running session lost those tools, and a green one is not proof that it has them. Changing a server restarts your sessions so they pick it up."
 :::
 
@@ -72,7 +74,7 @@ Some online servers ask you to sign in with your account instead of a key. The d
 3. Approve access in your browser.
 4. Come back to HappyVibe. You see "Connected to" the server and its tools.
 
-Changed your mind halfway? Click **Cancel**. The server simply stays on the list as **needs auth**, ready for when you are.
+To stop, click **Cancel**. The server stays on the list as **needs auth** until you sign in.
 
 ## Add your own server
 
@@ -81,16 +83,16 @@ For a server that isn't in the catalog:
 1. Click **Add server** in **Your servers**.
 2. Give it a **Name**: letters, digits, `-` and `_` only.
 3. Pick a **Type**:
-   - **Command (stdio)**: a program on your computer. Enter the **Command**, for example `npx -y @modelcontextprotocol/server-github`, and any **Environment (KEY=value per line)**.
+   - **Command (stdio)**: a program on your computer. Enter the **Command**, for example `npx -y @modelcontextprotocol/server-github` (copy it from the server's own instructions), and any **Environment (KEY=value per line)**.
    - **Remote URL (HTTP)**: an online server. Enter its **URL**.
-4. Tick **Expose tools directly** only if you want each of this server's tools to be its own tool for the agent. It "costs context tokens per tool": every tool's description takes up room in the conversation on every turn.
+4. Tick **Expose tools directly** only if you want each of this server's tools to be its own tool for the agent. It "costs context tokens per tool": every tool's description takes up room in the agent's [context](/docs/first-session/#context-what-the-agent-can-see) on every turn.
 5. Click **Save**. An online server connects, and asks you to sign in if it needs to, right away.
 
 ## During a session
 
-Open sessions don't pick up a server change in the middle of a reply. Each one restarts once it's idle and comes back with your servers.
+Open sessions don't pick up a server change in the middle of a reply. Each one restarts once it's idle and comes back with your servers. The conversation carries on, but anything you allowed only for that session asks again.
 
-In a session's top bar, a 🔌 chip counts how many of the session's servers are connected, for example **2/3 MCP**. It lists your global servers plus the ones added for this workspace. Click it to see each server with its state, and **Manage…** to come back to this screen.
+In a session's top bar, a 🔌 chip shows how many of your servers answered HappyVibe's check, for example **2/3 MCP**. It lists your global servers plus the ones added for this workspace. Click it to see each server with its state, and **Manage…** to come back to this screen.
 
 When the agent wants to use a server's tool, the call goes through your [permission rules](/docs/permissions/), the same as every other tool call.
 

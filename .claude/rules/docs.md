@@ -33,16 +33,19 @@ paths:
   Videos use `autoplay muted loop playsinline controls`, with a WebM and an MP4 `<source>` and a
   JPG `poster`. The v1 shots:
 
-  | Page | Shots |
-  |---|---|
-  | `install` | `install/install-smartscreen.png` |
-  | `first-launch` | `first-launch/onboarding-setup.png` |
-  | `connect-a-model`, `models` | `models/models-populated.png` |
-  | `first-session` | `first-session/session-running.png` |
-  | `approve-a-tool-call` | `approve-a-tool-call/permission-modal.png`, `approve-a-tool-call/permission-approve.{webm,mp4,jpg}` |
-  | `permissions` | `approve-a-tool-call/permission-modal.png`, `permissions/permissions-rules.png` |
-  | `memory` | `memory/memory-save-prompt.png` |
-  | `built-in-tools` | `built-in-tools/builtin-tools.png` |
-  | `plugins` | `plugins/plugins-marketplace.png` |
-  | `mcp` | `mcp/mcp-add.{webm,mp4,jpg}` |
-  | `audit-log` | `audit-log/audit-log.png` |
+  | Shot (under `media/`) | Pages | Shows (the alt text, and the placeholder's text) |
+  |---|---|---|
+  | `install/install-smartscreen.png` | `install` | Windows SmartScreen after clicking More info, with Run anyway visible |
+  | `first-launch/onboarding-setup.png` | `first-launch` | The Setup step: step 1 "Connect a model" with its three choices, step 2 "Pick a project" |
+  | `models/models-populated.png` | `connect-a-model`, `models` | Providers with rows tagged "signed in", "running" and "key saved"; Default model with the Thinking effort pills |
+  | `first-session/session-running.png` | `first-session` | A turn in progress: tool cards editing a file and running a command, the composer reading "Steer the agent — lands between tool calls…", the Stop button |
+  | `approve-a-tool-call/permission-modal.png` | `approve-a-tool-call`, `permissions` | "The agent wants to run something" with all five buttons: Allow, Allow for session, Allow for workspace, Always allow, Deny |
+  | `approve-a-tool-call/permission-approve.{webm,mp4,jpg}` | `approve-a-tool-call` | Ask to create hello.txt, the dialog appears, click Allow, and the card turns done with its approval mark |
+  | `memory/memory-save-prompt.png` | `memory` | In a session, the approval dialog for saving a memory, with the memory and what changes |
+  | `built-in-tools/builtin-tools.png` | `built-in-tools` | The Built-in tools list with its toggles, and Plan mode expanded to show its read-only prompt |
+  | `plugins/plugins-marketplace.png` | `plugins` | The Marketplace: search box, category chips and the card grid |
+  | `mcp/mcp-add.{webm,mp4,jpg}` | `mcp` | Pick Playwright, Add, and it connects: "Connected to Playwright" with the number of tools discovered |
+  | `permissions/permissions-rules.png` | `permissions` | The rule list mixing allow, ask and deny, with the test box |
+  | `audit-log/audit-log.png` | `audit-log` | Permission decisions including denials, with the filters visible |
+
+  A video's placeholder names it without an extension (`mcp/mcp-add`).

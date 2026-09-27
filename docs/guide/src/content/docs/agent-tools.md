@@ -3,7 +3,7 @@ title: Agent tools
 description: See every tool the agent can call, and whether your rules let it run, ask first, or block it.
 ---
 
-Curious what the agent can actually do? This is the full list: "Everything the agent can call, and whether it is allowed to." Nothing here changes anything. It's a place to look, so you know what you're working with.
+Here's the full list of what the agent can call right now, and what your rules say about each: "Everything the agent can call, and whether it is allowed to." It's look-only. Nothing you do here changes anything, so browse freely.
 
 ## Where to find it
 
@@ -23,7 +23,9 @@ The pill says what happens when the agent calls that tool:
 - **ask**: the approval dialog opens, and the call waits for you.
 - **deny**: it's blocked.
 
-The pills come from your [permission rules](/docs/permissions/), the same ones that decide real calls, for the workspace of the session you have selected. A pill answers for the tool as a whole, so it reflects **tool** rules and the defaults. A **path** or **command** rule only applies once there's an actual file or command to check, so a tool marked **allow** here can still ask, or be blocked, for a particular file or command.
+The pills come from your [permission rules](/docs/permissions/), the same ones that decide real calls, for the workspace of the session you have selected. A pill answers for the tool as a whole, so it reflects **tool** rules and the defaults. A **path** or **command** rule only kicks in on a real call. So a tool marked **allow** here can still ask, or be blocked, for one particular file or command.
+
+The pill also doesn't know about the session's state. With **Bypass ALL permissions** on, everything runs. In plan mode, anything that changes things is blocked, whatever the pill says. And a file tool reaching outside your workspace asks, even when its pill says **allow**.
 
 ### Where the list comes from
 
@@ -35,6 +37,13 @@ The list is read from the agent itself, so it shows what the agent really has. W
 2. Find the tool and look at its pill.
 3. Click the row to read what the tool does.
 4. To change its pill, go to [Permissions](/docs/permissions/) and add a **tool** rule with the tool's name as the pattern.
+
+## Block a tool
+
+1. Note the tool's name on this screen.
+2. Open [Permissions](/docs/permissions/) and click **+ Add rule**.
+3. Leave the type on **tool**, type the tool's name as the pattern, and set the action to **deny**.
+4. Click **Save rules**. Back here, the tool's pill reads **deny**.
 
 ## During a session
 
