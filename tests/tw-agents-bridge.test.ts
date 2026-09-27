@@ -47,7 +47,9 @@ test("the Agents page lists our agents and the project's — never upstream's de
   while (!agentsNotes.length && Date.now() - t0 < 20_000) await new Promise((r) => setTimeout(r, 200));
   const agents = agentsNotes[0].agents;
   const names = agents.map((a) => a.name).sort();
-  expect(names).toEqual(["agents-md-maker", "code-explorer", "project-helper", "worker"]);
+  expect(names).toEqual(["agents-md-maker", "code-explorer", "project-helper", "reviewer", "worker"]);
+  // `reviewer` (ported 2026-09-27) is a REVIEWER: read-only, and the page says so.
+  expect(agents.find((a) => a.name === "reviewer")!.tools).toEqual(["read", "grep", "find", "ls"]);
   for (const absent of ["general-purpose", "Explore", "Plan"]) expect(names).not.toContain(absent);
   expect(agents.find((a) => a.name === "code-explorer")!.source).toBe("bundled");
   expect(agents.find((a) => a.name === "project-helper")!.source).toBe("project");
