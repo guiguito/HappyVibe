@@ -43,6 +43,8 @@ interface ConfigFile {
   /** Round 11: set only when the user turns OFF open-files context (default on). */
   openFilesContextOff?: boolean;
   crashReportsOff?: boolean;
+  /** §39: usage statistics off (absent = on, the crashReportsOff shape). */
+  usageStatsOff?: boolean;
   /** §38: set only when the user turns OFF automatic update downloads (default on). */
   autoUpdate?: false;
   workspaceBypass?: Record<string, boolean>;
@@ -533,6 +535,18 @@ export function setOpenFilesContext(on: boolean): void {
  * "on" rather than as "unset" — which is what makes the opt-OUT an opt-out
  * rather than a silent opt-in at the next launch.
  */
+/** §39: usage statistics, stored negative so absent means on (the crashReportsOff shape). */
+export function getUsageStats(): boolean {
+  return !load().usageStatsOff;
+}
+
+export function setUsageStats(on: boolean): void {
+  const cfg = load();
+  if (on) delete cfg.usageStatsOff;
+  else cfg.usageStatsOff = true;
+  save(cfg);
+}
+
 export function getCrashReports(): boolean {
   return !load().crashReportsOff;
 }

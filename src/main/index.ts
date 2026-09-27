@@ -15,6 +15,7 @@ import { insideAny } from './tearOff'
 import { WindowRegistry } from './windows'
 import { installCrash } from './crash'
 import { installRemoteConfig } from './remoteConfig'
+import { installUsage } from './usage'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
 // AND userData resolves to .../HappyVibe — in dev the process runs inside
@@ -327,6 +328,7 @@ app.whenReady().then(() => {
   // §39: before the first window so its `hello` finds main listening; not
   // awaited — the network never gates a window, and the install never throws.
   void installRemoteConfig()
+  void installUsage()
   // Set app user model id for windows
   electronApp.setAppUserModelId('dev.happyvibe.app')
 
