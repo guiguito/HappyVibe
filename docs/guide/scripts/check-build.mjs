@@ -31,4 +31,21 @@ assert.ok(existsSync(join(DIST, "favicon.svg")), "no favicon");
 assert.match(css, /--color-paper:\s*#faf4e8/, "the app's tokens did not reach the CSS");
 assert.match(css, /Gabarito Variable/, "the app's text font did not reach the CSS");
 
+// Pages for agents (Task 4).
+const llms = read("llms.txt");
+for (const p of pages) {
+  const id = p === "index.html" ? "index" : p.replace(/\/index\.html$/, "");
+  assert.ok(existsSync(join(DIST, `${id}.md`)), `${id}: no Markdown copy`);
+  assert.ok(!read(`${id}.md`).includes("TODO(media)"), `${id}.md: media placeholders must not reach agents`);
+  assert.ok(id === "index" || llms.includes(`${SITE}${id}.md`), `llms.txt does not list ${id}`);
+  assert.ok(read(p).includes('class="hv-copy-md"'), `${p}: no Copy as Markdown button`);
+}
+assert.ok(llms.startsWith("# HappyVibe\n"), "llms.txt must open with the llmstxt.org title line");
+assert.ok(existsSync(join(DIST, "llms-full.txt")), "no llms-full.txt");
+assert.ok(read("index.md").startsWith("# HappyVibe docs\n"), "a Markdown copy opens with its page title");
+
+// Embed mode (Task 5).
+for (const p of pages) assert.ok(read(p).includes('sessionStorage.setItem("hv-embed"'), `${p}: no embed script`);
+assert.match(css, /\[data-embed\][^{]*\.site-title/, "embed mode must hide the site title");
+
 console.log(`docs check: ${pages.length} pages OK`);

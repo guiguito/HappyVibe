@@ -39,3 +39,20 @@
   border-radius: 12px;
   box-shadow: var(--shadow-sticker-lg);
 }
+
+.hv-copy-md {
+  margin-top: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  font: 700 13px/1 var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-card);
+  border: 2px solid var(--color-line-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sticker);
+  cursor: pointer;
+}
+.hv-copy-md:hover { background: var(--color-paper-deep); }
+
+/* In the app's browser pane (?embed=1), the page reads as part of the app, with no link back to the
+   website. Search and the page menu stay: a narrow pane has no other way around. */
+:root[data-embed] .site-title { display: none; }
