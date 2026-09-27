@@ -7,7 +7,7 @@ import { SESSION_DOT } from "../src/renderer/src/sessionDot";
 /**
  * Animations round (2026-09-10) — the motion vocabulary has ONE source.
  *
- * The tokens live in `styles.css`'s `@theme` (so Tailwind emits `ease-hv-*`
+ * The tokens live in `theme.css`'s `@theme` (so Tailwind emits `ease-hv-*`
  * utilities) and are mirrored as data in `motion.ts` (so the WAAPI helpers and
  * these tests can read them). Two copies of a number is exactly the drift
  * §20's Principle 11 forbids, so this file pins them equal — as a SOURCE SCAN,
@@ -16,12 +16,13 @@ import { SESSION_DOT } from "../src/renderer/src/sessionDot";
  */
 const R = (p: string): string => fs.readFileSync(path.join(process.cwd(), p), "utf8");
 const CSS = R("src/renderer/src/styles.css");
+const THEME = R("src/renderer/src/theme.css");
 
 describe("motion tokens (Animations round, 2026-09-10)", () => {
   it("motion.ts mirrors the CSS easings exactly — one source, two consumers", () => {
-    expect(CSS).toContain(`--ease-hv-out: ${EASE.out};`);
-    expect(CSS).toContain(`--ease-hv-in: ${EASE.in};`);
-    expect(CSS).toContain(`--ease-hv-pop: ${EASE.pop};`);
+    expect(THEME).toContain(`--ease-hv-out: ${EASE.out};`);
+    expect(THEME).toContain(`--ease-hv-in: ${EASE.in};`);
+    expect(THEME).toContain(`--ease-hv-pop: ${EASE.pop};`);
   });
 
   it("the pop easing IS the existing dialog overshoot, not a second one beside it", () => {

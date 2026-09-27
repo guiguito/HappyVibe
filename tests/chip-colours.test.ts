@@ -34,7 +34,7 @@ test("no chip borrows a colour that already means something else", () => {
 test("every colour a chip names is DEFINED in the palette", () => {
   // A Tailwind class for an undefined variable renders with no fill and no
   // error — exactly how `bg-plum` shipped unstyled for several rounds.
-  const css = read("src/renderer/src/styles.css");
+  const css = read("src/renderer/src/theme.css");
   for (const t of Object.values(CHIP_TONE)) {
     for (const cls of t.split(" ")) {
       const name = cls.replace(/^(bg|text)-/, "");
