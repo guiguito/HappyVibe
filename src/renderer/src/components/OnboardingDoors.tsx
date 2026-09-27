@@ -3,6 +3,7 @@ import { AuthFlowModal } from "./AuthFlowModal";
 import { GOTO_LABELS } from "./GoTo";
 import { parseAuth, type AuthEvent } from "../auth";
 import { ONBOARDING_COPY as C, rankProviders } from "../onboarding";
+import { THIS_COMPUTER } from "../platformCopy";
 
 /**
  * §22 onboarding round — step 1's doors.
@@ -300,7 +301,7 @@ export function ProviderDoors({
               // door that has to nudge the gate itself.
               onClick={onChanged}
             >
-              Use {r.label} — found on this Mac
+              Use {r.label} — found on {THIS_COMPUTER}
             </button>
             ))}
           </div>
