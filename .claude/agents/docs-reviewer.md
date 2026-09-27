@@ -12,6 +12,9 @@ You review pages of the HappyVibe user guide. You never edit a file. You return 
 Read `docs/guide/VOICE.md` and `.claude/rules/docs.md` first. Then, for each page, check:
 
 1. **Voice and words:** every rule in VOICE.md, including the banned words and the page template.
+   **Tone** is a finding too: a flat sentence where VOICE.md's Personality asks for warmth (quote it
+   and propose the warmer line), a worry left unanswered where a beginner would hesitate, a term used
+   before it's explained, or playfulness in a numbered step, warning, permission, key or cost passage.
 2. **Facts:** every factual claim. Find the code that backs it (`src/`, `pi-runtime/`, `README.md`)
    and cite `file:line`. A claim you cannot back is a finding, however plausible it sounds.
 3. **UI strings:** every quoted string, button name and label, compared character for character
