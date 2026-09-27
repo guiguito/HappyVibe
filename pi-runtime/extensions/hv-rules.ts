@@ -95,7 +95,10 @@ export interface Verdict {
 export const SHELL_TOOLS: ReadonlySet<string> = new Set(["bash", "powershell"]);
 export const isShellTool = (tool: string): boolean => SHELL_TOOLS.has(tool);
 
-export const SAFE_TOOLS = new Set(["read", "grep", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall",
+// `find` is Pi's own read-only search (its builtins are bash/edit/find/grep/ls/read/write);
+// `glob`/`list` are kept for older Pi names. Added 2026-09-27: without it every sub-agent
+// `find` prompted — and before child prompts existed, was silently refused.
+export const SAFE_TOOLS = new Set(["read", "grep", "find", "glob", "list", "ls", "ask_user", "plan_complete", "plan_start", "plan_status_update", "use_skill", "terminal_read", "browser_get_text", "browser_read_console", "browser_read_network", "browser_screenshot", "browser_close", "web_search", "document_read", "memory_recall",
   // §35: schedule_list is a read. schedule_create and schedule_update are here
   // for the ask_user reason rather than that one — their ONLY effect is to open
   // the drawer for the human to fill in, and main refuses to write without it
@@ -202,7 +205,7 @@ export function displayableTask(text: unknown): string | undefined {
  * workspace by default. bash is deliberately NOT here (it stays under
  * command-pattern rules; path-inspecting arbitrary shell is out of scope). */
 export const FILE_TOOLS = new Set([
-  "read", "write", "edit", "multi_edit", "multiedit", "grep", "glob", "ls", "list",
+  "read", "write", "edit", "multi_edit", "multiedit", "grep", "find", "glob", "ls", "list",
 ]);
 
 /**
