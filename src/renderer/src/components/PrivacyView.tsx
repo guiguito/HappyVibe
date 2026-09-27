@@ -51,7 +51,7 @@ export function PrivacyView(): React.JSX.Element {
       <h1 className="font-black text-3xl tracking-tight mb-1">Privacy</h1>
       <p className="text-sm text-ink-soft mb-6">
         What leaves this machine, and how to stop it. Everything else — your sessions, your files, your keys, your
-        audit log and your stats — stays here.
+        audit log and your Stats page — stays here.
       </p>
 
       {/* §39: live in both directions; off forgets this installation (D11). */}

@@ -3064,6 +3064,11 @@ export default function App(): React.JSX.Element {
     void window.hv.crashInfo().then((i) => { if (i.lastSent) setCrashNotice(true); });
     return window.hv.onCrashSent(() => setCrashNotice(true));
   }, []);
+  // §39: every visit, whatever path set the view — the sidebar, ⌘, / ⌘/, a
+  // GoTo link or navigate(). `activeView`'s expression, inlined for the same
+  // reason as the banner below: a hook cannot sit under the early return.
+  const screenNow: View = keyState === "missing" && !onboarding ? "models" : view;
+  useEffect(() => { screenView(screenNow); }, [screenNow]);
   // `activeView`'s own expression, inlined: that const is computed below the
   // early return and a hook cannot wait for it. Spelling it out rather than
   // approximating with `view` keeps the banner off the forced Models page.
@@ -3085,9 +3090,6 @@ export default function App(): React.JSX.Element {
   // already there. Dismissing re-arms it, which is what keeps `I'll set up
   // myself` with no model landing on Models.
   const activeView: View = needsSetup && !onboarding ? "models" : view;
-  // §39: every visit, whatever path set the view — the sidebar, ⌘, / ⌘/, a
-  // GoTo link or navigate(). navigate() alone misses most of them.
-  useEffect(() => { screenView(activeView); }, [activeView]);
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   // ── W2.2/WS6: current workspace's tab state + dirty flags for the strip ──

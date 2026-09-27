@@ -87,7 +87,11 @@ describe("§39 renderer half", () => {
 it("§39 screens: one effect on activeView, never inside navigate()", () => {
   const app = strip("src/renderer/src/App.tsx");
   expect(app.match(/screenView\(/g)?.length).toBe(1);
-  expect(app).toMatch(/useEffect\(\(\) => \{\s*screenView\(activeView\);?\s*\}, \[activeView\]\)/);
+  expect(app).toMatch(/useEffect\(\(\) => \{\s*screenView\(screenNow\);?\s*\}, \[screenNow\]\)/);
+  // A hook below App's early return changes the hook count between renders —
+  // "This view broke." on screen, and no test can see it. It must sit above
+  // `const activeView`, which is computed after that return.
+  expect(app.indexOf("screenView(")).toBeLessThan(app.indexOf("const activeView"));
   const at = app.indexOf("const navigate = useCallback");
   expect(at).toBeGreaterThan(-1);
   expect(app.slice(at, at + 1500)).not.toContain("screenView");
@@ -101,4 +105,9 @@ it("§39 every catalog event has at least one call site with a literal name", as
     const picked = all.includes(`name: "${name}"`);
     expect(direct || picked, name).toBe(true);
   }
+});
+
+it("§39 the Privacy intro names the Stats PAGE as local, not 'your stats'", () => {
+  const v = fs.readFileSync("src/renderer/src/components/PrivacyView.tsx", "utf8").replace(/\s+/g, " ");
+  expect(v).toContain("your audit log and your Stats page — stays here.");
 });
