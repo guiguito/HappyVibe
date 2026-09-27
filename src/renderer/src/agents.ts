@@ -244,7 +244,9 @@ export function inspectToResults(
 ): SubagentResult[] {
   const messages: SubagentMessage[] = (reply.messages ?? []).map((m) => ({
     role: m.role,
-    text: m.kind === "text" ? m.text : `${m.name ?? m.kind} ${m.text}`.trim(),
+    // A tool call is named by its tool; a tool RESULT already reads as one from its role
+    // label, so prefixing its kind printed "TOOLRESULT toolResult …" (GUI pass 2026-09-27).
+    text: m.kind === "toolCall" ? `${m.name ?? m.kind} ${m.text}`.trim() : m.text,
   }));
   const finalOutput = reply.finalOutput?.trim() || undefined;
   if (messages.length === 0 && !finalOutput) return [];

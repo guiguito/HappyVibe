@@ -185,3 +185,8 @@ describe("a RESTORED card keeps the id it needs to inspect its child", () => {
     expect(card).toContain("const asyncId = card.asyncId ?? async?.asyncId ?? null");
   });
 });
+
+it("a tool RESULT row is its text alone — its role label already names it (GUI pass 2026-09-27)", () => {
+  const [r] = inspectToResults({ messages: [{ role: "toolResult", kind: "toolResult", text: ".git/" }] }, "code-explorer");
+  expect(r.messages[0].text).toBe(".git/");
+});

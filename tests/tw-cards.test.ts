@@ -64,3 +64,23 @@ describe("a reopened tintinweb session's card can inspect its child", () => {
     expect(src).toMatch(/inspectToResults\(r\.reply, delegationAgent\(card\.args\) \?\? "subagent"\)/);
   });
 });
+
+// GUI pass 2026-09-27: a FOREGROUND delegation has already completed when its tool_execution_end
+// arrives, and the "already finished" guard used to skip the row too — so a reopened session
+// could not attach that run's spend to its card. Only the busy marker may be guarded.
+it("the delegation row is written for foreground runs too — only the busy marker is guarded", () => {
+  const src = fs.readFileSync("src/main/ipc.ts", "utf8");
+  const at = src.indexOf('type: "subagent.async_started"');
+  const before = src.slice(at - 600, at);
+  expect(before).toMatch(/if \(runId && !finishedAsyncRuns\.has\(runId\)\) activity\.asyncStarted\(sessionId, runId\);\s*if \(runId\) \{\s*void log\.append\(\{\s*$/);
+});
+
+// GUI pass 2026-09-27: tintinweb's `Agent` args share none of the old work-field names, so
+// running them through the machinery guard hid every delegation card. The guard is old-tool only.
+it("a tintinweb Agent call is never treated as machinery — the query guard is scoped to `subagent`", async () => {
+  const { isSubagentQuery } = await import("../src/renderer/src/agents");
+  expect(isSubagentQuery({ subagent_type: "worker", prompt: "do it", description: "Do it" })).toBe(true); // why the scope is needed
+  const src = fs.readFileSync("src/renderer/src/App.tsx", "utf8");
+  expect(src).toMatch(/toolName === "subagent"\s*&& isSubagentQuery\(/);
+  expect(src).not.toMatch(/isSubagentTool\([^)]*\)\s*&& isSubagentQuery\(/);
+});

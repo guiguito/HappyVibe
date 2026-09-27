@@ -1609,8 +1609,11 @@ export function registerIpc(
         const agent = callId ? delegatedAgentByCall.get(callId) : undefined;
         if (runId && agent) delegatedAgentByRun.set(runId, agent);
         if (callId) delegatedAgentByCall.delete(callId);
-        if (runId && !finishedAsyncRuns.has(runId)) {
-          activity.asyncStarted(sessionId, runId);
+        // The busy marker only for a run still going (a FOREGROUND delegation has already
+        // completed by now) — but the row is written either way: its toolCallId is how a
+        // reopened session attaches the run's spend to its card, foreground runs included.
+        if (runId && !finishedAsyncRuns.has(runId)) activity.asyncStarted(sessionId, runId);
+        if (runId) {
           void log.append({
             type: "subagent.async_started",
             sessionId,

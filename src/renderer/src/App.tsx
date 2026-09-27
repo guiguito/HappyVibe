@@ -1469,8 +1469,11 @@ export default function App(): React.JSX.Element {
       // draw a delegation card with no agent and no task — literally "→ asked ?".
       // Hidden for the same reason as the wait tool above; the delegation, its
       // result and any artifact read all still show.
+      // Only the pre-switch `subagent` tool had machinery-only calls. tintinweb's `Agent`
+      // always carries work (`subagent_type` + `prompt`, none of the old field names), and
+      // running it through this guard hid EVERY delegation card (GUI pass, 2026-09-27).
       if (
-        isSubagentTool((e as { toolName?: string }).toolName)
+        (e as { toolName?: string }).toolName === "subagent"
         && isSubagentQuery((e as { args?: unknown }).args)
       ) return;
       // §7 round 16: a tool call IS the next action — settle the reasoning that
