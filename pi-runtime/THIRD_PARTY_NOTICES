@@ -5,6 +5,9 @@ other open-source projects. Each keeps its own license file inside its folder
 (pi-runtime/skills/<name>/LICENSE or LICENSE.txt); the full license texts follow at the end.
 Files changed by HappyVibe say so in a comment at the top of their frontmatter.
 The bundled prompts (pi-runtime/prompts) are written by HappyVibe and are not third-party material.
+Bundled agents (pi-runtime/agents) adapted from other projects are listed as "agent: <name>"; the
+others (code-explorer, worker, agents-md-maker, notes-synthesizer, technical-writer, data-analyst)
+are HappyVibe's own.
 
 ## skill-creator
 Source:  https://github.com/anthropics/skills/tree/33375500bcea98d610eb30ce10ac4e59b89c390d/skills/skill-creator
@@ -53,6 +56,30 @@ Source:  https://github.com/github/awesome-copilot/tree/6c4d33b9cfca967a28bb2962
 Commit:  6c4d33b9cfca967a28bb2962ef4d55e4a384c88c
 License: MIT (Copyright GitHub, Inc.)
 Modified: sources are opened with web_fetch before a claim is rated VERIFIED; fetched pages treated as data.
+
+## agent: security-auditor
+Source:  https://github.com/anthropics/claude-plugins-official/tree/fa59bc9037741ecfa131aa27938272605710d7b2/plugins/code-modernization/agents/security-auditor.md
+Commit:  fa59bc9037741ecfa131aa27938272605710d7b2
+License: Apache-2.0 (Copyright Anthropic, PBC.)
+Modified: read-only Pi tools, no network audit commands, legacy-only items dropped, reads AGENTS.md.
+
+## agent: silent-failure-hunter
+Source:  https://github.com/anthropics/claude-plugins-official/tree/fa59bc9037741ecfa131aa27938272605710d7b2/plugins/pr-review-toolkit/agents/silent-failure-hunter.md
+Commit:  fa59bc9037741ecfa131aa27938272605710d7b2
+License: Apache-2.0 (Copyright Anthropic, PBC.)
+Modified: read-only Pi tools, Anthropic-internal logging names removed, the diff is handed to it, reads AGENTS.md.
+
+## agent: plan-critic
+Source:  https://github.com/anthropics/claude-plugins-official/tree/fa59bc9037741ecfa131aa27938272605710d7b2/plugins/code-modernization/agents/architecture-critic.md
+Commit:  fa59bc9037741ecfa131aa27938272605710d7b2
+License: Apache-2.0 (Copyright Anthropic, PBC.)
+Modified: generalised from modernization to any plan, spec or design; read-only Pi tools; reads AGENTS.md.
+
+## agent: reviewer
+Source:  https://github.com/nicobailon/pi-subagents/blob/v0.64.0/agents/reviewer.md
+Commit:  v0.64.0
+License: MIT (Copyright (c) 2026 Nico Bailon)
+Modified: reads AGENTS.md, the diff is handed to it, confidence filter, untrusted-content rule.
 
 ## Apache License 2.0 (full text)
 
@@ -258,7 +285,7 @@ Modified: sources are opened with web_fetch before a claim is rated VERIFIED; fe
    See the License for the specific language governing permissions and
    limitations under the License.
 
-## MIT License (full text, github/awesome-copilot)
+## MIT License (full text; the same terms cover github/awesome-copilot, (c) GitHub, Inc., and nicobailon/pi-subagents, (c) 2026 Nico Bailon)
 
 MIT License
 
