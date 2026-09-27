@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { trackFeature } from "./usage/client";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -4122,6 +4123,12 @@ export function registerIpc(
   // next tool call with no respawn — the row says so. Test is the only call
   // main ever makes that no tool asked for, which is why it is a button and
   // not a boot probe (the keychain-at-boot rule, one privacy notch over).
+  // §39: UI-only first uses (file editor, git panel, a user terminal, voice,
+  // a document). Deduped HERE, per session, so two windows showing one
+  // session send one event.
+  ipcMain.on("hv:usage-feature", (_e, sessionId: string, feature: string) => {
+    if (typeof sessionId === "string" && typeof feature === "string") trackFeature(sessionId, feature, "user");
+  });
   ipcMain.handle("hv:web-service-get", () => getWebService());
   ipcMain.handle("hv:web-service-set", (_e, p: { mode: "default" | "custom"; baseUrl?: string; key?: string | null }) => {
     setWebService(p);

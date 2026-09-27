@@ -419,6 +419,11 @@ contextBridge.exposeInMainWorld("hv", {
 
   // §37 crash reports.
   getCrashReports: () => ipcRenderer.invoke("hv:get-crash-reports"),
+  // §39: the Privacy page's usage-statistics switch, and UI-only first uses
+  // (main dedupes them per session, so two windows send one event).
+  getUsageStats: (): Promise<boolean> => ipcRenderer.invoke("hv:get-usage-stats"),
+  setUsageStats: (on: boolean): Promise<void> => ipcRenderer.invoke("hv:set-usage-stats", on),
+  usageFeature: (sessionId: string, feature: string): void => ipcRenderer.send("hv:usage-feature", sessionId, feature),
   setCrashReports: (on: boolean) => ipcRenderer.invoke("hv:set-crash-reports", on),
   crashInfo: () => ipcRenderer.invoke("hv:crash-info"),
   crashReveal: () => ipcRenderer.invoke("hv:crash-reveal"),
@@ -770,6 +775,14 @@ contextBridge.exposeInMainWorld("inletCrash", {
  * (`window.inletConfig.send` / `.on`). Literal channels, as for `inletCrash`:
  * a window reads config state and asks for a refresh, nothing else.
  */
+/** §39 — `inlet-sdk/analytics/electron-renderer`'s bridge. Literal channels; main owns identity and consent. */
+contextBridge.exposeInMainWorld("inletAnalytics", {
+  send: (_channel: string, message: unknown): void => ipcRenderer.send("inlet:analytics", message),
+  on: (_channel: string, listener: (payload: unknown) => void): void => {
+    ipcRenderer.on("inlet:analytics:ids", (_e, payload) => listener(payload));
+  },
+});
+
 contextBridge.exposeInMainWorld("inletConfig", {
   send: (_channel: string, message: unknown): void => ipcRenderer.send("inlet:config", message),
   on: (_channel: string, listener: (payload: unknown) => void): void => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { HOWTO_COPY } from "../src/renderer/src/components/HowItWorks";
+import { USAGE_EVENTS } from "../src/main/usage/events";
 
 /**
  * §20 round 17 — the deleted Help page, dissolved in place.
@@ -18,8 +19,8 @@ const rendered = (f: string): string =>
   fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 describe("HOWTO_COPY", () => {
-  it("has all nine entries, each a real explanation", () => {
-    const keys = ["planMode", "rules", "mcpBadge", "contextNumbers", "instructionFiles", "webTools", "memory", "worktrees", "crashReports"];
+  it("has all ten entries, each a real explanation", () => {
+    const keys = ["planMode", "rules", "mcpBadge", "contextNumbers", "instructionFiles", "webTools", "memory", "worktrees", "crashReports", "usageStats"];
     expect(Object.keys(HOWTO_COPY).sort()).toEqual([...keys].sort());
     for (const [k, v] of Object.entries(HOWTO_COPY)) {
       expect(v.title, k).toMatch(/^(How|What) /);
@@ -198,4 +199,15 @@ it("§39 web tools say the default service is free for now", () => {
   expect(HOWTO_COPY.webTools.body).toContain(
     "HappyVibe's service is free for now. If that changes, this page will say so, and a service of your own keeps working either way.",
   );
+});
+
+it("§39 'What is sent' is DERIVED from the catalog, never retyped", () => {
+  const b = HOWTO_COPY.usageStats.body;
+  for (const spec of Object.values(USAGE_EVENTS)) expect(b).toContain(spec.plain);
+  expect(b).toMatch(/random installation ID/i);
+  expect(b).toMatch(/IP address is never stored/i);
+  expect(b).toMatch(/Never sent:/);
+  const src = fs.readFileSync(path.join(R, "components/HowItWorks.tsx"), "utf8");
+  expect(src).toMatch(/USAGE_EVENTS/);
+  expect(src).not.toContain(USAGE_EVENTS.prompt_sent.plain);
 });

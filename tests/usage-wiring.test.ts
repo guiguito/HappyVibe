@@ -56,3 +56,30 @@ describe("§39 wiring rules", () => {
     expect(strip("src/main/analytics.ts")).not.toMatch(/inlet-sdk|usage\//);
   });
 });
+
+describe("§39 renderer half", () => {
+  it("preload exposes inletAnalytics with literal channels", () => {
+    const p = strip("src/preload/index.ts");
+    expect(p).toMatch(/exposeInMainWorld\("inletAnalytics"/);
+    expect(p).toContain('ipcRenderer.send("inlet:analytics"');
+    expect(p).toContain('"inlet:analytics:ids"');
+  });
+  it("the renderer imports only the electron-renderer analytics entry", () => {
+    for (const f of walk("src/renderer/src").filter((x) => /\.tsx?$/.test(x))) {
+      expect(strip(f), f).not.toMatch(/inlet-sdk\/analytics\/(electron|node|browser)["']/);
+    }
+    expect(strip("src/renderer/src/usage.ts")).toContain('"inlet-sdk/analytics/electron-renderer"');
+  });
+  it("Privacy puts Usage statistics above Crash reports, with the approved copy", () => {
+    const v = fs.readFileSync("src/renderer/src/components/PrivacyView.tsx", "utf8");
+    expect(v.indexOf('title="Usage statistics"')).toBeGreaterThan(-1);
+    expect(v.indexOf('title="Usage statistics"')).toBeLessThan(v.indexOf('title="Crash reports"'));
+    expect(v).toContain("Send anonymous usage statistics");
+    expect(v).toContain("Which features get used, where setup gets stuck, and whether the app is reliable. Never what you type, your files or your projects.");
+    expect(v.replace(/\s+/g, " ")).toContain("Turning statistics off doesn&apos;t stop it, but the ID is replaced with a new one that isn&apos;t linked to your statistics.");
+    expect(v).toContain('copy="usageStats"');
+  });
+  it("main dedupes UI first-uses", () => {
+    expect(strip("src/main/ipc.ts")).toMatch(/"hv:usage-feature"[\s\S]{0,200}trackFeature\(/);
+  });
+});

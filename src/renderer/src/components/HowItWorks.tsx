@@ -13,6 +13,8 @@
  * `resource-loader.js`, because the alternative is finding 13 — a sentence that
  * was true when written, false for months after, and failing nothing.
  */
+import { USAGE_EVENTS } from "../../../main/usage/events";
+
 export const HOWTO_COPY = {
   planMode: {
     title: "How plan mode works",
@@ -66,6 +68,17 @@ export const HOWTO_COPY = {
     body:
       "They all get read, in a fixed order, and stack up: first the one in your global agent folder, then every folder from the top of your filesystem down to your project — so the closest file is read last. Inside each folder only one file counts. Pi takes the first that exists of AGENTS.override.md, AGENTS.md, AGENTS.MD, CLAUDE.md, CLAUDE.MD and ignores the others, which is why a CLAUDE.md sitting beside an AGENTS.md is never read. HappyVibe adds one thing on top: a nested AGENTS.md deeper in your project is supplied for the turns where a tool touches that subtree. All of them are read once, when a session starts — so an edit applies to new or restarted sessions, not the one you are in.",
   },
+  // §39 D20: the event list is BUILT from the catalog, never pasted here —
+  // a sentence retyped beside the code it describes is finding 13.
+  usageStats: {
+    title: "What usage statistics contain",
+    body: [
+      "Each event is one of these, and nothing else:",
+      Object.values(USAGE_EVENTS).map((e) => `• ${e.plain}.`).join("\n"),
+      "Each carries a random installation ID, the app version, your operating system and its language, and the country worked out from the connection — the IP address is never stored. They go to HappyVibe's own server, and only there.",
+      "Never sent: what you type or what the agent replies, tool arguments, commands, file names, paths, web addresses, searches, session titles, project or branch names, commit messages, names you gave anything, keys, error messages, what you spend.",
+    ].join("\n\n"),
+  },
 } as const;
 
 export function HowItWorks({ copy }: { copy: keyof typeof HOWTO_COPY }): React.JSX.Element {
@@ -81,7 +94,7 @@ export function HowItWorks({ copy }: { copy: keyof typeof HOWTO_COPY }): React.J
           reads as a justification rather than an explanation — which is the
           note §37's copy came back with. */}
       {body.split("\n\n").map((para) => (
-        <p key={para.slice(0, 24)} className="text-xs leading-relaxed text-ink-soft mb-2 last:mb-0">
+        <p key={para.slice(0, 24)} className="text-xs leading-relaxed text-ink-soft mb-2 last:mb-0 whitespace-pre-line">
           {para}
         </p>
       ))}
