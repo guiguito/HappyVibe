@@ -33,7 +33,7 @@ interface Run {
 const w = (p: string, s: string): void => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); };
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-async function boot(opts: { policy: boolean }): Promise<Run> {
+async function boot(opts: { policy: boolean; host?: boolean }): Promise<Run> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hv-twtrust-"));
   const ws = path.join(dir, "ws");
   const agentDir = path.join(dir, "agent");
@@ -66,6 +66,7 @@ async function boot(opts: { policy: boolean }): Promise<Run> {
   const i = spec.args.indexOf(path.join(runtime, "extensions/happyvibe-bridge.ts"));
   spec.args.splice(i, 1, PROBE);
   Object.assign(spec.env, { TW_PROBE_OUT: out, TW_PROBE_MARKS: marks, TW_PROBE_GUARD: GUARD, TW_PROBE_POLICY: opts.policy ? "1" : "0" });
+  if (opts.host === false) delete spec.env.HV_HOST;
   const client = new PiClient(spec);
   client.on("ui-request", (r: { id: string; method?: string }) => {
     if (r.method === "select" || r.method === "input" || r.method === "editor") client.respondUi(r.id, { value: "" });
@@ -151,5 +152,20 @@ describe("patched, HV_HOST=1 but NO policy registered", () => {
     expect(marksOf(run)).toEqual([]);
     const kids = path.join(run.sessionDir, "subagents");
     expect(fs.existsSync(kids) ? fs.readdirSync(kids) : []).toEqual([]);
+  }, 60_000);
+});
+
+// P2 on its own — the upstream-worthy part, which the app never reaches (HV_HOST=1 +
+// a policy lets P3 force `noExtensions`). Before 2026-09-28 it never fired: path
+// entries add their canonical name to `keepNames`, so `keepNames.size === 0` was
+// never true for a path-only list and discovery ran every factory anyway.
+describe("patched, no HV_HOST and no policy (P2 alone)", () => {
+  let run: Run;
+  beforeAll(async () => { run = await boot({ policy: false, host: false }); }, 60_000);
+  afterAll(() => run?.client.stop());
+
+  test("a path-only extensions: list loads that path and discovers nothing", async () => {
+    await spawn(run, "guard-only");
+    expect(marksOf(run), "planted <agentDir>/extensions/*.ts must not run").toEqual(["guard-ran"]);
   }, 60_000);
 });

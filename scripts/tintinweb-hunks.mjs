@@ -72,7 +72,8 @@ const hvChildPolicy = (): undefined | { extensionPaths(): string[]; skillPaths()
     cwd: configCwd,
     agentDir,
     settingsManager: hvSettings,
-    noExtensions: hvPolicy ? true : noExtensions || (!!additionalExtensionPaths && keepNames.size === 0 && !loadAll),
+    // P2: path entries put their canonical name in keepNames too, so "path-only" = every kept name came from a path.
+    noExtensions: hvPolicy ? true : noExtensions || (!!additionalExtensionPaths && !loadAll && [...keepNames].every((n) => additionalExtensionPaths.some((p) => extensionCanonicalName(p) === n))),
     additionalExtensionPaths: hvPolicy ? hvPolicy.extensionPaths() : additionalExtensionPaths,
     extensionsOverride: hvPolicy ? undefined : extensionsOverride,
     noSkills: hvPolicy ? true : noSkills,
