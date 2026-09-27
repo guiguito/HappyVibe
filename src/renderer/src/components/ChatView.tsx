@@ -47,7 +47,7 @@ import { Banner } from "./Banner";
 import { UpdateRow } from "./UpdateRow";
 import { SessionPulse } from "./SessionPulse";
 import { trackUi } from "../usage";
-import { promptFlags } from "../usageUi";
+import { panelJustOpened, promptFlags } from "../usageUi";
 
 /** §20 round 17 — red-zone dismissals persist per session (Principle 5: never nag). */
 const REDZONE_KEY = "hv:redzone-dismissed:";
@@ -825,13 +825,19 @@ export function ChatView({
   // §39: each time a panel OPENS, from the pill or the red-zone banner alike.
   // The gauge's value rides along, omitted while it is still measuring.
   const gaugePct = gauge?.percent;
+  const prevContext = useRef<{ open: boolean; sid: string | null } | null>(null);
+  const prevCost = useRef<{ open: boolean; sid: string | null } | null>(null);
   useEffect(() => {
-    if (contextOpen) trackUi("panel_opened", { panel: "context", ...(gaugePct != null ? { contextPct: Math.round(gaugePct) } : {}) });
+    const now = { open: contextOpen, sid: sessionId };
+    if (panelJustOpened(prevContext.current, now)) trackUi("panel_opened", { panel: "context", ...(gaugePct != null ? { contextPct: Math.round(gaugePct) } : {}) });
+    prevContext.current = now;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- on open only, not on every gauge tick
-  }, [contextOpen]);
+  }, [contextOpen, sessionId]);
   useEffect(() => {
-    if (costOpen) trackUi("panel_opened", { panel: "cost" });
-  }, [costOpen]);
+    const now = { open: costOpen, sid: sessionId };
+    if (panelJustOpened(prevCost.current, now)) trackUi("panel_opened", { panel: "cost" });
+    prevCost.current = now;
+  }, [costOpen, sessionId]);
   const suggestCompact = gauge?.zone === "red" && sessionId != null && !suggestDismissed.has(sessionId) && !contextOpen;
 
   // #8: filter the transcript by search text (message kinds that carry text).

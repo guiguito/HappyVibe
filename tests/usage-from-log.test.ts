@@ -16,7 +16,7 @@ const ev = (type: string, data: Record<string, unknown>, extra: Record<string, u
 describe("§39 eventFromLog — an explicit picker, never data wholesale", () => {
   it("permission.decision: only a human's answer, mapped", () => {
     expect(ev("permission.decision", { tool: "bash", summary: "rm -rf /", decision: "allow-session", source: "user", agent: "explorer" }, { sessionId: "s" }))
-      .toEqual({ name: "permission_answered", params: { decision: "allow_session", toolKind: "bash", byRule: false, fromSubagent: true, waitSec: 7 } });
+      .toEqual({ name: "permission_answered", params: { decision: "allow_session", toolKind: "bash", waitSec: 7 } });
     expect(ev("permission.decision", { tool: "bash", decision: "allow", source: "rule" })).toBeNull();
     expect(ev("permission.decision", { tool: "bash", decision: "allow", source: "bypass" })).toBeNull();
   });

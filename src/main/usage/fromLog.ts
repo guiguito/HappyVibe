@@ -44,13 +44,15 @@ export function eventFromLog(e: Omit<LogEvent, "ts">, ctx: TapContext): Out {
   const d = e.data ?? {};
   switch (e.type) {
     case "permission.decision": {
-      if (d.source !== "user" || typeof d.tool !== "string") return null;
+      // An allow under an earlier "Allow for session" is audited as the user's
+      // but showed no prompt — it is not an answer.
+      if (d.source !== "user" || typeof d.tool !== "string" || d.grant === "session") return null;
       const decision = Object.hasOwn(DECISION, String(d.decision)) ? DECISION[String(d.decision)] : null;
       if (!decision) return null;
       const wait = e.sessionId ? ctx.waitSec(e.sessionId) : undefined;
       return {
         name: "permission_answered",
-        params: { decision, toolKind: toolKind(d.tool), byRule: d.rule != null, fromSubagent: typeof d.agent === "string", ...(wait !== undefined ? { waitSec: wait } : {}) },
+        params: { decision, toolKind: toolKind(d.tool), ...(wait !== undefined ? { waitSec: wait } : {}) },
       };
     }
     case "plan.enter":
@@ -92,5 +94,19 @@ export function eventFromLog(e: Omit<LogEvent, "ts">, ctx: TapContext): Out {
       return { name: "session_opened", params: { kind: "new", inWorktree: ctx.inWorktree(e.workspaceId) } };
     default:
       return null;
+  }
+}
+
+/**
+ * A sub-agent's prompt is answered by a human, but its audit row (source
+ * "subagent") mixes those answers with the boundary's automatic decisions, so
+ * it is not counted — and its wait must not enter the queue the user's rows pair with.
+ */
+export function isSubagentPrompt(title: string | undefined): boolean {
+  try {
+    const p = JSON.parse(title ?? "") as { child?: unknown };
+    return !!p && typeof p === "object" && p.child != null;
+  } catch {
+    return false;
   }
 }

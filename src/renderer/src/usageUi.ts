@@ -33,3 +33,12 @@ export function promptFlags(p: {
     queued: p.queued,
   };
 }
+
+/**
+ * A panel OPENED in this session — not a session switch that happens to show
+ * an open panel (the prop is `open && sid === selected`, so switching flips it
+ * for one render before App resets it).
+ */
+export function panelJustOpened(prev: { open: boolean; sid: string | null } | null, now: { open: boolean; sid: string | null }): boolean {
+  return !!prev && now.open && !prev.open && prev.sid === now.sid;
+}

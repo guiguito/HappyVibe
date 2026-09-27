@@ -1,10 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, systemPreferences } from "electron";
 import { forgetSessionFeatures, track, trackFeature } from "./usage/client";
-import { TurnTracker, type TurnEnd } from "./usage/turns";
+import { TurnTracker, startsTurn, turnEndFor, type TurnEnd } from "./usage/turns";
 import { featureOfTool } from "./usage/features";
-import { eventFromLog, storePluginId, type TapContext } from "./usage/fromLog";
+import { eventFromLog, isSubagentPrompt, storePluginId, type TapContext } from "./usage/fromLog";
 import { mcpParams, modelParams, scheduleParams } from "./usage/mappers";
-import { describeProviderError } from "./providerError";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -1170,7 +1169,7 @@ export function registerIpc(
   const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
   const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
     if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
-    promptShownAt.set(r.id, Date.now()); // §39: permission_answered.waitSec
+    if (!isSubagentPrompt(r.title)) promptShownAt.set(r.id, Date.now()); // §39: permission_answered.waitSec
   };
   const clearPending = (id: string): void => {
     if (pendingUi.clear(id)) pendingChanged();
@@ -1604,26 +1603,23 @@ export function registerIpc(
     const meta = index.get(sessionId);
     client.on("event", (e: Record<string, unknown>) => {
       activity.event(sessionId, e); // W1.3: busy/subagent state + last-activity
-      // §39: counts only — never an argument, a path or a message leaves here.
-      turns.onEvent(sessionId, e as { type: string; toolName?: string; args?: unknown });
-      if (e.type === "tool_execution_start" && typeof e.toolName === "string") {
-        const f = featureOfTool(e.toolName);
-        if (f) trackFeature(sessionId, f, "agent");
-      } else if (e.type === "message_end") {
-        const m = (e as { message?: { role?: string; stopReason?: string; errorMessage?: string; provider?: string; model?: string } }).message;
-        if (m?.role === "assistant") lastStop.set(sessionId, m);
-      } else if (e.type === "auto_retry_start") {
-        lastStop.delete(sessionId);
-      } else if (e.type === "agent_end") {
-        const m = lastStop.get(sessionId);
-        endTurn(
-          sessionId,
-          m?.stopReason === "aborted"
-            ? { outcome: "aborted" }
-            : m?.stopReason === "error"
-              ? { outcome: "error", errorKind: describeProviderError(String(m.errorMessage ?? "")).kind }
-              : { outcome: "completed" },
-        );
+      try {
+        // §39: counts only — never an argument, a path or a message leaves here.
+        turns.onEvent(sessionId, e as { type: string; toolName?: string; args?: unknown });
+        if (e.type === "tool_execution_start" && typeof e.toolName === "string") {
+          const f = featureOfTool(e.toolName);
+          if (f) trackFeature(sessionId, f, "agent");
+        } else if (e.type === "message_end") {
+          const m = (e as { message?: { role?: string; stopReason?: string; errorMessage?: string; provider?: string; model?: string } }).message;
+          if (m?.role === "assistant") lastStop.set(sessionId, m);
+        } else if (e.type === "auto_retry_start") {
+          lastStop.delete(sessionId);
+        } else if (e.type === "agent_end") {
+          const how = turnEndFor(e, lastStop.get(sessionId));
+          if (how) endTurn(sessionId, how);
+        }
+      } catch {
+        /* analytics never costs the stream its forward */
       }
       // §9 rewind: stamp the pending "pre" snapshot with the turn's FIRST
       // toolCallId (the only id durable across a reload), and record what the
@@ -2624,7 +2620,8 @@ export function registerIpc(
   manager.on("session-exit", ({ sessionId, code, intentional, stderr, stderrLines }: SessionExit) => {
     activity.remove(sessionId);
     // §39: an exited Pi never sends agent_end — close the in-flight turn here.
-    if (turns.isBusy(sessionId)) endTurn(sessionId, { outcome: "error", errorKind: "pi_exit" });
+    // An exit WE asked for (hibernate, close, reload) mid-turn is a stop, not a crash.
+    if (turns.isBusy(sessionId)) endTurn(sessionId, intentional ? { outcome: "aborted" } : { outcome: "error", errorKind: "pi_exit" });
     pendingMcpReload.delete(sessionId); // don't reload a session that's gone
     // Stop this session's status pollers — its children died with its Pi process.
     for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId) stopSubagentPoll(runId);
@@ -3659,7 +3656,7 @@ export function registerIpc(
     // schedule run starting is when `session_opened` "scheduled" is counted
     // (new or reused session alike).
     // A steer or follow-up sent mid-turn joins that turn; it never restarts it.
-    if (!turns.isBusy(sessionId)) turns.start(sessionId, bySchedule);
+    if (!turns.isBusy(sessionId) && startsTurn(msg)) turns.start(sessionId, bySchedule);
     if (bySchedule) {
       const ws = meta?.workspaceId;
       track("session_opened", { kind: "scheduled", inWorktree: !!ws && worktrees.projectOf(ws) !== ws });
@@ -3674,7 +3671,13 @@ export function registerIpc(
     // and it carries the TYPED text rather than `outgoing`: the user sees what
     // they wrote, exactly as the composer shows it.
     if (bySchedule) send("hv:session-prompted", { sessionId, text: msg });
-    await client.send(promptCommand(outgoing, behavior, images));
+    try {
+      await client.send(promptCommand(outgoing, behavior, images));
+    } catch (err) {
+      // §39: a prompt Pi refused never started a turn — do not leave one open.
+      if (!behavior) turns.discard(sessionId);
+      throw err;
+    }
     return { warnings };
   };
 

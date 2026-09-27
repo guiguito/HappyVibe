@@ -4,6 +4,7 @@
  * end(). A turn ends once — an agent_end after a pi_exit (or the reverse) is null.
  */
 import { isDelegationTool } from "../../../pi-runtime/extensions/hv-rules";
+import { describeProviderError } from "../providerError";
 import type { UsageParams } from "./events";
 
 export type TurnEnd = { outcome: "completed" | "aborted" } | { outcome: "error"; errorKind: string };
@@ -21,6 +22,11 @@ export class TurnTracker {
 
   start(sessionId: string, scheduled: boolean, now = Date.now()): void {
     this.turns.set(sessionId, { startedAt: now, scheduled, toolCalls: 0, files: new Set(), subagentRuns: 0 });
+  }
+
+  /** A prompt that never reached the agent (its send failed): no turn to report. */
+  discard(sessionId: string): void {
+    this.turns.delete(sessionId);
   }
 
   isBusy(sessionId: string): boolean {
@@ -50,4 +56,24 @@ export class TurnTracker {
       scheduled: t.scheduled,
     };
   }
+}
+
+/** `/hv-*` commands run in the bridge and never start the agent, so no agent_end would close them. */
+export function startsTurn(msg: string): boolean {
+  return !msg.trim().startsWith("/hv-");
+}
+
+/**
+ * How a turn ended, from its `agent_end` and the last assistant message.
+ * Null while Pi will retry: it emits agent_end(willRetry) BEFORE auto_retry_start,
+ * so the retried attempt's own agent_end is the one that decides.
+ */
+export function turnEndFor(
+  agentEnd: { willRetry?: unknown },
+  last: { stopReason?: string; errorMessage?: string } | undefined,
+): TurnEnd | null {
+  if (agentEnd.willRetry === true) return null;
+  if (last?.stopReason === "aborted") return { outcome: "aborted" };
+  if (last?.stopReason === "error") return { outcome: "error", errorKind: describeProviderError(String(last.errorMessage ?? "")).kind };
+  return { outcome: "completed" };
 }
