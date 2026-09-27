@@ -17,7 +17,7 @@ import { PrivacyView } from "./components/PrivacyView";
 import { type TranscriptItem } from "./components/Transcript";
 import { type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
-import { describeProviderError, retryNoticeText } from "./providerError";
+import { describeProviderError, retryNoticeText } from "../../main/providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";

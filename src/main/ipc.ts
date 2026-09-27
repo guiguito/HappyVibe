@@ -1,5 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, systemPreferences } from "electron";
-import { trackFeature } from "./usage/client";
+import { forgetSessionFeatures, track, trackFeature } from "./usage/client";
+import { TurnTracker, type TurnEnd } from "./usage/turns";
+import { featureOfTool } from "./usage/features";
+import { describeProviderError } from "./providerError";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -842,6 +845,19 @@ export function registerIpc(
   const activity = new SessionActivity();
   /** §35: when the current turn began, per session — the run duration a finish notification reports. */
   const turnStartedAt = new Map<string, number>();
+  // §39: per-turn counts for `agent_turn_completed`, and the last assistant
+  // message's end (the renderer's own rule: a failed attempt that was retried
+  // does not count, the final one decides).
+  const turns = new TurnTracker();
+  const lastStop = new Map<string, { stopReason?: string; errorMessage?: string; provider?: string; model?: string }>();
+  const endTurn = (sessionId: string, how: TurnEnd): void => {
+    const p = turns.end(sessionId, how);
+    const m = lastStop.get(sessionId);
+    lastStop.delete(sessionId);
+    if (p) track("agent_turn_completed", { ...p, ...turnModel(sessionId, m) });
+  };
+  // Filled in by the model/billing mappers (§39 Task 11).
+  const turnModel = (_sessionId: string, _m?: { provider?: string; model?: string }): Record<string, string> => ({});
   const readonlyForSession = (sessionId?: string): boolean => {
     if (!sessionId) return false;
     const scheduleId = index.get(sessionId)?.scheduleId;
@@ -1554,6 +1570,27 @@ export function registerIpc(
     const meta = index.get(sessionId);
     client.on("event", (e: Record<string, unknown>) => {
       activity.event(sessionId, e); // W1.3: busy/subagent state + last-activity
+      // §39: counts only — never an argument, a path or a message leaves here.
+      turns.onEvent(sessionId, e as { type: string; toolName?: string; args?: unknown });
+      if (e.type === "tool_execution_start" && typeof e.toolName === "string") {
+        const f = featureOfTool(e.toolName);
+        if (f) trackFeature(sessionId, f, "agent");
+      } else if (e.type === "message_end") {
+        const m = (e as { message?: { role?: string; stopReason?: string; errorMessage?: string; provider?: string; model?: string } }).message;
+        if (m?.role === "assistant") lastStop.set(sessionId, m);
+      } else if (e.type === "auto_retry_start") {
+        lastStop.delete(sessionId);
+      } else if (e.type === "agent_end") {
+        const m = lastStop.get(sessionId);
+        endTurn(
+          sessionId,
+          m?.stopReason === "aborted"
+            ? { outcome: "aborted" }
+            : m?.stopReason === "error"
+              ? { outcome: "error", errorKind: describeProviderError(String(m.errorMessage ?? "")).kind }
+              : { outcome: "completed" },
+        );
+      }
       // §9 rewind: stamp the pending "pre" snapshot with the turn's FIRST
       // toolCallId (the only id durable across a reload), and record what the
       // agent left behind at agent_end — that record is the stale-check's
@@ -2551,6 +2588,8 @@ export function registerIpc(
   };
   manager.on("session-exit", ({ sessionId, code, intentional, stderr, stderrLines }: SessionExit) => {
     activity.remove(sessionId);
+    // §39: an exited Pi never sends agent_end — close the in-flight turn here.
+    if (turns.isBusy(sessionId)) endTurn(sessionId, { outcome: "error", errorKind: "pi_exit" });
     pendingMcpReload.delete(sessionId); // don't reload a session that's gone
     // Stop this session's status pollers — its children died with its Pi process.
     for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId) stopSubagentPoll(runId);
@@ -2797,6 +2836,7 @@ export function registerIpc(
         deleteSessionFile(sessionDir(), s.piSessionFile);
         deleteSessionSnapshots(snapshotDir(), s.id);
         void log.append({ type: "session.delete", sessionId: s.id, workspaceId: s.workspaceId });
+        forgetSessionFeatures(s.id);
       } else if (!s.archived) {
         index.update(s.id, { archived: true });
       }
@@ -3057,6 +3097,7 @@ export function registerIpc(
     lastOpenTerminals.delete(sessionId);
     lastOpenBrowser.delete(sessionId);
     void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId, data: { reason: "empty" } });
+    forgetSessionFeatures(sessionId);
     sessionsChanged();
     return true;
   };
@@ -3133,6 +3174,7 @@ export function registerIpc(
     lastOpenTerminals.delete(sessionId); // §26: same, for the terminals block
     lastOpenBrowser.delete(sessionId); // §28: …and for the browser block
     void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId });
+    forgetSessionFeatures(sessionId);
     sessionsChanged();
   });
 
@@ -3565,6 +3607,15 @@ export function registerIpc(
     // §35: when the turn started, for the run's duration. Set for every prompt
     // so a user-prompted run is measured the same way.
     turnStartedAt.set(sessionId, Date.now());
+    // §39 D19: a turn a schedule started is marked, never dropped; and a
+    // schedule run starting is when `session_opened` "scheduled" is counted
+    // (new or reused session alike).
+    // A steer or follow-up sent mid-turn joins that turn; it never restarts it.
+    if (!turns.isBusy(sessionId)) turns.start(sessionId, bySchedule);
+    if (bySchedule) {
+      const ws = meta?.workspaceId;
+      track("session_opened", { kind: "scheduled", inWorktree: !!ws && worktrees.projectOf(ws) !== ws });
+    }
     // §35: a prompt MAIN sent has no composer behind it, so nothing has drawn
     // the user's message — the renderer only ever appends one for its own send
     // or for a queue delivery. Without this a scheduled run's transcript opens

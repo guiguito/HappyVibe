@@ -5,7 +5,8 @@
  * — which tells a user nothing about whether to wait, fix a key, or fix a
  * setting. This maps the classes that a user can actually act on.
  *
- * PURE module (no react, no window) so it is unit-testable.
+ * PURE module (no react, no window, no imports) so it is unit-testable, and
+ * shared: the renderer shows the headline, main sends only `kind` (§39).
  *
  * `retriable` marks the TRANSIENT classes only. Note Pi's own auto-retry list
  * (pi-ai/dist/utils/retry.js) covers 429/500/502/503/504/524 but NOT 529, so a
@@ -29,7 +30,11 @@ export interface ProviderErrorInfo {
   retriable: boolean;
   /** The original message, ALWAYS preserved so a bug report stays actionable. */
   raw: string;
+  /** §39: the class, from a closed set — the ONLY part usage statistics send. */
+  kind: ErrorKind;
 }
+
+export type ErrorKind = "auth" | "balance" | "rate_limit" | "overloaded" | "server" | "network" | "context_overflow" | "model_not_found" | "other";
 
 const has = (s: string, re: RegExp): boolean => re.test(s);
 
@@ -37,13 +42,13 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   const t = raw.trim();
   const what = [ctx.provider, ctx.model].filter(Boolean).join(" · ");
   if (!t) {
-    return { headline: what ? `${what} returned an error.` : "The model provider returned an error.", retriable: false, raw };
+    return { kind: "other", headline: what ? `${what} returned an error.` : "The model provider returned an error.", retriable: false, raw };
   }
 
   // Quota/billing before rate-limit: "quota exceeded" can read as a throttle but
   // retrying never clears it (mirrors Pi's NON_RETRYABLE_PROVIDER_LIMIT list).
   if (has(t, /insufficient_quota|quota exceeded|out of budget|billing|usage limit|available balance/i)) {
-    return {
+    return { kind: "balance",
       headline: "The provider says this account is out of quota or credit.",
       hint: "Check the account's billing or usage limits — retrying will not clear it.",
       retriable: false,
@@ -55,7 +60,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   // generic 400. For a custom endpoint this usually means the context window
   // entered in Settings is larger than the server really allows.
   if (has(t, /context length|context window|too many tokens|maximum context|token limit/i)) {
-    return {
+    return { kind: "context_overflow",
       headline: "The conversation is longer than this model's context window.",
       hint: "If this is a custom endpoint, the context window set for the model may be larger than the server actually allows.",
       retriable: false,
@@ -64,7 +69,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   }
 
   if (has(t, /\b529\b|overloaded/i)) {
-    return {
+    return { kind: "overloaded",
       headline: "The model provider is overloaded right now.",
       hint: "This is temporary and not a problem with your setup — retry in a moment.",
       retriable: true,
@@ -73,7 +78,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   }
 
   if (has(t, /\b429\b|rate.?limit|too many requests/i)) {
-    return {
+    return { kind: "rate_limit",
       headline: "The provider is rate-limiting this API key.",
       hint: "Wait a few seconds, then retry. Frequent rate limits usually mean a per-minute cap on the key.",
       retriable: true,
@@ -82,7 +87,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   }
 
   if (has(t, /\b(500|502|503|504|520|521|522|523|524)\b|service.?unavailable|server.?error|internal.?error|bad gateway/i)) {
-    return {
+    return { kind: "server",
       headline: "The provider had a server error.",
       hint: "Nothing is wrong on your side — retry in a moment.",
       retriable: true,
@@ -91,7 +96,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   }
 
   if (has(t, /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|network.?error|socket hang up|aborted/i)) {
-    return {
+    return { kind: "network",
       headline: "Could not reach the model endpoint.",
       hint: "Check the server is running and the base URL is reachable from this machine.",
       retriable: true,
@@ -100,7 +105,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   }
 
   if (has(t, /\b40[13]\b|unauthorized|forbidden|invalid.?api.?key|authentication/i)) {
-    return {
+    return { kind: "auth",
       headline: "The provider rejected the API key.",
       hint: "Re-enter the key in Settings → LLM Setup. A custom endpoint with no key needs one only if its server requires it.",
       retriable: false,
@@ -109,7 +114,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   }
 
   if (has(t, /\b404\b|model not found|no such model|unknown model/i)) {
-    return {
+    return { kind: "model_not_found",
       headline: "The provider does not have that model.",
       hint: "Check the model id — for a custom endpoint, re-fetch its model list in Settings.",
       retriable: false,
@@ -122,7 +127,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   // Both observed in real logs ("Upstream idle timeout exceeded" x3,
   // "Stream ended without finish_reason").
   if (has(t, /idle timeout|timed? ?out|timeout exceeded|stream ended|without finish_reason|incomplete (response|stream)/i)) {
-    return {
+    return { kind: "network",
       headline: "The provider stopped responding mid-request.",
       hint: "The connection went idle or the stream ended early — retry; this is not a problem with your setup.",
       retriable: true,
@@ -134,7 +139,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   // almost always the compat preset (an unknown host gets OpenAI-only fields —
   // see PRESET_COMPAT in src/main/modelsJson.ts).
   if (has(t, /\b400\b|bad request|invalid.?request/i)) {
-    return {
+    return { kind: "other",
       headline: "The provider rejected the request.",
       hint: "For a custom endpoint this usually means the wrong compatibility preset — try \"Other\" in Settings → LLM Setup.",
       retriable: false,
@@ -157,7 +162,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   // not told us it is permanent, and the alternative leaves the user with a dead
   // end. A pointless retry costs one request; a missing one costs the turn.
   if (CONTENT_FREE.test(t)) {
-    return {
+    return { kind: "other",
       headline: what ? `${what} failed without saying why.` : "The model provider returned an error with no details.",
       hint: "The provider sent no details. This is usually transient — retry, and if it repeats, try another model.",
       retriable: true,
@@ -165,7 +170,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
     };
   }
 
-  return { headline: t, retriable: false, raw };
+  return { kind: "other", headline: t, retriable: false, raw };
 }
 
 /**
