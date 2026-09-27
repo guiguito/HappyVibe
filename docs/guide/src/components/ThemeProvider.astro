@@ -1,0 +1,6 @@
+---
+// Light only: the app and the landing page have no dark theme, so neither does the guide.
+// Replaces Starlight's ThemeProvider, which would follow the OS setting.
+---
+
+<script is:inline>document.documentElement.dataset.theme = "light";</script>

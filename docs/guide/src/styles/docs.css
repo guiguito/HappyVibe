@@ -1,0 +1,41 @@
+@layer base, starlight, theme, components, utilities;
+
+@import "@astrojs/starlight-tailwind";
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+/* The app's own tokens, imported and never copied. They also set --font-sans (Gabarito) and
+   --font-mono (JetBrains Mono), which starlight-tailwind hands to Starlight. */
+@import "../../../../src/renderer/src/theme.css";
+
+/* Starlight's light palette, mapped onto the app's tokens. Starlight's light scale runs
+   white (text) → gray-1…7 → black (page background). */
+:root[data-theme="light"] {
+  --sl-color-white: var(--color-ink);
+  --sl-color-gray-1: var(--color-ink);
+  --sl-color-gray-2: var(--color-ink);
+  --sl-color-gray-3: var(--color-ink);
+  --sl-color-gray-4: var(--color-ink-soft);
+  --sl-color-gray-5: var(--color-line-strong);
+  --sl-color-gray-6: var(--color-line);
+  --sl-color-gray-7: var(--color-paper-deep);
+  --sl-color-black: var(--color-paper);
+  --sl-color-accent-low: var(--color-honey-soft);
+  --sl-color-accent: var(--color-tangerine);
+  /* Link text. tangerine-deep is 4.3:1 on paper, under AA's 4.5:1, so links are ink with a
+     tangerine underline instead. */
+  --sl-color-accent-high: var(--color-ink);
+}
+
+.sl-markdown-content a {
+  text-decoration-color: var(--color-tangerine);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+/* The app's sticker look: chunky borders and hard offset shadows. */
+.sl-markdown-content img,
+.sl-markdown-content video {
+  border: 2px solid var(--color-line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sticker-lg);
+}
