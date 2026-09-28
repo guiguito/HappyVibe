@@ -54,8 +54,8 @@ paths:
   raises no banner. Re-test with a unique message, or delete `dedupe.json` with the app stopped.
 - `hv:crash-test` acts on `event.sender`: `BrowserWindow.getFocusedWindow()` is null whenever the app
   isn't frontmost — always, under CDP.
-- Read crashes back with the Inlet MCP crash tools; `list_crash_groups` defaults to
-  `environment: "production"`, so pass `"development"` for dev. Over REST there's no `/reports`
+- Read crashes back with the Inlet MCP crash tools, from the Dev project for dev builds (since
+  inlet-sdk 0.5.0 there is no `environment`: dev and prod are separate projects). Over REST there's no `/reports`
   collection route: list groups, then `…/groups/<groupId>/reports`. `docs/validation/d1.md` §37.
 
 ## Feedback
@@ -86,5 +86,5 @@ paths:
 - `feature_used` goes through `trackFeature` (main dedupes per session or workspace), never `trackUi` — two windows send one.
 - Opt-out is `setEnabled(false, { forget: true })` only; never `setUserId`, `setUser`, `setInstallationIdEnabled(false` (source-scanned).
 - `existing_user` keys on `<userData>/inlet/analytics-state.json` — config writes `installation-id.json` itself.
-- Dev builds send to the dev database: every Inlet query there needs `environment: development`, or it reads empty. The crash half of the one-ID check needs `HV_CRASH_DEV=1`.
+- Dev builds send to the Dev project's databases. inlet-sdk 0.5.0 has no `environment` option and its server REFUSES an envelope carrying one (`unknown_field`) — never add it back (`tests/usage-wiring.test.ts` scans for it). The crash half of the one-ID check needs `HV_CRASH_DEV=1`.
 - `web_default_service` fails open (default `true`), is read per web call, and pausing it never removes the tools.

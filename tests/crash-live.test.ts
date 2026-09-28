@@ -63,7 +63,6 @@ describe.skipIf(!LIVE)("§37 live: the Inlet crash contract, on the dev database
         crashDatabaseId: DB,
         release: "0.0.0-crash-live",
         channel: "dev",
-        environment: "development",
         // A tmp queue, so a failed send never leaves anything in the
         // developer's real userData directory.
         store: new FileStore(dir),

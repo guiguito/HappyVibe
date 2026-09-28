@@ -27,7 +27,7 @@ for (const line of fs.existsSync(".env") ? fs.readFileSync(".env", "utf8").split
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
 }
 
-const SMOKE_DB = "fdb_d27rwrartady";
+const SMOKE_DB = "fdb_ev05jx7fz8b2";
 const PUB = FEEDBACK_CHANNELS.dev.publishableKey as string;
 const BASE = FEEDBACK_CHANNELS.dev.baseUrl;
 /** The isk_ SERVER key, for cleanup ONLY. Never imported by anything under src/. */

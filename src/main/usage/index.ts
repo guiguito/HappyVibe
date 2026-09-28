@@ -42,7 +42,8 @@ export async function installUsage(): Promise<void> {
       baseUrl: cfg.baseUrl,
       publishableKey: cfg.publishableKey,
       analyticsDatabaseId: cfg.analyticsDatabase,
-      environment: cfg.environment, // D8: dev builds send, to the dev database
+      // D8: dev builds send to the Dev project's database — an environment is a
+      // project since inlet-sdk 0.5.0, which has no `environment` field.
       enabled: getUsageStats(),
       ...(attribution ? { attribution } : {}),
       acceptRendererIdentity: false,

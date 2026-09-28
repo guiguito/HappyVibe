@@ -125,3 +125,9 @@ it("§39 turning statistics back on re-tags the new installation existing_user B
   expect(tag).toBeGreaterThan(-1);
   expect(tag).toBeLessThan(enable);
 });
+
+it("§39 inlet-sdk 0.5.0: no environment is sent — the server refuses the envelope (unknown_field)", () => {
+  for (const f of ["src/main/crash/index.ts", "src/main/usage/index.ts", "src/main/feedback/config.ts"]) {
+    expect(strip(f), f).not.toMatch(/\benvironment\s*:/);
+  }
+});

@@ -6,7 +6,7 @@ describe("resolveFeedbackConfig", () => {
     const c = resolveFeedbackConfig({}, true);
     expect(c?.channel).toBe("dev");
     expect(c?.publishableKey).toMatch(/^ipk_/);
-    expect(c?.databases).toEqual({ general: "fdb_k1wv6q4f5y3d", session: "fdb_8acy05bfbdd8" });
+    expect(c?.databases).toEqual({ general: "fdb_fhkd99m59f7a", session: "fdb_9jc4be9npr1g" });
     expect(c?.baseUrl).toBe("https://feedback.bzapps.eu");
   });
 
@@ -19,7 +19,7 @@ describe("resolveFeedbackConfig", () => {
     const c = resolveFeedbackConfig({}, false);
     expect(c?.channel).toBe("prod");
     expect(c?.publishableKey).toMatch(/^ipk_/);
-    expect(c?.databases).toEqual({ general: "fdb_kvsfs4azz0xc", session: "fdb_fg71xjz0y9t6" });
+    expect(c?.databases).toEqual({ general: "fdb_gk46pdxj0d7b", session: "fdb_ma2pqzg46cj5" });
   });
 
   /** The two channels must never share a key or a database — that is what keeps dev noise out. */
@@ -37,7 +37,7 @@ describe("resolveFeedbackConfig", () => {
   });
 
   it("prod databases are the prod project's, never the dev ones", () => {
-    expect(FEEDBACK_CHANNELS.prod.databases).toEqual({ general: "fdb_kvsfs4azz0xc", session: "fdb_fg71xjz0y9t6" });
+    expect(FEEDBACK_CHANNELS.prod.databases).toEqual({ general: "fdb_gk46pdxj0d7b", session: "fdb_ma2pqzg46cj5" });
   });
 
   it("HV_FEEDBACK_* env overrides win, and a key override makes prod available", () => {
@@ -58,7 +58,6 @@ describe("resolveFeedbackConfig", () => {
       crashDatabase: FEEDBACK_CHANNELS.prod.crashDatabase,
       analyticsDatabase: FEEDBACK_CHANNELS.prod.analyticsDatabase,
       configDatabase: FEEDBACK_CHANNELS.prod.configDatabase,
-      environment: "production",
     });
   });
 
@@ -102,23 +101,23 @@ describe("resolveFeedbackConfig", () => {
 });
 
 describe("§39 analytics + config databases", () => {
-  it("dev resolves the dev project's databases in development", () => {
+  // inlet-sdk 0.5.0: an environment is a PROJECT, so dev and prod are told
+  // apart only by which project's databases they point at.
+  it("dev resolves the Dev project's databases", () => {
     const c = resolveFeedbackConfig({}, true)!;
-    expect(c.analyticsDatabase).toBe("adb_49c94fgpyah0");
-    expect(c.configDatabase).toBe("cfg_fnc0pxzkmjc0");
-    expect(c.environment).toBe("development");
+    expect(c.analyticsDatabase).toBe("adb_nf15qfg0crx6");
+    expect(c.configDatabase).toBe("cfg_gsd6fxwmwdmj");
   });
-  it("prod resolves the prod project's databases in production", () => {
+  it("prod resolves the Prod project's databases", () => {
     const c = resolveFeedbackConfig({}, false)!;
-    expect(c.analyticsDatabase).toBe("adb_k820zq5xsfh1");
-    expect(c.configDatabase).toBe("cfg_8hsh4dzaerwj");
-    expect(c.environment).toBe("production");
+    expect(c.analyticsDatabase).toBe("adb_k9hj2jq82zyv");
+    expect(c.configDatabase).toBe("cfg_s4zxy72egxf5");
   });
   it("env overrides win", () => {
     const c = resolveFeedbackConfig({ HV_ANALYTICS_DB: "adb_x", HV_CONFIG_DB: "cfg_y" }, true)!;
     expect([c.analyticsDatabase, c.configDatabase]).toEqual(["adb_x", "cfg_y"]);
   });
-  it("a forced channel keeps its own environment", () => {
-    expect(resolveFeedbackConfig({ HV_FEEDBACK_CHANNEL: "prod" }, true)!.environment).toBe("production");
+  it("a forced channel reads its own project's databases", () => {
+    expect(resolveFeedbackConfig({ HV_FEEDBACK_CHANNEL: "prod" }, true)!.analyticsDatabase).toBe("adb_k9hj2jq82zyv");
   });
 });
