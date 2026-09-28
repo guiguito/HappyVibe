@@ -89,6 +89,7 @@ import { NavContext, type NavTarget } from "./components/GoTo";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
 import { ipcMessage } from "./ipcError";
 import { screenView, trackUi } from "./usage";
+import type { UsageParams } from "../../main/usage/events";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -2694,6 +2695,8 @@ export default function App(): React.JSX.Element {
     mentions?: string[],
     /** §31: the attached documents — paths go to main, name/format draw the chip. */
     documents?: DocumentAttachment[],
+    /** §39: the composer's counts and flags, tracked only once main accepted the prompt. */
+    usage?: UsageParams,
   ): Promise<void> => {
     // §22: the suggestion chips have done their job the moment anything is
     // sent — they never come back, in this session or any other.
@@ -2718,6 +2721,7 @@ export default function App(): React.JSX.Element {
       try {
         const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions, openFiles, documentPaths);
         noteWarnings(warnings);
+        if (usage) trackUi("prompt_sent", usage);
       } catch (err) {
         surface(err);
       }
@@ -2735,6 +2739,7 @@ export default function App(): React.JSX.Element {
     try {
       const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documentPaths);
       noteWarnings(warnings);
+      if (usage) trackUi("prompt_sent", usage);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
       surface(err);
@@ -3901,14 +3906,16 @@ export default function App(): React.JSX.Element {
             chips={firstRunSession.current === sid ? chips : null}
             onChip={(text) => setComposerInsert((prev) => ({ sid, text, nonce: (prev?.nonce ?? 0) + 1 }))}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
-            onSend={(msg, behavior, images, mentions, documents) => void send(sid, msg, behavior, images, mentions, documents)}
+            onSend={(msg, behavior, images, mentions, documents, usage) => void send(sid, msg, behavior, images, mentions, documents, usage)}
             pageRefs={pageRefs[sid]}
             onDropPageRef={(i) =>
               setPageRefs((p) => ({ ...p, [sid]: (p[sid] ?? []).filter((_, j) => j !== i) }))
             }
             onClearPageRefs={() => setPageRefs((p) => ({ ...p, [sid]: [] }))}
             onRetry={() => void retryCrash(sid)}
-            onCompact={() => void window.hv.compactSession(sid)}
+            onCompact={(trigger) =>
+              void window.hv.compactSession(sid).then(() => trackUi("context_changed", { action: "compacted", trigger }))
+            }
             onAbort={() => {
               // Mark BEFORE committing: the abort has a renderer→main→child round
               // trip to make, so deltas arriving in that window must merge into the

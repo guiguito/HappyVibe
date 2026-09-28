@@ -28,7 +28,7 @@ describe("§39 eventFromLog — an explicit picker, never data wholesale", () =>
     expect(ev("plan.exit", { discard: true })?.params).toEqual({ action: "exited" });
   });
   it("context.compact: Pi's own only (a click is tracked by the window)", () => {
-    expect(ev("context.compact", { reason: "threshold" })).toEqual({ name: "context_changed", params: { action: "compacted", trigger: "auto" } });
+    expect(ev("context.compact", { reason: "threshold", firstKeptEntryId: "e1" })).toEqual({ name: "context_changed", params: { action: "compacted", trigger: "auto" } });
     expect(ev("context.compact", { reason: "manual" })).toBeNull();
   });
   it("git.action: the action, never message/branch/path", () => {

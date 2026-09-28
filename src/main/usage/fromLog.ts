@@ -62,7 +62,9 @@ export function eventFromLog(e: Omit<LogEvent, "ts">, ctx: TapContext): Out {
     case "plan.exit":
       return { name: "plan_mode_changed", params: { action: PLAN[e.type] } };
     case "context.compact":
-      return d.reason === "manual" ? null : { name: "context_changed", params: { action: "compacted", trigger: "auto" } };
+      // A failed or aborted compaction ends with no result (firstKeptEntryId null): nothing was freed.
+      if (d.reason === "manual" || d.firstKeptEntryId == null) return null;
+      return { name: "context_changed", params: { action: "compacted", trigger: "auto" } };
     case "git.action": {
       const raw = String(d.action ?? "");
       const action = raw.startsWith("stash-") ? "stash" : Object.hasOwn(GIT, raw) ? GIT[raw] : undefined;

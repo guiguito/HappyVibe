@@ -37,3 +37,16 @@ export function trackFeature(sessionId: string, feature: string, trigger: "user"
 export function forgetSessionFeatures(sessionId: string): void {
   seen.delete(sessionId);
 }
+
+/** A key reported once per process (e.g. a failure that every respawn would repeat). */
+export class OnceSet {
+  private keys = new Set<string>();
+  first(key: string): boolean {
+    if (this.keys.has(key)) return false;
+    this.keys.add(key);
+    return true;
+  }
+  forget(key: string): void {
+    this.keys.delete(key);
+  }
+}

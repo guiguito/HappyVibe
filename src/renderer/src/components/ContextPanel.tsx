@@ -40,7 +40,7 @@ export function ContextPanel({
    *  open panel isn't stale after a compaction changed what's in context. */
   turns: number;
   onClose: () => void;
-  onCompact: () => void;
+  onCompact: (trigger: "suggested" | "manual") => void;
 }): React.JSX.Element {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmCompact, setConfirmCompact] = useState(false);
@@ -73,8 +73,8 @@ export function ContextPanel({
 
   const removeSelected = (): void => {
     if (selected.size === 0) return;
-    void window.hv.contextRemove(sessionId, [...selected]);
-    trackUi("context_changed", { action: "turn_removed" });
+    void Promise.resolve(window.hv.contextRemove(sessionId, [...selected])).then(() =>
+      trackUi("context_changed", { action: "turn_removed" }), () => {});
     setSelected(new Set());
   };
   const restore = (key: string): void => void window.hv.contextRestore(sessionId, [key]);
@@ -391,9 +391,8 @@ export function ContextPanel({
           onCancel={() => setConfirmCompact(false)}
           onConfirm={() => {
             setConfirmCompact(false);
-            // §39: a clicked compaction; `suggested` when the gauge was red.
-            trackUi("context_changed", { action: "compacted", trigger: redZone ? "suggested" : "manual" });
-            onCompact();
+            // §39: `suggested` when the gauge was red; App tracks it once the compaction ran.
+            onCompact(redZone ? "suggested" : "manual");
           }}
         />
       )}

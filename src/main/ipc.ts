@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, systemPreferences } from "electron";
-import { forgetSessionFeatures, track, trackFeature } from "./usage/client";
+import { OnceSet, forgetSessionFeatures, track, trackFeature } from "./usage/client";
 import { TurnTracker, startsTurn, turnEndFor, type TurnEnd } from "./usage/turns";
 import { featureOfTool } from "./usage/features";
 import { eventFromLog, isSubagentPrompt, storePluginId, type TapContext } from "./usage/fromLog";
@@ -605,7 +605,7 @@ export function registerIpc(
   const scheduleStore = new ScheduleStore(path.join(userData, "schedules.json"));
   // §39: the EventLog tap. Its state is declared before `log` so an early
   // append can never reach an uninitialised binding.
-  const promptShownAt = new Map<string, number>(); // ui-request id → ms
+  const promptShownAt = new Map<string, { at: number; sid: string }>(); // ui-request id → when, whose
   const answeredWaits = new Map<string, number[]>(); // sessionId → FIFO of wait ms
   const lastCommitDraft = new Map<string, string>(); // workspaceId → last generated message
   const tap: TapContext = {
@@ -868,6 +868,10 @@ export function registerIpc(
   // message's end (the renderer's own rule: a failed attempt that was retried
   // does not count, the final one decides).
   const turns = new TurnTracker();
+  // §39: a model-less session refuses on every respawn (wake, MCP reload); count it once.
+  const noModelOnce = new OnceSet();
+  // §39: the session bypass as last applied, so a repeated "/hv-dangerous on" is not a change.
+  const sessionBypass = new Map<string, boolean>();
   const lastStop = new Map<string, { stopReason?: string; errorMessage?: string; provider?: string; model?: string }>();
   const endTurn = (sessionId: string, how: TurnEnd): void => {
     const p = turns.end(sessionId, how);
@@ -1074,7 +1078,7 @@ export function registerIpc(
       // exists. The renderer blocks send on the same condition (ChatView
       // noModel), so this is the backstop, not the message the user reads.
       if (!resolveSpawnModel(workspace, sessionId)) {
-        track("session_start_failed", { reason: "no_model" });
+        if (noModelOnce.first(sessionId ?? workspace ?? "")) track("session_start_failed", { reason: "no_model" });
         throw new Error("No model configured — add a provider in Settings → Models.");
       }
       return new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile, sessionId)));
@@ -1169,7 +1173,7 @@ export function registerIpc(
   const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
   const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
     if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
-    if (!isSubagentPrompt(r.title)) promptShownAt.set(r.id, Date.now()); // §39: permission_answered.waitSec
+    if (!isSubagentPrompt(r.title)) promptShownAt.set(r.id, { at: Date.now(), sid: sessionId }); // §39: permission_answered.waitSec
   };
   const clearPending = (id: string): void => {
     if (pendingUi.clear(id)) pendingChanged();
@@ -2620,6 +2624,10 @@ export function registerIpc(
   manager.on("session-exit", ({ sessionId, code, intentional, stderr, stderrLines }: SessionExit) => {
     activity.remove(sessionId);
     // §39: an exited Pi never sends agent_end — close the in-flight turn here.
+    answeredWaits.delete(sessionId); // §39: its unpaired waits and open prompts die with it
+    for (const [id, p] of promptShownAt) if (p.sid === sessionId) promptShownAt.delete(id);
+    sessionBypass.delete(sessionId); // a respawn starts with the session bypass off
+    noModelOnce.forget(sessionId);
     // An exit WE asked for (hibernate, close, reload) mid-turn is a stop, not a crash.
     if (turns.isBusy(sessionId)) endTurn(sessionId, intentional ? { outcome: "aborted" } : { outcome: "error", errorKind: "pi_exit" });
     pendingMcpReload.delete(sessionId); // don't reload a session that's gone
@@ -2862,6 +2870,7 @@ export function registerIpc(
    * `hv:delete-session`) rather than adding a second delete implementation.
    */
   ipcMain.handle("hv:remove-workspace", async (_e, ws: string, mode: "forget" | "delete" = "forget") => {
+    forgetSessionFeatures(ws); // §39: the per-workspace first-use set goes with it
     // §29 worktrees: round 11's orphan defect, one level down. A worktree's
     // sessions carry the WORKTREE's path, so `sessionsOfWorkspace` would leave
     // every one of them pointing at a project that is no longer listed.
@@ -3693,10 +3702,16 @@ export function registerIpc(
       openFiles?: string[],
       documents?: string[],
     ) => {
-      // §39: the session-scoped bypass switch is a slash command.
+      // §39: the session-scoped bypass switch is a slash command — counted once
+      // it ran, and only when it changed something.
       const dangerous = /^\/hv-dangerous (on|off)$/.exec(String(msg).trim());
-      if (dangerous) track("bypass_changed", { on: dangerous[1] === "on", scope: "session" });
-      return promptSession(sessionId, msg, behavior, images, mentions, openFiles, documents);
+      const result = await promptSession(sessionId, msg, behavior, images, mentions, openFiles, documents);
+      if (dangerous) {
+        const on = dangerous[1] === "on";
+        if ((sessionBypass.get(sessionId) ?? false) !== on) track("bypass_changed", { on, scope: "session" });
+        sessionBypass.set(sessionId, on);
+      }
+      return result;
     },
   );
 
@@ -3938,7 +3953,7 @@ export function registerIpc(
     promptShownAt.delete(id);
     if (shown !== undefined && owner && owner !== UTILITY) {
       const q = answeredWaits.get(owner) ?? [];
-      q.push(Date.now() - shown);
+      q.push(Date.now() - shown.at);
       answeredWaits.set(owner, q);
     }
     if (owner && owner !== UTILITY) {
@@ -3951,6 +3966,7 @@ export function registerIpc(
   // ── B3: providers & onboarding ────────────────────────────────────
   // input/select responses use { value }; null → { cancelled: true } (rpc-mode.js).
   ipcMain.on("hv:respond-input", (_e, id: string, value: string | null) => {
+    promptShownAt.delete(id); // §39: only permission answers are timed
     const owner = uiOwners.get(id);
     uiOwners.delete(id);
     send("hv:ui-resolved", { id });
@@ -5694,6 +5710,8 @@ export function registerIpc(
     const body = drafted?.body || commits.map((c) => `- ${c}`).join("\n");
 
     const url = pullRequestUrl({ host: remote.host, path: remote.path, base, head: branch.branch, title, body });
+    // §39: the click (draft: true) is the action; the eligibility probe is not.
+    if (url && draft) track("git_action", { action: "pull_request" });
     return url ? { url, drafted: !!drafted } : null;
   });
 

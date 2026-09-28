@@ -47,6 +47,7 @@ import { Banner } from "./Banner";
 import { UpdateRow } from "./UpdateRow";
 import { SessionPulse } from "./SessionPulse";
 import { trackUi } from "../usage";
+import type { UsageParams } from "../../../main/usage/events";
 import { panelJustOpened, promptFlags } from "../usageUi";
 
 /** §20 round 17 — red-zone dismissals persist per session (Principle 5: never nag). */
@@ -260,7 +261,7 @@ export function ChatView({
    * Only the recording indicator reads it, to choose docked vs viewport-fixed.
    */
   visible?: boolean;
-  onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[], documents?: DocumentAttachment[]) => void;
+  onSend: (msg: string, behavior?: "followUp", images?: ImageAttachment[], mentions?: string[], documents?: DocumentAttachment[], usage?: UsageParams) => void;
   /**
    * §28: page-element comments the user picked in the embedded browser. They
    * STACK here and are folded into the next message on send — the user decides
@@ -274,7 +275,8 @@ export function ChatView({
   onRestart: () => void;
   onRetry: () => void;
   onOpenFolder: () => void;
-  onCompact: () => void;
+  /** §39: the trigger is tracked once the compaction ran. */
+  onCompact: (trigger: "suggested" | "manual") => void;
   /** W2.2: open a workspace-relative file in an editor tab (clickable card paths). */
   onOpenFile?: (relPath: string) => void;
   /** v5: navigate to the MCP page (from the composer "+" menu). */
@@ -930,10 +932,7 @@ export function ChatView({
       templateNames,
     });
     dictatedRef.current = false;
-    if (flags) {
-      trackUi("prompt_sent", flags);
-      if (flags.usedTemplate && sessionId) window.hv.usageFeature(sessionId, "prompt_template");
-    }
+    if (flags?.usedTemplate && sessionId) window.hv.usageFeature(sessionId, "prompt_template");
     onSend(
       withRefs,
       behavior,
@@ -945,6 +944,7 @@ export function ChatView({
       // A chip still converting is fine to send: main converts from the PATH at
       // send time regardless, so the pick-time conversion is only the preview.
       documents.length ? documents : undefined,
+      flags ?? undefined,
     );
     // Round 15: sending is the user saying "I am at the end now", so the view
     // goes to the bottom whatever it was reading. The stream's own follow stays
@@ -2287,10 +2287,10 @@ function RunRail({
                 // killed the open-as-tab flight the moment the tool-call join
                 // shipped — the derivation now lives only in runRail.ts.
                 data-hv-run-key={a.key}
-                onClick={() => setOpen((o) => {
-                  if (o !== a.key) trackUi("panel_opened", { panel: "run_card" });
-                  return o === a.key ? null : a.key;
-                })}
+                onClick={() => {
+                  if (open !== a.key) trackUi("panel_opened", { panel: "run_card" });
+                  setOpen((o) => (o === a.key ? null : a.key));
+                }}
                 aria-expanded={open === a.key}
                 aria-label={`${a.name}${a.caption ? ` — ${a.caption}` : ""} (${a.state})`}
                 // The hue is INLINE, not a class: Tailwind's scanner never sees

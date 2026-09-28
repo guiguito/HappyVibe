@@ -2,7 +2,7 @@
  * §39 — handler facts → params, as shipped ids or the literal `custom` (D9).
  * Pure; `ipc.ts` calls these at the handlers where each fact lives.
  */
-import { OAUTH_CATALOG, PROVIDER_CATALOG } from "../providerCatalog.generated";
+import { OAUTH_CATALOG, PROVIDER_CATALOG, REGISTRY_MODELS } from "../providerCatalog.generated";
 import type { UsageParams } from "./events";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
@@ -15,16 +15,16 @@ export function knownProviders(): ReadonlySet<string> {
 }
 
 /**
- * ponytail: a provider in the generated catalog only offers Pi-registry models,
- * so its model id is sent (shape-checked, `/` → `:`); anything HappyVibe wrote
- * into models.json — custom endpoints, local runners, Ollama — is `custom`.
- * Ceiling: a registry provider given a hand-typed model id sends that id if
- * it is id-shaped. Upgrade path: check against Pi's model list.
+ * A model id is sent only when Pi's own registry ships it for that provider
+ * (`REGISTRY_MODELS`, generated and pinned by the catalog contract test), so a
+ * hand-typed id never leaves; `/` → `:` for the guard's id shape. Anything
+ * HappyVibe wrote into models.json — custom endpoints, local runners, Ollama — is `custom`.
  */
 export function modelParams(provider: string, modelId: string, k: ReadonlySet<string> = knownProviders()): { provider: string; model: string } {
   if (!k.has(provider)) return { provider: "custom", model: "custom" };
+  const shipped = Object.hasOwn(REGISTRY_MODELS, provider) && REGISTRY_MODELS[provider].includes(modelId);
   const m = modelId.replace(/\//g, ":");
-  return { provider, model: ID.test(m) ? m : "custom" };
+  return { provider, model: shipped && ID.test(m) ? m : "custom" };
 }
 
 export function mcpParams(
