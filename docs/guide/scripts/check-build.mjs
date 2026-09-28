@@ -58,4 +58,8 @@ for (const p of pages) {
   }
 }
 
+// Design (Everyday-use round): the fonts preload, so a page never paints in the fallback font first.
+for (const p of pages) assert.match(read(p), /<link rel="preload" href="[^"]+gabarito[^"]*\.woff2" as="font"/, `${p}: Gabarito isn't preloaded`);
+assert.match(css, /\.sidebar-pane\{[^}]*radial-gradient/, "the sidebar lost the app's pegboard texture");
+
 console.log(`docs check: ${pages.length} pages OK`);

@@ -25,6 +25,7 @@ export default defineConfig({
         ThemeProvider: "./src/components/ThemeProvider.astro",
         ThemeSelect: "./src/components/ThemeSelect.astro",
         PageTitle: "./src/components/PageTitle.astro",
+        Head: "./src/components/Head.astro",
       },
     }),
   ],

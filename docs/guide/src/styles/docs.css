@@ -59,3 +59,14 @@
 /* In the app's browser pane (?embed=1), the page reads as part of the app, with no link back to the
    website. Search and the page menu stay: a narrow pane has no other way around. */
 :root[data-embed] .site-title { display: none; }
+
+/* The app's sidebar: paper-deep with the dotted "pegboard" texture and a chunky right border
+   (Sidebar.tsx `bg-paper-deep pegboard border-r-2 border-line`, styles.css `.pegboard`). */
+.sidebar-pane {
+  background-color: var(--color-paper-deep);
+  background-image: radial-gradient(var(--color-line) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+@media (min-width: 50rem) {
+  .sidebar-pane { border-inline-end: 2px solid var(--color-line); }
+}

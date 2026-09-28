@@ -1,0 +1,11 @@
+---
+// Starlight's own <head>, plus a preload for the two fonts. Without it the first paint of every page
+// uses the fallback font and then swaps to Gabarito (the fonts are font-display: swap), a visible jump.
+import Default from "@astrojs/starlight/components/Head.astro";
+import gabarito from "@fontsource-variable/gabarito/files/gabarito-latin-wght-normal.woff2?url";
+import mono from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
+---
+
+<Default />
+<link rel="preload" href={gabarito} as="font" type="font/woff2" crossorigin />
+<link rel="preload" href={mono} as="font" type="font/woff2" crossorigin />
