@@ -6,6 +6,7 @@ import {
   OAUTH_CATALOG,
   OAUTH_NOT_ENABLED,
   PROVIDER_CATALOG,
+  REGISTRY_MODELS,
 } from "../src/main/providerCatalog.generated";
 import { KEY_RESOLVED_PLAN_PROVIDERS, PLAN_PROVIDERS } from "../src/main/calls";
 
@@ -127,6 +128,15 @@ describe.skipIf(!HAVE_RUNTIME)("generated provider catalog (Pi pin-bump gate)", 
           `a pin bump added a provider the app is silently not offering. Re-run: npm run catalog:providers`,
       ).toBe(true);
     }
+  });
+
+  test("§39 REGISTRY_MODELS is exactly upstream's model ids per provider", async () => {
+    const derived: Record<string, string[]> = {};
+    for (const p of await upstream()) {
+      const ids = modelsOf(p).map((m) => (m as { id?: unknown }).id).filter((x): x is string => typeof x === "string").sort();
+      if (ids.length) derived[p.id] = ids;
+    }
+    expect(REGISTRY_MODELS, "Re-run: npm run catalog:providers").toEqual(derived);
   });
 
   test("model counts and labels still match upstream", async () => {

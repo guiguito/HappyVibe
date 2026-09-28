@@ -113,6 +113,9 @@ export function FileTab({
       .catch(() => { setDiff([]); setChanged(false); });
   }, [workspace, relPath]);
 
+  // §39: first file opened in the editor, per workspace (main dedupes).
+  useEffect(() => { window.hv.usageFeature(workspace, "file_editor"); }, [workspace]);
+
   useEffect(() => {
     loadDiff();
     const off = window.hv.onGitChanged(({ workspaceId }) => {

@@ -4,6 +4,8 @@ import { BrandLogo } from "./BrandLogo";
 import { ModelsEscape, ProviderDoors } from "./OnboardingDoors";
 import { ONBOARDING_COPY as C } from "../onboarding";
 import { ipcMessage } from "../ipcError";
+import { trackUi } from "../usage";
+import { onboardingStep } from "../usageUi";
 
 /**
  * §22 onboarding round (2026-09-01). One landscape dialog, three beats:
@@ -105,15 +107,31 @@ export function OnboardingDialog({
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // §39: how long the guide took, and whether the welcome was cut short.
+  const mountedAt = useRef(Date.now());
+  const skippedAnimation = useRef(false);
+  useEffect(() => {
+    trackUi("onboarding_started", { providerPrechecked: modelReady });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, at open
+  }, []);
+  const dismiss = (): void => {
+    trackUi("onboarding_dismissed", { atStep: onboardingStep({ welcome, modelReady, workspaceReady }) });
+    onSkip();
+  };
+
   useEffect(() => {
     const land = (): void => setWelcome(false);
+    const byUser = (): void => {
+      skippedAnimation.current = true;
+      land();
+    };
     const t = setTimeout(land, 2500);
-    window.addEventListener("keydown", land);
-    window.addEventListener("mousedown", land);
+    window.addEventListener("keydown", byUser);
+    window.addEventListener("mousedown", byUser);
     return () => {
       clearTimeout(t);
-      window.removeEventListener("keydown", land);
-      window.removeEventListener("mousedown", land);
+      window.removeEventListener("keydown", byUser);
+      window.removeEventListener("mousedown", byUser);
     };
   }, []);
 
@@ -125,8 +143,18 @@ export function OnboardingDialog({
     // congratulating the user and leaving them on an empty screen.
     // The pops finish at ~920ms. Handing over at 1600 cut the moment short;
     // this leaves a beat to actually read it.
+    // §39: registered first, so it fires just before the handover's own timer.
+    const report = setTimeout(() => {
+      trackUi("onboarding_completed", {
+        durationSec: Math.round((Date.now() - mountedAt.current) / 1000),
+        skippedAnimation: skippedAnimation.current,
+      });
+    }, 2200);
     const t = setTimeout(onDone, 2200);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(report);
+      clearTimeout(t);
+    };
   }, [complete, welcome, onDone]);
 
   const createFresh = async (): Promise<void> => {
@@ -168,7 +196,7 @@ export function OnboardingDialog({
             // "last in the Escape chain" care, one dialog over.
             e.preventDefault();
             if (welcome) { setWelcome(false); return; }
-            onSkip();
+            dismiss();
           }}
           onOpenAutoFocus={(e) => {
             // Radix focuses the first tabbable, which here is the DISMISS — so
@@ -188,7 +216,7 @@ export function OnboardingDialog({
           {!complete && (
             <button
               type="button"
-              onClick={onSkip}
+              onClick={dismiss}
               title={C.skip}
               aria-label={C.skip}
               className="absolute top-2.5 right-2.5 z-10 text-base leading-none text-ink-soft hover:text-ink cursor-pointer p-1.5"

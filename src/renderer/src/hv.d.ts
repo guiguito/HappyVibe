@@ -1114,6 +1114,10 @@ interface HvApi {
   /** §37 crash reports. Global, default ON, live in both directions — turning
       it off stops capture AND drops anything already queued. */
   getCrashReports(): Promise<boolean>;
+  /** §39 */
+  getUsageStats(): Promise<boolean>;
+  setUsageStats(on: boolean): Promise<void>;
+  usageFeature(sessionId: string, feature: string): void;
   setCrashReports(on: boolean): Promise<void>;
   crashInfo(): Promise<HvCrashInfo>;
   crashReveal(): Promise<void>;
@@ -1424,6 +1428,10 @@ interface HvApi {
         through. The channel is fixed in the preload; this signature only
         matches the SDK's. */
     inletCrash: { send(channel: string, envelope: unknown): void };
+    /** §39: the SDK's analytics bridge; channels are fixed in the preload. */
+    inletAnalytics: { send(channel: string, message: unknown): void; on(channel: string, listener: (payload: unknown) => void): void };
+    /** §39: the SDK's config bridge; channels are fixed in the preload. */
+    inletConfig: { send(channel: string, message: unknown): void; on(channel: string, listener: (payload: unknown) => void): void };
   }
 }
 

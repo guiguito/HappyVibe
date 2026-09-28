@@ -3,6 +3,7 @@ import { DOCUMENT_FAMILY_LIST } from "../../../../pi-runtime/extensions/hv-docum
 import { Section } from "./Section";
 import { PromptRow, TogglePill } from "./PromptRow";
 import { HowItWorks } from "./HowItWorks";
+import { useWebDefaultPaused } from "../remoteConfig";
 
 /** Minor 3: same phrase used in the Plan-off confirm modal and in the live
     hv:session-reloading notice (App.tsx) — reused verbatim so every control
@@ -355,6 +356,9 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
   const [key, setKey] = useState("");
   const [test, setTest] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // §39: remote config can pause the default box; the row explains itself
+  // rather than greying the radio out — "Your own" is the way forward.
+  const paused = useWebDefaultPaused();
 
   useEffect(() => {
     void window.hv.webServiceGet().then((s) => {
@@ -429,8 +433,11 @@ function WebRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void
         <div className="mt-2 space-y-2 text-xs">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="radio" checked={mode === "default"} onChange={() => setMode("default")} />
-            HappyVibe&apos;s service
+            {paused ? <>HappyVibe&apos;s service — paused</> : <>HappyVibe&apos;s service (free for now)</>}
           </label>
+          {paused && mode === "default" && (
+            <p className="pl-5 text-ink-soft">The free service is paused. Choose Your own to keep using web tools.</p>
+          )}
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="radio" checked={mode === "custom"} onChange={() => setMode("custom")} />
             Your own

@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { describeProviderError, retryNoticeText } from "../src/renderer/src/providerError";
+import { describe, expect, it, test } from "vitest";
+import { describeProviderError, retryNoticeText } from "../src/main/providerError";
 
 /**
  * Provider errors reach the transcript as raw wire text ("529 status code (no
@@ -167,5 +167,23 @@ describe("retryNoticeText", () => {
   test("never carries the provider's message — that is what exploded the pill", () => {
     // Round 16: the old text appended ` — ${errorMessage}`, unbounded.
     expect(retryNoticeText({ attempt: 1, maxAttempts: 3, delayMs: 5_000 }).length).toBeLessThanOrEqual(24);
+  });
+});
+
+describe("§39 kind — the only part that leaves the machine", () => {
+  const k = (s: string): string => describeProviderError(s).kind;
+  it("maps the ladder to a closed set", () => {
+    expect(k("insufficient_quota: you exceeded your quota")).toBe("balance");
+    expect(k("429 Too Many Requests")).toBe("rate_limit");
+    expect(k("529 overloaded_error")).toBe("overloaded");
+    expect(k("500 Internal Server Error")).toBe("server");
+    expect(k("fetch failed ECONNRESET")).toBe("network");
+    expect(k("idle timeout after 60s")).toBe("network");
+    expect(k("401 invalid x-api-key")).toBe("auth");
+    expect(k("404 model not found")).toBe("model_not_found");
+    expect(k("prompt is too long: context length exceeded")).toBe("context_overflow");
+    expect(k("400 bad request")).toBe("other");
+    expect(k("something odd")).toBe("other");
+    expect(k("")).toBe("other");
   });
 });

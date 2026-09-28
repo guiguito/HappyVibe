@@ -20,6 +20,7 @@ const smallBtn =
 
 export function PrivacyView(): React.JSX.Element {
   const [on, setOn] = useState(true);
+  const [stats, setStats] = useState(true);
   const [info, setInfo] = useState<HvCrashInfo | null>(null);
   const [showReport, setShowReport] = useState(false);
 
@@ -29,6 +30,7 @@ export function PrivacyView(): React.JSX.Element {
 
   useEffect(() => {
     void window.hv.getCrashReports().then(setOn);
+    void window.hv.getUsageStats().then(setStats);
     refresh();
     // A report can land while the page is open; the "last report" block is the
     // page's own evidence, so it must not be a snapshot taken at mount.
@@ -45,12 +47,50 @@ export function PrivacyView(): React.JSX.Element {
   };
 
   return (
+    // The page scrolls like every other settings page — it outgrew the window
+    // once Usage statistics joined Crash reports.
+    <div className="flex-1 overflow-y-auto">
     <div className="mx-auto w-full max-w-3xl p-8">
       <h1 className="font-black text-3xl tracking-tight mb-1">Privacy</h1>
       <p className="text-sm text-ink-soft mb-6">
         What leaves this machine, and how to stop it. Everything else — your sessions, your files, your keys, your
-        audit log and your stats — stays here.
+        audit log and your Stats page — stays here.
       </p>
+
+      {/* §39: live in both directions; off forgets this installation (D11). */}
+      <Section
+        icon="stats"
+        title="Usage statistics"
+        subtitle="Which features get used, where setup gets stuck, and whether the app is reliable. Never what you type, your files or your projects."
+      >
+        <div className="rounded-xl border-2 border-line bg-card p-4 flex items-start justify-between gap-4">
+          <div>
+            <div className="font-bold">Send anonymous usage statistics</div>
+            <p className="text-sm text-ink-soft mt-0.5">
+              The app also checks HappyVibe&apos;s server for settings, such as whether the free web service is
+              available. That check carries a random device ID so gradual changes reach the same devices. Turning
+              statistics off doesn&apos;t stop it, but the ID is replaced with a new one that isn&apos;t linked to your
+              statistics.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !stats;
+              setStats(next);
+              void window.hv.setUsageStats(next);
+            }}
+            className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm cursor-pointer ${
+              stats ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"
+            }`}
+          >
+            {stats ? "On" : "Off"}
+          </button>
+        </div>
+        <div className="mt-4">
+          <HowItWorks copy="usageStats" />
+        </div>
+      </Section>
 
       <Section icon="audit" title="Crash reports" subtitle="Automatic, and content-free by design.">
         <div className="rounded-xl border-2 border-line bg-card p-4 flex items-start justify-between gap-4">
@@ -103,6 +143,7 @@ export function PrivacyView(): React.JSX.Element {
           </pre>
         )}
       </Section>
+    </div>
     </div>
   );
 }

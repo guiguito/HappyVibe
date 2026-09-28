@@ -13,6 +13,8 @@
  * `resource-loader.js`, because the alternative is finding 13 — a sentence that
  * was true when written, false for months after, and failing nothing.
  */
+import { USAGE_EVENTS } from "../../../main/usage/events";
+
 export const HOWTO_COPY = {
   planMode: {
     title: "How plan mode works",
@@ -47,7 +49,7 @@ export const HOWTO_COPY = {
   webTools: {
     title: "How web tools work",
     body:
-      "Four tools let the agent use the public web as text. Search finds pages, Read returns one page as clean markdown, Site map lists a site's URLs, and Read a site reads up to 30 pages in one go. Long pages come back in pieces, and the card tells you how much of the page you got. The pages are fetched by a web service, not by your computer, so sites see the service's address rather than yours. With the default service that is a server HappyVibe operates, which can see the URLs and the searches the agent sends — point the app at your own service below if that matters to you. Reading a new site asks you first, using the same rules as the agent's browser: “Allow for this session”, or a rule for that site, covers both from then on. The Allow button on a blocked browser page is narrower — it clears that one page's site for that browser pane only. Everything a page returns is marked as untrusted, so words on a web page can never pose as instructions from you. What these tools cannot do: take screenshots, click anything, or open pages that need you to be signed in — the agent's browser does all three. And there is no way to ask for recent results only.",
+      "Four tools let the agent use the public web as text. Search finds pages, Read returns one page as clean markdown, Site map lists a site's URLs, and Read a site reads up to 30 pages in one go. Long pages come back in pieces, and the card tells you how much of the page you got. The pages are fetched by a web service, not by your computer, so sites see the service's address rather than yours. With the default service that is a server HappyVibe operates, which can see the URLs and the searches the agent sends — point the app at your own service below if that matters to you. Reading a new site asks you first, using the same rules as the agent's browser: “Allow for this session”, or a rule for that site, covers both from then on. The Allow button on a blocked browser page is narrower — it clears that one page's site for that browser pane only. Everything a page returns is marked as untrusted, so words on a web page can never pose as instructions from you. What these tools cannot do: take screenshots, click anything, or open pages that need you to be signed in — the agent's browser does all three. And there is no way to ask for recent results only. HappyVibe's service is free for now. If that changes, this page will say so, and a service of your own keeps working either way.",
   },
   memory: {
     title: "How memory works",
@@ -66,6 +68,12 @@ export const HOWTO_COPY = {
     body:
       "They all get read, in a fixed order, and stack up: first the one in your global agent folder, then every folder from the top of your filesystem down to your project — so the closest file is read last. Inside each folder only one file counts. Pi takes the first that exists of AGENTS.override.md, AGENTS.md, AGENTS.MD, CLAUDE.md, CLAUDE.MD and ignores the others, which is why a CLAUDE.md sitting beside an AGENTS.md is never read. HappyVibe adds one thing on top: a nested AGENTS.md deeper in your project is supplied for the turns where a tool touches that subtree. All of them are read once, when a session starts — so an edit applies to new or restarted sessions, not the one you are in.",
   },
+  // §39 D20: the count comes from the catalog, never retyped beside it; the
+  // full list lives in usage/events.ts. As short as the crash-report entry.
+  usageStats: {
+    title: "What usage statistics contain",
+    body: `Which parts of the app get used — setup steps, messages sent, how turns ended, permission answers, panels opened, features tried — as counts, yes-or-no values and names HappyVibe itself ships: ${Object.keys(USAGE_EVENTS).length} kinds of event. Each carries a random installation ID, the app version, your operating system and its language, and a country worked out from the connection; the IP address is never stored.\n\nNever what you type or the agent replies, your files, paths, web addresses, searches, names you gave anything, your keys or what you spend.`,
+  },
 } as const;
 
 export function HowItWorks({ copy }: { copy: keyof typeof HOWTO_COPY }): React.JSX.Element {
@@ -81,7 +89,7 @@ export function HowItWorks({ copy }: { copy: keyof typeof HOWTO_COPY }): React.J
           reads as a justification rather than an explanation — which is the
           note §37's copy came back with. */}
       {body.split("\n\n").map((para) => (
-        <p key={para.slice(0, 24)} className="text-xs leading-relaxed text-ink-soft mb-2 last:mb-0">
+        <p key={para.slice(0, 24)} className="text-xs leading-relaxed text-ink-soft mb-2 last:mb-0 whitespace-pre-line">
           {para}
         </p>
       ))}
