@@ -7,6 +7,7 @@
     "dev": "npm run prebuild && astro dev",
     "build": "astro build && node scripts/check-build.mjs",
     "preview": "astro preview",
+    "check:media": "node scripts/check-media.mjs",
     "publish:site": "npm run build && rm -rf \"${WEBSITE_REPO:-../../../HappyVibeWebsite}/public/docs\" && cp -R dist \"${WEBSITE_REPO:-../../../HappyVibeWebsite}/public/docs\""
   },
   "dependencies": {

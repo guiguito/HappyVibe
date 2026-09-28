@@ -4,3 +4,6 @@ node_modules/
 # Copied from build/icon.svg by `npm run prebuild`, so build/icon.svg stays the only copy anyone edits.
 src/assets/logo.svg
 public/favicon.svg
+
+# Raw frames and review stills from scripts/media/, never shipped.
+.media-work/
