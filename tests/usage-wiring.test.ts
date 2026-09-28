@@ -111,3 +111,8 @@ it("§39 the Privacy intro names the Stats PAGE as local, not 'your stats'", () 
   const v = fs.readFileSync("src/renderer/src/components/PrivacyView.tsx", "utf8").replace(/\s+/g, " ");
   expect(v).toContain("your audit log and your Stats page — stays here.");
 });
+
+it("§39 the Privacy page scrolls like every other settings page", () => {
+  const v = strip("src/renderer/src/components/PrivacyView.tsx");
+  expect(v).toMatch(/return \(\s*<div className="flex-1 overflow-y-auto">/);
+});

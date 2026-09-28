@@ -80,7 +80,7 @@ paths:
 
 - Modules are `src/main/usage/` and `src/main/remoteConfig/` — never `src/main/analytics/`: `analytics.ts` is the local Stats aggregator and never sends.
 - The §37 split twice: import-free `client.ts` facades; `index.ts` is Electron-only and `ipc.ts` never imports it (vitest's `electron` stub).
-- `usage/events.ts` is the ONLY list of events. `track()` and `usageBeforeSend` refuse anything else; the Privacy "What is sent" copy is generated from it (`HOWTO_COPY.usageStats`).
+- `usage/events.ts` is the ONLY list of events. `track()` and `usageBeforeSend` refuse anything else; `HOWTO_COPY.usageStats` stays crash-report short and reads its event count from it.
 - Every param is an enum, number, boolean, or a shipped id / `custom`. Never spread an EventLog row's `data` into params — `fromLog.ts` names each field.
 - A skill is sent by its bundled NAME: its id is an absolute path.
 - `feature_used` goes through `trackFeature` (main dedupes per session or workspace), never `trackUi` — two windows send one.

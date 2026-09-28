@@ -47,6 +47,9 @@ export function PrivacyView(): React.JSX.Element {
   };
 
   return (
+    // The page scrolls like every other settings page — it outgrew the window
+    // once Usage statistics joined Crash reports.
+    <div className="flex-1 overflow-y-auto">
     <div className="mx-auto w-full max-w-3xl p-8">
       <h1 className="font-black text-3xl tracking-tight mb-1">Privacy</h1>
       <p className="text-sm text-ink-soft mb-6">
@@ -140,6 +143,7 @@ export function PrivacyView(): React.JSX.Element {
           </pre>
         )}
       </Section>
+    </div>
     </div>
   );
 }

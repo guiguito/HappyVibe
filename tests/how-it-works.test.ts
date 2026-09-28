@@ -201,13 +201,13 @@ it("§39 web tools say the default service is free for now", () => {
   );
 });
 
-it("§39 'What is sent' is DERIVED from the catalog, never retyped", () => {
+it("§39 'What usage statistics contain' is as short as the crash one, and its count is derived", () => {
   const b = HOWTO_COPY.usageStats.body;
-  for (const spec of Object.values(USAGE_EVENTS)) expect(b).toContain(spec.plain);
+  expect(b.length).toBeLessThanOrEqual(HOWTO_COPY.crashReports.body.length * 1.25);
+  expect(b).toContain(`${Object.keys(USAGE_EVENTS).length} kinds of event`);
   expect(b).toMatch(/random installation ID/i);
   expect(b).toMatch(/IP address is never stored/i);
-  expect(b).toMatch(/Never sent:/);
+  expect(b).toMatch(/Never what you type/);
   const src = fs.readFileSync(path.join(R, "components/HowItWorks.tsx"), "utf8");
-  expect(src).toMatch(/USAGE_EVENTS/);
-  expect(src).not.toContain(USAGE_EVENTS.prompt_sent.plain);
+  expect(src).toMatch(/Object\.keys\(USAGE_EVENTS\)\.length/);
 });
