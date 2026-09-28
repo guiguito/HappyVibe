@@ -9,15 +9,17 @@ A run is an ordinary session. It shows up in the sidebar, it asks before it acts
 
 ## Where to find it
 
-The **Schedules** row near the top of the sidebar, above **workspaces**, with a clock beside it. When the sidebar is collapsed to its narrow strip, it's the clock button just above the gear.
+The **Schedules** row near the top of the sidebar, above **workspaces**, with a clock beside it. When the sidebar is folded into its [icon rail](/docs/workspaces-and-sessions/#the-icon-rail), it's the clock just above the gear.
 
-The row also tells you what's coming, for example "2 active · next 9:00". When a run missed its time and is waiting for you, it reads "1 missed · decide", and the collapsed strip's clock gets a small dot.
+The row also tells you what's coming, for example "2 active · next 9:00". When a run missed its time and is waiting for you, it reads "1 missed · decide", and the rail's clock gets a small dot.
 
 At the bottom of the screen, **How this page works ↗** opens this page.
 
 ## What's on the screen
 
-The screen's intro is followed by one plain fact: "HappyVibe has to be open for schedules to run." Beside it, in the installed app, the **Open at login** switch starts HappyVibe when you log in to your computer, so your schedules don't depend on you remembering to open it.
+One switch at the top, then your schedules grouped by workspace, or four templates while you have none.
+
+The screen's intro is followed by one plain fact: "HappyVibe has to be open for schedules to run." Beside it, on macOS and Windows, the **Open at login** switch starts HappyVibe when you log in to your computer, so your schedules don't depend on you remembering to open it.
 
 At the top right, **New schedule** opens the drawer to make one.
 
@@ -63,7 +65,7 @@ A row can carry one more line:
 
 ### Recent runs
 
-Click **▸** on a row to see its last ten runs, newest first: a mark (✓, ✕ or –), when it ran, the reason if it didn't go well, its cost when known, and **Open** to jump to the run's session. Below them, "Last 30 days:" adds up what the schedule has cost lately. A schedule the agent proposed says "Created by the agent." Before its first run, the panel says "No runs yet."
+Click **▸** on a row to see its last ten runs, newest first: a mark (✓, ✕ or –), when it ran, the reason if it didn't go well, its cost when known, and **Open** to jump to the run's session. Below them, "Last 30 days:" adds up what the schedule has cost lately. Before its first run, the panel says "No runs yet."
 
 **Delete this schedule** sits at the bottom of the panel.
 
@@ -77,7 +79,7 @@ Click **▸** on a row to see its last ten runs, newest first: a mark (✓, ✕ 
 3. Pick when it runs (see [Timing](#timing)).
 4. Under **How careful**, pick **Full session** or **Read-only** (see [Full or read-only](#full-or-read-only)).
 5. Adjust the rest if you like:
-   - **Reuse the same session for every run**: off by default, so each run gets a fresh session. On, every run goes into one session: "Context builds up across runs; HappyVibe compacts it when it gets long." ([What context is](/docs/first-session/#context-what-the-agent-can-see).)
+   - **Reuse the same session for every run**: off by default, so each run gets a fresh session. On, every run goes into one session: "Context builds up across runs; HappyVibe compacts it when it gets long." ([Context: what the agent can see](/docs/first-session/#context-what-the-agent-can-see).)
    - **Model**: "Same as this project" unless you pick one, so runs use the workspace's model, or your default model if the workspace has none.
    - **Notify when a run finishes**: on by default. "You are always notified when a run needs your permission."
    - **If it misses its time**: see [If a run is missed](#if-a-run-is-missed).
@@ -103,7 +105,7 @@ With the **Schedules** built-in tool on, you can ask the agent to check your dep
 
 A change the agent proposes to an existing schedule opens the same drawer, titled "Edit schedule", with **Save**. If you're already editing a schedule when a proposal arrives, the proposal is turned down and the agent is told so.
 
-The agent can also list the workspace's schedules, and ask to delete one. A delete comes as an ordinary [approval dialog](/docs/approve-a-tool-call/) naming the schedule and when it runs. The agent only ever sees the schedules of the workspace it's working in. [Built-in tools](/docs/built-in-tools/#schedules--4-tools) is where you turn these tools off. Your schedules keep running.
+The agent can also list the workspace's schedules, and ask to delete one. A delete comes as an ordinary [approval dialog](/docs/approve-a-tool-call/) naming the schedule and when it runs, unless a bypass is on: then it goes straight through, and the [Audit log](/docs/audit-log/) still records it. The agent only ever sees the schedules of the workspace it's working in. [Built-in tools](/docs/built-in-tools/#schedules--4-tools) is where you turn these tools off. Your schedules keep running.
 
 ## Timing
 
@@ -128,12 +130,12 @@ Under **Until**, **No end** is the default: "It runs until you pause it." **Ends
 
 Every run is a real session, so the one question that matters is what it may do while you're not watching. **How careful** offers two cards:
 
-- **Full session**: "Runs like a session you started. If it needs permission, it waits for you." It uses the workspace's own [permission rules](/docs/permissions/). Anything that would ask you waits, however long, in an approval dialog. If the workspace has a bypass on, the run bypasses too.
+- **Full session**: "Runs like a session you started. If it needs permission, it waits for you." It uses the workspace's own [permission rules](/docs/permissions/). Anything that would ask you waits, however long, in an approval dialog. If this workspace bypasses permissions, through **Bypass ALL permissions** on [Permissions](/docs/permissions/#bypass-all-permissions) or its own [workspace settings](/docs/first-session/#workspace-settings), a Full run bypasses too: nothing waits for you, and the drawer doesn't warn you. Choose **Read-only** when that's not what you want.
 - **Read-only**: "Can read, search and report. Cannot change files or run commands." And: "Nothing in the run can switch this off."
 
-In a read-only run the agent can read and search your project and write its report in the session. Editing or creating files, starting terminals, and clicking or typing in its browser are all blocked. Commands are limited to a short list that only look. It can't plan, and it can't create, change or delete schedules. A blocked call shows as a skipped card and the agent carries on. Read-only holds even under a bypass, and even your rules can't widen it.
+In a read-only run the agent can read and search your project and write its report in the session. Editing or creating files, starting terminals, and clicking or typing in its browser are all blocked. Commands are limited to a short list that only look. It can't plan, and it can't create, change or delete schedules. Running a workflow is blocked, and it can only hand work to a subagent whose tools only read. A blocked call shows as a skipped card and the agent carries on. Read-only holds even under a bypass, and even your rules can't widen it.
 
-A tool HappyVibe can't tell is harmless (for example one from an MCP server) still asks you first in a read-only run, and the run waits for your answer.
+Some calls still ask you first, and the run waits for your answer: a tool from an MCP server, opening a page in its browser, handing work to a subagent, saving or forgetting a memory, and reading outside the project. A bypass doesn't answer these for you: in a read-only run they ask even with bypass on.
 
 Change a schedule's mode any time with the pill on its row.
 
@@ -155,8 +157,9 @@ Nothing runs while it waits. The question stands until the schedule's next time 
 ## When the app is closed
 
 - On macOS, closing every window keeps HappyVibe running, so schedules still run. On Windows and Linux, closing the last window quits the app, and schedules wait until it's open again.
+- A run that's still working when the app quits stops there, and its row doesn't record how it went.
 - While your computer sleeps, nothing runs. When it wakes, missed runs are handled as above.
-- **Open at login** keeps HappyVibe open without you thinking about it.
+- On macOS and Windows, **Open at login** keeps HappyVibe open without you thinking about it. On Linux, open HappyVibe yourself.
 
 ## Delete a schedule
 
@@ -170,8 +173,8 @@ To stop a schedule without losing it, turn its switch off instead.
 
 - **In the sidebar:** each run is a session in its workspace, marked with a small clock whose tooltip reads "Started by a schedule". It's named after the schedule and the day, like "Daily change review · Sep 29". When a new run starts, the previous run's session moves to **Show archived**, unless you've sent it a message or renamed it since. With **Reuse the same session for every run** on, every run lands in the same session.
 - **In the session:** the schedule's prompt shows as the first message, and the agent works as usual. A read-only run shows **🕰 Read-only run** at the top, with the tooltip "Read-only run — started by a schedule. It can read and report; changes are blocked, and nothing in the run can allow them." The **🧭 Plan** button isn't there.
-- **If it needs you:** the approval dialog waits in the run's session, like any other [question from the agent](/docs/approve-a-tool-call/#it-waits-for-you). If every window is closed, it waits until you open one.
-- **Busy workspace:** a run doesn't start while another session in the same workspace is working, because they share the same files. It waits up to two hours, then skips. **Run now** won't start either while one is working. Try again once it has finished.
+- **If it needs you:** the approval dialog waits in the run's session, like any other question ([Approve a tool call](/docs/approve-a-tool-call/#it-waits-for-you)). On macOS, if every window is closed, it waits until you open one.
+- **Busy workspace:** a run doesn't start while another session in the same workspace is working, because they share the same files. It waits up to two hours, then skips. If another session in that workspace is working, **Run now** doesn't start the run, even though the message says it will wait. Click it again once that session has finished.
 - **Notifications:** your computer's notifications say "… finished" with the time and cost when known (silently), "… needs your permission", or "1 schedule missed its time". Click one to go to the run, or to the missed-runs dialog.
 - **In the record:** on the [Audit log](/docs/audit-log/), **Any source** → **Schedules** shows what your schedules did, and **Read-only run** shows what read-only runs blocked.
 

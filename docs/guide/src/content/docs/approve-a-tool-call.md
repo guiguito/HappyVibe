@@ -59,4 +59,4 @@ Every answer you give is recorded in the [Audit log](/docs/audit-log/). And if y
 
 ## Next
 
-That's the whole journey: installed, connected, and your first yes. Nice work. Next, decide what the agent may do without asking on [Permissions](/docs/permissions/), or fine-tune who it talks to on [Models](/docs/models/).
+That's the whole journey: installed, connected, and your first yes. Nice work. From here, get to know the places you'll spend your days, starting with [Workspaces and sessions](/docs/workspaces-and-sessions/). Or decide what the agent may do without asking on [Permissions](/docs/permissions/).

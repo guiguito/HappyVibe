@@ -77,3 +77,29 @@ working. None of them is fixed in this round. Line numbers are as of commit `cea
     install dialog promises "MCP servers arrive unconnected — so nothing the agent can do changes yet"
     (`PluginsSection.tsx:464-465`), and the guide quotes it. Each call still asks for permission. Check it
     live before relying on the promise.
+
+## Found writing Everyday use (2026-09-29)
+26. **Forget workspace leaves its agents running, invisibly.** It only sets `archived` on each session
+    and never calls `endSession` (`ipc.ts:2797-2799`), unlike `hv:archive-session` (`:3362`).
+27. **Re-adding a forgotten workspace doesn't bring its sessions back**, although
+    `WorkspaceSettingsView.tsx:221` says it does. They come back archived (`ipc.ts:2764`).
+    "Show archived (N)" also counts sessions from forgotten workspaces (`Sidebar.tsx:908`).
+28. **Hard-coded key hints read "CtrlK" / "Ctrl\" / "Save (CtrlS)" on Windows and Linux** and ignore
+    rebinding: `Sidebar.tsx:995,1095,1104`, `FileTab.tsx:436-437` (compare `formatBinding`).
+29. **Schedules:** the drawer's "This workspace bypasses permissions — runs will too." warning never
+    shows (`App.tsx:3454` passes `bypassHere={() => false}`). **Run now** on a busy workspace says the
+    run will wait, but nothing is queued (`SchedulesView.tsx:105` vs `scheduler.ts:142`). **Open at
+    login** shows on Linux, where Electron's login items don't apply (`ipc.ts:3350`). Skipped-run
+    reasons show as raw codes ("workspace-gone", `schedulesCopy.ts:155`). The "⚠ needs you" outcome is
+    never recorded (`scheduler.ts:242`).
+30. **Session view:** the `/` menu footer says "Enter to send", but Enter completes while it's open
+    (`ChatView.tsx:1807` vs `:1847`). The no-model notice points to "Settings → Models", which doesn't
+    exist (`:1638`). A document-only message can be sent with Enter while **Send** stays disabled
+    (`:1929` vs `:855`). The model chip has no way back to the default (`:943`, no `onClear`).
+31. **Changes panel:** a comment says declining the junk-files dialog still saves (`ChangesPanel.tsx:402`),
+    but the dialog only offers **Cancel**. Git actions are logged (`ipc.ts:5114-5118`) but never shown
+    in the Audit log.
+32. More Everyday-use findings: "Created by the agent." can never show, because nothing sets `createdBy`
+    (`SchedulesView.tsx:305`, `ipc.ts:2324`, `ScheduleDrawer.tsx:78-92`). A staged-only save prints
+    `git add -A && …` although it skips `add -A` (`ChangesPanel.tsx:406` vs `git.ts:701`). The search
+    tooltip reads "(CtrlF)" on Windows and Linux (`ChatView.tsx:1054`).

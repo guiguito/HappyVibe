@@ -21,6 +21,8 @@ A [workspace](/docs/first-launch/#pick-a-project) is your project, as it shows u
 
 Or press ⌘N on macOS, Ctrl+N on Windows and Linux, for a new session in the current workspace.
 
+Everything else the sidebar does, from renaming to archiving, is on [Workspaces and sessions](/docs/workspaces-and-sessions/).
+
 ## Ask for something
 
 1. Type what you want in the message box. It reads "Ask for a change… (@ to add a file)". Type @ to point the agent at a file.
@@ -28,7 +30,7 @@ Or press ⌘N on macOS, Ctrl+N on Windows and Linux, for a new session in the cu
 
 If the agent wants to change a file or run a command, it stops and asks you first. Nothing happens until you say yes. [Approve a tool call](/docs/approve-a-tool-call/) shows you how.
 
-If you came through the setup window, the session it opens for you shows a few suggested prompts sit above the message box. They're matched to your folder. A folder that already holds files gets ideas like "Give me a tour of this codebase". An empty one gets ideas like "Make a snake game I can open in my browser".
+If you came through the setup window, a few suggested prompts sit above the message box, matched to your folder. A folder that already holds files gets ideas like "Give me a tour of this codebase". An empty one gets ideas like "Make a snake game I can open in my browser".
 
 Clicking one fills the message box and never sends it. Change it as much as you like, then press **Enter** yourself. The suggestions leave for good once you send your first message.
 
@@ -58,6 +60,8 @@ Some cards carry one more mark. Hover over it to read what it means:
 - a red warning triangle: "Destructive command".
 :::
 
+Every button on a card and around the message box is mapped on [Session view](/docs/session-view/).
+
 ## Steer, or stop
 
 You don't have to wait for the agent to finish. While it works, the message box reads "Steer the agent — lands between tool calls…". Whatever you type reaches the agent between two of its steps, so it can change course without stopping.
@@ -82,7 +86,7 @@ Running short on room? There are two ways to make some:
 1. **Remove old parts.** Open a kind, tick the items you don't need, and click **Remove from context**. Only finished turns can be removed, never the one the agent is working on, and removing a tool call also removes its result. A removed item stays in the list, struck through, with a **restore** button to bring it back (its tooltip reads "Restore to context").
 2. **Compact.** Click **Compact now…**. The app explains: "Compaction replaces older turns with a summary so the agent has room to keep going. It keeps recent messages and important decisions, and your full session history stays on disk — nothing is lost." Click **Compact now** to go ahead.
 
-Beside the gauge, a second pill shows what this session has cost so far. Click it for the call-by-call breakdown.
+Beside the gauge, a second pill shows what this session has cost so far. Click it for the call-by-call breakdown ([Session view](/docs/session-view/#the-top-bar) explains its marks).
 
 :::note[The fine print]
 - The gauge turns amber at 35% and red at 80%. In the red, the panel says "Context is filling up."
@@ -90,7 +94,6 @@ Beside the gauge, a second pill shows what this session has cost so far. Click i
 - Right after compaction the gauge reads "…%" until the next reply measures it again.
 - The sizes in the panel are always estimates ("Breakdown sizes are **estimated** (≈ chars/4)."). Only the gauge can be measured.
 - Messages from before a compaction can't be rewound to.
-- On the cost pill, "—" means no call has been billed yet, a dollar figure is an estimate, "plan" means your subscription covered it, and "$?" means the app has no price for the model.
 :::
 
 ## Changed your mind? Rewind
@@ -107,6 +110,8 @@ Don't like where that went? Take the session back to one of your own messages, a
 5. Click **Rewind**.
 
 The two file choices appear only when the app has something to restore for that message. Before you confirm, it tells you how many files will be restored and removed, and names any file changed since, which it leaves alone.
+
+To undo one change instead of a whole message, see [Files and changes](/docs/files-and-changes/#undo-one-change).
 
 ## Workspace settings
 
