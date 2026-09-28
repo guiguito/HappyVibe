@@ -17,7 +17,7 @@ import { PrivacyView } from "./components/PrivacyView";
 import { type TranscriptItem } from "./components/Transcript";
 import { type PlanCardData } from "./components/PlanCard";
 import { PermissionModal } from "./components/PermissionModal";
-import { describeProviderError, retryNoticeText } from "./providerError";
+import { describeProviderError, retryNoticeText } from "../../main/providerError";
 import { rewindActions, tailToolCallIds, type RewindScope } from "./rewind";
 import { WorkspaceSettingsView } from "./components/WorkspaceSettingsView";
 import { OnboardingDialog } from "./components/OnboardingDialog";
@@ -89,6 +89,8 @@ import { NavContext, type NavTarget } from "./components/GoTo";
 import { DocsLink } from "./components/DocsLink";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
 import { ipcMessage } from "./ipcError";
+import { screenView, trackUi } from "./usage";
+import type { UsageParams } from "../../main/usage/events";
 
 type KeyState = "loading" | "missing" | "present";
 export type SessionStatus = "running" | "crashed" | "waking";
@@ -336,7 +338,15 @@ export default function App(): React.JSX.Element {
     });
   };
   /** The rail's contract: press a panel to show it, press the lit one to close. */
-  const toggleDrawer = (panel: DrawerPanel): void => setDrawerPanel(drawerPanel === panel ? null : panel);
+  const toggleDrawer = (panel: DrawerPanel): void => {
+    // §39: opening the changes or files panel. Features are keyed by
+    // workspace here — the drawer belongs to the workspace, not a session.
+    if (drawerPanel !== panel && (panel === "changes" || panel === "files")) {
+      trackUi("panel_opened", { panel: panel === "changes" ? "git" : "files" });
+      if (panel === "changes" && activeWs) window.hv.usageFeature(activeWs, "git_panel");
+    }
+    setDrawerPanel(drawerPanel === panel ? null : panel);
+  };
   /**
    * Width is per PANEL, not per workspace and not shared: a tree of filenames
    * is comfortable at 256 while the Changes panel has a branch bar, a message
@@ -2101,6 +2111,7 @@ export default function App(): React.JSX.Element {
 
   /** §26: open a terminal in the focused pane of `ws`. ⌘T and the `+` menu. */
   const newTerminal = async (ws: string): Promise<void> => {
+    window.hv.usageFeature(ws, "terminal"); // §39
     try {
       const info = await window.hv.termCreate(ws);
       setTerminals((p) => ({ ...p, [info.id]: info }));
@@ -2496,11 +2507,17 @@ export default function App(): React.JSX.Element {
     // ask again rather than going quiet for a month over a failed launch.
     void window.hv
       .openExternal(STAR_URL)
-      .then(() => window.hv.snoozeStarNudge(STAR_SNOOZE_DAYS.starred))
+      .then(() => {
+        trackUi("star_nudge_answered", { action: "starred" }); // §39: only once the browser opened
+        return window.hv.snoozeStarNudge(STAR_SNOOZE_DAYS.starred);
+      })
       .catch(() => {});
   };
 
-  const starLater = (): void => setStarNudge(false); // the 3-day stamp landed at show
+  const starLater = (): void => {
+    trackUi("star_nudge_answered", { action: "later" }); // §39: the button and the ✕ alike (§36)
+    setStarNudge(false); // the 3-day stamp landed at show
+  };
 
   /**
    * The wizard's handover (§22 round 19). It closes by DOING the next thing:
@@ -2692,6 +2709,8 @@ export default function App(): React.JSX.Element {
     mentions?: string[],
     /** §31: the attached documents — paths go to main, name/format draw the chip. */
     documents?: DocumentAttachment[],
+    /** §39: the composer's counts and flags, tracked only once main accepted the prompt. */
+    usage?: UsageParams,
   ): Promise<void> => {
     // §22: the suggestion chips have done their job the moment anything is
     // sent — they never come back, in this session or any other.
@@ -2716,6 +2735,7 @@ export default function App(): React.JSX.Element {
       try {
         const { warnings } = await window.hv.promptSession(sid, msg, behavior ?? "steer", images, mentions, openFiles, documentPaths);
         noteWarnings(warnings);
+        if (usage) trackUi("prompt_sent", usage);
       } catch (err) {
         surface(err);
       }
@@ -2733,6 +2753,7 @@ export default function App(): React.JSX.Element {
     try {
       const { warnings } = await window.hv.promptSession(sid, msg, undefined, images, mentions, openFiles, documentPaths);
       noteWarnings(warnings);
+      if (usage) trackUi("prompt_sent", usage);
     } catch (err) {
       setBusy((p) => ({ ...p, [sid]: false }));
       surface(err);
@@ -2837,6 +2858,7 @@ export default function App(): React.JSX.Element {
     const msgCount = tail.filter((x) => x.kind === "user" || x.kind === "assistant").length;
     const toolIds = new Set(tailToolCallIds(items, idx));
     const { truncateChat, restoreFiles } = rewindActions(scope);
+    trackUi("context_changed", { action: "rewound", rewindMode: scope }); // §39
 
     // Files first: the restore reads the CURRENT transcript's tool ids, and it
     // must not depend on whether the chat half ran.
@@ -3061,6 +3083,11 @@ export default function App(): React.JSX.Element {
     void window.hv.crashInfo().then((i) => { if (i.lastSent) setCrashNotice(true); });
     return window.hv.onCrashSent(() => setCrashNotice(true));
   }, []);
+  // §39: every visit, whatever path set the view — the sidebar, ⌘, / ⌘/, a
+  // GoTo link or navigate(). `activeView`'s expression, inlined for the same
+  // reason as the banner below: a hook cannot sit under the early return.
+  const screenNow: View = keyState === "missing" && !onboarding ? "models" : view;
+  useEffect(() => { screenView(screenNow); }, [screenNow]);
   // `activeView`'s own expression, inlined: that const is computed below the
   // early return and a hook cannot wait for it. Spelling it out rather than
   // approximating with `view` keeps the banner off the forced Models page.
@@ -3894,14 +3921,16 @@ export default function App(): React.JSX.Element {
             chips={firstRunSession.current === sid ? chips : null}
             onChip={(text) => setComposerInsert((prev) => ({ sid, text, nonce: (prev?.nonce ?? 0) + 1 }))}
             onOpenAgentsMd={() => setAgentsMd("AGENTS.md")}
-            onSend={(msg, behavior, images, mentions, documents) => void send(sid, msg, behavior, images, mentions, documents)}
+            onSend={(msg, behavior, images, mentions, documents, usage) => void send(sid, msg, behavior, images, mentions, documents, usage)}
             pageRefs={pageRefs[sid]}
             onDropPageRef={(i) =>
               setPageRefs((p) => ({ ...p, [sid]: (p[sid] ?? []).filter((_, j) => j !== i) }))
             }
             onClearPageRefs={() => setPageRefs((p) => ({ ...p, [sid]: [] }))}
             onRetry={() => void retryCrash(sid)}
-            onCompact={() => void window.hv.compactSession(sid)}
+            onCompact={(trigger) =>
+              void window.hv.compactSession(sid).then(() => trackUi("context_changed", { action: "compacted", trigger }))
+            }
             onAbort={() => {
               // Mark BEFORE committing: the abort has a renderer→main→child round
               // trip to make, so deltas arriving in that window must merge into the

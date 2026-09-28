@@ -7,6 +7,10 @@ paths:
   - "src/renderer/src/components/{FeedbackDialog,PrivacyView,feedbackCopy}.*"
   - "scripts/{crash-probe,catalog-crash-messages}.mjs"
   - "tests/{crash,feedback,pi-crash}*.test.ts"
+  - "src/main/usage/**"
+  - "src/main/remoteConfig/**"
+  - "src/renderer/src/{usage,usageUi,remoteConfig}.ts"
+  - "tests/{usage,remote-config}*.test.ts"
 ---
 # Crash reports (§37) and feedback (§34) — both via `inlet-sdk`
 
@@ -50,8 +54,8 @@ paths:
   raises no banner. Re-test with a unique message, or delete `dedupe.json` with the app stopped.
 - `hv:crash-test` acts on `event.sender`: `BrowserWindow.getFocusedWindow()` is null whenever the app
   isn't frontmost — always, under CDP.
-- Read crashes back with the Inlet MCP crash tools; `list_crash_groups` defaults to
-  `environment: "production"`, so pass `"development"` for dev. Over REST there's no `/reports`
+- Read crashes back with the Inlet MCP crash tools, from the Dev project for dev builds (since
+  inlet-sdk 0.5.0 there is no `environment`: dev and prod are separate projects). Over REST there's no `/reports`
   collection route: list groups, then `…/groups/<groupId>/reports`. `docs/validation/d1.md` §37.
 
 ## Feedback
@@ -71,3 +75,16 @@ paths:
   would pulse, and every tap writes a REAL row.
 - The live test writes to its own Smoke tests database and deletes the row; it skips on no `.env` or
   an unreachable server.
+
+## Usage statistics and remote config (§39)
+
+- Modules are `src/main/usage/` and `src/main/remoteConfig/` — never `src/main/analytics/`: `analytics.ts` is the local Stats aggregator and never sends.
+- The §37 split twice: import-free `client.ts` facades; `index.ts` is Electron-only and `ipc.ts` never imports it (vitest's `electron` stub).
+- `usage/events.ts` is the ONLY list of events. `track()` and `usageBeforeSend` refuse anything else; `HOWTO_COPY.usageStats` stays crash-report short and reads its event count from it.
+- Every param is an enum, number, boolean, or a shipped id / `custom`. Never spread an EventLog row's `data` into params — `fromLog.ts` names each field.
+- A skill is sent by its bundled NAME: its id is an absolute path.
+- `feature_used` goes through `trackFeature` (main dedupes per session or workspace), never `trackUi` — two windows send one.
+- Opt-out is `setEnabled(false, { forget: true })` only; never `setUserId`, `setUser`, `setInstallationIdEnabled(false` (source-scanned).
+- `existing_user` keys on `<userData>/inlet/analytics-state.json` — config writes `installation-id.json` itself.
+- Dev builds send to the Dev project's databases. inlet-sdk 0.5.0 has no `environment` option and its server REFUSES an envelope carrying one (`unknown_field`) — never add it back (`tests/usage-wiring.test.ts` scans for it). The crash half of the one-ID check needs `HV_CRASH_DEV=1`.
+- `web_default_service` fails open (default `true`), is read per web call, and pausing it never removes the tools.

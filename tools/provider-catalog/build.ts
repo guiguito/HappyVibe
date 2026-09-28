@@ -140,6 +140,9 @@ async function main(): Promise<void> {
   };
 
   const candidates: Row[] = [];
+  // §39: every model id Pi's registry ships, per provider — usage statistics
+  // send a model id only when it is in here (anything else is `custom`).
+  const registryModels: Record<string, string[]> = {};
   const oauth: OAuthRow[] = [];
   const refusedOAuth: string[] = [];
 
@@ -147,8 +150,11 @@ async function main(): Promise<void> {
     const modelsRaw = (await p.getModels?.()) as unknown;
     const models = (Array.isArray(modelsRaw) ? modelsRaw : Object.values(modelsRaw ?? {})) as Array<{
       baseUrl?: string;
+      id?: string;
     }>;
     const modelCount = models.length;
+    const ids = models.map((m) => m.id).filter((x): x is string => typeof x === "string").sort();
+    if (ids.length) registryModels[p.id] = ids;
 
     // ── the sign-in list ────────────────────────────────────────────────
     if (p.auth?.oauth && modelCount > 0) {
@@ -274,6 +280,9 @@ export const OAUTH_CATALOG: readonly CatalogOAuthProvider[] = ${JSON.stringify(o
 
 /** Upstream OAuth flows deliberately NOT surfaced, with the reason. */
 export const OAUTH_NOT_ENABLED: Readonly<Record<string, string>> = ${JSON.stringify(OAUTH_NOT_ENABLED, null, 2)};
+
+/** §39: Pi's registry model ids per provider. A usage event names a model only if it is here. */
+export const REGISTRY_MODELS: Readonly<Record<string, readonly string[]>> = ${JSON.stringify(registryModels)};
 
 /** The cards that stay above the "More providers…" search. */
 export const FEATURED_PROVIDER_IDS = ["deepseek", "anthropic", "openai", "google", "openrouter"] as const;

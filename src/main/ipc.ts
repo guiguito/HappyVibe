@@ -1,4 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, systemPreferences } from "electron";
+import { OnceSet, forgetSessionFeatures, track, trackFeature } from "./usage/client";
+import { TurnTracker, startsTurn, turnEndFor, type TurnEnd } from "./usage/turns";
+import { featureOfTool } from "./usage/features";
+import { eventFromLog, isSubagentPrompt, storePluginId, type TapContext } from "./usage/fromLog";
+import { mcpParams, modelParams, scheduleParams } from "./usage/mappers";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -598,7 +603,25 @@ export function registerIpc(
   // §35: declared up here because spawnOpts reads it — a read-only schedule's
   // run is clamped by the ENVIRONMENT, re-derived at every spawn.
   const scheduleStore = new ScheduleStore(path.join(userData, "schedules.json"));
-  const log = new EventLog(path.join(userData, "events.jsonl"));
+  // §39: the EventLog tap. Its state is declared before `log` so an early
+  // append can never reach an uninitialised binding.
+  const promptShownAt = new Map<string, { at: number; sid: string }>(); // ui-request id → when, whose
+  const answeredWaits = new Map<string, number[]>(); // sessionId → FIFO of wait ms
+  const lastCommitDraft = new Map<string, string>(); // workspaceId → last generated message
+  const tap: TapContext = {
+    waitSec: (sid) => {
+      const ms = answeredWaits.get(sid)?.shift();
+      return ms === undefined ? undefined : Math.round(ms / 1000);
+    },
+    aiMessage: (ws, m) => typeof m === "string" && !!ws && lastCommitDraft.get(ws)?.trim() === m.trim(),
+    isStorePlugin: storePluginId,
+    isScheduleSession: (sid) => !!(sid && index.get(sid)?.scheduleId),
+    inWorktree: (ws) => !!ws && worktrees.projectOf(ws) !== ws,
+  };
+  const log = new EventLog(path.join(userData, "events.jsonl"), (e) => {
+    const r = eventFromLog(e, tap);
+    if (r) track(r.name, r.params);
+  });
   // §37: crash rows written before this point (a boot crash, which is the one
   // we most want) were buffered — hand them the log now.
   attachCrashAudit(log);
@@ -841,6 +864,32 @@ export function registerIpc(
   const activity = new SessionActivity();
   /** §35: when the current turn began, per session — the run duration a finish notification reports. */
   const turnStartedAt = new Map<string, number>();
+  // §39: per-turn counts for `agent_turn_completed`, and the last assistant
+  // message's end (the renderer's own rule: a failed attempt that was retried
+  // does not count, the final one decides).
+  const turns = new TurnTracker();
+  // §39: a model-less session refuses on every respawn (wake, MCP reload); count it once.
+  const noModelOnce = new OnceSet();
+  // §39: the session bypass as last applied, so a repeated "/hv-dangerous on" is not a change.
+  const sessionBypass = new Map<string, boolean>();
+  const lastStop = new Map<string, { stopReason?: string; errorMessage?: string; provider?: string; model?: string }>();
+  const endTurn = (sessionId: string, how: TurnEnd): void => {
+    const p = turns.end(sessionId, how);
+    const m = lastStop.get(sessionId);
+    lastStop.delete(sessionId);
+    if (p) track("agent_turn_completed", { ...p, ...turnModel(sessionId, m) });
+  };
+  // §39: the model the turn actually ran on (the final assistant message's),
+  // falling back to the resolved chain; billing by the ledger's own rule.
+  const turnModel = (sessionId: string, m?: { provider?: string; model?: string }): Record<string, string> => {
+    const meta = index.get(sessionId);
+    const r = m?.provider && m.model ? { provider: m.provider, modelId: m.model } : meta ? resolveSpawnModel(meta.workspaceId, sessionId) : null;
+    if (!r) return {};
+    // ponytail: plan vs metered from the provider alone; `unknown` needs the ledger's per-call price, which the pill owns.
+    return { ...modelParams(r.provider, r.modelId), billing: planProvidersFor(providerKeyStatus()).has(r.provider) ? "plan" : "metered" };
+  };
+  const providerCount = (): number =>
+    Object.values(providerKeyStatus()).filter(Boolean).length + listCustomEndpoints().length + authJsonProviders(agentDir()).length;
   const readonlyForSession = (sessionId?: string): boolean => {
     if (!sessionId) return false;
     const scheduleId = index.get(sessionId)?.scheduleId;
@@ -1029,6 +1078,7 @@ export function registerIpc(
       // exists. The renderer blocks send on the same condition (ChatView
       // noModel), so this is the backstop, not the message the user reads.
       if (!resolveSpawnModel(workspace, sessionId)) {
+        if (noModelOnce.first(sessionId ?? workspace ?? "")) track("session_start_failed", { reason: "no_model" });
         throw new Error("No model configured — add a provider in Settings → Models.");
       }
       return new PiClient(resolvePiSpawn(workspace, sessionDir(), piRuntimeDir(), spawnOpts(workspace, resumeFile, sessionId)));
@@ -1123,6 +1173,7 @@ export function registerIpc(
   const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
   const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
     if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
+    if (!isSubagentPrompt(r.title)) promptShownAt.set(r.id, { at: Date.now(), sid: sessionId }); // §39: permission_answered.waitSec
   };
   const clearPending = (id: string): void => {
     if (pendingUi.clear(id)) pendingChanged();
@@ -1216,6 +1267,9 @@ export function registerIpc(
           authState = p.providers;
           send("hv:auth-state-changed", authState);
           return;
+        }
+        if (p.stage === "success" && typeof (p as { provider?: unknown }).provider === "string") {
+          track("provider_connected", { provider: modelParams((p as { provider: string }).provider, "").provider, method: "oauth", providerCount: providerCount() });
         }
         if (p.stage === "success" || p.stage === "logged_out") {
           // Tell the renderer straight away — but do NOT try to fill the default
@@ -1553,6 +1607,24 @@ export function registerIpc(
     const meta = index.get(sessionId);
     client.on("event", (e: Record<string, unknown>) => {
       activity.event(sessionId, e); // W1.3: busy/subagent state + last-activity
+      try {
+        // §39: counts only — never an argument, a path or a message leaves here.
+        turns.onEvent(sessionId, e as { type: string; toolName?: string; args?: unknown });
+        if (e.type === "tool_execution_start" && typeof e.toolName === "string") {
+          const f = featureOfTool(e.toolName);
+          if (f) trackFeature(sessionId, f, "agent");
+        } else if (e.type === "message_end") {
+          const m = (e as { message?: { role?: string; stopReason?: string; errorMessage?: string; provider?: string; model?: string } }).message;
+          if (m?.role === "assistant") lastStop.set(sessionId, m);
+        } else if (e.type === "auto_retry_start") {
+          lastStop.delete(sessionId);
+        } else if (e.type === "agent_end") {
+          const how = turnEndFor(e, lastStop.get(sessionId));
+          if (how) endTurn(sessionId, how);
+        }
+      } catch {
+        /* analytics never costs the stream its forward */
+      }
       // §9 rewind: stamp the pending "pre" snapshot with the turn's FIRST
       // toolCallId (the only id durable across a reload), and record what the
       // agent left behind at agent_end — that record is the stale-check's
@@ -2029,14 +2101,15 @@ export function registerIpc(
           const wsId = meta?.workspaceId;
           const resolved = resolveWebServiceForCall();
           // §32 amendment: a custom service with a bad URL refuses the call —
-          // it is never quietly routed to the default box.
+          // it is never quietly routed to the default box. §39: so does the
+          // default box while remote config has it paused.
           if ("error" in resolved) {
             client.respondUi(rid, { value: JSON.stringify({ ok: false, reason: resolved.error }) });
             void log.append({
               type: "web.call",
               sessionId,
               workspaceId: wsId,
-              data: { tool: `web_${wr.kind}`, ms: 0, ok: false, service: "custom", code: "CUSTOM_URL_INVALID" },
+              data: { tool: `web_${wr.kind}`, ms: 0, ok: false, service: resolved.service, code: resolved.code },
             });
             return;
           }
@@ -2326,6 +2399,7 @@ export function registerIpc(
               : { mode: "full", catchUp: "ask", reuseSession: false, notifyOnDone: true, enabled: true, ...sched.draft, workspaceId: ws };
             const res = await requestScheduleDrawer({ workspaceId: ws, draft, existingId: existing?.id, sessionId });
             if ("cancelled" in res) return answer("declined");
+            if (!existing) track("schedule_created", scheduleParams(res.saved, "agent"));
             void log.append({
               type: existing ? "schedule.update" : "schedule.create",
               sessionId,
@@ -2549,6 +2623,13 @@ export function registerIpc(
   };
   manager.on("session-exit", ({ sessionId, code, intentional, stderr, stderrLines }: SessionExit) => {
     activity.remove(sessionId);
+    // §39: an exited Pi never sends agent_end — close the in-flight turn here.
+    answeredWaits.delete(sessionId); // §39: its unpaired waits and open prompts die with it
+    for (const [id, p] of promptShownAt) if (p.sid === sessionId) promptShownAt.delete(id);
+    sessionBypass.delete(sessionId); // a respawn starts with the session bypass off
+    noModelOnce.forget(sessionId);
+    // An exit WE asked for (hibernate, close, reload) mid-turn is a stop, not a crash.
+    if (turns.isBusy(sessionId)) endTurn(sessionId, intentional ? { outcome: "aborted" } : { outcome: "error", errorKind: "pi_exit" });
     pendingMcpReload.delete(sessionId); // don't reload a session that's gone
     // Stop this session's status pollers — its children died with its Pi process.
     for (const [runId, p] of subagentPollers) if (p.sessionId === sessionId) stopSubagentPoll(runId);
@@ -2605,6 +2686,7 @@ export function registerIpc(
       if (!fs.statSync(meta.workspaceId).isDirectory()) throw new Error("not a directory");
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
+      track("session_start_failed", { reason: "folder_unavailable" });
       throw new Error(
         code === "EPERM" || code === "EACCES"
           ? `macOS denied access to ${meta.workspaceId} — grant HappyVibe/Electron access to this folder in System Settings → Privacy & Security → Files & Folders`
@@ -2612,11 +2694,14 @@ export function registerIpc(
       );
     }
     await syncModelsJson(agentDir(), listCustomEndpoints()).catch(() => {});
-    const client = (await manager.start(
-      meta.id,
-      meta.workspaceId,
-      resume ? meta.piSessionFile : undefined
-    )) as PiClient;
+    const client = (await manager
+      .start(meta.id, meta.workspaceId, resume ? meta.piSessionFile : undefined)
+      .catch((err: unknown) => {
+        // §39: the no-model refusal is counted where it is thrown; the cap is SessionManager's.
+        const msg = err instanceof Error ? err.message : "";
+        if (msg.includes("running sessions are actively working")) track("session_start_failed", { reason: "session_cap" });
+        throw err;
+      })) as PiClient;
     attach(meta.id, client);
     // W1.3: waking a hibernated session — restore is otherwise the plain resume path.
     if (index.get(meta.id)?.hibernated) {
@@ -2759,12 +2844,17 @@ export function registerIpc(
   ipcMain.handle("hv:create-workspace-folder", (_e, name: string) => {
     const dir = createWorkspaceFolder(String(name));
     workspaces.add(dir);
+    track("workspace_added", { isGitRepo: false, workspaceCount: workspaces.list().length });
     return dir;
   });
   ipcMain.handle("hv:add-workspace", async (e) => {
     const r = await dialog.showOpenDialog(ownerOf(e), { properties: ["openDirectory"] });
     if (r.canceled || !r.filePaths[0]) return null;
     workspaces.add(r.filePaths[0]);
+    const count = workspaces.list().length;
+    void probeWorkspace(r.filePaths[0])
+      .then((st) => track("workspace_added", { isGitRepo: st.kind === "repo", workspaceCount: count }))
+      .catch(() => {});
     return r.filePaths[0];
   });
   /**
@@ -2780,6 +2870,7 @@ export function registerIpc(
    * `hv:delete-session`) rather than adding a second delete implementation.
    */
   ipcMain.handle("hv:remove-workspace", async (_e, ws: string, mode: "forget" | "delete" = "forget") => {
+    forgetSessionFeatures(ws); // §39: the per-workspace first-use set goes with it
     // §29 worktrees: round 11's orphan defect, one level down. A worktree's
     // sessions carry the WORKTREE's path, so `sessionsOfWorkspace` would leave
     // every one of them pointing at a project that is no longer listed.
@@ -2795,6 +2886,7 @@ export function registerIpc(
         deleteSessionFile(sessionDir(), s.piSessionFile);
         deleteSessionSnapshots(snapshotDir(), s.id);
         void log.append({ type: "session.delete", sessionId: s.id, workspaceId: s.workspaceId });
+        forgetSessionFeatures(s.id);
       } else if (!s.archived) {
         index.update(s.id, { archived: true });
       }
@@ -3055,6 +3147,7 @@ export function registerIpc(
     lastOpenTerminals.delete(sessionId);
     lastOpenBrowser.delete(sessionId);
     void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId, data: { reason: "empty" } });
+    forgetSessionFeatures(sessionId);
     sessionsChanged();
     return true;
   };
@@ -3131,6 +3224,7 @@ export function registerIpc(
     lastOpenTerminals.delete(sessionId); // §26: same, for the terminals block
     lastOpenBrowser.delete(sessionId); // §28: …and for the browser block
     void log.append({ type: "session.delete", sessionId, workspaceId: meta.workspaceId });
+    forgetSessionFeatures(sessionId);
     sessionsChanged();
   });
 
@@ -3300,6 +3394,10 @@ export function registerIpc(
     const v = validateScheduleInput(input, workspaces.list());
     const s = input.id ? scheduleStore.update(input.id, editPatch(v), new Date()) : scheduleStore.create(v as NewSchedule, new Date());
     if (!s) throw new Error("That schedule no longer exists.");
+    // §39: the agent's drawer saves through here too; while one is open the
+    // agent path below counts it, as `agent`.
+    // ponytail: a page create made while an agent drawer is open is not counted; key the save by requestId if that ever matters.
+    if (!input.id && scheduleDrawerWaits.size === 0) track("schedule_created", scheduleParams(s, "page"));
     void log.append({
       type: input.id ? "schedule.update" : "schedule.create",
       workspaceId: s.workspaceId,
@@ -3563,6 +3661,15 @@ export function registerIpc(
     // §35: when the turn started, for the run's duration. Set for every prompt
     // so a user-prompted run is measured the same way.
     turnStartedAt.set(sessionId, Date.now());
+    // §39 D19: a turn a schedule started is marked, never dropped; and a
+    // schedule run starting is when `session_opened` "scheduled" is counted
+    // (new or reused session alike).
+    // A steer or follow-up sent mid-turn joins that turn; it never restarts it.
+    if (!turns.isBusy(sessionId) && startsTurn(msg)) turns.start(sessionId, bySchedule);
+    if (bySchedule) {
+      const ws = meta?.workspaceId;
+      track("session_opened", { kind: "scheduled", inWorktree: !!ws && worktrees.projectOf(ws) !== ws });
+    }
     // §35: a prompt MAIN sent has no composer behind it, so nothing has drawn
     // the user's message — the renderer only ever appends one for its own send
     // or for a queue delivery. Without this a scheduled run's transcript opens
@@ -3573,7 +3680,13 @@ export function registerIpc(
     // and it carries the TYPED text rather than `outgoing`: the user sees what
     // they wrote, exactly as the composer shows it.
     if (bySchedule) send("hv:session-prompted", { sessionId, text: msg });
-    await client.send(promptCommand(outgoing, behavior, images));
+    try {
+      await client.send(promptCommand(outgoing, behavior, images));
+    } catch (err) {
+      // §39: a prompt Pi refused never started a turn — do not leave one open.
+      if (!behavior) turns.discard(sessionId);
+      throw err;
+    }
     return { warnings };
   };
 
@@ -3588,7 +3701,18 @@ export function registerIpc(
       mentions?: string[],
       openFiles?: string[],
       documents?: string[],
-    ) => promptSession(sessionId, msg, behavior, images, mentions, openFiles, documents),
+    ) => {
+      // §39: the session-scoped bypass switch is a slash command — counted once
+      // it ran, and only when it changed something.
+      const dangerous = /^\/hv-dangerous (on|off)$/.exec(String(msg).trim());
+      const result = await promptSession(sessionId, msg, behavior, images, mentions, openFiles, documents);
+      if (dangerous) {
+        const on = dangerous[1] === "on";
+        if ((sessionBypass.get(sessionId) ?? false) !== on) track("bypass_changed", { on, scope: "session" });
+        sessionBypass.set(sessionId, on);
+      }
+      return result;
+    },
   );
 
   ipcMain.handle("hv:abort-session", async (_e, sessionId: string) => {
@@ -3823,6 +3947,15 @@ export function registerIpc(
     // counting it. Tell them all it is answered, then re-publish the counts.
     send("hv:ui-resolved", { id });
     clearPending(id);
+    // §39: the audit row the bridge writes next has no wait time; answers
+    // arrive in order per session, so a FIFO pairs each with its row.
+    const shown = promptShownAt.get(id);
+    promptShownAt.delete(id);
+    if (shown !== undefined && owner && owner !== UTILITY) {
+      const q = answeredWaits.get(owner) ?? [];
+      q.push(Date.now() - shown.at);
+      answeredWaits.set(owner, q);
+    }
     if (owner && owner !== UTILITY) {
       activity.promptClosed(owner);
       drainPendingReload(owner); // prompt closed → session may be idle now
@@ -3833,6 +3966,7 @@ export function registerIpc(
   // ── B3: providers & onboarding ────────────────────────────────────
   // input/select responses use { value }; null → { cancelled: true } (rpc-mode.js).
   ipcMain.on("hv:respond-input", (_e, id: string, value: string | null) => {
+    promptShownAt.delete(id); // §39: only permission answers are timed
     const owner = uiOwners.get(id);
     uiOwners.delete(id);
     send("hv:ui-resolved", { id });
@@ -3865,6 +3999,7 @@ export function registerIpc(
   ipcMain.handle("hv:set-provider-key", async (_e, provider: string, key: string) => {
     if (!isByokProvider(provider)) throw new Error(`Unknown provider: ${provider}`);
     setProviderKey(provider, key);
+    if (key.trim()) track("provider_connected", { provider: modelParams(provider, "").provider, method: "api_key", providerCount: providerCount() });
     // The probe INFORMS, it never blocks: the key is already saved above. A
     // provider that answers 401 to a model listing but works for completions
     // would otherwise lock the user out of a key that is fine.
@@ -3942,6 +4077,7 @@ export function registerIpc(
       const problem = validateEndpoint(endpoint, listCustomEndpoints().map((x) => x.id));
       if (problem) throw new Error(problem);
       saveCustomEndpoint(endpoint, key);
+      track("provider_connected", { provider: "custom", method: "custom_endpoint", providerCount: providerCount() });
       // NOT swallowed, and rolled back: config.json is already written, so a
       // models.json failure (EACCES/ENOSPC) would otherwise leave Settings
       // showing an endpoint — with its key injected on every spawn — that Pi
@@ -4095,6 +4231,7 @@ export function registerIpc(
   ipcMain.handle("hv:get-global-bypass", () => getGlobalBypass());
   ipcMain.handle("hv:set-global-bypass", (_e, on: boolean) => {
     setGlobalBypass(on);
+    track("bypass_changed", { on: !!on, scope: "global" });
     // Only sessions that inherit the global default (no explicit workspace override).
     for (const id of manager.activeIds()) {
       const ws = index.get(id)?.workspaceId ?? null;
@@ -4104,6 +4241,7 @@ export function registerIpc(
   ipcMain.handle("hv:get-workspace-bypass", (_e, workspace: string) => getWorkspaceBypass(workspace));
   ipcMain.handle("hv:set-workspace-bypass", (_e, workspace: string, on: boolean | null) => {
     setWorkspaceBypass(workspace, on);
+    if (on !== null) track("bypass_changed", { on: !!on, scope: "workspace" });
     for (const id of manager.activeIds()) {
       if ((index.get(id)?.workspaceId ?? null) === workspace) applyBypassLive(id);
     }
@@ -4114,6 +4252,10 @@ export function registerIpc(
   // resume-preserving reload path (same mechanism as MCP/skills config changes).
   ipcMain.handle("hv:builtins-get", () => getBuiltinTools());
   ipcMain.handle("hv:builtins-set", (_e, t: { plan?: boolean; askUser?: boolean; planAppend?: string; terminal?: boolean; intent?: boolean; browser?: boolean; web?: boolean; document?: boolean }) => {
+    const prev = getBuiltinTools() as Record<string, unknown>;
+    for (const [k, v] of Object.entries(t)) {
+      if (typeof v === "boolean" && prev[k] !== v) track("builtin_toggled", { item: k, kind: "builtin_tool", on: v });
+    }
     setBuiltinTools(t);
     scheduleRuntimeReload("skills", "global", null);
   });
@@ -4121,6 +4263,12 @@ export function registerIpc(
   // next tool call with no respawn — the row says so. Test is the only call
   // main ever makes that no tool asked for, which is why it is a button and
   // not a boot probe (the keychain-at-boot rule, one privacy notch over).
+  // §39: UI-only first uses (file editor, git panel, a user terminal, voice,
+  // a document). Deduped HERE, per session, so two windows showing one
+  // session send one event.
+  ipcMain.on("hv:usage-feature", (_e, sessionId: string, feature: string) => {
+    if (typeof sessionId === "string" && typeof feature === "string") trackFeature(sessionId, feature, "user");
+  });
   ipcMain.handle("hv:web-service-get", () => getWebService());
   ipcMain.handle("hv:web-service-set", (_e, p: { mode: "default" | "custom"; baseUrl?: string; key?: string | null }) => {
     setWebService(p);
@@ -4381,6 +4529,7 @@ export function registerIpc(
   ipcMain.handle("hv:assistant-tasks-get", () => getAssistantTasks());
   ipcMain.handle("hv:assistant-task-set", (_e, id: AssistantTaskId, patch: Partial<AssistantTask>) => {
     setAssistantTask(id, patch);
+    if (patch.model) track("model_changed", { ...modelParams(patch.model.provider, patch.model.modelId), scope: "autofill" });
     return getAssistantTasks();
   });
 
@@ -4715,7 +4864,15 @@ export function registerIpc(
     });
   });
   ipcMain.handle("hv:set-default-model", async (_e, provider: string, modelId: string) => {
+    const before = getDefaultModel();
     setDefaultModel({ provider, modelId });
+    track("model_changed", { ...modelParams(provider, modelId), scope: "global" });
+    // §39: picking a local runner saves nothing by itself — the default model
+    // moving onto one is the moment it becomes "connected".
+    const runner = (id: string | undefined): boolean => !!id && (id === "ollama" || LOCAL_RUNNERS.some((r) => r.id === id));
+    if (runner(provider) && before?.provider !== provider) {
+      track("provider_connected", { provider: "custom", method: "local_runner", providerCount: providerCount() });
+    }
     // Apply live to the utility client; chat sessions pick the new default up
     // at their next spawn (changing a running conversation's model mid-turn
     // would be surprising).
@@ -4836,11 +4993,19 @@ export function registerIpc(
    */
   ipcMain.handle("hv:set-agent-enabled", (_e, name: string, enabled: boolean) => {
     setAgentEnabled(name, enabled);
+    // §39: only an agent HappyVibe ships is named; one the user made is never sent.
+    if (fs.existsSync(path.join(piRuntimeDir(), "agents", `${name}.md`))) {
+      track("builtin_toggled", { item: name, kind: "bundled_agent", on: !!enabled });
+    }
   });
 
   ipcMain.handle("hv:read-agent", (_e, filePath: string) => readAgentBody(agentDirs(), filePath));
   ipcMain.handle("hv:write-agent", (_e, filePath: string, edit: { body?: string; model?: string | null }) => {
     writeAgentEdit(agentDirs(), filePath, edit);
+    if (typeof edit.model === "string" && edit.model.includes("/")) {
+      const [prov, ...rest] = edit.model.split("/");
+      track("model_changed", { ...modelParams(prov, rest.join("/")), scope: "agent" });
+    }
     // Agents are read at delegation time by the pi-subagents child spawn, so
     // edits apply to the next delegation — no live broadcast needed.
   });
@@ -4874,6 +5039,7 @@ export function registerIpc(
         ? { provider: m.provider, modelId: m.modelId }
         : undefined;
       index.update(sessionId, { model }); // undefined clears (dropped by JSON.stringify)
+      if (model) track("model_changed", { ...modelParams(model.provider, model.modelId), scope: "session" });
       sessionsChanged();
       const client = manager.get(sessionId) as PiClient | null;
       if (!client || !model) return { live: false };
@@ -5445,6 +5611,8 @@ export function registerIpc(
       .map((f) => `${f.fileHeader}\n${f.hunks.map((h) => h.raw).join("")}`)
       .join("\n");
     if (!diffText.trim()) return null;
+    // §39: remembered so `git_action.aiMessage` can tell a commit made from
+    // this draft; only equality is ever sent, never the text.
     return draftCommitMessage(
       piRuntimeDir(),
       workspaceId,
@@ -5458,7 +5626,10 @@ export function registerIpc(
       undefined,
       oneShot("commit-message", workspaceId),
       task.append,
-    );
+    ).then((m) => {
+      if (m) lastCommitDraft.set(workspaceId, m);
+      return m;
+    });
   });
 
   /**
@@ -5539,6 +5710,8 @@ export function registerIpc(
     const body = drafted?.body || commits.map((c) => `- ${c}`).join("\n");
 
     const url = pullRequestUrl({ host: remote.host, path: remote.path, base, head: branch.branch, title, body });
+    // §39: the click (draft: true) is the action; the eligibility probe is not.
+    if (url && draft) track("git_action", { action: "pull_request" });
     return url ? { url, drafted: !!drafted } : null;
   });
 
@@ -5562,6 +5735,7 @@ export function registerIpc(
     workspaces.setModel(workspaceId, m && typeof m.provider === "string" && typeof m.modelId === "string"
       ? { provider: m.provider, modelId: m.modelId }
       : null);
+    if (m && typeof m.provider === "string" && typeof m.modelId === "string") track("model_changed", { ...modelParams(m.provider, m.modelId), scope: "workspace" });
     providersChanged(); // open chat bars refetch → the chip's tier updates live
   });
 
@@ -5590,7 +5764,9 @@ export function registerIpc(
     // the OS keychain through the sidecar, which is a round-trip.
     async (_e, scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: McpServerConfig | null) => {
       const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
+      const isNew = cfg !== null && !readMcpFile(file).mcpServers[name];
       writeMcpServer(file, name, cfg);
+      if (isNew && cfg) track("mcp_server_added", mcpParams("manual", cfg));
       void log.append({ type: "mcp.config", workspaceId: workspaceId ?? undefined,
         data: { scope, name, removed: cfg === null } });
       if (cfg === null) {
@@ -5637,10 +5813,12 @@ export function registerIpc(
     ) => {
       const entry = catalogEntry(catalogKey);
       if (!entry) return { ok: false as const, error: "Unknown catalog entry" };
+      let installedCfg: McpServerConfig | null = null;
 
       const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
       try {
         const { cfg, secrets } = buildCatalogInstall(entry, values);
+        installedCfg = cfg;
         // Encrypt first: if the write then fails on a name collision we drop
         // them again, rather than leaving secrets for a server we never wrote.
         for (const s of secrets) setMcpSecret(entry.key, s.inputId, s.value);
@@ -5659,6 +5837,7 @@ export function registerIpc(
         workspaceId: workspaceId ?? undefined,
         data: { scope, name: entry.key, removed: false, source: "catalog" },
       });
+      if (installedCfg) track("mcp_server_added", mcpParams("catalog", installedCfg, { id: entry.key, auth: entry.auth }));
       scheduleMcpReload(scope, workspaceId); // apply to running sessions
       return { ok: true as const };
     },
@@ -6046,6 +6225,11 @@ export function registerIpc(
   ipcMain.handle("hv:skills-set-enabled", (_e, id: string, enabled: boolean) => {
     if (!isKnownSkillDir(id)) throw new Error("Unknown skill location");
     skillRegistry.setEnabled(id, !!enabled, new Date().toISOString());
+    // §39: the bundled skill's NAME — its id is an absolute folder path.
+    try {
+      const sk = readKnownSkill(id);
+      if (sk.source === "bundled") track("builtin_toggled", { item: sk.name, kind: "bundled_skill", on: !!enabled });
+    } catch { /* unreadable skill: nothing to report */ }
     void log.append({ type: enabled ? "skill.enabled" : "skill.disabled", data: { id } });
     skillsChanged();
     scheduleSkillReload("global", null);
@@ -6430,6 +6614,10 @@ export function registerIpc(
   ipcMain.handle("hv:prompt-templates-set-enabled", (_e, id: string, enabled: boolean) => {
     if (!promptTemplateRoot(id)) throw new Error("Unknown prompt location");
     promptTemplateRegistry.setEnabled(id, !!enabled, new Date().toISOString());
+    try {
+      const pt = readKnownPromptTemplate(id);
+      if (pt.source === "bundled") track("builtin_toggled", { item: path.basename(id, ".md"), kind: "bundled_prompt", on: !!enabled });
+    } catch { /* unreadable template: nothing to report */ }
     void log.append({ type: enabled ? "prompt-template.enabled" : "prompt-template.disabled", data: { id } });
     promptTemplatesChanged();
     schedulePromptTemplateReload("global", null);
@@ -6775,6 +6963,7 @@ export function registerIpc(
             { ...normalizePluginMcpServer(cfg), origin: pluginOrigin(scan.name, marketplaceId) },
             { failIfExists: true },
           );
+          track("mcp_server_added", mcpParams("plugin", normalizePluginMcpServer(cfg)));
           servers.push(key);
         }
 

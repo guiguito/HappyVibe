@@ -146,7 +146,6 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
         publishableKey: cfg.publishableKey,
         crashDatabaseId: cfg.crashDatabase,
         channel: cfg.channel,
-        environment: is.dev ? "development" : "production",
         // Always initialise, even when off, so the toggle needs no relaunch.
         enabled: getCrashReports(),
         tags: { runtime: __RUNTIME_PINS__, channel: cfg.channel },

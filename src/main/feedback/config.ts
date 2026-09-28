@@ -31,20 +31,27 @@ export interface FeedbackConfig {
   databases: { general: string; session: string };
   /** §37: the crash database for this channel. Same `ipk_` key as feedback. */
   crashDatabase: string;
+  /** §39: usage statistics and remote config, same `ipk_` key. */
+  analyticsDatabase: string;
+  configDatabase: string;
 }
 
 export const FEEDBACK_CHANNELS = {
   dev: {
     baseUrl: "https://feedback.bzapps.eu",
-    publishableKey: "ipk_VV0zTdc7-c01Yc_EHEoMNJDvtaLlPPeP" as string | null,
-    databases: { general: "fdb_k1wv6q4f5y3d", session: "fdb_8acy05bfbdd8" },
-    crashDatabase: "cdb_38g7t8v30pxe",
+    publishableKey: "ipk_24t5FAKO80XhC2jJZr3xrLcqITJhyxW0" as string | null,
+    databases: { general: "fdb_fhkd99m59f7a", session: "fdb_9jc4be9npr1g" },
+    crashDatabase: "cdb_vhqmcqmwq2dz",
+    analyticsDatabase: "adb_nf15qfg0crx6",
+    configDatabase: "cfg_gsd6fxwmwdmj",
   },
   prod: {
     baseUrl: "https://feedback.bzapps.eu",
-    publishableKey: "ipk__H5yhFPYwIx5kHuXI7F33b8XEkohrtXr" as string | null,
-    databases: { general: "fdb_kvsfs4azz0xc", session: "fdb_fg71xjz0y9t6" },
-    crashDatabase: "cdb_2nt89ap6w63j",
+    publishableKey: "ipk_6AGD12cyhTC37jfZikScNC9ktaFVpP5j" as string | null,
+    databases: { general: "fdb_gk46pdxj0d7b", session: "fdb_ma2pqzg46cj5" },
+    crashDatabase: "cdb_x1rta1zm9hta",
+    analyticsDatabase: "adb_k9hj2jq82zyv",
+    configDatabase: "cfg_s4zxy72egxf5",
   },
 } as const satisfies Record<
   FeedbackChannel,
@@ -53,6 +60,8 @@ export const FEEDBACK_CHANNELS = {
     publishableKey: string | null;
     databases: { general: string; session: string };
     crashDatabase: string;
+    analyticsDatabase: string;
+    configDatabase: string;
   }
 >;
 
@@ -74,6 +83,8 @@ export function resolveFeedbackConfig(
       session: env.HV_FEEDBACK_DB_SESSION ?? base.databases.session,
     },
     crashDatabase: env.HV_CRASH_DB ?? base.crashDatabase,
+    analyticsDatabase: env.HV_ANALYTICS_DB ?? base.analyticsDatabase,
+    configDatabase: env.HV_CONFIG_DB ?? base.configDatabase,
   };
 }
 

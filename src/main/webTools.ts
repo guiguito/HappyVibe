@@ -24,9 +24,13 @@ export interface WebServiceConfig {
 export const WEB_CUSTOM_URL_INVALID =
   "Your custom web service URL isn't valid — fix it in Settings → Built-in tools, or switch back to the default service.";
 
+/** §39: the sentence a web tool returns while remote config pauses the default box. */
+export const WEB_DEFAULT_PAUSED =
+  "HappyVibe's free web service is paused right now. To keep using web tools, point the app at your own Firecrawl-compatible service in Settings → Built-in tools.";
+
 export type ResolvedWebService =
   | { baseUrl: string; key?: string; service: "default" | "custom" }
-  | { error: string };
+  | { error: string; code: "CUSTOM_URL_INVALID" | "DEFAULT_PAUSED"; service: "default" | "custom" };
 
 /**
  * Which service this call goes to, with the key decrypted only here.
@@ -40,10 +44,16 @@ export type ResolvedWebService =
 export function resolveWebService(
   cfg: WebServiceConfig | undefined,
   decrypt: (b64: string) => string,
+  defaultAllowed = true,
 ): ResolvedWebService {
-  if (cfg?.mode !== "custom") return { baseUrl: DEFAULT_WEB_SERVICE_URL, service: "default" };
+  if (cfg?.mode !== "custom") {
+    // §39: paused remotely → refuse BEFORE any request; the four tools stay
+    // registered so the model can relay the sentence (D14).
+    if (!defaultAllowed) return { error: WEB_DEFAULT_PAUSED, code: "DEFAULT_PAUSED", service: "default" };
+    return { baseUrl: DEFAULT_WEB_SERVICE_URL, service: "default" };
+  }
   const base = cfg.baseUrl?.trim().replace(/\/+$/, "");
-  if (!base || !/^https?:\/\/./.test(base)) return { error: WEB_CUSTOM_URL_INVALID };
+  if (!base || !/^https?:\/\/./.test(base)) return { error: WEB_CUSTOM_URL_INVALID, code: "CUSTOM_URL_INVALID", service: "custom" };
   const key = cfg.keyEnc ? decrypt(cfg.keyEnc) : undefined;
   return key ? { baseUrl: base, key, service: "custom" } : { baseUrl: base, service: "custom" };
 }
