@@ -52,7 +52,7 @@ The row above the conversation belongs to this session alone. On the left:
 
 On the right:
 
-- **⌕** opens [search](#search-this-conversation). Its tooltip reads "Search this conversation (⌘F)" on macOS, "Search this conversation (CtrlF)" on Windows and Linux.
+- **⌕** opens [search](#search-this-conversation). Its tooltip reads "Search this conversation", with the search shortcut: ⌘F on macOS, Ctrl+F on Windows and Linux.
 - **The cost pill** shows an estimate of what this session has cost so far. Click it to open **Session cost**, the call-by-call breakdown. "—" means nothing has been billed yet, "plan" means your subscription covered it, "$?" means the app has no price for the model, and "+?" after an amount means part of the bill is missing.
 - **The context gauge** shows how full the model's context is, as a percentage. Click it to open the context panel. [Context: what the agent can see](/docs/first-session/#context-what-the-agent-can-see) explains both.
 

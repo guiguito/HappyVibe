@@ -153,11 +153,11 @@ These are safe, because what they remove waits for you somewhere:
 
 - **Delete…** in the files panel moves things to your computer's Trash.
 - **Stash changes** parks your changes under **Stashed** until you **Restore** them.
-- A saved version stays in **History**, whatever you do to your files afterwards.
+- A saved version stays in git's history. Amend and **Delete it anyway** are the only buttons here that drop one.
 
 These can't be taken back from HappyVibe:
 
-- **Undo** on a block, and **undo** on a file: there's no redo, so the lines you undid are gone unless they're in a saved version.
+- **Undo** on a block, and **undo** on a file: there's no redo, so the lines you undid are gone for good.
 - **discard** on a new file: it's deleted, not moved to the Trash.
 - **Delete** on a stash, **Delete it anyway** on a branch, and **Remove it anyway** on a worktree.
 
@@ -211,7 +211,7 @@ If git still lists a worktree whose folder has gone, the project's panel offers 
 - **Some actions wait for it.** Switching branches, stashing, syncing, undoing, discarding and starting tracking would change files under the agent's feet, so while a session in this project is working, the panel says "Anything that changes files waits until it finishes." and names the session. Merging and removing a worktree wait too, with "Waiting for: …" and the session's name. Try again when the turn ends.
 - **The panel catches up at the end of a turn.** It doesn't refresh on every edit while the agent works; the list and the badge update once its turn ends. The files panel updates as files appear.
 - **Open files follow along.** If the agent edits a file you have open, the tab reloads. If you have unsaved edits in it, you choose: "This file changed on disk while you have unsaved edits." with **Reload from disk** or **Keep mine**. If the file was deleted, your edits are kept, and saving puts the file back.
-- **The buttons here are yours.** The agent has no way to press them. When it runs git commands of its own, each one goes through the [approval dialog](/docs/approve-a-tool-call/) like any other command, and rules already set on [Permissions](/docs/permissions/) cover the risky ones: force-pushing is refused outright, and a few others, like `git reset --hard`, always ask.
+- **The buttons here are yours.** The agent has no way to press them. When it runs git commands of its own, each one goes through the [approval dialog](/docs/approve-a-tool-call/) like any other command, and rules already set on [Permissions](/docs/permissions/) cover the risky ones: `git push --force` is refused, and pushing, `git reset --hard` and a few others ask first.
 
 ## Related
 

@@ -103,3 +103,5 @@ working. None of them is fixed in this round. Line numbers are as of commit `cea
     (`SchedulesView.tsx:305`, `ipc.ts:2324`, `ScheduleDrawer.tsx:78-92`). A staged-only save prints
     `git add -A && …` although it skips `add -A` (`ChangesPanel.tsx:406` vs `git.ts:701`). The search
     tooltip reads "(CtrlF)" on Windows and Linux (`ChatView.tsx:1054`).
+33. **Open at login shows on Linux and does nothing there** (`SchedulesView.tsx:146`, `ipc.ts:3349-3352`).
+    The guide says so; hide the switch on Linux, or make it work.

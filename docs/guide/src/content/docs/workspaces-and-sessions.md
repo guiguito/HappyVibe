@@ -26,7 +26,7 @@ From top to bottom: a row of buttons, **Schedules**, then your workspaces, each 
 
 ### Schedules
 
-The first row takes you to [Schedules](/docs/schedules/), the one thing in HappyVibe that runs on its own, across workspaces. Once a schedule is switched on, the row says how things stand, like "2 active · next 9:00". When a run was missed, it says so instead ("1 missed · decide") and waits for you to choose.
+The **Schedules** row takes you to [Schedules](/docs/schedules/), the one thing in HappyVibe that runs on its own, across workspaces. Once a schedule is switched on, the row says how things stand, like "2 active · next 9:00". When a run was missed, it says so instead ("1 missed · decide") and waits for you to choose.
 
 ### workspaces
 

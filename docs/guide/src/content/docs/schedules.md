@@ -135,7 +135,7 @@ Every run is a real session, so the one question that matters is what it may do 
 
 In a read-only run the agent can read and search your project and write its report in the session. Editing or creating files, starting terminals, and clicking or typing in its browser are all blocked. Commands are limited to a short list that only look. It can't plan, and it can't create, change or delete schedules. Running a workflow is blocked, and it can only hand work to a subagent whose tools only read. A blocked call shows as a skipped card and the agent carries on. Read-only holds even under a bypass, and even your rules can't widen it.
 
-Some calls still ask you first, and the run waits for your answer: a tool from an MCP server, opening a page in its browser, handing work to a subagent, saving or forgetting a memory, and reading outside the project. A bypass doesn't answer these for you: in a read-only run they ask even with bypass on.
+Some calls still ask you first, and the run waits for your answer: running a command (even one that only looks), reading a web page, a tool from an MCP server, opening a page in its browser, handing work to a subagent, saving or forgetting a memory, and reading outside the project. A bypass doesn't answer these for you: in a read-only run they ask even with bypass on. An allow rule on [Permissions](/docs/permissions/) is what lets one run without asking.
 
 Change a schedule's mode any time with the pill on its row.
 
@@ -159,7 +159,7 @@ Nothing runs while it waits. The question stands until the schedule's next time 
 - On macOS, closing every window keeps HappyVibe running, so schedules still run. On Windows and Linux, closing the last window quits the app, and schedules wait until it's open again.
 - A run that's still working when the app quits stops there, and its row doesn't record how it went.
 - While your computer sleeps, nothing runs. When it wakes, missed runs are handled as above.
-- On macOS and Windows, **Open at login** keeps HappyVibe open without you thinking about it. On Linux, open HappyVibe yourself.
+- On macOS and Windows, **Open at login** keeps HappyVibe open without you thinking about it. On Linux the switch is there but doesn't work yet, so open HappyVibe yourself.
 
 ## Delete a schedule
 
