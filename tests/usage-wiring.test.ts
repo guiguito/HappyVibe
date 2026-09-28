@@ -116,3 +116,12 @@ it("§39 the Privacy page scrolls like every other settings page", () => {
   const v = strip("src/renderer/src/components/PrivacyView.tsx");
   expect(v).toMatch(/return \(\s*<div className="flex-1 overflow-y-auto">/);
 });
+
+it("§39 turning statistics back on re-tags the new installation existing_user BEFORE enabling", () => {
+  const idx = strip("src/main/usage/index.ts");
+  const handler = idx.slice(idx.indexOf('"hv:set-usage-stats"'));
+  const tag = handler.indexOf('setAttribution?.("existing_user")');
+  const enable = handler.indexOf("setEnabled?.(");
+  expect(tag).toBeGreaterThan(-1);
+  expect(tag).toBeLessThan(enable);
+});

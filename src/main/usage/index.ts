@@ -14,11 +14,17 @@ import { usageBeforeSend } from "./guard";
 import { setUsageSink } from "./client";
 
 let setEnabled: ((on: boolean, opts?: { forget?: boolean }) => Promise<void> | void) | null = null;
+let setAttribution: ((value: string) => void) | null = null;
 
 function registerUsageIpc(): void {
   ipcMain.handle("hv:get-usage-stats", () => getUsageStats());
   ipcMain.handle("hv:set-usage-stats", async (_e, on: boolean) => {
     setUsageStats(!!on);
+    // D16: opting back in starts a NEW installation, and forget cleared the
+    // attribution — so it would count as a new install. Whoever flips this
+    // switch has used the app: tag it first (the SDK keeps it while disabled
+    // and announces it with app_installed on enable).
+    if (on) setAttribution?.("existing_user");
     // D11: off FORGETS this installation (ID, session, queue, and the ID on
     // queued crash reports and submissions). No event is sent about it.
     await setEnabled?.(!!on, on ? undefined : { forget: true });
@@ -49,6 +55,7 @@ export async function installUsage(): Promise<void> {
         : {}),
     });
     setEnabled = (on, opts) => a.setEnabled(on, opts);
+    setAttribution = (value) => a.setAttribution(value);
     setUsageSink((name, category, params) => a.track(name, { category, params }));
   } catch (err) {
     console.warn("[usage] not installed:", err);
