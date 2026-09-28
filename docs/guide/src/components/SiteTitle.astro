@@ -1,0 +1,37 @@
+---
+// Starlight's SiteTitle with the app's two-tone wordmark: Happy in ink, Vibe in tangerine
+// (Sidebar.tsx `font-black tracking-tight`, `Happy<span className="text-tangerine">Vibe</span>`).
+// A logotype has no WCAG contrast requirement (1.4.3), but Lighthouse can't tell a logo from text and
+// flags tangerine-on-paper (2.8:1). So "Vibe" is drawn by CSS `content`, the drawn wordmark is
+// aria-hidden, and screen readers get the plain name beside it.
+import { logos } from "virtual:starlight/user-images";
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title sl-flex">
+  {logos.dark && <img alt="" src={logos.dark.src} width={logos.dark.width} height={logos.dark.height} />}
+  <span class="wordmark" aria-hidden="true" translate="no">Happy<span class="vibe"></span></span>
+  <span class="sr-only">{siteTitle}</span>
+</a>
+
+<style>
+  .site-title {
+    align-items: center;
+    gap: var(--sl-nav-gap);
+    text-decoration: none;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .wordmark {
+    font-size: var(--sl-text-h4);
+    font-weight: 900;
+    letter-spacing: -0.025em;
+    color: var(--color-ink);
+  }
+  .vibe::after { content: "Vibe"; color: var(--color-tangerine); }
+  img {
+    height: calc(var(--sl-nav-height) - 2 * var(--sl-nav-pad-y));
+    width: auto;
+    transform: rotate(3deg);
+  }
+</style>

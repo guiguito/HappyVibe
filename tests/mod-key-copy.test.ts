@@ -90,6 +90,8 @@ describe("no copy claims the user is on a Mac", () => {
    * the name is what the user hunts for on screen, so it varies.
    */
   const MAC_WORDS = /\b(your Mac|this Mac|on a Mac|macOS|Finder)\b/;
+  /** Two-word phrases are never identifiers, so they count as copy even without quotes (JSX text). */
+  const MAC_PHRASES = /\b(your Mac|this Mac|on a Mac)\b/;
 
   it("scans every rendered string", () => {
     const offenders: string[] = [];
@@ -98,7 +100,7 @@ describe("no copy claims the user is on a Mac", () => {
       if (rel === "platformCopy.ts") continue; // where the variants are DEFINED
       for (const line of code(f).split("\n")) {
         if (!MAC_WORDS.test(line)) continue;
-        if (!/["'`]/.test(line)) continue; // a bare identifier is not copy
+        if (!/["'`]/.test(line) && !MAC_PHRASES.test(line)) continue; // a bare identifier is not copy
         offenders.push(`${rel}: ${line.trim().slice(0, 90)}`);
       }
     }
