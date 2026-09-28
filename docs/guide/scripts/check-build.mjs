@@ -62,4 +62,8 @@ for (const p of pages) {
 for (const p of pages) assert.match(read(p), /<link rel="preload" href="[^"]+gabarito[^"]*\.woff2" as="font"/, `${p}: Gabarito isn't preloaded`);
 assert.match(css, /\.sidebar-pane\{[^}]*radial-gradient/, "the sidebar lost the app's pegboard texture");
 
+// Brand: the site title is the app's two-tone wordmark, never plain "HappyVibe".
+for (const p of pages) assert.match(read(p), /Happy<span class="vibe[^"]*"><\/span>/, `${p}: the wordmark isn't two-tone`);
+assert.match(css, /\.vibe[^{]*:after\{content:"Vibe";color:var\(--color-tangerine\)/, "the wordmark's Vibe lost its tangerine");
+
 console.log(`docs check: ${pages.length} pages OK`);
