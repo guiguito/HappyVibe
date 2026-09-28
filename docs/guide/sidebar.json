@@ -1,5 +1,6 @@
 [
   { "label": "Get started", "items": ["install", "first-launch", "connect-a-model", "first-session", "approve-a-tool-call"] },
+  { "label": "Everyday use", "items": ["workspaces-and-sessions", "session-view", "files-and-changes", "schedules"] },
   "models",
   { "label": "Abilities", "items": ["built-in-tools", "memory", "plugins", "skills", "prompts", "mcp", "agents"] },
   { "label": "Control", "items": ["system-prompt", "permissions", "agent-tools"] },

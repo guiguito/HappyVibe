@@ -21,9 +21,10 @@ const title = (slug: string): string => {
 };
 
 describe("the guide mirrors the app's sidebar (Docs round, 2026-09-28)", () => {
-  it("Get started first, then Models pinned, then the app's groups in order", () => {
+  it("Get started, then Everyday use, then Models pinned, then the app's groups in order", () => {
     expect(SIDEBAR.map((i) => (typeof i === "string" ? i : i.label))).toEqual([
       "Get started",
+      "Everyday use",
       "models",
       ...GROUPS.map((g) => g.label),
     ]);
@@ -37,6 +38,14 @@ describe("the guide mirrors the app's sidebar (Docs round, 2026-09-28)", () => {
 
   it("every screen's page exists and is titled with the screen's label", () => {
     for (const n of NAV) expect(title(DOC_SLUG[n.view]!), n.view).toBe(n.label);
+  });
+
+  // Everyday-use round (2026-09-29): the surfaces people spend their time in are not settings
+  // screens, so NAV never asked for them. Schedules is a sidebar destination outside NAV.
+  it("Everyday use holds the sidebar, the session view, files and changes, and Schedules", () => {
+    expect(group("Everyday use")).toEqual(["workspaces-and-sessions", "session-view", "files-and-changes", "schedules"]);
+    expect(DOC_SLUG.schedules).toBe("schedules");
+    expect(title("schedules")).toBe("Schedules");
   });
 
   it("Get started holds the five pages the spec names", () => {

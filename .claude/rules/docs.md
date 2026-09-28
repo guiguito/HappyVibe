@@ -47,5 +47,9 @@ paths:
   | `mcp/mcp-add.{webm,mp4,jpg}` | `mcp` | Pick Playwright, Add, and it connects: "Connected to Playwright" with the number of tools discovered |
   | `permissions/permissions-rules.png` | `permissions` | The rule list mixing allow, ask and deny, with the test box |
   | `audit-log/audit-log.png` | `audit-log` | Permission decisions including denials, with the filters visible |
+  | `workspaces-and-sessions/sidebar-workspaces.png` | `workspaces-and-sessions` | The sidebar with two workspaces and their sessions, showing the working, plan-mode and sleeping marks, with the + menu open on New session |
+  | `session-view/session-view.png` | `session-view` | A session with its top bar (model, thinking effort, cost, context gauge), a second tab in a split pane, and the message box |
+  | `files-and-changes/changes-panel.png` | `files-and-changes` | The Changes panel with its changed files, one diff open and a drafted commit message |
+  | `schedules/schedules-list.png` | `schedules` | The Schedules screen with two schedules and a recent run |
 
   A video's placeholder names it without an extension (`mcp/mcp-add`).

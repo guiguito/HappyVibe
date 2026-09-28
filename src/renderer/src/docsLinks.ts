@@ -25,6 +25,8 @@ export const DOC_SLUG: Partial<Record<View, string>> = {
   stats: "stats",
   audit: "audit-log",
   changelog: "changelog",
+  // Everyday-use round (2026-09-29): a sidebar destination outside NAV, rendered in the same wrapper.
+  schedules: "schedules",
 };
 
 /** `?embed=1` hides the site title, so the page reads as part of the app (docs/guide/astro.config.mjs). */
