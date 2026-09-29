@@ -51,7 +51,7 @@ Some model calls happen outside any session: naming a session, writing a commit 
 - **schedule**: what one of your [schedules](/docs/schedules/) did, such as "created schedule", "schedule fired" or "schedule missed its time", with the schedule's name.
 - **feedback**: feedback you sent, such as "Sent feedback" or "Rated the session". Your answers stay out of the log.
 - **crash**: a crash report the app sent, as "Sent a crash report" and its kind, with "new" when it's the first of its sort. The log records the report's ID and size, never its content. See [Privacy](/docs/privacy/).
-- **git**: a git action you took in HappyVibe, such as "committed", "switched branch" or "merged a worktree", with the branch or file it touched. The commit message stays out of the log. Git commands the agent runs itself are ordinary decisions, under the tool that ran them.
+- **git**: a git action you took in HappyVibe, such as "committed", "switched branch" or "merged a worktree", with the branch or file it touched. The row never shows the commit message. Git commands the agent runs itself are ordinary decisions, under the tool that ran them.
 
 ## Find every call you denied
 

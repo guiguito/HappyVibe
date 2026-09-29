@@ -169,7 +169,7 @@ interface CrashEvent {
 /**
  * §29 (docs-round #31): a git action YOU took, written by `auditGit` (ipc.ts). Human-only by
  * construction (there is no git tool the model can call), so there is no decision to show.
- * The branch or the path only, never the commit message.
+ * The row shows the branch or the path only, never the commit message (main still records it).
  */
 interface GitEvent {
   ts: string;
