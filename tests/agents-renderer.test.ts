@@ -5,6 +5,10 @@ import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
 import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
 import { AGENT_STATUS_LABEL, AGENT_STATUS_TONE, EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
 import { SOURCE_ORDER, agentBlurb, sortAgents } from "../src/renderer/src/agents";
+import { checkedAs } from "../src/renderer/src/agents";
+import { boundaryRuleName } from "../pi-runtime/extensions/hv-subagent-boundary";
+import { unwrapMcpCall } from "../pi-runtime/extensions/hv-mcp";
+import { browserRuleName } from "../pi-runtime/extensions/hv-browser";
 import {
   applySubagentStarted,
   asyncResultInfo,
@@ -1003,5 +1007,53 @@ describe("findByRunId — the lookups that the attach would otherwise break (A1)
 
   it("answers null for a run nobody knows", () => {
     expect(findByRunId({}, "nope")).toBeNull();
+  });
+});
+
+describe("per-call pills (docs round #3)", () => {
+  test("the tools the gate checks under another name say which, and the per-call ones have no verdict", () => {
+    expect(checkedAs("mcp")).toEqual({ name: "mcp:<tool>", per: "per MCP tool" });
+    expect(checkedAs("Agent")).toEqual({ name: "subagent:<agent>", per: "per agent" });
+    for (const t of ["browser_open", "browser_navigate", "web_fetch", "web_map", "web_crawl"]) {
+      expect(checkedAs(t)).toEqual({ name: "browser:<host>", per: "per site" });
+    }
+    expect(checkedAs("SubagentWorkflow")).toEqual({ name: "workflow" });
+    // web_search has no host; browser_click never navigates; a directly exposed MCP tool keeps its name.
+    for (const t of ["bash", "read", "web_search", "browser_click", "github_create_issue"]) expect(checkedAs(t)).toBeNull();
+  });
+
+  test("the names are the gate's own", () => {
+    expect(checkedAs("mcp")!.name).toBe(unwrapMcpCall({ tool: "<tool>" }).ruleTool);
+    expect(checkedAs("Agent")!.name).toBe(boundaryRuleName("<agent>"));
+    expect(browserRuleName("https://example.org")).toBe("browser:example.org");
+    const bridge = readFileSync(path.join(process.cwd(), "pi-runtime/extensions/happyvibe-bridge.ts"), "utf8");
+    expect(bridge).toContain('(tool === "browser_open" || tool === "browser_navigate") && typeof input.url === "string"');
+    expect(bridge).toContain('WEB_URL_TOOLS.has(tool) && typeof input.url === "string" ? browserRuleName(input.url) : null');
+    expect(bridge).toContain("const permTool = mcp?.ruleTool ?? browserNav ?? webHost ?? (subagentName ? boundaryRuleName(subagentName) : tool);");
+    expect(bridge).toContain('evaluate(rules, { tool: "workflow", input');
+  });
+
+  test("a per-call tool shows what it is checked per; a workflow never shows allow", () => {
+    const tools = [
+      { name: "Agent", description: "", source: "" },
+      { name: "SubagentWorkflow", description: "", source: "" },
+      { name: "bash", description: "", source: "" },
+    ];
+    expect(joinToolPermissions(tools, { Agent: "deny", SubagentWorkflow: "allow", bash: "deny" })).toEqual([
+      { name: "Agent", description: "", source: "", permission: "per agent", checkedAs: { name: "subagent:<agent>", per: "per agent" } },
+      { name: "SubagentWorkflow", description: "", source: "", permission: "ask", checkedAs: { name: "workflow" } },
+      { name: "bash", description: "", source: "", permission: "deny" },
+    ]);
+    expect(joinToolPermissions([tools[1]], { SubagentWorkflow: "deny" })[0].permission).toBe("deny");
+  });
+
+  test("the page evaluates the checked name, and the test box says which name to test", () => {
+    const view = readFileSync(path.join(process.cwd(), "src/renderer/src/components/AllToolsView.tsx"), "utf8");
+    expect(view).toMatch(/evalRules\(ws, checkedAs\(t\.name\)\?\.name \?\? t\.name, \{\}\)/);
+    expect(view).not.toMatch(/evalRules\(ws, t\.name, \{\}\)/);
+    expect(view).toContain("Checked as <span className=\"font-mono\">{t.checkedAs.name}</span> on every call.");
+    const box = readFileSync(path.join(process.cwd(), "src/renderer/src/components/PermissionRulesSection.tsx"), "utf8");
+    expect(box).toContain("checkedAs(tool.trim())");
+    expect(box).toContain("is checked as ${c.name} on every call. Test that name instead.");
   });
 });

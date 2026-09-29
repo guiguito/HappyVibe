@@ -61,6 +61,8 @@ The box under the rules checks what your saved rules would do, without the agent
 
 The answer is **allow**, **ask** or **deny**, followed by why: the rule that decided it, "(safe tool default)", or "(no rule matched — default is ask)". On this screen it checks your global rules.
 
+Type a tool that's checked under another name (`mcp`, `Agent`, `SubagentWorkflow`, or a browser or web tool that opens an address), and the box names the one to test instead, for example "Agent is checked as `subagent:<agent>` on every call. Test that name instead."
+
 ### Bypass ALL permissions
 
 "Auto-approve every action — file writes, shell commands, MCP calls — in every workspace, with no prompts."

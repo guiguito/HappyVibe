@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { EmptyState } from "./EmptyState";
 import { HowItWorks } from "./HowItWorks";
+import { checkedAs } from "../agents";
 
 /**
  * B4 rules editor, parameterized by scope (W1.4): no `workspace` prop → the
@@ -30,8 +31,17 @@ function TestBox({ workspace }: { workspace: string }): React.JSX.Element {
   const [tool, setTool] = useState("bash");
   const [arg, setArg] = useState("");
   const [verdict, setVerdict] = useState<HvVerdict | null>(null);
+  // docs round #3: a tool the gate checks under another name has no verdict under its own.
+  const [instead, setInstead] = useState<string | null>(null);
 
   const run = async (): Promise<void> => {
+    const c = checkedAs(tool.trim());
+    if (c) {
+      setVerdict(null);
+      setInstead(`${tool.trim()} is checked as ${c.name} on every call. Test that name instead.`);
+      return;
+    }
+    setInstead(null);
     // bash-ish tools carry a command; everything else a path — same keys the engine scans.
     const input = tool === "bash" ? { command: arg } : { path: arg };
     setVerdict(await window.hv.evalRules(workspace, tool, input));
@@ -58,6 +68,7 @@ function TestBox({ workspace }: { workspace: string }): React.JSX.Element {
           Evaluate
         </button>
       </form>
+      {instead && <p className="text-xs mt-2 text-ink-soft">{instead}</p>}
       {verdict && (
         <p className="text-xs mt-2">
           → <span className={`font-black uppercase ${VERDICT_TONE[verdict.action]}`}>{verdict.action}</span>{" "}

@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import { joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from "../agents";
+import { checkedAs, joinToolPermissions, type PermState, type ToolInfo, type ToolRow } from "../agents";
 import { Section } from "./Section";
 import { EmptyState } from "./EmptyState";
 import { GoTo } from "./GoTo";
 
-const PERM_TONE: Record<PermState, string> = {
+const PERM_TONE: Record<ToolRow["permission"], string> = {
   deny: "bg-berry-soft text-berry border-berry/50",
   ask: "bg-honey-soft text-tangerine-deep border-honey/60",
   allow: "bg-leaf-soft text-leaf border-leaf/50",
+  // docs round #3: not verdicts. Which rule decides depends on the call.
+  "per MCP tool": "bg-card text-ink-soft border-line",
+  "per agent": "bg-card text-ink-soft border-line",
+  "per site": "bg-card text-ink-soft border-line",
 };
 
 /** Round 4 #5: a tool row that expands to show the full (often-truncated)
@@ -34,6 +38,11 @@ function ToolRowItem({ t }: { t: ToolRow }): React.JSX.Element {
       {open && (
         <div className="px-4 pb-3 pt-0 flex flex-col gap-2">
           <p className="text-sm text-ink whitespace-pre-wrap">{t.description || "No description provided."}</p>
+          {t.checkedAs && (
+            <p className="text-xs text-ink-soft">
+              Checked as <span className="font-mono">{t.checkedAs.name}</span> on every call.
+            </p>
+          )}
           {t.source && (
             <p className="font-mono text-[11px] text-ink-soft break-all">
               <span className="uppercase tracking-wider text-ink-soft/70">source </span>
@@ -75,13 +84,17 @@ export function AllToolsView({
     void window.hv.listTools(sessionId ?? undefined);
   }, [sessionId]);
 
-  // Join tools against the SAME rules engine the bridge runs (hv:eval-rules).
+  // Join tools against the SAME rules engine the bridge runs (hv:eval-rules), under the
+  // name the gate checks (docs round #3: SubagentWorkflow is checked as `workflow`). A
+  // per-call name (mcp:<tool>, subagent:<agent>, browser:<host>) has no one verdict to ask for.
   useEffect(() => {
     if (!tools) return setToolRows(null);
     const ws = workspaceId ?? "";
     let stale = false;
     void Promise.all(
-      tools.map((t) => window.hv.evalRules(ws, t.name, {}).then((v) => [t.name, v.action] as const)),
+      tools
+        .filter((t) => !checkedAs(t.name)?.per)
+        .map((t) => window.hv.evalRules(ws, checkedAs(t.name)?.name ?? t.name, {}).then((v) => [t.name, v.action] as const)),
     ).then((pairs) => {
       if (stale) return;
       const verdicts = Object.fromEntries(pairs) as Record<string, PermState>;
