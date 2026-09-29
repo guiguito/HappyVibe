@@ -17,7 +17,7 @@ The screen says what it holds: "Global rules for every workspace. Per-workspace 
 
 ### Rules
 
-"Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). With no match, a short list of safe tools runs on its own and everything else asks you." The safe tools are the ones that only read, such as reading and searching your project's files. The **Test a call** box below tells you which ones: it says "(safe tool default)".
+"Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). With no match, a short list of safe tools runs on its own and everything else asks you." The safe tools are a short list that can't change your files, such as reading and searching them. The **Test a call** box below says "(safe tool default)" for one.
 
 Under that line, **How rules combine** opens the longer explanation.
 
