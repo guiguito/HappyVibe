@@ -163,6 +163,7 @@ export function ChatView({
   onAbort,
   onRestart,
   onRetry,
+  onOpenDoc,
   onOpenFolder,
   onCompact,
   onOpenFile,
@@ -274,6 +275,8 @@ export function ChatView({
   onAbort: () => void;
   onRestart: () => void;
   onRetry: () => void;
+  /** Docs in the app (2026-09-29): opens a guide page from an error card. */
+  onOpenDoc?: (url: string) => void;
   onOpenFolder: () => void;
   /** §39: the trigger is tracked once the compaction ran. */
   onCompact: (trigger: "suggested" | "manual") => void;
@@ -1468,6 +1471,7 @@ export function ChatView({
             ) : undefined
           }
           onRetry={onRetry}
+          onOpenDoc={onOpenDoc}
           workspace={workspace}
           sessionId={sessionId}
           onOpenFile={onOpenFile}

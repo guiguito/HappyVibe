@@ -26,3 +26,44 @@ describe("guide URLs (Docs in the app, 2026-09-29)", () => {
     expect(ERROR_GUIDE_LABEL).toBe("Read the guide ↗");
   });
 });
+
+const ENDPOINT = { slug: "models", anchor: "add-a-custom-endpoint" };
+const DOCS: Array<[string, string, { slug: string; anchor: string } | undefined]> = [
+  ["401 Unauthorized", "auth", { slug: "connect-a-model", anchor: "if-the-provider-rejects-the-key" }],
+  ["404 model not found", "model_not_found", ENDPOINT],
+  ["maximum context length exceeded", "context_overflow", ENDPOINT],
+  ["insufficient_quota", "balance", undefined],
+  ["429 Too Many Requests", "rate_limit", undefined],
+  ["529 status code (no body)", "overloaded", undefined],
+  ["503 Service Unavailable", "server", undefined],
+  ["fetch failed", "network", undefined],
+  ["something odd happened", "other", undefined],
+  ["", "other", undefined],
+];
+
+describe("provider errors link to the guide only where a page fixes them", () => {
+  test.each(DOCS)("%j is %s", (raw, kind, doc) => {
+    const d = describeProviderError(raw);
+    expect(d.kind).toBe(kind);
+    expect(d.doc).toEqual(doc);
+  });
+  it("every linked page and anchor exists in the guide", () => {
+    for (const [, , doc] of DOCS) if (doc) expect(headings(doc.slug), `${doc.slug}#${doc.anchor}`).toContain(doc.anchor);
+  });
+  it("providerError.ts stays import-free — the renderer imports it", () => {
+    expect(read("src", "main", "providerError.ts")).not.toMatch(/^import /m);
+  });
+  it("§39: usage statistics read the kind and never the doc", () => {
+    expect(read("src", "main", "usage", "turns.ts")).not.toMatch(/\.doc\b/);
+  });
+  it("the card links only when the item carries a doc, through the shared label", () => {
+    const t = read("src", "renderer", "src", "components", "Transcript.tsx");
+    expect(t).toMatch(/it\.doc && onOpenDoc/);
+    expect(t).toContain("ERROR_GUIDE_LABEL");
+  });
+  it("App hands the error's doc to the card and the card's opener is openDocs", () => {
+    const app = read("src", "renderer", "src", "App.tsx");
+    expect(app).toMatch(/doc: info\.doc/);
+    expect(app).toMatch(/onOpenDoc=\{openDocs\}/);
+  });
+});

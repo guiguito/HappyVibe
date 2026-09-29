@@ -1717,6 +1717,7 @@ export default function App(): React.JSX.Element {
             hint: info.hint,
             retriable: info.retriable,
             retryLabel: info.retriable ? "Retry" : undefined,
+            doc: info.doc,
           });
         }
         setBusy((p) => ({ ...p, [sid]: false }));
@@ -3944,6 +3945,7 @@ export default function App(): React.JSX.Element {
             }
             onClearPageRefs={() => setPageRefs((p) => ({ ...p, [sid]: [] }))}
             onRetry={() => void retryCrash(sid)}
+            onOpenDoc={openDocs}
             onCompact={(trigger) =>
               void window.hv.compactSession(sid).then(() => trackUi("context_changed", { action: "compacted", trigger }))
             }
