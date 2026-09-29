@@ -54,7 +54,7 @@ In this list, the composer is the message box.
 ## Change a shortcut
 
 1. Click the keys next to the action. The button pulses and says "press…".
-2. Press the new combination. Include ⌘ on macOS or Ctrl on Windows and Linux, plus a key. Shift or Alt alone would take over normal typing. (On macOS, Ctrl counts as ⌘. On Windows and Linux, the Windows key counts as Ctrl.)
+2. Press the new combination: ⌘ on macOS or Ctrl on Windows and Linux, plus a key, with Shift or Alt too if you like. Without ⌘ or Ctrl the button keeps waiting, because Shift or Alt on its own would take over normal typing. (On macOS, Ctrl counts as ⌘. On Windows and Linux, the Windows key counts as Ctrl.)
 3. The new shortcut saves straight away and keeps working after a restart.
 
 Changed your mind halfway? Press Esc, and the old shortcut stays.

@@ -97,11 +97,12 @@ const MODIFIER_KEYS = new Set(["Meta", "Control", "Shift", "Alt"]);
 /** A KeyboardEvent → its canonical binding, or null when it isn't one. */
 export function eventToBinding(e: KeyEventish): string | null {
   if (MODIFIER_KEYS.has(e.key)) return null;
-  const parts: string[] = [];
-  if (e.metaKey || e.ctrlKey) parts.push("Mod");
+  // docs round #5: ⌘/Ctrl is required, not merely some modifier. Shift+A is a capital A
+  // and Option+E an accent; the app-wide handler would swallow them while you type.
+  if (!(e.metaKey || e.ctrlKey)) return null;
+  const parts = ["Mod"];
   if (e.shiftKey) parts.push("Shift");
   if (e.altKey) parts.push("Alt");
-  if (parts.length === 0) return null; // a bare key is never an app shortcut
   parts.push(e.key.length === 1 ? e.key.toLowerCase() : e.key);
   return parts.join("-");
 }
@@ -129,12 +130,14 @@ export function formatBinding(binding: string, mac = IS_MAC): string {
 }
 
 /** Stored overrides layered over the defaults. Unknown ids are dropped, so a
-    renamed action can never resurrect a stale binding from an old config. */
+    renamed action can never resurrect a stale binding from an old config. A saved
+    binding without ⌘/Ctrl is dropped too (docs round #5): eventToBinding can never
+    produce one again, so it would be a dead key, and it would swallow typing. */
 export function resolveBindings(saved: Record<string, string> | null | undefined): Record<ShortcutId, string> {
   const out = {} as Record<ShortcutId, string>;
   for (const a of SHORTCUT_ACTIONS) {
     const s = saved?.[a.id];
-    out[a.id] = typeof s === "string" && s.length > 0 ? s : a.defaultKey;
+    out[a.id] = typeof s === "string" && s.startsWith("Mod-") ? s : a.defaultKey;
   }
   return out;
 }
