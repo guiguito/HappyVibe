@@ -9,7 +9,7 @@ import { startUpdater } from './update'
 import { loginShellPath, mergePath } from './shellPath'
 import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
 import { seedDefaultGitRules } from './gitRules'
-import { navAction } from './navGuard'
+import { frameNavAction, navAction } from './navGuard'
 import { parseLayoutFile, type WindowRecord } from './windowLayout'
 import { insideAny } from './tearOff'
 import { WindowRegistry } from './windows'
@@ -299,6 +299,15 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
     if (action === 'allow') return
     event.preventDefault()
     if (action === 'external') void shell.openExternal(url)
+  })
+  // Docs in the app: the User guide is an iframe, and will-navigate does not fire for subframes.
+  // Only a frame that is showing the guide is judged — see frameNavAction.
+  win.webContents.on('will-frame-navigate', (details) => {
+    if (details.isMainFrame) return
+    const action = frameNavAction(details.frame?.url ?? '', details.url)
+    if (action === 'allow') return
+    details.preventDefault()
+    if (action === 'external') void shell.openExternal(details.url)
   })
 
   // §37: the repair, not the report — the SDK's own `render-process-gone`

@@ -49,8 +49,9 @@ page. So all of these now land in the app, at the right page:
 | `context_overflow` | `models#add-a-custom-endpoint` | step 6: check each model's context window |
 | `balance`, `rate_limit`, `overloaded`, `server`, `network`, `other` | **none** | nothing on a page changes them |
 
-Because the view needs no workspace, the old fallback (system browser while no workspace exists)
-goes away.
+The view needs no workspace, so the old "no workspace" fallback goes away. One fallback remains:
+while no model is connected the app is locked to Models (`needsSetup`, and the sidebar won't
+navigate), so the page could not show — the guide opens in the system browser then.
 
 ### 3. First-run setup keeps the system browser
 The setup dialog gets one link, **Read the setup guide ↗** (to `first-launch`), in the brand column.

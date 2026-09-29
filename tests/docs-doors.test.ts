@@ -2,7 +2,9 @@ import { describe, expect, it, test } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { describeProviderError } from "../src/main/providerError";
-import { docUrl, docsIndexUrl, ERROR_GUIDE_LABEL } from "../src/renderer/src/docsLinks";
+import { docUrl, docsIndexUrl, ERROR_GUIDE_LABEL, externalDocUrl, GUIDE_COPY } from "../src/renderer/src/docsLinks";
+import { NAV } from "../src/renderer/src/components/Sidebar";
+import { frameNavAction } from "../src/main/navGuard";
 import { ONBOARDING_COPY } from "../src/renderer/src/onboarding";
 
 const ROOT = path.join(import.meta.dirname, "..");
@@ -113,5 +115,88 @@ describe("Help ▸ HappyVibe Guide (Docs in the app, 2026-09-29)", () => {
   });
   it("the shortcuts note records F1 beside Mod-Shift-n, because findConflict cannot see menu accelerators", () => {
     expect(read("src", "renderer", "src", "shortcuts.ts")).toMatch(/F1/);
+  });
+});
+
+
+describe("the guide is a page inside the app (Docs in the app, 2026-09-29)", () => {
+  const app = read("src", "renderer", "src", "App.tsx");
+  const sidebar = read("src", "renderer", "src", "components", "Sidebar.tsx");
+
+  it("Open in browser drops ?embed=1 but keeps the anchor", () => {
+    expect(externalDocUrl("https://happyvibe.dev/docs/models/?embed=1#add-a-custom-endpoint")).toBe(
+      "https://happyvibe.dev/docs/models/#add-a-custom-endpoint",
+    );
+    expect(externalDocUrl(docsIndexUrl)).toBe("https://happyvibe.dev/docs/");
+  });
+
+  it("the copy is one record", () => {
+    expect(GUIDE_COPY).toEqual({ title: "User guide", back: "← Back", external: "Open in browser ↗" });
+  });
+
+  it("the view is a sandboxed iframe with a Back button and an Open-in-browser escape", () => {
+    const v = read("src", "renderer", "src", "components", "GuideView.tsx");
+    expect(v).toContain("<iframe");
+    expect(v).toContain('sandbox="allow-scripts allow-same-origin"');
+    expect(v).toContain("onClick={onBack}");
+    expect(v).toContain("externalDocUrl(url)");
+    // Absence: the frame may not navigate the app or open windows.
+    expect(v).not.toMatch(/allow-top-navigation|allow-popups|allow-modals/);
+  });
+
+  it("the row sits BELOW the last settings group, and is outside NAV like Schedules", () => {
+    expect(NAV.some((n) => (n.view as string) === "guide")).toBe(false);
+    expect(sidebar).toMatch(/\| "guide"/);
+    const groups = sidebar.indexOf("GROUPS.map(");
+    const row = sidebar.indexOf("data-hv-guide-row");
+    expect(groups).toBeGreaterThan(-1);
+    expect(row).toBeGreaterThan(groups);
+  });
+
+  it("openDocs shows the guide page — no browser pane — except before a model exists", () => {
+    const at = app.indexOf("const openDocs");
+    expect(at).toBeGreaterThan(-1);
+    const body = app.slice(at, at + 900);
+    expect(body).toContain('navigate({ view: "guide" })');
+    expect(body).not.toContain("newBrowser");
+    // The one fallback: the app is locked to Models until a model is connected.
+    expect(body).toMatch(/keyState === "missing"[\s\S]{0,120}openExternal\(url\)/);
+  });
+
+  it("App renders the view with Back going to the main chat screen", () => {
+    expect(app).toMatch(/activeView === "guide" && \(\s*<GuideView/);
+    expect(app).toMatch(/onBack=\{\(\) => navigate\(\{ view: "chat" \}\)\}/);
+  });
+});
+
+describe("the frame showing the guide cannot wander off it", () => {
+  const G = "https://happyvibe.dev/docs/models/?embed=1";
+  test.each([
+    [G, "https://happyvibe.dev/docs/mcp/?embed=1", "allow"],
+    [G, "https://happyvibe.dev/docs/?embed=1#x", "allow"],
+    [G, "https://github.com/x/y", "external"],
+    [G, "mailto:a@b.c", "external"],
+    [G, "https://happyvibe.dev/", "external"], // the site's home is not the guide
+    [G, "https://happyvibe.dev.evil.com/docs/", "external"],
+    [G, "file:///etc/passwd", "block"],
+    ["about:srcdoc", "https://example.com/", "allow"], // the editor's HTML preview is not our frame
+    ["about:blank", "https://happyvibe.dev/docs/?embed=1", "allow"], // the initial load
+  ])("frame at %s going to %s is %s", (frameUrl, url, want) => {
+    expect(frameNavAction(frameUrl, url)).toBe(want);
+  });
+
+  it("main wires it to will-frame-navigate, for subframes only", () => {
+    const index = read("src", "main", "index.ts");
+    expect(index).toContain("will-frame-navigate");
+    expect(index).toMatch(/isMainFrame/);
+    expect(index).toContain("frameNavAction(");
+  });
+
+  it("the CSP allows exactly one frame origin, and script-src is untouched", () => {
+    const html = read("src", "renderer", "index.html");
+    const csp = /content="([^"]+)"/.exec(html.split("Content-Security-Policy")[1] ?? "")?.[1] ?? "";
+    expect(/frame-src ([^;]*)/.exec(csp)?.[1]?.trim()).toBe("https://happyvibe.dev");
+    expect(csp).toContain("script-src 'self';");
+    expect(csp).toContain("default-src 'self'");
   });
 });

@@ -1,3 +1,4 @@
+import { GUIDE_COPY } from "../docsLinks";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { basename } from "../basename";
 import { uiGet, uiSet } from "../uiStore";
@@ -33,6 +34,9 @@ export type View =
   | "voice"
   // §35: a top-level destination, deliberately NOT in NAV — see the row below.
   | "schedules"
+  // Docs in the app (2026-09-29): the user guide, a row BELOW the last settings group and
+  // deliberately NOT in NAV — the guide needs no page about itself.
+  | "guide"
   | "workspace";
 
 
@@ -210,6 +214,15 @@ function VoiceIcon(): React.JSX.Element {
       <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
       <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
       <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
+  );
+}
+
+function GuideIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
+      <path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20" />
     </svg>
   );
 }
@@ -1556,6 +1569,18 @@ export function Sidebar({
                   </div>
                 );
               })}
+              {/* Docs in the app: below the last group, at a group item's indent. Not a NAV screen. */}
+              <button
+                type="button"
+                data-hv-guide-row
+                onClick={() => onNavigate("guide")}
+                className={`w-full flex items-center gap-2.5 rounded-xl pl-5 pr-3.5 py-2 mt-1 text-sm font-bold border-2 cursor-pointer transition-colors ${
+                  view === "guide" ? "bg-card border-line shadow-sticker" : "border-transparent hover:bg-card/70"
+                }`}
+              >
+                <GuideIcon />
+                <span className="flex-1 text-left">{GUIDE_COPY.title}</span>
+              </button>
             </div>
           )}
         </div>

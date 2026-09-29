@@ -36,5 +36,15 @@ export const docUrl = (slug: string, anchor?: string): string => `${DOCS_BASE}${
 /** Docs in the app (2026-09-29): the guide's front page — the Help menu's target. */
 export const docsIndexUrl = `${DOCS_BASE}?embed=1`;
 
+/** The same page for the system browser: without `?embed=1`, so the site's title shows. */
+export const externalDocUrl = (url: string): string => {
+  const u = new URL(url);
+  u.searchParams.delete("embed");
+  return u.href;
+};
+
+/** The User guide page's own copy (GuideView, and the settings row that opens it). */
+export const GUIDE_COPY = { title: "User guide", back: "← Back", external: "Open in browser ↗" } as const;
+
 /** The label on a model-call error card that links to a guide page. */
 export const ERROR_GUIDE_LABEL = "Read the guide ↗";

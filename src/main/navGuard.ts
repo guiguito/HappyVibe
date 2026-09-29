@@ -1,3 +1,5 @@
+import { DOCS_BASE } from "./docsBase";
+
 /**
  * What to do with one `will-navigate` attempt.
  *
@@ -23,5 +25,18 @@
  */
 export function navAction(url: string, current: string): "allow" | "external" | "block" {
   if (url === current) return "allow";
+  return /^(https?|mailto):/i.test(url) ? "external" : "block";
+}
+
+/**
+ * Docs in the app (2026-09-29): what to do with a SUBFRAME navigation. `will-navigate` never fires
+ * for a subframe, and the User guide is an iframe whose CSP allows no other origin — so a link in
+ * the guide that leaves it would leave a blank frame. Only a frame that is showing the guide is
+ * judged: the editor's sandboxed HTML preview (`about:srcdoc`) and a frame's initial load
+ * (`about:blank`) pass through untouched.
+ */
+export function frameNavAction(frameUrl: string, url: string): "allow" | "external" | "block" {
+  if (!frameUrl.startsWith(DOCS_BASE)) return "allow";
+  if (url.startsWith(DOCS_BASE)) return "allow";
   return /^(https?|mailto):/i.test(url) ? "external" : "block";
 }

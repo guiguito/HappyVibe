@@ -88,6 +88,7 @@ import { delegationAgent, isWaitTool } from "../../../pi-runtime/extensions/hv-r
 import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
 import { DocsLink } from "./components/DocsLink";
+import { GuideView } from "./components/GuideView";
 import { docUrl, docsIndexUrl } from "./docsLinks";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
 import { ipcMessage } from "./ipcError";
@@ -2164,14 +2165,19 @@ export default function App(): React.JSX.Element {
   };
 
   /**
-   * Docs round (2026-09-28): a screen's help link. Browser panes live in a
-   * workspace's tabs, so with no workspace yet (first run) the system browser
-   * opens it instead.
+   * Docs in the app (2026-09-29): every guide link — a screen's help link, Help ▸ HappyVibe Guide,
+   * an error card — opens the User guide page at the right address. A page needs no workspace.
    */
+  const [guide, setGuide] = useState({ url: docsIndexUrl, nonce: 0 });
   const openDocs = (url: string): void => {
-    const ws = activeWs ?? workspaces[0];
-    if (ws) void newBrowser(ws, url);
-    else void window.hv.openExternal(url);
+    // Before any model is connected the app is locked to Models and the sidebar won't navigate,
+    // so the page could not show: the system browser is the only door then.
+    if (keyState === "missing") {
+      void window.hv.openExternal(url);
+      return;
+    }
+    setGuide((g) => ({ url, nonce: g.nonce + 1 }));
+    navigate({ view: "guide" });
   };
   // Docs in the app: Help ▸ HappyVibe Guide. A ref, so the one subscription always sees the
   // current workspaces instead of the ones from the render it was made in.
@@ -3495,6 +3501,9 @@ export default function App(): React.JSX.Element {
           {activeView === "changelog" && <ChangelogView />}
           {activeView === "privacy" && <PrivacyView />}
           {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
+          {activeView === "guide" && (
+            <GuideView url={guide.url} nonce={guide.nonce} onBack={() => navigate({ view: "chat" })} />
+          )}
           {activeView === "schedules" && (
             <SchedulesView
               schedules={schedules}

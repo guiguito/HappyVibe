@@ -11,7 +11,7 @@ Shortcuts use ⌘ on macOS and Ctrl on Windows and Linux. The screen shows the k
 
 **App features** → **Keyboard shortcuts** in the sidebar. You can also press ⌘/ on macOS or Ctrl+/ on Windows and Linux.
 
-To open this guide from the app, press F1 on Windows and Linux, where the menu bar stays hidden until you press Alt. On macOS, choose **Help** ▸ **HappyVibe Guide** in the menu bar. It opens in a tab.
+To open this guide from the app, press F1 on Windows and Linux, where the menu bar stays hidden until you press Alt. On macOS, choose **Help** ▸ **HappyVibe Guide** in the menu bar. It opens the **User guide** page inside the app.
 
 ## What's on the screen
 
