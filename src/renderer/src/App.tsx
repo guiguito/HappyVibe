@@ -88,6 +88,7 @@ import { delegationAgent, isWaitTool } from "../../../pi-runtime/extensions/hv-r
 import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
 import { DocsLink } from "./components/DocsLink";
+import { docUrl, docsIndexUrl } from "./docsLinks";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
 import { ipcMessage } from "./ipcError";
 import { screenView, trackUi } from "./usage";
@@ -4176,6 +4177,7 @@ export default function App(): React.JSX.Element {
           onGoModels={() => { dismissOnboarding(); navigate({ view: "models" }); }}
           onSkip={dismissOnboarding}
           onDone={() => void finishOnboarding()}
+          onOpenGuide={() => void window.hv.openExternal(docUrl("first-launch"))}
         />
       )}
       {/* §36: the star nudge. Not gated on onboarding — it cannot coincide,

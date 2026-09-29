@@ -67,3 +67,20 @@ describe("provider errors link to the guide only where a page fixes them", () =>
     expect(app).toMatch(/onOpenDoc=\{openDocs\}/);
   });
 });
+
+describe("the setup dialog links to the setup guide", () => {
+  const dialog = read("src", "renderer", "src", "components", "OnboardingDialog.tsx");
+  const app = read("src", "renderer", "src", "App.tsx");
+  it("the copy is one string", () => expect(ONBOARDING_COPY.guideLink).toBe("Read the setup guide ↗"));
+  it("the dialog renders it in the brand column, and not on the celebration screen", () => {
+    expect(dialog).toMatch(/!complete && !welcome && \(\s*<button[^>]*onClick=\{onOpenGuide\}/);
+    expect(dialog).toContain("C.guideLink");
+  });
+  it("it always opens the SYSTEM browser — a pane opened behind a modal is invisible", () => {
+    const at = app.indexOf("onOpenGuide=");
+    expect(at).toBeGreaterThan(-1);
+    const call = app.slice(at, at + 200);
+    expect(call).toContain('window.hv.openExternal(docUrl("first-launch"))');
+    expect(call).not.toContain("openDocs");
+  });
+});

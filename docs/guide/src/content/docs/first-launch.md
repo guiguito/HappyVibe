@@ -7,7 +7,7 @@ The first time you open HappyVibe, it greets you with one small window in three 
 
 ## When you see it
 
-The setup window appears only on a fresh install, before you've added a project or started a session, and only until you close it. If you've used HappyVibe before, it stays out of your way.
+The setup window appears only on a fresh install, before you've added a project or started a session, and only until you close it. If you've used HappyVibe before, it stays out of your way. Under the tagline, a **Read the setup guide** link opens this page in your browser.
 
 ## Say hello
 
