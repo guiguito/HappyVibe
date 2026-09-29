@@ -984,7 +984,7 @@ export function Sidebar({
   return (
     <aside
       ref={asideRef}
-      className={`${railCollapsed ? "w-12" : "w-64"} shrink-0 bg-paper-deep pegboard border-r-2 border-line grid overflow-hidden motion-safe:transition-[width] motion-safe:duration-270 motion-safe:ease-hv-out`}
+      className={`${railCollapsed ? "w-12" : "w-72"} shrink-0 bg-paper-deep pegboard border-r-2 border-line grid overflow-hidden motion-safe:transition-[width] motion-safe:duration-270 motion-safe:ease-hv-out`}
       // A row must not move under the pointer: selecting re-sorts, and the next click
       // landed on the row that slid into its place (holdOrder). Released on leave.
       onMouseEnter={() => setHeldOrder([...sessions].sort(bySidebarOrder(live)).map((x) => x.id))}
@@ -1066,12 +1066,12 @@ export function Sidebar({
             <GearIcon />
           </button>
       </div>
-      {/* The expanded sidebar. `min-w-64` keeps its contents from reflowing
+      {/* The expanded sidebar. `min-w-72` keeps its contents from reflowing
           while the aside animates through the narrow widths between. */}
       <div
         inert={railCollapsed || undefined}
         aria-hidden={railCollapsed || undefined}
-        className={`col-start-1 row-start-1 w-64 min-w-64 flex flex-col min-h-0 motion-safe:transition-opacity motion-safe:duration-150 ${railCollapsed ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+        className={`col-start-1 row-start-1 w-72 min-w-72 flex flex-col min-h-0 motion-safe:transition-opacity motion-safe:duration-150 ${railCollapsed ? "opacity-0 pointer-events-none" : "opacity-100"}`}
       >
         {/* Brand */}
         {/* §34: `gap-1`, not `gap-2`. Measured — with three icon buttons the row
