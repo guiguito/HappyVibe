@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
 import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
-import { AGENT_STATUS_LABEL, AGENT_STATUS_TONE, EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
+import { AGENT_STATUS_LABEL, AGENT_STATUS_TONE, AGENTS_INTRO, AGENTS_LOADING_SUBTITLE, EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
 import { SOURCE_ORDER, agentBlurb, sortAgents } from "../src/renderer/src/agents";
 import { checkedAs } from "../src/renderer/src/agents";
 import { boundaryRuleName } from "../pi-runtime/extensions/hv-subagent-boundary";
@@ -1055,5 +1055,43 @@ describe("per-call pills (docs round #3)", () => {
     const box = readFileSync(path.join(process.cwd(), "src/renderer/src/components/PermissionRulesSection.tsx"), "utf8");
     expect(box).toContain("checkedAs(tool.trim())");
     expect(box).toContain("is checked as ${c.name} on every call. Test that name instead.");
+  });
+});
+
+// ── docs round #15: the page names only sources the bridge can emit ─────────
+describe("the Agents page's own words about where agents come from", () => {
+  const read = (rel: string): string => readFileSync(path.join(__dirname, "..", rel), "utf8");
+  const literals = (s: string): string[] => [...s.matchAll(/"(\w+)"/g)].map((m) => m[1]);
+  // Every AgentSource value, from its declaration.
+  const all = literals(read("pi-runtime/extensions/hv-agents.ts").match(/export type AgentSource = ([^;]+);/)![1]);
+  // What twEnumerateAgents can actually put in `source`: the literals of its ternary.
+  const emitted = new Set(literals(read("pi-runtime/extensions/happyvibe-bridge.ts").match(/source: ourDir[^\n]*/)![0]));
+  const NAMES: Record<string, RegExp> = {
+    builtin: /built-in|builtin|Pi runtime/i,
+    bundled: /bundled/i,
+    user: /\buser\b/i,
+    project: /project/i,
+    package: /package/i,
+  };
+
+  test("every source has a word to look for, and the bridge emits the two the copy names", () => {
+    expect(Object.keys(NAMES).sort()).toEqual([...all].sort());
+    expect(emitted.has("bundled")).toBe(true);
+    expect(emitted.has("project")).toBe(true);
+  });
+
+  test("the intro and the loading subtitle name no source the bridge never emits", () => {
+    for (const copy of [AGENTS_INTRO, AGENTS_LOADING_SUBTITLE]) {
+      for (const s of all) if (!emitted.has(s)) expect(copy, s).not.toMatch(NAMES[s]);
+      expect(copy).toMatch(NAMES.bundled);
+      expect(copy).toMatch(NAMES.project);
+    }
+  });
+
+  test("the view renders those constants, not inline copies", () => {
+    const view = read("src/renderer/src/components/AgentsView.tsx");
+    expect(view).toContain("{AGENTS_INTRO}");
+    expect(view).toContain("? AGENTS_LOADING_SUBTITLE");
+    expect(view).not.toMatch(/installed packages|Pi runtime/);
   });
 });

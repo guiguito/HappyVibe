@@ -39,6 +39,16 @@ export const AGENT_STATUS_LABEL: Record<"on" | "off", string> = { on: "on", off:
 export const EDITABLE_SOURCES: ReadonlySet<string> = new Set(["bundled", "project"]);
 
 /**
+ * docs round #15 — the page's own words for where agents come from. DATA, so
+ * tests/agents-renderer.test.ts can hold them to the sources the bridge's
+ * twEnumerateAgents actually emits (bundled and project; upstream's defaults
+ * are off and nothing is discovered from packages).
+ */
+export const AGENTS_INTRO =
+  "Every subagent this workspace can delegate to — HappyVibe's bundled ones, copies you've made of them, and this project's own.";
+export const AGENTS_LOADING_SUBTITLE = "Bundled and project subagents you can delegate to.";
+
+/**
  * Agents page (split out of the old combined Skills/MCP/Agents/Tools view).
  * Lists the agent inventory — bundled, upstream builtin, project, user and
  * package — with edit-system-prompt / duplicate / agent-tier model override.
@@ -93,7 +103,7 @@ export function AgentsView({
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Agents</h1>
-        <p className="text-sm text-ink-soft mb-8">Every subagent this workspace can delegate to — yours, this project's, and the ones your Pi runtime and installed packages provide.</p>
+        <p className="text-sm text-ink-soft mb-8">{AGENTS_INTRO}</p>
 
         {/* Agents */}
         <Section
@@ -101,7 +111,7 @@ export function AgentsView({
           title="Agents"
           subtitle={
             sortedAgents === null
-              ? "Bundled, built-in, project, user and package subagents you can delegate to."
+              ? AGENTS_LOADING_SUBTITLE
               // The context lever, stated plainly: the roster is injected into the
               // system prompt on EVERY turn, so an agent left on has a standing cost.
               : `${sortedAgents.filter((a) => a.enabled !== false).length} on · about ${rosterTokenCost(sortedAgents)} tokens of context every turn. Switch off the ones you do not use.`
