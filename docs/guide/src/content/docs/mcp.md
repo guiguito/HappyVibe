@@ -43,7 +43,7 @@ The buttons on each row:
 - **Log out**: sign out of a connected online server.
 - **Reconnect**: check the server again. On an **off** server this button reads **Connect**: HappyVibe checks the server answers and signs you in if it needs to. Once it's connected, your sessions can use it.
 - **Edit**: change its name, command, address or settings.
-- **Remove**: take it off the list. It goes straight away, so the catalog card becomes clickable again.
+- **Remove**: take it off the list, after you confirm. The catalog card becomes clickable again.
 
 With no servers yet, the list says "No MCP servers yet" and "Install one from the catalog above, or add your own."
 

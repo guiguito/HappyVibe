@@ -22,6 +22,12 @@ function statusKey(scope: string, workspaceId: string | null, name: string): str
   return `${scope}:${workspaceId ?? ""}:${name}`;
 }
 
+/** docs-round #24: Remove asks first, the way skill Delete does (SkillsSection.tsx). */
+export function mcpRemoveMessage(s: { scope: "global" | "workspace"; name: string }): string {
+  const file = s.scope === "global" ? "your global mcp.json" : "this workspace's .mcp.json";
+  return `Remove “${s.name}”?\n\nIt's taken out of ${file}. Open sessions restart once they're idle.`;
+}
+
 // ---------------------------------------------------------------------------
 // McpConnectResult — shown after authenticate/check resolves
 // ---------------------------------------------------------------------------
@@ -225,6 +231,7 @@ export function McpServersSection({
   }, [workspaceId, scope]);
 
   const remove = async (s: McpServer): Promise<void> => {
+    if (!window.confirm(mcpRemoveMessage(s))) return;
     await window.hv.mcpSetServer(s.scope, s.scope === "workspace" ? workspaceId : null, s.name, null);
     await refresh();
     onServersChanged?.();

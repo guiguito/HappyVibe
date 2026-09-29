@@ -64,8 +64,9 @@ You can skip either step and come back later. Once the dialog is closed, the sam
 
 1. Find it under **Installed**.
 2. Click **Remove**.
+3. Confirm. HappyVibe asks first, "Remove “<name>”?", and says what goes with it, for example "This deletes its 2 skills, 1 prompt and 1 MCP server."
 
-HappyVibe removes every skill, prompt and MCP server that plugin brought, and nothing else. It happens right away, with no second check. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)). You can install it again any time.
+HappyVibe removes every skill, prompt and MCP server that plugin brought, and nothing else. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)). You can install it again any time.
 
 ## During a session
 
