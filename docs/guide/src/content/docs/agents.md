@@ -47,10 +47,6 @@ It takes effect from your next message. No restart needed. The agent stays on th
 
 **Edit** appears for **bundled** and **project** agents, the ones HappyVibe can write to.
 
-:::caution
-For a project agent kept in `.agents/agents`, **Edit** and **Duplicate** don't work yet: **Edit** opens with an error, and **Duplicate** does nothing. Edit that agent's file in your project instead. Agents in `.pi/agents` work as described here.
-:::
-
 1. Click the agent's row, then **Edit**.
 2. Pick a **Model (agent tier)**, or leave it on **Inherit (global / workspace default)** to use your default model.
 3. Change the **System prompt** if you want the agent to work differently.
@@ -63,7 +59,7 @@ To try a variation without touching the original:
 1. Click the agent's row.
 2. Click **Duplicate**.
 
-A copy named *name*-copy appears on the list, next to the original. Edit the copy, and turn the original off if you only want the new one.
+A copy named *name*-copy appears on the list, next to the original, in the same folder. Edit the copy, and turn the original off if you only want the new one. If the copy can't be made, the window stays open and says why.
 
 ## During a session
 

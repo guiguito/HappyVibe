@@ -6,16 +6,21 @@ import { editAgentFile, parseAgentFile, serializeAgentFile, duplicateName } from
  * Agent management (B6) — path-confined fs, mirroring agentsMd.ts.
  *
  * Edits/duplicates are confined to `*.md` files directly inside an ALLOWED
- * agent dir: the app-owned built-in dir, or a registered workspace's
- * `.pi/agents`. The renderer-supplied path is a trust boundary — we resolve it
- * and refuse anything that escapes an allowed dir.
+ * agent dir: the app-owned built-in dir, or a root's `.pi/agents` or
+ * `.agents/agents`, the three folders tintinweb discovers. The renderer-supplied
+ * path is a trust boundary — we resolve it and refuse anything that escapes an
+ * allowed dir.
  */
 
-/** Allowed dirs: the app built-in dir + every registered workspace's .pi/agents. */
-export function allowedAgentDirs(builtinDir: string, registeredWorkspaces: string[]): string[] {
+/**
+ * Allowed dirs: the app built-in dir, plus every admitted root's `.pi/agents` and
+ * `.agents/agents`. docs-round #8: the list showed `.agents/agents` agents as
+ * "project", and Duplicate/Edit refused them. The app already writes `.agents/plans`.
+ */
+export function allowedAgentDirs(builtinDir: string, roots: string[]): string[] {
   return [
     path.resolve(builtinDir),
-    ...registeredWorkspaces.map((w) => path.resolve(w, ".pi", "agents")),
+    ...roots.flatMap((w) => [path.resolve(w, ".pi", "agents"), path.resolve(w, ".agents", "agents")]),
   ];
 }
 

@@ -4969,7 +4969,9 @@ export function registerIpc(
     const c = sessionId ? (manager.get(sessionId) as PiClient | null) : null;
     return c ?? ensureUtility();
   };
-  const agentDirs = (): string[] => allowedAgentDirs(builtinAgentsDir(), workspaces.list());
+  // roots(), not workspaces.list(): a worktree session's Pi runs in the worktree, so
+  // its agents live under a root the registry alone doesn't list (docs-round #8).
+  const agentDirs = (): string[] => allowedAgentDirs(builtinAgentsDir(), roots());
 
   ipcMain.handle("hv:list-agents", async (_e, sessionId?: string) => {
     void (await anyClient(sessionId)).send({ type: "prompt", message: "/hv-agents" }).catch(() => {});

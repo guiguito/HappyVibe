@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { agentBlurb, agentTokenCost, rosterTokenCost, sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
 import { EmptyState } from "./EmptyState";
+import { ipcMessage } from "../ipcError";
 
 /**
  * §12 (2026-08-29): five sources, because there are five. `bundled` is ours and
@@ -74,9 +75,18 @@ export function AgentsView({
     void window.hv.listAgents(sessionId ?? undefined); // refreshes page AND composer chip
   };
 
-  const duplicate = async (a: AgentInfo): Promise<void> => {
-    await window.hv.duplicateAgent(a.path);
+  // docs-round #8: a refused copy is SAID, in main's words. It used to reject into
+  // nothing and leave the dialog open with no sign anything had been tried.
+  const [dupError, setDupError] = useState<string | null>(null);
+  const duplicate = async (a: AgentInfo): Promise<boolean> => {
+    try {
+      await window.hv.duplicateAgent(a.path);
+    } catch (e) {
+      setDupError(ipcMessage(e));
+      return false;
+    }
     void window.hv.listAgents(sessionId ?? undefined); // refresh
+    return true;
   };
 
   return (
@@ -109,7 +119,7 @@ export function AgentsView({
                 <button
                   key={a.path}
                   type="button"
-                  onClick={() => setInspecting(a)}
+                  onClick={() => { setDupError(null); setInspecting(a); }}
                   className={`w-full text-left px-4 py-3 border-b border-line last:border-b-0 hover:bg-paper-deep/30 cursor-pointer block ${on ? "" : "opacity-55"}`}
                 >
                   <div className="flex items-center gap-2 flex-wrap">
@@ -150,12 +160,13 @@ export function AgentsView({
       {inspecting && (
         <AgentInspector
           agent={inspecting}
+          error={dupError}
           onClose={() => setInspecting(null)}
           onToggle={() => {
             void toggle(inspecting).then(() => setInspecting(null));
           }}
           onDuplicate={() => {
-            void duplicate(inspecting).then(() => setInspecting(null));
+            void duplicate(inspecting).then((ok) => { if (ok) setInspecting(null); });
           }}
           onEdit={() => {
             setEditing(inspecting);
@@ -186,12 +197,15 @@ export function AgentsView({
  */
 function AgentInspector({
   agent,
+  error,
   onClose,
   onToggle,
   onDuplicate,
   onEdit,
 }: {
   agent: AgentInfo;
+  /** Why the last Duplicate was refused, in main's words (docs-round #8). */
+  error: string | null;
   onClose: () => void;
   onToggle: () => void;
   onDuplicate: () => void;
@@ -220,6 +234,8 @@ function AgentInspector({
             Close
           </button>
         </div>
+
+        {error && <div className="mb-2 text-sm font-semibold text-berry">{error}</div>}
 
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${AGENT_STATUS_TONE[agent.enabled === false ? "off" : "on"]}`}>
@@ -310,7 +326,7 @@ function AgentEditor({
     window.hv.readAgent(agent.path).then((r) => {
       setBody(r.body);
       setModel(r.model ?? "");
-    }).catch((e) => setError(String(e)));
+    }).catch((e) => setError(ipcMessage(e)));
     void window.hv.listModels().then(setModels).catch(() => {});
   }, [agent.path]);
 
@@ -320,7 +336,7 @@ function AgentEditor({
       await window.hv.writeAgent(agent.path, { body, model: model || null });
       onSaved();
     } catch (e) {
-      setError(String(e));
+      setError(ipcMessage(e));
     }
   };
 
