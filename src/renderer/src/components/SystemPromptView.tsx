@@ -146,6 +146,10 @@ export function SystemPromptView({ sessionId }: { sessionId: string | null }): R
  * agent started. One setting, one answer — but the second half has a real cost
  * the first does not, so the copy states it: with this off, an agent can start
  * a dev server and then lose track of it after a compaction.
+ *
+ * §28 rides it too: the address of the browser pane this session opened
+ * (agentBrowsers.buildOpenBrowserBlock), never the page's content.
+ * tests/open-files-copy.test.ts holds the copy to every block this gates.
  */
 function OpenFilesToggle(): React.JSX.Element {
   const [on, setOn] = useState(true);
@@ -160,9 +164,10 @@ function OpenFilesToggle(): React.JSX.Element {
           takes effect on your next message.
         </p>
         <p className="text-sm text-ink-soft mt-1.5">
-          It also lists the terminals the agent itself started, so it can still find a dev server it opened earlier in
-          a long conversation. Turning this off takes that away too — the terminal keeps running and you keep seeing
-          it, but the agent may lose track of it.
+          It also lists the terminals the agent itself started, and the address of the browser pane it opened (never
+          the page itself), so it can still find a dev server or a page it opened earlier in a long conversation.
+          Turning this off takes that away too — the terminal keeps running and you keep seeing it, but the agent may
+          lose track of it.
         </p>
       </div>
       <button
