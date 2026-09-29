@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  isMcpManageRule, isMcpNamespaceTool, unwrapMcpNamespaceCall, MCP_NAMESPACE_DESCRIPTION, MCP_MANAGE_ACTIONS, MCP_MANAGE_PREFIX, MCP_READ_ACTIONS, unwrapMcpCall,
+  isMcpManageRule, isMcpNamespaceTool, isMcpNamespaceProxy, unwrapMcpNamespaceCall, MCP_NAMESPACE_DESCRIPTION, MCP_MANAGE_ACTIONS, MCP_MANAGE_PREFIX, MCP_READ_ACTIONS, unwrapMcpCall,
 } from "../pi-runtime/extensions/hv-mcp";
 import { gatePlanCall } from "../pi-runtime/extensions/hv-plan";
 import { gateReadonlyCall } from "../pi-runtime/extensions/hv-readonly";
@@ -187,9 +187,26 @@ test("#35 isMcpNamespaceTool: the adapter's mcp__<server> proxies, not the proxy
   expect(isMcpNamespaceTool("mcp__" + "_mcpns_" + "2e_x")).toBe(true); // encoded server names carry `__`
   expect(isMcpNamespaceTool("mcp")).toBe(false);
   expect(isMcpNamespaceTool("mcp__")).toBe(false);
-  expect(isMcpNamespaceTool("mcp__echo__prompt")).toBe(false);
+  // servers named with `__` are left unencoded by the adapter: mcp__foo__bar IS a namespace tool.
+  // Prompt commands (mcp__<s>__<p>) are registerCommand slash commands, never tools, so they never reach tool_call.
+  expect(isMcpNamespaceTool("mcp__foo__bar")).toBe(true);
   expect(isMcpNamespaceTool("read")).toBe(false);
   expect(isMcpNamespaceTool("xmcp__echo")).toBe(false);
+});
+
+test("#35 isMcpNamespaceProxy: the registered description AND the {tool, args} parameter shape", () => {
+  const description = MCP_NAMESPACE_DESCRIPTION + 'echo". Forwards ...';
+  const props = (o: Record<string, unknown>) => ({ type: "object", properties: o });
+  expect(isMcpNamespaceProxy({ description, parameters: props({ tool: {}, args: {} }) })).toBe(true);
+  expect(isMcpNamespaceProxy({ description, parameters: props({ tool: {} }) })).toBe(true); // args is optional
+  expect(isMcpNamespaceProxy({ description, parameters: props({ tool: {}, args: {}, intent: {} }) })).toBe(true); // bridge-injected
+  // a hostile direct tool copying the description
+  expect(isMcpNamespaceProxy({ description, parameters: props({ tool: {}, args: {}, command: {} }) })).toBe(false);
+  expect(isMcpNamespaceProxy({ description, parameters: props({ tool: {}, path: {} }) })).toBe(false);
+  expect(isMcpNamespaceProxy({ description, parameters: props({ args: {} }) })).toBe(false);
+  expect(isMcpNamespaceProxy({ description, parameters: undefined })).toBe(false);
+  expect(isMcpNamespaceProxy({ description: "Other", parameters: props({ tool: {}, args: {} }) })).toBe(false);
+  expect(isMcpNamespaceProxy(undefined)).toBe(false);
 });
 
 test("#35 a namespace call gates as the proxy would: mcp:<tool>, 'MCP → <tool>'", () => {
@@ -219,8 +236,8 @@ test("#35 the bridge unwraps namespace calls, but only for a tool the adapter re
   const bridge = fs.readFileSync(path.join(__dirname, "../pi-runtime/extensions/happyvibe-bridge.ts"), "utf8");
   const line = bridge.match(/const mcp =[\s\S]*?: null;/)![0];
   expect(line).toContain("isMcpNamespaceTool(tool)");
+  expect(line).toContain("isMcpNamespaceProxy(");
   expect(line).toContain("unwrapMcpNamespaceCall(tool, input)");
-  expect(bridge).toContain("MCP_NAMESPACE_DESCRIPTION");
 });
 
 test("#35 contract: the adapter still names the proxy mcp__<server> and describes it as we recognise it", () => {
@@ -231,6 +248,7 @@ test("#35 contract: the adapter still names the proxy mcp__<server> and describe
   expect(ns).toContain("`Namespace-proxy for MCP server \"${serverName}\". `");
   expect(MCP_NAMESPACE_DESCRIPTION).toBe('Namespace-proxy for MCP server "');
   expect(ns).toMatch(/const parameters = Type\.Object\(\{\s*tool: Type\.String/);
+  expect(ns).toMatch(/tool: Type\.String\([^)]*\),\s*args: Type\.Optional/); // exactly {tool, args}: isMcpNamespaceProxy pins this shape
   expect(ns).toContain("params.tool"); // execute reads `tool` alone — unwrapMcpNamespaceCall drops every other dispatch key
   expect(ns).not.toMatch(/params\.(action|connect|describe|search|instructions)/);
 });

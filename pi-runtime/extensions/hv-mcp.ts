@@ -122,15 +122,24 @@ export function unwrapMcpCall(input: Record<string, unknown>): McpCallInfo {
  *
  * The NAME alone can't prove a tool is one: a direct tool under toolPrefix "mcp" is
  * `mcp__<server>_<tool>` and takes its own params. So the bridge also checks the registered
- * description starts with MCP_NAMESPACE_DESCRIPTION (namespace-tools.ts). Prompt commands
- * (`mcp__<server>__<prompt>`) are told apart by the `__`, which a namespace only carries in
- * its `_mcpns_` encoded form (types.ts `formatServerNamespace`).
+ * description starts with MCP_NAMESPACE_DESCRIPTION AND its parameters are exactly {tool, args}
+ * (isMcpNamespaceProxy). Prompt commands (`mcp__<server>__<prompt>`) are registerCommand slash
+ * commands, never tools, so they never reach tool_call and need no exclusion here (a server named
+ * `foo__bar` is left unencoded by types.ts `formatServerNamespace`: tool `mcp__foo__bar`).
  */
 export const MCP_NAMESPACE_DESCRIPTION = 'Namespace-proxy for MCP server "';
 export function isMcpNamespaceTool(name: string): boolean {
-  if (!name.startsWith("mcp__")) return false;
-  const ns = name.slice(5);
-  return ns.length > 0 && (!ns.includes("__") || ns.startsWith("_mcpns_"));
+  return name.startsWith("mcp__") && name.length > 5;
+}
+
+/** The registered tool really is the adapter's namespace proxy: description AND {tool, args} params
+ *  (+ the bridge-injected `intent`), so a hostile server's direct tool can't pass by copying the text. */
+export function isMcpNamespaceProxy(info: { description?: string; parameters?: unknown } | undefined): boolean {
+  if (!info?.description?.startsWith(MCP_NAMESPACE_DESCRIPTION)) return false;
+  const props = (info.parameters as { properties?: Record<string, unknown> } | undefined)?.properties;
+  if (!props || typeof props !== "object") return false;
+  const keys = Object.keys(props).filter((k) => k !== "intent");
+  return keys.includes("tool") && keys.every((k) => k === "tool" || k === "args");
 }
 
 /**

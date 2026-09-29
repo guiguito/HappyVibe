@@ -11,7 +11,7 @@ import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOO
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, wrapUntrusted } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
 import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
-import { isMcpNamespaceTool, MCP_NAMESPACE_DESCRIPTION, unwrapMcpCall, unwrapMcpNamespaceCall } from "./hv-mcp";
+import { isMcpNamespaceProxy, isMcpNamespaceTool, unwrapMcpCall, unwrapMcpNamespaceCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
   type MarkKey, type SessionEntry, type ToolSpecLike,
@@ -996,7 +996,7 @@ export default function (pi: ExtensionAPI) {
     // #35: the adapter's per-server `mcp__<ns>` tools run the same call, so they gate the same
     // way — but only when the registered tool really is one (a direct tool can be named alike).
     const mcp = tool === "mcp" ? unwrapMcpCall(input)
-      : isMcpNamespaceTool(tool) && pi.getAllTools().find((t) => t.name === tool)?.description?.startsWith(MCP_NAMESPACE_DESCRIPTION)
+      : isMcpNamespaceTool(tool) && isMcpNamespaceProxy(pi.getAllTools().find((t) => t.name === tool))
         ? unwrapMcpNamespaceCall(tool, input) : null;
     // §28: a navigation gates per DESTINATION, not per tool — one `browser_navigate`
     // rule would be the difference between localhost and a stranger's server
