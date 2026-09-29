@@ -66,7 +66,9 @@ export function duplicateAgent(allowedDirs: string[], filePath: string): string 
     fs.readdirSync(dir).filter((n) => n.endsWith(".md")).map((n) => n.replace(/\.md$/, "")),
   );
   const newName = duplicateName(frontmatter.name || path.basename(src, ".md"), existing);
-  const target = path.join(dir, `${newName}.md`);
+  // The name comes from the file's own frontmatter (free text, and a repo can supply it), so
+  // the copy's path is confined too: a `/` or `..` in it would land outside the agent folders.
+  const target = confineAgentPath(allowedDirs, path.join(dir, `${newName}.md`));
   fs.writeFileSync(target, serializeAgentFile({ ...frontmatter, name: newName }, body), "utf8");
   return target;
 }

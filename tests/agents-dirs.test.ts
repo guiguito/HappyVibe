@@ -3,7 +3,7 @@
  * `.pi/agents` and `.agents/agents`, in every root the app admits (a worktree too). Driven through
  * the real path confinement on temp dirs; the wiring halves are source scans.
  */
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,6 +19,7 @@ const AGENT = "---\nname: greeter\ndescription: Says hello.\n---\nSay hello, the
 fs.writeFileSync(path.join(shared, "greeter.md"), AGENT);
 fs.writeFileSync(path.join(wt, ".pi", "agents", "tester.md"), AGENT.replace("greeter", "tester"));
 const dirs = allowedAgentDirs(builtin, [ws, wt]);
+afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 describe("agents in .agents/agents can be edited and duplicated", () => {
   it("the allowed folders are the three tintinweb discovers", () => {
@@ -42,6 +43,52 @@ describe("agents in .agents/agents can be edited and duplicated", () => {
   it("still refuses anything outside an agent folder", () => {
     fs.writeFileSync(path.join(ws, ".agents", "notes.md"), "x");
     expect(() => confineAgentPath(dirs, path.join(ws, ".agents", "notes.md"))).toThrow(/escapes/);
+  });
+});
+
+describe("Duplicate confines the copy's path, since the name is the file's own text", () => {
+  // A repo can supply an agent file, and its frontmatter `name:` is free text. The victim folders
+  // exist, so an unconfined write would succeed (writeFileSync never creates missing folders).
+  const evil = path.join(tmp, "evil");
+  const evilAgents = path.join(evil, ".agents", "agents");
+  const victims = [path.join(tmp, "victim"), path.join(evilAgents, "sub"), path.join(evilAgents, "tmp")];
+  for (const d of [evilAgents, ...victims]) fs.mkdirSync(d, { recursive: true });
+  const evilDirs = allowedAgentDirs(builtin, [evil]);
+  const listing = (d: string): string[] => fs.readdirSync(d).sort();
+
+  it.each([
+    ["../../../victim/planted", "a parent-folder name"],
+    ["sub/dir", "a name with a separator"],
+    ["/tmp/x-planted", "an absolute name"],
+  ])("refuses %s (%s) and writes nothing", (name) => {
+    const evilFile = path.join(evilAgents, "evil.md");
+    fs.writeFileSync(evilFile, `---\nname: ${name}\ndescription: Not what it seems.\n---\nBody.\n`);
+    const before = victims.map(listing);
+    const beforeAllowed = listing(evilAgents);
+    expect(() => duplicateAgent(evilDirs, evilFile)).toThrow(/escapes/);
+    expect(victims.map(listing)).toEqual(before);
+    expect(listing(evilAgents)).toEqual(beforeAllowed);
+    fs.rmSync(evilFile);
+  });
+
+  it("a normal name still duplicates as <name>-copy.md beside the original", () => {
+    const ok = path.join(evilAgents, "fine.md");
+    fs.writeFileSync(ok, "---\nname: fine\ndescription: Ordinary.\n---\nBody.\n");
+    expect(duplicateAgent(evilDirs, ok)).toBe(path.join(evilAgents, "fine-copy.md"));
+  });
+});
+
+describe("only the exact agent folders of admitted roots are allowed", () => {
+  it("a root that isn't in the list is refused", () => {
+    const only = allowedAgentDirs(builtin, [ws]);
+    expect(() => readAgentBody(only, path.join(wt, ".pi", "agents", "tester.md"))).toThrow(/escapes/);
+  });
+
+  it("a sibling folder sharing the prefix is refused", () => {
+    const sibling = path.join(ws, ".agents", "agents-evil");
+    fs.mkdirSync(sibling, { recursive: true });
+    fs.writeFileSync(path.join(sibling, "x.md"), AGENT);
+    expect(() => readAgentBody(dirs, path.join(sibling, "x.md"))).toThrow(/escapes/);
   });
 });
 
