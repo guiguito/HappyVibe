@@ -6,7 +6,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { TERMINAL_PALETTES } from "../terminalTheme";
-import { fontStack } from "../../../main/terminalSettings";
+import { allowPaste, fontStack } from "../../../main/terminalSettings";
 
 /**
  * §26 — one mounted emulator, bound to one terminal id in main.
@@ -205,13 +205,14 @@ export function TerminalTab({
    * Pasting is where a terminal can hurt someone who did not mean it: a block
    * ending in a newline EXECUTES on arrival. §26 calls this a safety setting
    * rather than a preference, which is why it defaults on.
+   *
+   * CAPTURE, not onPaste (docs round #4): xterm's own paste listener on its
+   * textarea calls stopPropagation() and writes the text at once, so a bubbling
+   * handler here never ran. React's capture listener sits at the root and runs
+   * first, and stopping the event there keeps a refused paste from reaching xterm.
    */
-  const onPaste = (e: React.ClipboardEvent): void => {
-    if (!live.current.warnMultilinePaste) return;
-    const text = e.clipboardData.getData("text");
-    if (!/\n/.test(text.trim()) && !text.endsWith("\n")) return;
-    const lines = text.trimEnd().split("\n").length;
-    if (!window.confirm(`Paste and run ${lines} lines? A pasted newline executes immediately.`)) {
+  const onPasteCapture = (e: React.ClipboardEvent): void => {
+    if (!allowPaste(e.clipboardData.getData("text"), live.current.warnMultilinePaste)) {
       e.preventDefault();
       e.stopPropagation();
     }
@@ -221,7 +222,9 @@ export function TerminalTab({
     if (!live.current.rightClickPastes) return; // macOS convention is a menu
     e.preventDefault();
     void navigator.clipboard.readText().then((text) => {
-      if (text) void window.hv.termInput(terminalId, text);
+      // Through xterm's paste(), never a raw write to the PTY: it applies bracketed
+      // paste and line-ending normalisation, exactly as a keyboard paste does.
+      if (text && allowPaste(text, live.current.warnMultilinePaste)) term.current?.paste(text);
     });
   };
 
@@ -247,7 +250,7 @@ export function TerminalTab({
     <div
       className={`relative min-h-0 min-w-0 overflow-hidden ${dividerClass ?? ""}`}
       style={{ gridArea, display: hidden ? "none" : "block", background: TERMINAL_PALETTES[settings.style].background }}
-      onPaste={onPaste}
+      onPasteCapture={onPasteCapture}
       onContextMenu={onContextMenu}
     >
       <div ref={host} className="absolute inset-0 p-2" />

@@ -41,7 +41,7 @@ Every row has its own **Reset** button, which appears once you've changed that r
 - **Scrollback**: how many lines each terminal keeps.
 - **Copy on select**: copies text as soon as you select it.
 - **Right-click pastes**: "Off by default — a right-click opens the context menu instead."
-- **Warn on multi-line paste** (on by default): "A safety setting, not a preference: a pasted block ending in a newline runs the moment it lands." With it on, pasting text that contains or ends with a line break asks first, for example "Paste and run 3 lines? A pasted newline executes immediately." A right-click paste (with **Right-click pastes** on) doesn't ask, so paste several lines with the keyboard instead.
+- **Warn on multi-line paste** (on by default): "A safety setting, not a preference: a pasted block ending in a newline runs the moment it lands." With it on, pasting text that contains or ends with a line break asks first, for example "Paste and run 3 lines? A pasted newline executes immediately." Every paste asks: from the keyboard, with a right-click (when **Right-click pastes** is on), and into an agent terminal's card.
 - **Confirm close while running** (on by default): "Closing a terminal tab kills its process." With it on, closing a tab while a command is still running asks first.
 - **Bell**: off, visual (a quick flash) or sound.
 - **Word separators**: "Characters that end a word for double-click selection."
@@ -69,7 +69,7 @@ An agent terminal doesn't open a tab. It shows up as a circle in the row at the 
 - **◼ Stop**: "Stop this terminal and the process in it". It doesn't ask first, so you can always stop an agent terminal in one click.
 - **✕**: "Close — the terminal keeps running, and its circle stays in the row"
 
-Agent terminals use the same style and appearance settings as yours.
+Agent terminals use the same style and appearance settings as yours, and the same **Warn on multi-line paste**.
 
 ## Related
 
