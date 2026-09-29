@@ -683,12 +683,13 @@ export default function (pi: ExtensionAPI) {
         if (!ui) return "deny";
         const control = (activityState?: string) =>
           req.agentId && ui.notify(JSON.stringify({ kind: "hv.subagent", stage: "control", runId: req.agentId, ...(activityState ? { activityState } : {}) }), "info");
-        const record = req.agentId
-          ? (globalThis as Record<symbol, { getRecord?(id: string): { description?: string } | undefined } | undefined>)[Symbol.for("pi-subagents:manager")]?.getRecord?.(req.agentId)
-          : undefined;
+        // docs round #1: the app names the child, by its agent type and run id. Never the
+        // run's task text: that is the model's own `Agent` argument, and a prompt never
+        // shows the model's words (§13). The run's card turns amber while this waits,
+        // which is how the user tells two runs of one agent apart.
         const title = JSON.stringify({
           kind: "hv.permission", tool: req.permTool, summary: summarize(req.tool, req.input),
-          child: { agent: req.type ?? "sub-agent", runLabel: record?.description ?? "", runId: req.agentId ?? "" },
+          child: { agent: req.type ?? "sub-agent", runId: req.agentId ?? "" },
         });
         control("needs_attention");
         try {

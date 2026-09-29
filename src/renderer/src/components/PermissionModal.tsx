@@ -162,7 +162,7 @@ export function PermissionModal({
               <Dialog.Title className="font-bold text-lg leading-tight">
                 {fact ? memoryPromptTitle(info.tool, previous !== null)
                   : info.workflow ? "The agent wants to run a workflow"
-                  : info.child ? `Sub-agent ${info.child.agent}${info.child.runLabel ? ` · ${info.child.runLabel}` : ""} wants to run something`
+                  : info.child ? `Sub-agent ${info.child.agent} wants to run something`
                   : "The agent wants to run something"}
               </Dialog.Title>
               {/* W1.1: human summary line (same toolLabel as the tool cards). */}
