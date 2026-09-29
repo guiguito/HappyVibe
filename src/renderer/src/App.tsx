@@ -2173,6 +2173,11 @@ export default function App(): React.JSX.Element {
     if (ws) void newBrowser(ws, url);
     else void window.hv.openExternal(url);
   };
+  // Docs in the app: Help ▸ HappyVibe Guide. A ref, so the one subscription always sees the
+  // current workspaces instead of the ones from the render it was made in.
+  const openDocsRef = useRef(openDocs);
+  openDocsRef.current = openDocs;
+  useEffect(() => window.hv.onOpenDocs(() => openDocsRef.current(docsIndexUrl)), []);
 
   /**
    * §26: close a terminal tab, which KILLS its PTY — a terminal tab IS its

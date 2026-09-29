@@ -1206,6 +1206,8 @@ interface HvApi {
     at?: { x: number; y: number };
   }): Promise<boolean>;
   onTabArrive(h: (p: { tab: string; ws: string; draft?: string }) => void): () => void;
+  /** Docs in the app: the Help menu's guide item was clicked. */
+  onOpenDocs(h: () => void): () => void;
   setWindowTabs(t: Record<string, unknown>): Promise<void>;
   windowHolds(h: { sessions: string[]; terminals: string[]; browsers: string[] }): void;
   dragBegin(d: { tab: string; ws: string; draft?: string }): void;

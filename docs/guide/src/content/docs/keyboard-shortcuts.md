@@ -47,6 +47,7 @@ A worktree is a second copy of your project's files, on its own branch, in its o
 | New line in the composer | ⇧Enter on macOS, Shift+Enter on Windows and Linux |
 | Reference a file or folder in the composer | @ |
 | Close a dialog or search | Esc |
+| Open this guide | F1 on Windows and Linux. On macOS, use Help ▸ HappyVibe Guide |
 | Dictate into the composer (tap to keep recording) | Hold right ⌘ on macOS, right Ctrl on Windows and Linux |
 
 In this list, the composer is the message box.

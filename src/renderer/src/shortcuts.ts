@@ -46,7 +46,8 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   // Electron's app menu owns it for New Window (src/main/index.ts), an
   // accelerator is served before the renderer ever sees the key, and
   // findConflict only knows about THIS list — so it could not even warn.
-  // Mod-Shift-w is gone the same way (close window).
+  // Mod-Shift-w is gone the same way (close window). So is F1: on Windows and Linux it is
+  // Help ▸ HappyVibe Guide, an accelerator findConflict cannot see.
   //
   // Mod-Shift rather than Mod-Alt on purpose: macOS composes an Option key into
   // a dead character, so e.key for ⌘⌥N can arrive as "˜" and never match. The

@@ -84,3 +84,34 @@ describe("the setup dialog links to the setup guide", () => {
     expect(call).not.toContain("openDocs");
   });
 });
+
+describe("Help ▸ HappyVibe Guide (Docs in the app, 2026-09-29)", () => {
+  const index = read("src", "main", "index.ts");
+  it("the menu is set on EVERY platform, not only inside the macOS branch", () => {
+    expect(index).not.toMatch(/if \(process\.platform === 'darwin'\) \{\s*Menu\.setApplicationMenu/);
+    expect(index).toMatch(/Menu\.setApplicationMenu\(/);
+  });
+  it("Help holds the guide item", () => {
+    expect(index).toMatch(/role: 'help'/);
+    expect(index).toMatch(/label: 'HappyVibe Guide'/);
+  });
+  it("F1 is Windows/Linux only — on macOS it is a hardware key", () => {
+    expect(index).toMatch(/isMac \? \{\} : \{ accelerator: 'F1' \}/);
+  });
+  it("the click goes to the focused window, and with none open opens the system browser", () => {
+    expect(index).toMatch(/getFocusedWindow\(\)/);
+    expect(index).toContain("send('hv:open-docs')");
+    expect(index).toMatch(/shell\.openExternal\(DOCS_BASE\)/);
+  });
+  it("Windows and Linux get File ▸ Quit where macOS has the app menu", () => {
+    expect(index).toMatch(/role: 'fileMenu'/);
+  });
+  it("preload, the typings and App all carry the event", () => {
+    expect(read("src", "preload", "index.ts")).toContain('"hv:open-docs"');
+    expect(read("src", "renderer", "src", "hv.d.ts")).toContain("onOpenDocs(");
+    expect(read("src", "renderer", "src", "App.tsx")).toMatch(/onOpenDocs\(\(\) => openDocsRef\.current\(docsIndexUrl\)\)/);
+  });
+  it("the shortcuts note records F1 beside Mod-Shift-n, because findConflict cannot see menu accelerators", () => {
+    expect(read("src", "renderer", "src", "shortcuts.ts")).toMatch(/F1/);
+  });
+});
