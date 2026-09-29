@@ -32,8 +32,10 @@ paths:
   app's sidebar is hidden (CSS, not unmounted) so the guide's own left column is the only one. Every link goes
   through `openDocs` in `App.tsx`; only "no model connected yet" and the setup dialog use the system
   browser. An iframe on purpose — a browser pane is a native view that paints above prompts. The
-  renderer CSP allows exactly `frame-src https://happyvibe.dev`, and `frameNavAction` (`navGuard.ts`)
-  sends any link that would leave the guide to the system browser.
+  renderer CSP allows exactly `frame-src https://happyvibe.dev`. The CSP blocks a cross-origin frame
+  navigation before main can see it (no `will-frame-navigate`), so main injects `guideLinkScript`
+  (`navGuard.ts`) into the guide's frame on load: it turns a click on an outside link into
+  `window.open`, which the popup handler sends to the system browser (web and mail schemes only).
 - Media: `public/media/<slug>/<shot-id>.<ext>`, referenced as `/docs/media/<slug>/<shot-id>.<ext>`.
   Until a file exists, its page holds `<!-- TODO(media): <file> — <Shows line> -->` on its own line
   where the shot goes; `markdown()` (`src/lib/pages.ts`) strips it from the agent copies. List what

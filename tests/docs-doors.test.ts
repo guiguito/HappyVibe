@@ -4,7 +4,8 @@ import path from "node:path";
 import { describeProviderError } from "../src/main/providerError";
 import { docUrl, docsIndexUrl, ERROR_GUIDE_LABEL, GUIDE_COPY } from "../src/renderer/src/docsLinks";
 import { NAV } from "../src/renderer/src/components/Sidebar";
-import { frameNavAction } from "../src/main/navGuard";
+import vm from "node:vm";
+import { guideLinkScript } from "../src/main/navGuard";
 import { FIXED_SHORTCUTS } from "../src/renderer/src/shortcuts";
 import { ONBOARDING_COPY } from "../src/renderer/src/onboarding";
 
@@ -134,14 +135,14 @@ describe("the guide is a page inside the app (Docs in the app, 2026-09-29)", () 
   it("the view is a sandboxed iframe and ONE big circled close button — no top bar", () => {
     const v = read("src", "renderer", "src", "components", "GuideView.tsx");
     expect(v).toContain("<iframe");
-    expect(v).toContain('sandbox="allow-scripts allow-same-origin"');
+    expect(v).toContain('sandbox="allow-scripts allow-same-origin allow-popups"');
     expect(v).toContain("onClick={onClose}");
     expect(v).toContain("size-11 rounded-full");
     expect(v).toMatch(/absolute[^"]*\btop-\d+[^"]*\bright-\d+/);
     // Absence: no bar of our own (the guide's header carries the HappyVibe brand), no escape button.
     expect(v).not.toContain("border-b-2");
     expect(v).not.toContain("externalDocUrl");
-    expect(v).not.toMatch(/allow-top-navigation|allow-popups|allow-modals/);
+    expect(v).not.toMatch(/allow-top-navigation|allow-popups-to-escape-sandbox|allow-modals/);
   });
 
   it("the row sits BELOW the last settings group, and is outside NAV like Schedules", () => {
@@ -178,27 +179,77 @@ describe("the guide is a page inside the app (Docs in the app, 2026-09-29)", () 
   });
 });
 
-describe("the frame showing the guide cannot wander off it", () => {
-  const G = "https://happyvibe.dev/docs/models/?embed=1";
+describe("a click on a link that leaves the guide goes to the system browser", () => {
+  // The CSP blocks a cross-origin FRAME navigation before the browser process sees it, so no
+  // will-frame-navigate ever fires (seen in the running app) and the frame is left on an error page.
+  // The click is caught INSIDE the frame instead: main injects this script when the frame loads.
+  // It only ever runs in another origin's frame, so it is executed here against a stub DOM.
+  const BASE = "https://happyvibe.dev/docs/";
+  const ctx = { opened: [] as Array<[string, string]>, handlers: 0 };
+  function click(href: string, opts: { defaultPrevented?: boolean; onLink?: boolean } = {}): { prevented: boolean; opened: Array<[string, string]> } {
+    const opened: Array<[string, string]> = [];
+    let handler: ((e: unknown) => void) | undefined;
+    class FakeElement {
+      closest(): unknown { return opts.onLink === false ? null : { href }; }
+    }
+    const box = {
+      window: { open: (u: string, t: string) => { opened.push([u, t]); } },
+      document: { addEventListener: (_t: string, h: (e: unknown) => void, capture: boolean) => { handler = h; expect(capture).toBe(true); } },
+      location: { href: BASE + "models/" },
+      URL,
+      Element: FakeElement,
+    };
+    vm.runInNewContext(guideLinkScript(BASE), box);
+    const ev = { target: new FakeElement(), defaultPrevented: !!opts.defaultPrevented, prevented: false, preventDefault() { this.prevented = true; } };
+    handler!(ev);
+    return { prevented: ev.prevented, opened };
+  }
   test.each([
-    [G, "https://happyvibe.dev/docs/mcp/?embed=1", "allow"],
-    [G, "https://happyvibe.dev/docs/?embed=1#x", "allow"],
-    [G, "https://github.com/x/y", "external"],
-    [G, "mailto:a@b.c", "external"],
-    [G, "https://happyvibe.dev/", "external"], // the site's home is not the guide
-    [G, "https://happyvibe.dev.evil.com/docs/", "external"],
-    [G, "file:///etc/passwd", "block"],
-    ["about:srcdoc", "https://example.com/", "allow"], // the editor's HTML preview is not our frame
-    ["about:blank", "https://happyvibe.dev/docs/?embed=1", "allow"], // the initial load
-  ])("frame at %s going to %s is %s", (frameUrl, url, want) => {
-    expect(frameNavAction(frameUrl, url)).toBe(want);
+    ["https://github.com/guiguito/HappyVibe/edit/main/x.md", true],
+    ["http://example.com/", true],
+    ["mailto:a@b.c", true],
+    ["https://happyvibe.dev/docs/mcp/", false],
+    ["https://happyvibe.dev/docs/models/#add-a-custom-endpoint", false],
+    ["https://happyvibe.dev/", true], // the site's home is not the guide
+    ["https://happyvibe.dev.evil.com/docs/", true],
+    ["javascript:alert(1)", false], // not ours to reroute — the frame's own sandbox handles it
+    ["file:///etc/passwd", false],
+  ])("%s is sent out: %s", (href, out) => {
+    const r = click(href);
+    expect(r.prevented).toBe(out);
+    expect(r.opened).toEqual(out ? [[href, "_blank"]] : []);
   });
 
-  it("main wires it to will-frame-navigate, for subframes only", () => {
+  it("leaves alone a click that is not on a link, or that something else already handled", () => {
+    expect(click("https://github.com/x", { onLink: false })).toEqual({ prevented: false, opened: [] });
+    expect(click("https://github.com/x", { defaultPrevented: true })).toEqual({ prevented: false, opened: [] });
+  });
+
+  it("installs its listener once per page, however many times main injects it", () => {
+    let added = 0;
+    const box = { window: {} as Record<string, unknown>, document: { addEventListener: () => { added++; } }, location: { href: BASE }, URL, Element: class {} };
+    vm.createContext(box);
+    vm.runInContext(guideLinkScript(BASE), box);
+    vm.runInContext(guideLinkScript(BASE), box);
+    expect(added).toBe(1);
+    void ctx;
+  });
+
+  it("main injects it when the guide's frame loads — and only into a frame showing the guide", () => {
     const index = read("src", "main", "index.ts");
-    expect(index).toContain("will-frame-navigate");
-    expect(index).toMatch(/isMainFrame/);
-    expect(index).toContain("frameNavAction(");
+    expect(index).toContain("did-frame-finish-load");
+    expect(index).toMatch(/webFrameMain\.fromId\(/);
+    expect(index).toMatch(/frame\?\.url\.startsWith\(DOCS_BASE\)/);
+    expect(index).toContain("guideLinkScript(DOCS_BASE)");
+    // Absence: the handler that could never fire (the comment may still say why).
+    expect(index).not.toMatch(/\.on\(['"]will-frame-navigate/);
+    expect(index).not.toContain("frameNavAction");
+  });
+
+  it("the popup handler opens only web and mail links now that the guide can reach it", () => {
+    const index = read("src", "main", "index.ts");
+    const at = index.indexOf("setWindowOpenHandler((details)");
+    expect(index.slice(at, at + 400)).toMatch(/navAction\(details\.url, [^\n]*\) === 'external'/);
   });
 
   it("the CSP allows exactly one frame origin, and script-src is untouched", () => {

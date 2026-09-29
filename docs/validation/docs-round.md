@@ -287,3 +287,37 @@ handler), #25 and #34 (what the adapter does with the call).
 - **36 (new, pre-existing): sub-agents ignore a live bypass Turn off.** The child guard reads `HV_BYPASS` once per child (`hv-child-guard.ts:205`), not the parent's live `dangerous && !plan.enabled && !readonly`. Fix: a `ChildPolicy.bypass()` getter from the bridge.
 - **Always allow persists a wildcard.** A persistent grant stores `pattern: tool` as a glob, so a model-chosen install URL such as `https://*/mcp` becomes a rule matching every such install. Needs a decision: escape `*`/`?` in grants, or don't offer Always allow on `mcp-manage:` prompts.
 
+
+## Docs in the app — GUI pass (2026-09-30, dev app on `--remoteDebuggingPort=9333`)
+
+Run after PR #92 merged, against a freshly relaunched app (renderer loaded 00:04:49, after every change).
+This is the pass `/feature` §5 owes; it found one real bug that the unit suite could not.
+
+| # | Claim | Result |
+|---|---|---|
+| 1 | The **User guide** row is the LAST child of the settings list, below THE RECORD, outside every group; `NAV` has no `guide` | ✅ |
+| 2 | Opening it: the frame's `src` is `https://happyvibe.dev/docs/` (no `embed`), fills the whole 900×638 window; the ✕ is 44×44, round, 24px from the right; the app's sidebar wrapper is `display: none` (width 0); no "← Back" bar | ✅ |
+| 2b | The guide's HappyVibe logo and title are shown (`.site-title` displayed, 168px wide, logo present; no `hv-embed` flag) | ✅ on a fresh process. A process that ever loaded `?embed=1` keeps hiding it (the site's flag lives in the frame's session storage for the life of the process) |
+| 3 | Esc with focus in the app returns to chat; the sidebar is back at exactly 288px | ✅ |
+| 3b | Regression: open THE RECORD, open the guide, close it with the ✕ — THE RECORD (and the open workspace) are still open | ✅ |
+| 4 | "How this page works ↗" on Models opens the in-app guide at `/docs/models/`; still exactly one `page` target, so no browser pane was created | ✅ |
+| 5 | An external link in the guide (the "Edit page" link) leaves the frame on the guide and reaches the system browser | ❌ **failed as first built**, ✅ after the fix below |
+| 7 | The editor's sandboxed `srcdoc` frame still loads under the new CSP; no console errors | ✅ |
+| 9 | Esc with focus INSIDE the frame closes the guide (main forwards the key via `before-input-event`) | ⚠️ **not verified.** A debugger key press reaches the page's own keydown handler (`keydown: 1`, forwarded IPC `0`), so it cannot exercise the forwarding path, and `osascript` is refused (`1002`, no Accessibility permission). Needs one real Esc press with focus inside the guide |
+| 6 | An error card's "Read the guide ↗" | not run (needs a throwaway 401 endpoint added to the maintainer's provider settings) |
+| 8 | Before any model is connected the link opens the system browser; Windows/Linux menu and F1 | not run (fresh profile / other OS) |
+
+### The bug: external links in the guide
+
+The first design listened for `will-frame-navigate` and prevented a frame navigation that left the guide. Probing the running
+app (a listener added in memory through the Node inspector, `kill -USR1 <main pid>`) showed it recorded ONE event, the guide's
+initial load, and none for the GitHub click: Chromium enforces `frame-src` before the browser process sees a frame navigation,
+so the event never fires, and the frame was left on an error page (`Framing 'https://github.com/' violates ... frame-src`).
+The unit tests passed because they tested a pure function, not that the event exists.
+
+Fix: main injects `guideLinkScript` into the frame on `did-frame-finish-load` (checked live: main sees the load with
+`isMainFrame: false` and can run code in the cross-origin frame); a capture-phase click handler sends outside http(s)/mailto
+links through `window.open` (sandbox now has `allow-popups`), which reaches the popup handler, and that handler now opens web and
+mail schemes only. Verified live by arming the same script in memory with a spy on `shell.openExternal`: the frame stayed on the
+guide, `openExternal` received exactly the clicked URL, a link within the guide still navigated normally and the next page was
+injected too, and the console stayed empty. The CSP stays at exactly one frame origin.
