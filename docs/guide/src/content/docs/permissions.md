@@ -46,6 +46,7 @@ In a pattern, `*` stands for any run of characters. In a path, `*` stays within 
 A few tools are checked under their own names, so a **tool** rule for them uses that name:
 
 - MCP tools: `mcp:` and the tool's name, or `mcp:*` for all of them. For a server with **Expose tools directly** ticked, use each tool's own name, as it's listed on [Agent tools](/docs/agent-tools/).
+- Adding an MCP server or signing in to one: `mcp-manage:install:` and the server's address, or `mcp-manage:auth:` and the server's name. `mcp:*` doesn't cover these. With no rule they ask you, and in plan mode or a read-only run they're blocked.
 - The browser and the web tools that open an address: `browser:` and the site, such as `browser:docs.example.com`, or `browser:*`.
 - Subagents: `subagent:` and the agent's name, or `subagent:*`.
 - Workflows: `workflow`. Only **deny** has an effect: every workflow asks you.

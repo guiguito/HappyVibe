@@ -94,7 +94,7 @@ A server change never lands in the middle of a reply. Open sessions restart once
 
 In a session's top bar, a 🔌 chip shows how many of your servers answered HappyVibe's check, for example **2/3 MCP**. It lists your global servers plus the ones added for this workspace. Click it to see each server with its state, and **Manage…** to come back to this screen.
 
-When the agent wants to use a server's tool, the call goes through your [permission rules](/docs/permissions/), the same as every other tool call.
+When the agent wants to use a server's tool, the call goes through your [permission rules](/docs/permissions/), the same as every other tool call. If the agent tries to add a server itself, or to sign in to one, it asks you first and names the address and where it would be saved.
 
 ## Related
 

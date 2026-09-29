@@ -16,8 +16,13 @@ paths:
   probes configured servers. `docs/validation/m1.md`.
 - The proxy tool is `mcp`; the bridge unwraps it (`hv-mcp.ts`) to the virtual rule name
   `mcp:<serverKey>_<toolName>` for rules/grants/prompts/audit. Discovery calls
-  (search/describe/connect) are safe-default-allowed. `unwrapMcpCall` is the ONE source of the
-  factual display (gate + renderer), enriched with a key arg (url/query).
+  (search/describe/connect/instructions, `action:"ui-messages"`) are safe-default-allowed.
+  `install`, `auth-start`/`auth-complete` and a lone unknown action are the `manage` kind
+  (`mcp-manage:install:<url>`, `mcp-manage:auth:<server>` — outside `mcp:` so no MCP tool rule
+  covers them): asked by default, blocked in plan mode and read-only runs. `unwrapMcpCall` reads
+  keys in the ADAPTER's dispatch order (action → tool → connect → describe → instructions →
+  search), pinned with its action list by `tests/mcp-adapter-actions.test.ts`. It is the ONE
+  source of the factual display (gate + renderer), enriched with a key arg (url/query).
 - stdio servers configured with `node`/`npx` need a runtime in the packaged app.
 
 ## Intent

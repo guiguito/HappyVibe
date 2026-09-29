@@ -7,6 +7,7 @@ import { PI_CLI_RELPATH, PI_MCP_ADAPTER_RELPATH } from "../src/main/pi/spawn";
 
 // Tiny .env loader — keeps tests dependency-free
 import { KEY, MODEL, PROVIDER_ENV } from "./liveModel";
+import { askUntil } from "./reask";
 let client: PiClient;
 afterEach(() => client?.stop());
 
@@ -106,4 +107,57 @@ test.skipIf(!KEY)("mcp proxy call surfaces an unwrapped hv.permission prompt; Al
   const intent = (mcpInvoke!.args as { intent?: unknown }).intent;
   expect(typeof intent).toBe("string");
   expect((intent as string).trim().length).toBeGreaterThan(0);
+}, 180_000);
+
+test.skipIf(!KEY)("docs-round #34: an MCP install asks with the URL, and Deny writes nothing", async () => {
+  const runtime = path.join(process.cwd(), "pi-runtime");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hv-mcp-install-"));
+  const agentDir = path.join(tmp, ".pi", "agent");
+  client = new PiClient({
+    execPath: process.execPath,
+    args: [
+      path.join(runtime, PI_CLI_RELPATH),
+      "--mode", "rpc", "--no-session",
+      "-e", path.join(runtime, PI_MCP_ADAPTER_RELPATH),
+      "-e", path.join(runtime, "extensions/happyvibe-bridge.ts"),
+      "--provider", MODEL.provider, "--model", MODEL.modelId,
+    ],
+    env: {
+      ...process.env, ...PROVIDER_ENV,
+      HOME: tmp, XDG_CONFIG_HOME: path.join(tmp, ".config"), PI_CODING_AGENT_DIR: agentDir,
+    } as Record<string, string>,
+    cwd: tmp,
+  });
+  await client.start();
+
+  const prompts: Array<Record<string, unknown>> = [];
+  client.on("ui-request", (m) => {
+    const req = m as Record<string, unknown>;
+    if (req.method !== "select") return;
+    try {
+      const t = JSON.parse(req.title as string);
+      if (t.kind !== "hv.permission") return;
+      prompts.push(t);
+      client.respondUi(req.id as string, { value: "Deny" });
+    } catch { /* not ours */ }
+  });
+
+  // Loopback http is the one non-https URL the adapter accepts; nothing listens on port 9.
+  const url = "http://127.0.0.1:9/mcp";
+  const isInstall = (p: Record<string, unknown>): boolean => String(p.tool).startsWith("mcp-manage:install:");
+  const asked = await askUntil(
+    () => client.send({
+      type: "prompt",
+      message: `Call the \`mcp\` tool right now with exactly these arguments: {"action":"install","url":"${url}"}. `
+        + "Do not explain, do not ask questions, do not reply in prose: make the tool call.",
+    }),
+    () => prompts.some(isInstall),
+  );
+  expect(asked, "model never called mcp install across 3 attempts").toBe(true);
+  const p = prompts.find(isInstall)!;
+  expect(p.tool).toBe(`mcp-manage:install:${url}`);
+  expect(p.summary).toBe(`MCP: install ${url} into your global MCP config`);
+  // Denied: neither config the adapter can write to exists.
+  expect(fs.existsSync(path.join(agentDir, "mcp.json"))).toBe(false);
+  expect(fs.existsSync(path.join(tmp, ".pi", "mcp.json"))).toBe(false);
 }, 180_000);

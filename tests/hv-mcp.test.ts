@@ -1,5 +1,11 @@
 import { expect, test } from "vitest";
-import { unwrapMcpCall } from "../pi-runtime/extensions/hv-mcp";
+import fs from "node:fs";
+import path from "node:path";
+import {
+  isMcpManageRule, MCP_MANAGE_ACTIONS, MCP_MANAGE_PREFIX, MCP_READ_ACTIONS, unwrapMcpCall,
+} from "../pi-runtime/extensions/hv-mcp";
+import { gatePlanCall } from "../pi-runtime/extensions/hv-plan";
+import { gateReadonlyCall } from "../pi-runtime/extensions/hv-readonly";
 
 test("invoke: params.tool present → per-tool ruleTool and enriched display", () => {
   const r = unwrapMcpCall({ tool: "github_create_issue", args: '{"title":"x"}' });
@@ -51,4 +57,88 @@ test("empty / unknown params default to discovery on the bare mcp tool", () => {
 
 test("non-string tool param is not an invoke", () => {
   expect(unwrapMcpCall({ tool: 42 }).kind).toBe("discovery");
+});
+
+test("#34 install is a manage call that names the URL and where it is written", () => {
+  const g = unwrapMcpCall({ action: "install", url: "https://evil.example/mcp" });
+  expect(g.kind).toBe("manage");
+  expect(g.ruleTool).toBe("mcp-manage:install:https://evil.example/mcp");
+  expect(g.display).toBe("MCP: install https://evil.example/mcp into your global MCP config");
+  expect(unwrapMcpCall({ action: "install", url: "https://x.example/mcp", target: "project" }).display)
+    .toBe("MCP: install https://x.example/mcp into this project's MCP config");
+  expect(unwrapMcpCall({ action: "install" }).display).toBe("MCP: install (no URL given) into your global MCP config");
+});
+
+test("#34 both sign-in actions are manage calls that name the server", () => {
+  for (const action of ["auth-start", "auth-complete"]) {
+    const g = unwrapMcpCall({ action, server: "linear" });
+    expect(g.kind, action).toBe("manage");
+    expect(g.ruleTool, action).toBe("mcp-manage:auth:linear");
+    expect(g.display, action).toBe("MCP: sign in to linear");
+    expect(g.server, action).toBe("linear");
+  }
+});
+
+test("#34 action is read FIRST, exactly as the adapter dispatches it", () => {
+  // The adapter runs the install here, not the tool call and not the search.
+  expect(unwrapMcpCall({ tool: "x", action: "install", url: "https://a.example/mcp" }).kind).toBe("manage");
+  expect(unwrapMcpCall({ search: "a", action: "install", url: "https://a.example/mcp" }).kind).toBe("manage");
+  expect(unwrapMcpCall({ connect: "srv", action: "auth-start", server: "srv" }).kind).toBe("manage");
+  // ui-messages is a read, and it too wins over a tool beside it.
+  const ui = unwrapMcpCall({ tool: "x", action: "ui-messages" });
+  expect(ui.kind).toBe("discovery");
+  expect(ui.ruleTool).toBe("mcp");
+});
+
+test("#34 an action the adapter doesn't know falls through to the next key, like the adapter; alone, it asks", () => {
+  expect(unwrapMcpCall({ action: "bogus", tool: "github_x" }).ruleTool).toBe("mcp:github_x");
+  expect(unwrapMcpCall({ action: "bogus", connect: "srv" }).kind).toBe("discovery");
+  const alone = unwrapMcpCall({ action: "bogus" });
+  expect(alone.kind).toBe("manage");
+  expect(alone.ruleTool).toBe("mcp-manage:bogus");
+  expect(alone.display).toBe("MCP: bogus");
+});
+
+test("#34 connect beats describe beats instructions beats search, like the adapter", () => {
+  expect(unwrapMcpCall({ describe: "t", connect: "srv" }).display).toBe("MCP: connect to srv");
+  expect(unwrapMcpCall({ instructions: "srv", describe: "t" }).display).toBe("MCP discovery: describe t");
+  expect(unwrapMcpCall({ search: "q", instructions: "srv" }).display).toBe("MCP discovery: instructions srv");
+  expect(unwrapMcpCall({ instructions: "srv" }).kind).toBe("discovery");
+});
+
+test("#34 no manage call has a rule name that an MCP tool rule or grant covers", () => {
+  expect(MCP_MANAGE_PREFIX.startsWith("mcp:")).toBe(false);
+  for (const input of [{ action: "install", url: "https://a.example/mcp" }, { action: "auth-start", server: "s" }, { action: "bogus" }]) {
+    const r = unwrapMcpCall(input).ruleTool;
+    expect(isMcpManageRule(r), r).toBe(true);
+    expect(r.startsWith("mcp:"), r).toBe(false);
+  }
+  expect(isMcpManageRule("mcp:github_x")).toBe(false);
+  expect([...MCP_READ_ACTIONS, ...MCP_MANAGE_ACTIONS].sort()).toEqual(["auth-complete", "auth-start", "install", "ui-messages"]);
+});
+
+test("#34 plan mode and read-only runs block a manage call; discovery and invoke keep floor-ask", () => {
+  const install = { action: "install", url: "https://a.example/mcp" };
+  const plan = gatePlanCall("mcp", install);
+  expect(plan.kind).toBe("block");
+  expect(plan.kind === "block" && plan.reason).toMatch(/^Plan mode is read-only — adding an MCP server or signing in to one is blocked\./);
+  expect(gatePlanCall("mcp", { action: "auth-start", server: "s" }).kind).toBe("block");
+  const ro = gateReadonlyCall("mcp", install);
+  expect(ro.kind).toBe("block");
+  expect(ro.kind === "block" && ro.reason).toBe("This is a read-only run — adding an MCP server or signing in to one is blocked. Read, search and report what you find.");
+  expect(gatePlanCall("mcp", { search: "q" }).kind).toBe("floor-ask");
+  expect(gatePlanCall("mcp", { tool: "srv_do" }).kind).toBe("floor-ask");
+  expect(gatePlanCall("mcp", {}).kind).toBe("floor-ask");
+});
+
+test("#34 the bridge auto-allows discovery ONLY, and prompts with the factual display", () => {
+  const bridge = fs.readFileSync(path.join(__dirname, "../pi-runtime/extensions/happyvibe-bridge.ts"), "utf8");
+  expect(bridge).toContain('if (mcp?.kind === "discovery" && v.source === "default" && !planFloorAsk) {');
+  expect(bridge).not.toMatch(/mcp\?\.kind !== "invoke"/); // the regression: "anything not an invoke is safe"
+  expect(bridge).toContain("const summary = mcp?.display ?? summarize(tool, input);");
+});
+
+test("#34 the permission prompt heads a manage call with that factual display", () => {
+  const modal = fs.readFileSync(path.join(__dirname, "../src/renderer/src/components/PermissionModal.tsx"), "utf8");
+  expect(modal).toMatch(/isMcpManageRule\(info\.tool\)\s*\?\s*\{ icon: "wrench" as const, label: info\.summary \}\s*:\s*toolLabel\(info\.tool, args\)/);
 });

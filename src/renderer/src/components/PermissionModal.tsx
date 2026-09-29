@@ -4,6 +4,7 @@ import { SCOPED_CONTENT, SCOPED_OVERLAY, VIEWPORT_CONTENT, VIEWPORT_OVERLAY } fr
 import type { PermissionChoice, PermissionInfo, UiRequest } from "../permission";
 import type { BoundarySummary } from "../../../../pi-runtime/extensions/hv-subagent-boundary";
 import { toolLabel } from "../toolLabel";
+import { isMcpManageRule } from "../../../../pi-runtime/extensions/hv-mcp";
 import { ToolIcon } from "./ToolCard";
 import { SkillDiff } from "./SkillsSection";
 import { memoryFactFrom, memoryFactRows, memoryPromptTitle } from "../memoryFact";
@@ -109,7 +110,9 @@ export function PermissionModal({
   container?: HTMLElement | null;
 }): React.JSX.Element {
   const args = argsFromSummary(info.tool, info.summary);
-  const { icon, label } = toolLabel(info.tool, args);
+  // docs-round #34: an MCP install or sign-in is headed by the bridge's factual display (the
+  // URL and which config it lands in); toolLabel only knows the rule name.
+  const { icon, label } = isMcpManageRule(info.tool) ? { icon: "wrench" as const, label: info.summary } : toolLabel(info.tool, args);
   // §33: a memory is approved as the FACT it is — scope, kind, name, summary and the body —
   // never as raw JSON. The user is agreeing to change what every future session is told.
   const fact = memoryFactFrom(info.tool, args);
