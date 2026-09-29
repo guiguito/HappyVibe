@@ -117,7 +117,7 @@ export function PermissionRulesSection({ workspace }: { workspace?: string }): R
       <p className="text-sm text-ink-soft mb-4">
         {workspace
           ? "Overrides layered on top of the global rules for this workspace — the most restrictive match wins (deny > ask > allow)."
-          : "Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). No match falls back to asking you."}
+          : "Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). With no match, a short list of safe tools runs on its own and everything else asks you."}
       </p>
 
       {/* The subtitle above is the short form; this is its long form, in place. */}

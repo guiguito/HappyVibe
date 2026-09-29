@@ -3,6 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { HOWTO_COPY } from "../src/renderer/src/components/HowItWorks";
 import { USAGE_EVENTS } from "../src/main/usage/events";
+import { EXPANDED_CHOICES } from "../src/renderer/src/components/PermissionModal";
+import { EMPTY_COPY } from "../src/renderer/src/components/EmptyState";
+import { SAFE_TOOLS, evaluate, type RulesFile } from "../pi-runtime/extensions/hv-rules";
 
 /**
  * §20 round 17 — the deleted Help page, dissolved in place.
@@ -49,11 +52,18 @@ describe("HOWTO_COPY", () => {
     expect(b).toMatch(/only you/i);
   });
 
-  it("rules names the precedence and that silence never allows", () => {
+  it("rules names the precedence, and its no-match sentence is what the rule engine does", () => {
     const b = HOWTO_COPY.rules.body;
     expect(b).toMatch(/deny beats ask/i);
     expect(b).toMatch(/ask beats allow/i);
-    expect(b).toMatch(/asks you/i);
+    // docs-round #20 — derived from hv-rules, never re-typed: with no rule, a SAFE_TOOLS call
+    // runs and anything else asks. While SAFE_TOOLS is non-empty the copy must say both halves.
+    expect(SAFE_TOOLS.size).toBeGreaterThan(0);
+    const none: RulesFile = { global: [], workspaces: {} };
+    expect(evaluate(none, { tool: [...SAFE_TOOLS][0], input: {}, workspace: "/ws" })).toEqual({ action: "allow", source: "safe-default" });
+    expect(evaluate(none, { tool: "bash", input: { command: "ls" }, workspace: "/ws" })).toEqual({ action: "ask", source: "default" });
+    expect(b).toContain("When no rule matches, a short list of safe tools runs on its own; everything else asks you.");
+    expect(b).not.toMatch(/by silence/i);
   });
 
   it("the MCP badge entry refuses to overclaim in BOTH directions", () => {
@@ -175,7 +185,7 @@ describe("HOWTO_COPY.webTools (§32)", () => {
 
   it("names the shared grant AND the narrower pane button, because they differ", () => {
     expect(b).toMatch(/same rules as the agent's browser/i);
-    expect(b).toMatch(/Allow for this session/);
+    expect(b).toContain("“Allow for session”");
     // The asymmetry is deliberate (PRD §28 round 20) and is the one thing a
     // user could reasonably read as a bug, so the copy states it.
     expect(b).toMatch(/that one page's site for that browser pane only/i);
@@ -210,4 +220,24 @@ it("§39 'What usage statistics contain' is as short as the crash one, and its c
   expect(b).toMatch(/Never what you type/);
   const src = fs.readFileSync(path.join(R, "components/HowItWorks.tsx"), "utf8");
   expect(src).toMatch(/Object\.keys\(USAGE_EVENTS\)\.length/);
+});
+
+describe("docs-round #20 — a button named in guidance is a button the prompt has", () => {
+  it("every quoted Allow/Always/Deny label in HOWTO_COPY is one of the modal's choices", () => {
+    const quoted = Object.values(HOWTO_COPY).flatMap((v) =>
+      [...v.body.matchAll(/“((?:Allow|Always|Deny)[^”]*)”/g)].map((m) => m[1]));
+    expect(quoted.length).toBeGreaterThan(0); // not vacuous
+    for (const q of quoted) expect(EXPANDED_CHOICES, q).toContain(q);
+  });
+
+  it("the rules empty state names a real button", () => {
+    expect(EMPTY_COPY.rules.next).toBe("Add one below, or choose Always allow when the agent asks.");
+    expect(EXPANDED_CHOICES.some((c) => EMPTY_COPY.rules.next.includes(`choose ${c} `))).toBe(true);
+  });
+
+  it("the rules subtitle says what the long form says", () => {
+    const src = rendered(path.join(R, "components", "PermissionRulesSection.tsx"));
+    expect(src).not.toContain("No match falls back to asking you.");
+    expect(src).toContain("With no match, a short list of safe tools runs on its own and everything else asks you.");
+  });
 });

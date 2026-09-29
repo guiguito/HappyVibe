@@ -38,7 +38,7 @@ const CHOICE_STYLE: Record<string, string> = {
 /** Round 3 #13: the bridge only offers Allow / Allow for session / Deny. The
     renderer adds two persistent-grant choices (workspace / global) that write a
     rule; App maps them to a bridge "Allow". */
-const EXPANDED_CHOICES: PermissionChoice[] = [
+export const EXPANDED_CHOICES: PermissionChoice[] = [
   "Allow",
   "Allow for session",
   "Allow for workspace",
