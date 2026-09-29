@@ -692,7 +692,7 @@ export default function (pi: ExtensionAPI) {
         // which is how the user tells two runs of one agent apart.
         const title = JSON.stringify({
           kind: "hv.permission", tool: req.permTool, summary: summarize(req.tool, req.input),
-          child: { agent: req.type ?? "sub-agent", runId: req.agentId ?? "" },
+          child: { agent: req.type ?? "unknown", runId: req.agentId ?? "" },
         });
         control("needs_attention");
         try {

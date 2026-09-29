@@ -34,7 +34,7 @@ describe("the prompt", () => {
     const at = bridge.indexOf("ask: async (req) =>");
     expect(at).toBeGreaterThan(0);
     const ask = bridge.slice(at, bridge.indexOf('control("needs_attention");', at));
-    expect(ask).toContain('child: { agent: req.type ?? "sub-agent", runId: req.agentId ?? "" }');
+    expect(ask).toContain('child: { agent: req.type ?? "unknown", runId: req.agentId ?? "" }');
     expect(ask).not.toMatch(/runLabel|description|getRecord/);
   });
   it("a child answer never writes a persistent rule", () => {
