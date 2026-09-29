@@ -1364,7 +1364,9 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       dangerous = arg === "on";
-      ctx.ui.notify(JSON.stringify({ kind: "hv.dangerous", on: dangerous }), dangerous ? "warning" : "info");
+      // A read-only run never honours bypass, so it must not show the red banner either.
+      const on = dangerous && !readonly;
+      ctx.ui.notify(JSON.stringify({ kind: "hv.dangerous", on }), on ? "warning" : "info");
     },
   });
 

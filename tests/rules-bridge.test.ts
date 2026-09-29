@@ -161,6 +161,25 @@ test("a read-only run under HV_BYPASS=1 announces read-only, never bypass", asyn
   expect(seen.filter((r) => isKind(r, "hv.dangerous"))).toEqual([]);
 }, 60_000);
 
+test("cleanup C7: /hv-dangerous on in a read-only run never shows the banner (no on:true)", async () => {
+  const seen: UiReq[] = [];
+  const c = makeClient({ HV_READONLY: "1" });
+  c.on("ui-request", (m) => seen.push(m as UiReq));
+  try {
+    await c.start();
+    await c.send({ type: "prompt", message: "/hv-dangerous on" });
+    await c.send({ type: "prompt", message: "/hv-dangerous off" }); // always answers, so it marks "on" was handled
+    const deadline = Date.now() + 30_000;
+    while (!seen.some((r) => isKind(r, "hv.dangerous") && payloadOf(r).on === false) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(seen.some((r) => isKind(r, "hv.dangerous") && payloadOf(r).on === false), `saw ${JSON.stringify(seen)}`).toBe(true);
+    expect(seen.filter((r) => isKind(r, "hv.dangerous") && payloadOf(r).on === true)).toEqual([]);
+  } finally {
+    c.stop();
+  }
+}, 60_000);
+
 test.skipIf(!KEY)(
   "rule-deny blocks the tool with NO permission prompt and emits an hv.audit deny notify",
   async () => {
