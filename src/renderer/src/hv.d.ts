@@ -940,7 +940,7 @@ interface HvApi {
   onPiEvent(cb: (e: Record<string, unknown>) => void): () => void;
   // §35 Schedules.
   schedulesList(): Promise<HvSchedule[]>;
-  scheduleSave(input: Partial<HvSchedule> & { id?: string }): Promise<HvSchedule>;
+  scheduleSave(input: Partial<HvSchedule> & { id?: string }, requestId?: string): Promise<HvSchedule>;
   scheduleDelete(id: string): Promise<void>;
   scheduleMissedAnswer(id: string, answer: "run" | "skip"): Promise<void>;
   scheduleRunNow(id: string): Promise<{ ok: true } | { ok: false; reason: "busy" | "disabled" | "gone" }>;
@@ -1228,7 +1228,7 @@ interface HvApi {
   setVoiceSettings(s: Partial<HvVoiceSettings>): Promise<HvVoiceSettings>;
   /** §8.3: check this BEFORE getUserMedia. A denied mic on macOS still hands
       back a "live" track that produces nothing but zeros. */
-  voiceMicStatus(): Promise<"not-determined" | "granted" | "denied" | "restricted" | "unknown">;
+  voiceMicStatus(): Promise<"not-determined" | "granted" | "denied" | "restricted" | "unknown" | "not-needed">;
   voiceAskMic(): Promise<boolean>;
   voiceOpenMicSettings(): Promise<void>;
   /** Int16 PCM at 16 kHz mono in, transcript out. Nothing is logged (§11). */
@@ -1343,7 +1343,7 @@ interface HvApi {
     plugin: string,
   ): Promise<{ ok: true; skills: number; commands: number } | { ok: false; error: string }>;
 
-  // MCP server config (additive). Changes apply to new sessions.
+  // MCP server config (additive). A change restarts open sessions once they're idle.
   mcpGet(workspaceId?: string): Promise<{ global: McpFileLike; workspace: McpFileLike | null }>;
   mcpSetServer(
     scope: "global" | "workspace",

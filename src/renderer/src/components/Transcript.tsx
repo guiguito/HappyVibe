@@ -41,7 +41,7 @@ function RewindButton({ onClick }: { onClick: () => void }): React.JSX.Element {
     <button
       type="button"
       aria-label="Rewind to this message"
-      title="Rewind to this message (removes everything after; files are not rolled back)"
+      title="Rewind to this message — you choose whether files roll back too"
       onClick={onClick}
       className="rounded-lg border-2 border-line bg-card p-1 text-ink-soft hover:text-ink hover:bg-paper-deep cursor-pointer shadow-sticker"
     >

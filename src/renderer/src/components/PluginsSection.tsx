@@ -25,6 +25,17 @@ interface Chosen {
 
 const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? "" : "s"}`;
 
+/** docs-round #24: Remove deletes files, so it asks first, the way skill Delete does (SkillsSection.tsx). */
+export function pluginRemoveMessage(p: { plugin: string; skills: string[]; commands: string[]; servers: string[] }): string {
+  const parts = [
+    p.skills.length ? plural(p.skills.length, "skill") : null,
+    p.commands.length ? plural(p.commands.length, "prompt") : null,
+    p.servers.length ? plural(p.servers.length, "MCP server") : null,
+  ].filter((x): x is string => x !== null);
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+  return `Remove “${p.plugin}”?\n\nThis deletes its ${list}. Open sessions restart once they're idle. You can install it again later.`;
+}
+
 /** §25 round 12: how many cards a page shows. */
 export const PAGE = 24;
 
@@ -268,7 +279,7 @@ export function PluginsSection(): React.JSX.Element {
                 </span>
                 <button
                   disabled={removing === p.plugin}
-                  onClick={() => remove(p.plugin)}
+                  onClick={() => { if (window.confirm(pluginRemoveMessage(p))) remove(p.plugin); }}
                   className="rounded-lg border border-line px-2 py-1 font-semibold hover:bg-paper disabled:opacity-50"
                 >
                   {removing === p.plugin ? "Removing…" : "Remove"}
@@ -448,7 +459,7 @@ export function PluginsSection(): React.JSX.Element {
             />
             <PickList
               title="MCP servers"
-              note="Added to your global mcp.json but NOT connected — you can connect (and sign in) here once installed. Removed with the plugin."
+              note="Added to your global mcp.json, switched off: sessions can't use them until you click Connect, here once installed or on the MCP page. Removed with the plugin."
               rows={scan.mcpServers.map((k) => ({ id: k, label: k }))}
               chosen={chosen.servers}
               onToggle={(id) => toggle("servers", id)}

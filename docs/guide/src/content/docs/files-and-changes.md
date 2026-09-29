@@ -77,7 +77,7 @@ Two saves, two jobs: **Save** in the editor writes one file to disk; the Changes
 **The commit message box and the save button:**
 
 - The commit message box reads "What did you change?". The message is how you'll recognise this version later.
-- The wand, "Write it for me", drafts a message from your changes. It shows only when the **Commit message** job is on in [AI autofill](/docs/ai-autofill/) and a model is set up.
+- The wand, "Write it for me", drafts a message from your changes, using the model picked for **Commit message** in [AI autofill](/docs/ai-autofill/), or your default model. It shows only when that job is on and a model is set up.
 - The save button (an arrow rising out of a tray): its tooltip reads "Save a version". It stays greyed until you've written a message.
 - **▾** beside it: "Other ways to save".
 
@@ -123,7 +123,7 @@ Hover over a file for its buttons:
 
 "Version saved." appears at the foot of the panel. A saved version stays on this computer: nothing goes to the remote until you click **Publish branch** or **Sync**. Every changed file goes in, new ones too. To save only some files, stage them first: the save button then shows how many, for example "2/5", and its tooltip adds "(staged only)". New files have no stage button, so they wait for a save that includes everything.
 
-If the save would sweep in folders nobody means to keep, like `node_modules`, the panel stops and asks: "This save includes files you probably didn’t mean to keep". **Add to .gitignore and save** leaves those folders out of this save and every later one. **Cancel** saves nothing.
+If the save would sweep in folders nobody means to keep, like `node_modules`, the panel stops and asks: "This save includes files you probably didn’t mean to keep". **Add to .gitignore and save** leaves those folders out of this save and every later one. **Save anyway** saves everything, those folders included. **Cancel** saves nothing.
 
 ### Other ways to save
 

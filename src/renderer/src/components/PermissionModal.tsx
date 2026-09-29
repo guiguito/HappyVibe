@@ -4,6 +4,7 @@ import { SCOPED_CONTENT, SCOPED_OVERLAY, VIEWPORT_CONTENT, VIEWPORT_OVERLAY } fr
 import type { PermissionChoice, PermissionInfo, UiRequest } from "../permission";
 import type { BoundarySummary } from "../../../../pi-runtime/extensions/hv-subagent-boundary";
 import { toolLabel } from "../toolLabel";
+import { isMcpManageRule } from "../../../../pi-runtime/extensions/hv-mcp";
 import { ToolIcon } from "./ToolCard";
 import { SkillDiff } from "./SkillsSection";
 import { memoryFactFrom, memoryFactRows, memoryPromptTitle } from "../memoryFact";
@@ -37,7 +38,7 @@ const CHOICE_STYLE: Record<string, string> = {
 /** Round 3 #13: the bridge only offers Allow / Allow for session / Deny. The
     renderer adds two persistent-grant choices (workspace / global) that write a
     rule; App maps them to a bridge "Allow". */
-const EXPANDED_CHOICES: PermissionChoice[] = [
+export const EXPANDED_CHOICES: PermissionChoice[] = [
   "Allow",
   "Allow for session",
   "Allow for workspace",
@@ -109,7 +110,9 @@ export function PermissionModal({
   container?: HTMLElement | null;
 }): React.JSX.Element {
   const args = argsFromSummary(info.tool, info.summary);
-  const { icon, label } = toolLabel(info.tool, args);
+  // docs-round #34: an MCP install or sign-in is headed by the bridge's factual display (the
+  // URL and which config it lands in); toolLabel only knows the rule name.
+  const { icon, label } = isMcpManageRule(info.tool) ? { icon: "wrench" as const, label: info.summary } : toolLabel(info.tool, args);
   // §33: a memory is approved as the FACT it is — scope, kind, name, summary and the body —
   // never as raw JSON. The user is agreeing to change what every future session is told.
   const fact = memoryFactFrom(info.tool, args);
@@ -159,7 +162,7 @@ export function PermissionModal({
               <Dialog.Title className="font-bold text-lg leading-tight">
                 {fact ? memoryPromptTitle(info.tool, previous !== null)
                   : info.workflow ? "The agent wants to run a workflow"
-                  : info.child ? `Sub-agent ${info.child.agent}${info.child.runLabel ? ` · ${info.child.runLabel}` : ""} wants to run something`
+                  : info.child ? `Sub-agent ${info.child.agent} wants to run something`
                   : "The agent wants to run something"}
               </Dialog.Title>
               {/* W1.1: human summary line (same toolLabel as the tool cards). */}

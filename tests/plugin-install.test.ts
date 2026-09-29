@@ -7,10 +7,12 @@ import {
   installPluginCommands,
   findPluginServers,
   pluginOrigin,
+  pluginServerEntry,
 } from "../src/main/plugins/install";
 import { scanPluginDir } from "../src/main/plugins/scan";
 import { readSkillDir } from "../src/main/skills/discovery";
-import { writeMcpServer, readMcpFile } from "../src/main/mcp";
+import { writeMcpServer, readMcpFile, isMcpServerOff, withoutOffFlag } from "../src/main/mcp";
+import { MCP_OFF_PILL } from "../src/renderer/src/components/McpServersSection";
 
 let tmp: string, src: string, dest: string;
 const w = (base: string, rel: string, body: string): void => {
@@ -167,5 +169,84 @@ describe("the origin link", () => {
     writeMcpServer(f, "byhand", { url: "https://b" });
     expect(findPluginServers(f, "demo")).toEqual([]);
     expect(findPluginServers(path.join(tmp, "absent.json"), "demo")).toEqual([]);
+  });
+});
+
+describe("docs-round #25: a plugin's MCP servers arrive switched off", () => {
+  const read = (rel: string): string => fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+  const between = (src: string, a: string, b: string): string => {
+    const i = src.indexOf(a);
+    const j = src.indexOf(b, i);
+    expect(i, a).toBeGreaterThan(-1);
+    expect(j, b).toBeGreaterThan(i);
+    return src.slice(i, j);
+  };
+
+  it("the entry the install writes is off, attributed, and still normalised", () => {
+    const e = pluginServerEntry({ url: "https://mcp.miro.com/", headers: { "X-AI-Source": "claude-code-plugin" } }, "miro", "official");
+    expect(e.disabled).toBe(true);
+    expect(isMcpServerOff(e)).toBe(true);
+    expect(e.origin).toEqual({ plugin: "miro", marketplace: "official" });
+    expect(e.auth).toBe("oauth"); // normalizePluginMcpServer still ran
+  });
+
+  it("a plugin that ships disabled:false still arrives off", () => {
+    expect(pluginServerEntry({ command: "npx", args: ["x"], disabled: false }, "p", "m").disabled).toBe(true);
+  });
+
+  it("the flag survives mcp.json, and withoutOffFlag turns it on without touching the rest", () => {
+    const f = path.join(tmp, "mcp.json");
+    writeMcpServer(f, "s", pluginServerEntry({ command: "npx", args: ["x"] }, "demo", "official"));
+    const cfg = readMcpFile(f).mcpServers.s;
+    expect(isMcpServerOff(cfg)).toBe(true);
+    const on = withoutOffFlag(cfg);
+    expect("disabled" in on).toBe(false);
+    expect(on).toMatchObject({ command: "npx", args: ["x"], origin: { plugin: "demo", marketplace: "official" } });
+    expect(isMcpServerOff(on)).toBe(false);
+    expect(findPluginServers(f, "demo")).toEqual(["s"]); // Remove still finds it
+  });
+
+  it("main: install writes the off entry and restarts nothing; Connect is the switch; probes skip off servers", () => {
+    const ipc = read("src/main/ipc.ts");
+    const install = between(ipc, '"hv:plugins-install"', 'ipcMain.handle("hv:plugins-installed"');
+    expect(install).toMatch(/pluginServerEntry\(cfg, scan\.name, marketplaceId\), \{ failIfExists: true \}/); // Review Focus 2: a reinstall never rewrites (so never re-disables) a server you already connected
+    expect(install).not.toMatch(/scheduleMcpReload\(/);
+    const flow = between(ipc, '"hv:mcp-connect-flow"', 'ipcMain.handle("hv:mcp-status"');
+    expect(flow).toMatch(/if \(result\.state === "connected"\) \{/);
+    expect(flow).toMatch(/if \(now && isMcpServerOff\(now\)\) \{\s*writeMcpServer\(file, name, withoutOffFlag\(now\)\);\s*scheduleMcpReload\(scope, workspaceId\);/);
+    expect(between(ipc, "const checkServer = async", "// Startup connectivity sweep")).toMatch(/if \(!cfg \|\| isMcpServerOff\(cfg\)\) \{/);
+    expect(between(ipc, "const httpByName", "const wanted").match(/isMcpServerOff\(cfg\)/g)).toHaveLength(2);
+  });
+
+  it("cleanup C5: a failed Connect on an off server leaves no status, Log out hides on off, saving an off server reloads nothing", () => {
+    const ipc = read("src/main/ipc.ts");
+    const flow = between(ipc, '"hv:mcp-connect-flow"', 'ipcMain.handle("hv:mcp-status"');
+    expect(flow).toMatch(/mcpStatusMap\.delete\(statusKey\(scope, workspaceId, name\)\);\s*mcpStatusChanged\(\);/);
+    const set = between(ipc, '"hv:mcp-set-server"', '"hv:mcp-install-catalog"');
+    expect(set).toMatch(/if \(!\(cfg && isMcpServerOff\(cfg\) && \(isNew \|\| wasOff\)\)\) scheduleMcpReload\(scope, workspaceId\);/);
+    const src = read("src/renderer/src/components/McpServersSection.tsx");
+    expect(src).toMatch(/\{!off && status\?\.state === "connected" && isHttp && \(/);
+  });
+
+  it("the MCP page shows an off server as off, with Connect in place of Reconnect and no Authenticate", () => {
+    expect(MCP_OFF_PILL.label).toBe("off");
+    expect(MCP_OFF_PILL.title).toBe("Installed by a plugin and switched off. Sessions can't use it until you click Connect.");
+    const src = read("src/renderer/src/components/McpServersSection.tsx");
+    expect(src).toMatch(/const off = s\.cfg\.disabled === true;/);
+    expect(src).toMatch(/status=\{status\}\s*off=\{off\}/);
+    expect(src).toMatch(/onClick=\{\(\) => \(off \? authenticate\(s\.scope, s\.name, "connect"\) : reconnect\(s\)\)\}/);
+    expect(src).toMatch(/\{off \? "Connect" : "Reconnect"\}/);
+    expect(src).toMatch(/\{!off && status\?\.state === "needs-auth" && \(/);
+    expect(src).toMatch(/via === "connect" \? window\.hv\.mcpConnectFlow : window\.hv\.mcpAuthenticate/);
+    // Edit keeps it off, and saving an off server does not sign in behind the row's back.
+    expect(src).toMatch(/\.\.\.\(cfg\.disabled === true \? \{ disabled: true \} : \{\}\),/);
+    expect(src).toMatch(/onSaved\(scope, name, kind === "http" && cfg\.disabled !== true\);/);
+  });
+
+  it("the install dialog still tells the truth about servers", () => {
+    const src = read("src/renderer/src/components/PluginsSection.tsx");
+    expect(src).not.toContain("but NOT connected");
+    expect(src).toContain("Added to your global mcp.json, switched off: sessions can't use them until you click Connect, here once installed or on the MCP page. Removed with the plugin.");
+    expect(src).toMatch(/MCP servers arrive unconnected<\/strong> — so nothing the agent can do changes yet/);
   });
 });

@@ -72,7 +72,7 @@ import { scanPluginDir, type PluginScan } from "./plugins/scan";
 import { fetchMarketplace, fetchPluginDir } from "./plugins/fetch";
 import { normalizePluginMcpServer } from "./plugins/mcpImport";
 import {
-  findPluginServers, installPluginCommands, installPluginSkills, pluginOrigin, rewriteSkillRoots,
+  findPluginServers, installPluginCommands, installPluginSkills, pluginServerEntry, rewriteSkillRoots,
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
@@ -129,7 +129,7 @@ import { expandedHash, pairPromptTemplateItems, restoreItems, type RestoreItem }
 import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
-import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
+import { isMcpServerOff, readMcpFile, withoutOffFlag, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { sweepLegacyCredentials } from "./mcpAuthStore";
 import { createAdapterStore, type AdapterEntry } from "./mcpAdapterStore";
 import { mapLimit, probe } from "./mcpClient";
@@ -140,6 +140,7 @@ import { affectedSessionIds, type ReloadSession } from "./mcpReloadScope";
 import { hasNodeRuntime } from "./nodePreflight";
 import { BLOCKING_UI_METHODS, isUnhandledBlockingUi, UI_CANCEL_RESPONSE } from "./uiFallback";
 import { PendingPrompts } from "./pendingPrompts";
+import { BypassNotices } from "./bypassNotices";
 import { humanRecurrence, runTitle, type Schedule } from "./schedules";
 import { editPatch, ScheduleStore, validateScheduleInput, type NewSchedule } from "./scheduleStore";
 import { parseScheduleEnvelope, permissionSummary, renderScheduleList } from "./scheduleEnvelopes";
@@ -232,8 +233,9 @@ export function promptTemplateNotifyMessage(
   return JSON.stringify({ ...payload, typed });
 }
 
-/** Which config source a live respawn is applying — cosmetic, shown in the renderer notice. */
-type ReloadReason = "mcp" | "skills" | "promptTemplates";
+/** Which config source a live respawn is applying — cosmetic, shown in the renderer notice
+    (one line per value in src/renderer/src/reloadNotice.ts, pinned by tests/mcp-reload-copy.test.ts). */
+type ReloadReason = "mcp" | "skills" | "promptTemplates" | "tools";
 
 /** §23: a plan-family notify (hv.plan | hv.plan-status | hv.plan.blocked), else null. */
 function parsePlanNotify(r: { method?: string; message?: string }): Record<string, unknown> | null {
@@ -480,6 +482,19 @@ export const MEMORY_EVENT_TYPES = [
   "memory.forgotten",
   "memory.edited",
   "memory.imported",
+] as const;
+
+/** §35 (docs-round #7): every schedule audit type, named once. The Audit page reads these,
+ *  `SCHEDULE_EVENT_LABELS` (AuditView.tsx) words them, and tests/audit-filters.test.ts keeps the
+ *  two lists equal. */
+export const SCHEDULE_EVENT_TYPES = [
+  "schedule.create",
+  "schedule.update",
+  "schedule.delete",
+  "schedule.fire",
+  "schedule.skip",
+  "schedule.done",
+  "schedule.missed",
 ] as const;
 
 export function parseMemoryEnvelope(r: { method?: string; title?: string }): MemoryEnvelope | null {
@@ -979,6 +994,10 @@ export function registerIpc(
      * changes meaning for a user who has no worktrees.
      */
     const project = workspace ? worktrees.projectOf(workspace) : undefined;
+    // The session starts with this bypass (HV_BYPASS), so §39's session-bypass analytics
+    // start from it: a click on the banner's "Turn off" is then a change, and counted.
+    const bypass = resolveBypass(project ?? null);
+    if (sessionId) sessionBypass.set(sessionId, bypass);
     // §14: resolve the approved ∩ enabled ∩ active-for-workspace skill set and
     // write the per-session manifest the bridge reads (HV_SKILLS_FILE). Only for
     // real chat sessions — the utility client ($HOME, no workspace/id) loads none.
@@ -1009,7 +1028,7 @@ export function registerIpc(
       rulesFile: rulesFile(),
       // #14: persistent bypass resolved workspace ?? global ?? off; re-applied on
       // every (re)spawn so it survives respawns (unlike session dangerous mode).
-      bypass: resolveBypass(project ?? null),
+      bypass,
       // §35: a run whose schedule says Read-only spawns clamped. Re-derived here
       // rather than stored on the session, so a resume, a hibernation wake and
       // an MCP reload all recompute it — the clamp cannot be lost by a respawn.
@@ -1170,6 +1189,8 @@ export function registerIpc(
    * pendingPrompts.ts and the `hv:pending-ui-requests` handler below.
    */
   const pendingUi = new PendingPrompts(BLOCKING_UI_METHODS);
+  // docs round #2: the latest ON `hv.dangerous` notify per session, replayed to a window that opens later.
+  const bypassNotices = new BypassNotices();
   const pendingChanged = (): void => send("hv:pending-changed", pendingUi.counts(UTILITY));
   const notePending = (r: { id: string; method?: string; title?: string; message?: string; options?: string[] }, sessionId: string): void => {
     if (r.method && pendingUi.note({ ...r, method: r.method, sessionId })) pendingChanged();
@@ -1192,7 +1213,8 @@ export function registerIpc(
     // badge. The replayed prompt reaches its queue, but nothing on screen says
     // to go and look at it — which for an unattended run is the whole point.
     pendingChanged();
-    return pendingUi.list().map((r) => stampPrompt(r));
+    // The bypass banner's notifies ride along (docs round #2). Notifies, so nothing answers them.
+    return [...pendingUi.list().map((r) => stampPrompt(r)), ...bypassNotices.list().map((r) => stampPrompt(r))];
   });
   /**
    * What each window currently shows, declared by its own renderer on every
@@ -1409,7 +1431,9 @@ export function registerIpc(
             return path.join(ws, ".mcp.json");
           })();
     const cfg = readMcpFile(file).mcpServers[name];
-    if (!cfg) {
+    // docs-round #25: an off server (a plugin's, until Connect) is never probed: a stdio
+    // probe STARTS it. Every sweep and Reconnect routes through here.
+    if (!cfg || isMcpServerOff(cfg)) {
       mcpStatusMap.delete(statusKey(scope, workspaceId, name));
       mcpStatusChanged();
       return;
@@ -1507,9 +1531,9 @@ export function registerIpc(
      * name here is correct, not a shortcut.
      */
     const httpByName = new Map<string, { name: string; url: string }>();
-    for (const [n, cfg] of Object.entries(globalFile)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
+    for (const [n, cfg] of Object.entries(globalFile)) if (cfg.url && !isMcpServerOff(cfg)) httpByName.set(n, { name: n, url: cfg.url });
     for (const [, servers] of wsFiles) {
-      for (const [n, cfg] of Object.entries(servers)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
+      for (const [n, cfg] of Object.entries(servers)) if (cfg.url && !isMcpServerOff(cfg)) httpByName.set(n, { name: n, url: cfg.url });
     }
     const wanted = [...httpByName.values()];
     if (!wanted.length) return;
@@ -2399,7 +2423,13 @@ export function registerIpc(
               : { mode: "full", catchUp: "ask", reuseSession: false, notifyOnDone: true, enabled: true, ...sched.draft, workspaceId: ws };
             const res = await requestScheduleDrawer({ workspaceId: ws, draft, existingId: existing?.id, sessionId });
             if ("cancelled" in res) return answer("declined");
-            if (!existing) track("schedule_created", scheduleParams(res.saved, "agent"));
+            if (!existing) {
+              // docs-round #32: provenance the drawer never sends. editPatch
+              // (scheduleStore.ts) keeps it out of every later edit.
+              scheduleStore.update(res.saved.id, { createdBy: { source: "agent", sessionId } }, new Date());
+              schedulesChanged();
+              track("schedule_created", scheduleParams(res.saved, "agent"));
+            }
             void log.append({
               type: existing ? "schedule.update" : "schedule.create",
               sessionId,
@@ -2526,6 +2556,7 @@ export function registerIpc(
       }
       uiOwners.set(r.id, sessionId);
       notePending(r, sessionId);
+      if (r.method) bypassNotices.note({ ...r, method: r.method, sessionId });
       // W1.3: an unanswered permission prompt protects the session from hibernation.
       if (isPermissionPrompt(r)) {
         activity.promptOpened(sessionId);
@@ -2626,7 +2657,8 @@ export function registerIpc(
     // §39: an exited Pi never sends agent_end — close the in-flight turn here.
     answeredWaits.delete(sessionId); // §39: its unpaired waits and open prompts die with it
     for (const [id, p] of promptShownAt) if (p.sid === sessionId) promptShownAt.delete(id);
-    sessionBypass.delete(sessionId); // a respawn starts with the session bypass off
+    sessionBypass.delete(sessionId); // spawnOpts re-seeds it at the next spawn
+    bypassNotices.drop(sessionId); // the respawned Pi announces its own bypass at session_start
     noModelOnce.forget(sessionId);
     // An exit WE asked for (hibernate, close, reload) mid-turn is a stop, not a crash.
     if (turns.isBusy(sessionId)) endTurn(sessionId, intentional ? { outcome: "aborted" } : { outcome: "error", errorKind: "pi_exit" });
@@ -2726,7 +2758,7 @@ export function registerIpc(
   // (pendingMcpReload is declared earlier so the session-exit handler can clear it.)
   const reloadingMcp = new Set<string>();
 
-  // Reason for each pending/in-flight reload (mcp | skills | commands) —
+  // Reason for each pending/in-flight reload (mcp | skills | promptTemplates | tools) —
   // cosmetic (renderer notice text); coalesced last-writer-wins per session.
   const reloadReasons = new Map<string, ReloadReason>();
   const reloadSession = async (sessionId: string): Promise<void> => {
@@ -2858,16 +2890,16 @@ export function registerIpc(
     return r.filePaths[0];
   });
   /**
-   * Round 11: removal is a confirmed choice between two outcomes, and neither
-   * leaves orphans behind (the old one-liner dropped the registry entry and left
-   * every session pointing at a workspace that no longer existed).
+   * Round 11: removal is a confirmed choice between two outcomes.
    *
-   *   forget — archive its sessions; re-adding the folder brings them back, and
-   *            nothing on disk is touched.
+   *   forget — stop its running agents and leave its sessions as they are.
+   *            Only registered workspaces render, so they are hidden, and
+   *            re-adding the folder brings them back unchanged — archived ones
+   *            stay archived (docs-round #27). Nothing on disk is touched.
    *   delete — permanently remove them, session files and snapshots included.
    *
-   * Both reuse the paths the session UI already calls (`hv:archive-session` /
-   * `hv:delete-session`) rather than adding a second delete implementation.
+   * Both stop an agent through `endSession`, the path `hv:archive-session` and
+   * `hv:delete-session` already take, rather than a second implementation.
    */
   ipcMain.handle("hv:remove-workspace", async (_e, ws: string, mode: "forget" | "delete" = "forget") => {
     forgetSessionFeatures(ws); // §39: the per-workspace first-use set goes with it
@@ -2877,8 +2909,12 @@ export function registerIpc(
     const wtPaths = worktrees.of(ws).map((w) => w.path);
     const affected = sessionsOfProject(index.list(), ws, wtPaths);
     for (const s of affected) {
+      // docs-round #26: both outcomes stop a running agent first, as archiving
+      // does (hv:archive-session). Nothing hibernates it otherwise, so a turn
+      // nobody can see would keep running — and spending — until quit.
+      if (manager.get(s.id)) await endSession(s.id);
+      // docs-round #27: forget writes nothing else to the session.
       if (mode === "delete") {
-        if (manager.get(s.id)) await endSession(s.id);
         index.remove(s.id);
         // §5: before the session file, never after — the run ids its sub-agent
         // artifacts are filed under exist only inside it.
@@ -2887,8 +2923,6 @@ export function registerIpc(
         deleteSessionSnapshots(snapshotDir(), s.id);
         void log.append({ type: "session.delete", sessionId: s.id, workspaceId: s.workspaceId });
         forgetSessionFeatures(s.id);
-      } else if (!s.archived) {
-        index.update(s.id, { archived: true });
       }
     }
     // §26: a terminal belongs to the workspace, not to a session, so nothing
@@ -3390,19 +3424,23 @@ export function registerIpc(
 
   ipcMain.handle("hv:schedules-list", () => scheduleStore.list());
 
-  ipcMain.handle("hv:schedule-save", (_e, input: Partial<NewSchedule> & { id?: string }) => {
+  ipcMain.handle("hv:schedule-save", (_e, input: Partial<NewSchedule> & { id?: string }, requestId?: string) => {
     const v = validateScheduleInput(input, workspaces.list());
     const s = input.id ? scheduleStore.update(input.id, editPatch(v), new Date()) : scheduleStore.create(v as NewSchedule, new Date());
     if (!s) throw new Error("That schedule no longer exists.");
-    // §39: the agent's drawer saves through here too; while one is open the
-    // agent path below counts it, as `agent`.
-    // ponytail: a page create made while an agent drawer is open is not counted; key the save by requestId if that ever matters.
-    if (!input.id && scheduleDrawerWaits.size === 0) track("schedule_created", scheduleParams(s, "page"));
-    void log.append({
-      type: input.id ? "schedule.update" : "schedule.create",
-      workspaceId: s.workspaceId,
-      data: { scheduleId: s.id, title: s.title, mode: s.mode, recurrence: humanRecurrence(s.repeat, s.at), source: "user" },
-    });
+    // §39: the agent's drawer saves through here too (it passes its requestId); the
+    // agent path below counts and logs that one as `agent`. Page saves pass none.
+    const agentDrawer = !!requestId && scheduleDrawerWaits.has(requestId);
+    if (!input.id && !agentDrawer) track("schedule_created", scheduleParams(s, "page"));
+    // docs-round #32: an agent-opened drawer saves through here too, and the
+    // agent path logs that create or update itself as `source: "agent"`.
+    if (!agentDrawer) {
+      void log.append({
+        type: input.id ? "schedule.update" : "schedule.create",
+        workspaceId: s.workspaceId,
+        data: { scheduleId: s.id, title: s.title, mode: s.mode, recurrence: humanRecurrence(s.repeat, s.at), source: "user" },
+      });
+    }
     schedulesChanged();
     return s;
   });
@@ -3442,12 +3480,17 @@ export function registerIpc(
   /**
    * "Open HappyVibe at login". Hidden in development rather than disabled: in
    * dev this would register the Electron binary itself, which is not the app
-   * the user thinks they are launching at login.
+   * the user thinks they are launching at login. Hidden on Linux too
+   * (docs-round #29): Electron's login items are macOS and Windows only, so the
+   * switch would flip and do nothing.
    */
-  ipcMain.handle("hv:login-item-get", () => ({
-    available: app.isPackaged,
-    openAtLogin: app.isPackaged ? app.getLoginItemSettings().openAtLogin : false,
-  }));
+  ipcMain.handle("hv:login-item-get", () => {
+    const available = app.isPackaged && platform.name !== "linux";
+    return {
+      available,
+      openAtLogin: available ? app.getLoginItemSettings().openAtLogin : false,
+    };
+  });
   ipcMain.handle("hv:login-item-set", (_e, on: boolean) => {
     if (!app.isPackaged) throw new Error("Opening at login is only available in the installed app.");
     app.setLoginItemSettings({ openAtLogin: !!on });
@@ -4226,6 +4269,7 @@ export function registerIpc(
     // project's — the same resolution spawnOpts does, so the live toggle and
     // the next respawn cannot disagree.
     const on = resolveBypass(ws ? worktrees.projectOf(ws) : null);
+    sessionBypass.set(id, on); // §39: what the session now runs, so its next "Turn off" is measured against it
     void (manager.get(id) as PiClient | null)?.send({ type: "prompt", message: `/hv-dangerous ${on ? "on" : "off"}` }).catch(() => {});
   };
   ipcMain.handle("hv:get-global-bypass", () => getGlobalBypass());
@@ -4235,7 +4279,8 @@ export function registerIpc(
     // Only sessions that inherit the global default (no explicit workspace override).
     for (const id of manager.activeIds()) {
       const ws = index.get(id)?.workspaceId ?? null;
-      if (!ws || getWorkspaceBypass(ws) === null) applyBypassLive(id);
+      // A worktree root never carries an override of its own: read its project's.
+      if (!ws || getWorkspaceBypass(worktrees.projectOf(ws)) === null) applyBypassLive(id);
     }
   });
   ipcMain.handle("hv:get-workspace-bypass", (_e, workspace: string) => getWorkspaceBypass(workspace));
@@ -4243,7 +4288,8 @@ export function registerIpc(
     setWorkspaceBypass(workspace, on);
     if (on !== null) track("bypass_changed", { on: !!on, scope: "workspace" });
     for (const id of manager.activeIds()) {
-      if ((index.get(id)?.workspaceId ?? null) === workspace) applyBypassLive(id);
+      // §29: a worktree session's workspaceId is the worktree root; its bypass is its project's.
+      if (worktrees.projectOf(index.get(id)?.workspaceId ?? "") === workspace) applyBypassLive(id);
     }
   });
 
@@ -4257,7 +4303,7 @@ export function registerIpc(
       if (typeof v === "boolean" && prev[k] !== v) track("builtin_toggled", { item: k, kind: "builtin_tool", on: v });
     }
     setBuiltinTools(t);
-    scheduleRuntimeReload("skills", "global", null);
+    scheduleRuntimeReload("tools", "global", null);
   });
   // §32: the web service. Main reads it PER CALL, so a change applies to the
   // next tool call with no respawn — the row says so. Test is the only call
@@ -4379,12 +4425,13 @@ export function registerIpc(
    * silent empty transcript.
    */
   // §27 + §4 Windows round: Electron answers getMediaAccessStatus on darwin AND
-  // win32. The blanket "granted" now covers only linux, which has no such API — so a
-  // Windows user whose privacy toggle is off gets the same guidance as a Mac user,
-  // instead of a level meter that reads zero with nothing explaining why.
-  const HAS_MIC_API = process.platform === "darwin" || process.platform === "win32";
+  // win32 — so a Windows user whose privacy toggle is off gets the same guidance as a
+  // Mac user, instead of a level meter that reads zero with nothing explaining why.
+  // docs-round #11: Linux has no such permission at all. "granted" there claimed a check
+  // that never ran; "not-needed" is what is true, and capture treats it like "granted".
+  const HAS_MIC_API = platform.name === "darwin" || platform.name === "win32";
   ipcMain.handle("hv:voice-mic-status", () =>
-    HAS_MIC_API ? systemPreferences.getMediaAccessStatus("microphone") : "granted",
+    HAS_MIC_API ? systemPreferences.getMediaAccessStatus("microphone") : "not-needed",
   );
   ipcMain.handle("hv:voice-ask-mic", async () => {
     if (!HAS_MIC_API) return true;
@@ -4393,14 +4440,14 @@ export function registerIpc(
     }
     // askForMediaAccess is darwin-only. Windows has no prompt to raise: permission
     // lives in Settings, which is what hv:voice-open-mic-settings opens.
-    return process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : false;
+    return platform.name === "darwin" ? systemPreferences.askForMediaAccess("microphone") : false;
   });
   ipcMain.handle("hv:voice-open-mic-settings", () => {
-    if (process.platform === "win32") {
+    if (platform.name === "win32") {
       void shell.openExternal("ms-settings:privacy-microphone");
       return;
     }
-    if (process.platform !== "darwin") return;
+    if (platform.name !== "darwin") return;
     // The pane identifier changed with System Settings (macOS 13+), and the old
     // one FAILS SOFTLY: `com.apple.preference.security` still launches Settings
     // but the ?Privacy_Microphone anchor is dropped, so you land on the Privacy
@@ -4571,7 +4618,13 @@ export function registerIpc(
     // §37: a crash report is the fifth thing this page answers for, and the
     // only one that left WITHOUT a click — which is precisely why it is here.
     const crashes = await log.read({ type: "crash.sent", ...scoped });
-    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback, ...crashes]
+    // §35 (docs-round #7): what each schedule did. Written since §35 shipped and never read
+    // until now, so the page's Schedules choice was always empty. Per type, like memory.
+    const schedules = await Promise.all(SCHEDULE_EVENT_TYPES.map((t) => log.read({ type: t, ...scoped })));
+    // §29 (docs-round #31): the git actions you took. `auditGit` writes them as human actions
+    // for exactly this page, which never read them back.
+    const git = await log.read({ type: "git.action", ...scoped });
+    return [...decisions, ...oneShots, ...excluded, ...memory.flat(), ...feedback, ...crashes, ...schedules.flat(), ...git]
       // A row with no workspace never matched a workspace filter before either.
       .filter((e) => !wsKeys || (e.workspaceId != null && wsKeys.has(normPath(e.workspaceId))))
       .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
@@ -4935,7 +4988,9 @@ export function registerIpc(
     const c = sessionId ? (manager.get(sessionId) as PiClient | null) : null;
     return c ?? ensureUtility();
   };
-  const agentDirs = (): string[] => allowedAgentDirs(builtinAgentsDir(), workspaces.list());
+  // roots(), not workspaces.list(): a worktree session's Pi runs in the worktree, so
+  // its agents live under a root the registry alone doesn't list (docs-round #8).
+  const agentDirs = (): string[] => allowedAgentDirs(builtinAgentsDir(), roots());
 
   ipcMain.handle("hv:list-agents", async (_e, sessionId?: string) => {
     void (await anyClient(sessionId)).send({ type: "prompt", message: "/hv-agents" }).catch(() => {});
@@ -5042,9 +5097,13 @@ export function registerIpc(
       if (model) track("model_changed", { ...modelParams(model.provider, model.modelId), scope: "session" });
       sessionsChanged();
       const client = manager.get(sessionId) as PiClient | null;
-      if (!client || !model) return { live: false };
+      // docs-round #30: clearing the override switches the running session to
+      // what its next spawn would pick — workspace, then global — through the
+      // one resolver spawnOpts uses. The session tier is already cleared above.
+      const target = model ?? resolveSpawnModel(index.get(sessionId)?.workspaceId, sessionId);
+      if (!client || !target) return { live: false };
       try {
-        const res = await client.send({ type: "set_model", provider: model.provider, modelId: model.modelId });
+        const res = await client.send({ type: "set_model", provider: target.provider, modelId: target.modelId });
         // §16 round 16: set_model RE-CLAMPS the thinking level upstream, so the
         // user's choice has to be re-asserted or it changes underneath them
         // with nothing on screen to say so.
@@ -5480,8 +5539,8 @@ export function registerIpc(
     const r = await removeWorktree(parent, worktreePath, force);
     if (!r.ok) return r;
 
-    // §5's Forget path, one level down: the folder is gone, so reopening a
-    // session here must fail honestly rather than resolve to nothing.
+    // Archived, unlike a forgotten workspace's sessions: this folder is gone, so
+    // reopening a session here must fail honestly rather than resolve to nothing.
     for (const s of here) if (!s.archived) index.update(s.id, { archived: true });
     sessionsChanged();
     auditGit(parent, "worktree-remove", { path: worktreePath, branch, force });
@@ -5764,7 +5823,9 @@ export function registerIpc(
     // the OS keychain through the sidecar, which is a round-trip.
     async (_e, scope: "global" | "workspace", workspaceId: string | null, name: string, cfg: McpServerConfig | null) => {
       const file = scope === "global" ? globalMcpFile() : workspaceMcpFile(workspaceId ?? "");
-      const isNew = cfg !== null && !readMcpFile(file).mcpServers[name];
+      const prev = readMcpFile(file).mcpServers[name];
+      const isNew = cfg !== null && !prev;
+      const wasOff = !!prev && isMcpServerOff(prev);
       writeMcpServer(file, name, cfg);
       if (isNew && cfg) track("mcp_server_added", mcpParams("manual", cfg));
       void log.append({ type: "mcp.config", workspaceId: workspaceId ?? undefined,
@@ -5793,7 +5854,8 @@ export function registerIpc(
             data: { name, action: "credentials-deleted", reason: "server-removed" } });
         }
       }
-      scheduleMcpReload(scope, workspaceId); // apply to running sessions
+      // Saving a server that stays off changes nothing a session can see. (On to off still reloads.)
+      if (!(cfg && isMcpServerOff(cfg) && (isNew || wasOff))) scheduleMcpReload(scope, workspaceId); // apply to running sessions
       return readMcpFile(file);
     },
   );
@@ -5885,6 +5947,20 @@ export function registerIpc(
       }
 
       setStatus(result.state, result.tools, result.error);
+      // docs-round #25: Connect is the switch for a server that arrived off (a plugin's).
+      // Re-read the file rather than trust `cfg`: the OAuth leg can take minutes. A failed
+      // connect leaves it off.
+      const now = readMcpFile(file).mcpServers[name];
+      if (result.state === "connected") {
+        if (now && isMcpServerOff(now)) {
+          writeMcpServer(file, name, withoutOffFlag(now));
+          scheduleMcpReload(scope, workspaceId);
+        }
+      } else if (now && isMcpServerOff(now)) {
+        // Still off: a failed Connect leaves no status, so the chip doesn't count it.
+        mcpStatusMap.delete(statusKey(scope, workspaceId, name));
+        mcpStatusChanged();
+      }
       return result.state === "connected"
         ? { ok: true as const, tools: result.tools ?? [] }
         : { ok: false as const, error: result.error ?? "Could not connect" };
@@ -6957,12 +7033,9 @@ export function registerIpc(
           // on the MCP page worked. See plugins/mcpImport.ts.
           // origin is what lets removal take these with it — it must be on the
           // FIRST write or the install is unattributable forever.
-          writeMcpServer(
-            globalMcpFile(),
-            key,
-            { ...normalizePluginMcpServer(cfg), origin: pluginOrigin(scan.name, marketplaceId) },
-            { failIfExists: true },
-          );
+          // docs-round #25: written OFF. The adapter neither lists nor connects it until
+          // Connect (hv:mcp-connect-flow) removes the flag.
+          writeMcpServer(globalMcpFile(), key, pluginServerEntry(cfg, scan.name, marketplaceId), { failIfExists: true });
           track("mcp_server_added", mcpParams("plugin", normalizePluginMcpServer(cfg)));
           servers.push(key);
         }
@@ -6977,7 +7050,6 @@ export function registerIpc(
         });
         if (installed.length > 0) { skillsChanged(); scheduleSkillReload("global", null); }
         if (commands.length > 0) { promptTemplatesChanged(); schedulePromptTemplateReload("global", null); }
-        if (servers.length > 0) scheduleMcpReload("global", null);
         return {
           ok: true as const,
           skills: installed.map((s) => s.skill.name),

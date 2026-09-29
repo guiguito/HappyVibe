@@ -30,6 +30,9 @@ paths:
 - `.hv-overlay`/`.hv-dialog` are `z-index: 100`; the app's own scale tops out at z-50. Portalling to
   `<body>` doesn't put anything on top — an explicit z-index beats document order. Anything that must
   sit above a dialog has to BE a dialog. `tests/modal-layer.test.ts` fails on anything else reaching 100.
+- Session prompts (permission, ask_user) add `.hv-prompt` (z-index 110, the constants in `paneDialog.ts`)
+  so they sit above every dialog: a prompt never times out, and a covered one deadlocks
+  (seen with the AGENTS.md draft). Nothing else may use it.
 - A session dialog (permission, ask_user) portalled into a pane falls back to the viewport when that
   pane is hidden (`dialogHost`, `paneDialog.ts`: null for `offsetParent === null` or a zero rect) —
   prompts never time out, so an invisible one waits forever. The pane wrapper needs `relative`.

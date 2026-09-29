@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { readSkillDir, type DiscoveredSkill } from "../skills/discovery";
 import { countPluginRootRefs, substitutePluginRoot } from "./screen";
-import { readMcpFile } from "../mcp";
+import { readMcpFile, type McpServerConfig } from "../mcp";
+import { normalizePluginMcpServer } from "./mcpImport";
 import type { PluginScan } from "./scan";
 
 /**
@@ -22,6 +23,16 @@ export interface PluginOrigin {
 
 export function pluginOrigin(plugin: string, marketplace: string): PluginOrigin {
   return { plugin, marketplace };
+}
+
+/**
+ * What the install writes for one of a plugin's MCP servers (§25, docs-round #25):
+ * normalised for the adapter's OAuth detection (mcpImport.ts), attributed so Remove can
+ * find it, and OFF — the adapter neither lists nor connects a disabled server, so the
+ * install changes nothing the agent can do until the user clicks Connect.
+ */
+export function pluginServerEntry(cfg: McpServerConfig, plugin: string, marketplace: string): McpServerConfig {
+  return { ...normalizePluginMcpServer(cfg), origin: pluginOrigin(plugin, marketplace), disabled: true };
 }
 
 /** Files whose text we rewrite for ${CLAUDE_PLUGIN_ROOT}. Binary is left alone. */

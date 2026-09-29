@@ -237,6 +237,15 @@ describe("agents-md is not a one-shot kind", () => {
     expect(read("src/renderer/src/components/AuditView.tsx")).not.toMatch(/drafted AGENTS\.md/);
     expect(read("src/main/ipc.ts")).not.toMatch(/oneShot\("agents-md"/);
   });
+
+  it("no surface still lists it among the app's own calls (docs round #13)", () => {
+    // The scan above never looked at the Stats sentence or analytics' doc
+    // comment, and both kept the fourth kind after it went.
+    const stats = read("src/renderer/src/components/DashboardView.tsx");
+    expect(stats).not.toMatch(/AGENTS\.md/);
+    expect(read("src/main/analytics.ts")).not.toMatch(/AGENTS\.md/);
+    expect(stats).toContain("(session titles, commit messages, PR drafts)");
+  });
 });
 
 // ── §19 (2026-08-30): an append is recorded, not silent ─────────────────────

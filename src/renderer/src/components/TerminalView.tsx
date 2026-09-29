@@ -3,6 +3,7 @@ import { Section } from "./Section";
 import { TERMINAL_PALETTES, contrastRatio } from "../terminalTheme";
 import { DEFAULT_TERMINAL_SETTINGS, fontStack } from "../../../main/terminalSettings";
 import { BUNDLED_MONO, listMonospaceFamilies } from "../monospaceFonts";
+import { SHELL_COPY } from "../platformCopy";
 
 /**
  * §26 — Settings → Terminal.
@@ -222,16 +223,16 @@ export function TerminalView({
         </Row>
       </Section>
 
-      <Section icon="terminal" title="Shell" subtitle="What gets started, and in what environment. Leave the path blank to use your login shell.">
-        <Row label="Shell path" hint={`Blank uses $SHELL. ${s.shellPath ? "" : "Currently: your login shell."}`} field="shellPath">
+      <Section icon="terminal" title="Shell" subtitle={SHELL_COPY.subtitle}>
+        <Row label="Shell path" hint={SHELL_COPY.pathHint} field="shellPath">
           <input
             value={s.shellPath ?? ""}
-            placeholder="$SHELL"
+            placeholder={SHELL_COPY.placeholder}
             onChange={(e) => patch({ shellPath: e.target.value.trim() ? e.target.value : null })}
             className={`${input} w-64`}
           />
         </Row>
-        <Row label="Shell arguments" hint="Space-separated. `-l` starts a login shell, so your real PATH and version managers work." field="shellArgs">
+        <Row label="Shell arguments" hint={SHELL_COPY.argsHint} field="shellArgs">
           <input
             value={s.shellArgs.join(" ")}
             onChange={(e) => patch({ shellArgs: e.target.value.split(/\s+/).filter(Boolean) })}

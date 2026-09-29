@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { agentBlurb, agentTokenCost, rosterTokenCost, sortAgents, type AgentInfo } from "../agents";
 import { Section } from "./Section";
 import { EmptyState } from "./EmptyState";
+import { ipcMessage } from "../ipcError";
 
 /**
  * §12 (2026-08-29): five sources, because there are five. `bundled` is ours and
@@ -36,6 +37,16 @@ export const AGENT_STATUS_LABEL: Record<"on" | "off", string> = { on: "on", off:
 
 /** Where `hv:write-agent` is path-confined to — the only rows Edit can serve. */
 export const EDITABLE_SOURCES: ReadonlySet<string> = new Set(["bundled", "project"]);
+
+/**
+ * docs round #15 — the page's own words for where agents come from. DATA, so
+ * tests/agents-renderer.test.ts can hold them to the sources the bridge's
+ * twEnumerateAgents actually emits (bundled and project; upstream's defaults
+ * are off and nothing is discovered from packages).
+ */
+export const AGENTS_INTRO =
+  "Every subagent this workspace can delegate to — HappyVibe's bundled ones, copies you've made of them, and this project's own.";
+export const AGENTS_LOADING_SUBTITLE = "Bundled and project subagents you can delegate to.";
 
 /**
  * Agents page (split out of the old combined Skills/MCP/Agents/Tools view).
@@ -74,16 +85,25 @@ export function AgentsView({
     void window.hv.listAgents(sessionId ?? undefined); // refreshes page AND composer chip
   };
 
-  const duplicate = async (a: AgentInfo): Promise<void> => {
-    await window.hv.duplicateAgent(a.path);
+  // docs-round #8: a refused copy is SAID, in main's words. It used to reject into
+  // nothing and leave the dialog open with no sign anything had been tried.
+  const [dupError, setDupError] = useState<string | null>(null);
+  const duplicate = async (a: AgentInfo): Promise<boolean> => {
+    try {
+      await window.hv.duplicateAgent(a.path);
+    } catch (e) {
+      setDupError(ipcMessage(e));
+      return false;
+    }
     void window.hv.listAgents(sessionId ?? undefined); // refresh
+    return true;
   };
 
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full px-8 py-10">
         <h1 className="font-black text-3xl tracking-tight mb-2">Agents</h1>
-        <p className="text-sm text-ink-soft mb-8">Every subagent this workspace can delegate to — yours, this project's, and the ones your Pi runtime and installed packages provide.</p>
+        <p className="text-sm text-ink-soft mb-8">{AGENTS_INTRO}</p>
 
         {/* Agents */}
         <Section
@@ -91,7 +111,7 @@ export function AgentsView({
           title="Agents"
           subtitle={
             sortedAgents === null
-              ? "Bundled, built-in, project, user and package subagents you can delegate to."
+              ? AGENTS_LOADING_SUBTITLE
               // The context lever, stated plainly: the roster is injected into the
               // system prompt on EVERY turn, so an agent left on has a standing cost.
               : `${sortedAgents.filter((a) => a.enabled !== false).length} on · about ${rosterTokenCost(sortedAgents)} tokens of context every turn. Switch off the ones you do not use.`
@@ -109,7 +129,7 @@ export function AgentsView({
                 <button
                   key={a.path}
                   type="button"
-                  onClick={() => setInspecting(a)}
+                  onClick={() => { setDupError(null); setInspecting(a); }}
                   className={`w-full text-left px-4 py-3 border-b border-line last:border-b-0 hover:bg-paper-deep/30 cursor-pointer block ${on ? "" : "opacity-55"}`}
                 >
                   <div className="flex items-center gap-2 flex-wrap">
@@ -150,12 +170,13 @@ export function AgentsView({
       {inspecting && (
         <AgentInspector
           agent={inspecting}
+          error={dupError}
           onClose={() => setInspecting(null)}
           onToggle={() => {
             void toggle(inspecting).then(() => setInspecting(null));
           }}
           onDuplicate={() => {
-            void duplicate(inspecting).then(() => setInspecting(null));
+            void duplicate(inspecting).then((ok) => { if (ok) setInspecting(null); });
           }}
           onEdit={() => {
             setEditing(inspecting);
@@ -186,12 +207,15 @@ export function AgentsView({
  */
 function AgentInspector({
   agent,
+  error,
   onClose,
   onToggle,
   onDuplicate,
   onEdit,
 }: {
   agent: AgentInfo;
+  /** Why the last Duplicate was refused, in main's words (docs-round #8). */
+  error: string | null;
   onClose: () => void;
   onToggle: () => void;
   onDuplicate: () => void;
@@ -220,6 +244,8 @@ function AgentInspector({
             Close
           </button>
         </div>
+
+        {error && <div className="mb-2 text-sm font-semibold text-berry">{error}</div>}
 
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full border px-2 py-0.5 ${AGENT_STATUS_TONE[agent.enabled === false ? "off" : "on"]}`}>
@@ -310,7 +336,7 @@ function AgentEditor({
     window.hv.readAgent(agent.path).then((r) => {
       setBody(r.body);
       setModel(r.model ?? "");
-    }).catch((e) => setError(String(e)));
+    }).catch((e) => setError(ipcMessage(e)));
     void window.hv.listModels().then(setModels).catch(() => {});
   }, [agent.path]);
 
@@ -320,7 +346,7 @@ function AgentEditor({
       await window.hv.writeAgent(agent.path, { body, model: model || null });
       onSaved();
     } catch (e) {
-      setError(String(e));
+      setError(ipcMessage(e));
     }
   };
 

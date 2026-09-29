@@ -221,6 +221,7 @@ const PLAN_PASS_TOOLS = new Set([
 
 import { isReadOnlyBoundary, writeCapableIn } from "./hv-subagent-boundary";
 import { isDelegationTool, isShellTool } from "./hv-rules";
+import { unwrapMcpCall } from "./hv-mcp";
 
 export type PlanGate =
   | { kind: "block"; reason: string }
@@ -310,6 +311,11 @@ export function gatePlanCall(toolName: string, input: unknown): PlanGate {
   if (isDelegationTool(toolName)) return { kind: "needs-boundary" };
   if (BLOCKED_PLAN_TOOLS.has(toolName)) {
     return { kind: "block", reason: `Plan mode is read-only — '${toolName}' is blocked. Explore and draft a plan; the user implements it later.` };
+  }
+  // docs-round #34: installing an MCP server or signing in to one writes config, so both
+  // read-only modes block it. Every other proxy call keeps the floor-ask below.
+  if (toolName === "mcp" && unwrapMcpCall(typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {}).kind === "manage") {
+    return { kind: "block", reason: "Plan mode is read-only — adding an MCP server or signing in to one is blocked. Explore and draft a plan; the user implements it later." };
   }
   // isShellTool, not === "bash": a PowerShell session would otherwise fall through to
   // floor-ask, turning plan mode's block into a permission PROMPT for arbitrary shell.

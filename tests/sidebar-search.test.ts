@@ -22,10 +22,11 @@ describe("the input is conditional, the icon is not", () => {
   });
 
   it("the affordance carries its shortcut in the tooltip, like the collapse control", () => {
-    // The glyph comes from MOD now (PRD §4, Windows round) — a literal ⌘ named a key
-    // that is not on a Windows keyboard. What this test is FOR is that the affordance
-    // still carries its shortcut, not which glyph the shortcut is spelled with.
-    expect(SRC).toMatch(/title=\{`Find a session \(\$\{MOD\}K\)`\}/);
+    // The key comes from App's resolved binding (docs-round #28) — a literal ⌘ named a
+    // key that is not on a Windows keyboard, and MOD+K ignored a rebound shortcut. What
+    // this test is FOR is that the affordance still carries its shortcut, not how the
+    // shortcut is spelled.
+    expect(SRC).toMatch(/title=\{`Find a session \(\$\{findSessionKey\}\)`\}/);
   });
 
   it("the placeholder is unchanged — this hides the input, not the capability", () => {

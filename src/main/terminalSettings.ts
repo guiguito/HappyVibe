@@ -197,3 +197,24 @@ export function resolveSpawn(
     env: { ...inherited, BROWSER: "none", ...s.env, TERM: "xterm-256color" },
   };
 }
+
+/**
+ * §26: the question to ask before a paste runs, or null when it needs none. A block
+ * containing or ending in a newline EXECUTES on arrival, which is why the multi-line
+ * warning is a safety setting rather than a preference.
+ */
+export function pasteWarning(text: string): string | null {
+  if (!/\n/.test(text.trimStart())) return null;
+  const lines = text.trimEnd().split("\n").length;
+  return `Paste and run ${lines} ${lines === 1 ? "line" : "lines"}? A pasted newline executes immediately.`;
+}
+
+/**
+ * docs round #4: the ONE paste check, for every route into an emulator (keyboard, right
+ * click, the agent terminal card). `ask` is injectable so vitest can drive it; the default
+ * is only ever reached in the renderer.
+ */
+export function allowPaste(text: string, warn: boolean, ask: (question: string) => boolean = (q) => window.confirm(q)): boolean {
+  const question = warn ? pasteWarning(text) : null;
+  return question === null || ask(question);
+}

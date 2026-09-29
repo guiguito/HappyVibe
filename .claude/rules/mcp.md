@@ -16,8 +16,19 @@ paths:
   probes configured servers. `docs/validation/m1.md`.
 - The proxy tool is `mcp`; the bridge unwraps it (`hv-mcp.ts`) to the virtual rule name
   `mcp:<serverKey>_<toolName>` for rules/grants/prompts/audit. Discovery calls
-  (search/describe/connect) are safe-default-allowed. `unwrapMcpCall` is the ONE source of the
-  factual display (gate + renderer), enriched with a key arg (url/query).
+  (search/describe/connect/instructions, `action:"ui-messages"`) are safe-default-allowed.
+  `install`, `auth-start`/`auth-complete` and a lone unknown action are the `manage` kind
+  (`mcp-manage:install:<url>`, `mcp-manage:auth:<server>`, and `mcp-manage:<action>` for a lone
+  unknown action — outside `mcp:` so no MCP tool rule covers them): asked by default, blocked in
+  plan mode and read-only runs. The install URL is shown canonicalised (`new URL(…).toString()`,
+  as the adapter writes it), or "(not a valid URL)" — model text never reaches the headline. An
+  action added to `MCP_MANAGE_ACTIONS` is asked with no other edit. `unwrapMcpCall` reads
+  keys in the ADAPTER's dispatch order (action → tool → connect → describe → instructions →
+  search), pinned with its action list by `tests/mcp-adapter-actions.test.ts`. It is the ONE
+  source of the factual display (gate + renderer), enriched with a key arg (url/query).
+- The adapter's per-server `mcp__<ns>` namespace tools (`{tool, args}`) are gated as the proxy
+  (`mcp:<tool>`), only when the registered description matches (`MCP_NAMESPACE_DESCRIPTION`), its params are exactly `{tool, args}` (`isMcpNamespaceProxy`), and only
+  `tool` is read (the adapter runs nothing else): a raw-name gate let `mcp:<tool>` rules be sidestepped.
 - stdio servers configured with `node`/`npx` need a runtime in the packaged app.
 
 ## Intent
@@ -68,6 +79,10 @@ paths:
 - Only IDLE sessions (`activity.isIdle`) reload immediately; busy ones defer via `pendingMcpReload`,
   drained on `agent_end` / permission-prompt close. The renderer gets `hv:session-reloading`
   (grants reset); main then fires `/hv-tools`.
+- A plugin's servers are written `disabled: true` (`pluginServerEntry`, plugins/install.ts) — the
+  adapter's own flag: not listed to the model, never connected. Main's Connect
+  (`hv:mcp-connect-flow`) is the ONLY thing that clears it (then `scheduleMcpReload`); an off server
+  is never probed or credential-read (`isMcpServerOff`, mcp.ts). `tests/mcp-adapter-disabled.test.ts`.
 
 ## Secrets can execute
 - The adapter resolves env/header values through `resolveCommandSecret`: a leading `!` runs a shell

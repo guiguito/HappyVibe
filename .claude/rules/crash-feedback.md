@@ -15,8 +15,11 @@ paths:
 # Crash reports (§37) and feedback (§34) — both via `inlet-sdk`
 
 ## Crash: wiring
-- `src/main/crash/client.ts` is the import-free seam (`captureCrash`, `attachCrashAudit`,
-  `recordCrashSent`). The five `hv:crash-*` handlers live inside `crash/index.ts`
+- `src/main/crash/client.ts` is the electron-free seam (node builtins only: `captureCrash`,
+  `attachCrashAudit`, `recordCrashSent`, and `write/read/clearLastReport` for `last-report.json`,
+  the scrubbed last envelope kept in the SDK's store dir so Privacy shows it after a restart; it
+  holds the session id, so crash reports off AND usage statistics off delete it via
+  `forgetLastCrashReport`; `lastSent` stays in memory, the launch notice keys on it). The five `hv:crash-*` handlers live inside `crash/index.ts`
   (`registerCrashIpc`, called before every gate so the Privacy page opens with reporting off).
   `ipc.ts` never imports `./crash` (`tests/crash-wiring.test.ts`).
 - The renderer uses `inlet-sdk/crash/electron-renderer` (node-free), never `inlet-sdk/crash/electron`

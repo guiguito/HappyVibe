@@ -11,7 +11,7 @@ import { checkCommand, hasBackgroundAmpersand, TERMINAL_STEER_LINE, TERMINAL_TOO
 import { BROWSER_TOOL_DESCRIPTIONS, browserRuleName, hostOf, isLocalHost, schemeRefusal, wrapUntrusted } from "./hv-browser";
 import { WEB_CAPS, WEB_STEER_LINE, WEB_TOOL_DESCRIPTIONS, WEB_URL_TOOLS, webRefusal } from "./hv-web";
 import { DOCUMENT_TOOL, DOCUMENT_TOOL_DESCRIPTIONS, documentFactsLine, documentReadRefusal, type DocumentFacts } from "./hv-document";
-import { unwrapMcpCall } from "./hv-mcp";
+import { isMcpNamespaceProxy, isMcpNamespaceTool, unwrapMcpCall, unwrapMcpNamespaceCall } from "./hv-mcp";
 import {
   acceptableMarks, filterMessages, serializeEntries, buildToolDefs,
   type MarkKey, type SessionEntry, type ToolSpecLike,
@@ -562,6 +562,8 @@ function audit(
     /** §12 (2026-09-26): a tintinweb child's call — which agent, which run (AuditView names both). */
     agent?: string;
     runId?: string;
+    /** docs-round #7: on a child's row, the bypass let it through (AuditView lists it under Bypass too). */
+    bypass?: boolean;
   },
 ): void {
   // §33: the audit row's summary is CAPPED here, at the one choke point every caller routes
@@ -671,6 +673,7 @@ export default function (pi: ExtensionAPI) {
         audit(busUi, {
           tool: row.tool, decision: row.decision, summary: row.summary, source: "subagent",
           wouldHave: row.wouldHave, ...(row.type ? { agent: row.type } : {}), ...(row.agentId ? { runId: row.agentId } : {}),
+          ...(row.bypass ? { bypass: true } : {}),
         });
       },
       // §10 (2026-09-26, Phase 4, decision 10): a child inherits the parent's session grants…
@@ -683,12 +686,13 @@ export default function (pi: ExtensionAPI) {
         if (!ui) return "deny";
         const control = (activityState?: string) =>
           req.agentId && ui.notify(JSON.stringify({ kind: "hv.subagent", stage: "control", runId: req.agentId, ...(activityState ? { activityState } : {}) }), "info");
-        const record = req.agentId
-          ? (globalThis as Record<symbol, { getRecord?(id: string): { description?: string } | undefined } | undefined>)[Symbol.for("pi-subagents:manager")]?.getRecord?.(req.agentId)
-          : undefined;
+        // docs round #1: the app names the child, by its agent type and run id. Never the
+        // run's task text: that is the model's own `Agent` argument, and a prompt never
+        // shows the model's words (§13). The run's card turns amber while this waits,
+        // which is how the user tells two runs of one agent apart.
         const title = JSON.stringify({
           kind: "hv.permission", tool: req.permTool, summary: summarize(req.tool, req.input),
-          child: { agent: req.type ?? "sub-agent", runLabel: record?.description ?? "", runId: req.agentId ?? "" },
+          child: { agent: req.type ?? "unknown", runId: req.agentId ?? "" },
         });
         control("needs_attention");
         try {
@@ -751,6 +755,13 @@ export default function (pi: ExtensionAPI) {
     // than persisted state — the mode comes from the environment on every
     // spawn, so a respawn re-announces it without anything to restore.
     if (readonly) ctx.ui.notify(JSON.stringify({ kind: "hv.readonly", enabled: true }), "info");
+    // docs round #2: the red banner's only signal. The persistent setting arrives as
+    // HV_BYPASS at every spawn, so `dangerous` is already true here, and nothing else
+    // would say so; `/hv-dangerous` announces its own toggles. Only when ON: a notify
+    // on every fresh session would be the first ui-request other bridge tests wait on.
+    // Never in a read-only run: bypass doesn't reach it (the tool_call gate), and a
+    // banner saying every call runs without asking would be false.
+    if (dangerous && !readonly) ctx.ui.notify(JSON.stringify({ kind: "hv.dangerous", on: true }), "warning");
     busUi = ctx.ui;
   });
 
@@ -982,7 +993,11 @@ export default function (pi: ExtensionAPI) {
     if (strippedIntentTools.has(tool)) delete input.intent;
     // MCP proxy unwrapping: rules, grants, prompts and audit all operate on
     // the real MCP tool ("mcp:<tool>"), never the bare proxy.
-    const mcp = tool === "mcp" ? unwrapMcpCall(input) : null;
+    // #35: the adapter's per-server `mcp__<ns>` tools run the same call, so they gate the same
+    // way — but only when the registered tool really is one (a direct tool can be named alike).
+    const mcp = tool === "mcp" ? unwrapMcpCall(input)
+      : isMcpNamespaceTool(tool) && isMcpNamespaceProxy(pi.getAllTools().find((t) => t.name === tool))
+        ? unwrapMcpNamespaceCall(tool, input) : null;
     // §28: a navigation gates per DESTINATION, not per tool — one `browser_navigate`
     // rule would be the difference between localhost and a stranger's server
     // being the same decision. Same virtual-name trick as mcp:<server>_<tool>,
@@ -1353,7 +1368,9 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       dangerous = arg === "on";
-      ctx.ui.notify(JSON.stringify({ kind: "hv.dangerous", on: dangerous }), dangerous ? "warning" : "info");
+      // A read-only run never honours bypass, so it must not show the red banner either.
+      const on = dangerous && !readonly;
+      ctx.ui.notify(JSON.stringify({ kind: "hv.dangerous", on }), on ? "warning" : "info");
     },
   });
 

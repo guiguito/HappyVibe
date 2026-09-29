@@ -5,7 +5,10 @@
  * fail" discipline as context.ts / permission.ts.
  */
 import { delegationRunId, displayableTask, isDelegationTool } from "../../../pi-runtime/extensions/hv-rules";
+import { isMcpNamespaceTool } from "../../../pi-runtime/extensions/hv-mcp";
 import { subagentRosterLine } from "../../../pi-runtime/extensions/hv-agents";
+import { AGENT_TOOL, WORKFLOW_TOOL } from "../../../pi-runtime/extensions/hv-tw-gate";
+import { WEB_URL_TOOLS } from "../../../pi-runtime/extensions/hv-web";
 import { fmtNum } from "./analytics-format";
 
 // ── hv.agents / hv.tools notifies ────────────────────────────────────────────
@@ -72,13 +75,50 @@ export function parseTools(r: { method?: string; message?: string }): ToolInfo[]
 
 export type PermState = "allow" | "ask" | "deny";
 
+/**
+ * docs round #3: the name the bridge's gate checks a tool's calls under, when it isn't the
+ * tool's own (happyvibe-bridge.ts `permTool`, and the SubagentWorkflow gate). `per` is set
+ * when that name changes with the call (which MCP tool, which agent, which site), so the
+ * bare name has no verdict of its own: a deny rule on `Agent` would paint the pill red while
+ * every delegation still prompts. A directly exposed MCP tool keeps its own name (null here).
+ */
+export interface CheckedAs {
+  name: string;
+  per?: "per MCP tool" | "per agent" | "per site";
+}
+
+export function checkedAs(tool: string): CheckedAs | null {
+  if (tool === "mcp" || isMcpNamespaceTool(tool)) return { name: "mcp:<tool>", per: "per MCP tool" };
+  if (tool === AGENT_TOOL) return { name: "subagent:<agent>", per: "per agent" };
+  if (tool === "browser_open" || tool === "browser_navigate" || WEB_URL_TOOLS.has(tool)) {
+    return { name: "browser:<host>", per: "per site" };
+  }
+  if (tool === WORKFLOW_TOOL) return { name: "workflow" };
+  return null;
+}
+
 export interface ToolRow extends ToolInfo {
-  permission: PermState;
+  /** The verdict, or, for a per-call tool, what it is checked per (a pill, never a verdict). */
+  permission: PermState | NonNullable<CheckedAs["per"]>;
+  checkedAs?: CheckedAs;
+}
+
+/** What the rules test box prints: an allow rule never skips the workflow question, so it reads ask. */
+export function testedAction(tool: string, action: PermState): PermState {
+  return action === "allow" && tool === checkedAs(WORKFLOW_TOOL)?.name ? "ask" : action;
 }
 
 /** Join a tool list against per-tool verdicts. A tool with no verdict → "ask". */
 export function joinToolPermissions(tools: ToolInfo[], verdicts: Record<string, PermState>): ToolRow[] {
-  return tools.map((t) => ({ ...t, permission: verdicts[t.name] ?? "ask" }));
+  return tools.map((t) => {
+    const c = checkedAs(t.name);
+    if (!c) return { ...t, permission: verdicts[t.name] ?? "ask" };
+    if (c.per) return { ...t, permission: c.per, checkedAs: c };
+    // The one fixed-name case is the workflow gate. It prompts unless a rule DENIES,
+    // and an allow rule never skips it, so the pill never says allow.
+    const v = verdicts[t.name] ?? "ask";
+    return { ...t, permission: v === "allow" ? "ask" : v, checkedAs: c };
+  });
 }
 
 // ── subagent trace extraction ────────────────────────────────────────────────

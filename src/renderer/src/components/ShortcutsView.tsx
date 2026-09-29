@@ -37,7 +37,7 @@ export function ShortcutsView({
         return;
       }
       const next = eventToBinding(e);
-      if (!next) return; // still holding modifiers — keep listening
+      if (!next) return; // a lone modifier, or no Mod (Cmd/Ctrl) yet — keep listening
       e.preventDefault();
       e.stopPropagation();
       const clash = findConflict(bindings, capturing, next);

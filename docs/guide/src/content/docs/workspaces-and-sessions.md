@@ -138,11 +138,11 @@ Removing is tucked away in the workspace's settings, so it never sits one carele
 1. Hover over the workspace's name and click the gear, "Workspace settings".
 2. Scroll to the last section, **Remove workspace**: "Take this project out of HappyVibe."
 3. Pick one:
-   - **Forget workspace:** takes it out of the list and archives its sessions. "Nothing on disk is touched, and adding the folder again brings them back." Click **Forget**.
+   - **Forget workspace:** takes it out of the list and stops any agent still working there. "Nothing on disk is touched, and adding the folder again brings its sessions back as they were." Click **Forget**.
    - **Delete permanently:** removes it and permanently deletes its sessions, "conversations, history and sub-agent transcripts included. Your files are never touched. This cannot be undone." Click **Delete**.
 4. The app asks once more, naming the workspace and how many sessions it holds. Click **Forget** or **Delete** to go ahead, or **Cancel**.
 
-Both choices also cover the sessions in the project's worktrees, and both stop the terminals open in that workspace. Your project's files stay where they are either way. If you forget a workspace and add its folder again later, its sessions return archived, under **Show archived**.
+Both choices also cover the sessions in the project's worktrees, and both stop the terminals open in that workspace. Your project's files stay where they are either way. If you forget a workspace and add its folder again later, its sessions come back as they were: sessions you had archived stay under **Show archived**, and the rest are back in the list.
 
 ## The icon rail
 

@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { stripSkillFrontMatter } from "../skillMd";
 import { SkillDiff, SOURCE_TONE, STATUS_LABEL, STATUS_TONE } from "./SkillsSection";
+import { GoTo } from "./GoTo";
 
 /**
  * §24 Commands — the GLOBAL commands surface (managed + linked + bundled),
@@ -117,7 +118,7 @@ function GitUrlModal({ onClose, onScan }: { onClose: () => void; onScan: (url: s
         <h3 className="font-black text-lg mb-1">Import from Git URL</h3>
         <p className="text-xs text-ink-soft mb-3">
           Public GitHub, GitLab, Bitbucket or Codeberg repo. Downloaded over HTTPS (no git needed); you choose which
-          commands to import.
+          prompts to import.
         </p>
         <input
           autoFocus
@@ -308,7 +309,7 @@ export function PromptTemplateInspector({
   id: string;
   /** Set when opened from workspace settings, so delete/unlink scopes the reload to this workspace. */
   workspaceId?: string | null;
-  /** false in workspace settings for a global command: inspectable, but approval only happens from the Commands page. */
+  /** false in workspace settings for a global prompt: inspectable, but approval only happens on the Prompts page. */
   canApprove?: boolean;
   onClose: () => void;
   onChanged: () => void;
@@ -480,8 +481,8 @@ export function PromptTemplateInspector({
                   </button>
                 ) : (
                   <p className="text-[11px] text-ink-soft self-center">
-                    Approve this command from the Commands page — a workspace can only turn a global command off for
-                    itself.
+                    Approve this prompt on the <GoTo view="promptTemplates" /> page — a workspace can only turn a global
+                    prompt off for itself.
                   </p>
                 )
               ) : detail.status === "active" ? (

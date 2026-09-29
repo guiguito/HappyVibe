@@ -23,6 +23,21 @@ test("a bare key or a lone modifier is not a binding", () => {
   expect(eventToBinding(ev({ key: "Shift", shiftKey: true }))).toBeNull();
 });
 
+test("a binding needs ⌘/Ctrl: Shift or Alt alone would take over typing (docs round #5)", () => {
+  expect(eventToBinding(ev({ key: "A", shiftKey: true }))).toBeNull();
+  expect(eventToBinding(ev({ key: "e", altKey: true }))).toBeNull();
+  expect(eventToBinding(ev({ key: "E", shiftKey: true, altKey: true }))).toBeNull();
+  expect(eventToBinding(ev({ key: "A", metaKey: true, shiftKey: true }))).toBe("Mod-Shift-a");
+  expect(eventToBinding(ev({ key: "x", ctrlKey: true, altKey: true }))).toBe("Mod-Alt-x");
+});
+
+test("resolveBindings drops a saved binding without ⌘/Ctrl, so it falls back instead of going dead", () => {
+  const b = resolveBindings({ newSession: "Shift-a", newTerminal: "Alt-t", save: "Mod-Shift-s" });
+  expect(b.newSession).toBe("Mod-n");
+  expect(b.newTerminal).toBe("Mod-t");
+  expect(b.save).toBe("Mod-Shift-s");
+});
+
 test("matchesBinding is the exact inverse of capture", () => {
   const e = ev({ key: "E", metaKey: true, shiftKey: true });
   expect(matchesBinding(e, "Mod-Shift-e")).toBe(true);
@@ -33,6 +48,12 @@ test("formatBinding renders mac glyphs, and words elsewhere", () => {
   expect(formatBinding("Mod-Shift-e")).toBe("⌘⇧E");
   expect(formatBinding("Mod-,")).toBe("⌘,");
   expect(formatBinding("Mod-n", false)).toBe("Ctrl+N");
+});
+
+test("cleanup C9: a saved Mod- with no key is dropped, and every default is Mod- plus a key", () => {
+  expect(resolveBindings({ save: "Mod-" }).save).toBe("Mod-s");
+  expect(resolveBindings({ save: "Mod-y" }).save).toBe("Mod-y");
+  for (const a of SHORTCUT_ACTIONS) expect(a.defaultKey).toMatch(/^Mod-.+/);
 });
 
 test("resolveBindings falls back to defaults and ignores unknown ids", () => {

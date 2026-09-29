@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { ToolIcon } from "./ToolCard";
 import { TERMINAL_PALETTES } from "../terminalTheme";
-import { fontStack } from "../../../main/terminalSettings";
+import { allowPaste, fontStack } from "../../../main/terminalSettings";
 
 /**
  * §26 part 2 — an agent terminal is a card in the transcript, not a tab.
@@ -255,5 +255,14 @@ function LiveTerminal({ terminalId, settings }: { terminalId: string; settings: 
     };
   }, [terminalId]);
 
-  return <div ref={host} className="border-t-2 border-line h-64 px-2 py-1.5 bg-paper-deep/40" />;
+  // docs round #4: the same paste question as a terminal tab (TerminalTab.tsx). Typing here
+  // is ungated, but a pasted newline still runs, and that is the user's own safety setting.
+  const onPasteCapture = (e: React.ClipboardEvent): void => {
+    if (!allowPaste(e.clipboardData.getData("text"), live.current.warnMultilinePaste)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  return <div ref={host} onPasteCapture={onPasteCapture} className="border-t-2 border-line h-64 px-2 py-1.5 bg-paper-deep/40" />;
 }

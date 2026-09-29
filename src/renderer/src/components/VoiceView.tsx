@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { MIC_DENIED_HINT } from "../platformCopy";
+import { MIC_DENIED_HINT, MIC_SETTINGS_BUTTON, MOD } from "../platformCopy";
 import { Toggle } from "./Toggle";
 import { Section } from "./Section";
 // Electron-free main modules, imported rather than restated — the pattern
@@ -47,6 +47,16 @@ function Row({
   );
 }
 
+/**
+ * docs-round #11: the Microphone access badge, as data (the suite has no DOM).
+ * "not-needed" is main's answer on Linux, which has no OS microphone permission.
+ */
+export function micStatusLabel(mic: string): string {
+  if (mic === "granted") return "Granted";
+  if (mic === "denied") return "Denied";
+  if (mic === "not-needed") return "No permission needed";
+  return "Not requested";
+}
 
 /**
  * Round 2: settings are OWNED BY APP and passed in, mirroring TerminalView's
@@ -77,7 +87,7 @@ export function VoiceView({
   // Device labels are only populated once permission has been granted, so this
   // list is deliberately enumerated after the status check rather than at mount.
   useEffect(() => {
-    if (mic !== "granted") return;
+    if (mic !== "granted" && mic !== "not-needed") return;
     void navigator.mediaDevices
       .enumerateDevices()
       .then((d) => setDevices(d.filter((x) => x.kind === "audioinput")));
@@ -333,7 +343,7 @@ export function VoiceView({
         <Section
           icon="voice"
           title="Behaviour"
-          subtitle="Hold right \u2318 (right Ctrl on Windows and Linux) to dictate while held; tap it to keep recording until you tap again. It is listed under Built-in on the Keyboard shortcuts page."
+          subtitle={`Hold right ${MOD} to dictate while held; tap it to keep recording until you tap again. It is listed under Built-in on the Keyboard shortcuts page.`}
         >
           <Row
             label="Hold threshold"
@@ -389,10 +399,10 @@ export function VoiceView({
             <div className="flex items-center gap-2">
               <span
                 className={`text-[12px] font-bold rounded-full px-2.5 py-1 ${
-                  mic === "granted" ? "bg-leaf-soft text-leaf" : "bg-honey-soft text-tangerine"
+                  mic === "granted" || mic === "not-needed" ? "bg-leaf-soft text-leaf" : "bg-honey-soft text-tangerine"
                 }`}
               >
-                {mic === "granted" ? "Granted" : mic === "denied" ? "Denied" : "Not requested"}
+                {micStatusLabel(mic)}
               </span>
               {mic === "denied" && (
                 <button
@@ -400,7 +410,7 @@ export function VoiceView({
                   onClick={() => void window.hv.voiceOpenMicSettings()}
                   className="text-[13px] font-semibold px-3 py-1.5 rounded-xl hover:bg-paper-deep/40 cursor-pointer transition-colors"
                 >
-                  Open System Settings
+                  {MIC_SETTINGS_BUTTON}
                 </button>
               )}
             </div>

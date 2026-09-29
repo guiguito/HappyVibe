@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { basename } from "../basename";
-import { MOD } from "../platformCopy";
 import { uiGet, uiSet } from "../uiStore";
 import { timeago } from "../timeago";
 import { DOT_TITLE, SESSION_DOT, sessionDotState } from "../sessionDot";
@@ -687,6 +686,8 @@ export function Sidebar({
   onNewWorktree,
   newSessionKey,
   newWorktreeKey,
+  findSessionKey,
+  sidebarKey,
   onNewSession,
   onSelectSession,
   onRenameSession,
@@ -777,6 +778,9 @@ export function Sidebar({
    *  literal ⌘ in exactly three files and pins that allowlist at three. */
   newSessionKey?: string;
   newWorktreeKey?: string;
+  /** docs-round #28: the Find-a-session and sidebar-toggle hints, formatted in App like the two above. */
+  findSessionKey: string;
+  sidebarKey: string;
   onNewSession: (ws: string) => void;
   onSelectSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
@@ -905,7 +909,10 @@ export function Sidebar({
   /** §29: which project's `+ ▾` menu is open, by path. One at a time. */
   const [startMenu, setStartMenu] = useState<string | null>(null);
 
-  const archivedCount = sessions.filter((s) => s.archived).length;
+  // docs-round #27: only sessions this list can show. A forgotten workspace's
+  // sessions stay in the index, archived or not, and never render here.
+  const listed = new Set(workspaces.flatMap((ws) => [ws, ...(worktrees?.[ws] ?? []).map((w) => w.path)]));
+  const archivedCount = sessions.filter((s) => s.archived && listed.has(s.workspaceId)).length;
 
   /**
    * Sessions whose agent process is LIVE — pinned to the top of their
@@ -992,7 +999,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={onToggleCollapsed}
-            title={`Expand sidebar (${MOD}\\)`}
+            title={`Expand sidebar (${sidebarKey})`}
             aria-label="Expand sidebar"
             className="cursor-pointer hover:brightness-105 transition-all"
           >
@@ -1092,7 +1099,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={openSearch}
-            title={`Find a session (${MOD}K)`}
+            title={`Find a session (${findSessionKey})`}
             aria-label="Find a session"
             className="shrink-0 text-ink-soft hover:text-ink cursor-pointer px-1"
           >
@@ -1101,7 +1108,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={onToggleCollapsed}
-            title={`Collapse sidebar (${MOD}\\)`}
+            title={`Collapse sidebar (${sidebarKey})`}
             aria-label="Collapse sidebar"
             className="shrink-0 text-ink-soft hover:text-ink cursor-pointer text-lg leading-none px-1"
           >

@@ -44,7 +44,7 @@ export const EMPTY_COPY = {
   },
   rules: {
     headline: "No rules yet",
-    next: "Add one below, or let the agent ask and choose Always.",
+    next: "Add one below, or choose Always allow when the agent asks.",
   },
   statsSessions: {
     headline: "No sessions yet",

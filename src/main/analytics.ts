@@ -67,7 +67,7 @@ export interface Analytics {
   };
   /**
    * Round 15 — the app's own `pi -p --no-session` calls (session titles, the
-   * AGENTS.md draft, the commit message, the PR draft).
+   * commit message, the PR draft).
    *
    * Tokens only, and estimated. These calls carry no usage record at all, so a
    * dollar figure here would be invented from a price table main does not have

@@ -8,7 +8,9 @@
  * read files.
  */
 import { describe, expect, test } from "vitest";
-import { hasRestorable, rewindActions, type RewindPreview } from "../src/renderer/src/rewind";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { hasRestorable, rewindActions, rewindDialogBody, type RewindPreview } from "../src/renderer/src/rewind";
 
 const preview = (p: Partial<RewindPreview>): RewindPreview => ({
   willRestore: [],
@@ -52,5 +54,32 @@ describe("rewindActions is unchanged by the gating", () => {
     expect(rewindActions("conversation")).toEqual({ truncateChat: true, restoreFiles: false });
     expect(rewindActions("both")).toEqual({ truncateChat: true, restoreFiles: true });
     expect(rewindActions("files")).toEqual({ truncateChat: false, restoreFiles: true });
+  });
+});
+
+// ── docs round #17: the copy follows the scope, not a V1 that no longer exists ──
+describe("rewind copy says what each scope does", () => {
+  const read = (rel: string): string => readFileSync(path.join(__dirname, "..", rel), "utf8");
+
+  test("the body promises a truncated conversation exactly when the scope truncates it", () => {
+    for (const scope of ["conversation", "both", "files"] as const) {
+      const body = rewindDialogBody(scope);
+      expect(/removed from the conversation/.test(body), scope).toBe(rewindActions(scope).truncateChat);
+      expect(/moves back into the composer/.test(body), scope).toBe(rewindActions(scope).truncateChat);
+    }
+    expect(rewindDialogBody("files")).toMatch(/stay exactly as they are/);
+  });
+
+  test("the tooltip no longer says files are never rolled back", () => {
+    const t = read("src/renderer/src/components/Transcript.tsx");
+    expect(t).not.toMatch(/not rolled back/);
+    expect(t).toContain('title="Rewind to this message — you choose whether files roll back too"');
+  });
+
+  test("the dialog renders the derived body, not a fixed paragraph", () => {
+    const c = read("src/renderer/src/components/ChatView.tsx");
+    expect(c).toContain("{rewindDialogBody(rewindScope)}");
+    expect(c).not.toMatch(/moves back into the composer so you can edit/);
+    expect(c).not.toMatch(/files are NOT rolled back/);
   });
 });

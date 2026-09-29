@@ -1,10 +1,13 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { makePlatform } from "../src/main/platform";
 import {
   DEFAULT_TERMINAL_SETTINGS,
+  allowPaste,
   fontStack,
   mergeTerminalSettings,
   normalizeFamily,
+  pasteWarning,
   resolveSpawn,
 } from "../src/main/terminalSettings";
 
@@ -220,5 +223,44 @@ describe("§4 Windows round — the shell's arguments belong to the shell", () =
     // And edited arguments survive even on the default shell.
     expect(resolveSpawn({ ...d, shellArgs: ["-NoLogo"] }, {}, win).args).toEqual(["-NoLogo"]);
     expect(resolveSpawn({ ...d, shellArgs: [] }, {}, mac).args).toEqual([]);
+  });
+});
+
+describe("the multi-line paste question (docs round #4, #12)", () => {
+  it("asks only when a newline would run, and counts lines in English", () => {
+    expect(pasteWarning("ls -la")).toBeNull();
+    expect(pasteWarning("  ls -la  ")).toBeNull();
+    expect(pasteWarning("ls -la\n")).toBe("Paste and run 1 line? A pasted newline executes immediately.");
+    expect(pasteWarning("cd /tmp\nrm -rf x\n")).toBe("Paste and run 2 lines? A pasted newline executes immediately.");
+    expect(pasteWarning("a\r\nb\r\nc")).toBe("Paste and run 3 lines? A pasted newline executes immediately.");
+    expect(pasteWarning("rm x\n  ")).toBe("Paste and run 1 line? A pasted newline executes immediately.");
+    expect(pasteWarning("a\n")).toBe("Paste and run 1 line? A pasted newline executes immediately.");
+  });
+
+  it("allowPaste asks that exact question, and only while the setting is on", () => {
+    const asked: string[] = [];
+    const no = (q: string): boolean => { asked.push(q); return false; };
+    expect(allowPaste("a\nb", true, no)).toBe(false);
+    expect(asked).toEqual(["Paste and run 2 lines? A pasted newline executes immediately."]);
+    expect(allowPaste("a\nb", false, no)).toBe(true);
+    expect(allowPaste("one line", true, no)).toBe(true);
+    expect(asked).toHaveLength(1);
+    expect(allowPaste("a\nb", true, () => true)).toBe(true);
+  });
+
+  it("both emulators ask in the CAPTURE phase, and a right-click paste goes through the same check", () => {
+    const tab = readFileSync("src/renderer/src/components/TerminalTab.tsx", "utf8");
+    const card = readFileSync("src/renderer/src/components/TerminalRunCard.tsx", "utf8");
+    for (const src of [tab, card]) {
+      // xterm's own paste listener stops propagation, so a bubbling onPaste never runs.
+      expect(src).toContain("onPasteCapture={onPasteCapture}");
+      expect(src).not.toMatch(/\sonPaste=\{/);
+      expect(src).toContain('allowPaste(e.clipboardData.getData("text"), live.current.warnMultilinePaste)');
+    }
+    const at = tab.indexOf("const onContextMenu");
+    const menu = tab.slice(at, at + 600);
+    expect(menu).toContain("allowPaste(text, live.current.warnMultilinePaste)) term.current?.paste(text)");
+    expect(menu).not.toContain("termInput");
+    expect(tab).not.toContain("${lines} lines?");
   });
 });

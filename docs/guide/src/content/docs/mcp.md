@@ -33,6 +33,7 @@ The status badge is HappyVibe checking the server for you:
 - **needs auth**: it wants you to sign in. Click **Authenticate**.
 - **failed**: it didn't answer. Hover the badge to read why.
 - **—**: no check has run yet.
+- **off**: a plugin installed this server and it's switched off. Sessions can't use it until you click **Connect**, and HappyVibe doesn't check it either.
 
 A **direct** badge means you chose **Expose tools directly** for that server.
 
@@ -40,9 +41,9 @@ The buttons on each row:
 
 - **Authenticate**: sign in, when the badge says **needs auth**.
 - **Log out**: sign out of a connected online server.
-- **Reconnect**: check the server again.
+- **Reconnect**: check the server again. On an **off** server this button reads **Connect**: HappyVibe checks the server answers and signs you in if it needs to. Once it's connected, your sessions can use it.
 - **Edit**: change its name, command, address or settings.
-- **Remove**: take it off the list. It goes straight away, so the catalog card becomes clickable again.
+- **Remove**: take it off the list, after you confirm. The catalog card becomes clickable again.
 
 With no servers yet, the list says "No MCP servers yet" and "Install one from the catalog above, or add your own."
 
@@ -94,7 +95,7 @@ A server change never lands in the middle of a reply. Open sessions restart once
 
 In a session's top bar, a 🔌 chip shows how many of your servers answered HappyVibe's check, for example **2/3 MCP**. It lists your global servers plus the ones added for this workspace. Click it to see each server with its state, and **Manage…** to come back to this screen.
 
-When the agent wants to use a server's tool, the call goes through your [permission rules](/docs/permissions/), the same as every other tool call.
+When the agent wants to use a server's tool, the call goes through your [permission rules](/docs/permissions/), the same as every other tool call. If the agent tries to add a server itself, it asks you first and names the address and where it would be saved. If it tries to sign in to one, it asks you first and names the server.
 
 ## Related
 

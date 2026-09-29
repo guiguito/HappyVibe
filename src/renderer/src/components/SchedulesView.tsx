@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { basename } from "../basename";
 import type { Schedule } from "../../../main/schedules";
+import { resolveBypass } from "../../../main/bypass";
 import { EmptyState } from "./EmptyState";
 import { usePresence } from "../usePresence";
 import { DUR } from "../motion";
@@ -8,7 +9,7 @@ import { ScheduleDrawer } from "./ScheduleDrawer";
 import { Toggle } from "./Toggle";
 import {
   ENDED_COPY, hasEnded, humanRecurrence, lastRunLabel, LOGIN_ITEM_COPY, MISSED_ROW, nextRunLabel, OUTCOME_MARK, PAUSED_COPY,
-  TEMPLATES,
+  SKIP_REASON, TEMPLATES,
 } from "../schedulesCopy";
 
 /**
@@ -22,7 +23,6 @@ export function SchedulesView({
   schedules,
   workspaces,
   models,
-  bypassHere,
   prefill,
   drawerRequest,
   onPrefillUsed,
@@ -33,7 +33,6 @@ export function SchedulesView({
   schedules: Schedule[];
   workspaces: string[];
   models: Array<{ provider: string; id: string; name: string }>;
-  bypassHere: (ws: string) => boolean;
   /** From "Repeat this on a schedule…" — a session's own prompt and title. */
   prefill: Partial<Schedule> | null;
   /** From the agent's schedule_create / schedule_update: the drawer is the confirm step. */
@@ -49,6 +48,10 @@ export function SchedulesView({
   const [costs, setCosts] = useState<Record<string, { perRun: Record<string, number | null>; last30: number | null }>>({});
   const [loginItem, setLoginItem] = useState<{ available: boolean; openAtLogin: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // docs-round #29: the Full card's "runs will too" warning, resolved exactly as
+  // every spawn resolves it (ipc.ts spawnOpts) — the workspace's own setting
+  // over the global one. Here, not in the drawer: the drawer test bans setBypass.
+  const [bypass, setBypass] = useState<Record<string, boolean>>({});
   // Deleting takes the run history with it, so it asks — ONE confirm for both
   // routes in (the ended row's button and the expanded panel's link), because
   // two paths to an irreversible thing is how one of them ends up without it.
@@ -82,6 +85,12 @@ export function SchedulesView({
     void window.hv.loginItemGet().then(setLoginItem).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    void Promise.all([window.hv.getGlobalBypass(), Promise.all(workspaces.map((ws) => window.hv.getWorkspaceBypass(ws)))])
+      .then(([globalOn, perWs]) => setBypass(Object.fromEntries(workspaces.map((ws, i) => [ws, resolveBypass(globalOn, perWs[i])]))))
+      .catch(() => {});
+  }, [workspaces]);
+
   // "Repeat this on a schedule…" opened us with a session's prompt in hand.
   useEffect(() => {
     if (prefill) {
@@ -102,7 +111,7 @@ export function SchedulesView({
     void window.hv.scheduleRunNow(id).then((r) => {
       if (!r.ok) {
         setNotice(
-          r.reason === "busy" ? "That project is busy right now — the run will wait for the session that's working."
+          r.reason === "busy" ? "Another session in that project is working — try again when that session finishes."
           : r.reason === "disabled" ? "That schedule is paused. Switch it on first."
           : "That schedule is gone.",
         );
@@ -287,7 +296,7 @@ export function SchedulesView({
                               <li key={`${r.firedAt}-${i}`} className="text-xs flex items-center gap-2">
                                 <span aria-hidden>{OUTCOME_MARK[r.outcome]}</span>
                                 <span className="text-ink-soft">{new Date(r.firedAt).toLocaleString()}</span>
-                                {r.reason && <span className="text-ink-soft">{r.reason}</span>}
+                                {r.reason && <span className="text-ink-soft">{r.outcome === "skipped" ? SKIP_REASON[r.reason] ?? r.reason : r.reason}</span>}
                                 {cost != null && <span className="text-ink-soft">${cost.toFixed(2)}</span>}
                                 {r.sessionId && (
                                   <button type="button" onClick={() => onOpenSession(r.sessionId!)} className="font-bold cursor-pointer hover:underline">
@@ -356,7 +365,7 @@ export function SchedulesView({
           initial={shown.current.initial}
           workspaces={workspaces}
           models={models}
-          bypassHere={bypassHere}
+          bypassHere={(ws) => bypass[ws] ?? false}
           requestId={shown.current.requestId}
           leaving={drawer.leaving}
           onSaved={() => {}}

@@ -5,7 +5,7 @@ description: See every keyboard shortcut in HappyVibe, change the ones you can, 
 
 All of HappyVibe's shortcuts, on one page. Most are yours to change: "Click a shortcut to record a new one. Esc cancels."
 
-Shortcuts use ⌘ on macOS and Ctrl on Windows and Linux. The screen shows the keys for the computer you're on (except the **Built-in** list, which always shows ⇧ for Shift).
+Shortcuts use ⌘ on macOS and Ctrl on Windows and Linux. The screen shows the keys for the computer you're on.
 
 ## Where to find it
 
@@ -44,7 +44,7 @@ A worktree is a second copy of your project's files, on its own branch, in its o
 | Action | Keys |
 |---|---|
 | Send the message | Enter |
-| New line in the composer | ⇧Enter (Shift+Enter) |
+| New line in the composer | ⇧Enter on macOS, Shift+Enter on Windows and Linux |
 | Reference a file or folder in the composer | @ |
 | Close a dialog or search | Esc |
 | Dictate into the composer (tap to keep recording) | Hold right ⌘ on macOS, right Ctrl on Windows and Linux |
@@ -54,7 +54,7 @@ In this list, the composer is the message box.
 ## Change a shortcut
 
 1. Click the keys next to the action. The button pulses and says "press…".
-2. Press the new combination. Include ⌘ on macOS or Ctrl on Windows and Linux, plus a key. Shift or Alt alone would take over normal typing. (On macOS, Ctrl counts as ⌘. On Windows and Linux, the Windows key counts as Ctrl.)
+2. Press the new combination: ⌘ on macOS or Ctrl on Windows and Linux, plus a key, with Shift or Alt too if you like. Without ⌘ or Ctrl the button keeps waiting, because Shift or Alt on its own would take over normal typing. (On macOS, Ctrl counts as ⌘. On Windows and Linux, the Windows key counts as Ctrl.)
 3. The new shortcut saves straight away and keeps working after a restart.
 
 Changed your mind halfway? Press Esc, and the old shortcut stays.
@@ -72,7 +72,7 @@ The same check applies to **Reset**: if another action now holds the default key
 
 ## During a session
 
-The app shows the keys you've chosen, not the defaults. The tab strip's **+** menu, for example, lists your keys next to **New session**, **New terminal** and **New browser**.
+The app shows the keys you've chosen, not the defaults. The tab strip's **+** menu, for example, lists your keys next to **New session**, **New terminal** and **New browser**, and tooltips like "Find a session" and the editor's **Save** name them too.
 
 ## Related
 

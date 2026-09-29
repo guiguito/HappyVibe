@@ -34,8 +34,9 @@ export interface PermissionInfo {
     agents: Array<{ type: string; known: boolean; tools: string[]; writeCapable: string[] }>;
     unparsed: boolean;
   };
-  /** §10 (2026-09-26, Phase 4): a sub-agent's own `ask`, raised on the parent's pane. */
-  child?: { agent: string; runLabel: string; runId: string };
+  /** §10 (2026-09-26, Phase 4): a sub-agent's own `ask`, raised on the parent's pane.
+      Only what the app knows. The run's description is the model's words (docs round #1). */
+  child?: { agent: string; runId: string };
 }
 
 // Round 3 #13: "Allow for workspace" / "Always allow" persist a rule (workspace /
@@ -94,7 +95,7 @@ export function parsePermission(r: UiRequest): PermissionInfo | null {
       }
       const ch = p.child as Record<string, unknown> | undefined;
       if (ch && typeof ch === "object" && typeof ch.agent === "string" && typeof ch.runId === "string") {
-        info.child = { agent: ch.agent, runId: ch.runId, runLabel: typeof ch.runLabel === "string" ? ch.runLabel : "" };
+        info.child = { agent: ch.agent, runId: ch.runId };
       }
       if (p.reason === "outside-workspace") {
         info.reason = "outside-workspace";

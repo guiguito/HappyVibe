@@ -5,6 +5,7 @@ import { BrandLogo } from "./BrandLogo";
 import { ModelSelect } from "./ModelSelect";
 import { Section } from "./Section";
 import { THINKING_LEVELS } from "../../../main/thinking";
+import { keyRejectedNote } from "../onboarding";
 
 /**
  * Round 8: the old "LLM Setup" section of the single Settings scroll, promoted
@@ -66,7 +67,8 @@ function LongCacheToggle(): React.JSX.Element {
           Keeps the cached conversation prefix alive for 1 hour on Anthropic (24h on OpenAI) instead of the 5-minute
           default, so a session you come back to later still gets cache-priced prompt tokens. Anthropic bills a
           long-lived cache write at 2× the input rate, so this wins when your turns are minutes apart and loses when
-          you type continuously. Other providers ignore it. Takes effect for new sessions.
+          you type continuously. Most other providers get the same request; Google, Mistral, OpenAI Codex, xAI and a
+          few others ignore it. Takes effect for new sessions.
         </p>
       </div>
       <button
@@ -85,9 +87,14 @@ function LongCacheToggle(): React.JSX.Element {
 export function ModelsView({
   firstRun,
   onSaved,
+  onSaving,
 }: {
   firstRun: boolean;
   onSaved: () => void;
+  /** docs-round #9: a first-run key save is starting. App pins `view` to "models" so
+   *  the provider push (which lands before the probe answers) can't close this page
+   *  and take the verdict with it. */
+  onSaving: () => void;
 }): React.JSX.Element {
   const [byok, setByok] = useState<HvByokProvider[]>([]);
   /**
@@ -221,6 +228,7 @@ export function ModelsView({
     // The key is saved regardless — this only reports what the provider said
     // when asked. "bad" means it answered 401/403; "unverified" means we could
     // not tell (no /models route, or the host was unreachable).
+    if (firstRun) onSaving();
     const probe = await window.hv.setProviderKey(id, key);
     setKeyProbes((p) => ({ ...p, [id]: probe }));
     setKeyInputs((k) => ({ ...k, [id]: "" }));
@@ -234,7 +242,9 @@ export function ModelsView({
     // and bring the card it became to where they are looking.
     setProviderQuery("");
     setJustSaved(id);
-    if (firstRun) onSaved();
+    // docs-round #9: a refused key stays on this page with its verdict. Only an
+    // accepted (or unverifiable) one hands over to the chat.
+    if (firstRun && probe.status !== "bad") onSaved();
   };
 
   /** What the key check said, per provider. Cleared when the key is removed. */
@@ -243,7 +253,7 @@ export function ModelsView({
     if (!probe || probe.status === "ok") return null;
     return probe.status === "bad" ? (
       <p className="mt-1 text-xs font-bold text-berry">
-        Saved, but {byok.find((b) => b.id === id)?.label ?? id} rejected this key ({probe.error}).
+        {keyRejectedNote(byok.find((b) => b.id === id)?.label ?? id, probe.error)}
       </p>
     ) : (
       <p className="mt-1 text-xs text-ink-soft">Saved. We couldn&apos;t verify this key here.</p>

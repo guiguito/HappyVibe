@@ -180,6 +180,14 @@
   z-index: 100;
   animation: hv-pop-in 270ms cubic-bezier(0.34, 1.4, 0.64, 1);
 }
+/* A blocking session prompt (permission, ask_user) sits above every dialog: it never
+   times out, so one covered by another dialog deadlocks both. Radix's layer stack
+   already leaves the newest modal clickable; !important also covers a prompt that
+   was mounted BEFORE the dialog above which it now paints (inline pointer-events). */
+.hv-prompt {
+  z-index: 110;
+  pointer-events: auto !important;
+}
 
 /**
  * Animations round (2026-09-10) — A7: a transcript item that arrived LIVE

@@ -28,14 +28,14 @@ Open **What a crash report contains** for the full answer. A report holds:
 - what kind of failure it was, and the error's type
 - where in HappyVibe's own code it happened
 - your HappyVibe version and your operating system
-- a random ID, kept only in memory and replaced after 30 idle minutes and at least once a day. It lets a crash be matched with feedback you sent in the same sitting, and "identifies nothing else."
+- a random ID, held in memory and replaced after 30 idle minutes and at least once a day. It lets a crash be matched with feedback you sent in the same sitting, and "identifies nothing else." The last report you sent, ID included, is also kept on this computer so the Privacy page can show it after a restart. Turning off **Send crash reports** or **Send anonymous usage statistics** deletes that copy.
 
 "It never contains your prompts, your files, your paths or your keys. Error messages are redacted before they leave, and native crash snapshots stay on your computer."
 
 ### Show the last report and the folder
 
-- **Show the last report** displays the most recent report sent since HappyVibe started, in full. Click **Hide the last report** to fold it away. If none has been sent since the app started, the button is greyed out and the screen says "Nothing has been sent from this computer yet."
-- **Reveal crash reports** shows the folder where crash snapshots are kept on your computer, selected in Finder on macOS or File Explorer on Windows. On Linux it opens in your file manager.
+- **Show the last report** displays the most recent report sent from this computer, in full. A copy stays on your computer, so it's still there after HappyVibe restarts. Click **Hide the last report** to fold it away. If none has been sent yet, the button is greyed out and the screen says "Nothing has been sent from this computer yet."
+- **Reveal in Finder** (**Show in File Explorer** on Windows, **Show in file manager** on Linux) shows the folder where crash snapshots are kept on your computer.
 
 ## Turn crash reports off
 
@@ -47,7 +47,7 @@ From that moment, nothing is sent. Click it again whenever you want to turn repo
 ## Check what was sent
 
 1. Open **Privacy**.
-2. Click **Show the last report** to read the most recent one since the app started.
+2. Click **Show the last report** to read the most recent one.
 3. Open the [Audit log](/docs/audit-log/) to see every report that was sent, and when.
 
 ## During a session

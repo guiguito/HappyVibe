@@ -53,3 +53,34 @@ export const MIC_DENIED_HINT: string =
     : here === "win32"
       ? "Access is denied. Turn the microphone on for HappyVibe in Settings → Privacy & security → Microphone."
       : "Access is denied. Grant microphone access to HappyVibe in your system settings.";
+
+/** The Voice page's button to the microphone setting. Windows calls its app "Settings"
+    (MIC_DENIED_HINT above already does); hv:voice-open-mic-settings opens ms-settings there. */
+export function micSettingsLabel(platform: string): string {
+  return platform === "win32" ? "Open Settings" : "Open System Settings";
+}
+export const MIC_SETTINGS_BUTTON: string = micSettingsLabel(here);
+
+/**
+ * The terminal settings' Shell rows (docs-round #22). A blank path starts what
+ * `terminalShell()` in src/main/platform.ts picks: `$SHELL` (else zsh/bash) on POSIX,
+ * pwsh.exe → powershell.exe → COMSPEC/cmd.exe on Windows, which is never a login shell.
+ * PowerShell rejects `-l`, so `terminalShellArgs()` drops the default while the path is blank.
+ */
+export function shellCopy(platform: string): { subtitle: string; pathHint: string; placeholder: string; argsHint: string } {
+  if (platform === "win32") {
+    return {
+      subtitle: "What gets started, and in what environment. Leave the path blank to use the default shell.",
+      pathHint: "Blank uses PowerShell 7, then Windows PowerShell, then the Command Prompt.",
+      placeholder: "pwsh.exe",
+      argsHint: "Space-separated. While the path is blank, the default shell starts without -l, because PowerShell rejects it.",
+    };
+  }
+  return {
+    subtitle: "What gets started, and in what environment. Leave the path blank to use your login shell.",
+    pathHint: "Blank uses your login shell ($SHELL).",
+    placeholder: "$SHELL",
+    argsHint: "Space-separated. -l starts a login shell, so your real PATH and version managers work.",
+  };
+}
+export const SHELL_COPY = shellCopy(here);

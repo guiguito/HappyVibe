@@ -94,7 +94,7 @@ Plan mode is a switch for one session. The agent explores and writes a plan, and
 2. Ask for what you want planned, as usual. The agent reads, asks you questions if it needs to, and drafts the plan.
 3. When it's ready, a plan card appears in the session. Read it, then pick one:
    - **Implement this plan**: the session leaves plan mode and the agent starts the work. **Implement with** lets you pick a different model first. The session keeps that model afterwards.
-   - **Keep planning**: hides these buttons so you can keep talking. A revised plan won't show them again, so to build it, leave plan mode and ask the agent to go ahead.
+   - **Keep planning**: hides these buttons so you can keep talking. When the agent sends a revised plan, the card shows the new plan and its buttons again.
    - **Discard**: leave plan mode without building it. The session can change files again, and the plan file stays in `.agents/plans/`.
 4. Want it to finish sooner? Click **Wrap up** beside **🧭 Plan mode** in the top bar, to ask the agent to finish the plan now. It may ask you one last question first.
 

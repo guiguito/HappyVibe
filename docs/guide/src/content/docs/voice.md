@@ -50,11 +50,11 @@ The row changes with the model's state:
 
 ### Permissions
 
-**Microphone access** shows whether your operating system lets HappyVibe use the microphone: **Granted**, **Denied** or **Not requested**. How you change it depends on your system:
+**Microphone access** shows whether your operating system lets HappyVibe use the microphone: **Granted**, **Denied** or **Not requested**. On Linux it reads **No permission needed**. How you change it depends on your system:
 
 - **macOS**: you're asked the first time you dictate. If access is denied, **Open System Settings** takes you to the right page. Quit and reopen HappyVibe for the change to take effect.
-- **Windows**: nothing pops up to ask. If access is denied, "Turn the microphone on for HappyVibe in Settings → Privacy & security → Microphone." **Open System Settings** opens that page for you.
-- **Linux**: the app has no way to check, so the row always reads **Granted**. Use **Test** to be sure the microphone reaches the app.
+- **Windows**: nothing pops up to ask. If access is denied, "Turn the microphone on for HappyVibe in Settings → Privacy & security → Microphone." **Open Settings** opens that page for you.
+- **Linux**: there's no permission to give, so the row reads **No permission needed**. Use **Test** to be sure the microphone reaches the app.
 
 ### Open source licenses
 

@@ -17,7 +17,7 @@ The screen says what it holds: "Global rules for every workspace. Per-workspace 
 
 ### Rules
 
-"Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). No match falls back to asking you."
+"Tool, path and command rules for every workspace. Workspace overrides layer on top — the most restrictive match wins (deny > ask > allow). With no match, a short list of safe tools runs on its own and everything else asks you." The safe tools are a short list that can't change your files, such as reading and searching them. The **Test a call** box below says "(safe tool default)" for one.
 
 Under that line, **How rules combine** opens the longer explanation.
 
@@ -46,6 +46,7 @@ In a pattern, `*` stands for any run of characters. In a path, `*` stays within 
 A few tools are checked under their own names, so a **tool** rule for them uses that name:
 
 - MCP tools: `mcp:` and the tool's name, or `mcp:*` for all of them. For a server with **Expose tools directly** ticked, use each tool's own name, as it's listed on [Agent tools](/docs/agent-tools/).
+- Adding an MCP server or signing in to one: `mcp-manage:install:` and the server's address, or `mcp-manage:auth:` and the server's name. `mcp:*` doesn't cover these. With no rule they ask you, and in plan mode or a read-only run they're blocked.
 - The browser and the web tools that open an address: `browser:` and the site, such as `browser:docs.example.com`, or `browser:*`.
 - Subagents: `subagent:` and the agent's name, or `subagent:*`.
 - Workflows: `workflow`. Only **deny** has an effect: every workflow asks you.
@@ -58,7 +59,9 @@ The box under the rules checks what your saved rules would do, without the agent
 2. Type a command in the second field (for `bash`) or a path (for any other tool).
 3. Click **Evaluate**.
 
-The answer is **allow**, **ask** or **deny**, followed by why: the rule that decided it, "(safe tool default)", or "(no rule matched — default is ask)". On this screen it checks your global rules.
+The answer is **allow**, **ask** or **deny**, followed by why: the rule that decided it, "(safe tool default)", or "(no rule matched — default is ask)". On this screen it checks your global rules. Testing `workflow` never answers **allow**: an allow rule doesn't skip the workflow question, so the box says **ask**.
+
+Type a tool that's checked under another name (`mcp`, `Agent`, `SubagentWorkflow`, or a browser or web tool that opens an address), and the box names the one to test instead, for example "Agent is checked as `subagent:<agent>` on every call. Test that name instead."
 
 ### Bypass ALL permissions
 
@@ -70,7 +73,7 @@ Before you turn it on, know two things. Your **deny** rules no longer stop a cal
 
 The switch reads **Off** while it's off. Clicking it asks you first: "⚠ Auto-approve every action?" with "This turns off ALL permission prompts globally — the agent may write files and run shell commands without asking. Only enable this if you fully trust what you're running." Click **Enable bypass** to turn it on, or **Cancel** to leave everything as it was. To turn it off again, click the switch. It reads **On**.
 
-Sessions already open when you switch it on show a red banner, "Dangerous mode is ON for this session — every tool call runs without asking.", whose **Turn off** button makes that session ask again until it restarts. Sessions started or restarted while bypass is on don't show the banner, but bypass applies to them too. To stop bypass for good, turn this switch off.
+While it's on, every session it applies to shows a red banner, "Dangerous mode is ON for this session — every tool call runs without asking.": the ones already open, and every one you start or restart. The banner's **Turn off** button makes that session ask again until it restarts. To stop bypass for good, turn this switch off.
 
 ## Add a rule
 
@@ -126,7 +129,7 @@ Opening a site other than localhost in the app's browser, or fetching a page fro
 
 A subagent is a helper agent the main agent hands a task to, and a workflow is a small script that runs several subagents. When one of them asks, the dialog offers fewer buttons:
 
-- A subagent: **Allow**, **Allow for this run** and **Deny**. **Allow for this run** covers that tool until the subagent's run ends.
+- A subagent: the title names it, for example "Sub-agent worker wants to run something". The buttons are **Allow**, **Allow for this run** and **Deny**. **Allow for this run** covers that tool until the subagent's run ends.
 - A workflow: **Allow** and **Deny**.
 
 None of their answers ever becomes a rule.

@@ -17,12 +17,25 @@ describe("the prompt", () => {
   it("offers exactly three choices", () => {
     expect([...CHILD_CHOICES]).toEqual(["Allow", "Allow for this run", "Deny"]);
   });
-  it("parses the child's identity", () => {
+  it("parses the child's identity: its agent and run id, never the model's task text", () => {
     const info = parsePermission({
       method: "select", options: [...CHILD_CHOICES],
-      title: JSON.stringify({ kind: "hv.permission", tool: "bash", summary: "npm test", child: { agent: "worker", runLabel: "run 2", runId: "r2" } }),
+      title: JSON.stringify({ kind: "hv.permission", tool: "bash", summary: "npm test", child: { agent: "worker", runLabel: "Run the approved tests", runId: "r2" } }),
     } as never)!;
-    expect(info.child).toEqual({ agent: "worker", runLabel: "run 2", runId: "r2" });
+    expect(info.child).toEqual({ agent: "worker", runId: "r2" });
+  });
+  it("the title names the agent only — the app writes the dialog, never the model (docs round #1)", () => {
+    const modal = fs.readFileSync("src/renderer/src/components/PermissionModal.tsx", "utf8");
+    const title = modal.slice(modal.indexOf("<Dialog.Title"), modal.indexOf("</Dialog.Title>"));
+    expect(title).toContain("`Sub-agent ${info.child.agent} wants to run something`");
+    expect(title).not.toMatch(/runLabel|description/);
+    // …and the bridge never looks the model's words up to send them.
+    const bridge = fs.readFileSync("pi-runtime/extensions/happyvibe-bridge.ts", "utf8");
+    const at = bridge.indexOf("ask: async (req) =>");
+    expect(at).toBeGreaterThan(0);
+    const ask = bridge.slice(at, bridge.indexOf('control("needs_attention");', at));
+    expect(ask).toContain('child: { agent: req.type ?? "unknown", runId: req.agentId ?? "" }');
+    expect(ask).not.toMatch(/runLabel|description|getRecord/);
   });
   it("a child answer never writes a persistent rule", () => {
     const src = fs.readFileSync("src/renderer/src/App.tsx", "utf8");

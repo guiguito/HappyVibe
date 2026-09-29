@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Section } from "./Section";
 import { HowItWorks } from "./HowItWorks";
 import type { HvCrashInfo } from "../hv";
+import { REVEAL_IN_FILE_MANAGER } from "../platformCopy";
 
 /**
  * §37 — the one page that answers "what does this app send".
@@ -23,6 +24,11 @@ export function PrivacyView(): React.JSX.Element {
   const [stats, setStats] = useState(true);
   const [info, setInfo] = useState<HvCrashInfo | null>(null);
   const [showReport, setShowReport] = useState(false);
+
+  // After an opt-out the report is gone; the button must not stay on "Hide".
+  useEffect(() => {
+    if (!info?.lastReport) setShowReport(false);
+  }, [info]);
 
   const refresh = useCallback(() => {
     void window.hv.crashInfo().then(setInfo);
@@ -78,7 +84,7 @@ export function PrivacyView(): React.JSX.Element {
             onClick={() => {
               const next = !stats;
               setStats(next);
-              void window.hv.setUsageStats(next);
+              void window.hv.setUsageStats(next).then(refresh); // off also forgets the kept crash report
             }}
             className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm cursor-pointer ${
               stats ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"
@@ -130,7 +136,7 @@ export function PrivacyView(): React.JSX.Element {
             className={`${smallBtn} bg-card border-line hover:border-leaf`}
             onClick={() => void window.hv.crashReveal()}
           >
-            Reveal crash reports
+            {REVEAL_IN_FILE_MANAGER}
           </button>
           {!info?.lastReport && (
             <span className="text-xs text-ink-soft">Nothing has been sent from this computer yet.</span>

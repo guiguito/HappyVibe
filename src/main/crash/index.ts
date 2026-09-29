@@ -15,7 +15,7 @@ import { setEnabled } from "inlet-sdk/crash";
 import { resolveFeedbackConfig } from "../feedback/config";
 import { getCrashReports, setCrashReports } from "../config";
 import { TAG_ALLOW, redactMessage, scrubEnvelope } from "./policy";
-import { captureCrash, recordCrashSent, setCrashCapture, type CrashRow } from "./client";
+import { captureCrash, clearLastReport, readLastReport, recordCrashSent, setCrashCapture, writeLastReport, type CrashRow } from "./client";
 
 /** Injected by electron-vite (`main.define`), the same string the Changelog shows. */
 declare const __RUNTIME_PINS__: string;
@@ -40,14 +40,28 @@ export function crashInfo(): {
     enabled: getCrashReports(),
     installed: client !== null,
     lastSent,
-    lastReport: recent.at(-1) ?? null,
+    // docs-round #10: after a restart `recent` is empty, and the file is what left last.
+    // `lastSent` above deliberately does NOT fall back: App's launch notice keys on it.
+    lastReport: recent.at(-1) ?? (queueDir ? readLastReport(queueDir) : null),
     queueDir,
     dumpsDir: app.getPath("crashDumps"),
   };
 }
 
+/**
+ * docs-round #10: the kept copy of the last report carries the SDK's session id and, while
+ * usage statistics are on, the installation id. Both opt-outs (crash reports off, usage
+ * statistics off) delete it whole — memory and file. `lastSent` stays: it is only ids and
+ * counts, and App's launch notice keys on it.
+ */
+export function forgetLastCrashReport(): void {
+  recent.length = 0;
+  if (queueDir) clearLastReport(queueDir);
+}
+
 /** The toggle. Live in both directions — the client is always initialised. */
 export async function setCrashEnabled(on: boolean): Promise<void> {
+  if (!on) forgetLastCrashReport();
   // `dropQueue` is what makes OFF mean OFF: without it a report captured on the
   // fatal path while the setting was off would still be on disk, and turning
   // reports back on months later would send it.
@@ -127,8 +141,12 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
       channel: cfg.channel,
     };
     lastSent = row;
-    recent.push(envelope);
-    if (recent.length > 5) recent.shift();
+    // A send that completes after the user turned reports off must not rewrite what off deleted.
+    if (getCrashReports()) {
+      recent.push(envelope);
+      if (recent.length > 5) recent.shift();
+      writeLastReport(queueDir, envelope);
+    }
     recordCrashSent(row);
     broadcast("hv:crash-sent", row);
   };

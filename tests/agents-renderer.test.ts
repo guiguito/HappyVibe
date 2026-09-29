@@ -3,8 +3,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REDACTED_PROMPT } from "../pi-runtime/extensions/hv-rules";
 import { GAUGE_TONE } from "../src/renderer/src/components/ChatView";
-import { AGENT_STATUS_LABEL, AGENT_STATUS_TONE, EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
+import { AGENT_STATUS_LABEL, AGENT_STATUS_TONE, AGENTS_INTRO, AGENTS_LOADING_SUBTITLE, EDITABLE_SOURCES, SOURCE_TONE } from "../src/renderer/src/components/AgentsView";
 import { SOURCE_ORDER, agentBlurb, sortAgents } from "../src/renderer/src/agents";
+import { checkedAs } from "../src/renderer/src/agents";
+import { boundaryRuleName } from "../pi-runtime/extensions/hv-subagent-boundary";
+import { unwrapMcpCall } from "../pi-runtime/extensions/hv-mcp";
+import { browserRuleName } from "../pi-runtime/extensions/hv-browser";
 import {
   applySubagentStarted,
   asyncResultInfo,
@@ -15,6 +19,7 @@ import {
   isSubagentQuery,
   isSubagentTool,
   joinToolPermissions,
+  testedAction,
   mergeTrace,
   parseAgents,
   parseSubagentEvent,
@@ -1003,5 +1008,104 @@ describe("findByRunId — the lookups that the attach would otherwise break (A1)
 
   it("answers null for a run nobody knows", () => {
     expect(findByRunId({}, "nope")).toBeNull();
+  });
+});
+
+describe("cleanup C8: the test box never says allow for a workflow", () => {
+  test("workflow + allow reads ask; deny and ask stay; other tools are untouched", () => {
+    expect(testedAction("workflow", "allow")).toBe("ask");
+    expect(testedAction("workflow", "deny")).toBe("deny");
+    expect(testedAction("workflow", "ask")).toBe("ask");
+    expect(testedAction("bash", "allow")).toBe("allow");
+  });
+  test("the test box prints the mapped action", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/renderer/src/components/PermissionRulesSection.tsx"), "utf8");
+    expect(src).toContain("testedAction(tool.trim(), verdict.action)");
+  });
+});
+
+describe("per-call pills (docs round #3)", () => {
+  test("the tools the gate checks under another name say which, and the per-call ones have no verdict", () => {
+    expect(checkedAs("mcp")).toEqual({ name: "mcp:<tool>", per: "per MCP tool" });
+    expect(checkedAs("Agent")).toEqual({ name: "subagent:<agent>", per: "per agent" });
+    for (const t of ["browser_open", "browser_navigate", "web_fetch", "web_map", "web_crawl"]) {
+      expect(checkedAs(t)).toEqual({ name: "browser:<host>", per: "per site" });
+    }
+    expect(checkedAs("SubagentWorkflow")).toEqual({ name: "workflow" });
+    // web_search has no host; browser_click never navigates; a directly exposed MCP tool keeps its name.
+    for (const t of ["bash", "read", "web_search", "browser_click", "github_create_issue"]) expect(checkedAs(t)).toBeNull();
+  });
+
+  test("the names are the gate's own", () => {
+    expect(checkedAs("mcp")!.name).toBe(unwrapMcpCall({ tool: "<tool>" }).ruleTool);
+    expect(checkedAs("Agent")!.name).toBe(boundaryRuleName("<agent>"));
+    expect(browserRuleName("https://example.org")).toBe("browser:example.org");
+    const bridge = readFileSync(path.join(process.cwd(), "pi-runtime/extensions/happyvibe-bridge.ts"), "utf8");
+    expect(bridge).toContain('(tool === "browser_open" || tool === "browser_navigate") && typeof input.url === "string"');
+    expect(bridge).toContain('WEB_URL_TOOLS.has(tool) && typeof input.url === "string" ? browserRuleName(input.url) : null');
+    expect(bridge).toContain("const permTool = mcp?.ruleTool ?? browserNav ?? webHost ?? (subagentName ? boundaryRuleName(subagentName) : tool);");
+    expect(bridge).toContain('evaluate(rules, { tool: "workflow", input');
+  });
+
+  test("a per-call tool shows what it is checked per; a workflow never shows allow", () => {
+    const tools = [
+      { name: "Agent", description: "", source: "" },
+      { name: "SubagentWorkflow", description: "", source: "" },
+      { name: "bash", description: "", source: "" },
+    ];
+    expect(joinToolPermissions(tools, { Agent: "deny", SubagentWorkflow: "allow", bash: "deny" })).toEqual([
+      { name: "Agent", description: "", source: "", permission: "per agent", checkedAs: { name: "subagent:<agent>", per: "per agent" } },
+      { name: "SubagentWorkflow", description: "", source: "", permission: "ask", checkedAs: { name: "workflow" } },
+      { name: "bash", description: "", source: "", permission: "deny" },
+    ]);
+    expect(joinToolPermissions([tools[1]], { SubagentWorkflow: "deny" })[0].permission).toBe("deny");
+  });
+
+  test("the page evaluates the checked name, and the test box says which name to test", () => {
+    const view = readFileSync(path.join(process.cwd(), "src/renderer/src/components/AllToolsView.tsx"), "utf8");
+    expect(view).toMatch(/evalRules\(ws, checkedAs\(t\.name\)\?\.name \?\? t\.name, \{\}\)/);
+    expect(view).not.toMatch(/evalRules\(ws, t\.name, \{\}\)/);
+    expect(view).toContain("Checked as <span className=\"font-mono\">{t.checkedAs.name}</span> on every call.");
+    const box = readFileSync(path.join(process.cwd(), "src/renderer/src/components/PermissionRulesSection.tsx"), "utf8");
+    expect(box).toContain("checkedAs(tool.trim())");
+    expect(box).toContain("is checked as ${c.name} on every call. Test that name instead.");
+  });
+});
+
+// ── docs round #15: the page names only sources the bridge can emit ─────────
+describe("the Agents page's own words about where agents come from", () => {
+  const read = (rel: string): string => readFileSync(path.join(__dirname, "..", rel), "utf8");
+  const literals = (s: string): string[] => [...s.matchAll(/"(\w+)"/g)].map((m) => m[1]);
+  // Every AgentSource value, from its declaration.
+  const all = literals(read("pi-runtime/extensions/hv-agents.ts").match(/export type AgentSource = ([^;]+);/)![1]);
+  // What twEnumerateAgents can actually put in `source`: the literals of its ternary.
+  const emitted = new Set(literals(read("pi-runtime/extensions/happyvibe-bridge.ts").match(/source: ourDir[^\n]*/)![0]));
+  const NAMES: Record<string, RegExp> = {
+    builtin: /built-in|builtin|Pi runtime/i,
+    bundled: /bundled/i,
+    user: /\buser\b/i,
+    project: /project/i,
+    package: /package/i,
+  };
+
+  test("every source has a word to look for, and the bridge emits the two the copy names", () => {
+    expect(Object.keys(NAMES).sort()).toEqual([...all].sort());
+    expect(emitted.has("bundled")).toBe(true);
+    expect(emitted.has("project")).toBe(true);
+  });
+
+  test("the intro and the loading subtitle name no source the bridge never emits", () => {
+    for (const copy of [AGENTS_INTRO, AGENTS_LOADING_SUBTITLE]) {
+      for (const s of all) if (!emitted.has(s)) expect(copy, s).not.toMatch(NAMES[s]);
+      expect(copy).toMatch(NAMES.bundled);
+      expect(copy).toMatch(NAMES.project);
+    }
+  });
+
+  test("the view renders those constants, not inline copies", () => {
+    const view = read("src/renderer/src/components/AgentsView.tsx");
+    expect(view).toContain("{AGENTS_INTRO}");
+    expect(view).toContain("? AGENTS_LOADING_SUBTITLE");
+    expect(view).not.toMatch(/installed packages|Pi runtime/);
   });
 });

@@ -55,7 +55,7 @@ The rest still installs normally. It just may not work exactly as the plugin's a
 The dialog doesn't close after installing. It turns into the next step, and says: "Nothing from it is active yet — one click does it:"
 
 1. Click **Enable**, for example **Enable 2 skills · 1 prompt**. It switches on every skill and prompt the plugin installed. The button changes to **Enabled**, and the dialog says "Active now."
-2. For each MCP server, click **Connect**, followed by the server's name. HappyVibe checks the server answers, and if it needs you to sign in, your browser opens. The button then says the server is connected.
+2. For each MCP server, click **Connect**, followed by the server's name. HappyVibe checks the server answers, and if it needs you to sign in, your browser opens. The button then says the server is connected. Until you connect it, sessions can't use that server: it waits on [MCP](/docs/mcp/), marked **off**.
 3. Click **Done**.
 
 You can skip either step and come back later. Once the dialog is closed, the same buttons wait in a green banner above the cards. Or turn things on one at a time on [Skills](/docs/skills/), [Prompts](/docs/prompts/) and [MCP](/docs/mcp/), where you can also fine-tune them.
@@ -64,8 +64,9 @@ You can skip either step and come back later. Once the dialog is closed, the sam
 
 1. Find it under **Installed**.
 2. Click **Remove**.
+3. Confirm. HappyVibe asks first, "Remove “<name>”?", and says what goes with it, for example "This deletes its 2 skills, 1 prompt and 1 MCP server."
 
-HappyVibe removes every skill, prompt and MCP server that plugin brought, and nothing else. It happens right away, with no second check. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)). You can install it again any time.
+HappyVibe removes every skill, prompt and MCP server that plugin brought, and nothing else. Open sessions restart once they're idle to pick it up ([what that resets](/docs/approve-a-tool-call/#the-five-buttons)). You can install it again any time.
 
 ## During a session
 

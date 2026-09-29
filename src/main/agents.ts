@@ -6,16 +6,21 @@ import { editAgentFile, parseAgentFile, serializeAgentFile, duplicateName } from
  * Agent management (B6) — path-confined fs, mirroring agentsMd.ts.
  *
  * Edits/duplicates are confined to `*.md` files directly inside an ALLOWED
- * agent dir: the app-owned built-in dir, or a registered workspace's
- * `.pi/agents`. The renderer-supplied path is a trust boundary — we resolve it
- * and refuse anything that escapes an allowed dir.
+ * agent dir: the app-owned built-in dir, or a root's `.pi/agents` or
+ * `.agents/agents`, the three folders tintinweb discovers. The renderer-supplied
+ * path is a trust boundary — we resolve it and refuse anything that escapes an
+ * allowed dir.
  */
 
-/** Allowed dirs: the app built-in dir + every registered workspace's .pi/agents. */
-export function allowedAgentDirs(builtinDir: string, registeredWorkspaces: string[]): string[] {
+/**
+ * Allowed dirs: the app built-in dir, plus every admitted root's `.pi/agents` and
+ * `.agents/agents`. docs-round #8: the list showed `.agents/agents` agents as
+ * "project", and Duplicate/Edit refused them. The app already writes `.agents/plans`.
+ */
+export function allowedAgentDirs(builtinDir: string, roots: string[]): string[] {
   return [
     path.resolve(builtinDir),
-    ...registeredWorkspaces.map((w) => path.resolve(w, ".pi", "agents")),
+    ...roots.flatMap((w) => [path.resolve(w, ".pi", "agents"), path.resolve(w, ".agents", "agents")]),
   ];
 }
 
@@ -61,7 +66,12 @@ export function duplicateAgent(allowedDirs: string[], filePath: string): string 
     fs.readdirSync(dir).filter((n) => n.endsWith(".md")).map((n) => n.replace(/\.md$/, "")),
   );
   const newName = duplicateName(frontmatter.name || path.basename(src, ".md"), existing);
-  const target = path.join(dir, `${newName}.md`);
-  fs.writeFileSync(target, serializeAgentFile({ ...frontmatter, name: newName }, body), "utf8");
+  // The name comes from the file's own frontmatter (free text, and a repo can supply it), so
+  // the copy's path is confined too: a `/` or `..` in it would land outside the agent folders.
+  const target = confineAgentPath(allowedDirs, path.join(dir, `${newName}.md`));
+  // `x/../fine` collapses to a sibling file inside the same folder and passes the confinement above.
+  if (path.basename(target, ".md") !== newName) throw new Error("Agent name can't contain a path");
+  // "wx": never overwrite (also covers case-insensitive filesystems).
+  fs.writeFileSync(target, serializeAgentFile({ ...frontmatter, name: newName }, body), { encoding: "utf8", flag: "wx" });
   return target;
 }

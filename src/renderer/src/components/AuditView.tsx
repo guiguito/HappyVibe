@@ -166,7 +166,50 @@ interface CrashEvent {
   channel?: string;
 }
 
+/**
+ * §29 (docs-round #31): a git action YOU took, written by `auditGit` (ipc.ts). Human-only by
+ * construction (there is no git tool the model can call), so there is no decision to show.
+ * The row shows the branch or the path only, never the commit message (main still records it).
+ */
+interface GitEvent {
+  ts: string;
+  workspaceId?: string;
+  sessionId?: string;
+  action: string;
+  branch?: string;
+  path?: string;
+  ok?: boolean;
+}
+
+/** The app's own words for each `auditGit` action. A test asserts every action main writes has one. */
+export const GIT_ACTION_LABEL: Record<string, string> = {
+  commit: "committed",
+  amend: "amended the last commit",
+  switch: "switched branch",
+  "delete-branch": "deleted a branch",
+  "worktree-add": "made a worktree",
+  merge: "merged a worktree",
+  "worktree-remove": "removed a worktree",
+  "worktree-prune": "cleaned up missing worktrees",
+  sync: "synced with the remote",
+  publish: "published the branch",
+  "stash-save": "stashed changes",
+  "stash-pop": "restored a stash",
+  "stash-drop": "deleted a stash",
+  "undo-hunk": "undid a change",
+  "undo-file": "undid a file",
+  "discard-untracked": "discarded a new file",
+  init: "started tracking versions",
+};
+
+/** Exported for tests, like its neighbours: the renderer suite has no DOM. */
+export function gitText(r: { action: string; ok?: boolean }): string {
+  const label = GIT_ACTION_LABEL[r.action] ?? r.action;
+  return r.ok === false ? `${label} · failed` : label;
+}
+
 export type Row =
+  | ({ row: "git" } & GitEvent)
   | ({ row: "decision" } & Decision)
   | ({ row: "oneshot" } & OneShot)
   | ({ row: "excluded" } & ModelExcluded)
@@ -194,6 +237,9 @@ export function toAuditRow(e: HvAuditEvent): Row {
   // §37: the TYPE again — the crash payload carries its own `kind` ("exception",
   // "child-exit"…) and reading that is the same bug this function was extracted to fix.
   if (e.type === "crash.sent") return { row: "crash", ...(e.data as unknown as CrashEvent), ...base };
+  // §29 (docs-round #31): the TYPE again. Falling through would file a git action as a
+  // permission decision with no tool and no decision.
+  if (e.type === "git.action") return { row: "git", ...(e.data as unknown as GitEvent), ...base };
   // §35: same rule — discriminate on the TYPE main keyed the row by.
   if (e.type.startsWith("schedule.")) {
     return { row: "schedule", kind: e.type, ...(e.data as unknown as Omit<ScheduleEvent, "kind">), ...base };
@@ -302,8 +348,12 @@ export function sourceText(r: Decision): string {
   // Folding it to plain "bypass" made a sub-agent's actions indistinguishable
   // from the parent's, which is the one thing these rows must not do.
   const base = r.source === "subagent" && r.bypass ? `${named} · bypass` : named;
+  // Only a bypassed row can say what the rules WOULD have done; the child guard
+  // stamps wouldHave on every sub-agent row, bypass or not.
+  const bypassed = r.source === "bypass" || r.source === "dangerous" || (r.source === "subagent" && r.bypass);
   const would =
-    r.wouldHave === "ask" ? "rules would have asked"
+    !bypassed ? ""
+    : r.wouldHave === "ask" ? "rules would have asked"
     : r.wouldHave === "deny" ? "rules would have DENIED"
     : r.wouldHave === "allow" ? "rules would have allowed"
     : "";
@@ -316,6 +366,67 @@ const DECISION_TONE: Record<string, string> = {
   allow: "bg-leaf-soft text-leaf border-leaf/50",
   "allow-session": "bg-leaf-soft text-leaf border-leaf/50",
 };
+
+/**
+ * docs-round #7: the source menu, as data (the renderer suite has no DOM). Each
+ * value is the STORED source, or a non-decision row's own name, never a label.
+ * Comparing against SOURCE_LABEL is what made Web tools and Read-only run match
+ * nothing.
+ */
+export const SOURCE_FILTERS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "rule", label: "Rule" },
+  { value: "user", label: "You" },
+  { value: "safe-default", label: "Safe default" },
+  { value: "bypass", label: "Bypass" },
+  { value: "plan", label: "Plan mode" },
+  { value: "readonly", label: "Read-only run" },
+  { value: "subagent", label: "Sub-agents" },
+  { value: "schedule", label: "Schedules" },
+  { value: "terminal", label: "Terminal" },
+  { value: "web", label: "Web tools" },
+  { value: "document", label: "Documents" },
+  { value: "git", label: "Git" },
+  { value: "assistant", label: "The app itself" },
+  { value: "model", label: "Model availability" },
+  { value: "memory", label: "Memory" },
+  { value: "feedback", label: "Feedback" },
+  { value: "crash", label: "Crash reports" },
+];
+
+/**
+ * One row against the two menus. Exported for tests.
+ *
+ * "bypass" also selects the old "dangerous" rows (one name, one filter, or the
+ * log silently hides everything recorded before the rename) and a sub-agent's call
+ * the bypass let through, which shows under BOTH Sub-agents and Bypass.
+ */
+export function matchesFilters(r: Row, decision: string, source: string): boolean {
+  // A one-shot has no decision and no rule source; it answers to the source
+  // filter under its own name so it can be isolated or excluded, and it is
+  // hidden whenever a DECISION filter is on, because it is not one.
+  if (r.row === "oneshot") return !decision && (!source || source === "assistant");
+  // Not a decision either: it answers to the source filter under its own name.
+  if (r.row === "excluded") return !decision && (!source || source === "model");
+  // §33: a memory event is not a permission decision either — the DECISION that let it
+  // happen is its own row, right beside this one. It answers to the source filter under its
+  // own name so it can be isolated or excluded.
+  if (r.row === "memory") return !decision && (!source || source === "memory");
+  // §34: not a decision either. Its own source name, so it can be isolated or
+  // excluded, and hidden whenever a DECISION filter is on.
+  if (r.row === "feedback") return !decision && (!source || source === "feedback");
+  // §37: not a decision either — nobody decided anything, which is the point.
+  if (r.row === "crash") return !decision && (!source || source === "crash");
+  // §35: a schedule event is not a permission decision — the run's own tool
+  // calls are those, under this same log. Its own source name so it can be
+  // isolated, which is how you answer "what has this thing been doing".
+  if (r.row === "schedule") return !decision && (!source || source === "schedule");
+  // §29: a git action is yours, not a decision — its own name, like a schedule's.
+  if (r.row === "git") return !decision && (!source || source === "git");
+  if (decision && r.decision !== decision) return false;
+  if (!source) return true;
+  if (source === "bypass") return r.source === "bypass" || r.source === "dangerous" || (r.source === "subagent" && r.bypass === true);
+  return r.source === source;
+}
 
 
 export function AuditView({
@@ -353,31 +464,7 @@ export function AuditView({
     };
   }, [workspaceId, sessionId]);
 
-  // "bypass" selects the old "dangerous" rows too — one name, one filter, or
-  // the log silently hides everything recorded before the rename.
-  const matches = (r: Row): boolean => {
-    // A one-shot has no decision and no rule source; it answers to the source
-    // filter under its own name so it can be isolated or excluded, and it is
-    // hidden whenever a DECISION filter is on, because it is not one.
-    if (r.row === "oneshot") return !decision && (!source || source === "assistant");
-    // Not a decision either: it answers to the source filter under its own name.
-    if (r.row === "excluded") return !decision && (!source || source === "model");
-    // §33: a memory event is not a permission decision either — the DECISION that let it
-    // happen is its own row, right beside this one. It answers to the source filter under its
-    // own name so it can be isolated or excluded.
-    if (r.row === "memory") return !decision && (!source || source === "memory");
-    // §34: not a decision either. Its own source name, so it can be isolated or
-    // excluded, and hidden whenever a DECISION filter is on.
-    if (r.row === "feedback") return !decision && (!source || source === "feedback");
-    // §37: not a decision either — nobody decided anything, which is the point.
-    if (r.row === "crash") return !decision && (!source || source === "crash");
-    // §35: a schedule event is not a permission decision — the run's own tool
-    // calls are those, under this same log. Its own source name so it can be
-    // isolated, which is how you answer "what has this thing been doing".
-    if (r.row === "schedule") return !decision && (!source || source === "schedule");
-    return (!decision || r.decision === decision) && (!source || (SOURCE_LABEL[r.source] ?? r.source) === source);
-  };
-  const shown = rows?.filter(matches) ?? null;
+  const shown = rows?.filter((r) => matchesFilters(r, decision, source)) ?? null;
 
   const sessionTitle = (id?: string): string => sessions.find((s) => s.id === id)?.title ?? (id ? id.slice(0, 8) : "—");
   const wsSessions = workspaceId ? sessions.filter((s) => s.workspaceId === workspaceId) : sessions;
@@ -435,20 +522,11 @@ export function AuditView({
             className="rounded-lg border-2 border-line bg-card px-2.5 py-1.5 text-sm font-bold focus:outline-none focus:border-tangerine cursor-pointer"
           >
             <option value="">Any source</option>
-            <option value="rule">Rule</option>
-            <option value="user">You</option>
-            <option value="safe-default">Safe default</option>
-            <option value="bypass">Bypass</option>
-            <option value="plan">Plan mode</option>
-            <option value="readonly">Read-only run</option>
-            <option value="schedule">Schedules</option>
-            <option value="terminal">Terminal</option>
-            <option value="web">Web tools</option>
-            <option value="assistant">The app itself</option>
-            <option value="model">Model availability</option>
-            <option value="memory">Memory</option>
-            <option value="feedback">Feedback</option>
-            <option value="crash">Crash reports</option>
+            {SOURCE_FILTERS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -516,6 +594,25 @@ export function AuditView({
                         {[r.recurrence, r.outcome, r.reason, r.source === "agent" ? "asked for by the agent" : null].filter(Boolean).join(" · ")}
                       </div>
                     )}
+                  </>
+                ) : r.row === "git" ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block rounded-full border border-line bg-paper-deep px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 text-ink-soft">
+                        git
+                      </span>
+                      <span className="font-bold shrink-0">{gitText(r)}</span>
+                      <span className="text-xs text-ink-soft truncate min-w-0">{r.branch ?? (r.path ? basename(r.path) : "")}</span>
+                      <span className="flex-1" />
+                      <span className="text-xs text-ink-soft shrink-0" title={r.ts}>
+                        {new Date(r.ts).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-ink-soft/70 shrink-0" title={r.workspaceId}>
+                        {r.workspaceId ? basename(r.workspaceId) : ""}
+                      </span>
+                    </div>
                   </>
                 ) : r.row === "crash" ? (
                   <>

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { modKey, revealLabel, THIS_COMPUTER, YOUR_COMPUTER } from "../src/renderer/src/platformCopy";
-import { formatBinding } from "../src/renderer/src/shortcuts";
+import { micSettingsLabel, modKey, revealLabel, shellCopy, THIS_COMPUTER, YOUR_COMPUTER } from "../src/renderer/src/platformCopy";
+import { FIXED_SHORTCUTS, formatBinding } from "../src/renderer/src/shortcuts";
 import { basename } from "../src/renderer/src/basename";
 
 /**
@@ -81,6 +81,58 @@ describe("no literal ⌘ survives in rendered copy", () => {
   });
 });
 
+describe("docs-round #28/#12/#22/#11: a key hint follows the binding", () => {
+  /**
+   * `${MOD}K` printed "CtrlK" off macOS — no separator — and ignored a rebound
+   * shortcut, because MOD is a glyph, not a binding. MOD stays for naming the
+   * key itself ("Hold right Ctrl"); a COMBINATION goes through formatBinding.
+   */
+  it("no hint glues MOD to a key", () => {
+    const offenders: string[] = [];
+    for (const f of walk(SRC)) {
+      const rel = path.relative(SRC, f).split(path.sep).join("/");
+      for (const line of code(f).split("\n")) {
+        if (/\{MOD\}[A-Za-z0-9\\,./]/.test(line)) offenders.push(`${rel}: ${line.trim().slice(0, 90)}`);
+      }
+    }
+    expect(offenders, "use formatBinding(binding) instead").toEqual([]);
+  });
+
+  it("no ⌘ hides behind a \\u2318 escape — a JSX attribute prints it as six characters", () => {
+    const offenders = walk(SRC)
+      .filter((f) => /\\u2318/i.test(code(f)))
+      .map((f) => path.relative(SRC, f).split(path.sep).join("/"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("the Built-in list names Shift the way the running platform does", () => {
+    expect(code(path.join(SRC, "shortcuts.ts"))).not.toContain('"⇧Enter"');
+    expect(code(path.join(SRC, "shortcuts.ts"))).toContain('formatBinding("Shift-Enter")');
+    expect(FIXED_SHORTCUTS.map((s) => s.keys)).toContain(formatBinding("Shift-Enter"));
+    expect(formatBinding("Shift-Enter", false)).toBe("Shift+Enter");
+    expect(formatBinding("Shift-Enter", true)).toBe("⇧Enter");
+  });
+
+  it("every hinted surface gets the RESOLVED binding from App", () => {
+    const app = code(path.join(SRC, "App.tsx"));
+    expect(app).toContain("findSessionKey={formatBinding(bindings.findSession)}");
+    expect(app).toContain("sidebarKey={formatBinding(bindings.toggleSidebar)}");
+    expect(app).toContain("closeKey={bindings.closeTab}");
+    const sites: Array<[string, string]> = [
+      ["components/Sidebar.tsx", "Find a session (${findSessionKey})"],
+      ["components/Sidebar.tsx", "Collapse sidebar (${sidebarKey})"],
+      ["components/Sidebar.tsx", "Expand sidebar (${sidebarKey})"],
+      ["components/FileTab.tsx", "Save (${formatBinding(saveKey)})"],
+      ["components/ChatView.tsx", "Search this conversation (${formatBinding(searchKey)})"],
+      ["components/ChatView.tsx", 'Previous match (${formatBinding("Shift-Enter")})'],
+      ["components/TerminalTab.tsx", "{formatBinding(closeKey)} closes this tab"],
+      ["components/feedbackCopy.ts", 'Paste an image (${formatBinding("Mod-v")}) or'],
+      ["components/VoiceView.tsx", "Hold right ${MOD} to dictate"],
+    ];
+    for (const [file, hint] of sites) expect(code(path.join(SRC, file)), file).toContain(hint);
+  });
+});
+
 describe("no copy claims the user is on a Mac", () => {
   /**
    * PRD §4 (Windows round). "A folder on your Mac" photographs perfectly on Windows
@@ -155,5 +207,40 @@ describe("a path's last segment is found on both separators", () => {
       }
     }
     expect(offenders, "use basename() instead").toEqual([]);
+  });
+});
+
+describe("docs-round #22 — per-OS copy the Windows round missed", () => {
+  it("the terminal Shell rows say what a blank path really starts, per OS", () => {
+    const win = shellCopy("win32");
+    expect(win.pathHint).toBe("Blank uses PowerShell 7, then Windows PowerShell, then the Command Prompt.");
+    expect(win.placeholder).toBe("pwsh.exe");
+    for (const s of Object.values(win)) expect(s).not.toMatch(/\$SHELL|login shell/);
+    for (const p of ["darwin", "linux"]) {
+      expect(shellCopy(p).pathHint, p).toBe("Blank uses your login shell ($SHELL).");
+      expect(shellCopy(p).placeholder, p).toBe("$SHELL");
+      expect(shellCopy(p).argsHint, p).toBe("Space-separated. -l starts a login shell, so your real PATH and version managers work.");
+    }
+    for (const p of ["darwin", "linux", "win32"]) {
+      for (const s of Object.values(shellCopy(p))) expect(s, p).not.toContain("`"); // plain text, not markdown
+    }
+  });
+
+  it("TerminalView renders them instead of its own literals", () => {
+    const src = code(path.join(SRC, "components", "TerminalView.tsx"));
+    for (const k of ["subtitle", "pathHint", "placeholder", "argsHint"]) expect(src).toContain(`SHELL_COPY.${k}`);
+    expect(src).not.toContain("Blank uses $SHELL");
+    expect(src).not.toContain("`-l`");
+  });
+
+  it("the microphone button names the OS's settings app; the crash-reports button names its file manager", () => {
+    expect(micSettingsLabel("darwin")).toBe("Open System Settings");
+    expect(micSettingsLabel("win32")).toBe("Open Settings");
+    const voice = code(path.join(SRC, "components", "VoiceView.tsx"));
+    expect(voice).toContain("{MIC_SETTINGS_BUTTON}");
+    expect(voice).not.toContain("Open System Settings");
+    const privacy = code(path.join(SRC, "components", "PrivacyView.tsx"));
+    expect(privacy).toContain("{REVEAL_IN_FILE_MANAGER}");
+    expect(privacy).not.toContain("Reveal crash reports");
   });
 });
