@@ -233,6 +233,8 @@ describe("the multi-line paste question (docs round #4, #12)", () => {
     expect(pasteWarning("ls -la\n")).toBe("Paste and run 1 line? A pasted newline executes immediately.");
     expect(pasteWarning("cd /tmp\nrm -rf x\n")).toBe("Paste and run 2 lines? A pasted newline executes immediately.");
     expect(pasteWarning("a\r\nb\r\nc")).toBe("Paste and run 3 lines? A pasted newline executes immediately.");
+    expect(pasteWarning("rm x\n  ")).toBe("Paste and run 1 line? A pasted newline executes immediately.");
+    expect(pasteWarning("a\n")).toBe("Paste and run 1 line? A pasted newline executes immediately.");
   });
 
   it("allowPaste asks that exact question, and only while the setting is on", () => {

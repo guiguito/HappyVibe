@@ -204,7 +204,7 @@ export function resolveSpawn(
  * warning is a safety setting rather than a preference.
  */
 export function pasteWarning(text: string): string | null {
-  if (!/\n/.test(text.trim()) && !text.endsWith("\n")) return null;
+  if (!/\n/.test(text.trimStart())) return null;
   const lines = text.trimEnd().split("\n").length;
   return `Paste and run ${lines} ${lines === 1 ? "line" : "lines"}? A pasted newline executes immediately.`;
 }
