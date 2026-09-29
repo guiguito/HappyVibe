@@ -15,6 +15,14 @@ export function rewindActions(scope: RewindScope): RewindActions {
   };
 }
 
+/** docs round #17 — the confirm dialog's body, per scope. Derived from
+    rewindActions so "Files only" can never promise a truncated conversation. */
+export function rewindDialogBody(scope: RewindScope): string {
+  return rewindActions(scope).truncateChat
+    ? "Everything after this point is removed from the conversation and the agent's context, and this message moves back into the composer so you can edit and resend it."
+    : "The conversation and the agent's context stay exactly as they are. Only files on disk roll back to before this message.";
+}
+
 /** What `hv:rewind-preview` answers with. `null` = no snapshot at this message. */
 export interface RewindPreview {
   willRestore: string[];

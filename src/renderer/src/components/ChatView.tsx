@@ -4,7 +4,7 @@ import { DUR, EASE, flipChildren, flyGhost, reducedMotion, snapshotRects } from 
 import { usePresence } from "../usePresence";
 import { Unfold } from "./Unfold";
 import { Transcript, type TranscriptItem } from "./Transcript";
-import { hasRestorable, tailToolCallIds, type RewindScope } from "../rewind";
+import { hasRestorable, rewindDialogBody, tailToolCallIds, type RewindScope } from "../rewind";
 import { formatBinding, matchesBinding } from "../shortcuts";
 import { ModelSelect } from "./ModelSelect";
 import { GoTo } from "./GoTo";
@@ -1214,15 +1214,12 @@ export function ChatView({
         </div>
         </div>
       )}
-      {/* Round 3 #11: rewind confirm — files are NOT rolled back (chat-only V1). */}
+      {/* Round 3 #11 / §9: rewind confirm — the chosen scope decides what rolls back (rewindActions). */}
       {pendingRewind !== null && (
         <div className="hv-overlay fixed inset-0 flex items-center justify-center bg-ink/60 p-8" onClick={() => setPendingRewind(null)}>
           <div className="hv-dialog-flow w-full max-w-md rounded-2xl border-2 border-line-strong bg-card p-5 shadow-sticker-lg" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-ink mb-1">Rewind to this message?</div>
-            <p className="text-sm text-ink-soft mb-3">
-              Everything after this point is removed from the conversation and the agent's context, and this
-              message moves back into the composer so you can edit and resend it.
-            </p>
+            <p className="text-sm text-ink-soft mb-3">{rewindDialogBody(rewindScope)}</p>
             <div className="flex flex-col gap-1.5 mb-3">
               {((): Array<[RewindScope, string, string]> => {
                 const opts: Array<[RewindScope, string, string]> = [

@@ -101,8 +101,8 @@ Beside the gauge, a second pill shows what this session has cost so far. Click i
 Don't like where that went? Take the session back to one of your own messages, and often your files too.
 
 1. Wait until the agent has finished its turn. Rewind isn't offered while it's working.
-2. Hover over your message and click the rewind icon beside the copy icon. Its tooltip starts "Rewind to this message".
-3. The app asks "Rewind to this message?" and explains that everything after it is removed from the conversation, and your message moves back into the message box so you can edit and resend it.
+2. Hover over your message and click the rewind icon beside the copy icon. Its tooltip reads "Rewind to this message — you choose whether files roll back too".
+3. The app asks "Rewind to this message?" and explains what happens: everything after it is removed from the conversation, and your message moves back into the message box so you can edit and resend it. If you pick **Files only** below, the explanation changes to "The conversation and the agent's context stay exactly as they are. Only files on disk roll back to before this message."
 4. Choose what to take back:
    - **Conversation only:** "Files on disk are left exactly as they are."
    - **Conversation and files:** "Also roll the workspace back to before this message."
