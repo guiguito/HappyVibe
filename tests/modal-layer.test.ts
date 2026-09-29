@@ -20,6 +20,8 @@ const CSS = R("src/renderer/src/styles.css");
 
 /** The floor the app may not reach. */
 const MODAL_LAYER = 100;
+/** The one layer above it: a blocking session prompt (permission, ask_user). */
+const PROMPT_LAYER = 110;
 
 describe("the modal layer (§28 round 1)", () => {
   it("both dialog classes declare the layer", () => {
@@ -27,6 +29,34 @@ describe("the modal layer (§28 round 1)", () => {
       const block = CSS.slice(CSS.indexOf(`.${cls} {`), CSS.indexOf("}", CSS.indexOf(`.${cls} {`)));
       expect(block, cls).toContain(`z-index: ${MODAL_LAYER}`);
     }
+  });
+
+  it("the prompt layer sits above the dialogs and only the two session prompts use it", () => {
+    // A prompt never times out. Covered by another dialog (seen with the
+    // AGENTS.md draft) it waits forever and the dialog under it cannot be closed.
+    const at = CSS.indexOf(".hv-prompt {");
+    expect(at).toBeGreaterThan(CSS.indexOf(".hv-dialog {"));
+    const block = CSS.slice(at, CSS.indexOf("}", at));
+    expect(block).toContain(`z-index: ${PROMPT_LAYER}`);
+    expect(block).toContain("pointer-events: auto !important");
+    const users: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(e.name) && /\bhv-prompt\b/.test(fs.readFileSync(full, "utf8")))
+          users.push(path.relative(process.cwd(), full));
+      }
+    };
+    walk(path.join(process.cwd(), "src/renderer/src"));
+    // The four class constants live in paneDialog.ts, which only the two prompts import.
+    expect(users).toEqual(["src/renderer/src/paneDialog.ts"]);
+    const importers = fs
+      .readdirSync(path.join(process.cwd(), "src/renderer/src/components"))
+      .filter((f) => /^\w+\.tsx$/.test(f) && fs.readFileSync(path.join(process.cwd(), "src/renderer/src/components", f), "utf8").includes("VIEWPORT_OVERLAY"));
+    expect(importers.sort()).toEqual(["AskUserModal.tsx", "PermissionModal.tsx"]);
+    const pd = R("src/renderer/src/paneDialog.ts");
+    expect(pd.match(/hv-prompt/g)?.length).toBe(4);
   });
 
   it("nothing in the renderer outranks it", () => {

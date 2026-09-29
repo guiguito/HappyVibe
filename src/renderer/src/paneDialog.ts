@@ -29,16 +29,17 @@ export function dialogHost(el: HTMLElement | null | undefined): HTMLElement | nu
   return el.getClientRects().length > 0 ? el : null;
 }
 
+/** Every constant below is a blocking session prompt, so it also takes the layer above all dialogs. */
 /** Scoped: absolute within the pane, which must therefore be `relative`. */
-export const SCOPED_OVERLAY = "hv-overlay absolute inset-0 bg-ink/50 backdrop-blur-[2px]";
+export const SCOPED_OVERLAY = "hv-overlay hv-prompt absolute inset-0 bg-ink/50 backdrop-blur-[2px]";
 /**
  * Clamped to the pane and scrolling inside it: a narrow pane must not push the
  * dialog out over its neighbour, which is the browser pane this exists to stop
  * covering. `1.5rem` leaves the same visual inset the viewport variant has.
  */
 export const SCOPED_CONTENT =
-  "hv-dialog absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-[calc(100%-1.5rem)] max-h-[calc(100%-1.5rem)] overflow-y-auto";
+  "hv-dialog hv-prompt absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-[calc(100%-1.5rem)] max-h-[calc(100%-1.5rem)] overflow-y-auto";
 
 /** Viewport: what every dialog did before, and still the fallback. */
-export const VIEWPORT_OVERLAY = "hv-overlay fixed inset-0 bg-ink/50 backdrop-blur-[2px]";
-export const VIEWPORT_CONTENT = "hv-dialog fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2";
+export const VIEWPORT_OVERLAY = "hv-overlay hv-prompt fixed inset-0 bg-ink/50 backdrop-blur-[2px]";
+export const VIEWPORT_CONTENT = "hv-dialog hv-prompt fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2";
