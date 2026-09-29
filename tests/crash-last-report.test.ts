@@ -14,6 +14,16 @@ const usage = fs.readFileSync("src/main/usage/index.ts", "utf8");
 const privacyGuide = fs.readFileSync("docs/guide/src/content/docs/privacy.md", "utf8");
 const howItWorks = fs.readFileSync("src/renderer/src/components/HowItWorks.tsx", "utf8");
 
+describe("cleanup C4: opting out stays opted out", () => {
+  it("onSent writes recent + last-report.json only while crash reports are on", () => {
+    expect(crash).toMatch(/if \(getCrashReports\(\)\) \{\s*recent\.push\(envelope\);[\s\S]{0,120}writeLastReport\(queueDir, envelope\);\s*\}/);
+  });
+  it("the Privacy page folds the report away when there is no last report", () => {
+    const pv = fs.readFileSync("src/renderer/src/components/PrivacyView.tsx", "utf8");
+    expect(pv).toMatch(/if \(!info\?\.lastReport\) setShowReport\(false\)/);
+  });
+});
+
 const dirs: string[] = [];
 const tmp = (): string => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "hv-lastreport-"));

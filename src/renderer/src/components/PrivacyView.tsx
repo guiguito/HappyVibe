@@ -25,6 +25,11 @@ export function PrivacyView(): React.JSX.Element {
   const [info, setInfo] = useState<HvCrashInfo | null>(null);
   const [showReport, setShowReport] = useState(false);
 
+  // After an opt-out the report is gone; the button must not stay on "Hide".
+  useEffect(() => {
+    if (!info?.lastReport) setShowReport(false);
+  }, [info]);
+
   const refresh = useCallback(() => {
     void window.hv.crashInfo().then(setInfo);
   }, []);

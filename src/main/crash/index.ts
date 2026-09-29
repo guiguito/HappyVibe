@@ -141,9 +141,12 @@ export async function installCrash(broadcast: (channel: string, payload?: unknow
       channel: cfg.channel,
     };
     lastSent = row;
-    recent.push(envelope);
-    if (recent.length > 5) recent.shift();
-    writeLastReport(queueDir, envelope);
+    // A send that completes after the user turned reports off must not rewrite what off deleted.
+    if (getCrashReports()) {
+      recent.push(envelope);
+      if (recent.length > 5) recent.shift();
+      writeLastReport(queueDir, envelope);
+    }
     recordCrashSent(row);
     broadcast("hv:crash-sent", row);
   };
