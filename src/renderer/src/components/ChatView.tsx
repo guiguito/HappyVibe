@@ -7,6 +7,7 @@ import { Transcript, type TranscriptItem } from "./Transcript";
 import { hasRestorable, tailToolCallIds, type RewindScope } from "../rewind";
 import { formatBinding, matchesBinding } from "../shortcuts";
 import { ModelSelect } from "./ModelSelect";
+import { GoTo } from "./GoTo";
 import { ContextBubble } from "./ContextBubble";
 import { PlanCard, type PlanCardData } from "./PlanCard";
 import { ContextPanel } from "./ContextPanel";
@@ -690,6 +691,18 @@ export function ChatView({
     return () => { alive = false; };
   }, [sessionId, resolved?.provider, resolved?.modelId]);
 
+  // docs-round #30: drop this session's override. Main switches the running
+  // session to whatever a respawn would pick, so the chip is not a promise.
+  const clearModel = async (): Promise<void> => {
+    if (!sessionId) return;
+    try {
+      const { live } = await window.hv.setSessionModel(sessionId, null);
+      setRestartHint(!live);
+    } catch {
+      /* unknown session (closed mid-click) — nothing to do */
+    }
+  };
+
   const pickModel = async (m: HvModel): Promise<void> => {
     setModelMenuOpen(false);
     if (!sessionId) return;
@@ -876,13 +889,18 @@ export function ChatView({
   // (placeholder + tooltip suffix on the queued chips).
   const hint = delegationHint(delegations);
 
+  // docs-round #30: ONE answer to "can this be sent", for Enter and the Send
+  // button alike — Enter used to send a documents-only message while Send sat
+  // disabled, and to send with no model at all.
+  // §28 round 1: a picked element is a message on its own. The comment and the
+  // markup carry the whole intent, so requiring typed text as well would make
+  // the popup's paper-plane hand you a composer that then refuses to send.
+  // §31: a document with no typed text is a real message — the user picked a
+  // file precisely so the agent would read it.
+  const canSend = !noModel && (!!input.trim() || (pageRefs?.length ?? 0) > 0 || documents.length > 0);
+
   const submit = (behavior?: "followUp"): void => {
-    // §28 round 1: a picked element is a message on its own. The comment and the
-    // markup carry the whole intent, so requiring typed text as well would make
-    // the popup's paper-plane hand you a composer that then refuses to send.
-    // §31: a document with no typed text is a real message — the user picked a
-    // file precisely so the agent would read it.
-    if (!input.trim() && !(pageRefs?.length ?? 0) && !documents.length) return;
+    if (!canSend) return;
     // §7/§12 (2026-09-26): a prompt that starts with a PICKED running run goes to that run,
     // not to the main model — and nothing is added to the parent transcript.
     const steered = steerTarget(input, pickedRun);
@@ -990,6 +1008,10 @@ export function ChatView({
               loading={models === null}
               value={resolved ? { provider: resolved.provider, modelId: resolved.modelId } : null}
               onPick={(m) => void pickModel(m)}
+              // docs-round #30: the way back from a session override, named after
+              // the tier the session falls back to (the chip's own TIER_LABEL words).
+              onClear={sessionModel ? () => void clearModel() : undefined}
+              clearLabel={`Use the ${TIER_LABEL[workspaceModel ? "workspace" : "global"]}`}
               open={modelMenuOpen}
               onOpenChange={(o) => { setModelMenuOpen(o); if (o) setAttachMenuOpen(false); }}
               // §7 round 12: the chip moved to the top bar, so the menu opens
@@ -1680,7 +1702,7 @@ export function ChatView({
         ))}
         {noModel && (
           <div className="max-w-3xl mx-auto px-1 pb-1.5 text-[11px] font-semibold text-berry">
-            No model configured — add a provider in Settings → Models to start chatting.
+            No model configured — set one up on the <GoTo view="models" /> page to start chatting.
           </div>
         )}
         <div className={`max-w-3xl mx-auto flex gap-1.5 ${multiline ? "items-start" : "items-center"} rounded-2xl bg-card border-2 border-line-strong shadow-sticker-lg px-2 py-1.5 focus-within:border-tangerine transition-colors`}>
@@ -1849,7 +1871,7 @@ export function ChatView({
                     <span className="block truncate text-[11px] font-medium text-ink-soft">{commandSubtitle(c)}</span>
                   </button>
                 ))}
-                <p className="px-3 pt-1 text-[10px] text-ink-soft">Tab to complete · Enter to send</p>
+                <p className="px-3 pt-1 text-[10px] text-ink-soft">Tab or Enter to complete</p>
               </div>
             )}
             {/* §7/§12 (2026-09-26): the picked run, visibly NOT a file chip and NOT a roster
@@ -1971,7 +1993,7 @@ export function ChatView({
           )}
           <button
             type="submit"
-            disabled={noModel || (!input.trim() && !(pageRefs?.length ?? 0))}
+            disabled={!canSend}
             aria-label={busy ? "Steer" : "Send"}
             title={busy ? "Steer — lands between tool calls" : "Send"}
             className="shrink-0 size-8 flex items-center justify-center rounded-xl text-tangerine hover:bg-paper-deep/40 transition-colors enabled:cursor-pointer disabled:opacity-40"

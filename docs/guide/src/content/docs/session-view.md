@@ -117,7 +117,7 @@ Type here, press **Enter** to send, **Shift+Enter** for a new line. It reads "As
 - **Stop** ("Stop the agent"), only while the agent is working.
 - **Send**, the paper plane. While the agent works, its tooltip changes to "Steer — lands between tool calls".
 
-You can also paste or drop an image straight into the box, and, while **Documents** is on, drop a document on it. Each attachment waits above the box as a chip, with **×** to remove it, until you send. A document's chip shows its size as Markdown and roughly how many tokens it will take, so you know what it costs before you send it.
+You can also paste or drop an image straight into the box, and, while **Documents** is on, drop a document on it. Each attachment waits above the box as a chip, with **×** to remove it, until you send. A document can go on its own, with nothing typed. A document's chip shows its size as Markdown and roughly how many tokens it will take, so you know what it costs before you send it.
 
 Pasting more than 100,000 characters asks first: "That's a large amount of text to add to the composer. Insert it anyway?" (the composer is the message box).
 
@@ -126,7 +126,7 @@ Above the box, you may also see:
 - the first-prompt suggestions, in the session the setup window opened for you;
 - your queued messages, marked "queued · kept on stop", while the agent works (see [Steer, or stop](/docs/first-session/#steer-or-stop));
 - "Model saved — applies when this session restarts.", after a change that couldn't reach the running session;
-- "No model configured — add a provider in Settings → Models to start chatting.", when no model is set. You can't send until one is set on the [Models](/docs/models/) screen in the sidebar;
+- "No model configured — set one up on the Models page to start chatting.", when no model is set. Click **Models** in it to go there. You can't send until a model is set;
 - an update line, when a new version of HappyVibe is ready, for example "HappyVibe … is ready" with **Restart to update**. **✕** hides it until the next launch.
 
 ### The browser pane
@@ -153,6 +153,7 @@ While the cursor is in a file you're editing, ⌘F or Ctrl+F searches that file 
 1. Click the model chip at the left of the top bar.
 2. Pick a model from the list. With more than five, type in "Search models…" to narrow it. Each row shows its price.
 3. To change how hard it thinks, click **think:** beside it and pick a level. **default** ("Follow the default set on the Models page") puts it back.
+4. To drop this session's own choice, open the chip again and pick **Use the workspace default** at the top of the list (**Use the global default** when the workspace has no model of its own). The session switches right away.
 
 The choice belongs to this session only. Other sessions keep theirs, and new sessions start from the workspace's model (set in [workspace settings](/docs/first-session/#workspace-settings)) or the default one on [Models](/docs/models/).
 

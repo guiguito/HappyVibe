@@ -5097,9 +5097,13 @@ export function registerIpc(
       if (model) track("model_changed", { ...modelParams(model.provider, model.modelId), scope: "session" });
       sessionsChanged();
       const client = manager.get(sessionId) as PiClient | null;
-      if (!client || !model) return { live: false };
+      // docs-round #30: clearing the override switches the running session to
+      // what its next spawn would pick — workspace, then global — through the
+      // one resolver spawnOpts uses. The session tier is already cleared above.
+      const target = model ?? resolveSpawnModel(index.get(sessionId)?.workspaceId, sessionId);
+      if (!client || !target) return { live: false };
       try {
-        const res = await client.send({ type: "set_model", provider: model.provider, modelId: model.modelId });
+        const res = await client.send({ type: "set_model", provider: target.provider, modelId: target.modelId });
         // §16 round 16: set_model RE-CLAMPS the thinking level upstream, so the
         // user's choice has to be re-asserted or it changes underneath them
         // with nothing on screen to say so.
