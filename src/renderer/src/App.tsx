@@ -3307,6 +3307,10 @@ export default function App(): React.JSX.Element {
         <MissedRunsDialog missed={schedules.filter((s) => s.missed)} onClose={() => setMissedOpen(false)} />
       )}
     <div className="h-full flex">
+      {/* Docs in the app: the guide has a left column of its own, so it takes the whole window.
+          `contents` keeps this wrapper out of the flex row; `hidden` keeps the sidebar MOUNTED, so its
+          open groups, scroll and dialogs are still there after "← Back". */}
+      <div className={activeView === "guide" ? "hidden" : "contents"}>
       <Sidebar
         workspaces={workspaces}
         activeWs={wsId}
@@ -3400,6 +3404,7 @@ export default function App(): React.JSX.Element {
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
+      </div>
       <main className="flex-1 min-w-0 flex flex-col">
         {errorBanner.mounted && (
           <Banner tone="attention" leaving={errorBanner.leaving} onDismiss={() => setError(null)}>

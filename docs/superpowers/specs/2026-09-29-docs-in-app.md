@@ -15,7 +15,9 @@ reachable from the settings list, the menu bar, first-run setup and a failing mo
 - A row **User guide** sits below the last settings group (The record: Stats, Audit log, Changelog).
   It is a sidebar destination **outside `NAV`**, like Schedules, so the guide needs no page about
   itself and the guide's sidebar-mirrors-the-app test is untouched.
-- Its view replaces the whole page content: a slim bar with **← Back** (to the main chat screen)
+- Its view takes the **whole window**: the app's own sidebar is hidden while it is open (the guide has
+  a left column of its own; two read as one too many). It is hidden with CSS, not unmounted, so its
+  open groups, scroll and dialogs are there after **← Back**. The page is a slim bar with **← Back** (to the main chat screen)
   and **Open in browser ↗**, over an `<iframe>` of the guide filling the rest.
 - **An iframe, not a browser pane, on purpose.** A pane is a native `WebContentsView`; nothing in
   the DOM paints above it (`.claude/rules/renderer-layers.md`), so a permission prompt or dialog

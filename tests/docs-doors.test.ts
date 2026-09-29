@@ -163,6 +163,15 @@ describe("the guide is a page inside the app (Docs in the app, 2026-09-29)", () 
     expect(body).toMatch(/keyState === "missing"[\s\S]{0,120}openExternal\(url\)/);
   });
 
+  it("the guide takes the whole window: the app's sidebar is hidden, not unmounted", () => {
+    // Two left columns (the app's and the guide's own) read as one too many. Hidden with CSS so its
+    // open groups, scroll and any dialog survive "← Back"; unmounting would reset all of it.
+    const at = app.indexOf("<Sidebar\n");
+    expect(at).toBeGreaterThan(-1);
+    expect(app.slice(Math.max(0, at - 200), at)).toMatch(/activeView === "guide" \? "hidden" : "contents"/);
+    expect(app).not.toMatch(/activeView !== "guide" && \(\s*<Sidebar/);
+  });
+
   it("App renders the view with Back going to the main chat screen", () => {
     expect(app).toMatch(/activeView === "guide" && \(\s*<GuideView/);
     expect(app).toMatch(/onBack=\{\(\) => navigate\(\{ view: "chat" \}\)\}/);

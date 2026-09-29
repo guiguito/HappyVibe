@@ -327,8 +327,8 @@ Back button. Decided: an iframe with one CSP entry, and every existing link conv
 ### GUI verification — what must be TRUE on screen
 
 1. **Row.** With Settings expanded, a **User guide** row sits below the Changelog row, outside every group. **Absence:** it is not listed under The record's header; `NAV` has no `guide`.
-2. **Page.** Clicking it: the whole content area is the bar plus one `<iframe>` whose `src` is `https://happyvibe.dev/docs/?embed=1`, taller than 400px, showing the guide with **no** site title.
-3. **Back.** **← Back** returns to the chat screen with the settings list unchanged.
+2. **Page.** Clicking it: the app's sidebar disappears (**absence:** no `aside` is visible, `getComputedStyle` `display` is `none` on its wrapper) and the window is the bar plus one `<iframe>` whose `src` is `https://happyvibe.dev/docs/?embed=1`, taller than 400px, showing the guide with **no** site title.
+3. **Back.** **← Back** returns to the chat screen and the sidebar is back with its groups as they were (**regression:** open a group, click the guide row, Back, and the group is still open, not reset).
 4. **Other doors, same view.** From **Models**, "How this page works ↗" lands on the guide page at `/docs/models/`. **Absence:** no browser tab appears in the tab strip. Help ▸ HappyVibe Guide does the same from Models and from chat.
 5. **Leaving the guide.** Click an external link in the guide (Models page has one to ollama.com): the system browser opens, and the frame stays on the guide. **Absence:** no `Refused to frame` message in `get_console_messages level:error`.
 6. **Error link.** Custom endpoint returning 401 → the error card's **Read the guide ↗** opens the guide at `connect-a-model` (anchor `if-the-provider-rejects-the-key`).
