@@ -12,6 +12,7 @@
 export const SAFE_MESSAGES: ReadonlySet<string> = new Set([
   "A file or folder already exists there",
   "A project name can't contain a slash.",
+  "Agent name can't contain a path",
   "Cannot move into itself",
   "Command is required",
   "Could not work out which repo hosts that marketplace.",
