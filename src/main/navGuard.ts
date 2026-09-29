@@ -1,5 +1,3 @@
-import { DOCS_BASE } from "./docsBase";
-
 /**
  * What to do with one `will-navigate` attempt.
  *
@@ -29,14 +27,33 @@ export function navAction(url: string, current: string): "allow" | "external" | 
 }
 
 /**
- * Docs in the app (2026-09-29): what to do with a SUBFRAME navigation. `will-navigate` never fires
- * for a subframe, and the User guide is an iframe whose CSP allows no other origin — so a link in
- * the guide that leaves it would leave a blank frame. Only a frame that is showing the guide is
- * judged: the editor's sandboxed HTML preview (`about:srcdoc`) and a frame's initial load
- * (`about:blank`) pass through untouched.
+ * Docs in the app (2026-09-29): the script main injects into the User guide's frame each time it
+ * loads, so a click on a link that leaves the guide reaches the system browser.
+ *
+ * It has to be a click handler INSIDE the frame. The renderer's CSP allows one frame origin, and
+ * Chromium enforces `frame-src` before the browser process sees a frame navigation — so no
+ * `will-frame-navigate` ever fires for an external link (measured in the running app), and the frame
+ * is left on an error page. `window.open` from a sandboxed frame with `allow-popups` is different:
+ * it reaches `setWindowOpenHandler`, which opens the system browser.
+ *
+ * Only http(s) and mailto links are rerouted; a link into the guide, a `javascript:` link or a
+ * `file:` link is left to the frame's own sandbox and the CSP.
  */
-export function frameNavAction(frameUrl: string, url: string): "allow" | "external" | "block" {
-  if (!frameUrl.startsWith(DOCS_BASE)) return "allow";
-  if (url.startsWith(DOCS_BASE)) return "allow";
-  return /^(https?|mailto):/i.test(url) ? "external" : "block";
+export function guideLinkScript(base: string): string {
+  return `(() => {
+  if (window.__hvGuideLinks) return;
+  window.__hvGuideLinks = true;
+  const BASE = ${JSON.stringify(base)};
+  document.addEventListener("click", (e) => {
+    if (e.defaultPrevented) return;
+    const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+    if (!a) return;
+    let u;
+    try { u = new URL(a.href, location.href); } catch { return; }
+    if (u.href.startsWith(BASE)) return;
+    if (u.protocol !== "http:" && u.protocol !== "https:" && u.protocol !== "mailto:") return;
+    e.preventDefault();
+    window.open(u.href, "_blank");
+  }, true);
+})()`;
 }

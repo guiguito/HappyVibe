@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, shell, BrowserWindow, nativeImage, Menu, ipcMain, screen } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, Menu, ipcMain, screen, webFrameMain } from 'electron'
 import { join } from 'path'
 import { existsSync, renameSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -9,7 +9,7 @@ import { startUpdater } from './update'
 import { loginShellPath, mergePath } from './shellPath'
 import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
 import { seedDefaultGitRules } from './gitRules'
-import { frameNavAction, navAction } from './navGuard'
+import { guideLinkScript, navAction } from './navGuard'
 import { parseLayoutFile, type WindowRecord } from './windowLayout'
 import { insideAny } from './tearOff'
 import { WindowRegistry } from './windows'
@@ -289,7 +289,9 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
   // covers a plain <a href> click (e.g. links in chat answers), which would
   // otherwise navigate the whole SPA away from the app.
   win.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // Web and mail links only: the User guide's frame can reach this handler too (its links are
+    // rerouted here), and shell.openExternal will run ANY scheme's handler.
+    if (navAction(details.url, win.webContents.getURL()) === 'external') shell.openExternal(details.url)
     return { action: 'deny' }
   })
   // The rule is deny-by-default and lives in navGuard.ts — see there for why an
@@ -300,14 +302,13 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
     event.preventDefault()
     if (action === 'external') void shell.openExternal(url)
   })
-  // Docs in the app: the User guide is an iframe, and will-navigate does not fire for subframes.
-  // Only a frame that is showing the guide is judged — see frameNavAction.
-  win.webContents.on('will-frame-navigate', (details) => {
-    if (details.isMainFrame) return
-    const action = frameNavAction(details.frame?.url ?? '', details.url)
-    if (action === 'allow') return
-    details.preventDefault()
-    if (action === 'external') void shell.openExternal(details.url)
+  // Docs in the app: a link in the User guide that leaves it must reach the system browser, but the
+  // CSP blocks that frame navigation before main can see it (no will-frame-navigate fires), so the
+  // click is caught inside the frame: inject the handler whenever a frame showing the guide loads.
+  win.webContents.on('did-frame-finish-load', (_event, isMainFrame, processId, routingId) => {
+    if (isMainFrame) return
+    const frame = webFrameMain.fromId(processId, routingId)
+    if (frame?.url.startsWith(DOCS_BASE)) void frame.executeJavaScript(guideLinkScript(DOCS_BASE)).catch(() => {})
   })
   // Docs in the app: Esc closes the User guide, but once focus is inside its iframe the keypress goes
   // to the frame and the renderer never sees it; before-input-event does. It is forwarded as-is —

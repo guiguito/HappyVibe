@@ -25,12 +25,19 @@ reachable from the settings list, the menu bar, first-run setup and a failing mo
   would hide behind it. An iframe is plain DOM.
 - The renderer CSP gains exactly one directive: `frame-src https://happyvibe.dev`. The site sends
   no `X-Frame-Options` and no `frame-ancestors` (checked with `curl -I`), so framing works today.
-- The frame is sandboxed with `allow-scripts allow-same-origin` (the guide's search needs both).
+- The frame is sandboxed with `allow-scripts allow-same-origin allow-popups` (the guide's search needs
+  the first two; the third only lets a link reach the popup handler, below).
   The preload API is not exposed to a cross-origin frame.
-- **Leaving the guide.** A link in the guide to another site would navigate the frame away, and the
-  CSP would show a blank frame. Main catches it (`will-frame-navigate`): when the frame is showing the
-  guide and the target is not, http(s)/mailto open in the system browser and anything else is
-  blocked. Frames not showing the guide (the editor's sandboxed HTML preview) are never touched.
+- **Leaving the guide.** A link in the guide to another site must reach the system browser. It cannot
+  be caught as a navigation: Chromium enforces `frame-src` BEFORE the browser process sees a frame
+  navigation, so `will-frame-navigate` never fires (measured in the running app) and the frame is left
+  on an error page. So the click is caught INSIDE the frame: when a frame showing the guide finishes
+  loading, main injects a small capture-phase click handler (`guideLinkScript`, `navGuard.ts`) that
+  sends http(s)/mailto links outside the guide through `window.open`. That reaches the popup handler,
+  which opens the system browser — and now opens only web and mail links, because a `shell.openExternal`
+  of any scheme runs that scheme's handler. Links into the guide, `javascript:` and `file:` links are
+  left alone; the editor's sandboxed HTML preview is never touched (main only injects into a frame whose
+  address starts with the guide's).
 - Offline, the frame is blank; the ✕ is the way out. No error detection, and no separate "open in browser" button.
 - Clicking the row again shows the page you were last on, like a tab.
 

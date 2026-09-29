@@ -321,7 +321,7 @@ Back button. Decided: an iframe with one CSP entry, and every existing link conv
 | `GuideView` — a sandboxed iframe filling the window and one large circled ✕ (no bar of our own) | `components/GuideView.tsx` (new), `docsLinks.ts` (`externalDocUrl`, `GUIDE_COPY`) |
 | Settings row below the last group, outside `NAV`; new `View` `"guide"` | `Sidebar.tsx`, `usage/events.ts` (`SCREENS`, pinned equal to `View`) |
 | `openDocs` shows the page; only `keyState === "missing"` still uses the system browser | `App.tsx` |
-| CSP `frame-src https://happyvibe.dev`; `frameNavAction` for subframes | `index.html`, `navGuard.ts`, `index.ts` (`will-frame-navigate`) |
+| CSP `frame-src https://happyvibe.dev`; `guideLinkScript` injected into the frame (the first attempt, `will-frame-navigate`, never fired) | `index.html`, `navGuard.ts`, `index.ts` (`did-frame-finish-load`) |
 | Old pin replaced ("falls back to the system browser" → "opens the in-app guide") | `tests/docs-links.test.ts` |
 
 ### GUI verification — what must be TRUE on screen

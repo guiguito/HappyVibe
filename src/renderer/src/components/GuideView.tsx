@@ -8,8 +8,9 @@ import { GUIDE_COPY } from "../docsLinks";
  *
  * An iframe and not a browser pane on purpose: a pane is a native view that paints above every
  * dialog and permission prompt, and an iframe is plain DOM. The renderer CSP allows exactly one
- * frame origin (index.html); main sends any link that would leave the guide to the system browser
- * (`frameNavAction`). Offline the frame is blank, and the cross is the way out.
+ * frame origin (index.html), and that blocks a navigation main never gets to see — so main injects
+ * `guideLinkScript` into the frame, which turns a click on an outside link into a popup that goes to
+ * the system browser (hence `allow-popups`). Offline the frame is blank, and the cross is the way out.
  *
  * Esc closes it too. With focus in the app that is a plain keydown (skipped when a dialog already used
  * the key); with focus INSIDE the frame the app never sees the key, so main forwards it and this acts
@@ -40,7 +41,7 @@ export function GuideView({ url, nonce, onClose }: { url: string; nonce: number;
         key={nonce}
         title={GUIDE_COPY.title}
         src={url}
-        sandbox="allow-scripts allow-same-origin"
+        sandbox="allow-scripts allow-same-origin allow-popups"
         className="flex-1 min-h-0 w-full bg-paper"
       />
       {/* right-6 clears the frame's own scrollbar; z-10 keeps it above the guide's sticky header. */}
