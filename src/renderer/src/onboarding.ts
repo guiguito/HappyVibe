@@ -76,6 +76,17 @@ export function keyRejectedNote(provider: string, reason: string): string {
 }
 
 /**
+ * docs-round #9: what the setup window's key note becomes when the user edits or
+ * re-picks in the key box. A refusal survives: it is what holds step 1 open (and this
+ * box mounted), so clearing it on the first keystroke would tick the step and unmount
+ * the box with the replacement key half-typed. Only a save result, a working sign-in
+ * or a local runner clears it. An informational note still clears on edit.
+ */
+export function noteAfterEdit<T extends { rejected: boolean }>(note: T | null): T | null {
+  return note?.rejected ? note : null;
+}
+
+/**
  * `onboardingSeen` alone is NOT the migration it looks like.
  *
  * The flag is only written when the OLD bottom-right overlay was dismissed, and

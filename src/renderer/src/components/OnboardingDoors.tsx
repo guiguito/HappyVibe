@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { AuthFlowModal } from "./AuthFlowModal";
 import { GOTO_LABELS } from "./GoTo";
 import { parseAuth, type AuthEvent } from "../auth";
-import { ONBOARDING_COPY as C, keyRejectedNote, rankProviders } from "../onboarding";
+import { ONBOARDING_COPY as C, keyRejectedNote, noteAfterEdit, rankProviders } from "../onboarding";
 import { THIS_COMPUTER } from "../platformCopy";
 
 /**
@@ -186,7 +186,7 @@ export function ProviderDoors({
    * this component unmounting, and since docs-round #9 a `rejected` note also keeps
    * step 1 from ticking.
    */
-  onNote: (note: KeyNote | null) => void;
+  onNote: React.Dispatch<React.SetStateAction<KeyNote | null>>;
 }): React.JSX.Element {
   const [rung, setRung] = useState<Rung>("plan");
   const [oauth, setOauth] = useState<HvOAuthProvider[]>([]);
@@ -319,11 +319,11 @@ export function ProviderDoors({
 
         <RungPanel show={rung === "key"}>
           <div className="flex flex-wrap items-center gap-2">
-          <ProviderPicker rows={byok} value={keyId} onPick={(id) => { setKeyId(id); onNote(null); }} />
+          <ProviderPicker rows={byok} value={keyId} onPick={(id) => { setKeyId(id); onNote(noteAfterEdit); }} />
           <input
             type="password"
             value={keyText}
-            onChange={(e) => { setKeyText(e.target.value); onNote(null); }}
+            onChange={(e) => { setKeyText(e.target.value); onNote(noteAfterEdit); }}
             onKeyDown={(e) => { if (e.key === "Enter") void saveKey(); }}
             placeholder="sk-…"
             className="flex-1 min-w-36 rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm focus:outline-none placeholder:text-ink-soft/60"

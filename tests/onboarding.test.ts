@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { chipsFor, folderHasCode, keyRejectedNote, ONBOARDING_COPY, rankProviders, shouldShowOnboarding } from "../src/renderer/src/onboarding";
+import { chipsFor, folderHasCode, keyRejectedNote, noteAfterEdit, ONBOARDING_COPY, rankProviders, shouldShowOnboarding } from "../src/renderer/src/onboarding";
 
 /**
  * §22 onboarding round (2026-09-01).
@@ -648,5 +648,19 @@ describe("a rejected key on first run is seen, and doesn't count (docs-round #9)
     const src = flat(DOORS);
     expect(has(src, 'if (login?.event?.stage === "success") onNote(null);'), "sign-in").toBe(true);
     expect(has(src, "onClick={() => { onNote(null); onChanged(); }}"), "local runner").toBe(true);
+  });
+
+  it("editing or re-picking in the key box keeps a refusal, or step 1 ticks and the box unmounts", () => {
+    const refused = { text: keyRejectedNote("Anthropic", "HTTP 401"), rejected: true };
+    expect(noteAfterEdit(refused), "the refusal outlives an edit").toBe(refused);
+    expect(noteAfterEdit({ text: "Saved — couldn't verify this key.", rejected: false }), "info still clears").toBeNull();
+    expect(noteAfterEdit(null)).toBeNull();
+
+    const src = flat(DOORS);
+    expect(has(src, "setKeyText(e.target.value); onNote(noteAfterEdit);"), "typing/pasting").toBe(true);
+    expect(has(src, "setKeyId(id); onNote(noteAfterEdit);"), "re-picking the provider").toBe(true);
+    expect(has(src, "setKeyText(e.target.value); onNote(null);"), "no bare clear on the input").toBe(false);
+    expect(has(src, "setKeyId(id); onNote(null);"), "no bare clear on the picker").toBe(false);
+    expect(has(src, "onNote: React.Dispatch<React.SetStateAction<KeyNote | null>>"), "applied to the CURRENT note").toBe(true);
   });
 });
