@@ -91,7 +91,7 @@ And around them:
 - A long session starts at its latest messages. **Show earlier messages (…)** draws the rest.
 - After a compaction ([Context: what the agent can see](/docs/first-session/#context-what-the-agent-can-see) says more), a note says "Earlier messages were compacted into a summary" and why. **Load earlier messages** brings them back into view, marked "earlier — not in the agent's context": you can read them, but the agent can't see them.
 - Scrolled up while the agent writes? The conversation stops following it. **Jump to latest** takes you back down.
-- If a request fails, the error says what happened, and often offers **Retry** or **Restart & resend**. For a rejected key, an unknown model or a conversation that's too long, the error also links to the guide page that explains the fix.
+- If a request fails, the error says what happened, and often offers **Retry** or **Restart & resend**. For a rejected key, an unknown model or a conversation past the model's context window, the error also shows a **Read the guide ↗** link. It opens in a tab and points to where the fix lives; for the context window, that's the custom-endpoint steps on the Models page.
 
 ### Subagents and terminals at work
 
