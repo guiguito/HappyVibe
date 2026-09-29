@@ -72,7 +72,7 @@ import { scanPluginDir, type PluginScan } from "./plugins/scan";
 import { fetchMarketplace, fetchPluginDir } from "./plugins/fetch";
 import { normalizePluginMcpServer } from "./plugins/mcpImport";
 import {
-  findPluginServers, installPluginCommands, installPluginSkills, pluginOrigin, rewriteSkillRoots,
+  findPluginServers, installPluginCommands, installPluginSkills, pluginServerEntry, rewriteSkillRoots,
 } from "./plugins/install";
 import { allowedAgentDirs, duplicateAgent, readAgentBody, writeAgentEdit } from "./agents";
 import {
@@ -129,7 +129,7 @@ import { expandedHash, pairPromptTemplateItems, restoreItems, type RestoreItem }
 import { inlineMentionPaths, willExpand } from "./promptTemplateMentions";
 import { compactionInfo, compactionReason, contextItems, earlierItems } from "./history";
 import { globalAppendFile, readAppend, writeAppend } from "./appendSystem";
-import { readMcpFile, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
+import { isMcpServerOff, readMcpFile, withoutOffFlag, writeMcpServer, serverNameInFiles, type McpServerConfig } from "./mcp";
 import { sweepLegacyCredentials } from "./mcpAuthStore";
 import { createAdapterStore, type AdapterEntry } from "./mcpAdapterStore";
 import { mapLimit, probe } from "./mcpClient";
@@ -1409,7 +1409,9 @@ export function registerIpc(
             return path.join(ws, ".mcp.json");
           })();
     const cfg = readMcpFile(file).mcpServers[name];
-    if (!cfg) {
+    // docs-round #25: an off server (a plugin's, until Connect) is never probed: a stdio
+    // probe STARTS it. Every sweep and Reconnect routes through here.
+    if (!cfg || isMcpServerOff(cfg)) {
       mcpStatusMap.delete(statusKey(scope, workspaceId, name));
       mcpStatusChanged();
       return;
@@ -1507,9 +1509,9 @@ export function registerIpc(
      * name here is correct, not a shortcut.
      */
     const httpByName = new Map<string, { name: string; url: string }>();
-    for (const [n, cfg] of Object.entries(globalFile)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
+    for (const [n, cfg] of Object.entries(globalFile)) if (cfg.url && !isMcpServerOff(cfg)) httpByName.set(n, { name: n, url: cfg.url });
     for (const [, servers] of wsFiles) {
-      for (const [n, cfg] of Object.entries(servers)) if (cfg.url) httpByName.set(n, { name: n, url: cfg.url });
+      for (const [n, cfg] of Object.entries(servers)) if (cfg.url && !isMcpServerOff(cfg)) httpByName.set(n, { name: n, url: cfg.url });
     }
     const wanted = [...httpByName.values()];
     if (!wanted.length) return;
@@ -5885,6 +5887,16 @@ export function registerIpc(
       }
 
       setStatus(result.state, result.tools, result.error);
+      // docs-round #25: Connect is the switch for a server that arrived off (a plugin's).
+      // Re-read the file rather than trust `cfg`: the OAuth leg can take minutes. A failed
+      // connect leaves it off.
+      if (result.state === "connected") {
+        const now = readMcpFile(file).mcpServers[name];
+        if (now && isMcpServerOff(now)) {
+          writeMcpServer(file, name, withoutOffFlag(now));
+          scheduleMcpReload(scope, workspaceId);
+        }
+      }
       return result.state === "connected"
         ? { ok: true as const, tools: result.tools ?? [] }
         : { ok: false as const, error: result.error ?? "Could not connect" };
@@ -6957,12 +6969,9 @@ export function registerIpc(
           // on the MCP page worked. See plugins/mcpImport.ts.
           // origin is what lets removal take these with it — it must be on the
           // FIRST write or the install is unattributable forever.
-          writeMcpServer(
-            globalMcpFile(),
-            key,
-            { ...normalizePluginMcpServer(cfg), origin: pluginOrigin(scan.name, marketplaceId) },
-            { failIfExists: true },
-          );
+          // docs-round #25: written OFF. The adapter neither lists nor connects it until
+          // Connect (hv:mcp-connect-flow) removes the flag.
+          writeMcpServer(globalMcpFile(), key, pluginServerEntry(cfg, scan.name, marketplaceId), { failIfExists: true });
           track("mcp_server_added", mcpParams("plugin", normalizePluginMcpServer(cfg)));
           servers.push(key);
         }
@@ -6977,7 +6986,6 @@ export function registerIpc(
         });
         if (installed.length > 0) { skillsChanged(); scheduleSkillReload("global", null); }
         if (commands.length > 0) { promptTemplatesChanged(); schedulePromptTemplateReload("global", null); }
-        if (servers.length > 0) scheduleMcpReload("global", null);
         return {
           ok: true as const,
           skills: installed.map((s) => s.skill.name),

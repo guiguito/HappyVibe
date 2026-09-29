@@ -33,6 +33,7 @@ The status badge is HappyVibe checking the server for you:
 - **needs auth**: it wants you to sign in. Click **Authenticate**.
 - **failed**: it didn't answer. Hover the badge to read why.
 - **—**: no check has run yet.
+- **off**: a plugin installed this server and it's switched off. Sessions can't use it until you click **Connect**, and HappyVibe doesn't check it either.
 
 A **direct** badge means you chose **Expose tools directly** for that server.
 
@@ -40,7 +41,7 @@ The buttons on each row:
 
 - **Authenticate**: sign in, when the badge says **needs auth**.
 - **Log out**: sign out of a connected online server.
-- **Reconnect**: check the server again.
+- **Reconnect**: check the server again. On an **off** server this button reads **Connect**: HappyVibe checks the server answers and signs you in if it needs to. Once it's connected, your sessions can use it.
 - **Edit**: change its name, command, address or settings.
 - **Remove**: take it off the list. It goes straight away, so the catalog card becomes clickable again.
 

@@ -236,21 +236,25 @@ export function McpServersSection({
 
   // Kick off mcpAuthenticate and show result modal.
   // ponytail: single function covers add-time + per-row Authenticate flows.
-  const authenticate = (scope: "global" | "workspace", name: string): void => {
+  // docs-round #25: `via: "connect"` runs the plugin dialog's flow (probe, sign in only on a
+  // 401), which is also what switches an off server on — so the row re-reads its config.
+  const authenticate = (scope: "global" | "workspace", name: string, via: "auth" | "connect" = "auth"): void => {
     const wsId = scope === "workspace" ? workspaceId : null;
     const gen = ++connectGen.current;
     const stale = (): boolean => connectGen.current !== gen;
     setConnectResult({ phase: "connecting", serverName: name });
-    void window.hv.mcpAuthenticate(scope, wsId, name).then((res) => {
+    const run = via === "connect" ? window.hv.mcpConnectFlow : window.hv.mcpAuthenticate;
+    void run(scope, wsId, name).then((res) => {
       if (stale()) return;
       if (res.ok) {
         setConnectResult({ phase: "ok", serverName: name, tools: res.tools });
+        if (via === "connect") void refresh();
       } else {
         setConnectResult({
           phase: "error",
           serverName: name,
           error: res.error,
-          retry: () => authenticate(scope, name),
+          retry: () => authenticate(scope, name, via),
         });
       }
     }).catch((e: unknown) => {
@@ -259,7 +263,7 @@ export function McpServersSection({
         phase: "error",
         serverName: name,
         error: String(e),
-        retry: () => authenticate(scope, name),
+        retry: () => authenticate(scope, name, via),
       });
     });
   };
@@ -307,6 +311,7 @@ export function McpServersSection({
             const sKey = statusKey(s.scope, s.scope === "workspace" ? workspaceId : null, s.name);
             const status = statuses.get(sKey);
             const isHttp = typeof s.cfg.url === "string";
+            const off = s.cfg.disabled === true; // docs-round #25: a plugin's server, until Connect
             const brand = brandIconFor(s.name);
             return (
               <div key={`${s.scope}:${s.name}`} className="border-b border-line last:border-b-0">
@@ -326,6 +331,7 @@ export function McpServersSection({
                     </span>
                     <McpStatusBadge
                       status={status}
+                      off={off}
                       open={openTools.has(sKey)}
                       onToggleTools={
                         status?.tools?.length
@@ -351,7 +357,7 @@ export function McpServersSection({
                   </span>
                 </div>
                 {/* Authenticate — shown when needs-auth */}
-                {status?.state === "needs-auth" && (
+                {!off && status?.state === "needs-auth" && (
                   <button
                     type="button"
                     onClick={() => authenticate(s.scope, s.name)}
@@ -372,10 +378,10 @@ export function McpServersSection({
                 )}
                 <button
                   type="button"
-                  onClick={() => reconnect(s)}
+                  onClick={() => (off ? authenticate(s.scope, s.name, "connect") : reconnect(s))}
                   className="text-xs font-bold rounded-lg border-2 border-line px-2.5 py-1 hover:bg-paper-deep/40 cursor-pointer shrink-0"
                 >
-                  Reconnect
+                  {off ? "Connect" : "Reconnect"}
                 </button>
                 <button
                   type="button"
@@ -430,17 +436,33 @@ export function McpServersSection({
   );
 }
 
+/** docs-round #25: the badge of a server that arrived off. Exported as data (no DOM in the suite). */
+export const MCP_OFF_PILL = {
+  label: "off",
+  title: "Installed by a plugin and switched off. Sessions can't use it until you click Connect.",
+};
+
 function McpStatusBadge({
   status,
   open = false,
   onToggleTools,
+  off = false,
 }: {
   status: McpServerStatusLike | undefined;
   /** Round 11: is the tool list expanded? */
   open?: boolean;
   /** Provided only when there is a tool list to show — absent keeps the plain badge. */
   onToggleTools?: () => void;
+  /** docs-round #25: off wins over any status a failed Connect left behind. */
+  off?: boolean;
 }): React.JSX.Element {
+  if (off) {
+    return (
+      <span title={MCP_OFF_PILL.title} className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
+        {MCP_OFF_PILL.label}
+      </span>
+    );
+  }
   if (!status) {
     return (
       <span className="text-[10px] font-bold tracking-wider rounded-full px-2 py-0.5 bg-paper-deep text-ink-soft border border-line shrink-0">
@@ -534,6 +556,8 @@ function McpServerEditor({
           : { url, command: undefined, args: undefined, env: undefined }),
         ...(kind === "stdio" && Object.keys(envObj).length ? { env: envObj } : {}),
         ...(direct ? { directTools: true } : { directTools: undefined }),
+        // docs-round #25: Edit is not the switch. Connect is.
+        ...(cfg.disabled === true ? { disabled: true } : {}),
       };
       for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
       if (kind === "stdio" && !cmd) throw new Error("Command is required");
@@ -543,7 +567,7 @@ function McpServerEditor({
       if (server && (server.scope !== scope || server.name !== name)) {
         await window.hv.mcpSetServer(server.scope, server.scope === "workspace" ? workspaceId : null, server.name, null);
       }
-      onSaved(scope, name, kind === "http");
+      onSaved(scope, name, kind === "http" && cfg.disabled !== true);
     } catch (e) {
       setError(String(e));
     }

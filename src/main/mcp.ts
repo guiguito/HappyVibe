@@ -16,6 +16,8 @@ export interface McpServerConfig {
   url?: string;
   headers?: Record<string, string>;
   directTools?: boolean | string[];
+  /** The adapter's own off switch (`isServerDisabled`: only literal true). docs-round #25. */
+  disabled?: boolean;
   [k: string]: unknown;
 }
 
@@ -26,6 +28,19 @@ export interface McpFile {
 
 export function isValidServerName(name: string): boolean {
   return /^[\w-]+$/.test(name);
+}
+
+/** docs-round #25: main's reading of the adapter's `disabled` flag — the same truth table
+    (tests/mcp-adapter-disabled.test.ts). An off server is never probed and never swept. */
+export function isMcpServerOff(cfg: McpServerConfig | undefined): boolean {
+  return cfg?.disabled === true;
+}
+
+/** The same config, switched on: what a successful Connect writes back. */
+export function withoutOffFlag(cfg: McpServerConfig): McpServerConfig {
+  const on = { ...cfg };
+  delete on.disabled;
+  return on;
 }
 
 export function readMcpFile(file: string): McpFile {

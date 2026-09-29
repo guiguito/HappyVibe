@@ -76,6 +76,10 @@ paths:
 - Only IDLE sessions (`activity.isIdle`) reload immediately; busy ones defer via `pendingMcpReload`,
   drained on `agent_end` / permission-prompt close. The renderer gets `hv:session-reloading`
   (grants reset); main then fires `/hv-tools`.
+- A plugin's servers are written `disabled: true` (`pluginServerEntry`, plugins/install.ts) — the
+  adapter's own flag: not listed to the model, never connected. Main's Connect
+  (`hv:mcp-connect-flow`) is the ONLY thing that clears it (then `scheduleMcpReload`); an off server
+  is never probed or credential-read (`isMcpServerOff`, mcp.ts). `tests/mcp-adapter-disabled.test.ts`.
 
 ## Secrets can execute
 - The adapter resolves env/header values through `resolveCommandSecret`: a leading `!` runs a shell

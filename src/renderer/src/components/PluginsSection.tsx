@@ -448,7 +448,7 @@ export function PluginsSection(): React.JSX.Element {
             />
             <PickList
               title="MCP servers"
-              note="Added to your global mcp.json but NOT connected — you can connect (and sign in) here once installed. Removed with the plugin."
+              note="Added to your global mcp.json, switched off: sessions can't use them until you click Connect, here once installed or on the MCP page. Removed with the plugin."
               rows={scan.mcpServers.map((k) => ({ id: k, label: k }))}
               chosen={chosen.servers}
               onToggle={(id) => toggle("servers", id)}
