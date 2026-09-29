@@ -67,23 +67,40 @@ export function recordCrashSent(row: CrashRow): void {
  * docs-round #10: the last report that LEFT, kept so the Privacy page can still show it
  * after a restart. Its own file, beside the SDK's store, because the EventLog takes ids,
  * never content. The envelope is already scrubbed (`beforeSendSync`), so this file holds
- * exactly what was sent.
+ * exactly what was sent — including the SDK's rotating session id and, while usage
+ * statistics are on, the installation id. That is why both opt-outs delete it whole
+ * (`clearLastReport`): the SDK's `dropQueue` and `forget` only reach the queued items.
  */
 export const LAST_REPORT_FILE = "last-report.json";
+const LAST_REPORT_TMP = `${LAST_REPORT_FILE}.tmp`;
 
+/** Temp file then rename, so a kill mid-write cannot clobber the previous good copy. */
 export function writeLastReport(dir: string, envelope: CrashEnvelope): void {
+  const tmp = path.join(dir, LAST_REPORT_TMP);
   try {
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, LAST_REPORT_FILE), JSON.stringify(envelope));
+    fs.writeFileSync(tmp, JSON.stringify(envelope));
+    fs.renameSync(tmp, path.join(dir, LAST_REPORT_FILE));
   } catch {
     // A missing copy only means the page says nothing was sent. Never worth a crash.
+    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
   }
 }
 
+/** Valid JSON of the wrong shape (an array, a string, `{}`) reads as nothing sent. */
 export function readLastReport(dir: string): CrashEnvelope | null {
   try {
-    return JSON.parse(fs.readFileSync(path.join(dir, LAST_REPORT_FILE), "utf8")) as CrashEnvelope;
+    const v: unknown = JSON.parse(fs.readFileSync(path.join(dir, LAST_REPORT_FILE), "utf8"));
+    if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+    return typeof (v as { kind?: unknown }).kind === "string" ? (v as CrashEnvelope) : null;
   } catch {
     return null;
+  }
+}
+
+/** Opting out of crash reports or usage statistics forgets the local copy. Never throws. */
+export function clearLastReport(dir: string): void {
+  for (const f of [LAST_REPORT_FILE, LAST_REPORT_TMP]) {
+    try { fs.rmSync(path.join(dir, f), { force: true }); } catch { /* best effort */ }
   }
 }

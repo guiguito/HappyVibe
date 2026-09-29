@@ -78,7 +78,7 @@ export function PrivacyView(): React.JSX.Element {
             onClick={() => {
               const next = !stats;
               setStats(next);
-              void window.hv.setUsageStats(next);
+              void window.hv.setUsageStats(next).then(refresh); // off also forgets the kept crash report
             }}
             className={`shrink-0 rounded-full border-2 px-4 py-1.5 font-bold text-sm cursor-pointer ${
               stats ? "bg-leaf text-paper border-leaf" : "bg-card text-ink border-line hover:border-leaf"

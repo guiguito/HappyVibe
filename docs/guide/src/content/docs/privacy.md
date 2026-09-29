@@ -28,7 +28,7 @@ Open **What a crash report contains** for the full answer. A report holds:
 - what kind of failure it was, and the error's type
 - where in HappyVibe's own code it happened
 - your HappyVibe version and your operating system
-- a random ID, kept only in memory and replaced after 30 idle minutes and at least once a day. It lets a crash be matched with feedback you sent in the same sitting, and "identifies nothing else."
+- a random ID, held in memory and replaced after 30 idle minutes and at least once a day. It lets a crash be matched with feedback you sent in the same sitting, and "identifies nothing else." The last report you sent, ID included, is also kept on this computer so the Privacy page can show it after a restart. Turning off **Send crash reports** or **Send anonymous usage statistics** deletes that copy.
 
 "It never contains your prompts, your files, your paths or your keys. Error messages are redacted before they leave, and native crash snapshots stay on your computer."
 

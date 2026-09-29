@@ -12,6 +12,7 @@ import { agentDir, getUsageStats, setUsageStats } from "../config";
 import { existingUserAttribution, hasPriorUse } from "./attribution";
 import { usageBeforeSend } from "./guard";
 import { setUsageSink } from "./client";
+import { forgetLastCrashReport } from "../crash";
 
 let setEnabled: ((on: boolean, opts?: { forget?: boolean }) => Promise<void> | void) | null = null;
 let setAttribution: ((value: string) => void) | null = null;
@@ -27,6 +28,8 @@ function registerUsageIpc(): void {
     if (on) setAttribution?.("existing_user");
     // D11: off FORGETS this installation (ID, session, queue, and the ID on
     // queued crash reports and submissions). No event is sent about it.
+    // The kept copy of the last crash report carries that ID too: forget it whole.
+    if (!on) forgetLastCrashReport();
     await setEnabled?.(!!on, on ? undefined : { forget: true });
   });
 }
