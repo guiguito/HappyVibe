@@ -74,6 +74,13 @@ describe("the source menu filters on the stored value", () => {
     const r = decision({ source: "subagent", agent: "worker", wouldHave: "allow" });
     expect(shows(r, "subagent")).toBe(true);
     expect(shows(r, "bypass")).toBe(false);
+    expect(sourceText(r as never)).toBe("sub-agent worker");
+  });
+
+  it("the 'rules would have' clause appears only on a bypassed row", () => {
+    expect(sourceText(decision({ source: "bypass", wouldHave: "allow" }) as never)).toContain("· rules would have allowed");
+    expect(sourceText(decision({ source: "dangerous", wouldHave: "deny" }) as never)).toContain("· rules would have DENIED");
+    expect(sourceText(decision({ source: "rule", wouldHave: "allow" }) as never)).not.toContain("would have");
   });
 
   it("the menu is rendered from SOURCE_FILTERS, and nothing compares a label", () => {

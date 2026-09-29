@@ -348,8 +348,12 @@ export function sourceText(r: Decision): string {
   // Folding it to plain "bypass" made a sub-agent's actions indistinguishable
   // from the parent's, which is the one thing these rows must not do.
   const base = r.source === "subagent" && r.bypass ? `${named} · bypass` : named;
+  // Only a bypassed row can say what the rules WOULD have done; the child guard
+  // stamps wouldHave on every sub-agent row, bypass or not.
+  const bypassed = r.source === "bypass" || r.source === "dangerous" || (r.source === "subagent" && r.bypass);
   const would =
-    r.wouldHave === "ask" ? "rules would have asked"
+    !bypassed ? ""
+    : r.wouldHave === "ask" ? "rules would have asked"
     : r.wouldHave === "deny" ? "rules would have DENIED"
     : r.wouldHave === "allow" ? "rules would have allowed"
     : "";
