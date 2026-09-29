@@ -67,7 +67,8 @@ function LongCacheToggle(): React.JSX.Element {
           Keeps the cached conversation prefix alive for 1 hour on Anthropic (24h on OpenAI) instead of the 5-minute
           default, so a session you come back to later still gets cache-priced prompt tokens. Anthropic bills a
           long-lived cache write at 2× the input rate, so this wins when your turns are minutes apart and loses when
-          you type continuously. Other providers ignore it. Takes effect for new sessions.
+          you type continuously. Most other providers get the same request; Google, Mistral, OpenAI Codex, xAI and a
+          few others ignore it. Takes effect for new sessions.
         </p>
       </div>
       <button
