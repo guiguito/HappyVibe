@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { docUrl, ERROR_GUIDE_LABEL } from "../docsLinks";
 import { ToolCard, ToolIcon, type ToolCardData } from "./ToolCard";
 import { PlanCard, type PlanCardData } from "./PlanCard";
 import { parseDocumentChips, splitMentionSegments, stripInjectedBlocks } from "../mentions";
@@ -99,7 +100,7 @@ export type TranscriptItem = { id?: number; live?: true } & (
   // B2: provider errors / session crashes as first-class transcript items.
   // `detail` is verbatim machine output (a dead child's stderr tail) — shown
   // monospace with its newlines, where `hint` is prose we wrote.
-  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string }
+  | { kind: "error"; text: string; retriable?: boolean; hint?: string; retryLabel?: string; detail?: string; doc?: { slug: string; anchor?: string } }
   // A neutral, warm status line (not an error). `pending` shows an ongoing
   // spinner (e.g. "Compacting context…") that resolves in place on completion.
   // `title` is hover-only detail that must NOT widen the pill — round 16: the
@@ -228,6 +229,7 @@ function ThinkingBlock({ text, live, ms }: { text: string; live?: boolean; ms?: 
 const MessageItem = memo(function MessageItem({
   it,
   onRetry,
+  onOpenDoc,
   workspace,
   sessionId,
   onOpenFile,
@@ -236,6 +238,8 @@ const MessageItem = memo(function MessageItem({
 }: {
   it: TranscriptItem;
   onRetry?: () => void;
+  /** Docs in the app (2026-09-29): opens a guide page from an error card that carries a `doc`. */
+  onOpenDoc?: (url: string) => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
   /** §12 (2026-08-30): the session a card belongs to. Only the subagent card
@@ -281,6 +285,16 @@ const MessageItem = memo(function MessageItem({
           {/* The hint says what to DO; the raw provider text stays visible above
               it so a bug report is still actionable. */}
           {it.hint && <div className="text-xs text-berry/80 mt-0.5 break-words">{it.hint}</div>}
+          {/* Docs in the app: only where a guide page explains the fix (providerError.ts decides). */}
+          {it.doc && onOpenDoc && (
+            <button
+              type="button"
+              onClick={() => onOpenDoc(docUrl(it.doc!.slug, it.doc!.anchor))}
+              className="mt-1 text-xs font-bold text-berry underline underline-offset-2 hover:brightness-110 cursor-pointer"
+            >
+              {ERROR_GUIDE_LABEL}
+            </button>
+          )}
           {/* Round 12: the child's own last words. A code-1 banner with the
               explanation sitting in a console nobody is watching is the same
               class of dishonesty as an unlabelled token estimate. */}
@@ -544,6 +558,7 @@ export function Transcript({
   streaming,
   header,
   onRetry,
+  onOpenDoc,
   workspace,
   sessionId,
   onOpenFile,
@@ -564,6 +579,8 @@ export function Transcript({
       scroll container so it scrolls naturally yet pins at the top. */
   header?: React.ReactNode;
   onRetry?: () => void;
+  /** Docs in the app (2026-09-29): opens a guide page from an error card that carries a `doc`. */
+  onOpenDoc?: (url: string) => void;
   /** W2.2: session workspace + open-in-editor for clickable card paths. */
   workspace?: string | null;
   /** §12 (2026-08-30): the session a card belongs to. Only the subagent card
@@ -783,6 +800,7 @@ export function Transcript({
               <MessageItem
                 it={it}
                 onRetry={onRetry}
+                onOpenDoc={onOpenDoc}
                 workspace={workspace}
                 sessionId={sessionId}
                 onOpenFile={onOpenFile}

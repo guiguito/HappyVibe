@@ -88,6 +88,8 @@ import { delegationAgent, isWaitTool } from "../../../pi-runtime/extensions/hv-r
 import { Banner } from "./components/Banner";
 import { NavContext, type NavTarget } from "./components/GoTo";
 import { DocsLink } from "./components/DocsLink";
+import { GuideView } from "./components/GuideView";
+import { docUrl, docsIndexUrl } from "./docsLinks";
 import { chipsFor, folderHasCode, ONBOARDING_COPY, shouldShowOnboarding } from "./onboarding";
 import { ipcMessage } from "./ipcError";
 import { screenView, trackUi } from "./usage";
@@ -1717,6 +1719,7 @@ export default function App(): React.JSX.Element {
             hint: info.hint,
             retriable: info.retriable,
             retryLabel: info.retriable ? "Retry" : undefined,
+            doc: info.doc,
           });
         }
         setBusy((p) => ({ ...p, [sid]: false }));
@@ -2162,15 +2165,25 @@ export default function App(): React.JSX.Element {
   };
 
   /**
-   * Docs round (2026-09-28): a screen's help link. Browser panes live in a
-   * workspace's tabs, so with no workspace yet (first run) the system browser
-   * opens it instead.
+   * Docs in the app (2026-09-29): every guide link — a screen's help link, Help ▸ HappyVibe Guide,
+   * an error card — opens the User guide page at the right address. A page needs no workspace.
    */
+  const [guide, setGuide] = useState({ url: docsIndexUrl, nonce: 0 });
   const openDocs = (url: string): void => {
-    const ws = activeWs ?? workspaces[0];
-    if (ws) void newBrowser(ws, url);
-    else void window.hv.openExternal(url);
+    // Before any model is connected the app is locked to Models and the sidebar won't navigate,
+    // so the page could not show: the system browser is the only door then.
+    if (keyState === "missing") {
+      void window.hv.openExternal(url);
+      return;
+    }
+    setGuide((g) => ({ url, nonce: g.nonce + 1 }));
+    navigate({ view: "guide" });
   };
+  // Docs in the app: Help ▸ HappyVibe Guide. A ref, so the one subscription always sees the
+  // current workspaces instead of the ones from the render it was made in.
+  const openDocsRef = useRef(openDocs);
+  openDocsRef.current = openDocs;
+  useEffect(() => window.hv.onOpenDocs(() => openDocsRef.current(docsIndexUrl)), []);
 
   /**
    * §26: close a terminal tab, which KILLS its PTY — a terminal tab IS its
@@ -3294,6 +3307,10 @@ export default function App(): React.JSX.Element {
         <MissedRunsDialog missed={schedules.filter((s) => s.missed)} onClose={() => setMissedOpen(false)} />
       )}
     <div className="h-full flex">
+      {/* Docs in the app: the guide has a left column of its own, so it takes the whole window.
+          `contents` keeps this wrapper out of the flex row; `hidden` keeps the sidebar MOUNTED, so its
+          open groups, scroll and dialogs are still there after "← Back". */}
+      <div className={activeView === "guide" ? "hidden" : "contents"}>
       <Sidebar
         workspaces={workspaces}
         activeWs={wsId}
@@ -3387,6 +3404,7 @@ export default function App(): React.JSX.Element {
         railCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
       />
+      </div>
       <main className="flex-1 min-w-0 flex flex-col">
         {errorBanner.mounted && (
           <Banner tone="attention" leaving={errorBanner.leaving} onDismiss={() => setError(null)}>
@@ -3488,6 +3506,9 @@ export default function App(): React.JSX.Element {
           {activeView === "changelog" && <ChangelogView />}
           {activeView === "privacy" && <PrivacyView />}
           {activeView === "memory" && <MemoryView workspaceId={selected?.workspaceId ?? null} />}
+          {activeView === "guide" && (
+            <GuideView url={guide.url} nonce={guide.nonce} onClose={() => navigate({ view: "chat" })} />
+          )}
           {activeView === "schedules" && (
             <SchedulesView
               schedules={schedules}
@@ -3944,6 +3965,7 @@ export default function App(): React.JSX.Element {
             }
             onClearPageRefs={() => setPageRefs((p) => ({ ...p, [sid]: [] }))}
             onRetry={() => void retryCrash(sid)}
+            onOpenDoc={openDocs}
             onCompact={(trigger) =>
               void window.hv.compactSession(sid).then(() => trackUi("context_changed", { action: "compacted", trigger }))
             }
@@ -4174,6 +4196,7 @@ export default function App(): React.JSX.Element {
           onGoModels={() => { dismissOnboarding(); navigate({ view: "models" }); }}
           onSkip={dismissOnboarding}
           onDone={() => void finishOnboarding()}
+          onOpenGuide={() => void window.hv.openExternal(docUrl("first-launch"))}
         />
       )}
       {/* §36: the star nudge. Not gated on onboarding — it cannot coincide,

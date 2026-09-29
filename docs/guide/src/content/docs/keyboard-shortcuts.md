@@ -11,6 +11,8 @@ Shortcuts use ⌘ on macOS and Ctrl on Windows and Linux. The screen shows the k
 
 **App features** → **Keyboard shortcuts** in the sidebar. You can also press ⌘/ on macOS or Ctrl+/ on Windows and Linux.
 
+Looking for the guide instead? Press F1 on Windows and Linux, where the menu bar stays hidden until you press Alt. On macOS, choose **Help** ▸ **HappyVibe Guide** in the menu bar. It opens the **User guide** page inside the app, or in your browser before a model is connected.
+
 ## What's on the screen
 
 ### Editable
@@ -46,7 +48,7 @@ A worktree is a second copy of your project's files, on its own branch, in its o
 | Send the message | Enter |
 | New line in the composer | ⇧Enter on macOS, Shift+Enter on Windows and Linux |
 | Reference a file or folder in the composer | @ |
-| Close a dialog or search | Esc |
+| Close a dialog, a search or the User guide | Esc |
 | Dictate into the composer (tap to keep recording) | Hold right ⌘ on macOS, right Ctrl on Windows and Linux |
 
 In this list, the composer is the message box.

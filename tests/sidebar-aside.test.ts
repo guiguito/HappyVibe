@@ -57,8 +57,8 @@ describe("the sidebar is one aside, so its width can transition (A5)", () => {
   });
 
   it("the expanded half keeps its own width while the aside animates through", () => {
-    // Without `min-w-64` its contents reflow through every intermediate width,
+    // Without `min-w-72` its contents reflow through every intermediate width,
     // which reads as the text being squeezed rather than the panel sliding.
-    expect(SB).toContain("min-w-64");
+    expect(SB).toContain("min-w-72");
   });
 });

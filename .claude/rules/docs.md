@@ -25,7 +25,15 @@ paths:
   CSS). Never write a colour value into `docs.css`; map Starlight's `--sl-*` variables onto the app's.
 - Light only (`ThemeProvider` and `ThemeSelect` are overridden). Links are ink with a tangerine
   underline because tangerine-deep text is 4.3:1 on paper, under AA.
-- `?embed=1`, from the app's help links, hides the site title for the rest of the tab.
+- `?embed=1` hides the site title for the rest of the tab. The app no longer sends it: the in-app guide
+  keeps the HappyVibe header. The site still honours it.
+- In the app the guide is the **User guide** page (`GuideView.tsx`): an iframe of the deployed site, a
+  settings row below the last group (outside `NAV`, so no guide page about itself). While it is open the
+  app's sidebar is hidden (CSS, not unmounted) so the guide's own left column is the only one. Every link goes
+  through `openDocs` in `App.tsx`; only "no model connected yet" and the setup dialog use the system
+  browser. An iframe on purpose — a browser pane is a native view that paints above prompts. The
+  renderer CSP allows exactly `frame-src https://happyvibe.dev`, and `frameNavAction` (`navGuard.ts`)
+  sends any link that would leave the guide to the system browser.
 - Media: `public/media/<slug>/<shot-id>.<ext>`, referenced as `/docs/media/<slug>/<shot-id>.<ext>`.
   Until a file exists, its page holds `<!-- TODO(media): <file> — <Shows line> -->` on its own line
   where the shot goes; `markdown()` (`src/lib/pages.ts`) strips it from the agent copies. List what

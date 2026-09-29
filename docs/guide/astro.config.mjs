@@ -4,7 +4,7 @@ import starlight from "@astrojs/starlight";
 import tailwindcss from "@tailwindcss/vite";
 import sidebar from "./sidebar.json" with { type: "json" };
 
-// ?embed=1 comes from the app's help links (src/renderer/src/docsLinks.ts). It is kept for the tab in
+// ?embed=1 is an opt-in the app no longer sends (the in-app guide keeps the header). It is kept for the tab in
 // sessionStorage, because links inside the guide drop the query. It is only ever set from the query,
 // so a normal visit never inherits it.
 const EMBED = `try{if(new URLSearchParams(location.search).has("embed"))sessionStorage.setItem("hv-embed","1");if(sessionStorage.getItem("hv-embed"))document.documentElement.dataset.embed=""}catch{}`;

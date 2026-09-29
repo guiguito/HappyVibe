@@ -82,6 +82,7 @@ export function OnboardingDialog({
   onGoModels,
   onSkip,
   onDone,
+  onOpenGuide,
 }: {
   modelReady: boolean;
   workspaceReady: boolean;
@@ -94,6 +95,8 @@ export function OnboardingDialog({
   onGoModels: () => void;
   onSkip: () => void;
   onDone: () => void;
+  /** Docs in the app: the setup guide, in the system browser. */
+  onOpenGuide: () => void;
 }): React.JSX.Element {
   // Beat 1 is a timer, not a gate. Any click or key lands it early; a
   // reduced-motion user sees the settled frame from the first paint anyway
@@ -255,6 +258,16 @@ export function OnboardingDialog({
               >
                 {C.tagline}
               </Dialog.Description>
+              {/* Brand column, not the work column: that one is already at its height limit. */}
+              {!complete && !welcome && (
+                <button
+                  type="button"
+                  onClick={onOpenGuide}
+                  className="mt-6 self-start text-[13px] font-bold text-ink-soft hover:text-ink underline decoration-tangerine decoration-2 underline-offset-4 cursor-pointer"
+                >
+                  {C.guideLink}
+                </button>
+              )}
             </div>
 
             {/* RIGHT — the work. Empty board while the film plays, so the logo

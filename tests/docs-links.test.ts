@@ -22,17 +22,22 @@ describe("help links (Docs round, 2026-09-28)", () => {
     expect(new Set(slugs).size).toBe(slugs.length);
   });
 
-  it("links open the embedded page on the canonical host", () => {
-    expect(docUrl("mcp")).toBe("https://happyvibe.dev/docs/mcp/?embed=1");
+  it("links open the guide page on the canonical host", () => {
+    expect(docUrl("mcp")).toBe("https://happyvibe.dev/docs/mcp/");
   });
 
   it("the link renders once, in the settings-page wrapper", () => {
     expect(APP.match(/<DocsLink /g)).toHaveLength(1);
   });
 
-  it("with no workspace, the link falls back to the system browser", () => {
+  // Docs in the app (2026-09-29) reversed the browser-pane route: the link opens the app's User
+  // guide view, which needs no workspace. The one fallback left is "no model connected yet".
+  it("the link opens the in-app guide, and only falls back to the system browser before a model exists", () => {
     const at = APP.indexOf("const openDocs");
     expect(at).toBeGreaterThan(-1);
-    expect(APP.slice(at, at + 500)).toContain("window.hv.openExternal(url)");
+    const body = APP.slice(at, at + 900);
+    expect(body).toContain('navigate({ view: "guide" })');
+    expect(body).toContain("window.hv.openExternal(url)");
+    expect(body).not.toContain("newBrowser");
   });
 });

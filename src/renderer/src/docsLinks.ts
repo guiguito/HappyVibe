@@ -1,3 +1,4 @@
+import { DOCS_BASE } from "../../main/docsBase";
 import type { View } from "./components/Sidebar";
 
 /**
@@ -29,5 +30,17 @@ export const DOC_SLUG: Partial<Record<View, string>> = {
   schedules: "schedules",
 };
 
-/** `?embed=1` hides the site title, so the page reads as part of the app (docs/guide/astro.config.mjs). */
-export const docUrl = (slug: string): string => `https://happyvibe.dev/docs/${slug}/?embed=1`;
+/**
+ * A page of the guide. Docs in the app (2026-09-29): no `?embed=1` — that flag hid the site's
+ * title for a browser pane, and the in-app guide wants the HappyVibe header it carries.
+ */
+export const docUrl = (slug: string, anchor?: string): string => `${DOCS_BASE}${slug}/${anchor ? `#${anchor}` : ""}`;
+
+/** The guide's front page — the Help menu's target. */
+export const docsIndexUrl = DOCS_BASE;
+
+/** The User guide page's own copy (GuideView, and the settings row that opens it). */
+export const GUIDE_COPY = { title: "User guide", close: "Close the guide" } as const;
+
+/** The label on a model-call error card that links to a guide page. */
+export const ERROR_GUIDE_LABEL = "Read the guide ↗";

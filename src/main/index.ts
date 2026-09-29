@@ -9,13 +9,15 @@ import { startUpdater } from './update'
 import { loginShellPath, mergePath } from './shellPath'
 import { getGitRulesSeeded, getLayoutFile, rulesFile, setGitRulesSeeded, setLayoutFile } from './config'
 import { seedDefaultGitRules } from './gitRules'
-import { navAction } from './navGuard'
+import { frameNavAction, navAction } from './navGuard'
 import { parseLayoutFile, type WindowRecord } from './windowLayout'
 import { insideAny } from './tearOff'
 import { WindowRegistry } from './windows'
 import { installCrash } from './crash'
 import { installRemoteConfig } from './remoteConfig'
 import { installUsage } from './usage'
+import { platform } from './platform'
+import { DOCS_BASE } from './docsBase'
 
 // Force the app name so macOS shows "HappyVibe" (not "Electron") in the app menu
 // AND userData resolves to .../HappyVibe — in dev the process runs inside
@@ -298,6 +300,22 @@ export function openWindow(record: WindowRecord, at?: { x: number; y: number }):
     event.preventDefault()
     if (action === 'external') void shell.openExternal(url)
   })
+  // Docs in the app: the User guide is an iframe, and will-navigate does not fire for subframes.
+  // Only a frame that is showing the guide is judged — see frameNavAction.
+  win.webContents.on('will-frame-navigate', (details) => {
+    if (details.isMainFrame) return
+    const action = frameNavAction(details.frame?.url ?? '', details.url)
+    if (action === 'allow') return
+    details.preventDefault()
+    if (action === 'external') void shell.openExternal(details.url)
+  })
+  // Docs in the app: Esc closes the User guide, but once focus is inside its iframe the keypress goes
+  // to the frame and the renderer never sees it; before-input-event does. It is forwarded as-is —
+  // never prevented, the guide's own search closes on Esc too — and the guide acts on it only when
+  // the frame holds focus (a keydown that reached the app was already handled there).
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape') win.webContents.send('hv:esc-key')
+  })
 
   // §37: the repair, not the report — the SDK's own `render-process-gone`
   // handler on `app` files that. Once per window, because a view that crashes
@@ -343,59 +361,77 @@ app.whenReady().then(() => {
   // productName. Install an explicit menu whose first item is "HappyVibe";
   // keep the standard Edit/View/Window roles so shortcuts (copy/paste, quit,
   // devtools) still work.
-  if (process.platform === 'darwin') {
-    Menu.setApplicationMenu(
-      Menu.buildFromTemplate([
-        {
-          label: 'HappyVibe',
-          submenu: [
-            { role: 'about' },
-            { type: 'separator' },
-            { role: 'services' },
-            { type: 'separator' },
-            { role: 'hide' },
-            { role: 'hideOthers' },
-            { role: 'unhide' },
-            { type: 'separator' },
-            { role: 'quit' },
-          ],
-        },
-        { role: 'editMenu' },
-        { role: 'viewMenu' },
-        // F6: free ⌘W for the renderer (close the active file tab); window close
-        // moves to ⌘⇧W. Otherwise the default windowMenu's ⌘W closes the window.
-        {
-          label: 'Window',
-          submenu: [
-            // §7 round 23: a full peer, opened empty. ⌘N and ⌘T are the session
-            // and terminal bindings (shortcuts.ts), so a new WINDOW gets ⌘⇧N.
-            {
-              label: 'New Window',
-              accelerator: 'CmdOrCtrl+Shift+N',
-              click: () => {
-                // Same workspace as the window you pressed it in — a window you
-                // open to hold a tab should not also make you re-pick a project
-                // — but with the sidebar COLLAPSED, because it was opened to
-                // hold a tab, not to browse.
-                const from = BrowserWindow.getFocusedWindow()
-                const ui = from ? (windows.record(from.id) as WindowRecord | undefined)?.ui : undefined
-                const ws = ui?.['hv:active-ws']
-                openWindow({
-                  tabsByWs: {},
-                  ui: { ...(ws ? { 'hv:active-ws': ws } : {}), 'hv:sidebar-collapsed': '1' },
-                })
-              },
+  const isMac = platform.name === 'darwin'
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      isMac ? {
+        label: 'HappyVibe',
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      } : { role: 'fileMenu' },
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      // F6: free ⌘W for the renderer (close the active file tab); window close
+      // moves to ⌘⇧W. Otherwise the default windowMenu's ⌘W closes the window.
+      {
+        label: 'Window',
+        submenu: [
+          // §7 round 23: a full peer, opened empty. ⌘N and ⌘T are the session
+          // and terminal bindings (shortcuts.ts), so a new WINDOW gets ⌘⇧N.
+          {
+            label: 'New Window',
+            accelerator: 'CmdOrCtrl+Shift+N',
+            click: () => {
+              // Same workspace as the window you pressed it in — a window you
+              // open to hold a tab should not also make you re-pick a project
+              // — but with the sidebar COLLAPSED, because it was opened to
+              // hold a tab, not to browse.
+              const from = BrowserWindow.getFocusedWindow()
+              const ui = from ? (windows.record(from.id) as WindowRecord | undefined)?.ui : undefined
+              const ws = ui?.['hv:active-ws']
+              openWindow({
+                tabsByWs: {},
+                ui: { ...(ws ? { 'hv:active-ws': ws } : {}), 'hv:sidebar-collapsed': '1' },
+              })
             },
-            { type: 'separator' },
-            { role: 'minimize' },
-            { role: 'zoom' },
-            { type: 'separator' },
-            { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' },
-          ],
-        },
-      ]),
-    )
-  }
+          },
+          { type: 'separator' },
+          { role: 'minimize' },
+          { role: 'zoom' },
+          { type: 'separator' },
+          { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' },
+        ],
+      },
+      // Docs in the app (2026-09-29): the guide, from the menu bar. The click can't call the
+      // renderer directly, so the focused window opens it through its own openDocs; with no
+      // window open (possible on macOS) there is no pane to open, so the system browser does.
+      // F1 is Windows/Linux only — on macOS it is a hardware key — and works while
+      // autoHideMenuBar keeps the bar hidden.
+      {
+        role: 'help',
+        submenu: [
+          {
+            label: 'HappyVibe Guide',
+            ...(isMac ? {} : { accelerator: 'F1' }),
+            click: () => {
+              const w = BrowserWindow.getFocusedWindow()
+              if (w) w.webContents.send('hv:open-docs')
+              else void shell.openExternal(DOCS_BASE)
+            },
+          },
+        ],
+      },
+    ]),
+  )
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.

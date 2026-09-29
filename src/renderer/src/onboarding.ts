@@ -56,6 +56,8 @@ export const ONBOARDING_COPY = {
     "Install Git for Windows for the best experience — HappyVibe will use its shell automatically, and sub-agents need it.",
 
   skip: "I'll set up myself",
+  // Docs in the app (2026-09-29): opens first-launch in the SYSTEM browser — setup is a modal.
+  guideLink: "Read the setup guide ↗",
   doneTitle: "You're in.",
   doneBody: "Opening your first session…",
 

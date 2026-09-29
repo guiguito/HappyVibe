@@ -32,11 +32,16 @@ export interface ProviderErrorInfo {
   raw: string;
   /** §39: the class, from a closed set — the ONLY part usage statistics send. */
   kind: ErrorKind;
+  /** Docs in the app (2026-09-29): a guide page that explains the fix — set only where one does. */
+  doc?: { slug: string; anchor?: string };
 }
 
 export type ErrorKind = "auth" | "balance" | "rate_limit" | "overloaded" | "server" | "network" | "context_overflow" | "model_not_found" | "other";
 
 const has = (s: string, re: RegExp): boolean => re.test(s);
+
+const DOC_KEY = { slug: "connect-a-model", anchor: "if-the-provider-rejects-the-key" } as const;
+const DOC_ENDPOINT = { slug: "models", anchor: "add-a-custom-endpoint" } as const;
 
 export function describeProviderError(raw: string, ctx: ProviderErrorContext = {}): ProviderErrorInfo {
   const t = raw.trim();
@@ -61,6 +66,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
   // entered in Settings is larger than the server really allows.
   if (has(t, /context length|context window|too many tokens|maximum context|token limit/i)) {
     return { kind: "context_overflow",
+      doc: DOC_ENDPOINT,
       headline: "The conversation is longer than this model's context window.",
       hint: "If this is a custom endpoint, the context window set for the model may be larger than the server actually allows.",
       retriable: false,
@@ -106,6 +112,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
 
   if (has(t, /\b40[13]\b|unauthorized|forbidden|invalid.?api.?key|authentication/i)) {
     return { kind: "auth",
+      doc: DOC_KEY,
       headline: "The provider rejected the API key.",
       hint: "Re-enter the key in Settings → LLM Setup. A custom endpoint with no key needs one only if its server requires it.",
       retriable: false,
@@ -115,6 +122,7 @@ export function describeProviderError(raw: string, ctx: ProviderErrorContext = {
 
   if (has(t, /\b404\b|model not found|no such model|unknown model/i)) {
     return { kind: "model_not_found",
+      doc: DOC_ENDPOINT,
       headline: "The provider does not have that model.",
       hint: "Check the model id — for a custom endpoint, re-fetch its model list in Settings.",
       retriable: false,

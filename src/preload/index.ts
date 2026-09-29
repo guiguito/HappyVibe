@@ -80,6 +80,18 @@ contextBridge.exposeInMainWorld("hv", {
     ipcRenderer.on("hv:tab-arrive", l);
     return () => ipcRenderer.off("hv:tab-arrive", l);
   },
+  /** Docs in the app: Esc pressed anywhere in the window, including inside the guide's iframe. */
+  onEscapeKey: (h: () => void) => {
+    const l = (): void => h();
+    ipcRenderer.on("hv:esc-key", l);
+    return () => ipcRenderer.off("hv:esc-key", l);
+  },
+  /** Docs in the app (2026-09-29): Help ▸ HappyVibe Guide, from the menu bar in main. */
+  onOpenDocs: (h: () => void) => {
+    const l = (): void => h();
+    ipcRenderer.on("hv:open-docs", l);
+    return () => ipcRenderer.off("hv:open-docs", l);
+  },
   setWindowTabs: (t: Record<string, unknown>) => ipcRenderer.invoke("hv:set-window-tabs", t),
   /** §7 round 23: the drag payload lives in main, not in the dataTransfer —
       a custom MIME type does not survive the OS drag between two windows. */

@@ -46,7 +46,8 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   // Electron's app menu owns it for New Window (src/main/index.ts), an
   // accelerator is served before the renderer ever sees the key, and
   // findConflict only knows about THIS list — so it could not even warn.
-  // Mod-Shift-w is gone the same way (close window).
+  // Mod-Shift-w is gone the same way (close window). So is F1: on Windows and Linux it is
+  // Help ▸ HappyVibe Guide, an accelerator findConflict cannot see.
   //
   // Mod-Shift rather than Mod-Alt on purpose: macOS composes an Option key into
   // a dead character, so e.key for ⌘⌥N can arrive as "˜" and never match. The
@@ -82,7 +83,7 @@ export const FIXED_SHORTCUTS: { keys: string; label: string }[] = [
   { keys: "Enter", label: "Send the message" },
   { keys: formatBinding("Shift-Enter"), label: "New line in the composer" },
   { keys: "@", label: "Reference a file or folder in the composer" },
-  { keys: "Esc", label: "Close a dialog or search" },
+  { keys: "Esc", label: "Close a dialog, a search or the User guide" },
   // §27. NOT a SHORTCUT_ACTIONS entry, and it cannot become one: eventToBinding
   // returns null for a modifier key and again when no Mod (Cmd/Ctrl) accompanies it,
   // the canonical form carries no left/right (e.key is "Meta" for both ⌘s), and
