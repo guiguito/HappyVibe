@@ -1405,7 +1405,7 @@ export function ChatView({
             onClick={() => stepMatch(-1)}
             disabled={searchTotal === 0}
             aria-label="Previous match"
-            title="Previous match (Shift+Enter)"
+            title={`Previous match (${formatBinding("Shift-Enter")})`}
             className="text-ink-soft hover:text-ink cursor-pointer font-bold px-1 disabled:opacity-30"
           >
             ↑

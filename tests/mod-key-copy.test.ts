@@ -124,6 +124,7 @@ describe("docs-round #28/#12/#22/#11: a key hint follows the binding", () => {
       ["components/Sidebar.tsx", "Expand sidebar (${sidebarKey})"],
       ["components/FileTab.tsx", "Save (${formatBinding(saveKey)})"],
       ["components/ChatView.tsx", "Search this conversation (${formatBinding(searchKey)})"],
+      ["components/ChatView.tsx", 'Previous match (${formatBinding("Shift-Enter")})'],
       ["components/TerminalTab.tsx", "{formatBinding(closeKey)} closes this tab"],
       ["components/feedbackCopy.ts", 'Paste an image (${formatBinding("Mod-v")}) or'],
       ["components/VoiceView.tsx", "Hold right ${MOD} to dictate"],
