@@ -59,7 +59,7 @@ The box under the rules checks what your saved rules would do, without the agent
 2. Type a command in the second field (for `bash`) or a path (for any other tool).
 3. Click **Evaluate**.
 
-The answer is **allow**, **ask** or **deny**, followed by why: the rule that decided it, "(safe tool default)", or "(no rule matched — default is ask)". On this screen it checks your global rules.
+The answer is **allow**, **ask** or **deny**, followed by why: the rule that decided it, "(safe tool default)", or "(no rule matched — default is ask)". On this screen it checks your global rules. Testing `workflow` never answers **allow**: an allow rule doesn't skip the workflow question, so the box says **ask**.
 
 Type a tool that's checked under another name (`mcp`, `Agent`, `SubagentWorkflow`, or a browser or web tool that opens an address), and the box names the one to test instead, for example "Agent is checked as `subagent:<agent>` on every call. Test that name instead."
 

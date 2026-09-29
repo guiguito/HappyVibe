@@ -102,6 +102,11 @@ export interface ToolRow extends ToolInfo {
   checkedAs?: CheckedAs;
 }
 
+/** What the rules test box prints: an allow rule never skips the workflow question, so it reads ask. */
+export function testedAction(tool: string, action: PermState): PermState {
+  return action === "allow" && tool === checkedAs(WORKFLOW_TOOL)?.name ? "ask" : action;
+}
+
 /** Join a tool list against per-tool verdicts. A tool with no verdict → "ask". */
 export function joinToolPermissions(tools: ToolInfo[], verdicts: Record<string, PermState>): ToolRow[] {
   return tools.map((t) => {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { EmptyState } from "./EmptyState";
 import { HowItWorks } from "./HowItWorks";
-import { checkedAs } from "../agents";
+import { checkedAs, testedAction } from "../agents";
 
 /**
  * B4 rules editor, parameterized by scope (W1.4): no `workspace` prop → the
@@ -71,7 +71,7 @@ function TestBox({ workspace }: { workspace: string }): React.JSX.Element {
       {instead && <p className="text-xs mt-2 text-ink-soft">{instead}</p>}
       {verdict && (
         <p className="text-xs mt-2">
-          → <span className={`font-black uppercase ${VERDICT_TONE[verdict.action]}`}>{verdict.action}</span>{" "}
+          → <span className={`font-black uppercase ${VERDICT_TONE[testedAction(tool.trim(), verdict.action)]}`}>{testedAction(tool.trim(), verdict.action)}</span>{" "}
           <span className="text-ink-soft">
             {verdict.source === "rule" && verdict.rule
               ? `(${verdict.rule.scope} ${verdict.rule.layer} rule: ${verdict.rule.pattern})`

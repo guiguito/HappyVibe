@@ -19,6 +19,7 @@ import {
   isSubagentQuery,
   isSubagentTool,
   joinToolPermissions,
+  testedAction,
   mergeTrace,
   parseAgents,
   parseSubagentEvent,
@@ -1007,6 +1008,19 @@ describe("findByRunId — the lookups that the attach would otherwise break (A1)
 
   it("answers null for a run nobody knows", () => {
     expect(findByRunId({}, "nope")).toBeNull();
+  });
+});
+
+describe("cleanup C8: the test box never says allow for a workflow", () => {
+  test("workflow + allow reads ask; deny and ask stay; other tools are untouched", () => {
+    expect(testedAction("workflow", "allow")).toBe("ask");
+    expect(testedAction("workflow", "deny")).toBe("deny");
+    expect(testedAction("workflow", "ask")).toBe("ask");
+    expect(testedAction("bash", "allow")).toBe("allow");
+  });
+  test("the test box prints the mapped action", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/renderer/src/components/PermissionRulesSection.tsx"), "utf8");
+    expect(src).toContain("testedAction(tool.trim(), verdict.action)");
   });
 });
 
