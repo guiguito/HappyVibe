@@ -71,7 +71,8 @@ export async function startCapture(opts: CaptureOpts = {}): Promise<CaptureSessi
   if (status === "not-determined") {
     const granted = await window.hv.voiceAskMic();
     if (!granted) throw new CaptureError("denied", "Microphone access was not granted.");
-  } else if (status !== "granted") {
+  } else if (status !== "granted" && status !== "not-needed") {
+    // "not-needed": Linux, where there is no OS permission to hold (docs-round #11).
     throw new CaptureError(
       "denied",
       "HappyVibe does not have microphone access. Grant it in System Settings, then restart the app.",

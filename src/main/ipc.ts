@@ -4407,12 +4407,13 @@ export function registerIpc(
    * silent empty transcript.
    */
   // §27 + §4 Windows round: Electron answers getMediaAccessStatus on darwin AND
-  // win32. The blanket "granted" now covers only linux, which has no such API — so a
-  // Windows user whose privacy toggle is off gets the same guidance as a Mac user,
-  // instead of a level meter that reads zero with nothing explaining why.
-  const HAS_MIC_API = process.platform === "darwin" || process.platform === "win32";
+  // win32 — so a Windows user whose privacy toggle is off gets the same guidance as a
+  // Mac user, instead of a level meter that reads zero with nothing explaining why.
+  // docs-round #11: Linux has no such permission at all. "granted" there claimed a check
+  // that never ran; "not-needed" is what is true, and capture treats it like "granted".
+  const HAS_MIC_API = platform.name === "darwin" || platform.name === "win32";
   ipcMain.handle("hv:voice-mic-status", () =>
-    HAS_MIC_API ? systemPreferences.getMediaAccessStatus("microphone") : "granted",
+    HAS_MIC_API ? systemPreferences.getMediaAccessStatus("microphone") : "not-needed",
   );
   ipcMain.handle("hv:voice-ask-mic", async () => {
     if (!HAS_MIC_API) return true;
@@ -4421,14 +4422,14 @@ export function registerIpc(
     }
     // askForMediaAccess is darwin-only. Windows has no prompt to raise: permission
     // lives in Settings, which is what hv:voice-open-mic-settings opens.
-    return process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : false;
+    return platform.name === "darwin" ? systemPreferences.askForMediaAccess("microphone") : false;
   });
   ipcMain.handle("hv:voice-open-mic-settings", () => {
-    if (process.platform === "win32") {
+    if (platform.name === "win32") {
       void shell.openExternal("ms-settings:privacy-microphone");
       return;
     }
-    if (process.platform !== "darwin") return;
+    if (platform.name !== "darwin") return;
     // The pane identifier changed with System Settings (macOS 13+), and the old
     // one FAILS SOFTLY: `com.apple.preference.security` still launches Settings
     // but the ?Privacy_Microphone anchor is dropped, so you land on the Privacy

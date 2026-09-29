@@ -1228,7 +1228,7 @@ interface HvApi {
   setVoiceSettings(s: Partial<HvVoiceSettings>): Promise<HvVoiceSettings>;
   /** §8.3: check this BEFORE getUserMedia. A denied mic on macOS still hands
       back a "live" track that produces nothing but zeros. */
-  voiceMicStatus(): Promise<"not-determined" | "granted" | "denied" | "restricted" | "unknown">;
+  voiceMicStatus(): Promise<"not-determined" | "granted" | "denied" | "restricted" | "unknown" | "not-needed">;
   voiceAskMic(): Promise<boolean>;
   voiceOpenMicSettings(): Promise<void>;
   /** Int16 PCM at 16 kHz mono in, transcript out. Nothing is logged (§11). */
