@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { diffLines } from "diff";
 import { stripSkillFrontMatter } from "../skillMd";
+import { GoTo } from "./GoTo";
 
 /**
  * §14 Skills — the GLOBAL skills surface (managed + linked + bundled), rendered
@@ -537,7 +538,7 @@ export function SkillInspector({
                   </button>
                 ) : (
                   <p className="text-[11px] text-ink-soft self-center">
-                    Approve this skill from the Skills page — a workspace can only turn a global skill off for itself.
+                    Approve this skill on the <GoTo view="skills" /> page — a workspace can only turn a global skill off for itself.
                   </p>
                 )
               ) : detail.status === "active" ? (

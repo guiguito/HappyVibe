@@ -62,6 +62,11 @@ describe("the five old phrasings are retired", () => {
     // A sixth the audit missed, found while implementing: the cost panel's
     // unknown-price banner pointed at a settings page in prose too.
     "Settings → Custom endpoint",
+    // docs round #16: the §24 rename left "commands" behind, and both approval
+    // pointers named their page in prose.
+    "from the Commands page",
+    "from the Skills page",
+    "which commands to import",
   ];
 
   it("none of them survives in rendered source", () => {
@@ -88,5 +93,16 @@ describe("navigation is a single callback, not scattered setView calls", () => {
     const fn = app.slice(app.indexOf("const navigate ="), app.indexOf("const navigate =") + 600);
     expect(fn).toContain("setSettingsOpen");
     expect(fn).toContain("setWsSettings");
+  });
+});
+
+describe("approval pointers link to the page that approves (docs round #16)", () => {
+  it("a workspace's inspector points at the global page with GoTo", () => {
+    expect(rendered(path.join(R, "components/PromptTemplatesSection.tsx"))).toContain(
+      'Approve this prompt on the <GoTo view="promptTemplates" /> page — a workspace can only turn a global prompt off for itself.',
+    );
+    expect(rendered(path.join(R, "components/SkillsSection.tsx"))).toContain(
+      'Approve this skill on the <GoTo view="skills" /> page — a workspace can only turn a global skill off for itself.',
+    );
   });
 });

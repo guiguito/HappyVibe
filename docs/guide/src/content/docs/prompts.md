@@ -20,7 +20,7 @@ Global (in every workspace) prompts work everywhere, unless a workspace turns on
 At the top are three ways to bring prompts in:
 
 - **Import folder**: pick a folder on your computer and choose which prompts in it to copy in.
-- **Import from Git URL**: fetch prompts from a "Public GitHub, GitLab, Bitbucket or Codeberg repo. Downloaded over HTTPS (no git needed); you choose which commands to import."
+- **Import from Git URL**: fetch prompts from a "Public GitHub, GitLab, Bitbucket or Codeberg repo. Downloaded over HTTPS (no git needed); you choose which prompts to import."
 - **Link a directory**: point at a folder of prompts that another tool keeps. HappyVibe reads the files where they are and never copies them.
 
 If a prompt is waiting for you, a banner says so, for example "1 prompt needs review before it can run."
